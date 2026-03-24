@@ -131,7 +131,7 @@ static let ds_caption = Font.system(size: 10, weight: .medium)  // 145 instances
 
 **Steps:**
 1. Delete `ScaleButtonStyle` from `HydrationWidget.swift:1491`
-2. Delete `ScaleButtonStyle` from `DashboardView.swift:1025`
+2. Delete `ScaleButtonStyle` from `DashboardView+Programs.swift` (was `DashboardView.swift:1025`)
 3. Delete `MealsScaleButtonStyle` from `MealsQuickActionsView.swift:343`
 4. Delete `CardioScaleButtonStyle` from `CardioLandingView.swift:629`
 5. Delete `TutorialScaleButtonStyle` from `WelcomeTutorialView.swift:808`

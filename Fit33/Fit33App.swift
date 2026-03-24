@@ -306,10 +306,7 @@ struct Fit33App: App {
     private func scheduleIntelligenceInit() {
         Task { @MainActor in
             StartupCoordinator.shared.onPhaseComplete(.intelligence) {
-                // Extra delay: don't start until 8s after intelligence phase is reached
-                // This ensures the user can interact smoothly before heavy CPU work begins
-                Task(priority: .background) {
-                    try? await Task.sleep(nanoseconds: 8_000_000_000) // 8s extra delay
+                Task.detached(priority: .utility) {
                     await self.runIntelligenceInit()
                 }
             }
@@ -334,7 +331,7 @@ struct Fit33App: App {
         AppLogger.debug("Intelligence engine data loading started", category: .general)
         
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        try? await Task.sleep(for: .milliseconds(200))
         
         if !CPUProtection.shared.isCPUCritical() {
             await wf.measure("Intel: buildMaps") {
@@ -344,7 +341,7 @@ struct Fit33App: App {
         }
         
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        try? await Task.sleep(for: .milliseconds(200))
         
         if !CPUProtection.shared.isCPUCritical() {
             await wf.measure("Intel: pairingEngine") {
@@ -354,7 +351,7 @@ struct Fit33App: App {
         }
         
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        try? await Task.sleep(for: .milliseconds(200))
         
         if !CPUProtection.shared.isCPUTooHigh() {
             await wf.measure("Intel: popularity") {
@@ -364,7 +361,7 @@ struct Fit33App: App {
         }
         
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        try? await Task.sleep(for: .milliseconds(200))
         
         if !CPUProtection.shared.isCPUTooHigh() {
             await wf.measure("Intel: collaborative") {
@@ -374,9 +371,9 @@ struct Fit33App: App {
         }
         
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        try? await Task.sleep(for: .milliseconds(500))
         
-        await CPUProtection.shared.waitForCPUSettled(maxWait: 5.0)
+        await CPUProtection.shared.waitForCPUSettled(maxWait: 2.0)
         
         if !CPUProtection.shared.isCPUCritical() {
             await wf.measure("Intel: behaviorAnalysis") {
@@ -634,6 +631,7 @@ struct Fit33App: App {
                     switch newPhase {
                     case .active:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became active")
+                        MainThreadWatchdog.shared.resume()
                         
                         // ═══ IMMEDIATE (main thread, sync) ═══
                         NotificationManager.shared.performSmartCheck()
@@ -701,6 +699,7 @@ struct Fit33App: App {
                         // ⚡️ PERSISTENCE: Save workout state before app becomes inactive
                         WorkoutManager.shared.saveWorkoutStateOnBackground()
                     case .background:
+                        MainThreadWatchdog.shared.pause()
                         AdvancedSessionLogger.shared.deactivate()
                         SessionLogManager.shared.log(.info, category: .session, message: "App entered background")
                         // 🔧 DEV: Mark clean shutdown before going to background

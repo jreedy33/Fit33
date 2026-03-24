@@ -51,18 +51,24 @@ class RealtimeService: ObservableObject {
     
     // MARK: - Debounce State
     
-    /// Debounce tasks for community and private challenge progress refreshes.
-    /// For automated metrics like steps, many progress events fire in rapid succession.
-    /// We debounce to avoid calling fetchMyChallenges() on every single event.
+    /// Debounce task for batched community challenge progress refreshes.
+    /// Collects challenge IDs over a 3s window, then does ONE refresh for all.
     private var communityProgressDebounceTask: Task<Void, Never>?
+    private var pendingCommunityRefreshChallengeIds: Set<String> = []
+    
+    /// Separate debounce for auto-tracked challenges (steps, active_minutes, etc.)
+    /// Uses a longer 6s window since HealthKit events fire in rapid bursts.
+    private var autoTrackedDebounceTask: Task<Void, Never>?
+    
     private var privateProgressDebounceTask: Task<Void, Never>?
     
-    /// Periodic refresh timer for auto-tracked community/private challenge progress.
-    /// Manual-input challenges (protein, hydration) refresh in real-time via WebSocket.
-    /// Auto-tracked challenges (steps, active_minutes, walk, run) refresh on this cadence
-    /// since they update frequently in the background and real-time events would be noisy.
+    /// Periodic refresh timer — now a 120s safety-net fallback since event-driven
+    /// debouncing handles the primary refresh path for both manual and auto-tracked challenges.
     private var autoTrackedRefreshTimer: Task<Void, Never>?
-    private static let autoTrackedRefreshInterval: UInt64 = 90_000_000_000 // 90 seconds (was 30s — too aggressive)
+    private static let autoTrackedRefreshInterval: UInt64 = 120_000_000_000 // 120s fallback (was 90s)
+    
+    /// Timestamp when community view became visible — used for adaptive refresh cadence
+    private var communityViewBecameVisibleAt: Date?
     
     // MARK: - Throttle State (prevent cascading fetches)
     
@@ -1052,22 +1058,33 @@ class RealtimeService: ObservableObject {
         logRealtimeEvent(type: "🌍 COMMUNITY_MEMBER_PROGRESS", source: "community_challenge_daily_progress",
                         details: "⚡️ Member \(recordUserId.prefix(8)) → \(progressValue), challenge: \(challengeId.prefix(8)), manual: \(isManual)")
         
+        // Optimistic local patch — update the leaderboard entry immediately (<16ms)
+        await CommunityChallengeService.shared.applyOptimisticProgressUpdate(
+            challengeId: challengeId, userId: recordUserId, progressValue: progressValue
+        )
+        
         if isManual {
-            // Manual-input challenges (protein, hydration, etc.): debounced refresh
-            // Cancels any pending debounce and waits 1.5s before fetching, so rapid-fire
-            // events (e.g. logging 3 waters in quick succession) only trigger ONE fetch.
+            // Manual-input challenges: batch challenge IDs over a 3s window, then ONE refresh
+            pendingCommunityRefreshChallengeIds.insert(challengeId)
             communityProgressDebounceTask?.cancel()
             communityProgressDebounceTask = Task {
                 try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s debounce
                 guard !Task.isCancelled else { return }
-                AppLogger.debug("Community manual input (debounced) — refreshing community challenges", category: .network)
+                let batchedIds = pendingCommunityRefreshChallengeIds
+                pendingCommunityRefreshChallengeIds.removeAll()
+                AppLogger.debug("Community manual input (batched \(batchedIds.count) challenges) — refreshing", category: .network)
                 await throttledCommunityFetch()
-                AppLogger.info("Community challenges refreshed after member progress update", category: .network)
+            }
+        } else {
+            // Auto-tracked challenges: longer 6s debounce to batch rapid HealthKit-driven events
+            autoTrackedDebounceTask?.cancel()
+            autoTrackedDebounceTask = Task {
+                try? await Task.sleep(nanoseconds: 6_000_000_000) // 6s debounce
+                guard !Task.isCancelled else { return }
+                AppLogger.debug("Community auto-tracked (debounced 6s) — refreshing", category: .network)
+                await throttledCommunityFetch()
             }
         }
-        // Auto-tracked challenges (steps, active_minutes): skip immediate refresh.
-        // These update on the periodic cadence timer instead (every 90s) to avoid
-        // flooding the UI with rapid HealthKit-driven updates.
     }
     
     // MARK: - Community Participants Subscription (Join/Leave Events)
@@ -1199,14 +1216,14 @@ class RealtimeService: ObservableObject {
     
     // MARK: - Periodic Cadence Refresh (Community + Private Challenges)
     
-    /// Start the periodic refresh timer for community/private challenges.
-    /// Called when realtime connects. This serves two purposes:
-    /// 1. Auto-tracked challenges (steps, active_minutes) rely on this instead of instant WebSocket updates (too noisy)
-    /// 2. Fallback for ALL community/private challenges in case WebSocket events aren't delivered
-    ///    (e.g., Supabase Realtime publication not configured, cross-table RLS blocking events)
+    /// Start the periodic fallback refresh timer for community/private challenges.
+    /// Now primarily a safety net (120s) since event-driven debouncing handles
+    /// both manual-input (1.5s) and auto-tracked (6s) challenges directly.
     ///
-    /// ⚡️ PERF FIX: Only fetches when the community view is currently visible.
-    /// When not visible, the timer still runs but skips fetches to avoid background network storms.
+    /// Adaptive cadence based on user engagement:
+    /// - Community view visible + recently appeared (<60s) → refresh every 30s
+    /// - Community view visible + idle (>60s) → refresh every 60s
+    /// - Not visible → skip entirely
     func startAutoTrackedRefreshTimer() {
         autoTrackedRefreshTimer?.cancel()
         autoTrackedRefreshTimer = Task {
@@ -1214,22 +1231,27 @@ class RealtimeService: ObservableObject {
                 try? await Task.sleep(nanoseconds: Self.autoTrackedRefreshInterval)
                 guard !Task.isCancelled else { break }
                 
-                // ⚡️ PERF FIX: Only refresh when the community view is visible.
-                // Background refreshes were firing every 30s regardless, causing
-                // network storms and @MainActor contention that froze the UI.
                 guard CommunityChallengeService.shared.isCommunityViewVisible else {
+                    communityViewBecameVisibleAt = nil
                     continue
                 }
                 
-                // Skip if we already fetched recently from a realtime event (prevents redundant calls)
-                let communityStale = lastCommunityFetchTime.map { Date().timeIntervalSince($0) > 30 } ?? true
-                let privateStale = lastPrivateFetchTime.map { Date().timeIntervalSince($0) > 30 } ?? true
+                if communityViewBecameVisibleAt == nil {
+                    communityViewBecameVisibleAt = Date()
+                }
+                
+                // Adaptive staleness threshold based on engagement duration
+                let engagementDuration = communityViewBecameVisibleAt.map { Date().timeIntervalSince($0) } ?? 999
+                let stalenessThreshold: TimeInterval = engagementDuration < 60 ? 30 : 60
+                
+                let communityStale = lastCommunityFetchTime.map { Date().timeIntervalSince($0) > stalenessThreshold } ?? true
+                let privateStale = lastPrivateFetchTime.map { Date().timeIntervalSince($0) > stalenessThreshold } ?? true
                 
                 let hasCommunity = !CommunityChallengeService.shared.myChallenges.isEmpty
                 let hasPrivate = !PrivateChallengeService.shared.myChallenges.isEmpty
                 
                 if (hasCommunity && communityStale) || (hasPrivate && privateStale) {
-                    AppLogger.debug("Cadence refresh for community/private challenges (every \(Self.autoTrackedRefreshInterval / 1_000_000_000)s)", category: .network)
+                    AppLogger.debug("Cadence refresh (adaptive \(Int(stalenessThreshold))s threshold)", category: .network)
                     
                     if hasCommunity && communityStale {
                         lastCommunityFetchTime = Date()

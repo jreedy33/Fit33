@@ -434,7 +434,12 @@ class HealthKitManager: ObservableObject {
             guard let self = self else { return }
             
             if let error = error {
-                AppLogger.error("Error fetching today's steps: \(error.localizedDescription)", category: .health)
+                let desc = error.localizedDescription
+                if desc.contains("Protected health data") || desc.contains("No data available") {
+                    AppLogger.debug("Steps unavailable: \(desc)", category: .health)
+                } else {
+                    AppLogger.error("Error fetching today's steps: \(desc)", category: .health)
+                }
                 Task { await MainActor.run { self.isLoading = false } }
                 return
             }
@@ -477,7 +482,12 @@ class HealthKitManager: ObservableObject {
         query.initialResultsHandler = { [weak self] query, results, error in
             guard let self = self, let results = results else {
                 if let error = error {
-                    AppLogger.error("Error fetching weekly steps: \(error.localizedDescription)", category: .health)
+                    let desc = error.localizedDescription
+                    if desc.contains("Protected health data") || desc.contains("No data available") {
+                        AppLogger.debug("Weekly steps unavailable: \(desc)", category: .health)
+                    } else {
+                        AppLogger.error("Error fetching weekly steps: \(desc)", category: .health)
+                    }
                 }
                 return
             }
@@ -513,7 +523,12 @@ class HealthKitManager: ObservableObject {
             guard let self = self else { return }
             
             if let error = error {
-                AppLogger.error("Error fetching monthly steps: \(error.localizedDescription)", category: .health)
+                let desc = error.localizedDescription
+                if desc.contains("Protected health data") || desc.contains("No data available") {
+                    AppLogger.debug("Monthly steps unavailable: \(desc)", category: .health)
+                } else {
+                    AppLogger.error("Error fetching monthly steps: \(desc)", category: .health)
+                }
                 return
             }
             
@@ -536,7 +551,6 @@ class HealthKitManager: ObservableObject {
     /// Sync today's steps to Supabase cloud (with debounce to prevent rapid consecutive syncs)
     private func syncTodayStepsToCloud() async {
         guard supabaseManager.isAuthenticated else {
-            AppLogger.debug("Not authenticated, skipping step sync to cloud", category: .health)
             return
         }
         
@@ -558,21 +572,37 @@ class HealthKitManager: ObservableObject {
         let today = calendar.startOfDay(for: Date())
         
         do {
-            try await supabaseManager.saveStepData(
-                date: today,
-                steps: todaySteps,
-                goal: stepGoal
-            )
-            AppLogger.info("Synced \(todaySteps) steps to cloud", category: .health)
-            
-            // 🧠 ADVANCED INTELLIGENCE: Track activity for recovery correlation
-            // This helps recommend workouts based on previous day's activity
-            if let userId = supabaseManager.currentUser?.id {
-                await AdvancedIntelligenceService.shared.trackActivityForRecovery(
-                    userId: userId,
-                    date: today,
-                    steps: todaySteps
-                )
+            var succeeded = false
+            var lastError: Error?
+            for attempt in 0...1 {
+                do {
+                    try await supabaseManager.saveStepData(
+                        date: today,
+                        steps: todaySteps,
+                        goal: stepGoal
+                    )
+                    succeeded = true
+                    break
+                } catch {
+                    lastError = error
+                    let nsError = error as NSError
+                    if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut && attempt < 1 {
+                        AppLogger.warning("Steps sync timed out — retrying once in 2s...", category: .health)
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        continue
+                    }
+                    throw error
+                }
+            }
+            if succeeded {
+                AppLogger.info("Synced \(todaySteps) steps to cloud", category: .health)
+                if let userId = supabaseManager.currentUser?.id {
+                    await AdvancedIntelligenceService.shared.trackActivityForRecovery(
+                        userId: userId,
+                        date: today,
+                        steps: todaySteps
+                    )
+                }
             }
         } catch {
             AppLogger.error("Error syncing steps to cloud: \(error.localizedDescription)", category: .health)

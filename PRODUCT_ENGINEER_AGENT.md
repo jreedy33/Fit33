@@ -24,18 +24,89 @@
 ### App Structure
 ```
 Fit33/
-├── Fit33App.swift              — App entry point, environment injection
-├── ContentView.swift           — Root TabView with 5 tabs
-├── DashboardView.swift         — Home tab (Tab 1)
-├── WorkoutTabView.swift        — Workout tab (Tab 2)
-├── ExerciseLibraryView.swift   — Not a tab; accessed from Workout tab
-├── MealPlanView.swift          — Meals tab (Tab 3)
-├── FriendsTabView.swift        — Social tab (Tab 4)
-├── ProfileView.swift           — Stats/Profile tab (Tab 5)
-├── DesignSystem.swift          — Typography, spacing, corner radius, gradient tokens
-├── AdaptiveColors.swift        — Colors, SleekCard, AnimatedOrbBackground, AdaptiveGradient
-├── SharedUtilities.swift       — UniversalScaleButtonStyle, shared helpers
-└── [Feature views]             — 90+ feature-specific SwiftUI views
+├── Fit33App.swift                       — App entry point, environment injection
+│
+│ ── Content / Tab Shell ──
+├── ContentView.swift                    — Root onboarding gate (~113 lines)
+├── ContentViewModels.swift              — ScrollToTopTrigger, Notification.Name, TabItem
+├── MainTabView.swift                    — Tab bar + deep link handling (~630 lines)
+├── GoButton.swift                       — GoButtonState, GoButtonOverlay, HomeBadgeCounter
+│
+│ ── Dashboard (Tab 1) ──
+├── DashboardView.swift                  — Home tab core (properties + body, ~695 lines)
+├── DashboardView+Header.swift           — Header, notification banner, start workout buttons
+├── DashboardView+Challenges.swift       — Challenge cards and widgets (1v1, group, pending)
+├── DashboardView+Programs.swift         — Program widgets and recommendations
+├── DashboardView+Macros.swift           — Macros/nutrition dashboard widget
+├── DashboardView+Activity.swift         — Recent workouts section, stats overview
+├── DashboardView+Helpers.swift          — Data loading, motivational messages, utilities
+├── DashboardModels.swift                — DashboardRoute, enums, scroll key, small types
+├── DashboardNavigationDestinations.swift — Navigation destination ViewModifier
+├── DashboardWorkoutCards.swift          — RecentWorkoutCard, RecentCardioWorkoutCard, StatCard
+├── DashboardWorkoutHistory.swift        — WorkoutHistoryFullView, day section views
+├── DashboardStreakViews.swift           — StreakInfoSheet, EditStreakSheet
+├── DashboardWeightWidget.swift          — Weight tracking widget + input sheet
+├── DashboardHydrationWidget.swift       — Hydration widget + quick add sheet
+├── DashboardWidgetSettings.swift        — Widget settings sheet
+├── SmartProgramMiniCard.swift           — Program mini card component
+│
+│ ── Workout (Tab 2) ──
+├── WorkoutTabView.swift                 — Workout tab
+├── ActiveWorkoutView.swift              — Active workout core (properties + body, ~161 lines)
+├── ActiveWorkoutView+Layout.swift       — Workout background, header bar, geometry content
+├── ActiveWorkoutView+Init.swift         — Initialization, warmup, history loading
+├── ActiveWorkoutView+Actions.swift      — Set completion, finish, cancel, shuffle, ads
+├── ActiveWorkoutView+Persistence.swift  — Save, sync, Apple Health, analytics
+├── ExerciseCard.swift                   — Exercise card component (~600 lines)
+├── WorkoutSetViews.swift                — SwipeableSetRow, SetRowView
+├── WorkoutDataModels.swift              — PreviousSetData, SetType, WorkoutSetData
+├── RestTimerViews.swift                 — RestTimer, RestTimerView, TimerBorderShape
+├── AddExerciseDuringWorkoutView.swift   — Add exercise sheet
+├── PlateCalculatorView.swift            — Plate calculator
+├── WorkoutSettingsPanel.swift           — Workout settings side panel
+├── NowPlayingBar.swift                  — Music now-playing bar
+├── ExerciseReplacementView.swift        — Exercise swap UI
+├── RenameExerciseView.swift             — Rename exercise sheet
+├── SelectAllTextField.swift             — UIKit text field wrapper
+├── WorkoutUIHelpers.swift               — RoundedCorner, MarqueeText
+├── ExerciseLibraryView.swift            — Not a tab; accessed from Workout tab
+│
+│ ── Meals (Tab 3) ──
+├── SimpleMealPlanView.swift             — Meal plan main view (~1,543 lines)
+├── MealPlanComponents.swift             — SmartDailySummary, MealRowCard, SwipeableMealCard
+├── MealPlanSetup.swift                  — Profile setup, timer indicator
+├── NutritionModels.swift                — MealType, FoodEntry, MacronutrientData
+├── NutritionDetailViews.swift           — Nutrition charts, macro views, explainers
+├── USDAFoodSearch.swift                 — USDA food search + result rows
+│
+│ ── Social (Tab 4) ──
+├── FriendsTabView.swift                 — Social tab
+│
+│ ── Profile (Tab 5) ──
+├── ProfileView.swift                    — Stats/Profile tab
+│
+│ ── Onboarding ──
+├── NewOnboardingView.swift              — Onboarding core (properties + body, ~798 lines)
+├── NewOnboardingView+Chrome.swift       — Shared header, button bar, progress, transitions
+├── NewOnboardingView+Navigation.swift   — Step navigation, checkpoints
+├── NewOnboardingView+Auth.swift         — Auth forms, social login, OAuth
+├── NewOnboardingView+Verification.swift — Phone/email verification UI and logic
+├── NewOnboardingView+Steps.swift        — All onboarding step content views
+├── NewOnboardingView+Social.swift       — Profile photo, contacts, friend suggestions
+├── NewOnboardingView+Completion.swift   — Confirmation, account creation, finish flow
+├── OnboardingInfrastructure.swift       — KeyboardObserver, OnboardingSessionManager
+├── OnboardingFormControls.swift         — Text fields, password fields, code boxes
+├── OnboardingCardViews.swift            — Goal, experience, equipment, gender cards
+├── OnboardingConfirmationViews.swift    — Summary rows, confirmation sections
+├── OnboardingLimitationViews.swift      — Limitation cards, accommodation options
+├── OnboardingPhotoPickers.swift         — Photo/camera pickers with coordinators
+├── CountryCode.swift                    — Country code enum for phone input
+│
+│ ── Shared ──
+├── DesignSystem.swift                   — Typography, spacing, corner radius, gradient tokens
+├── AdaptiveColors.swift                 — Colors, SleekCard, AnimatedOrbBackground, AdaptiveGradient
+├── SharedUtilities.swift                — UniversalScaleButtonStyle, shared helpers
+└── [Feature views]                      — 90+ feature-specific SwiftUI views
 ```
 
 ### Key Shared Files (MUST use, NEVER duplicate)
@@ -77,7 +148,7 @@ Every feature in the app may be accessible from multiple entry points. **All ent
 }
 ```
 
-**KNOWN BUG**: `DashboardView.swift:4325` currently uses `NavigationLink` instead of `.fullScreenCover`. This MUST be fixed.
+**KNOWN BUG**: Dashboard challenge creation currently uses `NavigationLink` instead of `.fullScreenCover`. Check `DashboardView+Challenges.swift`. This MUST be fixed.
 
 #### Workout Creation
 | Entry Point | Destination | Required Presentation |
@@ -191,7 +262,7 @@ struct MyNewView: View {
 
 | Duplicate | Files | Canonical Version |
 |-----------|-------|-------------------|
-| `ScaleButtonStyle` | `HydrationWidget.swift:1491`, `DashboardView.swift:1025` | `UniversalScaleButtonStyle` in `SharedUtilities.swift:515` |
+| `ScaleButtonStyle` | `HydrationWidget.swift:1491`, `DashboardView+Programs.swift` | `UniversalScaleButtonStyle` in `SharedUtilities.swift:515` |
 | `MealsScaleButtonStyle` | `MealsQuickActionsView.swift:343` | Delete, use `UniversalScaleButtonStyle` |
 | `CardioScaleButtonStyle` | `CardioLandingView.swift:629` | Delete, use `UniversalScaleButtonStyle` |
 | `TutorialScaleButtonStyle` | `WelcomeTutorialView.swift:808` | Delete, use `UniversalScaleButtonStyle` |

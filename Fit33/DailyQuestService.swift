@@ -234,6 +234,26 @@ enum QuestKey: String, CaseIterable {
     // Reward (free users only)
     case watchAds = "watch_ads"
     
+    // Workout-metric quests
+    case beatVolumePR = "beat_volume_pr"
+    case maintainStreak = "maintain_streak"
+    case stretchSession = "stretch_session"
+    
+    // Health-metric quests (HealthKit auto-tracked)
+    case activeMinutes30 = "active_minutes_30"
+    case burn300Calories = "burn_300_calories"
+    case sleep7Hours = "sleep_7_hours"
+    
+    // Social-competitive quests
+    case beatFriendSteps = "beat_friend_steps"
+    case league3Workouts = "league_3_workouts"
+    case top3League = "top_3_league"
+    
+    // Tracking/consistency quests
+    case logAllMacros = "log_all_macros"
+    case hydrationBeforeNoon = "hydration_before_noon"
+    case weeklyWeighIn = "weekly_weigh_in"
+    
     // MARK: - Legacy keys (for backwards compat with existing quests)
     case logMeal = "log_meal"
     case logWater = "log_water"
@@ -317,28 +337,54 @@ class DailyQuestService: ObservableObject {
     
     // MARK: - Gather User Context
     
-    /// Collects current user context for personalized quest selection
-    private func gatherUserContext() -> (hasProgram: Bool, hasFriends: Bool, hasChallenge: Bool, stepGoal: Int, fitnessGoal: String) {
-        // Check for active program (cloud or generated)
+    struct UserQuestContext {
+        let hasProgram: Bool
+        let hasFriends: Bool
+        let hasChallenge: Bool
+        let stepGoal: Int
+        let fitnessGoal: String
+        let workoutStreak: Int
+        let totalWorkouts: Int
+        let preferredTime: String
+        let avgDuration: Int
+        let hasWeightLog: Bool
+        let hydrationActive: Bool
+        let leagueRank: Int
+    }
+    
+    private func gatherUserContext() -> UserQuestContext {
         let hasCloudProgram = CloudProgramService.shared.activeProgram != nil
         let hasGeneratedProgram = GeneratedProgramService.shared.activeProgram != nil
         let hasSmartProgram = SmartProgramEngine.shared.userPrograms.contains { !$0.isCompleted }
         let hasProgram = hasCloudProgram || hasGeneratedProgram || hasSmartProgram
-        
-        // Check for friends
         let hasFriends = !FriendService.shared.friends.isEmpty
-        
-        // Check for active challenges (1v1 or group)
-        let hasChallenge = !ChallengeService.shared.activeChallenges.isEmpty || 
+        let hasChallenge = !ChallengeService.shared.activeChallenges.isEmpty ||
                            !ChallengeService.shared.activeGroupChallenges.isEmpty
-        
-        // Step goal
         let stepGoal = HealthKitManager.shared.stepGoal
-        
-        // Fitness goal from user profile
         let fitnessGoal = UserManager.shared.currentUser?.fitnessGoal ?? "general"
         
-        return (hasProgram, hasFriends, hasChallenge, stepGoal, fitnessGoal)
+        let workoutStreak = Int(UserManager.shared.currentUser?.currentStreak ?? 0)
+        let totalWorkouts = Int(UserManager.shared.currentUser?.totalWorkouts ?? 0)
+        let preferredTime = UserBehaviorLearningEngine.shared.userPreferences?.preferredTimeOfDay ?? "any"
+        let avgDuration = UserBehaviorLearningEngine.shared.userPreferences?.preferredWorkoutDuration ?? 45
+        let hasWeightLog = WeightTrackingService.shared.statistics != nil
+        let hydrationActive = HydrationService.shared.settings.dailyGoalMl > 0
+        let leagueRank = WeeklyLeagueService.shared.standing?.myRank ?? 0
+        
+        return UserQuestContext(
+            hasProgram: hasProgram,
+            hasFriends: hasFriends,
+            hasChallenge: hasChallenge,
+            stepGoal: stepGoal,
+            fitnessGoal: fitnessGoal,
+            workoutStreak: workoutStreak,
+            totalWorkouts: totalWorkouts,
+            preferredTime: preferredTime,
+            avgDuration: avgDuration,
+            hasWeightLog: hasWeightLog,
+            hydrationActive: hydrationActive,
+            leagueRank: leagueRank
+        )
     }
     
     // MARK: - Fetch Daily Quests
@@ -374,6 +420,13 @@ class DailyQuestService: ObservableObject {
                 let p_step_goal: Int
                 let p_fitness_goal: String
                 let p_is_subscriber: Bool
+                let p_workout_streak: Int
+                let p_total_workouts: Int
+                let p_preferred_time: String
+                let p_avg_duration: Int
+                let p_has_weight_log: Bool
+                let p_hydration_active: Bool
+                let p_league_rank: Int
             }
             
             let params = GetDailyQuestsParams(
@@ -384,7 +437,14 @@ class DailyQuestService: ObservableObject {
                 p_has_challenge: ctx.hasChallenge,
                 p_step_goal: ctx.stepGoal,
                 p_fitness_goal: ctx.fitnessGoal,
-                p_is_subscriber: PremiumManager.shared.isPremiumUser
+                p_is_subscriber: PremiumManager.shared.isPremiumUser,
+                p_workout_streak: ctx.workoutStreak,
+                p_total_workouts: ctx.totalWorkouts,
+                p_preferred_time: ctx.preferredTime,
+                p_avg_duration: ctx.avgDuration,
+                p_has_weight_log: ctx.hasWeightLog,
+                p_hydration_active: ctx.hydrationActive,
+                p_league_rank: ctx.leagueRank
             )
             
             let response: DailyQuestsResponse = try await SupabaseManager.shared.supabaseClient
@@ -736,6 +796,58 @@ class DailyQuestService: ObservableObject {
         if actions >= 3 {
             await reportProgress(questKey: .perfectDay, increment: actions)
         }
+    }
+    
+    // MARK: - New Metric-Driven Quest Hooks
+    
+    func onStretchCompleted(durationSeconds: Int) async {
+        await reportProgress(questKey: .stretchSession, increment: durationSeconds / 60)
+    }
+    
+    func onActiveMinutesUpdated(minutes: Int) async {
+        if minutes >= 30 {
+            await reportProgress(questKey: .activeMinutes30, increment: minutes)
+        }
+    }
+    
+    func onCaloriesBurned(kcal: Int) async {
+        if kcal >= 300 {
+            await reportProgress(questKey: .burn300Calories, increment: kcal)
+        }
+    }
+    
+    func onSleepLogged(hours: Double) async {
+        if hours >= 7.0 {
+            await reportProgress(questKey: .sleep7Hours)
+        }
+    }
+    
+    func onVolumePRBeat(totalVolume: Double) async {
+        await reportProgress(questKey: .beatVolumePR)
+    }
+    
+    func onStreakMaintained() async {
+        await reportProgress(questKey: .maintainStreak)
+    }
+    
+    func onLeagueWorkoutLogged() async {
+        await reportProgress(questKey: .league3Workouts)
+    }
+    
+    func onAllMacrosLogged() async {
+        await reportProgress(questKey: .logAllMacros)
+    }
+    
+    func onHydrationBeforeNoon(glasses: Int) async {
+        let hour = Calendar.current.component(.hour, from: Date())
+        if hour < 12 && glasses >= 4 {
+            await reportProgress(questKey: .hydrationBeforeNoon, increment: glasses)
+        }
+    }
+    
+    func onWeeklyWeighIn() async {
+        await reportProgress(questKey: .weeklyWeighIn)
+        await reportProgress(questKey: .logWeight)
     }
     
     // MARK: - Step Delta Persistence

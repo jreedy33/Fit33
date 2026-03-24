@@ -44,6 +44,9 @@ extension Font {
     // Mono / Stats
     static let ds_stat = Font.system(size: 24, weight: .bold, design: .rounded)
     static let ds_statSmall = Font.system(size: 18, weight: .bold, design: .rounded)
+    
+    // Timer
+    static let ds_timer = Font.system(size: 56, weight: .bold, design: .rounded)
 }
 
 // MARK: - Spacing Tokens

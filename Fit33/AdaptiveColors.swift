@@ -312,6 +312,27 @@ struct AdaptiveGradient {
         }
     }
     
+    static func stretch(for colorScheme: ColorScheme) -> LinearGradient {
+        if colorScheme == .dark {
+            return LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.teal.opacity(0.15),
+                    Color.mint.opacity(0.08),
+                    Color(red: 0.05, green: 0.08, blue: 0.10),
+                    Color(red: 0.04, green: 0.05, blue: 0.07)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        } else {
+            return LinearGradient(
+                gradient: Gradient(colors: [Color.teal.opacity(0.25), Color.mint.opacity(0.15), Color.white]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+    }
+    
     /// Universal background that can be used anywhere
     static func universal(for colorScheme: ColorScheme) -> LinearGradient {
         if colorScheme == .dark {
@@ -390,6 +411,15 @@ struct AnimatedOrbBackground: View {
         )
     }
     
+    /// Stretch mode - calming teal/mint tones for recovery and mobility
+    static func stretch(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.stretch(for: colorScheme),
+            primaryOrbColor: .teal,
+            secondaryOrbColor: .mint
+        )
+    }
+    
     /// Onboarding flow - clean, professional with subtle blue/cyan orbs
     static func onboarding(colorScheme: ColorScheme) -> AnimatedOrbBackground {
         AnimatedOrbBackground(
@@ -459,6 +489,7 @@ struct AnimatedOrbBackground: View {
                         .animation(.easeInOut(duration: 3).repeatForever(autoreverses: true), value: animatePulse)
                 }
             }
+            .drawingGroup()
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)

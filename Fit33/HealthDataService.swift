@@ -85,34 +85,26 @@ final class HealthDataService: ObservableObject {
         
         updateConnectedSources()
         
-        // Sync from connected sources in parallel
-        await withTaskGroup(of: Void.self) { group in
-            // Apple HealthKit data (Nike Run Club, Apple Watch, etc.)
-            if HealthKitService.shared.isAuthorized {
-                group.addTask {
-                    await self.syncHealthKitData()
+        // Capture main-actor state before hopping off thread
+        let hkAuthorized = HealthKitService.shared.isAuthorized
+        let fitbitConnected = FitbitService.shared.isConnected
+        let stravaConnected = StravaService.shared.isConnected
+        
+        // Run health source syncs off main thread to avoid blocking UI
+        await Task.detached(priority: .userInitiated) { [self] in
+            await withTaskGroup(of: Void.self) { group in
+                if hkAuthorized {
+                    group.addTask { await self.syncHealthKitData() }
                 }
-            }
-            
-            // Fitbit data
-            if FitbitService.shared.isConnected {
-                group.addTask {
-                    await self.syncFitbitData()
+                if fitbitConnected {
+                    group.addTask { await self.syncFitbitData() }
                 }
-            }
-            
-            // Strava data
-            if StravaService.shared.isConnected {
-                group.addTask {
-                    await self.syncStravaData()
+                if stravaConnected {
+                    group.addTask { await self.syncStravaData() }
                 }
+                group.addTask { await self.fetchWeeklyData() }
             }
-            
-            // Fetch aggregated data from database
-            group.addTask {
-                await self.fetchWeeklyData()
-            }
-        }
+        }.value
         
         // 🏆 CHALLENGES: Sync all sources to active challenges AFTER data is loaded
         // This ensures challenges get credit from HealthKit, Strava, Fitbit, etc.

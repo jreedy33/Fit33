@@ -745,6 +745,8 @@ struct CommunityLeaderboardWidget: View {
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
         .shadow(color: themeColor.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        .animation(.default, value: challenge.myTodayProgress)
+        .animation(.default, value: challenge.myRank)
     }
     
     // MARK: - Challenge Header
@@ -801,6 +803,7 @@ struct CommunityLeaderboardWidget: View {
                                 ? LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
                                 : LinearGradient(colors: [.primary, .primary.opacity(0.7)], startPoint: .top, endPoint: .bottom)
                         )
+                        .contentTransition(.numericText())
                     Text("rank")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.secondary)
@@ -951,6 +954,7 @@ struct CommunityLeaderboardWidget: View {
                 Text(value)
                     .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(valueColor)
+                    .contentTransition(.numericText())
             }
             Text(label)
                 .font(.system(size: 9, weight: .medium))
@@ -1044,6 +1048,7 @@ struct CommunityLeaderboardWidget: View {
                             Text("\(entry.rank)")
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
                                 .foregroundColor(.secondary)
+                                .contentTransition(.numericText())
                         }
                     }
                 }
@@ -1081,6 +1086,7 @@ struct CommunityLeaderboardWidget: View {
                     Text("\(displayProgress)")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .foregroundColor(displayTargetHit ? themeColor : .primary)
+                        .contentTransition(.numericText())
                     
                     if displayTargetHit {
                         Image(systemName: "checkmark.circle.fill")
@@ -1189,6 +1195,7 @@ struct CommunityLeaderboardWidget: View {
             Text("\(Int(progressPct * 100))%")
                 .font(.system(size: 10, weight: .bold, design: .rounded))
                 .foregroundColor(themeColor)
+                .contentTransition(.numericText())
                 .frame(width: 32, alignment: .trailing)
             
             Image(systemName: "chevron.right")
@@ -1535,6 +1542,7 @@ struct CommunityLeaderboardView: View {
                         LinearGradient(colors: lb.myRank <= 3 ? [.yellow, .orange] : [.primary, .primary.opacity(0.8)],
                                        startPoint: .top, endPoint: .bottom)
                     )
+                    .contentTransition(.numericText())
                 Text("Rank")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -1548,6 +1556,7 @@ struct CommunityLeaderboardView: View {
                 Text("\(progressResolver.liveProgress(for: lb))")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(progressResolver.targetHitToday(for: lb) ? .green : .primary)
+                    .contentTransition(.numericText())
                 Text("Today")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -1560,6 +1569,7 @@ struct CommunityLeaderboardView: View {
             VStack(spacing: 2) {
                 Text("\(lb.myDaysCompleted)")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .contentTransition(.numericText())
                 Text("Days")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -1573,6 +1583,7 @@ struct CommunityLeaderboardView: View {
                 HStack(spacing: 2) {
                     Text("\(lb.myCurrentStreak)")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .contentTransition(.numericText())
                     Image(systemName: "flame.fill")
                         .font(.ds_bodySmall)
                         .foregroundColor(.orange)
@@ -1590,6 +1601,7 @@ struct CommunityLeaderboardView: View {
                 Text("\(lb.myBestStreak)")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.secondary)
+                    .contentTransition(.numericText())
                 Text("Best")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -1753,6 +1765,7 @@ struct CommunityLeaderboardView: View {
                         Text("#\(entry.rank)")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundColor(.secondary)
+                            .contentTransition(.numericText())
                     }
                 }
             }
@@ -1809,6 +1822,7 @@ struct CommunityLeaderboardView: View {
                 Text("\(entry.todayProgress)")
                     .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
                     .foregroundColor(entry.targetHitToday ? .green : .primary)
+                    .contentTransition(.numericText())
                 
                 if entry.targetHitToday {
                     Image(systemName: "checkmark.circle.fill")

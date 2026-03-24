@@ -295,7 +295,7 @@ final class ExerciseIntelligenceEngine {
             if let prefetchedExercises = prefetchedExercises {
                 exercises = prefetchedExercises
             } else {
-                exercises = try await SupabaseManager.shared.fetchAllExercises()
+                exercises = try await fetchWithRetry()
             }
             
             // Build all indexes on current (background) thread — NO MainActor needed
@@ -351,6 +351,27 @@ final class ExerciseIntelligenceEngine {
         } catch {
             AppLogger.error("ExerciseIntelligenceEngine failed to load data: \(error.localizedDescription)", category: .workout)
         }
+    }
+    
+    private func fetchWithRetry(maxRetries: Int = 2) async throws -> [ExerciseDTO] {
+        var lastError: Error?
+        for attempt in 0...maxRetries {
+            do {
+                return try await SupabaseManager.shared.fetchAllExercises()
+            } catch {
+                lastError = error
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+                if isTimeout && attempt < maxRetries {
+                    let delay = UInt64(pow(2.0, Double(attempt))) * 2_000_000_000
+                    AppLogger.warning("Exercise fetch timed out (attempt \(attempt + 1)/\(maxRetries + 1)) — retrying in \(delay / 1_000_000_000)s...", category: .workout)
+                    try? await Task.sleep(nanoseconds: delay)
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError ?? NSError(domain: "ExerciseIntelligenceEngine", code: -1)
     }
     
     // MARK: - Public API

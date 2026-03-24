@@ -17,12 +17,12 @@ import Realtime
 /// A leaderboard snippet entry returned inline with community challenge data.
 /// Used for rendering mini-leaderboard widgets without a separate RPC call.
 struct LeaderboardSnippetEntry: Codable, Identifiable {
-    let rank: Int
+    var rank: Int
     let userId: UUID
     let name: String?
     let username: String?
     let profilePhotoUrl: String?
-    let todayProgress: Int
+    var todayProgress: Int
     let daysCompleted: Int
     let currentStreak: Int
     let bestStreak: Int
@@ -98,15 +98,15 @@ struct CommunityChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     let isRecurring: Bool
     let isFeatured: Bool
     let isOfficial: Bool
-    let myTodayProgress: Int?
+    var myTodayProgress: Int?
     let myDaysCompleted: Int?
     let myCurrentStreak: Int?
     let myBestStreak: Int?
-    let myRank: Int?
+    var myRank: Int?
     let createdBy: UUID?
     let creatorName: String?
     let creatorUsername: String?
-    let topParticipants: [LeaderboardSnippetEntry]?
+    var topParticipants: [LeaderboardSnippetEntry]?
     let friendsIn: [CommunityFriendInfo]?
     let friendsCount: Int?
     
@@ -531,8 +531,8 @@ class CommunityChallengeService: ObservableObject {
     /// e.g. +2 means user moved up 2 spots, -1 means dropped 1 spot
     @Published var rankDeltas: [UUID: [UUID: Int]] = [:]
     
-    /// Realtime channel for community updates
-    private var communityRealtimeChannel: RealtimeChannelV2?
+    /// Timer for delayed rank delta clearing after user has "seen" them
+    private var rankDeltaClearTask: Task<Void, Never>?
     
     /// Stores previous ranks for delta computation: challengeId → userId → rank
     private var previousRanks: [UUID: [UUID: Int]] = [:]
@@ -553,11 +553,11 @@ class CommunityChallengeService: ObservableObject {
     // MARK: - Refresh All Community Data
     
     /// Central refresh method — call from pull-to-refresh, tab switches, and app foreground.
-    /// Throttled to avoid redundant network calls within 10 seconds.
+    /// Throttled to avoid redundant network calls within 5 seconds.
     func refreshAll(force: Bool = false) async {
         guard SupabaseManager.shared.isAuthenticated else { return }
         let now = Date()
-        if !force, let last = lastRefreshTime, now.timeIntervalSince(last) < 10 {
+        if !force, let last = lastRefreshTime, now.timeIntervalSince(last) < 5 {
             #if DEBUG
             AppLogger.debug("Skipping community refresh — last was \(Int(now.timeIntervalSince(last)))s ago", category: .social)
             #endif
@@ -690,18 +690,25 @@ class CommunityChallengeService: ObservableObject {
     // MARK: - Rank Delta Visibility
     
     /// Call when the community widgets appear on screen (Friends tab, Community Hub).
-    /// Keeps existing arrows visible and enables real-time delta updates.
+    /// Preserves accumulated rank deltas so the user sees changes that happened while away.
+    /// Starts a delayed clear — after 10s of continuous visibility, deltas fade out (user has "seen" them).
     func markCommunityViewVisible() {
         isCommunityViewVisible = true
+        rankDeltaClearTask?.cancel()
+        rankDeltaClearTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled, isCommunityViewVisible else { return }
+            withAnimation(.easeOut(duration: 0.6)) {
+                rankDeltas = [:]
+            }
+        }
     }
     
     /// Call when the user navigates AWAY from the community widgets.
-    /// Clears all rank delta arrows so they're gone when the user returns.
+    /// Rank deltas are preserved so they're visible when the user returns.
     func markCommunityViewHidden() {
         isCommunityViewVisible = false
-        withAnimation(.easeOut(duration: 0.4)) {
-            rankDeltas = [:]
-        }
+        rankDeltaClearTask?.cancel()
     }
     
     // MARK: - Fetch Discoverable (Friends' Communities)
@@ -955,104 +962,44 @@ class CommunityChallengeService: ObservableObject {
     
     // MARK: - Realtime Subscriptions
     
-    /// Subscribe to real-time updates for community challenge participant changes.
-    /// When any participant joins, leaves, or logs progress, the widget updates live.
+    /// No-op — community realtime is handled exclusively by RealtimeService.swift
+    /// which subscribes to community_challenge_daily_progress and community_challenge_participants
+    /// via dedicated channels. Keeping this method signature so callers don't break.
     func subscribeToRealtimeUpdates() async {
-        guard SupabaseManager.shared.isAuthenticated else { return }
-        
-        // Prevent duplicate subscriptions — calling postgresChange on an already-subscribed
-        // channel triggers "You cannot call postgresChange after joining the channel" warning
-        // and silently breaks the subscription.
-        if communityRealtimeChannel != nil {
-            AppLogger.debug("Already subscribed to community real-time updates — skipping", category: .social)
-            return
-        }
-        
-        let client = SupabaseManager.shared.supabaseClient
-        let channel = client.realtimeV2.channel("community-challenges")
-        
-        // Listen for new participants joining (someone's friend joins → update widgets)
-        let participantInserts = channel.postgresChange(
-            InsertAction.self,
-            schema: "public",
-            table: "community_challenge_participants"
-        )
-        
-        // Listen for participant updates (progress changes)
-        let participantUpdates = channel.postgresChange(
-            UpdateAction.self,
-            schema: "public",
-            table: "community_challenge_participants"
-        )
-        
-        // Listen for daily progress changes (live leaderboard updates)
-        let progressInserts = channel.postgresChange(
-            InsertAction.self,
-            schema: "public",
-            table: "community_challenge_daily_progress"
-        )
-        
-        let progressUpdates = channel.postgresChange(
-            UpdateAction.self,
-            schema: "public",
-            table: "community_challenge_daily_progress"
-        )
-        
-        // Handle participant changes → refresh widget data
-        Task {
-            for await _ in participantInserts {
-                AppLogger.debug("Realtime: new participant joined a community", category: .social)
-                await refreshAfterRealtimeUpdate()
-            }
-        }
-        
-        Task {
-            for await _ in participantUpdates {
-                AppLogger.debug("Realtime: community participant updated", category: .social)
-                await refreshAfterRealtimeUpdate()
-            }
-        }
-        
-        // Handle progress changes → refresh leaderboard data
-        Task {
-            for await _ in progressInserts {
-                AppLogger.debug("Realtime: new community progress logged", category: .social)
-                await refreshAfterRealtimeUpdate()
-            }
-        }
-        
-        Task {
-            for await _ in progressUpdates {
-                AppLogger.debug("Realtime: community progress updated", category: .social)
-                await refreshAfterRealtimeUpdate()
-            }
-        }
-        
-        await channel.subscribe()
-        communityRealtimeChannel = channel
-        AppLogger.info("Successfully subscribed to real-time community updates", category: .social)
+        AppLogger.debug("Community realtime handled by RealtimeService — no-op", category: .social)
     }
     
-    /// Unsubscribe from real-time updates
+    /// No-op cleanup — the channel is managed by RealtimeService.disconnect()
     func unsubscribeFromRealtimeUpdates() async {
-        if let channel = communityRealtimeChannel {
-            await channel.unsubscribe()
-            communityRealtimeChannel = nil
-            AppLogger.debug("Unsubscribed from community real-time updates", category: .social)
-        }
+        AppLogger.debug("Community realtime cleanup handled by RealtimeService — no-op", category: .social)
     }
     
-    /// Debounced refresh after a realtime event
-    private var lastRealtimeRefresh: Date = .distantPast
+    // MARK: - Optimistic Local Updates
     
-    private func refreshAfterRealtimeUpdate() async {
-        // Debounce: don't refresh more than once every 3 seconds
-        let now = Date()
-        guard now.timeIntervalSince(lastRealtimeRefresh) > 3 else { return }
-        lastRealtimeRefresh = now
+    /// Apply an optimistic progress update from a realtime event without waiting for server RPC.
+    /// Immediately patches the local myChallenges array so the UI updates within one frame (<16ms).
+    /// The next fetchMyChallenges() call reconciles with the server-authoritative data.
+    func applyOptimisticProgressUpdate(challengeId: String, userId: String, progressValue: Int) {
+        guard let challengeUUID = UUID(uuidString: challengeId),
+              let userUUID = UUID(uuidString: userId),
+              let idx = myChallenges.firstIndex(where: { $0.challengeId == challengeUUID }),
+              var participants = myChallenges[idx].topParticipants else { return }
         
-        await fetchMyChallenges()
-        await fetchDiscoverableChallenges()
+        guard let pIdx = participants.firstIndex(where: { $0.userId == userUUID }) else { return }
+        
+        participants[pIdx].todayProgress = progressValue
+        
+        // Re-sort by progress descending and recompute ranks
+        participants.sort { $0.todayProgress > $1.todayProgress }
+        for i in participants.indices {
+            participants[i].rank = i + 1
+        }
+        
+        myChallenges[idx].topParticipants = participants
+        
+        #if DEBUG
+        AppLogger.debug("Optimistic patch: challenge \(challengeId.prefix(8)), user \(userId.prefix(8)) → \(progressValue)", category: .social)
+        #endif
     }
     
     // MARK: - Leave Challenge
@@ -1245,7 +1192,15 @@ class CommunityChallengeService: ObservableObject {
             }
         }
         
-        // Refresh to show updated progress
+        // Instantly reflect own progress locally before the server round-trip
+        for i in myChallenges.indices {
+            let value = resolveProgress(for: myChallenges[i], from: progress)
+            if value > 0 || myChallenges[i].myTodayProgress != nil {
+                myChallenges[i].myTodayProgress = max(value, 0)
+            }
+        }
+        
+        // Server fetch reconciles with authoritative data
         await fetchMyChallenges()
         #if DEBUG
         AppLogger.info("Successfully completed community challenge sync", category: .social)

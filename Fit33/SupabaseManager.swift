@@ -2302,6 +2302,22 @@ class SupabaseManager: ObservableObject {
         return allExercises
     }
     
+    /// Fetch stretch exercises for a specific body area using server-side RPC
+    func fetchStretchesForArea(_ area: String, gender: String? = nil, limit: Int = 8) async throws -> [ExerciseDTO] {
+        var params: [String: String] = ["p_area": area]
+        if let gender = gender {
+            params["p_gender"] = gender
+        }
+        // p_limit needs special handling since RPC expects int
+        let response: [ExerciseDTO] = try await client
+            .rpc("fetch_stretches_for_area", params: params)
+            .execute()
+            .value
+        
+        AppLogger.info("Fetched \(response.count) stretches for area '\(area)' via RPC", category: .network)
+        return response
+    }
+    
     /// Update an exercise in the database
     func updateExercise(_ exercise: ExerciseDTO) async throws {
         guard let exerciseId = exercise.id else {
@@ -3933,7 +3949,8 @@ class SupabaseManager: ObservableObject {
             exercises: exerciseDTOs,
             completionRate: rate,
             totalSetsPlanned: totalPlanned,
-            totalSetsCompleted: totalCompleted
+            totalSetsCompleted: totalCompleted,
+            caloriesBurned: workout.caloriesBurned > 0 ? workout.caloriesBurned : nil
         )
         
         try await client

@@ -406,17 +406,17 @@ struct WorkoutHistoryDetailView: View {
                     .fill(Color.gray.opacity(0.2))
                     .frame(width: 1, height: 35)
                 
-                // Volume
+                // Calories
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
-                        Image(systemName: "scalemass.fill")
+                        Image(systemName: "flame.fill")
                             .font(.ds_bodySmall)
-                            .foregroundColor(accentColor)
-                        Text(formatVolume(totalVolume))
+                            .foregroundColor(.orange)
+                        Text(workout.caloriesBurned > 0 ? "\(Int(workout.caloriesBurned))" : "--")
                             .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
-                    Text("Volume")
+                    Text("Calories")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }

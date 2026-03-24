@@ -325,14 +325,33 @@ class ExerciseLibraryService: ObservableObject {
             syncLock.unlock()
         }
         
-        // Fetch exercises from Supabase and sync to Core Data
+        // Fetch exercises from Supabase with retry on timeout, then sync to Core Data
         AppLogger.debug("🔄 Starting exercise sync from cloud...", category: .network)
         do {
-            let cloudExercises = try await SupabaseManager.shared.fetchAllExercises()
-            AppLogger.debug("✅ Fetched \(cloudExercises.count) exercises from cloud", category: .network)
-            await performSync(with: cloudExercises)
+            var cloudExercises: [ExerciseDTO]?
+            var lastError: Error?
+            for attempt in 0...2 {
+                do {
+                    cloudExercises = try await SupabaseManager.shared.fetchAllExercises()
+                    break
+                } catch {
+                    lastError = error
+                    let nsError = error as NSError
+                    if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut && attempt < 2 {
+                        let delay = UInt64(pow(2.0, Double(attempt))) * 2_000_000_000
+                        AppLogger.warning("Exercise cloud sync timed out (attempt \(attempt + 1)/3) — retrying in \(delay / 1_000_000_000)s...", category: .network)
+                        try? await Task.sleep(nanoseconds: delay)
+                        continue
+                    }
+                    throw error
+                }
+            }
+            guard let exercises = cloudExercises else {
+                throw lastError ?? NSError(domain: "ExerciseLibraryService", code: -1)
+            }
+            AppLogger.debug("✅ Fetched \(exercises.count) exercises from cloud", category: .network)
+            await performSync(with: exercises)
             
-            // Record sync timestamp
             UserDefaults.standard.set(Date(), forKey: "lastExerciseCloudSync")
         } catch {
             AppLogger.error("❌ Failed to fetch exercises from cloud: \(error)", category: .network)

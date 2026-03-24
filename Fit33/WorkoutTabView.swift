@@ -8,12 +8,13 @@ struct WorkoutTabView: View {
     @EnvironmentObject var workoutManager: WorkoutManager
     @StateObject private var deepLinkManager = DeepLinkManager.shared
     @State private var navigationPath = NavigationPath()
+    @State private var showingStretchModeOverlay = false
     
     var body: some View {
         ZStack {
             // Layer 1: Navigation Stack (always present)
             NavigationStack(path: $navigationPath) {
-                WorkoutHomeView(navigationPath: $navigationPath)
+                WorkoutHomeView(navigationPath: $navigationPath, showingStretchModeOverlay: $showingStretchModeOverlay)
                     .navigationBarHidden(true)
                     .toolbarBackground(.hidden, for: .navigationBar)
                     .toolbarColorScheme(.dark, for: .navigationBar)
@@ -77,6 +78,14 @@ struct WorkoutTabView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(.systemBackground))
                 .zIndex(10)
+            }
+            
+            // Layer 4: Stretch Mode (on top when active, like ActiveWorkoutView)
+            if showingStretchModeOverlay {
+                StretchModeView(isPresented: $showingStretchModeOverlay)
+                    .environmentObject(userManager)
+                    .zIndex(11)
+                    .transition(.opacity)
             }
         }
         .onAppear {
@@ -280,6 +289,7 @@ struct WorkoutHomeView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var userManager: UserManager
     @Binding var navigationPath: NavigationPath
+    @Binding var showingStretchModeOverlay: Bool
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
         animation: .none)  // Disable animation for faster updates
@@ -416,7 +426,6 @@ struct WorkoutHomeView: View {
     
     // MARK: - Cardio Section
     @State private var showingCardioLanding = false
-    @State private var showingStretchMode = false
     
     private var cardioSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -486,7 +495,9 @@ struct WorkoutHomeView: View {
                     Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
 
                     HapticManager.impact(.medium)
-                    showingStretchMode = true
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showingStretchModeOverlay = true
+                    }
                 }) {
                     HStack(spacing: 12) {
                         ZStack {
@@ -539,10 +550,6 @@ struct WorkoutHomeView: View {
         }
         .sheet(isPresented: $showingCardioLanding) {
             CardioLandingView()
-                .environmentObject(userManager)
-        }
-        .sheet(isPresented: $showingStretchMode) {
-            StretchModeView()
                 .environmentObject(userManager)
         }
     }

@@ -201,13 +201,16 @@ final class HealthKitService: ObservableObject {
         
         StartupWaterfall.shared.mark("HealthKit.syncAll")
         
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.syncTodayStats() }
-            group.addTask { await self.syncRecentWorkouts() }
-            group.addTask { await self.syncHeartRate() }
-            group.addTask { await self.syncSleep() }
-            group.addTask { await self.syncWeeklyData() }
-        }
+        // Run HK queries off main thread to avoid blocking UI
+        await Task.detached(priority: .userInitiated) { [self] in
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await self.syncTodayStats() }
+                group.addTask { await self.syncRecentWorkouts() }
+                group.addTask { await self.syncHeartRate() }
+                group.addTask { await self.syncSleep() }
+                group.addTask { await self.syncWeeklyData() }
+            }
+        }.value
         
         isLoading = false
         isSyncing = false
@@ -300,7 +303,12 @@ final class HealthKitService: ObservableObject {
             AppLogger.info("HealthKit synced \(workouts.count) workouts", category: .health)
             
         } catch {
-            AppLogger.error("Failed to fetch HealthKit workouts: \(error.localizedDescription)", category: .health)
+            let desc = error.localizedDescription
+            if desc.contains("Protected health data") {
+                AppLogger.debug("HealthKit workouts unavailable (device locked or permissions revoked)", category: .health)
+            } else {
+                AppLogger.error("Failed to fetch HealthKit workouts: \(desc)", category: .health)
+            }
         }
     }
     
@@ -392,7 +400,12 @@ final class HealthKitService: ObservableObject {
             }
             
         } catch {
-            AppLogger.error("Failed to fetch HealthKit sleep: \(error.localizedDescription)", category: .health)
+            let desc = error.localizedDescription
+            if desc.contains("Protected health data") {
+                AppLogger.debug("HealthKit sleep unavailable (device locked or permissions revoked)", category: .health)
+            } else {
+                AppLogger.error("Failed to fetch HealthKit sleep: \(desc)", category: .health)
+            }
         }
     }
     

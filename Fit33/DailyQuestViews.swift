@@ -229,6 +229,11 @@ struct DailyQuestsWidget: View {
                 } else if quest.questKey == QuestKey.watchAds.rawValue {
                     compactAdRow(quest: quest)
                 } else {
+                    Text(dynamicDescription(for: quest))
+                        .font(.ds_caption)
+                        .foregroundColor(.secondary.opacity(0.7))
+                        .lineLimit(1)
+                    
                     HStack(spacing: 8) {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
@@ -333,6 +338,26 @@ struct DailyQuestsWidget: View {
         case .watchAds:
             break
             
+        // New metric-driven quests
+        case .maintainStreak, .beatVolumePR, .league3Workouts:
+            dl.pendingDestination = .workout
+        case .stretchSession:
+            dl.pendingDestination = .workout
+        case .activeMinutes30, .burn300Calories:
+            dl.pendingDestination = .stepTracker
+        case .sleep7Hours:
+            dl.pendingDestination = .dashboard
+        case .beatFriendSteps:
+            dl.pendingDestination = .stepTracker
+        case .top3League:
+            dl.pendingDestination = .workout
+        case .logAllMacros:
+            dl.pendingDestination = .mealsTab
+        case .hydrationBeforeNoon:
+            dl.pendingDestination = .hydration
+        case .weeklyWeighIn:
+            dl.pendingDestination = .weightTracker
+            
         // Legacy keys
         case .logMeal:
             dl.pendingDestination = .mealsTab
@@ -413,6 +438,32 @@ struct DailyQuestsWidget: View {
             
         case .watchAds:
             return "Videos watched — thank you!"
+            
+        case .maintainStreak:
+            let streak = UserManager.shared.currentUser?.currentStreak ?? 0
+            return "\(streak)-day streak maintained 🔥"
+        case .stretchSession:
+            return "Stretch session completed 🧘"
+        case .beatVolumePR:
+            return "New volume PR! 🏆"
+        case .activeMinutes30:
+            return "30+ active minutes ✓"
+        case .burn300Calories:
+            return "300+ calories burned 🔥"
+        case .sleep7Hours:
+            return "7+ hours of sleep 😴"
+        case .beatFriendSteps:
+            return "Outpaced your friend! 🏃"
+        case .league3Workouts:
+            return "3 workouts logged for the league ✓"
+        case .top3League:
+            return "Top 3 in your league! 🥇"
+        case .logAllMacros:
+            return "All macros logged ✓"
+        case .hydrationBeforeNoon:
+            return "Hydrated before noon 💧"
+        case .weeklyWeighIn:
+            return "Weekly weigh-in done ✓"
         }
     }
     
@@ -507,6 +558,200 @@ struct DailyQuestsWidget: View {
         default:
             return "\(quest.currentValue)/\(quest.targetValue) \(unit)"
         }
+    }
+    
+    // MARK: - Dynamic Quest Descriptions
+    
+    private func dynamicDescription(for quest: DailyQuest) -> String {
+        guard let key = QuestKey(rawValue: quest.questKey) else {
+            return quest.description
+        }
+        
+        switch key {
+        case .completeWorkout:
+            return "Finish any workout today"
+        case .completeProgramDay:
+            if let day = GeneratedProgramService.shared.currentDay {
+                let muscles = day.focusMuscles.prefix(2).joined(separator: " & ")
+                return "Complete Day \(day.dayNumber): \(muscles)"
+            }
+            if let details = CloudProgramService.shared.activeProgramDetails {
+                return "Complete your next \(details.program.name) day"
+            }
+            return "Complete your next program day"
+        case .complete2Workouts:
+            return "Knock out 2 workouts today"
+        case .workout30Min:
+            return "Complete a 30+ min workout"
+        case .exerciseSets15:
+            return "Hit 15 sets in a single workout"
+        case .exerciseSets25:
+            return "Crush 25+ sets in one session"
+        case .tryNewExercise:
+            return "Try an exercise you haven't done recently"
+        case .upperBodyWorkout:
+            return "Focus on chest, back, or shoulders"
+        case .lowerBodyWorkout:
+            return "Focus on legs, glutes, or calves"
+            
+        case .logBreakfast:
+            return "Log your breakfast to start the day"
+        case .logLunch:
+            return "Log your lunch"
+        case .logDinner:
+            return "Log your dinner before bed"
+        case .log3Meals:
+            let logged = MealService.shared.todaysMeals.count
+            if logged > 0 {
+                return "\(logged)/3 meals logged so far"
+            }
+            return "Log breakfast, lunch, and dinner"
+        case .logSnack:
+            return "Log a snack — every bite counts"
+        case .logWater3:
+            let glasses = HydrationService.shared.todaySummary?.entryCount ?? 0
+            if glasses > 0 {
+                return "\(glasses)/3 glasses logged"
+            }
+            return "Log 3 glasses of water"
+        case .logWater8:
+            let glasses = HydrationService.shared.todaySummary?.entryCount ?? 0
+            if glasses > 0 {
+                return "\(glasses)/8 glasses — keep drinking"
+            }
+            return "Drink 8 glasses of water today"
+        case .hitProteinGoal:
+            let goal = quest.targetValue
+            if goal > 0 {
+                return "Eat \(goal)g of protein today"
+            }
+            return "Hit your daily protein goal"
+        case .logHighProteinMeal:
+            return "Log a meal with 30g+ protein"
+            
+        case .walk3kSteps:
+            return stepsDescription(target: 3000)
+        case .walk5kSteps:
+            return stepsDescription(target: 5000)
+        case .walk7500Steps:
+            return stepsDescription(target: 7500)
+        case .walk10kSteps:
+            return stepsDescription(target: 10000)
+        case .hitStepGoal:
+            let goal = HealthKitManager.shared.stepGoal
+            return stepsDescription(target: goal)
+            
+        case .sendChallenge:
+            if let friend = FriendService.shared.friends.first {
+                return "Challenge \(friend.displayName ?? "a friend") to compete"
+            }
+            return "Send a challenge to any friend"
+        case .start1v1Challenge:
+            if let friend = FriendService.shared.friends.first {
+                return "Start a 1v1 with \(friend.displayName ?? "a friend")"
+            }
+            return "Start a 1v1 challenge"
+        case .reactToWorkout:
+            return "React to a friend's workout"
+        case .inviteFriend:
+            return "Invite someone to join Fit33"
+        case .addFriend:
+            return "Send a friend request"
+        case .startFirstChallenge:
+            return "Kick off your first challenge"
+            
+        case .logWeight:
+            if let stats = WeightTrackingService.shared.statistics,
+               let lastDate = stats.lastLoggedDate {
+                return "Log your weight — last was \(lastDate)"
+            }
+            return "Log your weight today"
+        case .checkProgress:
+            return "View your stats and PRs"
+        case .beatPersonalRecord:
+            return "Beat your best on any exercise"
+        case .logCardio:
+            return "Complete any cardio activity"
+            
+        case .perfectDay:
+            return "Workout + 3 meals + step goal"
+        case .earlyBirdWorkout:
+            return "Finish a workout before noon"
+        case .shareWorkout:
+            return "Share a completed workout"
+        case .favoriteAWorkout:
+            return "Save a workout as a favorite"
+            
+        case .maintainStreak:
+            let streak = UserManager.shared.currentUser?.currentStreak ?? 0
+            if streak > 0 {
+                return "Keep your \(streak)-day streak alive"
+            }
+            return "Start a workout streak today"
+        case .stretchSession:
+            return "Complete a guided stretch session"
+        case .beatVolumePR:
+            return "Beat your best total volume in a workout"
+            
+        case .activeMinutes30:
+            let minutes = HealthKitService.shared.todayActiveMinutes
+            if minutes > 0 {
+                return "\(minutes)/30 active minutes so far"
+            }
+            return "Get 30 active minutes today"
+        case .burn300Calories:
+            let cals = Int(HealthKitService.shared.todayCalories)
+            if cals > 0 {
+                return "\(cals)/300 active calories burned"
+            }
+            return "Burn 300 active calories today"
+        case .sleep7Hours:
+            return "Get 7+ hours of sleep"
+            
+        case .beatFriendSteps:
+            if let challenge = ChallengeService.shared.activeChallenges.first(where: { ($0.challengeType ?? "") == "steps" }),
+               let opponent = challenge.opponentName {
+                return "Beat \(opponent) in steps today"
+            }
+            return "Outpace a friend in steps today"
+        case .league3Workouts:
+            if let standing = WeeklyLeagueService.shared.standing {
+                return "Log 3 workouts — you're #\(standing.myRank) in your league"
+            }
+            return "Log 3 workouts to climb the league"
+        case .top3League:
+            if let standing = WeeklyLeagueService.shared.standing {
+                return "Finish top 3 — you're #\(standing.myRank) of \(standing.groupSize)"
+            }
+            return "Finish top 3 in your league this week"
+            
+        case .logAllMacros:
+            return "Log protein, carbs, and fat today"
+        case .hydrationBeforeNoon:
+            return "Log 4 glasses of water before noon"
+        case .weeklyWeighIn:
+            if let stats = WeightTrackingService.shared.statistics,
+               let lastDate = stats.lastLoggedDate {
+                return "Weigh in — last was \(lastDate)"
+            }
+            return "Log your weight this week"
+            
+        case .watchAds:
+            return quest.description
+        case .logMeal, .logWater, .exerciseSets10, .exerciseSets20:
+            return quest.description
+        }
+    }
+    
+    private func stepsDescription(target: Int) -> String {
+        let current = HealthKitService.shared.todaySteps
+        if current > 0 {
+            let currentK = String(format: "%.1fk", Double(current) / 1000.0)
+            let targetK = String(format: "%.0fk", Double(target) / 1000.0)
+            return "Walk \(targetK) steps — you're at \(currentK)"
+        }
+        let targetFormatted = target >= 1000 ? "\(target / 1000)k" : "\(target)"
+        return "Walk \(targetFormatted) steps today"
     }
     
     // MARK: - Ad Quest Action Row

@@ -515,6 +515,7 @@ struct WorkoutHistoryDTO: Codable {
     let completionRate: Double?
     let totalSetsPlanned: Int?
     let totalSetsCompleted: Int?
+    let caloriesBurned: Double?
 
     enum CodingKeys: String, CodingKey {
         case id, name, date, duration, notes, exercises
@@ -524,6 +525,7 @@ struct WorkoutHistoryDTO: Codable {
         case completionRate = "completion_rate"
         case totalSetsPlanned = "total_sets_planned"
         case totalSetsCompleted = "total_sets_completed"
+        case caloriesBurned = "calories_burned"
     }
 }
 

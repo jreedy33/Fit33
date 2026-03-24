@@ -484,8 +484,9 @@ class ChallengeService: ObservableObject {
     
     // MARK: - Retry Helper (handles -999 cancelled errors from network congestion)
     
-    /// Retries an async operation up to `maxRetries` times if it fails with a URLError.cancelled (-999).
-    /// Only retries during active app state — stops immediately if app is backgrounded or task is cancelled.
+    /// Retries an async operation up to `maxRetries` times if it fails with a retryable URL error
+    /// (cancelled -999 or timed out -1001). Uses exponential backoff between attempts.
+    /// Stops immediately if app is backgrounded or task is cancelled.
     private func withCancelRetry<T>(
         label: String,
         maxRetries: Int = 2,
@@ -499,9 +500,12 @@ class ChallengeService: ObservableObject {
                 lastError = error
                 guard !Task.isCancelled else { throw error }
                 let nsError = error as NSError
-                if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
+                let isRetryable = nsError.domain == NSURLErrorDomain &&
+                    (nsError.code == NSURLErrorCancelled || nsError.code == NSURLErrorTimedOut)
+                if isRetryable && attempt < maxRetries {
                     let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
-                    AppLogger.warning("\(label) cancelled (attempt \(attempt + 1)/\(maxRetries + 1)) — retrying in \(delay / 1_000_000_000)s...", category: .social)
+                    let reason = nsError.code == NSURLErrorTimedOut ? "timed out" : "cancelled"
+                    AppLogger.warning("\(label) \(reason) (attempt \(attempt + 1)/\(maxRetries + 1)) — retrying in \(delay / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                     continue
                 }

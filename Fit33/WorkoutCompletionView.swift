@@ -246,6 +246,7 @@ struct WorkoutCompletionView: View {
     @State private var showTags = false
     @State private var showActionBar = false
     @State private var showPhotoPrompt = false
+    @State private var estimatedCalories: Int = 0
     
     var totalSets: Int {
         exerciseSets.values.reduce(0) { total, sets in
@@ -417,6 +418,7 @@ struct WorkoutCompletionView: View {
                 workoutDuration: workoutDuration
             )
             startEntranceChoreography()
+            loadCalories()
         }
         .fullScreenCover(isPresented: $showingProgressPhotoCapture) {
             ProgressPhotoCaptureView()
@@ -532,7 +534,7 @@ struct WorkoutCompletionView: View {
                 Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
                 statPill(icon: "repeat", value: "\(totalSets)", label: "Sets")
                 Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
-                statPill(icon: "star.fill", value: "+\(calculateXP())", label: "XP")
+                statPill(icon: "flame.fill", value: estimatedCalories > 0 ? "\(estimatedCalories)" : "--", label: "Calories")
             }
             .padding(.vertical, Spacing.sm)
             
@@ -848,6 +850,28 @@ struct WorkoutCompletionView: View {
     // doneButton replaced by stickyActionBar
     
     // MARK: - Helper Functions
+    
+    private func loadCalories() {
+        // If calories are already on the workout (from saveWorkoutToAppleHealth), use them
+        if workout.caloriesBurned > 0 {
+            estimatedCalories = Int(workout.caloriesBurned)
+            return
+        }
+        
+        // Otherwise calculate asynchronously and poll for the value
+        Task {
+            // Brief delay to let the async calorie save from finishWorkout() complete
+            for _ in 0..<10 {
+                try? await Task.sleep(for: .seconds(0.5))
+                let cal = workout.caloriesBurned
+                if cal > 0 {
+                    await MainActor.run { estimatedCalories = Int(cal) }
+                    return
+                }
+            }
+        }
+    }
+    
     private func formatDurationMinutes(_ duration: TimeInterval) -> String {
         let minutes = Int(duration) / 60
         if minutes < 60 {

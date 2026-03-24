@@ -824,6 +824,10 @@ final class MainThreadWatchdog {
     private let freezeThreshold: TimeInterval = 1.5     // 1.5s without response = freeze
     private let criticalThreshold: TimeInterval = 3.0   // 3s = critical freeze
     
+    /// Paused when the app enters background to prevent false-positive freeze reports.
+    /// The watchdog loop skips checks while paused but stays alive for fast resume.
+    private var isPaused = false
+    
     // Track what was happening when freeze started
     private var activeContext: String = "none"
     private var contextStartTime: CFTimeInterval = 0
@@ -905,6 +909,12 @@ final class MainThreadWatchdog {
         while isRunning {
             Thread.sleep(forTimeInterval: checkInterval)
             
+            // Skip checks while app is backgrounded to prevent false positives
+            lock.lock()
+            let paused = isPaused
+            lock.unlock()
+            if paused { continue }
+            
             let pingStart = CACurrentMediaTime()
             let semaphore = DispatchSemaphore(value: 0)
             
@@ -959,6 +969,12 @@ final class MainThreadWatchdog {
                 let unblockResult = semaphore.wait(timeout: .now() + 30.0)
                 let totalBlocked = CACurrentMediaTime() - pingStart
                 
+                // If the app was paused/backgrounded during the wait, discard this measurement
+                lock.lock()
+                let wasPaused = isPaused
+                lock.unlock()
+                if wasPaused { continue }
+                
                 if unblockResult == .timedOut {
                     AppLogger.error("🧊🧊🧊 [WATCHDOG] Main thread blocked >30s! Possible DEADLOCK!", category: .performance)
                     AppLogger.debug("   └─ context: \(ctx)", category: .performance)
@@ -985,6 +1001,24 @@ final class MainThreadWatchdog {
                 vm_deallocate(mach_task_self_, vm_address_t(bitPattern: list), vm_size_t(Int(threadCount) * MemoryLayout<thread_act_t>.size))
             }
         }
+    }
+    
+    /// Pause the watchdog when app enters background to prevent false-positive freeze reports.
+    /// Without this, background suspension time (minutes/hours) is counted as freeze duration.
+    func pause() {
+        lock.lock()
+        isPaused = true
+        lock.unlock()
+        AppLogger.debug("🐕 [WATCHDOG] Paused (app backgrounded)", category: .performance)
+    }
+    
+    /// Resume the watchdog when app returns to foreground.
+    func resume() {
+        lock.lock()
+        isPaused = false
+        freezeCount = 0
+        lock.unlock()
+        AppLogger.debug("🐕 [WATCHDOG] Resumed (app foregrounded)", category: .performance)
     }
     
     func stop() {

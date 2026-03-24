@@ -45,9 +45,9 @@ struct FriendsTabView: View {
     @State private var isManualRefreshing = false
     @State private var autoRefreshTimer: Timer?
     
-    /// How often to auto-poll for fresh opponent data (60 seconds).
-    /// Realtime WebSocket handles immediate updates; this is a fallback.
-    private let autoRefreshInterval: TimeInterval = 60
+    /// Staggered auto-refresh: ticks every 30s, alternating between 1v1/league and community/private.
+    /// This gives each category a 60s polling cycle without doubling network load at any tick.
+    private let autoRefreshInterval: TimeInterval = 30
     
     
     var body: some View {
@@ -198,7 +198,7 @@ struct FriendsTabView: View {
             }
         }
         .onDisappear {
-            // Clear rank delta arrows — they'll be gone when user returns
+            // Preserve rank deltas — user will see accumulated changes on return
             communityService.markCommunityViewHidden()
             
             // Stop auto-refresh when leaving the tab to save battery
@@ -260,7 +260,9 @@ struct FriendsTabView: View {
     
     // MARK: - Auto-Refresh Timer (Live Opponent Data)
     
-    /// Start a background timer that auto-refreshes challenge data every 60s.
+    /// Start a staggered background timer that alternates between challenge types every 30s.
+    /// Even ticks (0s, 60s, 120s): fetch 1v1 + league
+    /// Odd ticks (30s, 90s, 150s): fetch community + private challenges
     /// This is a fallback for when Supabase Realtime misses an event.
     /// Uses .default RunLoop mode (NOT .common) so it never fires during
     /// scroll tracking or tab switch animations — preventing UI freezes.
@@ -269,15 +271,23 @@ struct FriendsTabView: View {
         var fireCount = 0
         let timer = Timer.scheduledTimer(withTimeInterval: autoRefreshInterval, repeats: true) { timer in
             fireCount += 1
-            if fireCount >= 60 {
+            if fireCount >= 120 {
                 timer.invalidate()
                 return
             }
             Task { @MainActor in
-                async let active: () = challengeService.fetchActiveChallenges()
-                async let groups: () = challengeService.fetchActiveGroupChallenges()
-                async let league: () = leagueService.fetchOrJoinLeague(force: false)
-                _ = await (active, groups, league)
+                if fireCount.isMultiple(of: 2) {
+                    // Even ticks: 1v1 challenges + league (existing behavior)
+                    async let active: () = challengeService.fetchActiveChallenges()
+                    async let groups: () = challengeService.fetchActiveGroupChallenges()
+                    async let league: () = leagueService.fetchOrJoinLeague(force: false)
+                    _ = await (active, groups, league)
+                } else {
+                    // Odd ticks: community + private challenges
+                    async let community: () = communityService.fetchMyChallenges()
+                    async let privateFetch: () = privateChallengeService.fetchMyChallenges()
+                    _ = await (community, privateFetch)
+                }
                 lastRefreshedAt = Date()
             }
         }

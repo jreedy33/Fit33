@@ -32,55 +32,30 @@ struct HydrationWidget: View {
         hydrationService.todayGoalMet
     }
     
+    private let gradientColors: [Color] = [.cyan, .blue]
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header row (OUTSIDE the card - matches other sections)
-            HStack {
-                Image(systemName: "drop.fill")
-                    .font(.ds_heading2)
-                    .foregroundStyle(
-                        LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                
-                Text("Hydration")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                Button(action: { HapticManager.selectionChanged(); showingDetailView = true }) {
-                    HStack(spacing: 4) {
-                        Text("Details")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.blue)
-                }
-            }
-            .padding(.horizontal, Spacing.xxs)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            hydrationHeader
             
-            // Card content - swipeable cards matching other carousels
             GeometryReader { geometry in
                 let cardWidth = geometry.size.width
-                let spacing: CGFloat = 16
+                let spacing: CGFloat = Spacing.md
                 
                 HStack(spacing: spacing) {
-                    // Card 1: Today's Progress
-                    todayCardStyled
-                        .frame(width: cardWidth)
+                    todayCard
+                        .frame(width: cardWidth, height: 200)
+                        .background(hydrationCardBackground)
                         .opacity(selectedCard == 0 ? 1 : 0)
                     
-                    // Card 2: Hydration Insights
-                    weeklyTrendsCardStyled
-                        .frame(width: cardWidth)
+                    weeklyOverviewCard
+                        .frame(width: cardWidth, height: 200)
+                        .background(hydrationCardBackground)
                         .opacity(selectedCard == 1 ? 1 : 0)
                 }
                 .offset(x: -CGFloat(selectedCard) * (cardWidth + spacing))
             }
-            .frame(height: 260)
+            .frame(height: 200)
             .animation(.easeOut(duration: 0.25), value: selectedCard)
             .highPriorityGesture(
                 DragGesture(minimumDistance: 20)
@@ -88,7 +63,6 @@ struct HydrationWidget: View {
                         let horizontalAmount = value.translation.width
                         let verticalAmount = abs(value.translation.height)
                         
-                        // Only swipe if horizontal movement is significantly more than vertical
                         if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
                             HapticManager.impact(.medium)
                             if horizontalAmount < 0 && selectedCard < 1 {
@@ -100,7 +74,6 @@ struct HydrationWidget: View {
                     }
             )
             
-            // Page indicator dots - OUTSIDE the cards, centered
             HStack(spacing: 6) {
                 ForEach(0..<2, id: \.self) { index in
                     Circle()
@@ -115,7 +88,6 @@ struct HydrationWidget: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 8)
         }
         .onAppear {
             Task { @MainActor in
@@ -142,179 +114,130 @@ struct HydrationWidget: View {
         }
     }
     
-    // MARK: - Today Card (Styled - With Blue Glow)
-    private var todayCardStyled: some View {
-        todayCard
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                ZStack {
-                    // Bottom shadow layer (deepest) - blue colored
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.cyan.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                        .offset(y: 8)
-                        .blur(radius: 4)
-                    
-                    // Middle shadow layer
-                    RoundedRectangle(cornerRadius: 25, style: .continuous)
-                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                        .offset(y: 4)
-                    
-                    // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: colorScheme == .dark 
-                                    ? [Color(white: 0.15), Color(white: 0.10)]
-                                    : [Color.white, Color.white.opacity(0.95)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                    
-                    // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1.5
-                        )
-                    
-                    // Colored accent border - blue/cyan gradient
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    Color.cyan.opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                    Color.blue.opacity(colorScheme == .dark ? 0.3 : 0.2)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
+    // MARK: - Header
+    private var hydrationHeader: some View {
+        HStack {
+            Image(systemName: "drop.fill")
+                .font(.ds_heading2)
+                .foregroundStyle(
+                    LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+            
+            Text("Hydration")
+                .font(.ds_heading3)
+                .foregroundColor(.primary)
+            
+            Spacer()
+            
+            Button(action: { HapticManager.selectionChanged(); showingDetailView = true }) {
+                HStack(spacing: Spacing.xxs) {
+                    Text("Details")
+                        .font(.ds_labelMedium)
+                    Image(systemName: "chevron.right")
+                        .font(.ds_caption)
                 }
-            )
+                .foregroundColor(.blue)
+            }
+            .accessibilityLabel("Hydration details")
+            .accessibilityHint("Opens detailed hydration history")
+        }
+        .padding(.horizontal, Spacing.xxs)
     }
     
-    // MARK: - Weekly Trends Card (Styled - With Blue Glow)
-    private var weeklyTrendsCardStyled: some View {
-        weeklyTrendsCard
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                ZStack {
-                    // Bottom shadow layer (deepest) - blue colored
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .fill(Color.cyan.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                        .offset(y: 8)
-                        .blur(radius: 4)
-                    
-                    // Middle shadow layer
-                    RoundedRectangle(cornerRadius: 25, style: .continuous)
-                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                        .offset(y: 4)
-                    
-                    // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: colorScheme == .dark 
-                                    ? [Color(white: 0.15), Color(white: 0.10)]
-                                    : [Color.white, Color.white.opacity(0.95)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                    
-                    // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1.5
-                        )
-                    
-                    // Colored accent border - blue/cyan gradient
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    Color.cyan.opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                    Color.blue.opacity(colorScheme == .dark ? 0.3 : 0.2)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
+    // MARK: - Shared Card Background
+    private var hydrationCardBackground: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .fill(Color.cyan.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                .offset(y: 6)
+                .blur(radius: 4)
+            
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .fill(Color.cardBackground)
+            
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.08), Color.clear]
+                            : [Color.white.opacity(0.8), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
+            
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.cyan.opacity(colorScheme == .dark ? 0.35 : 0.2),
+                            Color.blue.opacity(colorScheme == .dark ? 0.15 : 0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 4)
+        .shadow(color: Color.cyan.opacity(colorScheme == .dark ? 0.15 : 0.08), radius: 16, x: 0, y: 8)
     }
     
-    // MARK: - Today Card Content (Combined with Weekly)
+    // MARK: - Today Card
     private var todayCard: some View {
-        VStack(spacing: 12) {
-            // Main content - Ring and Stats side by side
-            HStack(spacing: 16) {
-                // Water Ring
+        VStack(spacing: Spacing.xs) {
+            HStack(spacing: Spacing.sm) {
                 WaterRing(
                     progress: animateRing ? progress : 0,
                     current: totalMl,
                     goal: goalMl,
                     goalMet: goalMet
                 )
-                .frame(width: 80, height: 80)
+                .frame(width: 64, height: 64)
                 
-                // Stats
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xxs) {
                         Text(formatMl(totalMl))
-                            .font(.title3)
-                            .fontWeight(.bold)
+                            .font(.ds_statSmall)
+                            .foregroundColor(.primary)
                         Text("/ \(formatMl(goalMl))")
-                            .font(.caption)
+                            .font(.ds_caption)
                             .foregroundColor(.secondary)
                     }
                     
                     if goalMet {
                         Label("Goal reached!", systemImage: "checkmark.circle.fill")
-                            .font(.caption)
+                            .font(.ds_caption)
                             .foregroundColor(.green)
                     } else {
                         Text("\(formatMl(remainingMl)) remaining")
-                            .font(.caption)
+                            .font(.ds_caption)
                             .foregroundColor(.secondary)
                     }
                 }
                 
                 Spacer()
                 
-                // Add button
                 Button(action: { HapticManager.impact(.medium); showingAddSheet = true }) {
                     ZStack {
                         Circle()
-                            .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 44, height: 44)
+                            .fill(LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 36, height: 36)
                         
                         Image(systemName: "plus")
-                            .font(.body.bold())
+                            .font(.ds_bodySmall).fontWeight(.bold)
                             .foregroundColor(.white)
                     }
                 }
                 .scaleButtonStyle(.standard, withHaptic: true)
+                .accessibilityLabel("Add water")
+                .accessibilityHint("Opens water intake entry")
             }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.sm)
             
-            // Quick add presets - compact row
-            HStack(spacing: 6) {
+            HStack(spacing: Spacing.xxs) {
                 ForEach(WaterPreset.presets.prefix(4)) { preset in
                     Button {
                         HapticManager.impact(.light)
@@ -326,43 +249,41 @@ struct HydrationWidget: View {
                         }
                     } label: {
                         Text("\(preset.amountMl)ml")
-                            .font(.ds_labelMedium)
+                            .font(.ds_labelSmall)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, Spacing.xs)
-                            .background(Color.blue.opacity(0.1))
+                            .padding(.vertical, Spacing.xxs)
+                            .background(Color.blue.opacity(0.08))
                             .cornerRadius(CornerRadius.sm)
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
             }
+            .padding(.horizontal, Spacing.md)
             
             Divider()
-                .padding(.vertical, 2)
+                .padding(.horizontal, Spacing.md)
             
-            // This Week section
             HStack {
                 Text("This Week")
-                    .font(.caption)
-                    .fontWeight(.semibold)
+                    .font(.ds_caption).fontWeight(.semibold)
                     .foregroundColor(.secondary)
                 Spacer()
                 Text("\(daysMetGoal)/7 days")
-                    .font(.caption)
+                    .font(.ds_caption)
                     .foregroundColor(.blue)
             }
+            .padding(.horizontal, Spacing.md)
             
-            // Compact weekly bar chart
-            HStack(alignment: .bottom, spacing: 6) {
+            HStack(alignment: .bottom, spacing: Spacing.xxs) {
                 ForEach(0..<7) { index in
                     let dayData = weeklyDataForIndex(index)
                     let isToday = index == 6
                     
-                    VStack(spacing: 4) {
-                        // Bar
+                    VStack(spacing: Spacing.xxxs) {
                         ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.blue.opacity(0.12))
-                                .frame(height: 50)
+                                .fill(Color.blue.opacity(0.1))
+                                .frame(height: 44)
                             
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(
@@ -370,168 +291,88 @@ struct HydrationWidget: View {
                                         ? LinearGradient(colors: [.green, .mint], startPoint: .bottom, endPoint: .top)
                                         : LinearGradient(colors: [.cyan, .blue.opacity(0.7)], startPoint: .bottom, endPoint: .top)
                                 )
-                                .frame(height: max(3, 50 * min(dayData.progress, 1.0)))
+                                .frame(height: max(3, 44 * min(dayData.progress, 1.0)))
                         }
                         .frame(maxWidth: .infinity)
                         
-                        // Day label
                         Text(dayLabel(for: index))
                             .font(.system(size: 9, weight: isToday ? .bold : .medium))
                             .foregroundColor(isToday ? .blue : .secondary)
                     }
                 }
             }
+            .padding(.horizontal, Spacing.md)
+            .padding(.bottom, Spacing.sm)
+            .accessibilityHidden(true)
         }
-        .padding(14)
     }
     
-    // MARK: - Hydration Insights Card (Cool Visual)
-    private var weeklyTrendsCard: some View {
-        VStack(spacing: 12) {
-            // Header with status pill
+    // MARK: - Weekly Overview Card (Slide 2)
+    private var weeklyOverviewCard: some View {
+        VStack(spacing: Spacing.xs) {
             HStack {
-                Text("Hydration Insights")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
+                Text("Weekly Overview")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.secondary)
                 
                 Spacer()
                 
-                // Status pill
-                HStack(spacing: 4) {
+                HStack(spacing: Spacing.xxs) {
                     Circle()
                         .fill(hydrationStatusColor)
-                        .frame(width: 6, height: 6)
+                        .frame(width: 5, height: 5)
                     Text(hydrationStatus)
                         .font(.ds_caption)
                 }
                 .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, Spacing.xxs)
-                .background(hydrationStatusColor.opacity(0.15))
-                .cornerRadius(10)
+                .padding(.vertical, Spacing.xxxs)
+                .background(hydrationStatusColor.opacity(0.12))
+                .cornerRadius(CornerRadius.sm)
             }
+            .padding(.horizontal, Spacing.md)
+            .padding(.top, Spacing.sm)
             
-            // Main content row
-            HStack(spacing: 14) {
-                // Water Drop Visual
-                ZStack {
-                    Image(systemName: "drop.fill")
-                        .font(.system(size: 55))
-                        .foregroundColor(.blue.opacity(0.15))
+            HStack(alignment: .bottom, spacing: Spacing.xxs) {
+                ForEach(0..<7) { index in
+                    let dayData = weeklyDataForIndex(index)
+                    let isToday = index == 6
                     
-                    Image(systemName: "drop.fill")
-                        .font(.system(size: 55))
-                        .foregroundStyle(
-                            LinearGradient(colors: [.cyan, .blue], startPoint: .bottom, endPoint: .top)
-                        )
-                        .mask(
-                            VStack(spacing: 0) {
-                                Rectangle().fill(Color.clear)
-                                    .frame(height: 55 * (1 - min(progress, 1.0)))
-                                Rectangle().fill(Color.white)
-                            }
-                        )
-                    
-                    Text("\(Int(progress * 100))%")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.3), radius: 2)
-                        .offset(y: 8)
-                }
-                .frame(width: 65, height: 70)
-                
-                // Pace tracker - shows if on track for daily goal
-                VStack(alignment: .leading, spacing: 6) {
-                    // Expected vs actual
-                    let expectedProgress = expectedProgressForTimeOfDay
-                    let paceStatus = progress >= expectedProgress ? "On Track" : "Behind"
-                    let paceColor: Color = progress >= expectedProgress ? .green : .orange
-                    
-                    HStack(spacing: 4) {
-                        Image(systemName: progress >= expectedProgress ? "checkmark.circle.fill" : "clock.badge.exclamationmark")
-                            .font(.ds_labelSmall)
-                            .foregroundColor(paceColor)
-                        Text(paceStatus)
-                            .font(.ds_labelMedium)
-                            .foregroundColor(paceColor)
-                    }
-                    
-                    // Mini pace bar
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            // Background
+                    VStack(spacing: Spacing.xxxs) {
+                        Text(formatMlShort(dayData.totalMl))
+                            .font(.system(size: 8, weight: .medium, design: .rounded))
+                            .foregroundColor(dayData.goalMet ? .green : (isToday ? .cyan : .secondary))
+                            .lineLimit(1)
+                        
+                        ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.gray.opacity(0.2))
+                                .fill(Color.blue.opacity(0.1))
+                                .frame(height: 65)
                             
-                            // Expected marker
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(width: geo.size.width * min(expectedProgress, 1.0))
-                            
-                            // Actual progress
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
-                                .frame(width: geo.size.width * min(progress, 1.0))
+                                .fill(
+                                    dayData.goalMet
+                                        ? LinearGradient(colors: [.green, .mint], startPoint: .bottom, endPoint: .top)
+                                        : LinearGradient(colors: [.cyan, .blue.opacity(0.7)], startPoint: .bottom, endPoint: .top)
+                                )
+                                .frame(height: max(4, 65 * min(dayData.progress, 1.0)))
                         }
-                    }
-                    .frame(height: 6)
-                    
-                    // Time info
-                    Text("Expected: \(Int(expectedProgress * 100))% by now")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                
-                // Streak & stats column
-                VStack(alignment: .trailing, spacing: 4) {
-                    if let streak = hydrationService.streaks?.currentStreak, streak > 0 {
-                        HStack(spacing: 3) {
-                            Image(systemName: "flame.fill")
-                                .font(.ds_bodySmall)
-                                .foregroundColor(.orange)
-                            Text("\(streak)")
-                                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                        }
-                        Text("day streak")
-                            .font(.system(size: 8))
-                            .foregroundColor(.secondary)
-                    } else {
-                        Image(systemName: "flame")
-                            .font(.ds_bodySmall)
-                            .foregroundColor(.gray.opacity(0.5))
-                        Text("No streak")
-                            .font(.system(size: 8))
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    // Avg comparison
-                    let avg = calculateWeeklyAverage()
-                    if avg > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: totalMl >= avg ? "arrow.up" : "arrow.down")
-                                .font(.system(size: 8, weight: .bold))
-                            Text("avg")
-                                .font(.system(size: 8))
-                        }
-                        .foregroundColor(totalMl >= avg ? .green : .orange)
+                        .frame(maxWidth: .infinity)
+                        
+                        Text(dayLabel(for: index))
+                            .font(.system(size: 9, weight: isToday ? .bold : .medium))
+                            .foregroundColor(isToday ? .blue : .secondary)
                     }
                 }
             }
+            .padding(.horizontal, Spacing.md)
+            .accessibilityHidden(true)
             
-            // Achievement row
             HStack(spacing: 0) {
                 HydrationBadge(
-                    icon: "trophy.fill",
-                    title: "Best Day",
-                    value: formatMlShort(bestDayMl),
-                    color: .yellow
-                )
-                
-                HydrationBadge(
-                    icon: "calendar.badge.checkmark",
-                    title: "This Week",
-                    value: "\(daysMetGoal)/7",
-                    color: .green
+                    icon: "flame.fill",
+                    title: "Streak",
+                    value: "\(hydrationService.streaks?.currentStreak ?? 0)d",
+                    color: .orange
                 )
                 
                 HydrationBadge(
@@ -540,20 +381,51 @@ struct HydrationWidget: View {
                     value: formatMlShort(calculateWeeklyAverage()),
                     color: .blue
                 )
+                
+                HydrationBadge(
+                    icon: "trophy.fill",
+                    title: "Best Day",
+                    value: formatMlShort(bestDayMl),
+                    color: .yellow
+                )
             }
+            .padding(.horizontal, Spacing.md)
+            .accessibilityElement(children: .combine)
             
-            // Motivational tip with icon
-            HStack(spacing: 6) {
-                Text(motivationalEmoji)
-                    .font(.ds_bodySmall)
-                Text(motivationalText)
+            let expectedProgress = expectedProgressForTimeOfDay
+            let paceColor: Color = progress >= expectedProgress ? .green : .orange
+            
+            HStack(spacing: Spacing.xxs) {
+                Image(systemName: progress >= expectedProgress ? "checkmark.circle.fill" : "clock.badge.exclamationmark")
                     .font(.ds_caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                    .foregroundColor(paceColor)
+                Text(progress >= expectedProgress ? "On Track" : "Behind")
+                    .font(.ds_caption).fontWeight(.semibold)
+                    .foregroundColor(paceColor)
+                
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.gray.opacity(0.2))
+                        
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.gray.opacity(0.15))
+                            .frame(width: geo.size.width * min(expectedProgress, 1.0))
+                        
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geo.size.width * min(progress, 1.0))
+                    }
+                }
+                .frame(height: 5)
+                
+                Text("\(Int(progress * 100))%")
+                    .font(.ds_caption).fontWeight(.bold).fontDesign(.rounded)
+                    .foregroundColor(paceColor)
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Spacing.md)
+            .padding(.bottom, Spacing.sm)
         }
-        .padding(14)
     }
     
     // Expected progress based on time of day (8am-10pm active hours)
@@ -712,16 +584,18 @@ struct HydrationWidget: View {
         return total / data.count
     }
     
-    private func weeklyDataForIndex(_ index: Int) -> (progress: Double, goalMet: Bool) {
+    private func weeklyDataForIndex(_ index: Int) -> (progress: Double, goalMet: Bool, totalMl: Int) {
         let calendar = Calendar.current
         let today = Date()
-        let targetDate = calendar.date(byAdding: .day, value: index - 6, to: today)!
+        guard let targetDate = calendar.date(byAdding: .day, value: index - 6, to: today) else {
+            return (0, false, 0)
+        }
         let dateString = formatDate(targetDate)
         
         if let data = hydrationService.weeklyData.first(where: { $0.date == dateString }) {
-            return (data.progress, data.goalMet)
+            return (data.progress, data.goalMet, data.totalMl)
         }
-        return (0, false)
+        return (0, false, 0)
     }
     
     private func dayLabel(for index: Int) -> String {
@@ -1475,10 +1349,9 @@ struct HydrationBadge: View {
     let color: Color
     
     var body: some View {
-        VStack(spacing: 6) {
-            // Floating icon - no background
+        VStack(spacing: Spacing.xxxs) {
             Image(systemName: icon)
-                .font(.ds_heading2)
+                .font(.ds_bodySmall)
                 .foregroundColor(color)
             
             Text(value)

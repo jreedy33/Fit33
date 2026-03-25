@@ -208,10 +208,21 @@ jobs:
         run: |
           set +e
 
-          git log --oneline --all | grep -E '^[a-f0-9]+ v[0-9]+\.[0-9]+' | head -20 > /tmp/version_commits.txt
+          git log --oneline --all | grep -E '^[a-f0-9]+ v[0-9]+\.[0-9]+' | head -20 > /tmp/version_commits_raw.txt
+
+          # Filter to v1.24.0+ only
+          > /tmp/version_commits.txt
+          while IFS= read -r line; do
+            VER=$(echo "$line" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "0.0.0")
+            MAJOR=$(echo "$VER" | cut -d. -f1)
+            MINOR=$(echo "$VER" | cut -d. -f2)
+            if [ "$MAJOR" -ge 1 ] 2>/dev/null && [ "$MINOR" -ge 24 ] 2>/dev/null; then
+              echo "$line" >> /tmp/version_commits.txt
+            fi
+          done < /tmp/version_commits_raw.txt
 
           TOTAL=$(wc -l < /tmp/version_commits.txt | tr -d ' ')
-          echo "Found $TOTAL version commits"
+          echo "Found $TOTAL version commits (v1.24+)"
           cat /tmp/version_commits.txt
           echo "---"
 
@@ -302,33 +313,41 @@ jobs:
             USER_SUMMARY=$(echo "$CONTENT" | jq -r '.user_facing_summary // ""' 2>/dev/null || echo "")
             AREAS=$(echo "$CONTENT" | jq -c '.areas_affected // []' 2>/dev/null || echo '[]')
 
-            ALL_FILES_JSON=$(echo "$ALL_FILES" | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || echo '[]')
-            SWIFT_FILES_JSON=$(echo "$SWIFT_FILES" | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || echo '[]')
+            echo "$ALL_FILES" | jq -R -s 'split("\n") | map(select(length > 0))' > /tmp/all_files.json 2>/dev/null || echo '[]' > /tmp/all_files.json
+            echo "$SWIFT_FILES" | jq -R -s 'split("\n") | map(select(length > 0))' > /tmp/swift_files.json 2>/dev/null || echo '[]' > /tmp/swift_files.json
 
-            PAYLOAD=$(jq -n \
+            # Validate AREAS is valid JSON array
+            if ! echo "$AREAS" | jq . >/dev/null 2>&1; then
+              AREAS='[]'
+            fi
+            echo "$AREAS" > /tmp/areas.json
+
+            jq -n \
               --arg version "$VERSION" \
               --arg build "$BUILD" \
               --arg sha "$FULL_SHA" \
               --arg msg "$COMMIT_MSG" \
-              --argjson files "$ALL_FILES_JSON" \
-              --argjson swift "$SWIFT_FILES_JSON" \
+              --slurpfile files /tmp/all_files.json \
+              --slurpfile swift /tmp/swift_files.json \
               --arg stats "$DIFF_STATS" \
               --arg tech "$TECH_SUMMARY" \
               --arg user_facing "$USER_SUMMARY" \
-              --argjson areas "$AREAS" \
+              --slurpfile areas /tmp/areas.json \
               '{
                 version: (if $version == "" then null else $version end),
                 build_number: (if $build == "" then null else $build end),
                 commit_sha: $sha,
                 commit_message: $msg,
-                changed_files: $files,
-                swift_files_changed: $swift,
+                changed_files: $files[0],
+                swift_files_changed: $swift[0],
                 diff_stats: $stats,
                 technical_summary: $tech,
                 user_facing_summary: $user_facing,
-                areas_affected: $areas,
+                areas_affected: $areas[0],
                 is_version_bump: true
-              }' 2>/dev/null)
+              }' > /tmp/payload.json 2>/dev/null
+
+            PAYLOAD=$(cat /tmp/payload.json 2>/dev/null || echo "")
 
             if [ -z "$PAYLOAD" ]; then
               echo "  Failed to build payload, skipping"

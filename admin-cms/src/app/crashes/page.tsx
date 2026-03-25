@@ -74,6 +74,66 @@ interface TopIssue {
   status: string
 }
 
+interface VersionGroup {
+  version: string
+  crashes: CrashReport[]
+  firstSeenFingerprints: Set<string>
+  newIssueCount: number
+}
+
+function parseVersion(v: string): number[] {
+  return v.replace(/^v/, '').split('.').map(n => parseInt(n, 10) || 0)
+}
+
+function compareVersions(a: string, b: string): number {
+  const pa = parseVersion(a)
+  const pb = parseVersion(b)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+function buildVersionGroups(crashes: CrashReport[]): { groups: VersionGroup[]; firstSeenMap: Map<string, string> } {
+  const fingerprintFirstVersion = new Map<string, string>()
+
+  for (const c of crashes) {
+    if (!c.app_version || !c.fingerprint) continue
+    const existing = fingerprintFirstVersion.get(c.fingerprint)
+    if (!existing || compareVersions(c.app_version, existing) < 0) {
+      fingerprintFirstVersion.set(c.fingerprint, c.app_version)
+    }
+  }
+
+  const byVersion = new Map<string, CrashReport[]>()
+  for (const c of crashes) {
+    const v = c.app_version || 'unknown'
+    if (!byVersion.has(v)) byVersion.set(v, [])
+    byVersion.get(v)!.push(c)
+  }
+
+  const allVersions = [...byVersion.keys()].sort((a, b) => compareVersions(b, a))
+
+  const groups: VersionGroup[] = allVersions.map(version => {
+    const vCrashes = byVersion.get(version)!
+    const firstSeenFingerprints = new Set<string>()
+    for (const c of vCrashes) {
+      if (c.fingerprint && fingerprintFirstVersion.get(c.fingerprint) === version) {
+        firstSeenFingerprints.add(c.fingerprint)
+      }
+    }
+    return {
+      version,
+      crashes: vCrashes,
+      firstSeenFingerprints,
+      newIssueCount: firstSeenFingerprints.size,
+    }
+  })
+
+  return { groups, firstSeenMap: fingerprintFirstVersion }
+}
+
 interface Overview {
   total_crash_reports: number
   total_bug_reports: number
@@ -153,7 +213,7 @@ function formatDuration(seconds: number | null): string {
 // ═══════════════════════════════════════════════════
 
 export default function CrashesPage() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'crashes' | 'bugs'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'crashes' | 'bugs' | 'versions'>('overview')
   const [overview, setOverview] = useState<Overview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -244,10 +304,27 @@ export default function CrashesPage() {
     loadOverview()
   }, [loadOverview])
 
+  // All crashes for version grouping
+  const [allCrashesForVersions, setAllCrashesForVersions] = useState<CrashReport[]>([])
+  const [versionLoading, setVersionLoading] = useState(false)
+
+  const loadAllCrashesForVersions = useCallback(async () => {
+    try {
+      setVersionLoading(true)
+      const data = await adminApi('get_crash_reports', { limit: 500 })
+      setAllCrashesForVersions(data.crash_reports || [])
+    } catch (err) {
+      console.error('Failed to load crashes for version view:', err)
+    } finally {
+      setVersionLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (activeTab === 'crashes') loadCrashes()
     if (activeTab === 'bugs') loadBugs()
-  }, [activeTab, loadCrashes, loadBugs])
+    if (activeTab === 'versions') loadAllCrashesForVersions()
+  }, [activeTab, loadCrashes, loadBugs, loadAllCrashesForVersions])
 
   // Auto-refresh timer
   useEffect(() => {
@@ -841,7 +918,7 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 p-1 rounded-lg" style={{ background: 'var(--bg-secondary)', display: 'inline-flex' }}>
-          {(['overview', 'crashes', 'bugs'] as const).map(tab => (
+          {(['overview', 'versions', 'crashes', 'bugs'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -851,7 +928,7 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
                 color: activeTab === tab ? 'white' : 'var(--text-secondary)',
               }}
             >
-              {tab === 'overview' ? '📊 Overview' : tab === 'crashes' ? '💥 Crash Reports' : '🐛 Bug Reports'}
+              {tab === 'overview' ? '📊 Overview' : tab === 'versions' ? '📦 By Version' : tab === 'crashes' ? '💥 Crash Reports' : '🐛 Bug Reports'}
             </button>
           ))}
         </div>
@@ -868,11 +945,17 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
             onViewFingerprint={(fp) => {
               setCrashFilter(prev => ({ ...prev, search: '' }))
               setActiveTab('crashes')
-              // Set fingerprint filter after switching tab
               setTimeout(() => {
                 setCrashFilter(prev => ({ ...prev, search: fp }))
               }, 100)
             }}
+            onSwitchToVersions={() => setActiveTab('versions')}
+          />
+        ) : activeTab === 'versions' ? (
+          <VersionGroupTab
+            crashes={allCrashesForVersions}
+            loading={versionLoading}
+            onViewCrash={(id) => loadCrashDetail(id)}
           />
         ) : activeTab === 'crashes' ? (
           <CrashListTab
@@ -918,11 +1001,12 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
 // Overview Tab
 // ═══════════════════════════════════════════════════
 
-function OverviewTab({ overview, onViewCrash, onViewBug, onViewFingerprint }: {
+function OverviewTab({ overview, onViewCrash, onViewBug, onViewFingerprint, onSwitchToVersions }: {
   overview: Overview
   onViewCrash: (id: string) => void
   onViewBug: (bug: BugReport) => void
   onViewFingerprint: (fp: string) => void
+  onSwitchToVersions: () => void
 }) {
   const hasData = overview.total_crash_reports > 0 || overview.total_bug_reports > 0
 
@@ -1070,11 +1154,27 @@ function OverviewTab({ overview, onViewCrash, onViewBug, onViewFingerprint }: {
 
             {Object.keys(overview.version_counts).length > 0 && (
               <div className="rounded-xl p-5" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
-                <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Errors by App Version</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Errors by App Version</h3>
+                  <button
+                    onClick={onSwitchToVersions}
+                    className="text-xs hover:opacity-70"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    View detailed breakdown →
+                  </button>
+                </div>
                 <div className="space-y-2">
-                  {Object.entries(overview.version_counts).sort((a, b) => b[1] - a[1]).map(([version, count]) => (
+                  {Object.entries(overview.version_counts).sort((a, b) => compareVersions(b[0], a[0])).map(([version, count], i) => (
                     <div key={version} className="flex items-center justify-between">
-                      <span className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>v{version}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>v{version}</span>
+                        {i === 0 && (
+                          <span className="text-xs px-1.5 py-0.5 rounded font-medium" style={{ background: 'var(--accent)', color: 'white' }}>
+                            latest
+                          </span>
+                        )}
+                      </div>
                       <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{count}</span>
                     </div>
                   ))}
@@ -1182,6 +1282,204 @@ function OverviewTab({ overview, onViewCrash, onViewBug, onViewFingerprint }: {
         </>
       )}
     </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════
+// Version Group Tab
+// ═══════════════════════════════════════════════════
+
+function VersionGroupTab({ crashes, loading, onViewCrash }: {
+  crashes: CrashReport[]
+  loading: boolean
+  onViewCrash: (id: string) => void
+}) {
+  const [collapsedVersions, setCollapsedVersions] = useState<Set<string>>(new Set())
+
+  if (loading) {
+    return <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>Loading version data...</div>
+  }
+
+  if (crashes.length === 0) {
+    return (
+      <div className="text-center py-12 rounded-xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+        <div className="text-3xl mb-2">🎉</div>
+        No crash reports to group by version
+      </div>
+    )
+  }
+
+  const { groups, firstSeenMap } = buildVersionGroups(crashes)
+  const latestVersion = groups.length > 0 ? groups[0].version : null
+
+  const toggleVersion = (v: string) => {
+    setCollapsedVersions(prev => {
+      const next = new Set(prev)
+      if (next.has(v)) next.delete(v)
+      else next.add(v)
+      return next
+    })
+  }
+
+  const totalNewInLatest = latestVersion ? (groups.find(g => g.version === latestVersion)?.newIssueCount || 0) : 0
+
+  return (
+    <div className="space-y-4">
+      {/* Summary bar */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+          {groups.length} version{groups.length !== 1 ? 's' : ''} · {crashes.length} total crashes
+        </span>
+        {latestVersion && totalNewInLatest > 0 && (
+          <span className="text-xs px-2.5 py-1 rounded-full font-semibold" style={{ background: '#f9731622', color: '#f97316' }}>
+            {totalNewInLatest} new issue{totalNewInLatest !== 1 ? 's' : ''} in v{latestVersion}
+          </span>
+        )}
+      </div>
+
+      {/* Version timeline */}
+      {groups.map((group) => {
+        const isCollapsed = collapsedVersions.has(group.version)
+        const isLatest = group.version === latestVersion
+        const severityCounts: Record<string, number> = {}
+        for (const c of group.crashes) {
+          severityCounts[c.severity] = (severityCounts[c.severity] || 0) + 1
+        }
+
+        const uniqueFingerprints = new Set(group.crashes.map(c => c.fingerprint))
+        const carryoverCount = uniqueFingerprints.size - group.newIssueCount
+
+        return (
+          <div key={group.version} className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-secondary)', border: `1px solid ${isLatest ? 'var(--accent)' : 'var(--border)'}` }}>
+            {/* Version header */}
+            <button
+              onClick={() => toggleVersion(group.version)}
+              className="w-full flex items-center gap-3 p-4 hover:opacity-80 transition-opacity"
+            >
+              <div className="flex items-center gap-2">
+                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{isCollapsed ? '▶' : '▼'}</span>
+                <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+                  v{group.version}
+                </span>
+                {isLatest && (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: 'var(--accent)', color: 'white' }}>
+                    LATEST
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 ml-auto">
+                {group.newIssueCount > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#f9731633', color: '#f97316' }}>
+                    🆕 {group.newIssueCount} new
+                  </span>
+                )}
+                {carryoverCount > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
+                    {carryoverCount} recurring
+                  </span>
+                )}
+                <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  {group.crashes.length} report{group.crashes.length !== 1 ? 's' : ''}
+                </span>
+
+                {/* Mini severity dots */}
+                <div className="flex items-center gap-1 ml-2">
+                  {Object.entries(severityCounts).sort((a, b) => {
+                    const order = ['fatal', 'critical', 'high', 'medium', 'low']
+                    return order.indexOf(a[0]) - order.indexOf(b[0])
+                  }).map(([sev, count]) => (
+                    <span
+                      key={sev}
+                      className="text-xs px-1.5 py-0.5 rounded"
+                      style={{ background: (SEVERITY_COLORS[sev] || '#6b7280') + '22', color: SEVERITY_COLORS[sev] || '#6b7280' }}
+                      title={`${sev}: ${count}`}
+                    >
+                      {count}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </button>
+
+            {/* Crash list for this version */}
+            {!isCollapsed && (
+              <div className="px-4 pb-4 space-y-1">
+                {/* New issues first, then recurring */}
+                {group.crashes
+                  .sort((a, b) => {
+                    const aNew = group.firstSeenFingerprints.has(a.fingerprint) ? 0 : 1
+                    const bNew = group.firstSeenFingerprints.has(b.fingerprint) ? 0 : 1
+                    if (aNew !== bNew) return aNew - bNew
+                    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                  })
+                  .map(crash => (
+                    <CrashRowVersioned
+                      key={crash.id}
+                      crash={crash}
+                      isNewInVersion={group.firstSeenFingerprints.has(crash.fingerprint)}
+                      firstSeenVersion={firstSeenMap.get(crash.fingerprint) || null}
+                      currentVersion={group.version}
+                      onClick={() => onViewCrash(crash.id)}
+                    />
+                  ))
+                }
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function CrashRowVersioned({ crash, isNewInVersion, firstSeenVersion, currentVersion, onClick }: {
+  crash: CrashReport
+  isNewInVersion: boolean
+  firstSeenVersion: string | null
+  currentVersion: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left flex items-center gap-3 p-3 rounded-lg hover:opacity-80 transition-opacity"
+      style={{ background: 'var(--bg-primary)', border: `1px solid ${isNewInVersion ? '#f9731644' : 'var(--border)'}` }}
+    >
+      <span className="text-lg shrink-0">{TYPE_ICONS[crash.report_type] || '❌'}</span>
+      <div
+        className="w-2.5 h-2.5 rounded-full shrink-0"
+        style={{ background: SEVERITY_COLORS[crash.severity] || '#6b7280' }}
+        title={crash.severity}
+      />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm truncate flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+          {crash.error_message}
+          {isNewInVersion && (
+            <span className="text-xs px-1.5 py-0.5 rounded font-semibold shrink-0" style={{ background: '#f9731633', color: '#f97316' }}>
+              NEW in v{currentVersion}
+            </span>
+          )}
+          {!isNewInVersion && firstSeenVersion && (
+            <span className="text-xs px-1.5 py-0.5 rounded shrink-0" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>
+              since v{firstSeenVersion}
+            </span>
+          )}
+        </div>
+        <div className="text-xs flex items-center gap-2 flex-wrap" style={{ color: 'var(--text-muted)' }}>
+          {crash.error_domain && <span className="font-medium">{crash.error_domain}</span>}
+          {crash.user_email && <span>· {crash.user_email}</span>}
+          {crash.device_model && <span>· {crash.device_model}</span>}
+          <span>· {timeAgo(crash.created_at)}</span>
+        </div>
+      </div>
+      <span
+        className="text-xs px-2 py-0.5 rounded-full shrink-0"
+        style={{ background: STATUS_COLORS[crash.status] + '22', color: STATUS_COLORS[crash.status] }}
+      >
+        {crash.status}
+      </span>
+    </button>
   )
 }
 

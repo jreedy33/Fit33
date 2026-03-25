@@ -41,6 +41,11 @@ export default function DevLogsPage() {
   const [analyzingTrends, setAnalyzingTrends] = useState(false)
   const [downloaded, setDownloaded] = useState(false)
 
+  // Multi-user comparison
+  const [checkedUserIds, setCheckedUserIds] = useState<Set<string>>(new Set())
+  const [comparingUsers, setComparingUsers] = useState(false)
+  const [comparisonDownloaded, setComparisonDownloaded] = useState(false)
+
   const loadDevUsers = useCallback(async () => {
     const data = await adminAction('get_dev_logging_users')
     setDevUsers(data.users || [])
@@ -365,6 +370,208 @@ export default function DevLogsPage() {
     setAnalyzingTrends(false)
   }
 
+  function toggleUserCheck(userId: string) {
+    setCheckedUserIds(prev => {
+      const next = new Set(prev)
+      if (next.has(userId)) next.delete(userId)
+      else next.add(userId)
+      return next
+    })
+    setComparisonDownloaded(false)
+  }
+
+  async function compareCheckedUsers() {
+    if (checkedUserIds.size < 1) return
+    setComparingUsers(true)
+
+    try {
+      const userSessionData: Array<{
+        userId: string
+        userName: string
+        userEmail: string
+        sessions: Array<{
+          sessionId: string
+          deviceInfo: Record<string, string>
+          startedAt: string
+          entries: LogEntry[]
+        }>
+      }> = []
+
+      for (const userId of checkedUserIds) {
+        const user = devUsers.find(u => u.user_id === userId)
+        const userSessions = sessions.filter(s => s.user_id === userId)
+
+        const sessionsWithEntries: Array<{
+          sessionId: string
+          deviceInfo: Record<string, string>
+          startedAt: string
+          entries: LogEntry[]
+        }> = []
+
+        for (const s of userSessions.slice(0, 5)) {
+          const data = await adminAction('get_dev_session_entries', { session_id: s.session_id })
+          const allEntries = (data.batches || []).flatMap((b: { entries: string | LogEntry[] }) => {
+            try { return typeof b.entries === 'string' ? JSON.parse(b.entries) : b.entries }
+            catch { return [] }
+          })
+          sessionsWithEntries.push({
+            sessionId: s.session_id,
+            deviceInfo: typeof s.device_info === 'string' ? (() => { try { return JSON.parse(s.device_info) } catch { return {} } })() : s.device_info || {},
+            startedAt: s.started_at,
+            entries: allEntries,
+          })
+        }
+
+        userSessionData.push({
+          userId,
+          userName: user?.user_profiles?.name || user?.user_profiles?.username || userId.slice(0, 8),
+          userEmail: user?.user_profiles?.email || '',
+          sessions: sessionsWithEntries,
+        })
+      }
+
+      const userSummaries = userSessionData.map(u => {
+        const allEntries = u.sessions.flatMap(s => s.entries)
+        const errors = allEntries.filter(e => e.type === 'error')
+        const slowOps = allEntries.filter(e => e.duration_ms && e.duration_ms > 500)
+        return {
+          name: u.userName,
+          email: u.userEmail,
+          session_count: u.sessions.length,
+          total_entries: allEntries.length,
+          error_count: errors.length,
+          slow_ops: slowOps.length,
+          screens_visited: [...new Set(allEntries.filter(e => e.type === 'screen').map(e => e.detail))],
+          errors: errors.slice(0, 20).map(e => ({ detail: e.detail, screen: e.screen, ts: e.ts })),
+          slow_operations: slowOps.slice(0, 10).map(e => ({ detail: e.detail, duration_ms: e.duration_ms, screen: e.screen })),
+          device_info: u.sessions[0]?.deviceInfo || {},
+        }
+      })
+
+      const prompt = `You are analyzing dev session logs from the Fit33 iOS fitness app for ${userSummaries.length} users. Compare their experiences and identify issues.
+
+For each user, here is their session summary:
+${JSON.stringify(userSummaries, null, 2)}
+
+Please provide:
+1. **Shared Issues**: Errors or problems that appear across multiple users (these are likely app-level bugs, not user-specific)
+2. **User-Specific Issues**: Unique problems for each user
+3. **Comparison Trends**: Differences in app behavior between users (different screens, performance, error rates)
+4. **Priority Recommendations**: Ranked list of fixes with estimated impact
+5. **Device/Version Correlation**: Note if issues correlate with specific devices or app versions
+
+Format your response as a structured analysis with clear sections. For shared issues, show which users are affected. For unique issues, clearly label each user.`
+
+      const res = await fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], fetchData: false }),
+      })
+
+      let analysisText = ''
+      const reader = res.body?.getReader()
+      const decoder = new TextDecoder()
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const chunk = decoder.decode(value)
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('data: ')) {
+              try {
+                const parsed = JSON.parse(line.slice(6))
+                if (parsed.text) analysisText += parsed.text
+              } catch { /* skip */ }
+            }
+          }
+        }
+      }
+
+      // Build .md report
+      const lines: string[] = [
+        '# Multi-User Comparison Analysis',
+        '',
+        `**Date:** ${new Date().toISOString().split('T')[0]}`,
+        `**Users analyzed:** ${userSummaries.length}`,
+        '',
+        '---',
+        '',
+        '## Users Included',
+        '',
+      ]
+
+      for (const u of userSummaries) {
+        const di = u.device_info as Record<string, string>
+        lines.push(`### ${u.name}`)
+        lines.push(`- **Email:** ${u.email || '—'}`)
+        lines.push(`- **Device:** ${di.model || di.name || '?'} · iOS ${di.systemVersion || '?'} · v${di.appVersion || '?'}`)
+        lines.push(`- **Sessions:** ${u.session_count} · **Entries:** ${u.total_entries} · **Errors:** ${u.error_count} · **Slow ops:** ${u.slow_ops}`)
+        lines.push('')
+      }
+
+      lines.push('---', '', '## Claude Analysis', '', analysisText, '', '---', '')
+
+      // Per-user raw error data
+      lines.push('## Raw Error Data by User', '')
+
+      const allErrorDetails = new Map<string, Array<{ user: string; screen?: string; ts: number }>>()
+
+      for (const u of userSummaries) {
+        lines.push(`### ${u.name} — Errors (${u.error_count})`, '')
+        if (u.errors.length === 0) {
+          lines.push('*No errors recorded*', '')
+        } else {
+          for (const e of u.errors) {
+            lines.push(`- \`${new Date(e.ts).toLocaleTimeString()}\` ${e.screen ? `[${e.screen}] ` : ''}${e.detail}`)
+
+            const normalized = e.detail.replace(/\b[0-9a-f]{8,}\b/gi, '<id>').replace(/\d+(\.\d+)?/g, '<n>')
+            if (!allErrorDetails.has(normalized)) allErrorDetails.set(normalized, [])
+            allErrorDetails.get(normalized)!.push({ user: u.name, screen: e.screen, ts: e.ts })
+          }
+          lines.push('')
+        }
+      }
+
+      // Paired similar errors
+      const sharedErrors = [...allErrorDetails.entries()].filter(([, occurrences]) => {
+        const uniqueUsers = new Set(occurrences.map(o => o.user))
+        return uniqueUsers.size > 1
+      })
+
+      if (sharedErrors.length > 0) {
+        lines.push('---', '', '## Shared / Similar Errors Across Users', '')
+        for (const [pattern, occurrences] of sharedErrors) {
+          const users = [...new Set(occurrences.map(o => o.user))]
+          lines.push(`### ${pattern}`)
+          lines.push(`**Affects:** ${users.join(', ')}`)
+          lines.push('')
+          for (const o of occurrences) {
+            lines.push(`- **${o.user}** at \`${new Date(o.ts).toLocaleTimeString()}\` ${o.screen ? `[${o.screen}]` : ''}`)
+          }
+          lines.push('')
+        }
+      }
+
+      lines.push('---', '')
+      lines.push('## Instructions', '', 'Drag this file into Cursor and ask: "Fix all the issues in this report."', '')
+
+      const content = lines.join('\n')
+      const blob = new Blob([content], { type: 'text/markdown' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `user-comparison-report-${new Date().toISOString().split('T')[0]}.md`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setComparisonDownloaded(true)
+    } catch (e) {
+      alert(`Comparison analysis failed: ${e}`)
+    }
+    setComparingUsers(false)
+  }
+
   const filteredEntries = filter === 'all' ? entries : entries.filter(e => e.type === filter)
   const errorCount = entries.filter(e => e.type === 'error').length
   const screenCount = new Set(entries.filter(e => e.type === 'screen').map(e => e.detail)).size
@@ -463,43 +670,102 @@ export default function DevLogsPage() {
         {activeTab === 'sessions' && <div style={{ display: 'grid', gridTemplateColumns: selectedSession ? '320px 1fr' : '1fr', gap: 20 }}>
           {/* Sessions List */}
           <div style={{ background: 'var(--bg-secondary)', borderRadius: 12, padding: 16, border: '1px solid var(--border)', maxHeight: '70vh', overflow: 'auto' }}>
-            <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Recent Sessions</h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <h2 style={{ fontSize: 14, fontWeight: 600 }}>Recent Sessions</h2>
+              {checkedUserIds.size > 0 && (
+                <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
+                  {checkedUserIds.size} selected
+                </span>
+              )}
+            </div>
+
+            {/* Compare button */}
+            {checkedUserIds.size >= 1 && (
+              <button
+                onClick={compareCheckedUsers}
+                disabled={comparingUsers}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  width: '100%', padding: '8px 12px', borderRadius: 8, marginBottom: 12,
+                  background: comparisonDownloaded ? '#4b5563' : '#7c3aed', color: 'white',
+                  fontWeight: 600, fontSize: 12, border: 'none', cursor: comparingUsers ? 'wait' : 'pointer',
+                  opacity: comparingUsers ? 0.6 : 1,
+                }}
+              >
+                {comparingUsers ? '⏳ Analyzing...' : comparisonDownloaded ? '✓ Report Downloaded' : `🧠 Compare ${checkedUserIds.size} User${checkedUserIds.size > 1 ? 's' : ''} with Claude`}
+              </button>
+            )}
+
             {loading ? <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading...</p> : sessions.length === 0 ? (
               <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No sessions recorded yet.</p>
-            ) : sessions.map(s => {
-              const sessionUser = devUsers.find(u => u.user_id === s.user_id)
-              const userName = sessionUser?.user_profiles?.name || sessionUser?.user_profiles?.username || null
-              const di = (typeof s.device_info === 'string' ? (() => { try { return JSON.parse(s.device_info) } catch { return {} } })() : s.device_info) || {}
-              const deviceModel = di.model || di.name || ''
-              const deviceOS = di.systemVersion ? `iOS ${di.systemVersion}` : ''
-              const appVer = di.appVersion ? `v${di.appVersion}` : ''
-              const deviceLabel = [deviceModel, deviceOS, appVer].filter(Boolean).join(' · ')
-              return (
-                <button
-                  key={s.session_id}
-                  onClick={() => openSession(s.session_id)}
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 8, marginBottom: 4, border: 'none', cursor: 'pointer',
-                    background: selectedSession === s.session_id ? 'rgba(37, 99, 235, 0.12)' : 'transparent',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                    {userName && <span style={{ fontSize: 13, fontWeight: 600 }}>{userName}</span>}
-                    {!userName && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{s.user_id.slice(0, 8)}</span>}
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{s.session_id.slice(0, 8)}</span>
-                  </div>
-                  {deviceLabel && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
-                      {deviceLabel}
+            ) : (() => {
+              const uniqueUserIds = [...new Set(sessions.map(s => s.user_id))]
+              return uniqueUserIds.map(userId => {
+                const userSessions = sessions.filter(s => s.user_id === userId)
+                const sessionUser = devUsers.find(u => u.user_id === userId)
+                const userName = sessionUser?.user_profiles?.name || sessionUser?.user_profiles?.username || null
+                const isChecked = checkedUserIds.has(userId)
+
+                return (
+                  <div key={userId} style={{ marginBottom: 8 }}>
+                    {/* User header with checkbox */}
+                    <div
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 8, marginBottom: 2,
+                        background: isChecked ? 'rgba(124, 58, 237, 0.08)' : 'transparent',
+                        border: isChecked ? '1px solid rgba(124, 58, 237, 0.2)' : '1px solid transparent',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleUserCheck(userId)}
+                        style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#7c3aed' }}
+                        title={`Select ${userName || userId.slice(0, 8)} for comparison`}
+                      />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: isChecked ? '#7c3aed' : 'var(--text-primary)' }}>
+                        {userName || userId.slice(0, 8)}
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                        {userSessions.length} session{userSessions.length !== 1 ? 's' : ''}
+                      </span>
                     </div>
-                  )}
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    {new Date(s.started_at).toLocaleString()} · {s.batch_count} batches
+
+                    {/* Session buttons */}
+                    {userSessions.map(s => {
+                      const di = (typeof s.device_info === 'string' ? (() => { try { return JSON.parse(s.device_info) } catch { return {} } })() : s.device_info) || {}
+                      const deviceModel = di.model || di.name || ''
+                      const deviceOS = di.systemVersion ? `iOS ${di.systemVersion}` : ''
+                      const appVer = di.appVersion ? `v${di.appVersion}` : ''
+                      const deviceLabel = [deviceModel, deviceOS, appVer].filter(Boolean).join(' · ')
+                      return (
+                        <button
+                          key={s.session_id}
+                          onClick={() => openSession(s.session_id)}
+                          style={{
+                            display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px 8px 30px', borderRadius: 8, marginBottom: 2, border: 'none', cursor: 'pointer',
+                            background: selectedSession === s.session_id ? 'rgba(37, 99, 235, 0.12)' : 'transparent',
+                            color: 'var(--text-primary)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{s.session_id.slice(0, 8)}</span>
+                          </div>
+                          {deviceLabel && (
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 1 }}>
+                              {deviceLabel}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {new Date(s.started_at).toLocaleString()} · {s.batch_count} batches
+                          </div>
+                        </button>
+                      )
+                    })}
                   </div>
-                </button>
-              )
-            })}
+                )
+              })
+            })()}
           </div>
 
           {/* Session Detail */}

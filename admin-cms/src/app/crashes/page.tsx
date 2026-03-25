@@ -74,6 +74,22 @@ interface TopIssue {
   status: string
 }
 
+interface VersionChangelog {
+  id: string
+  version: string | null
+  build_number: string | null
+  commit_sha: string
+  commit_message: string
+  changed_files: string[]
+  swift_files_changed: string[]
+  diff_stats: string | null
+  technical_summary: string | null
+  user_facing_summary: string | null
+  areas_affected: string[]
+  is_version_bump: boolean
+  created_at: string
+}
+
 interface VersionGroup {
   version: string
   crashes: CrashReport[]
@@ -307,12 +323,17 @@ export default function CrashesPage() {
   // All crashes for version grouping
   const [allCrashesForVersions, setAllCrashesForVersions] = useState<CrashReport[]>([])
   const [versionLoading, setVersionLoading] = useState(false)
+  const [versionChangelogs, setVersionChangelogs] = useState<VersionChangelog[]>([])
 
   const loadAllCrashesForVersions = useCallback(async () => {
     try {
       setVersionLoading(true)
-      const data = await adminApi('get_crash_reports', { limit: 500 })
-      setAllCrashesForVersions(data.crash_reports || [])
+      const [crashData, changelogData] = await Promise.all([
+        adminApi('get_crash_reports', { limit: 500 }),
+        adminApi('get_version_changelogs'),
+      ])
+      setAllCrashesForVersions(crashData.crash_reports || [])
+      setVersionChangelogs(changelogData.changelogs || [])
     } catch (err) {
       console.error('Failed to load crashes for version view:', err)
     } finally {
@@ -955,6 +976,7 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
           <VersionGroupTab
             crashes={allCrashesForVersions}
             loading={versionLoading}
+            changelogs={versionChangelogs}
             onViewCrash={(id) => loadCrashDetail(id)}
           />
         ) : activeTab === 'crashes' ? (
@@ -1289,9 +1311,10 @@ function OverviewTab({ overview, onViewCrash, onViewBug, onViewFingerprint, onSw
 // Version Group Tab
 // ═══════════════════════════════════════════════════
 
-function VersionGroupTab({ crashes, loading, onViewCrash }: {
+function VersionGroupTab({ crashes, loading, changelogs, onViewCrash }: {
   crashes: CrashReport[]
   loading: boolean
+  changelogs: VersionChangelog[]
   onViewCrash: (id: string) => void
 }) {
   const { groups, firstSeenMap } = crashes.length > 0 ? buildVersionGroups(crashes) : { groups: [], firstSeenMap: new Map<string, string>() }
@@ -1307,6 +1330,23 @@ function VersionGroupTab({ crashes, loading, onViewCrash }: {
   const [checkedVersions, setCheckedVersions] = useState<Set<string>>(new Set())
   const [vAnalyzing, setVAnalyzing] = useState(false)
   const [vAnalysisDownloaded, setVAnalysisDownloaded] = useState(false)
+  const [expandedChangelogs, setExpandedChangelogs] = useState<Set<string>>(new Set())
+
+  const changelogByVersion = new Map<string, VersionChangelog[]>()
+  for (const cl of changelogs) {
+    const v = cl.version || 'unknown'
+    if (!changelogByVersion.has(v)) changelogByVersion.set(v, [])
+    changelogByVersion.get(v)!.push(cl)
+  }
+
+  const toggleChangelogExpand = (v: string) => {
+    setExpandedChangelogs(prev => {
+      const next = new Set(prev)
+      if (next.has(v)) next.delete(v)
+      else next.add(v)
+      return next
+    })
+  }
 
   if (loading) {
     return <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>Loading version data...</div>
@@ -1403,21 +1443,41 @@ function VersionGroupTab({ crashes, loading, onViewCrash }: {
         versionBreakdown[v] = (versionBreakdown[v] || 0) + 1
       }
 
+      // Gather changelog context for the versions involved
+      const relevantChangelogs: Array<{ version: string; summary: string; swift_files: string[]; areas: string[]; commit: string }> = []
+      for (const v of Object.keys(versionBreakdown)) {
+        const cls = changelogByVersion.get(v) || []
+        for (const cl of cls) {
+          relevantChangelogs.push({
+            version: v,
+            summary: cl.technical_summary || cl.commit_message,
+            swift_files: cl.swift_files_changed || [],
+            areas: cl.areas_affected || [],
+            commit: cl.commit_message,
+          })
+        }
+      }
+
+      const changelogSection = relevantChangelogs.length > 0
+        ? `\n\nCode Changes Per Version (from auto-captured changelogs):\n${JSON.stringify(relevantChangelogs, null, 2)}\n\nUse these changelogs to correlate crashes with specific code changes. If a crash first appeared in a version, check what Swift files changed in that version's changelog — those are the likely culprits.`
+        : ''
+
       const prompt = `Analyze these ${selectedCrashes.length} crash reports from the Fit33 iOS fitness app, selected across these versions: ${Object.entries(versionBreakdown).map(([v, n]) => `v${v} (${n})`).join(', ')}.
+${changelogSection}
 
 For each significant issue:
 1. Identify the root cause from the error message and stack trace
 2. Rate priority (P0-P3) based on severity x frequency x user impact
 3. Note which version each crash first appeared in (use the first_seen_version field)
-4. Identify regressions — crashes that are NEW in a later version
+4. Identify regressions — crashes that are NEW in a later version, and correlate with the code changelog for that version
 5. Identify persistent issues — crashes that carry over across multiple versions
-6. Suggest the specific Swift file and fix approach
+6. Suggest the specific Swift file and fix approach (reference changelog files where relevant)
 7. Group related crashes by root cause
 
 Crash Reports (${selectedCrashes.length} total, showing ${crashSummary.length}):
 ${JSON.stringify(crashSummary, null, 2)}
 
-Respond with structured analysis: version-by-version breakdown, regressions, persistent issues, prioritized fixes.`
+Respond with structured analysis: version-by-version breakdown, regressions correlated with code changes, persistent issues, prioritized fixes.`
 
       const res = await fetch('/api/ai-chat', {
         method: 'POST',
@@ -1459,6 +1519,30 @@ Respond with structured analysis: version-by-version breakdown, regressions, per
         '',
         '---',
         '',
+      ]
+
+      // Add changelog context to .md
+      if (relevantChangelogs.length > 0) {
+        lines.push('## Code Changes Per Version', '')
+        const byVer = new Map<string, typeof relevantChangelogs>()
+        for (const cl of relevantChangelogs) {
+          if (!byVer.has(cl.version)) byVer.set(cl.version, [])
+          byVer.get(cl.version)!.push(cl)
+        }
+        for (const [v, cls] of byVer) {
+          lines.push(`### v${v}`, '')
+          for (const cl of cls) {
+            lines.push(`- **Commit:** ${cl.commit}`)
+            lines.push(`- **Summary:** ${cl.summary}`)
+            if (cl.areas.length > 0) lines.push(`- **Areas:** ${cl.areas.join(', ')}`)
+            if (cl.swift_files.length > 0) lines.push(`- **Swift files:** ${cl.swift_files.map(f => f.split('/').pop()).join(', ')}`)
+            lines.push('')
+          }
+        }
+        lines.push('---', '')
+      }
+
+      lines.push(
         '## Claude Analysis',
         '',
         analysisText,
@@ -1467,7 +1551,7 @@ Respond with structured analysis: version-by-version breakdown, regressions, per
         '',
         '## Raw Crash Data',
         '',
-      ]
+      )
 
       for (const c of selectedCrashes.slice(0, 30)) {
         const isNew = firstSeenMap.get(c.fingerprint) === c.app_version
@@ -1634,6 +1718,59 @@ Respond with structured analysis: version-by-version breakdown, regressions, per
                 </div>
               </button>
             </div>
+
+            {/* Changelog for this version */}
+            {isExpanded && (changelogByVersion.get(group.version) || []).length > 0 && (
+              <div className="mx-4 mb-3">
+                <button
+                  onClick={() => toggleChangelogExpand(group.version)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:opacity-80 transition-opacity"
+                  style={{ background: '#3b82f612', border: '1px solid #3b82f633', color: '#3b82f6' }}
+                >
+                  <span>{expandedChangelogs.has(group.version) ? '▼' : '▶'}</span>
+                  <span className="font-semibold">📋 Code Changes</span>
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    {(changelogByVersion.get(group.version) || []).reduce((n, cl) => n + (cl.swift_files_changed?.length || 0), 0)} Swift files changed
+                  </span>
+                  {(changelogByVersion.get(group.version) || []).some(cl => cl.areas_affected?.length > 0) && (
+                    <span className="ml-auto flex gap-1">
+                      {[...new Set((changelogByVersion.get(group.version) || []).flatMap(cl => cl.areas_affected || []))].slice(0, 5).map(area => (
+                        <span key={area} className="px-1.5 py-0.5 rounded text-xs" style={{ background: '#3b82f622', color: '#3b82f6' }}>{area}</span>
+                      ))}
+                    </span>
+                  )}
+                </button>
+                {expandedChangelogs.has(group.version) && (
+                  <div className="mt-2 space-y-2">
+                    {(changelogByVersion.get(group.version) || []).map(cl => (
+                      <div key={cl.id} className="rounded-lg p-3" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}>
+                        {cl.technical_summary && (
+                          <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{cl.technical_summary}</p>
+                        )}
+                        <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                          <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Commit:</span> {cl.commit_message.slice(0, 100)}
+                        </div>
+                        {cl.swift_files_changed && cl.swift_files_changed.length > 0 && (
+                          <div className="mt-1.5">
+                            <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Swift files ({cl.swift_files_changed.length}):</span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {cl.swift_files_changed.map((f, i) => (
+                                <span key={i} className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>
+                                  {f.split('/').pop()}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {cl.diff_stats && (
+                          <div className="text-xs mt-1.5 font-mono" style={{ color: 'var(--text-muted)' }}>{cl.diff_stats}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Crash list for this version */}
             {isExpanded && (

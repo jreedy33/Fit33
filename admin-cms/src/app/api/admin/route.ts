@@ -1733,6 +1733,26 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      // ═══════════════════════════════════════════════════
+      // VERSION CHANGELOGS
+      // ═══════════════════════════════════════════════════
+
+      case 'get_version_changelogs': {
+        const { version: filterVersion } = params
+        let query = admin.from('version_changelogs')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (filterVersion) {
+          query = query.eq('version', filterVersion)
+        }
+
+        const { data, error: clError } = await query.limit(100)
+        if (clError) throw clError
+
+        return NextResponse.json({ changelogs: data || [] })
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
     }

@@ -1,0 +1,326 @@
+name: Changelog Auto-Capture
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Fit33/**'
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: 'Backfill changelogs for existing version commits'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  capture-changelog:
+    if: github.event.inputs.backfill != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Extract commit info
+        id: info
+        run: |
+          COMMIT_MSG=$(git log -1 --format='%s')
+          COMMIT_SHA=$(git log -1 --format='%H')
+          echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+
+          # Detect version from commit message (e.g. "v1.33.0 (build 33)")
+          if echo "$COMMIT_MSG" | grep -qE '^v([0-9]+\.[0-9]+\.[0-9]+)'; then
+            VERSION=$(echo "$COMMIT_MSG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+            BUILD=$(echo "$COMMIT_MSG" | grep -oE 'build ([0-9]+)' | grep -oE '[0-9]+' || echo "")
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "build_number=$BUILD" >> $GITHUB_OUTPUT
+            echo "is_version_bump=true" >> $GITHUB_OUTPUT
+          else
+            echo "version=" >> $GITHUB_OUTPUT
+            echo "build_number=" >> $GITHUB_OUTPUT
+            echo "is_version_bump=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get changed files
+        id: changes
+        run: |
+          ALL_FILES=$(git diff HEAD~1 --name-only --diff-filter=ACDMR | head -100)
+          SWIFT_FILES=$(echo "$ALL_FILES" | grep '\.swift$' || echo "")
+          DIFF_STATS=$(git diff HEAD~1 --stat | tail -3)
+
+          echo "all_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$ALL_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "swift_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$SWIFT_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "diff_stats<<EOF" >> $GITHUB_OUTPUT
+          echo "$DIFF_STATS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          FILE_COUNT=$(echo "$ALL_FILES" | grep -c '.' || echo "0")
+          echo "count=$FILE_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Get Swift diff context
+        if: steps.changes.outputs.count != '0'
+        id: swift_diff
+        run: |
+          SWIFT_DIFF=$(git diff HEAD~1 -- '*.swift' | head -c 12000)
+          echo "diff<<EOF" >> $GITHUB_OUTPUT
+          echo "$SWIFT_DIFF" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Analyze with Claude
+        if: steps.changes.outputs.count != '0'
+        id: analysis
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          PROMPT="You are analyzing a code push to the Fit33 iOS fitness app. Provide a technical changelog.
+
+          Commit: ${{ steps.info.outputs.commit_msg }}
+          Version bump: ${{ steps.info.outputs.is_version_bump }}
+
+          Changed files:
+          ${{ steps.changes.outputs.all_files }}
+
+          Diff stats:
+          ${{ steps.changes.outputs.diff_stats }}
+
+          Swift code diff (truncated):
+          ${{ steps.swift_diff.outputs.diff }}
+
+          Respond with ONLY valid JSON:
+          {
+            \"technical_summary\": \"2-4 sentence technical summary of what changed and why\",
+            \"user_facing_summary\": \"1-2 sentence user-facing description (empty string if purely internal)\",
+            \"areas_affected\": [\"list\", \"of\", \"app areas affected like: dashboard, workout, healthkit, challenges, social, nutrition, auth, notifications, onboarding, settings, performance\"]
+          }"
+
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "content-type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "$(jq -n --arg prompt "$PROMPT" '{
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 1000,
+              messages: [{role: "user", content: $prompt}]
+            }')" \
+          )
+
+          CONTENT=$(echo "$RESPONSE" | jq -r '.content[0].text // empty')
+          if [ -z "$CONTENT" ]; then
+            echo "No response from Claude, using empty analysis."
+            CONTENT='{"technical_summary":"Auto-capture failed — no Claude response","user_facing_summary":"","areas_affected":[]}'
+          fi
+
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "$CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Write to Supabase
+        if: steps.changes.outputs.count != '0'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          RESULT='${{ steps.analysis.outputs.result }}'
+          TECH_SUMMARY=$(echo "$RESULT" | jq -r '.technical_summary // "No summary"')
+          USER_SUMMARY=$(echo "$RESULT" | jq -r '.user_facing_summary // ""')
+          AREAS=$(echo "$RESULT" | jq -c '.areas_affected // []')
+
+          # Build arrays for Supabase (PostgreSQL text[] format)
+          ALL_FILES_JSON=$(echo '${{ steps.changes.outputs.all_files }}' | jq -R -s 'split("\n") | map(select(length > 0))')
+          SWIFT_FILES_JSON=$(echo '${{ steps.changes.outputs.swift_files }}' | jq -R -s 'split("\n") | map(select(length > 0))')
+
+          # Construct payload
+          PAYLOAD=$(jq -n \
+            --arg version "${{ steps.info.outputs.version }}" \
+            --arg build "${{ steps.info.outputs.build_number }}" \
+            --arg sha "${{ steps.info.outputs.commit_sha }}" \
+            --arg msg "${{ steps.info.outputs.commit_msg }}" \
+            --argjson files "$ALL_FILES_JSON" \
+            --argjson swift "$SWIFT_FILES_JSON" \
+            --arg stats "${{ steps.changes.outputs.diff_stats }}" \
+            --arg tech "$TECH_SUMMARY" \
+            --arg user_facing "$USER_SUMMARY" \
+            --argjson areas "$AREAS" \
+            --argjson is_bump "${{ steps.info.outputs.is_version_bump }}" \
+            '{
+              version: (if $version == "" then null else $version end),
+              build_number: (if $build == "" then null else $build end),
+              commit_sha: $sha,
+              commit_message: $msg,
+              changed_files: $files,
+              swift_files_changed: $swift,
+              diff_stats: $stats,
+              technical_summary: $tech,
+              user_facing_summary: $user_facing,
+              areas_affected: $areas,
+              is_version_bump: $is_bump
+            }')
+
+          echo "Inserting changelog for commit ${{ steps.info.outputs.commit_sha }}"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            "$SUPABASE_URL/rest/v1/version_changelogs" \
+            -d "$PAYLOAD")
+
+          if [ "$HTTP_CODE" = "201" ]; then
+            echo "Changelog inserted successfully."
+          elif [ "$HTTP_CODE" = "409" ]; then
+            echo "Changelog already exists for this commit (duplicate), skipping."
+          else
+            echo "Warning: Supabase returned HTTP $HTTP_CODE"
+          fi
+
+  # Backfill job: iterate historical version commits
+  backfill-changelogs:
+    if: github.event.inputs.backfill == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Backfill version commits
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          # Find all version bump commits
+          VERSION_COMMITS=$(git log --oneline --all | grep -E '^[a-f0-9]+ v[0-9]+\.[0-9]+' | head -20)
+
+          echo "Found version commits:"
+          echo "$VERSION_COMMITS"
+          echo "---"
+
+          echo "$VERSION_COMMITS" | while IFS= read -r line; do
+            SHORT_SHA=$(echo "$line" | awk '{print $1}')
+            FULL_SHA=$(git rev-parse "$SHORT_SHA")
+            COMMIT_MSG=$(git log -1 --format='%s' "$FULL_SHA")
+
+            # Check if already in Supabase
+            EXISTS=$(curl -s \
+              -H "apikey: $SUPABASE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_KEY" \
+              "$SUPABASE_URL/rest/v1/version_changelogs?commit_sha=eq.$FULL_SHA&select=id" \
+              | jq 'length')
+
+            if [ "$EXISTS" != "0" ]; then
+              echo "Skipping $SHORT_SHA ($COMMIT_MSG) — already exists"
+              continue
+            fi
+
+            # Extract version
+            VERSION=$(echo "$COMMIT_MSG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+            BUILD=$(echo "$COMMIT_MSG" | grep -oE 'build ([0-9]+)' | grep -oE '[0-9]+' || echo "")
+
+            # Get diff (against parent)
+            PARENT="${FULL_SHA}~1"
+            ALL_FILES=$(git diff "$PARENT" "$FULL_SHA" --name-only --diff-filter=ACDMR 2>/dev/null | head -100)
+            SWIFT_FILES=$(echo "$ALL_FILES" | grep '\.swift$' || echo "")
+            DIFF_STATS=$(git diff "$PARENT" "$FULL_SHA" --stat 2>/dev/null | tail -3)
+            SWIFT_DIFF=$(git diff "$PARENT" "$FULL_SHA" -- '*.swift' 2>/dev/null | head -c 10000)
+
+            # Claude analysis
+            PROMPT="You are analyzing a version release of the Fit33 iOS fitness app.
+
+            Commit: $COMMIT_MSG
+            Version: $VERSION
+
+            Changed files:
+            $ALL_FILES
+
+            Diff stats:
+            $DIFF_STATS
+
+            Swift code diff (truncated):
+            $SWIFT_DIFF
+
+            Respond with ONLY valid JSON:
+            {
+              \"technical_summary\": \"2-4 sentence technical summary of what changed\",
+              \"user_facing_summary\": \"1-2 sentence user-facing description\",
+              \"areas_affected\": [\"list of app areas affected\"]
+            }"
+
+            RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+              -H "content-type: application/json" \
+              -H "x-api-key: $ANTHROPIC_API_KEY" \
+              -H "anthropic-version: 2023-06-01" \
+              -d "$(jq -n --arg prompt "$PROMPT" '{
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 1000,
+                messages: [{role: "user", content: $prompt}]
+              }')" \
+            )
+
+            CONTENT=$(echo "$RESPONSE" | jq -r '.content[0].text // empty')
+            if [ -z "$CONTENT" ]; then
+              CONTENT='{"technical_summary":"Backfill — no Claude response","user_facing_summary":"","areas_affected":[]}'
+            fi
+
+            TECH_SUMMARY=$(echo "$CONTENT" | jq -r '.technical_summary // "No summary"')
+            USER_SUMMARY=$(echo "$CONTENT" | jq -r '.user_facing_summary // ""')
+            AREAS=$(echo "$CONTENT" | jq -c '.areas_affected // []')
+
+            ALL_FILES_JSON=$(echo "$ALL_FILES" | jq -R -s 'split("\n") | map(select(length > 0))')
+            SWIFT_FILES_JSON=$(echo "$SWIFT_FILES" | jq -R -s 'split("\n") | map(select(length > 0))')
+
+            PAYLOAD=$(jq -n \
+              --arg version "$VERSION" \
+              --arg build "$BUILD" \
+              --arg sha "$FULL_SHA" \
+              --arg msg "$COMMIT_MSG" \
+              --argjson files "$ALL_FILES_JSON" \
+              --argjson swift "$SWIFT_FILES_JSON" \
+              --arg stats "$DIFF_STATS" \
+              --arg tech "$TECH_SUMMARY" \
+              --arg user_facing "$USER_SUMMARY" \
+              --argjson areas "$AREAS" \
+              '{
+                version: (if $version == "" then null else $version end),
+                build_number: (if $build == "" then null else $build end),
+                commit_sha: $sha,
+                commit_message: $msg,
+                changed_files: $files,
+                swift_files_changed: $swift,
+                diff_stats: $stats,
+                technical_summary: $tech,
+                user_facing_summary: $user_facing,
+                areas_affected: $areas,
+                is_version_bump: true
+              }')
+
+            echo "Inserting changelog for v$VERSION ($SHORT_SHA)"
+            curl -s -X POST \
+              -H "apikey: $SUPABASE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_KEY" \
+              -H "Content-Type: application/json" \
+              -H "Prefer: return=minimal" \
+              "$SUPABASE_URL/rest/v1/version_changelogs" \
+              -d "$PAYLOAD"
+
+            echo " Done."
+            sleep 2
+          done
+
+          echo "Backfill complete."

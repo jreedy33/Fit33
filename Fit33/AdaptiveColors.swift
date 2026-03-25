@@ -457,6 +457,7 @@ struct AnimatedOrbBackground: View {
                             )
                         )
                         .frame(width: 400, height: 400)
+                        .drawingGroup()
                         .offset(x: animatePulse ? -50 : -100, y: animatePulse ? -150 : -180)
                         .animation(isLowPowerMode ? nil : .easeInOut(duration: 4).repeatForever(autoreverses: true), value: animatePulse)
                     
@@ -474,6 +475,7 @@ struct AnimatedOrbBackground: View {
                             )
                         )
                         .frame(width: 500, height: 500)
+                        .drawingGroup()
                         .offset(x: animatePulse ? 150 : 100, y: animatePulse ? geometry.size.height * 0.4 : geometry.size.height * 0.5)
                         .animation(isLowPowerMode ? nil : .easeInOut(duration: 5).repeatForever(autoreverses: true), value: animatePulse)
                     
@@ -491,11 +493,11 @@ struct AnimatedOrbBackground: View {
                             )
                         )
                         .frame(width: 240, height: 240)
+                        .drawingGroup()
                         .offset(x: animatePulse ? geometry.size.width * 0.6 : geometry.size.width * 0.7, y: animatePulse ? geometry.size.height * 0.2 : geometry.size.height * 0.15)
                         .animation(isLowPowerMode ? nil : .easeInOut(duration: 3).repeatForever(autoreverses: true), value: animatePulse)
                 }
             }
-            .drawingGroup()
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)

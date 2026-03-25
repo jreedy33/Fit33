@@ -9,7 +9,6 @@ struct DashboardView: View {
     @Environment(\.scenePhase) var scenePhase
     @EnvironmentObject var userManager: UserManager
     @EnvironmentObject var workoutManager: WorkoutManager
-    @StateObject var notificationManager = NotificationManager.shared
     
     @State var showingWorkoutCreation = false
     @State var workoutCreationType: WorkoutCreationType = .custom
@@ -85,6 +84,7 @@ struct DashboardView: View {
     
     // ⚡️ PERFORMANCE: Cached combined workouts — updated via onChange, not recomputed every body eval
     @State var combinedRecentWorkouts: [RecentWorkoutItem] = []
+    @State var showRecoveryWidget: Bool = false
     
     private func rebuildCombinedWorkouts() {
         var items: [RecentWorkoutItem] = []
@@ -151,10 +151,13 @@ struct DashboardView: View {
     @State var programToStart: PersonalizedProgram?
     @State var programGlowRotation: Double = 0
     
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        predicate: NSPredicate(format: "isCompleted == true"),
-        animation: .none)
+    @FetchRequest(fetchRequest: {
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+        request.predicate = NSPredicate(format: "isCompleted == true")
+        request.fetchLimit = 10
+        return request
+    }(), animation: .none)
     var recentWorkouts: FetchedResults<Workout>
     
     var displayedWorkouts: [Workout] {
@@ -181,14 +184,7 @@ struct DashboardView: View {
                         .padding(.top, 0)
                         .padding(.bottom, 16)
                     
-                    // Notification permission banner - only show after checking status
-                    // and only if not authorized and not previously dismissed
-                    if notificationManager.hasCheckedAuthStatus && 
-                       !notificationManager.isAuthorized && 
-                       !dismissedNotificationBanner {
-                        notificationPermissionBanner
-                            .padding(.bottom, 16)
-                    }
+                    DashboardNotificationBannerWrapper()
                     
                     // Header with user info
                     headerView
@@ -220,8 +216,8 @@ struct DashboardView: View {
                     DashboardQuestsWrapper()
                         .padding(.bottom, 16)
                     
-                    // Recovery Day widget (shows when muscles are recovering)
-                    if RecoveryDayEngine.shared.shouldShowRecoveryWidget {
+                    // Recovery Day widget (cached — avoids 10-muscle evaluation per body pass)
+                    if showRecoveryWidget {
                         RecoveryDayDashboardWidget()
                             .padding(.horizontal, Spacing.md)
                             .padding(.bottom, 16)
@@ -463,7 +459,8 @@ struct DashboardView: View {
             }
         }
         .onAppear {
-            // Update streak shield risk status
+            showRecoveryWidget = RecoveryDayEngine.shared.shouldShowRecoveryWidget
+            
             if let user = userManager.currentUser {
                 streakShieldService.checkStreakRisk(
                     lastWorkoutDate: user.lastWorkoutDate,
@@ -476,7 +473,7 @@ struct DashboardView: View {
             
             // ⚡️ PERFORMANCE: Only log, don't trigger heavy refreshes on every appear
             SessionLogManager.shared.logScreen(.dashboard, metadata: [
-                "workouts_count": recentWorkouts.count,
+                "workouts_count": Int(userManager.currentUser?.totalWorkouts ?? 0),
                 "has_active_program": generatedProgramService.activeProgram != nil
             ])
             
@@ -538,10 +535,8 @@ struct DashboardView: View {
                 await insightsService.fetchStreaks()
             }
             
-            // 2. Motivational message (CPU-heavy, off main actor via background Core Data)
-            let messageTask = Task.detached(priority: .userInitiated) { [self] in
-                return self.generateMotivationalMessage()
-            }
+            // 2. Motivational message (runs on main actor — reads service state + recovery data)
+            let messageTask = Task { self.generateMotivationalMessage() }
             
             // 3. Recommendation + cardio (independent, parallel)
             Task { await loadPersonalizedRecommendation() }

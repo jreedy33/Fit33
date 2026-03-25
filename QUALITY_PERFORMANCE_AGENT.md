@@ -688,3 +688,90 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 - All `Codable` structs decoding from Supabase tables MUST handle NULL gracefully.
 - Use `decodeIfPresent` with `?? defaultValue` for non-optional properties that map to nullable DB columns.
 - The `PersonalizedInsightsService.StreakData` pattern (custom `init(from decoder:)`) is the canonical example.
+
+### 2026-03-25: Exercise Name Fuzzy Matching
+
+**Performance note**: `ExerciseLibraryService.getExercise(byName:)` now has a fuzzy matching fallback that builds an alternate-name cache (`fuzzyNameCache`) on first miss. Cache build is O(n) over the 5501 exercises but only runs once per cache lifecycle. Individual fuzzy lookups remain O(1) dictionary lookups across 6 strategies.
+
+**Rule**: Exercise name lookups MUST go through `ExerciseLibraryService.getExercise(byName:)`, never raw `NSFetchRequest` by name. The fuzzy cache handles historical naming convention changes (equipment prefix/suffix swaps, dash normalization, Smith Machine variants).
+
+### 2026-03-25: Crash Report Analysis — v1.34.0 (3 crashes)
+
+**Fixes applied**:
+
+1. **`user_programs` schema mismatch (P0)** — `SmartProgramEngine.saveProgramsToCloud()` sent `completed_days` to a table that didn't have the column. Migration `20260325_fix_user_programs_schema.sql` adds all missing columns.
+
+2. **Dashboard `@FetchRequest` unbounded (P1)** — `DashboardView.swift` fetched ALL completed workouts with no `fetchLimit`. Only `prefix(10)` was used for display, but Core Data materialized every row and every change triggered view invalidation. Fixed: `fetchLimit: 10` added. `totalCombinedWorkouts` now uses `userManager.currentUser?.totalWorkouts` instead of `recentWorkouts.count`.
+
+3. **`Task.detached` was misleading for motivational message (P1)** — Dashboard used `Task.detached { generateMotivationalMessage() }` but `generateMotivationalMessage()` is `@MainActor` (it's on the view), so Swift immediately hopped back to the main actor — the detached task never ran off-main. Changed to plain `Task { }` to remove the misleading overhead. The `bgContext.performAndWait` inside recovery analysis still runs from the main actor but is fast for the limited dataset. The real freeze was caused by the unbounded `@FetchRequest`, not the recovery computation.
+
+**Known follow-up**: `WorkoutSuggestionEngine.getRecentMusclesWithDates()` and `getRecentSplitFamilies()` use `bgContext.performAndWait` which blocks the calling thread. When called from `@MainActor` methods, this blocks the main thread for the duration of the Core Data fetch. For a future optimization, convert these to async `bgContext.perform { }` and make the call chain async — but this requires also updating `DailyQuestViews.dynamicDescription` which calls `suggestForToday()` synchronously.
+
+**New rules established**:
+- `@FetchRequest` that displays N items MUST set `fetchLimit: N` via `NSFetchRequest`. Without it, Core Data fetches all matching rows and view invalidation fires on every row change across the entire dataset. Use the `@FetchRequest(fetchRequest:)` initializer since the convenience initializer doesn't expose `fetchLimit`.
+- `Task.detached` does NOT move work off the main actor if the called method is `@MainActor`. The detached task creates a new non-isolated context, but calling an `@MainActor` method from it still hops to main. Use `nonisolated` standalone functions with parameter snapshots if you truly need off-main execution.
+
+### 2026-03-25: Startup Performance Overhaul — v1.35.0
+
+**Problem**: Startup waterfall reported 26103ms main thread budget. Investigation revealed two real main-thread blockers plus misleading reporting inflating the number.
+
+**Fix 1 — DeferredInit split** (`Fit33App.swift`):
+- The deferred init block ran entirely `@MainActor` (~5.4s). Split into two tasks:
+  - `@MainActor` task: `initializePerformanceOptimizations()` + `HapticManager.prepareAll()` (need main thread)
+  - `Task.detached`: `CrashReportingService`, `VideoThumbnailService.prewarmCDNConnection()`, `GenderFilterService`, `VideoPlaybackEngine` (no UI, safe off main)
+- **Rule**: DeferredInit items that don't touch UI or need `@MainActor` services MUST go in the background task. Only UIKit/AppKit interactions and `StartupCoordinator` stay on main.
+
+**Fix 2 — HealthKitService sync off main actor** (`HealthKitService.swift`):
+- `HealthKitService` is `@MainActor`. Its `Task.detached` in `syncAllData` was useless — the 5 sync methods (`syncTodayStats`, `syncRecentWorkouts`, `syncHeartRate`, `syncSleep`, `syncWeeklyData`) and 3 helpers (`fetchSum`, `fetchMostRecent`, `fetchAverage`) were implicitly `@MainActor`, so every call hopped back to main.
+- Fixed: all 8 methods marked `nonisolated`. `healthStore` (a `let` property) uses `nonisolated(unsafe)` since `HKHealthStore` is thread-safe. `isAuthorized` snapshot passed as parameter to avoid actor-isolated reads.
+- **Rule**: On `@MainActor` classes, methods that only do I/O and assign results via `MainActor.run { }` should be `nonisolated`. The class stays `@MainActor` for its `@Published` properties.
+
+**Fix 3 — StartupWaterfall accuracy** (`AppPerformanceSystem.swift`):
+- `mark()` recorded `Thread.isMainThread` only at start. Items that marked on main but ran heavy work in `Task.detached` showed as `[main]`, inflating the budget.
+- Fixed: `end()` now also records thread. `effectiveThread` returns `main` only if both mark and end are main; `bg` if both bg; `mixed` otherwise. Budget only counts `main`-tagged events.
+- **Rule**: Always check the `effectiveThread` label in waterfall output. `[mixed]` means the operation started on one thread and ended on another — the wall time includes async work.
+
+**Fix 4 — Startup audit** (`Fit33App.swift`, `AppPerformanceSystem.swift`):
+- `StartupWaterfall.mainThreadBudgetMs()` returns the computed main-thread budget.
+- DEBUG builds log `[STARTUP AUDIT] PASS/FAIL` after every launch with a 5000ms threshold.
+- **Rule**: Main thread budget must stay under 5000ms. If the audit logs FAIL, investigate before shipping.
+
+**Projected impact**:
+- Main thread budget: 26103ms (reported, inflated) / ~12s (actual) → under 5000ms
+- Watchdog freeze at startup: eliminated
+- Sustained FPS drops during startup: significantly reduced
+
+### 2026-03-25: Dashboard Scroll Smoothness + Remaining Startup Fixes
+
+**Fix A1 — `runIntelligenceInit` extracted as free function** (`Fit33App.swift`):
+- `Fit33App` conforms to `App` which is `@MainActor`. Every instance method inherits `@MainActor`. The `Task.detached { await self.runIntelligenceInit() }` hopped right back to main — same pattern as WorkoutSuggestionEngine.
+- The method uses ZERO `self` properties (only singletons). Extracted as module-level `performIntelligenceInit()` so `Task.detached` actually runs it off main.
+- **Rule**: Never put heavy async work as instance methods on `@MainActor` types (App, View, ObservableObject). Extract to free functions or static methods on non-isolated types.
+
+**Fix A2 — `syncAllData` made nonisolated** (`HealthKitService.swift`):
+- The 5 sync helpers were already `nonisolated`, but `syncAllData` itself was `@MainActor` (class-level). The `mark()`/`end()` and all `await` coordination ran on main.
+- Made `syncAllData` `nonisolated`. Guard checks and `@Published` mutations (`isSyncing`, `isLoading`, `lastSyncDate`) use `MainActor.run {}` — brief hops. The actual HealthKit queries run entirely off main.
+- **Rule**: On `@MainActor` service classes, orchestrator methods that coordinate nonisolated work should themselves be `nonisolated`. Use `MainActor.run {}` only for `@Published` state mutations.
+
+**Fix B3 — `.drawingGroup()` on challenge glow card** (`DashboardView+Challenges.swift`):
+- `getStartedChallengeWidget` runs a `repeatForever` AngularGradient rotation with blur and double shadow. Added `.drawingGroup()` to rasterize the entire card into a single GPU layer. Looks identical, compositing is cheaper.
+
+**Fix B4 — Macros gesture conflict** (`DashboardView+Macros.swift`):
+- Changed `.highPriorityGesture(DragGesture(minimumDistance: 20))` to `.simultaneousGesture(DragGesture(minimumDistance: 25))` per coding rules. Vertical scroll gets priority.
+
+**Fix B5 — `notificationManager` extracted to wrapper** (`DashboardView.swift`, `DashboardView+Helpers.swift`):
+- `@StateObject var notificationManager = NotificationManager.shared` removed from DashboardView. It only controlled the notification banner (2 lines in body). Extracted to `DashboardNotificationBannerWrapper` — now notification state changes don't trigger full dashboard body recomputation.
+
+**Fix B6 — Recovery widget check cached** (`DashboardView.swift`):
+- `RecoveryDayEngine.shared.shouldShowRecoveryWidget` evaluated 10 muscle recovery states every body pass. Cached as `@State var showRecoveryWidget` updated in `.onAppear`.
+
+**Skipped (would change visual appearance)**:
+- B1 (blur opaque:true) — all blurs are on semi-transparent shapes; opaque:true makes them solid
+- B2 (shadow consolidation) — two shadows create different depth than one; visual change
+
+**New rules**:
+- Heavy async methods must NOT be instance methods on `@MainActor` types — use free functions
+- `.drawingGroup()` on any view with `repeatForever` animation + blur/shadow inside a ScrollView
+- Horizontal drag in vertical scroll: always `.simultaneousGesture(minimumDistance: 25)`
+- `@StateObject` on parent views: only for services read extensively in body. Services used in one conditional → extract to wrapper view
+- Expensive computed checks in body (e.g. muscle recovery loops) → cache as `@State`, update in `.onAppear`/`.onChange`

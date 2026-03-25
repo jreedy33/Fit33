@@ -20,6 +20,8 @@ class ContactsService: ObservableObject {
     @Published var hasCheckedContacts = false
     
     private let store = CNContactStore()
+    private var lastRefreshDate: Date?
+    private static let refreshThrottleInterval: TimeInterval = 300
     
     private init() {
         checkAuthorizationStatus()
@@ -273,7 +275,10 @@ class ContactsService: ObservableObject {
             if !contactPhoneNumbers.isEmpty {
                 AppLogger.debug("Hashing \(contactPhoneNumbers.count) phone numbers for server-side matching...", category: .social)
                 
-                let hashedPhones = contactPhoneNumbers.map { md5Hash($0) }
+                let phones = contactPhoneNumbers
+                let hashedPhones = await Task.detached(priority: .utility) { [self] in
+                    phones.map { self.md5Hash($0) }
+                }.value
                 
                 struct PhoneMatch: Decodable {
                     let id: UUID
@@ -321,11 +326,15 @@ class ContactsService: ObservableObject {
         }
     }
     
-    /// Refresh suggestions (call after adding a friend)
-    func refreshSuggestions() async {
-        if canAccessContacts && hasCheckedContacts {
-            await findMatchingUsers()
+    /// Refresh suggestions (call after adding a friend, or from dashboard)
+    func refreshSuggestions(force: Bool = false) async {
+        guard canAccessContacts && hasCheckedContacts else { return }
+        if !force, let lastRefresh = lastRefreshDate,
+           Date().timeIntervalSince(lastRefresh) < Self.refreshThrottleInterval {
+            return
         }
+        lastRefreshDate = Date()
+        await findMatchingUsers()
     }
     
     // MARK: - People You May Know (Friends-of-Friends)

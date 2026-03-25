@@ -93,11 +93,7 @@ extension DashboardView {
     /// Combined total: in-app workouts + synced cardio/HealthKit workouts
     var totalCombinedWorkouts: Int {
         let inApp = Int(userManager.currentUser?.totalWorkouts ?? 0)
-        // Core Data workouts visible in the recent list (completed, all-time)
-        let coreDataCount = recentWorkouts.count
-        // Use the max of in-app counter vs Core Data count (in-app counter may lag)
-        let strength = max(inApp, coreDataCount)
-        return strength + totalCardioWorkoutCount
+        return inApp + totalCardioWorkoutCount
     }
     
     var statsOverview: some View {

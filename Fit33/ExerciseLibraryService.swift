@@ -35,6 +35,7 @@ class ExerciseLibraryService: ObservableObject {
     // MARK: - Caching
     private var cachedExercises: [Exercise]?
     private var cachedExercisesByName: [String: Exercise]? // For O(1) name lookups
+    private var fuzzyNameCache: [String: Exercise]?        // Alternate name forms → Exercise
     private var cacheTimestamp: Date?
     
     // MARK: - Sync Protection
@@ -96,6 +97,7 @@ class ExerciseLibraryService: ObservableObject {
     }
     
     /// Get exercise by name - O(1) lookup using cached dictionary (case-insensitive)
+    /// Falls back to fuzzy matching for renamed/reformatted exercise names from workout history
     func getExercise(byName name: String) -> Exercise? {
         // Build cache if needed (with lowercase keys for case-insensitive matching)
         if cachedExercisesByName == nil || !isCacheValid {
@@ -110,14 +112,161 @@ class ExerciseLibraryService: ObservableObject {
                 },
                 uniquingKeysWith: { first, _ in first }
             )
+            fuzzyNameCache = nil
         }
-        let result = cachedExercisesByName?[name.lowercased()]
+        
+        let lower = name.lowercased().trimmingCharacters(in: .whitespaces)
+        
+        if let result = cachedExercisesByName?[lower] {
+            return result
+        }
+        
+        // Fuzzy fallback for renamed/reformatted exercises
+        if let fuzzyResult = fuzzyMatchExercise(name: lower) {
+            #if DEBUG
+            AppLogger.debug("🔧 [ExerciseLibrary] Fuzzy matched '\(name)' → '\(fuzzyResult.name ?? "")'", category: .data)
+            #endif
+            return fuzzyResult
+        }
+        
         #if DEBUG
-        if result == nil {
-            AppLogger.warning("⚠️ [ExerciseLibrary] Exercise not found: '\(name)' (cache size: \(cachedExercisesByName?.count ?? 0))", category: .data)
-        }
+        AppLogger.warning("⚠️ [ExerciseLibrary] Exercise not found: '\(name)' (cache size: \(cachedExercisesByName?.count ?? 0))", category: .data)
         #endif
-        return result
+        return nil
+    }
+    
+    // MARK: - Fuzzy Name Matching
+    
+    /// Builds alternate-name lookup cache from the primary exercise cache.
+    /// Generates equipment-prefix, dash-normalized, and stripped-equipment variants.
+    private func buildFuzzyNameCache() {
+        guard let primaryCache = cachedExercisesByName else { return }
+        var fuzzy: [String: Exercise] = [:]
+        
+        for (name, exercise) in primaryCache {
+            // 1. Without equipment suffix: "incline press (dumbbell)" → "incline press"
+            if let parenStart = name.range(of: " (", options: .backwards) {
+                let stripped = String(name[..<parenStart.lowerBound]).trimmingCharacters(in: .whitespaces)
+                if !stripped.isEmpty && fuzzy[stripped] == nil {
+                    fuzzy[stripped] = exercise
+                }
+            }
+            
+            // 2. Equipment as prefix: "incline press (dumbbell)" → "dumbbell incline press"
+            if let openParen = name.range(of: "(", options: .backwards),
+               let closeParen = name.range(of: ")", options: .backwards),
+               openParen.lowerBound < closeParen.lowerBound {
+                let equipment = String(name[openParen.upperBound..<closeParen.lowerBound]).trimmingCharacters(in: .whitespaces)
+                let baseName = String(name[..<openParen.lowerBound]).trimmingCharacters(in: .whitespaces)
+                if !equipment.isEmpty && !baseName.isEmpty {
+                    let prefixed = "\(equipment) \(baseName)"
+                    if fuzzy[prefixed] == nil {
+                        fuzzy[prefixed] = exercise
+                    }
+                }
+            }
+            
+            // 3. Dash-normalized: "curl - one arm (cable)" → "curl one arm (cable)"
+            if name.contains(" - ") {
+                let dashNormalized = name.replacingOccurrences(of: " - ", with: " ")
+                if fuzzy[dashNormalized] == nil {
+                    fuzzy[dashNormalized] = exercise
+                }
+                if let parenStart = dashNormalized.range(of: " (", options: .backwards) {
+                    let stripped = String(dashNormalized[..<parenStart.lowerBound])
+                    if fuzzy[stripped] == nil {
+                        fuzzy[stripped] = exercise
+                    }
+                }
+            }
+            
+            // 4. "smith machine" variants: "hip thrust (smith machine)" → "smith hip thrust (machine)"
+            if name.contains("(smith machine)") {
+                let base = name.replacingOccurrences(of: " (smith machine)", with: "")
+                let smithPrefixed = "smith \(base) (machine)"
+                if fuzzy[smithPrefixed] == nil {
+                    fuzzy[smithPrefixed] = exercise
+                }
+                let smithPrefixedNoEquip = "smith \(base)"
+                if fuzzy[smithPrefixedNoEquip] == nil {
+                    fuzzy[smithPrefixedNoEquip] = exercise
+                }
+            }
+        }
+        
+        fuzzyNameCache = fuzzy
+    }
+    
+    /// Attempts fuzzy matching when exact name lookup fails.
+    /// Handles equipment-prefix/suffix swaps, dash normalization, and stripped names.
+    private func fuzzyMatchExercise(name: String) -> Exercise? {
+        if fuzzyNameCache == nil {
+            buildFuzzyNameCache()
+        }
+        guard let fuzzy = fuzzyNameCache, let primary = cachedExercisesByName else { return nil }
+        
+        // 1. Direct fuzzy cache hit
+        if let match = fuzzy[name] { return match }
+        
+        // 2. Dash normalization on input
+        let dashNorm = name.replacingOccurrences(of: " - ", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+        if dashNorm != name {
+            if let match = primary[dashNorm] { return match }
+            if let match = fuzzy[dashNorm] { return match }
+        }
+        
+        // 3. Equipment-prefix to suffix: "barbell shrug" → "shrug (barbell)"
+        let equipmentPrefixes = ["barbell", "dumbbell", "smith", "cable"]
+        for prefix in equipmentPrefixes {
+            guard name.hasPrefix(prefix + " ") else { continue }
+            let rest = String(name.dropFirst(prefix.count + 1))
+            
+            // Strip any existing equipment suffix from rest
+            let baseRest: String
+            if let parenStart = rest.range(of: " (", options: .backwards) {
+                baseRest = String(rest[..<parenStart.lowerBound]).trimmingCharacters(in: .whitespaces)
+            } else {
+                baseRest = rest
+            }
+            
+            let transformed = "\(baseRest) (\(prefix))"
+            if let match = primary[transformed] { return match }
+            if let match = fuzzy[baseRest] { return match }
+        }
+        
+        // 4. "Smith X (Machine)" → "X (Smith Machine)"
+        if name.hasPrefix("smith ") {
+            let withoutPrefix = String(name.dropFirst(6))
+            let base = withoutPrefix
+                .replacingOccurrences(of: " (machine)", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            let smTransformed = "\(base) (smith machine)"
+            if let match = primary[smTransformed] { return match }
+        }
+        
+        // 5. Strip ALL parenthetical content from input and try
+        let allParensStripped = name
+            .replacingOccurrences(of: "\\s*\\([^)]*\\)", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        if !allParensStripped.isEmpty && allParensStripped != name {
+            if let match = fuzzy[allParensStripped] { return match }
+        }
+        
+        // 6. Keep only innermost parenthetical qualifier
+        // Handles "seated military press (inside squat cage) (barbell)" → "seated military press (barbell)"
+        let components = name.components(separatedBy: "(")
+        if components.count >= 3 {
+            let basePart = components[0].trimmingCharacters(in: .whitespaces)
+            if let lastOpen = name.range(of: "(", options: .backwards),
+               let lastClose = name.range(of: ")", options: .backwards) {
+                let lastEquip = name[lastOpen.lowerBound...lastClose.lowerBound]
+                let reconstructed = "\(basePart) \(lastEquip)".trimmingCharacters(in: .whitespaces)
+                if let match = primary[reconstructed] { return match }
+            }
+        }
+        
+        return nil
     }
     
     /// Get multiple exercises by name - O(n) where n is names count
@@ -129,6 +278,7 @@ class ExerciseLibraryService: ObservableObject {
     func invalidateCache() {
         cachedExercises = nil
         cachedExercisesByName = nil
+        fuzzyNameCache = nil
         cacheTimestamp = nil
         #if DEBUG
         AppLogger.debug("📦 Exercise cache invalidated", category: .data)

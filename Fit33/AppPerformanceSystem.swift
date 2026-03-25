@@ -1060,10 +1060,17 @@ final class StartupWaterfall {
         let startOffset: Double
         var endOffset: Double?
         let thread: String
+        var endThread: String?
         
         var durationMs: Double? {
             guard let end = endOffset else { return nil }
             return (end - startOffset) * 1000
+        }
+        
+        var effectiveThread: String {
+            guard let et = endThread else { return thread }
+            if thread == et { return thread }
+            return "mixed"
         }
     }
     
@@ -1081,9 +1088,11 @@ final class StartupWaterfall {
     /// Mark the END of a previously-started operation.
     func end(_ label: String) {
         let offset = CACurrentMediaTime() - appLaunch
+        let thread = Thread.isMainThread ? "main" : "bg"
         lock.lock()
         if let idx = events.lastIndex(where: { $0.label == label && $0.endOffset == nil }) {
             events[idx].endOffset = offset
+            events[idx].endThread = thread
         }
         lock.unlock()
     }
@@ -1130,15 +1139,16 @@ final class StartupWaterfall {
         
         for event in sorted {
             let startMs = event.startOffset * 1000
+            let thr = event.effectiveThread
             let durStr: String
             if let dur = event.durationMs {
                 durStr = String(format: "%5.0fms", dur)
-                if event.thread == "main" { mainThreadMs += dur }
+                if thr == "main" { mainThreadMs += dur }
             } else {
                 durStr = "  ···  "
             }
-            let warn = (event.durationMs ?? 0) > 500 && event.thread == "main" ? " ⚠️" : ""
-            lines.append("  \(String(format: "%6.0f", startMs))ms \(durStr)  [\(event.thread)]  \(event.label)\(warn)")
+            let warn = (event.durationMs ?? 0) > 500 && thr == "main" ? " ⚠️" : ""
+            lines.append("  \(String(format: "%6.0f", startMs))ms \(durStr)  [\(thr)]  \(event.label)\(warn)")
         }
         
         lines.append("  ──────   ─────  ───  ─────────────────────────────────────")
@@ -1148,6 +1158,20 @@ final class StartupWaterfall {
         for line in lines {
             AppLogger.debug(line, category: .performance)
         }
+    }
+    
+    /// Returns the total milliseconds of work that ran entirely on the main thread.
+    func mainThreadBudgetMs() -> Int {
+        lock.lock()
+        let snapshot = events
+        lock.unlock()
+        var total: Double = 0
+        for event in snapshot {
+            if let dur = event.durationMs, event.effectiveThread == "main" {
+                total += dur
+            }
+        }
+        return Int(total)
     }
     
     /// Reset for next session (e.g. after background → foreground).

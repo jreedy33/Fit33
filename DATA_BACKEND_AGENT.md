@@ -369,3 +369,37 @@ When creating views, NEVER use `SECURITY DEFINER`. All views in the `public` sch
 **`get_friend_workout_exercises` RPC**:
 - Migration `20260325_friend_workout_exercises_rpc.sql` was missing `GRANT EXECUTE ... TO authenticated` — added.
 - The function must be deployed to the live database before the social friend workout preview works.
+
+### 2026-03-25: Exercise Name Fuzzy Matching (Workout History Fix)
+
+**Problem**: ~59 exercise names in workout history didn't match any exercise in Core Data. These exercises were renamed or removed from the `exercises` table during DB migrations. Result: 85 `WorkoutExercise` objects with nil `.exercise` relationships, hundreds of "Exercise not found" warnings.
+
+**Root cause**: Both `ExerciseLibraryService.getExercise(byName:)` (case-insensitive exact) and `SupabaseManager` workout sync (`NSPredicate(format: "name == %@")` — case-sensitive exact) required exact name matches. No fallback for common naming convention changes.
+
+**Fix — two layers**:
+1. **`ExerciseLibraryService.getExercise(byName:)`** — now falls back to `fuzzyMatchExercise(name:)` when exact match fails. A `fuzzyNameCache` maps alternate name forms (equipment-as-prefix, dash-normalized, stripped-equipment, Smith Machine variants) to the canonical Exercise. Built lazily on first fuzzy lookup, invalidated with primary cache.
+2. **`SupabaseManager` workout sync** — replaced raw `NSFetchRequest` with `ExerciseLibraryService.shared.getExercise(byName:)` so workout history sync benefits from fuzzy matching.
+
+**Fuzzy matching strategies** (tried in order):
+1. Direct fuzzy cache hit (pre-built alternate forms)
+2. Dash normalization (`"Curl - One Arm"` → `"Curl One Arm"`)
+3. Equipment prefix→suffix (`"Barbell Shrug"` → `"Shrug (Barbell)"`)
+4. Smith Machine transform (`"Smith X (Machine)"` → `"X (Smith Machine)"`)
+5. Strip all parenthetical content (`"Press (inside Cage) (Barbell)"` → `"Press"`)
+6. Keep only last parenthetical (`"Press (inside Cage) (Barbell)"` → `"Press (Barbell)"`)
+
+**Key rule**: Exercise name lookups should ALWAYS go through `ExerciseLibraryService.getExercise(byName:)` — never raw `NSFetchRequest` or `NSPredicate` by name. The fuzzy matching handles historical naming convention changes automatically.
+
+### 2026-03-25: `user_programs` Table Schema Fix
+
+**Migration**: `supabase/20260325_fix_user_programs_schema.sql`
+
+**Problem**: `SmartProgramEngine.saveProgramsToCloud()` upserts to `user_programs` with `completed_days`, `total_days`, `program_name`, `template_id`, `current_day`, `is_active`, `started_date`, `program_data`, `last_updated`. The `completed_days` column was missing from the live table → `PGRST204` error on every save.
+
+**Fix**: Migration adds all expected columns with `IF NOT EXISTS` + safe defaults.
+
+**Two different `completed_days` semantics** (important — do not confuse):
+- `user_programs.completed_days` — **INTEGER** (count of completed days), used by `SmartProgramEngine`
+- `user_active_programs.completed_days` — **`[Int]` JSON array** (list of completed day numbers), used by `CloudProgramService`
+
+These are different tables for different program systems. Do not unify.

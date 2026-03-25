@@ -45,7 +45,7 @@ final class HealthKitService: ObservableObject {
     
     // MARK: - Private Properties
     
-    private let healthStore = HKHealthStore()
+    nonisolated(unsafe) private let healthStore = HKHealthStore()
     private static let syncThrottleInterval: TimeInterval = 300 // 5 minutes
     private var isSyncing = false
     
@@ -178,42 +178,38 @@ final class HealthKitService: ObservableObject {
     // MARK: - Sync All Data
     
     /// Sync all health data from HealthKit (throttled)
-    func syncAllData(force: Bool = false) async {
-        guard isAuthorized else { return }
-        
-        // Always prevent concurrent syncs, even when forced
-        if isSyncing {
-            AppLogger.debug("Skipping HealthKit sync - already in progress", category: .health)
-            return
-        }
-        
-        // Time-based throttle (skipped when force = true)
-        if !force {
-            if let lastSync = lastSyncDate,
+    nonisolated func syncAllData(force: Bool = false) async {
+        let (shouldProceed, authorized) = await MainActor.run {
+            guard isAuthorized else { return (false, false) }
+            if isSyncing {
+                AppLogger.debug("Skipping HealthKit sync - already in progress", category: .health)
+                return (false, false)
+            }
+            if !force, let lastSync = lastSyncDate,
                Date().timeIntervalSince(lastSync) < Self.syncThrottleInterval {
                 AppLogger.debug("Skipping HealthKit sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .health)
-                return
+                return (false, false)
             }
+            isSyncing = true
+            isLoading = true
+            return (true, isAuthorized)
         }
-        
-        isSyncing = true
-        isLoading = true
+        guard shouldProceed else { return }
         
         StartupWaterfall.shared.mark("HealthKit.syncAll")
         
-        // Run HK queries off main thread to avoid blocking UI
-        await Task.detached(priority: .userInitiated) { [self] in
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await self.syncTodayStats() }
-                group.addTask { await self.syncRecentWorkouts() }
-                group.addTask { await self.syncHeartRate() }
-                group.addTask { await self.syncSleep() }
-                group.addTask { await self.syncWeeklyData() }
-            }
-        }.value
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.syncTodayStats(authorized: authorized) }
+            group.addTask { await self.syncRecentWorkouts() }
+            group.addTask { await self.syncHeartRate() }
+            group.addTask { await self.syncSleep() }
+            group.addTask { await self.syncWeeklyData(authorized: authorized) }
+        }
         
-        isLoading = false
-        isSyncing = false
+        await MainActor.run {
+            isLoading = false
+            isSyncing = false
+        }
         
         AppLogger.info("HealthKit full sync complete", category: .health)
         
@@ -223,45 +219,44 @@ final class HealthKitService: ObservableObject {
         
         await ChallengeService.shared.syncHealthKitDataToChallenges()
         
-        // Update lastSyncDate AFTER persist + challenge sync so UI observers fire with data ready
-        lastSyncDate = Date()
-        UserDefaults.standard.set(lastSyncDate, forKey: "healthkit_last_sync")
+        await MainActor.run {
+            lastSyncDate = Date()
+            UserDefaults.standard.set(lastSyncDate, forKey: "healthkit_last_sync")
+        }
     }
     
     // MARK: - Sync Today's Stats
     
-    private func syncTodayStats() async {
+    nonisolated private func syncTodayStats(authorized: Bool) async {
         let calendar = Calendar.current
         let now = Date()
         let startOfDay = calendar.startOfDay(for: now)
         let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: .strictStartDate)
         
-        // Fetch steps
-        if let steps = await fetchSum(for: .stepCount, predicate: predicate) {
-            await MainActor.run { todaySteps = Int(steps) }
+        let steps = await fetchSum(for: .stepCount, predicate: predicate, authorized: authorized)
+        let calories = await fetchSum(for: .activeEnergyBurned, predicate: predicate, authorized: authorized)
+        let distance = await fetchSum(for: .distanceWalkingRunning, predicate: predicate, authorized: authorized)
+        
+        let stepsInt = steps.map { Int($0) } ?? 0
+        let calsInt = calories.map { Int($0) } ?? 0
+        let distVal = distance ?? 0
+        
+        await MainActor.run {
+            todaySteps = stepsInt
+            todayCalories = calsInt
+            todayDistance = distVal
         }
         
-        // Fetch active calories
-        if let calories = await fetchSum(for: .activeEnergyBurned, predicate: predicate) {
-            await MainActor.run { todayCalories = Int(calories) }
-        }
+        AppLogger.info("HealthKit today: \(stepsInt) steps, \(calsInt) cal, \(String(format: "%.1f", distVal/1000)) km", category: .health)
         
-        // Fetch distance
-        if let distance = await fetchSum(for: .distanceWalkingRunning, predicate: predicate) {
-            await MainActor.run { todayDistance = distance }
-        }
-        
-        AppLogger.info("HealthKit today: \(todaySteps) steps, \(todayCalories) cal, \(String(format: "%.1f", todayDistance/1000)) km", category: .health)
-        
-        // Update daily quest progress for HealthKit-tracked quests
-        if todayCalories > 0 {
-            await DailyQuestService.shared.onCaloriesBurned(kcal: todayCalories)
+        if calsInt > 0 {
+            await DailyQuestService.shared.onCaloriesBurned(kcal: calsInt)
         }
     }
     
     // MARK: - Sync Recent Workouts
     
-    private func syncRecentWorkouts() async {
+    nonisolated private func syncRecentWorkouts() async {
         let calendar = Calendar.current
         let thirtyDaysAgo = calendar.date(byAdding: .day, value: -30, to: Date())!
         let predicate = HKQuery.predicateForSamples(withStart: thirtyDaysAgo, end: Date(), options: .strictStartDate)
@@ -325,17 +320,17 @@ final class HealthKitService: ObservableObject {
     
     // MARK: - Sync Heart Rate
     
-    private func syncHeartRate() async {
-        // Fetch resting heart rate
+    nonisolated private func syncHeartRate() async {
         let calendar = Calendar.current
         let oneWeekAgo = calendar.date(byAdding: .day, value: -7, to: Date())!
         let predicate = HKQuery.predicateForSamples(withStart: oneWeekAgo, end: Date(), options: .strictStartDate)
         
-        if let restingHR = await fetchMostRecent(for: .restingHeartRate, predicate: predicate) {
-            await MainActor.run { restingHeartRate = Int(restingHR) }
+        let restingHR = await fetchMostRecent(for: .restingHeartRate, predicate: predicate)
+        if let rhr = restingHR {
+            await MainActor.run { restingHeartRate = Int(rhr) }
+            AppLogger.info("HealthKit resting HR: \(Int(rhr)) bpm", category: .health)
         }
         
-        // Fetch average heart rate for today
         let todayPredicate = HKQuery.predicateForSamples(
             withStart: calendar.startOfDay(for: Date()),
             end: Date(),
@@ -345,15 +340,11 @@ final class HealthKitService: ObservableObject {
         if let avgHR = await fetchAverage(for: .heartRate, predicate: todayPredicate) {
             await MainActor.run { averageHeartRate = Int(avgHR) }
         }
-        
-        if let rhr = restingHeartRate {
-            AppLogger.info("HealthKit resting HR: \(rhr) bpm", category: .health)
-        }
     }
     
     // MARK: - Sync Sleep
     
-    private func syncSleep() async {
+    nonisolated private func syncSleep() async {
         guard let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return }
         
         let authStatus = healthStore.authorizationStatus(for: sleepType)
@@ -422,11 +413,10 @@ final class HealthKitService: ObservableObject {
     
     // MARK: - Sync Weekly Data
     
-    private func syncWeeklyData() async {
+    nonisolated private func syncWeeklyData(authorized: Bool) async {
         let calendar = Calendar.current
         var stepData: [DailyStepData] = []
         
-        // Fetch steps for each of the last 7 days
         for dayOffset in 0..<7 {
             let date = calendar.date(byAdding: .day, value: -dayOffset, to: Date())!
             let startOfDay = calendar.startOfDay(for: date)
@@ -434,7 +424,7 @@ final class HealthKitService: ObservableObject {
             
             let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: endOfDay, options: .strictStartDate)
             
-            if let steps = await fetchSum(for: .stepCount, predicate: predicate) {
+            if let steps = await fetchSum(for: .stepCount, predicate: predicate, authorized: authorized) {
                 stepData.append(DailyStepData(date: startOfDay, steps: Int(steps)))
             } else {
                 stepData.append(DailyStepData(date: startOfDay, steps: 0))
@@ -448,8 +438,8 @@ final class HealthKitService: ObservableObject {
     
     // MARK: - Helper Methods
     
-    private func fetchSum(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate) async -> Double? {
-        guard isAuthorized else { return nil }
+    nonisolated private func fetchSum(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate, authorized: Bool) async -> Double? {
+        guard authorized else { return nil }
         guard let quantityType = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
         
         return await withCheckedContinuation { continuation in
@@ -492,7 +482,7 @@ final class HealthKitService: ObservableObject {
         }
     }
     
-    private func fetchMostRecent(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate) async -> Double? {
+    nonisolated private func fetchMostRecent(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate) async -> Double? {
         guard let quantityType = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
         
         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
@@ -523,7 +513,7 @@ final class HealthKitService: ObservableObject {
         }
     }
     
-    private func fetchAverage(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate) async -> Double? {
+    nonisolated private func fetchAverage(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate) async -> Double? {
         guard let quantityType = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
         
         return await withCheckedContinuation { continuation in

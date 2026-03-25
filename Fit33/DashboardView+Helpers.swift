@@ -563,3 +563,105 @@ struct DashboardQuestsWrapper: View {
         DailyQuestsWidget(questService: questService)
     }
 }
+
+struct DashboardNotificationBannerWrapper: View {
+    @StateObject private var notificationManager = NotificationManager.shared
+    @AppStorage("notification_banner_dismissed") private var dismissedNotificationBanner = false
+    
+    var body: some View {
+        if notificationManager.hasCheckedAuthStatus &&
+           !notificationManager.isAuthorized &&
+           !dismissedNotificationBanner {
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.orange, Color.red.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 44, height: 44)
+                        
+                        Image(systemName: "bell.badge.fill")
+                            .font(.ds_heading3).fontWeight(.semibold)
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Stay on Track!")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        Text("Enable notifications to get workout reminders & celebrate your wins")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            dismissedNotificationBanner = true
+                        }
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+                            .padding(Spacing.xs)
+                    }
+                }
+                
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    Task {
+                        let settings = await UNUserNotificationCenter.current().notificationSettings()
+                        if settings.authorizationStatus == .notDetermined {
+                            let granted = await NotificationManager.shared.requestAuthorization()
+                            if granted {
+                                await MainActor.run {
+                                    withAnimation {
+                                        dismissedNotificationBanner = true
+                                    }
+                                }
+                            }
+                        } else {
+                            await MainActor.run {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    UIApplication.shared.open(url)
+                                }
+                            }
+                        }
+                    }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bell.fill")
+                            .font(.ds_labelMedium)
+                        Text("Enable Notifications")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.sm)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.orange, Color.red],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(CornerRadius.md)
+                }
+            }
+            .padding(Spacing.md)
+            .onboardingCardStyle(accentColor: .orange, secondaryColor: .red, isSelected: true, cornerRadius: CornerRadius.lg)
+            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            .padding(.bottom, 16)
+        }
+    }
+}

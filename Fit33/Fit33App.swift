@@ -136,18 +136,22 @@ struct Fit33App: App {
             
             StartupWaterfall.shared.mark("DeferredInit (total)")
             
-            CrashReportingService.shared.initialize()
             initializePerformanceOptimizations()
-            VideoThumbnailService.shared.prewarmCDNConnection()
             HapticManager.shared.prepareAll()
-            _ = GenderFilterService.shared
-            _ = VideoPlaybackEngine.shared
             
             #if DEBUG
             SessionLogManager.shared.checkForCrashLog()
             #endif
             
             StartupWaterfall.shared.end("DeferredInit (total)")
+        }
+        
+        Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .milliseconds(500))
+            CrashReportingService.shared.initialize()
+            VideoThumbnailService.shared.prewarmCDNConnection()
+            _ = GenderFilterService.shared
+            _ = VideoPlaybackEngine.shared
         }
         
         // ═══════════════════════════════════════════════════════════════
@@ -313,11 +317,14 @@ struct Fit33App: App {
         Task { @MainActor in
             StartupCoordinator.shared.onPhaseComplete(.intelligence) {
                 Task.detached(priority: .utility) {
-                    await self.runIntelligenceInit()
+                    await performIntelligenceInit()
                 }
             }
         }
     }
+    
+    // Intentionally left as a stub — real work moved to module-level performIntelligenceInit()
+    // to avoid @MainActor inheritance from App protocol.
     
     /// Run intelligence initialization with proper CPU protection
     private func runIntelligenceInit() async {
@@ -398,8 +405,16 @@ struct Fit33App: App {
         
         AppLogger.info("Exercise intelligence systems fully initialized", category: .general)
         
-        // Print the full waterfall after intelligence (the last heavy phase) completes
         wf.printWaterfall()
+        
+        #if DEBUG
+        let budget = wf.mainThreadBudgetMs()
+        if budget > 5000 {
+            AppLogger.error("[STARTUP AUDIT] FAIL: Main thread budget \(budget)ms exceeds 5000ms target", category: .performance)
+        } else {
+            AppLogger.info("[STARTUP AUDIT] PASS: Main thread budget \(budget)ms", category: .performance)
+        }
+        #endif
     }
     
     @State private var showCoreDataFatalError = false
@@ -811,3 +826,92 @@ struct Fit33App: App {
     }
 }
 
+// MARK: - Intelligence Init (free function — nonisolated to avoid @MainActor from App protocol)
+
+private func performIntelligenceInit() async {
+    HeavyWorkSentinel.shared.beginHeavyWork(reason: "Intelligence initialization")
+    defer { HeavyWorkSentinel.shared.endHeavyWork(reason: "Intelligence initialization") }
+    
+    let wf = StartupWaterfall.shared
+    wf.mark("Intelligence (total)")
+    
+    AppLogger.debug("Starting background intelligence initialization...", category: .general)
+    
+    await CPUProtection.shared.waitForCPUSettled(maxWait: 3.0)
+    
+    await wf.measure("Intel: loadExerciseData") {
+        ExerciseIntelligenceEngine.shared.loadExerciseData()
+    }
+    AppLogger.debug("Intelligence engine data loading started", category: .general)
+    
+    await Task.yield()
+    try? await Task.sleep(for: .milliseconds(200))
+    
+    if !CPUProtection.shared.isCPUCritical() {
+        await wf.measure("Intel: buildMaps") {
+            let cachedDTOs = try? await SupabaseManager.shared.fetchAllExercisesDeduped()
+            await ExerciseMappingService.shared.buildMaps(prefetchedExercises: cachedDTOs)
+        }
+        AppLogger.debug("Exercise mapping service initialized", category: .general)
+    }
+    
+    await Task.yield()
+    try? await Task.sleep(for: .milliseconds(500))
+    
+    if !CPUProtection.shared.isCPUCritical() {
+        await wf.measure("Intel: pairingEngine") {
+            SmartExercisePairingEngine.shared.initialize()
+        }
+        AppLogger.debug("Smart exercise pairing engine initialized", category: .general)
+    }
+    
+    await Task.yield()
+    try? await Task.sleep(for: .milliseconds(500))
+    
+    if !CPUProtection.shared.isCPUTooHigh() {
+        await wf.measure("Intel: popularity") {
+            await ExercisePopularityService.shared.refreshFromServer()
+        }
+        AppLogger.debug("Exercise popularity data loaded", category: .general)
+    }
+    
+    await Task.yield()
+    try? await Task.sleep(for: .milliseconds(500))
+    
+    if !CPUProtection.shared.isCPUTooHigh() {
+        await wf.measure("Intel: collaborative") {
+            await CollaborativeLearningEngine.shared.syncGlobalData()
+        }
+        AppLogger.debug("Collaborative learning engine synced", category: .general)
+    }
+    
+    await Task.yield()
+    try? await Task.sleep(for: .seconds(1))
+    
+    await CPUProtection.shared.waitForCPUSettled(maxWait: 3.0)
+    
+    if !CPUProtection.shared.isCPUCritical() {
+        await wf.measure("Intel: behaviorAnalysis") {
+            let context = PersistenceController.shared.container.viewContext
+            await UserBehaviorLearningEngine.shared.analyzeUserBehavior(context: context)
+        }
+        AppLogger.debug("User behavior learning engine initialized", category: .general)
+    } else {
+        AppLogger.warning("Skipping behavior analysis - CPU too high", category: .general)
+    }
+    
+    wf.end("Intelligence (total)")
+    
+    AppLogger.info("Exercise intelligence systems fully initialized", category: .general)
+    
+    wf.printWaterfall()
+    
+    #if DEBUG
+    let budget = wf.mainThreadBudgetMs()
+    if budget > 5000 {
+        AppLogger.error("[STARTUP AUDIT] FAIL: Main thread budget \(budget)ms exceeds 5000ms target", category: .performance)
+    } else {
+        AppLogger.info("[STARTUP AUDIT] PASS: Main thread budget \(budget)ms", category: .performance)
+    }
+    #endif
+}

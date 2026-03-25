@@ -4139,10 +4139,9 @@ class SupabaseManager: ObservableObject {
                             
                             // Add exercises from cloud
                             for exerciseDTO in workoutDTO.exercises {
-                                // Try to find the exercise by name
-                                let exerciseRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
-                                exerciseRequest.predicate = NSPredicate(format: "name == %@", exerciseDTO.exerciseName)
-                                let exercise = try? viewContext.fetch(exerciseRequest).first
+                                // Use ExerciseLibraryService for fuzzy name matching
+                                // (handles renamed exercises, equipment-prefix/suffix swaps, etc.)
+                                let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseDTO.exerciseName)
                                 
                                 // Create WorkoutExercise even if exercise relationship is nil
                                 // (we cache the name so the UI can still display it)
@@ -4151,7 +4150,7 @@ class SupabaseManager: ObservableObject {
                                 workoutExercise.id = workoutExerciseId
                                 workoutExercise.order = Int16(exerciseDTO.order)
                                 workoutExercise.workout = workout
-                                workoutExercise.exercise = exercise // May be nil, that's OK
+                                workoutExercise.exercise = exercise
                                 
                                 // ⚡️ Cache exercise name for fallback display
                                 ExerciseNameCache.shared.cacheName(
@@ -4161,7 +4160,7 @@ class SupabaseManager: ObservableObject {
                                 
                                 if exercise == nil {
                                     #if DEBUG
-                                    AppLogger.warning("[WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB yet - will retry relationship later", category: .network)
+                                    AppLogger.warning("[WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB — no exact or fuzzy match", category: .network)
                                     #endif
                                 }
                                 

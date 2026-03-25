@@ -61,8 +61,8 @@ extension DashboardView {
             }
             .frame(height: 160)
             .animation(.easeOut(duration: 0.25), value: selectedMacrosPage)
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 20)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 25)
                     .onEnded { value in
                         let horizontalAmount = value.translation.width
                         let verticalAmount = abs(value.translation.height)
@@ -361,8 +361,8 @@ struct DashboardMacrosWrapper: View {
             }
             .frame(height: 160)
             .animation(.easeOut(duration: 0.25), value: selectedMacrosPage)
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 20)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 25)
                     .onEnded { value in
                         let h = value.translation.width
                         let v = abs(value.translation.height)

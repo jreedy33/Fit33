@@ -1387,6 +1387,7 @@ extension DashboardView {
         )
         .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
         .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
+        .drawingGroup()
         .onAppear {
             withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
                 challengeGlowPhase = 360

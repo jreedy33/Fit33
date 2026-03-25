@@ -1294,7 +1294,19 @@ function VersionGroupTab({ crashes, loading, onViewCrash }: {
   loading: boolean
   onViewCrash: (id: string) => void
 }) {
-  const [collapsedVersions, setCollapsedVersions] = useState<Set<string>>(new Set())
+  const { groups, firstSeenMap } = crashes.length > 0 ? buildVersionGroups(crashes) : { groups: [], firstSeenMap: new Map<string, string>() }
+  const latestVersion = groups.length > 0 ? groups[0].version : null
+
+  // Default: all collapsed except latest
+  const [expandedVersions, setExpandedVersions] = useState<Set<string>>(() => {
+    return latestVersion ? new Set([latestVersion]) : new Set()
+  })
+
+  // Selection state
+  const [checkedCrashIds, setCheckedCrashIds] = useState<Set<string>>(new Set())
+  const [checkedVersions, setCheckedVersions] = useState<Set<string>>(new Set())
+  const [vAnalyzing, setVAnalyzing] = useState(false)
+  const [vAnalysisDownloaded, setVAnalysisDownloaded] = useState(false)
 
   if (loading) {
     return <div className="text-center py-20" style={{ color: 'var(--text-muted)' }}>Loading version data...</div>
@@ -1309,16 +1321,201 @@ function VersionGroupTab({ crashes, loading, onViewCrash }: {
     )
   }
 
-  const { groups, firstSeenMap } = buildVersionGroups(crashes)
-  const latestVersion = groups.length > 0 ? groups[0].version : null
-
-  const toggleVersion = (v: string) => {
-    setCollapsedVersions(prev => {
+  const toggleExpand = (v: string) => {
+    setExpandedVersions(prev => {
       const next = new Set(prev)
       if (next.has(v)) next.delete(v)
       else next.add(v)
       return next
     })
+  }
+
+  const toggleVersionCheck = (version: string, groupCrashIds: string[]) => {
+    setVAnalysisDownloaded(false)
+    setCheckedVersions(prev => {
+      const next = new Set(prev)
+      if (next.has(version)) {
+        next.delete(version)
+        setCheckedCrashIds(prev2 => {
+          const next2 = new Set(prev2)
+          for (const id of groupCrashIds) next2.delete(id)
+          return next2
+        })
+      } else {
+        next.add(version)
+        setCheckedCrashIds(prev2 => {
+          const next2 = new Set(prev2)
+          for (const id of groupCrashIds) next2.add(id)
+          return next2
+        })
+      }
+      return next
+    })
+  }
+
+  const toggleCrashCheck = (id: string) => {
+    setVAnalysisDownloaded(false)
+    setCheckedCrashIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const clearSelection = () => {
+    setCheckedCrashIds(new Set())
+    setCheckedVersions(new Set())
+    setVAnalysisDownloaded(false)
+  }
+
+  const selectedCrashes = crashes.filter(c => checkedCrashIds.has(c.id))
+
+  const analyzeSelected = async () => {
+    if (selectedCrashes.length === 0) return
+    setVAnalyzing(true)
+
+    try {
+      const crashSummary = selectedCrashes.slice(0, 40).map(c => ({
+        id: c.id.slice(0, 8),
+        type: c.report_type,
+        severity: c.severity,
+        status: c.status,
+        error: c.error_message,
+        domain: c.error_domain,
+        screen: c.current_screen,
+        device: c.device_model,
+        os: c.os_version,
+        app_version: c.app_version,
+        user: c.user_name || c.user_email || c.user_id?.slice(0, 8),
+        stack_preview: c.stack_trace?.slice(0, 300) || null,
+        breadcrumbs: c.breadcrumbs?.slice(-5) || null,
+        session_log: c.session_log_snippet?.slice(0, 500) || null,
+        memory_mb: c.memory_usage_mb,
+        session_duration: c.session_duration_seconds,
+        occurred: c.occurred_at,
+        first_seen_version: firstSeenMap.get(c.fingerprint) || c.app_version,
+      }))
+
+      const versionBreakdown: Record<string, number> = {}
+      for (const c of selectedCrashes) {
+        const v = c.app_version || 'unknown'
+        versionBreakdown[v] = (versionBreakdown[v] || 0) + 1
+      }
+
+      const prompt = `Analyze these ${selectedCrashes.length} crash reports from the Fit33 iOS fitness app, selected across these versions: ${Object.entries(versionBreakdown).map(([v, n]) => `v${v} (${n})`).join(', ')}.
+
+For each significant issue:
+1. Identify the root cause from the error message and stack trace
+2. Rate priority (P0-P3) based on severity x frequency x user impact
+3. Note which version each crash first appeared in (use the first_seen_version field)
+4. Identify regressions — crashes that are NEW in a later version
+5. Identify persistent issues — crashes that carry over across multiple versions
+6. Suggest the specific Swift file and fix approach
+7. Group related crashes by root cause
+
+Crash Reports (${selectedCrashes.length} total, showing ${crashSummary.length}):
+${JSON.stringify(crashSummary, null, 2)}
+
+Respond with structured analysis: version-by-version breakdown, regressions, persistent issues, prioritized fixes.`
+
+      const res = await fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], fetchData: false }),
+      })
+
+      let analysisText = ''
+      const reader = res.body?.getReader()
+      const decoder = new TextDecoder()
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const chunk = decoder.decode(value)
+          for (const line of chunk.split('\n')) {
+            if (line.startsWith('data: ')) {
+              try {
+                const parsed = JSON.parse(line.slice(6))
+                if (parsed.text) analysisText += parsed.text
+              } catch { /* skip */ }
+            }
+          }
+        }
+      }
+
+      const lines: string[] = [
+        '# Crash Report — Version Analysis',
+        '',
+        `**Date:** ${new Date().toISOString().split('T')[0]}`,
+        `**Crashes analyzed:** ${selectedCrashes.length}`,
+        `**Versions:** ${Object.entries(versionBreakdown).map(([v, n]) => `v${v} (${n})`).join(', ')}`,
+        '',
+        '---',
+        '',
+        '## Instructions',
+        '',
+        'Drag this file into Cursor and ask: "Fix all the issues in this report."',
+        '',
+        '---',
+        '',
+        '## Claude Analysis',
+        '',
+        analysisText,
+        '',
+        '---',
+        '',
+        '## Raw Crash Data',
+        '',
+      ]
+
+      for (const c of selectedCrashes.slice(0, 30)) {
+        const isNew = firstSeenMap.get(c.fingerprint) === c.app_version
+        lines.push(`### ${c.report_type.toUpperCase()} — ${c.error_message?.slice(0, 80) || 'Unknown'}`)
+        lines.push('')
+        lines.push(`- **ID:** \`${c.id.slice(0, 8)}\``)
+        lines.push(`- **Severity:** ${c.severity} | **Status:** ${c.status}`)
+        lines.push(`- **App Version:** v${c.app_version || '?'}${isNew ? ' **← NEW in this version**' : ` (first seen v${firstSeenMap.get(c.fingerprint) || '?'})`}`)
+        lines.push(`- **Screen:** ${c.current_screen || 'Unknown'} | **Domain:** ${c.error_domain || 'Unknown'}`)
+        lines.push(`- **Device:** ${c.device_model || '?'} | **OS:** ${c.os_version || '?'}`)
+        lines.push(`- **User:** ${c.user_name || c.user_email || c.user_id?.slice(0, 8) || 'Anonymous'}`)
+        if (c.memory_usage_mb) lines.push(`- **Memory:** ${c.memory_usage_mb}MB used, ${c.free_memory_mb || '?'}MB free`)
+        lines.push(`- **Occurred:** ${c.occurred_at}`)
+        lines.push('')
+        if (c.stack_trace) {
+          lines.push('**Stack trace:**')
+          lines.push('```')
+          lines.push(c.stack_trace.slice(0, 1000))
+          lines.push('```')
+          lines.push('')
+        }
+        if (c.breadcrumbs && c.breadcrumbs.length > 0) {
+          lines.push('**Breadcrumbs (last 5):**')
+          for (const b of c.breadcrumbs.slice(-5)) {
+            lines.push(`- \`${b.timestamp}\` [${b.screen}] ${b.action}`)
+          }
+          lines.push('')
+        }
+        lines.push('---')
+        lines.push('')
+      }
+
+      const content = lines.join('\n')
+      const blob = new Blob([content], { type: 'text/markdown' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const vLabel = checkedVersions.size > 0 ? `-v${[...checkedVersions].join('-v')}` : ''
+      a.download = `crash-version-analysis${vLabel}-${new Date().toISOString().slice(0, 10)}.md`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setVAnalysisDownloaded(true)
+    } catch (err) {
+      alert(`Analysis failed: ${err}`)
+    }
+    setVAnalyzing(false)
   }
 
   const totalNewInLatest = latestVersion ? (groups.find(g => g.version === latestVersion)?.newIssueCount || 0) : 0
@@ -1337,9 +1534,30 @@ function VersionGroupTab({ crashes, loading, onViewCrash }: {
         )}
       </div>
 
+      {/* Selection action bar */}
+      {checkedCrashIds.size > 0 && (
+        <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: '#7c3aed15', border: '1px solid #7c3aed33' }}>
+          <span className="text-sm font-medium" style={{ color: '#7c3aed' }}>
+            {checkedCrashIds.size} crash{checkedCrashIds.size !== 1 ? 'es' : ''} selected
+            {checkedVersions.size > 0 && ` across ${checkedVersions.size} version${checkedVersions.size !== 1 ? 's' : ''}`}
+          </span>
+          <button
+            onClick={analyzeSelected}
+            disabled={vAnalyzing}
+            className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+            style={{ background: vAnalysisDownloaded ? '#4b5563' : '#7c3aed', color: 'white', border: 'none', cursor: vAnalyzing ? 'wait' : 'pointer', opacity: vAnalyzing ? 0.6 : 1 }}
+          >
+            {vAnalyzing ? '⏳ Analyzing...' : vAnalysisDownloaded ? '✓ Report Downloaded' : `🧠 Analyze ${checkedCrashIds.size} with Claude`}
+          </button>
+          <button onClick={clearSelection} className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* Version timeline */}
       {groups.map((group) => {
-        const isCollapsed = collapsedVersions.has(group.version)
+        const isExpanded = expandedVersions.has(group.version)
         const isLatest = group.version === latestVersion
         const severityCounts: Record<string, number> = {}
         for (const c of group.crashes) {
@@ -1348,64 +1566,78 @@ function VersionGroupTab({ crashes, loading, onViewCrash }: {
 
         const uniqueFingerprints = new Set(group.crashes.map(c => c.fingerprint))
         const carryoverCount = uniqueFingerprints.size - group.newIssueCount
+        const groupCrashIds = group.crashes.map(c => c.id)
+        const isVersionChecked = checkedVersions.has(group.version)
+        const someChecked = group.crashes.some(c => checkedCrashIds.has(c.id))
 
         return (
-          <div key={group.version} className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-secondary)', border: `1px solid ${isLatest ? 'var(--accent)' : 'var(--border)'}` }}>
+          <div key={group.version} className="rounded-xl overflow-hidden" style={{ background: 'var(--bg-secondary)', border: `1px solid ${isVersionChecked ? '#7c3aed66' : isLatest ? 'var(--accent)' : 'var(--border)'}` }}>
             {/* Version header */}
-            <button
-              onClick={() => toggleVersion(group.version)}
-              className="w-full flex items-center gap-3 p-4 hover:opacity-80 transition-opacity"
-            >
-              <div className="flex items-center gap-2">
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{isCollapsed ? '▶' : '▼'}</span>
-                <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-                  v{group.version}
-                </span>
-                {isLatest && (
-                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: 'var(--accent)', color: 'white' }}>
-                    LATEST
-                  </span>
-                )}
-              </div>
+            <div className="flex items-center gap-2 p-4">
+              {/* Version checkbox */}
+              <input
+                type="checkbox"
+                checked={isVersionChecked}
+                ref={el => { if (el) el.indeterminate = !isVersionChecked && someChecked }}
+                onChange={() => toggleVersionCheck(group.version, groupCrashIds)}
+                style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#7c3aed' }}
+                title={`Select all ${group.crashes.length} crashes in v${group.version}`}
+              />
 
-              <div className="flex items-center gap-2 ml-auto">
-                {group.newIssueCount > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#f9731633', color: '#f97316' }}>
-                    🆕 {group.newIssueCount} new
+              <button
+                onClick={() => toggleExpand(group.version)}
+                className="flex-1 flex items-center gap-3 hover:opacity-80 transition-opacity"
+              >
+                <div className="flex items-center gap-2">
+                  <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{isExpanded ? '▼' : '▶'}</span>
+                  <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+                    v{group.version}
                   </span>
-                )}
-                {carryoverCount > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
-                    {carryoverCount} recurring
-                  </span>
-                )}
-                <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  {group.crashes.length} report{group.crashes.length !== 1 ? 's' : ''}
-                </span>
-
-                {/* Mini severity dots */}
-                <div className="flex items-center gap-1 ml-2">
-                  {Object.entries(severityCounts).sort((a, b) => {
-                    const order = ['fatal', 'critical', 'high', 'medium', 'low']
-                    return order.indexOf(a[0]) - order.indexOf(b[0])
-                  }).map(([sev, count]) => (
-                    <span
-                      key={sev}
-                      className="text-xs px-1.5 py-0.5 rounded"
-                      style={{ background: (SEVERITY_COLORS[sev] || '#6b7280') + '22', color: SEVERITY_COLORS[sev] || '#6b7280' }}
-                      title={`${sev}: ${count}`}
-                    >
-                      {count}
+                  {isLatest && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: 'var(--accent)', color: 'white' }}>
+                      LATEST
                     </span>
-                  ))}
+                  )}
                 </div>
-              </div>
-            </button>
+
+                <div className="flex items-center gap-2 ml-auto">
+                  {group.newIssueCount > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#f9731633', color: '#f97316' }}>
+                      🆕 {group.newIssueCount} new
+                    </span>
+                  )}
+                  {carryoverCount > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
+                      {carryoverCount} recurring
+                    </span>
+                  )}
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                    {group.crashes.length} report{group.crashes.length !== 1 ? 's' : ''}
+                  </span>
+
+                  {/* Mini severity dots */}
+                  <div className="flex items-center gap-1 ml-2">
+                    {Object.entries(severityCounts).sort((a, b) => {
+                      const order = ['fatal', 'critical', 'high', 'medium', 'low']
+                      return order.indexOf(a[0]) - order.indexOf(b[0])
+                    }).map(([sev, count]) => (
+                      <span
+                        key={sev}
+                        className="text-xs px-1.5 py-0.5 rounded"
+                        style={{ background: (SEVERITY_COLORS[sev] || '#6b7280') + '22', color: SEVERITY_COLORS[sev] || '#6b7280' }}
+                        title={`${sev}: ${count}`}
+                      >
+                        {count}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </button>
+            </div>
 
             {/* Crash list for this version */}
-            {!isCollapsed && (
+            {isExpanded && (
               <div className="px-4 pb-4 space-y-1">
-                {/* New issues first, then recurring */}
                 {group.crashes
                   .sort((a, b) => {
                     const aNew = group.firstSeenFingerprints.has(a.fingerprint) ? 0 : 1
@@ -1414,14 +1646,23 @@ function VersionGroupTab({ crashes, loading, onViewCrash }: {
                     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                   })
                   .map(crash => (
-                    <CrashRowVersioned
-                      key={crash.id}
-                      crash={crash}
-                      isNewInVersion={group.firstSeenFingerprints.has(crash.fingerprint)}
-                      firstSeenVersion={firstSeenMap.get(crash.fingerprint) || null}
-                      currentVersion={group.version}
-                      onClick={() => onViewCrash(crash.id)}
-                    />
+                    <div key={crash.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={checkedCrashIds.has(crash.id)}
+                        onChange={() => toggleCrashCheck(crash.id)}
+                        style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#7c3aed', flexShrink: 0 }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <CrashRowVersioned
+                          crash={crash}
+                          isNewInVersion={group.firstSeenFingerprints.has(crash.fingerprint)}
+                          firstSeenVersion={firstSeenMap.get(crash.fingerprint) || null}
+                          currentVersion={group.version}
+                          onClick={() => onViewCrash(crash.id)}
+                        />
+                      </div>
+                    </div>
                   ))
                 }
               </div>

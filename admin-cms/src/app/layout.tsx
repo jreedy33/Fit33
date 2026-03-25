@@ -3,7 +3,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Fit33 Admin CMS',
-  description: 'Internal admin dashboard for Fit33 user management',
+  description: 'Internal admin dashboard for Fit33 — user & exercise management',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

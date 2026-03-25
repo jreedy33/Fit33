@@ -206,7 +206,10 @@ export default function ExercisesPage() {
                   {exercises.map((ex) => (
                     <tr
                       key={ex.id}
-                      onClick={() => router.push(`/exercises/${ex.id}`)}
+                      onClick={() => {
+                        sessionStorage.setItem('exerciseIds', JSON.stringify(exercises.map(e => e.id)))
+                        router.push(`/exercises/${ex.id}`)
+                      }}
                       style={{ cursor: 'pointer' }}
                     >
                       <td>
@@ -216,7 +219,7 @@ export default function ExercisesPage() {
                             background: 'var(--bg-tertiary)', position: 'relative',
                           }}>
                             <video
-                              src={`${R2_BASE}/${encodeURIComponent(ex.video_filename)}`}
+                              src={`${R2_BASE}/${ex.video_filename}`}
                               muted
                               autoPlay
                               loop

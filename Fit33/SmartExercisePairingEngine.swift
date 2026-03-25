@@ -1,10 +1,10 @@
 import Foundation
+import CoreData
 
 // MARK: - Smart Exercise Pairing Engine
 // Intelligent system for finding exercise substitutions based on movement patterns,
 // muscle activation, equipment alternatives, and biomechanical similarity
 
-@MainActor
 final class SmartExercisePairingEngine {
     static let shared = SmartExercisePairingEngine()
     
@@ -275,9 +275,12 @@ final class SmartExercisePairingEngine {
     }
     
     private func buildPairingDatabase() async {
-        // Fetch exercise data on main thread to avoid Core Data threading issues
-        let exerciseData: [(name: String, muscles: [String], equipment: String)] = await MainActor.run {
-            let exercises = ExerciseLibraryService.shared.getAllExercises()
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
+
+        let exerciseData: [(name: String, muscles: [String], equipment: String)] = await bgContext.perform {
+            let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+            let exercises = (try? bgContext.fetch(request)) ?? []
             return exercises.map { exercise in
                 (
                     name: (exercise.name ?? "").lowercased(),

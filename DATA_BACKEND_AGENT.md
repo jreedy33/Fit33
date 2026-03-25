@@ -332,3 +332,40 @@ USDA API → Edge Function extracts nutrientNumber → `food_items` flat columns
 
 **NEW MANDATORY RULE — Views**:
 When creating views, NEVER use `SECURITY DEFINER`. All views in the `public` schema MUST use `security_invoker = on`. Views that aggregate across users should be in a non-public schema or accessed only via service-role. See `SUPABASE_AGENT.md` "When Creating a View" for full rules.
+
+### 2026-03-25: v1.33 — Notification & Quest Data Layer Updates
+
+**`app_notifications` table schema** (critical — no `data` JSONB column):
+- Columns: `id` (UUID), `user_id` (UUID), `notification_type` (TEXT), `reference_id` (UUID), `from_user_id` (UUID), `title` (TEXT), `body` (TEXT), `is_read` (BOOLEAN), `created_at` (TIMESTAMPTZ)
+- When inserting notifications, use `reference_id` and `from_user_id` — NOT a `data` JSONB column (it doesn't exist).
+
+**`accept_friend_request` RPC update**:
+- Now inserts into BOTH `push_notification_queue` (type: `friend_accepted`) AND `app_notifications` (type: `friend_request_accepted`).
+- Push uses `friend_accepted`; in-app uses `friend_request_accepted`. Both must be handled by iOS `NotificationManager`.
+
+**`get_daily_quests` RPC update** (16 params now, was 15):
+- New parameter: `p_active_step_challenge_target INT DEFAULT 0`
+- When > 0 and a step quest is selected, the quest target_value is overridden to match the challenge daily target.
+- Title/description dynamically generated (e.g. "10K Challenge Steps").
+- Old 15-arg function signature was DROPped.
+
+**Core Data threading rules** (reinforced):
+- `ExerciseLibraryService.init()` no longer calls `viewContext.count(for:)` synchronously — uses `preWarmCache()` on background context.
+- `WorkoutSuggestionEngine` uses a private `bgContext` with `performAndWait` — NOT `viewContext`.
+- `SmartExercisePairingEngine.buildPairingDatabase()` uses `container.newBackgroundContext()` — NOT `MainActor.run { getAllExercises() }`.
+
+### 2026-03-25: Crash Report Analysis — Data Layer Fixes
+
+**Hydration streak null safety** (`HydrationService.swift`):
+- `HydrationStreaks` struct now has a custom `init(from decoder:)` using `decodeIfPresent` with `?? 0` defaults for `currentStreak`, `totalDaysLogged`, `totalDaysGoalMet`.
+- Root cause: `hydration_streaks` table can return NULL for integer columns on newly-created rows. Default `Codable` crashes with `valueNotFound`.
+- **RULE**: All Codable DTOs fetching from Supabase tables where integer columns lack `NOT NULL DEFAULT 0` constraints MUST use `decodeIfPresent` with safe defaults. Never assume DB integer columns are non-null.
+
+**Auth guard on data write methods**:
+- `WeightTrackingService.logWeight()` now checks `SupabaseManager.shared.isAuthenticated` before the Supabase insert.
+- Root cause: expired auth sessions cause RLS rejections on INSERT (`auth.uid()` returns NULL).
+- **RULE**: All Supabase INSERT/UPDATE/DELETE calls in service methods (not just RPCs) MUST check `isAuthenticated` first. The existing `currentUser?.id` guard is insufficient — a user object can exist with an expired session token.
+
+**`get_friend_workout_exercises` RPC**:
+- Migration `20260325_friend_workout_exercises_rpc.sql` was missing `GRANT EXECUTE ... TO authenticated` — added.
+- The function must be deployed to the live database before the social friend workout preview works.

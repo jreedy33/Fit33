@@ -134,6 +134,23 @@ struct HydrationStreaks: Codable {
         case bestDailyDate = "best_daily_date"
         case lastGoalMetDate = "last_goal_met_date"
     }
+    
+    // DB can return NULL for any integer column on newly-created or partial rows.
+    // Default Codable crashes with valueNotFound — use decodeIfPresent with safe defaults.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id)
+        userId = try container.decode(UUID.self, forKey: .userId)
+        currentStreak = try container.decodeIfPresent(Int.self, forKey: .currentStreak) ?? 0
+        longestStreak = try container.decodeIfPresent(Int.self, forKey: .longestStreak)
+        totalDaysLogged = try container.decodeIfPresent(Int.self, forKey: .totalDaysLogged) ?? 0
+        totalDaysGoalMet = try container.decodeIfPresent(Int.self, forKey: .totalDaysGoalMet) ?? 0
+        totalLitersConsumed = try container.decodeIfPresent(Double.self, forKey: .totalLitersConsumed)
+        avgDailyIntakeMl = try container.decodeIfPresent(Int.self, forKey: .avgDailyIntakeMl)
+        bestDailyIntakeMl = try container.decodeIfPresent(Int.self, forKey: .bestDailyIntakeMl)
+        bestDailyDate = try container.decodeIfPresent(String.self, forKey: .bestDailyDate)
+        lastGoalMetDate = try container.decodeIfPresent(String.self, forKey: .lastGoalMetDate)
+    }
 }
 
 // MARK: - Water Intake Service

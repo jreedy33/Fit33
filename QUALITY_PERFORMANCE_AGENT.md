@@ -635,3 +635,56 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 - [ ] Disable master toggle -> no server pushes arrive at all
 
 **Graceful degradation**: If `user_notification_preferences` row doesn't exist for a user, server sends notifications normally (no preferences = default behavior). Preferences are synced on every toggle change.
+
+### 2026-03-25: v1.33 — Startup & Scroll Performance Overhaul
+
+**Two-phase optimization**: Phase 1 eliminated main thread freezes (watchdog errors). Phase 2 addressed sustained FPS drops and scroll responsiveness.
+
+**Phase 1 — Startup freeze elimination (v1.33.0):**
+
+| Fix | File | Impact |
+|-----|------|--------|
+| ExerciseLibraryService sync Core Data removed from `init()` | `ExerciseLibraryService.swift` | `viewContext.count(for:)` no longer blocks main thread at startup. `preWarmCache()` sets `isExercisesReady` async on background context. |
+| WorkoutSuggestionEngine off @MainActor | `WorkoutSuggestionEngine.swift` | Removed `@MainActor` from class. Core Data fetches use private `bgContext` with `performAndWait`. Methods that read `@MainActor` services (`suggestForToday`, `contextualMotivationalMessage`) are individually marked `@MainActor`. |
+| Dashboard .task full parallelism | `DashboardView.swift` | All independent work fires in separate `Task {}` blocks. Auth wait only gates social calls. All 14 social/challenge/quest calls in ONE `async let` group instead of 3 sequential batches. |
+| Duplicate .onAppear removed | `DashboardView.swift` | `FriendService.refreshHomeScreenData()` removed from `.onAppear` (already in `.task`). Phone verification uses `UserDefaults` flag to skip network call. |
+| Singleton init() deferred | `ChallengeService.swift`, `CloudProgramService.swift`, `SmartProgramEngine.swift` | Cache loading wrapped in `Task { @MainActor in }` so init returns instantly. |
+
+**Result**: Dashboard initial load: 1194ms. No more "MAIN THREAD FROZEN" watchdog errors.
+
+**Phase 2 — FPS and scroll responsiveness:**
+
+| Fix | File | Impact |
+|-----|------|--------|
+| ObservableObject isolation | `DashboardView.swift`, `DashboardView+Helpers.swift` | `challengeService` and `dailyQuestService` converted from `@ObservedObject`/`@StateObject` to plain `let`. `DashboardQuestsWrapper` struct owns its own `@StateObject`. Parent body no longer recomputes on quest/challenge updates. |
+| combinedRecentWorkouts cached | `DashboardView.swift` | Broken computed property replaced with `@State` + `rebuildCombinedWorkouts()` called via `.onChange`. Sort/merge only runs when data changes, not every body eval. |
+| SmartExercisePairingEngine off @MainActor | `SmartExercisePairingEngine.swift` | Removed `@MainActor`. `buildPairingDatabase()` uses `container.newBackgroundContext()` instead of `MainActor.run { getAllExercises() }`. Eliminates 6fps/1.3s drop during intelligence init. |
+| DragGesture conflict resolved | `DashboardView+Challenges.swift`, `DashboardView+Helpers.swift` | Changed from `.highPriorityGesture(minimumDistance: 8)` to `.simultaneousGesture(minimumDistance: 25)`. Vertical scroll gets priority. |
+
+**New performance rules established:**
+- Isolate ObservableObject subscriptions in wrapper views to prevent cascade recomputation
+- Horizontal DragGesture in vertical ScrollView: `.simultaneousGesture(minimumDistance: 25)`, never `.highPriorityGesture(minimumDistance: 8)`
+- `SmartExercisePairingEngine` and `WorkoutSuggestionEngine` are both NOT `@MainActor` — use background Core Data contexts
+- Singleton `init()` must return instantly — defer all cache loading to `Task {}`
+
+### 2026-03-25: Crash Report Analysis — v1.32.0 (40 crashes)
+
+**Report summary**: 40 crashes analyzed from v1.32.0. 67.5% (27/40) were main thread freezes — already fixed in v1.33.0 codebase (see Phase 1/Phase 2 above). Remaining issues fixed:
+
+**Fixes applied**:
+- `HydrationStreaks` custom decoder with `decodeIfPresent` defaults — prevents `valueNotFound` crash when DB returns NULL integers
+- `WeightTrackingService.logWeight()` auth guard — prevents RLS rejection on expired sessions
+- `ChallengeCreationFlow` close button log severity changed from `.error` to `.debug` — was polluting crash reports with normal user actions
+- `exercises.json` added to Xcode Copy Bundle Resources build phase — was missing from `.pbxproj`, causing "not found in bundle" crash
+- `get_friend_workout_exercises` SQL migration — added missing `GRANT EXECUTE` for `authenticated` role
+- `nudge_group_challenge_member` — new migration drops all overloads (TEXT,TEXT and UUID,UUID) to fix ambiguous function resolution
+
+**Log severity rule** (NEW):
+- Normal user actions (dismissing flows, closing sheets, cancelling operations) MUST use `.debug` or `.info` level — NEVER `.error`.
+- `.error` level is reserved for actual failures that indicate broken functionality.
+- Misuse of `.error` pollutes crash reports and makes real issues harder to find.
+
+**Codable null safety rule** (reinforced):
+- All `Codable` structs decoding from Supabase tables MUST handle NULL gracefully.
+- Use `decodeIfPresent` with `?? defaultValue` for non-optional properties that map to nullable DB columns.
+- The `PersonalizedInsightsService.StreakData` pattern (custom `init(from decoder:)`) is the canonical example.

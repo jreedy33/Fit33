@@ -932,3 +932,27 @@ OTP verified → createMinimalAccountForEmailPasswordSignup()
 - Achievement batching: 30-second window combines rapid-fire PR/level-up/streak into one notification
 - Daily notification cap: 8/day, critical types (friend request, challenge invite) bypass
 - `syncPreferencesToCloud()` upserts preferences to `user_notification_preferences` for server-side enforcement
+
+### 2026-03-25: v1.33 — Dashboard Architecture & Feature Updates
+
+**Dashboard wrapper view pattern (performance)**:
+- `challengeService` and `dailyQuestService` are now plain `let` references in `DashboardView` — NOT `@ObservedObject`/`@StateObject`. This prevents challenge/quest updates from recomputing the entire Dashboard body.
+- `DashboardQuestsWrapper` is a separate `View` struct that owns `@StateObject questService`. Quest updates only recompute the quest widget.
+- `combinedRecentWorkouts` is a `@State` array updated via `rebuildCombinedWorkouts()` + `.onChange`, NOT a computed property.
+- Horizontal carousels use `.simultaneousGesture(DragGesture(minimumDistance: 25))` — NOT `.highPriorityGesture(minimumDistance: 8)`.
+
+**Daily Quest / Challenge sync**:
+- When a user has an active step challenge, daily quests match the challenge target. The `get_daily_quests` RPC receives `p_active_step_challenge_target` from the app (extracted from `ChallengeService.shared.activeChallenges` and `activeGroupChallenges`, types: "steps", "walk").
+- `DailyQuestService.gatherUserContext()` now includes `activeStepChallengeTarget`.
+
+**Friend request accepted notification**:
+- `accept_friend_request` RPC now inserts into BOTH `push_notification_queue` (type: `friend_accepted`) AND `app_notifications` (type: `friend_request_accepted`).
+- `NotificationManager.handleNotificationType` handles both `friend_accepted` and `friend_request_accepted` for the tap handler.
+- `app_notifications` schema uses `reference_id` (UUID) and `from_user_id` (UUID), NOT a `data` JSONB column.
+
+**CMS Exercise Library Hub**:
+- New `/exercises` page with filterable list (workout type, category, equipment, search).
+- Exercise detail page with video autoplay, editable fields, autocomplete from DB values, delete with confirmation.
+- Prev/next navigation between exercises.
+
+**Key files changed**: `DashboardView.swift`, `DashboardView+Helpers.swift`, `DashboardView+Challenges.swift`, `DailyQuestService.swift`, `NotificationManager.swift`

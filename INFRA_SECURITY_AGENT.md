@@ -309,3 +309,22 @@ App-critical views: `weight_statistics`, `body_composition_statistics` — confi
 - `DATA_BACKEND_AGENT.md`: New view creation standard
 - `PRODUCT_ENGINEER_AGENT.md`: Updated mandatory standards
 - Quarterly health check now includes SECURITY DEFINER view audit
+
+### 2026-03-25: CMS Deployment & Security Updates
+
+**Vercel deployment**:
+- The admin CMS deploys to the `fitapp` Vercel project (ID: `prj_JEMYT6dE0REgOWTinDZbk6EQ3blZ`, team: `team_VccFdTGdJqnZXzU6C47zPWxn`).
+- Domain: `admin.doublethr33s.com`
+- Auto-deploy from GitHub is unreliable. Use the Vercel API to trigger deployments: `POST /v13/deployments` with `gitSource` pointing to the commit SHA.
+- A duplicate `admin-cms` Vercel project was deleted (was stealing build slots from the Hobby plan queue).
+- GitHub Action `admin-cms-ci.yml` lint step removed (was blocking CI due to missing ESLint config in Next.js 15).
+
+**CSP headers — DUAL LOCATION** (critical):
+- `admin-cms/next.config.ts` — sets CSP for all routes
+- `admin-cms/src/middleware.ts` — sets CSP for authenticated routes (OVERRIDES the config one)
+- BOTH must include `media-src` for R2 video domain when adding new external media sources.
+- Current allowed: `media-src 'self' https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev`
+
+**R2 video URLs**:
+- Exercise videos hosted on Cloudflare R2 at `https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev/{video_filename}`
+- Do NOT use `encodeURIComponent` on filenames — they contain parentheses like `(male)` and `(Dumbbell)` that break when encoded.

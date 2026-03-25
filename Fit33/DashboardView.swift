@@ -30,8 +30,8 @@ struct DashboardView: View {
     
     // Swipeable workout carousel (workout buttons + active program)
     @State var selectedWorkoutPage: Int = 0
-    @ObservedObject var challengeService = ChallengeService.shared
-    @StateObject var dailyQuestService = DailyQuestService.shared
+    let challengeService = ChallengeService.shared
+    let dailyQuestService = DailyQuestService.shared
     let stravaService = StravaService.shared
     let streakShieldService = StreakShieldService.shared
     let healthKitService = HealthKitService.shared
@@ -83,44 +83,18 @@ struct DashboardView: View {
         }
     }
     
-    // ⚡️ PERFORMANCE: Cache key for combined workouts to avoid recomputation
-    var combinedWorkoutsCacheKey: String {
-        let strengthCount = recentWorkouts.prefix(5).count
-        let cardioCount = recentCardioWorkouts.count
-        let latestStrength = recentWorkouts.first?.date?.timeIntervalSince1970 ?? 0
-        let latestCardio = recentCardioWorkouts.first.map { ISO8601Parser.parse($0.completedAt, fallback: Date.distantPast).timeIntervalSince1970 } ?? 0
-        return "\(strengthCount)-\(cardioCount)-\(Int(latestStrength))-\(Int(latestCardio))"
-    }
+    // ⚡️ PERFORMANCE: Cached combined workouts — updated via onChange, not recomputed every body eval
+    @State var combinedRecentWorkouts: [RecentWorkoutItem] = []
     
-    // ⚡️ PERFORMANCE: Memoized combined workouts - only recomputes when data changes
-    @State var _cachedCombinedWorkouts: [RecentWorkoutItem] = []
-    @State var _lastCombinedWorkoutsKey: String = ""
-    
-    // Combine strength and cardio workouts, sorted by date
-    var combinedRecentWorkouts: [RecentWorkoutItem] {
-        // Check cache first
-        let currentKey = combinedWorkoutsCacheKey
-        if currentKey == _lastCombinedWorkoutsKey && !_cachedCombinedWorkouts.isEmpty {
-            return _cachedCombinedWorkouts
-        }
-        
-        // Recompute (this is expensive but only when data changes)
+    private func rebuildCombinedWorkouts() {
         var items: [RecentWorkoutItem] = []
-        
-        // Add strength workouts
         for workout in recentWorkouts.prefix(5) {
             items.append(.strength(workout, isMostRecent: false))
         }
-        
-        // Add cardio workouts
         for cardio in recentCardioWorkouts {
             items.append(.cardio(cardio, isMostRecent: false))
         }
-        
-        // Sort by date (most recent first)
         items.sort { $0.date > $1.date }
-        
-        // Mark the most recent one
         if !items.isEmpty {
             switch items[0] {
             case .strength(let workout, _):
@@ -129,10 +103,7 @@ struct DashboardView: View {
                 items[0] = .cardio(cardio, isMostRecent: true)
             }
         }
-        
-        // Note: Can't update @State from computed property, but this pattern
-        // at least short-circuits the expensive sort when key matches
-        return items
+        combinedRecentWorkouts = items
     }
     
     // Streak info popup
@@ -245,8 +216,8 @@ struct DashboardView: View {
                     PrivateChallengeInviteContainer()
                         .padding(.bottom, 16)
                     
-                    // Daily Quests widget
-                    dailyQuestsSection
+                    // Daily Quests widget (isolated view to prevent quest updates from recomputing parent)
+                    DashboardQuestsWrapper()
                         .padding(.bottom, 16)
                     
                     // Recovery Day widget (shows when muscles are recovering)
@@ -418,11 +389,11 @@ struct DashboardView: View {
                     if let quest = dailyQuestService.lastCompletedQuest {
                         QuestCompletionCelebration(
                             quest: quest,
-                            isShowing: $dailyQuestService.showQuestCompletionCelebration
+                            isShowing: Binding(get: { dailyQuestService.showQuestCompletionCelebration }, set: { dailyQuestService.showQuestCompletionCelebration = $0 })
                         )
                     }
                     QuestBonusCelebration(
-                        isShowing: $dailyQuestService.showBonusCelebration
+                        isShowing: Binding(get: { dailyQuestService.showBonusCelebration }, set: { dailyQuestService.showBonusCelebration = $0 })
                     )
                 }
                 .padding(.top, 60)
@@ -518,6 +489,8 @@ struct DashboardView: View {
                 AppLogger.debug("[CAROUSEL] Defaulting to Custom/Auto (page 0)", category: .ui)
             }
             
+            rebuildCombinedWorkouts()
+            
             // Mark user as welcomed after first visit (delayed slightly to show "Welcome to Fit33" first)
             if let userId = userManager.currentUser?.id {
                 let welcomeKey = "has_been_welcomed_\(userId.uuidString)"
@@ -532,112 +505,100 @@ struct DashboardView: View {
             }
             
             // 📱 PHONE VERIFICATION PROMPT (v1.14.3+)
-            // Show one-time phone verification prompt for existing users who haven't verified
             if !hasSeenPhonePrompt && !userHasVerifiedPhone && userManager.hasCompletedOnboarding {
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(1.5))
-                    guard !Task.isCancelled else { return }
-                    if !hasSeenPhonePrompt && !userHasVerifiedPhone {
-                        // Check if user already has a phone number from previous onboarding
-                        Task {
-                            let existingPhone = await SupabaseManager.shared.getUserPhoneNumber()
-                            await MainActor.run {
-                                if let phone = existingPhone, !phone.isEmpty {
-                                    // User already has phone verified, mark as seen
-                                    userHasVerifiedPhone = true
-                                    hasSeenPhonePrompt = true
-                                    AppLogger.debug("[PHONE PROMPT] User already has phone verified, skipping prompt", category: .ui)
-                                } else {
-                                    // Show the prompt
-                                    showPhoneVerificationPrompt = true
-                                    AppLogger.debug("[PHONE PROMPT] Showing phone verification prompt to existing user", category: .ui)
-                                }
-                            }
+                let alreadyChecked = UserDefaults.standard.bool(forKey: "phone_verified_check_done")
+                if alreadyChecked {
+                    hasSeenPhonePrompt = true
+                } else {
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(1.5))
+                        guard !Task.isCancelled else { return }
+                        guard !hasSeenPhonePrompt && !userHasVerifiedPhone else { return }
+                        let existingPhone = await SupabaseManager.shared.getUserPhoneNumber()
+                        if let phone = existingPhone, !phone.isEmpty {
+                            userHasVerifiedPhone = true
+                            hasSeenPhonePrompt = true
+                            UserDefaults.standard.set(true, forKey: "phone_verified_check_done")
+                        } else {
+                            showPhoneVerificationPrompt = true
                         }
                     }
                 }
             }
             
-            // Refresh friend data when returning to home tab
-            // Red dot reads directly from FriendService so no need to cache counts
-            Task {
-                await FriendService.shared.refreshHomeScreenData()
-            }
         }
         .task(id: "dashboard_initial_load") {
             let dashStart = CFAbsoluteTimeGetCurrent()
             
-            // Fetch insights in a separate task (non-blocking)
+            // Fire all independent work in parallel — nothing waits for anything else
+            
+            // 1. Insights (independent)
             Task {
                 await insightsService.fetchActiveInsights()
                 await insightsService.fetchStreaks()
             }
             
-            // Load personalized recommendation (use cached if available)
-            await loadPersonalizedRecommendation()
-            
-            // generateMotivationalMessage() is ~300 lines of pure sync logic —
-            // run it off the main actor to keep the UI responsive
-            let message = await Task.detached(priority: .userInitiated) { [self] in
+            // 2. Motivational message (CPU-heavy, off main actor via background Core Data)
+            let messageTask = Task.detached(priority: .userInitiated) { [self] in
                 return self.generateMotivationalMessage()
-            }.value
-            currentMotivationalMessage = message
+            }
             
-            // Load cardio workouts in background
-            await loadRecentCardioWorkouts()
+            // 3. Recommendation + cardio (independent, parallel)
+            Task { await loadPersonalizedRecommendation() }
+            Task { await loadRecentCardioWorkouts() }
             
-            // Wait for auth if it hasn't completed yet (checkAuthOnly runs in parallel).
-            // Without this, social fetches are skipped and challenges/friends never load.
-            if !SupabaseManager.shared.isAuthenticated {
-                AppLogger.info("[DASHBOARD] Auth not ready yet — waiting up to 10s...", category: .performance)
-                for _ in 0..<20 {
-                    try? await Task.sleep(for: .milliseconds(500))
-                    guard !Task.isCancelled else { return }
-                    if SupabaseManager.shared.isAuthenticated { break }
+            // 4. Health sync (independent, already uses Task.detached internally)
+            Task { await HealthDataService.shared.syncAllHealthData(force: false) }
+            
+            // 5. Social/challenge data (needs auth — wait only for these)
+            Task {
+                if !SupabaseManager.shared.isAuthenticated {
+                    AppLogger.info("[DASHBOARD] Auth not ready — waiting up to 10s...", category: .performance)
+                    for _ in 0..<20 {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        guard !Task.isCancelled else { return }
+                        if SupabaseManager.shared.isAuthenticated { break }
+                    }
                 }
+                
+                guard SupabaseManager.shared.isAuthenticated else {
+                    AppLogger.warning("[DASHBOARD] Auth not available — skipping social fetch", category: .performance)
+                    return
+                }
+                
+                let authMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
+                AppLogger.info("[DASHBOARD] Auth ready (\(authMs)ms), starting all social fetches", category: .performance)
+                
+                // All social, challenge, quest, and contact fetches in ONE parallel group
+                async let friends: () = FriendService.shared.fetchFriends()
+                async let pending: () = FriendService.shared.loadPendingRequests()
+                async let received: () = FriendService.shared.loadReceivedWorkouts()
+                async let feed: () = ActivityFeedService.shared.fetchFeed()
+                async let ranked: () = FriendRankingService.shared.fetchRankedFriends()
+                async let activeCh: () = ChallengeService.shared.fetchActiveChallenges()
+                async let groupCh: () = ChallengeService.shared.fetchActiveGroupChallenges()
+                async let invites: () = ChallengeService.shared.fetchPendingInvites()
+                async let sent: () = ChallengeService.shared.fetchPendingSentChallenges()
+                async let priv: () = PrivateChallengeService.shared.refreshAll()
+                async let rt: () = PrivateChallengeService.shared.subscribeToRealtimeUpdates()
+                async let quests: () = dailyQuestService.fetchDailyQuests()
+                async let contacts: () = ContactsService.shared.refreshSuggestions()
+                async let photo: () = loadProfilePhoto()
+                _ = await (friends, pending, received, feed, ranked, activeCh, groupCh, invites, sent, priv, rt, quests, contacts, photo)
             }
             
-            guard SupabaseManager.shared.isAuthenticated else {
-                AppLogger.warning("[DASHBOARD] Auth still not available after wait — skipping social fetch", category: .performance)
-                return
-            }
-            
-            let authWaitMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
-            AppLogger.info("[DASHBOARD] Auth ready, starting social fetches (waited \(authWaitMs)ms total)", category: .performance)
-            
-            // Batch 1: Fast social data (parallel)
-            async let friends: () = FriendService.shared.fetchFriends()
-            async let pending: () = FriendService.shared.loadPendingRequests()
-            async let received: () = FriendService.shared.loadReceivedWorkouts()
-            async let feed: () = ActivityFeedService.shared.fetchFeed()
-            async let ranked: () = FriendRankingService.shared.fetchRankedFriends()
-            _ = await (friends, pending, received, feed, ranked)
-            
-            // Batch 2: Challenges (parallel)
-            async let active: () = ChallengeService.shared.fetchActiveChallenges()
-            async let group: () = ChallengeService.shared.fetchActiveGroupChallenges()
-            async let invites: () = ChallengeService.shared.fetchPendingInvites()
-            async let sent: () = ChallengeService.shared.fetchPendingSentChallenges()
-            async let priv: () = PrivateChallengeService.shared.refreshAll()
-            _ = await (active, group, invites, sent, priv)
-            
-            // Batch 3: Remaining (parallel)
-            async let rt: () = PrivateChallengeService.shared.subscribeToRealtimeUpdates()
-            async let quests: () = dailyQuestService.fetchDailyQuests()
-            async let contacts: () = ContactsService.shared.refreshSuggestions()
-            async let photo: () = loadProfilePhoto()
-            _ = await (rt, quests, contacts, photo)
-            
-            await HealthDataService.shared.syncAllHealthData(force: false)
+            // Await motivational message result (should already be done by now)
+            currentMotivationalMessage = await messageTask.value
             
             let dashMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
             AppLogger.info("[DASHBOARD] Initial load completed in \(dashMs)ms", category: .performance)
         }
+        .onChange(of: recentWorkouts.count) { _, _ in rebuildCombinedWorkouts() }
+        .onChange(of: recentCardioWorkouts.count) { _, _ in rebuildCombinedWorkouts() }
         .onChange(of: userManager.currentUser?.totalWorkouts) { _, _ in
-            // Refresh recommendation after workout completion (debounced)
+            rebuildCombinedWorkouts()
             Task {
-                // Small delay to debounce rapid updates
-                try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+                try? await Task.sleep(nanoseconds: 500_000_000)
                 await loadPersonalizedRecommendation()
             }
         }

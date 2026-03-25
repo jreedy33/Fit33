@@ -10,9 +10,14 @@ import CoreData
 /// - Respects active program schedules (generated, cloud, smart)
 /// - Persists the last Surprise Me split to prevent back-to-back duplicates
 /// - Provides a "what should the user do today?" recommendation
-@MainActor
 final class WorkoutSuggestionEngine: ObservableObject {
     static let shared = WorkoutSuggestionEngine()
+
+    private let bgContext: NSManagedObjectContext = {
+        let ctx = PersistenceController.shared.container.newBackgroundContext()
+        ctx.automaticallyMergesChangesFromParent = true
+        return ctx
+    }()
 
     // MARK: - Muscle Group Taxonomy
 
@@ -110,7 +115,7 @@ final class WorkoutSuggestionEngine: ObservableObject {
     // MARK: - Smart Suggestion for Today
 
     /// Primary entry point: "What should the user do today?"
-    func suggestForToday() -> TodaySuggestion {
+    @MainActor func suggestForToday() -> TodaySuggestion {
         if let programSuggestion = programBasedSuggestion() {
             return programSuggestion
         }
@@ -119,7 +124,7 @@ final class WorkoutSuggestionEngine: ObservableObject {
 
     // MARK: - Program-Aware Suggestion
 
-    private func programBasedSuggestion() -> TodaySuggestion? {
+    @MainActor private func programBasedSuggestion() -> TodaySuggestion? {
         // 1. Generated program (onboarding-created)
         if let day = GeneratedProgramService.shared.currentDay {
             let muscles = day.focusMuscles.compactMap { canonicalize($0) }
@@ -250,7 +255,7 @@ final class WorkoutSuggestionEngine: ObservableObject {
     // MARK: - Motivational Message Helpers
 
     /// Returns a context-aware motivational string based on recovery + recent training.
-    func contextualMotivationalMessage(firstName: String, crown: String) -> String? {
+    @MainActor func contextualMotivationalMessage(firstName: String, crown: String) -> String? {
         let suggestion = suggestForToday()
 
         if suggestion.isFromProgram {
@@ -293,7 +298,7 @@ final class WorkoutSuggestionEngine: ObservableObject {
     }
 
     /// Returns a smart description for upper/lower body daily quest based on recovery.
-    func smartQuestDescription(isUpperBody: Bool) -> String {
+    @MainActor func smartQuestDescription(isUpperBody: Bool) -> String {
         let states = getMuscleRecoveryStates()
 
         if isUpperBody {
@@ -378,61 +383,69 @@ final class WorkoutSuggestionEngine: ObservableObject {
     }
 
     /// Fetches the most recent training date for each muscle category from Core Data.
+    /// Uses a background context so this can run off the main thread.
     private func getRecentMusclesWithDates(days: Int) -> [MuscleCategory: Date] {
-        let context = PersistenceController.shared.container.viewContext
         let startDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
-
-        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
-        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-            NSPredicate(format: "isCompleted == YES"),
-            NSPredicate(format: "date >= %@", startDate as NSDate)
-        ])
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
 
         var latest: [MuscleCategory: Date] = [:]
 
-        do {
-            let workouts = try context.fetch(request)
-            for workout in workouts {
-                guard let date = workout.date else { continue }
-                if let exercises = workout.exercises?.allObjects as? [WorkoutExercise] {
-                    for ex in exercises {
-                        for muscle in ex.safeMuscleGroups {
-                            if let cat = canonicalize(muscle), latest[cat] == nil {
-                                latest[cat] = date
+        bgContext.performAndWait {
+            let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "isCompleted == YES"),
+                NSPredicate(format: "date >= %@", startDate as NSDate)
+            ])
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+
+            do {
+                let workouts = try self.bgContext.fetch(request)
+                for workout in workouts {
+                    guard let date = workout.date else { continue }
+                    if let exercises = workout.exercises?.allObjects as? [WorkoutExercise] {
+                        for ex in exercises {
+                            for muscle in ex.safeMuscleGroups {
+                                if let cat = self.canonicalize(muscle), latest[cat] == nil {
+                                    latest[cat] = date
+                                }
                             }
                         }
                     }
                 }
+            } catch {
+                AppLogger.error("WorkoutSuggestionEngine: failed to fetch workouts: \(error.localizedDescription)", category: .workout)
             }
-        } catch {
-            AppLogger.error("WorkoutSuggestionEngine: failed to fetch workouts: \(error.localizedDescription)", category: .workout)
         }
 
         return latest
     }
 
     /// Returns the split families of the last N days of workouts, oldest to newest.
+    /// Uses a background context so this can run off the main thread.
     private func getRecentSplitFamilies(days: Int) -> [SplitFamily] {
-        let context = PersistenceController.shared.container.viewContext
         let startDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
 
-        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
-        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-            NSPredicate(format: "isCompleted == YES"),
-            NSPredicate(format: "date >= %@", startDate as NSDate)
-        ])
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: true)]
+        var result: [SplitFamily] = []
 
-        do {
-            let workouts = try context.fetch(request)
-            return workouts.map { workout -> SplitFamily in
-                let muscles: [MuscleCategory] = (workout.exercises?.allObjects as? [WorkoutExercise] ?? [])
-                    .flatMap { $0.safeMuscleGroups.compactMap { canonicalize($0) } }
-                return splitFamilyFor(muscles)
+        bgContext.performAndWait {
+            let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "isCompleted == YES"),
+                NSPredicate(format: "date >= %@", startDate as NSDate)
+            ])
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: true)]
+
+            do {
+                let workouts = try self.bgContext.fetch(request)
+                result = workouts.map { workout -> SplitFamily in
+                    let muscles: [MuscleCategory] = (workout.exercises?.allObjects as? [WorkoutExercise] ?? [])
+                        .flatMap { $0.safeMuscleGroups.compactMap { self.canonicalize($0) } }
+                    return self.splitFamilyFor(muscles)
+                }
+            } catch {
+                // Return empty on failure
             }
-        } catch {
-            return []
         }
+
+        return result
     }
 }

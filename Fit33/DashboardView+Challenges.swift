@@ -83,8 +83,8 @@ extension DashboardView {
                         }
                         .frame(height: 156)
                         .animation(.easeOut(duration: 0.2), value: safePageIndex)
-                        .highPriorityGesture(
-                            DragGesture(minimumDistance: 8)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 25)
                                 .onEnded { value in
                                     let horizontalAmount = value.translation.width
                                     let verticalAmount = abs(value.translation.height)
@@ -159,8 +159,8 @@ extension DashboardView {
                         }
                         .frame(height: 156)
                         .animation(.easeOut(duration: 0.2), value: selectedWidgetPage)
-                        .highPriorityGesture(
-                            DragGesture(minimumDistance: 8)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 25)
                                 .onEnded { value in
                                     let horizontalAmount = value.translation.width
                                     let verticalAmount = abs(value.translation.height)
@@ -458,9 +458,8 @@ extension DashboardView {
                     .frame(height: 156)
                     // No .clipped() - allows glow to render naturally
                     .animation(.easeOut(duration: 0.2), value: selectedWidgetPage) // Snappy animation
-                    // High priority gesture that recognizes swipes before buttons
-                    .highPriorityGesture(
-                        DragGesture(minimumDistance: 8)
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 25)
                             .onEnded { value in
                                 let horizontalAmount = value.translation.width
                                 let verticalAmount = abs(value.translation.height)

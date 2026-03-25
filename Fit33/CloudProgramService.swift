@@ -259,7 +259,9 @@ class CloudProgramService: ObservableObject {
     private var generatedExercisesCache: [Int: [ExerciseData]] = [:]
     
     private init() {
-        loadCachedProgram()
+        Task { @MainActor [self] in
+            loadCachedProgram()
+        }
     }
     
     // MARK: - Exercise Cache Management

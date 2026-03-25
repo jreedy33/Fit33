@@ -44,11 +44,6 @@ class ExerciseLibraryService: ObservableObject {
     private var isPreWarming = false
     
     private init() {
-        let count = (try? viewContext.count(for: Exercise.fetchRequest())) ?? 0
-        if count > 100 {
-            isExercisesReady = true
-            AppLogger.debug("✅ [ExerciseLibrary] Exercises ready at init: \(count) in Core Data", category: .data)
-        }
         preWarmCache()
     }
     

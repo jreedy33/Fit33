@@ -262,7 +262,7 @@ struct ChallengeCreationFlow: View {
                         currentStep -= 1
                     }
                 } else {
-                    AppLogger.error("❌ [CHALLENGE FLOW] Close button tapped - dismissing flow", category: .social)
+                    AppLogger.debug("[CHALLENGE FLOW] Close button tapped - dismissing flow", category: .social)
                     dismiss()
                 }
             }) {

@@ -463,8 +463,8 @@ extension DashboardView {
             }
             .frame(height: 160)
             .animation(.easeOut(duration: 0.25), value: selectedWorkoutPage)
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 15)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 25)
                     .onEnded { value in
                         let horizontalAmount = value.translation.width
                         let verticalAmount = abs(value.translation.height)
@@ -552,4 +552,14 @@ extension DashboardView {
         AppLogger.debug("[PHONE PROMPT] User skipped phone verification", category: .ui)
     }
     
+}
+
+// MARK: - Isolated Wrapper Views (prevent parent body recomputation)
+
+struct DashboardQuestsWrapper: View {
+    @StateObject private var questService = DailyQuestService.shared
+    
+    var body: some View {
+        DailyQuestsWidget(questService: questService)
+    }
 }

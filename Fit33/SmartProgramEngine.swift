@@ -604,7 +604,9 @@ class SmartProgramEngine: ObservableObject {
     ]
     
     private init() {
-        loadUserPrograms()
+        Task { @MainActor [self] in
+            loadUserPrograms()
+        }
     }
     
     // MARK: - Public API

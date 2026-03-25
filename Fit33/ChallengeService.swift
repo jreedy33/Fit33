@@ -166,8 +166,9 @@ class ChallengeService: ObservableObject {
     #endif
     
     private init() {
-        // Load cached challenges immediately on init for instant display
-        loadCachedChallenges()
+        Task { @MainActor [self] in
+            loadCachedChallenges()
+        }
     }
     
     // MARK: - Local Challenge Caching (survives force quit)

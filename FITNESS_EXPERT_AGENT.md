@@ -403,3 +403,20 @@ Squat (467) · Curl (271) · Press (15) · Push Up (9) · Fly (8) · Hip Hinge (
 - 60-90s = Hypertrophy (default 90s)
 - 120-180s = Strength / heavy compound lifts
 - 180-300s = Powerlifting / maximal effort
+
+### 2026-03-25: Engine Threading Updates
+
+**`SmartExercisePairingEngine` is NOT `@MainActor`** (changed in v1.33):
+- Previously `@MainActor`, caused 6fps/1.3s drop by fetching 5500+ exercises on the main thread via `MainActor.run { getAllExercises() }`.
+- Now uses `container.newBackgroundContext()` + `context.perform { }` in `buildPairingDatabase()`.
+- No `@Published` properties, so removing `@MainActor` is thread-safe.
+- Callers from views still work since view bodies run on main actor.
+
+**`WorkoutSuggestionEngine` is NOT `@MainActor`** (changed in v1.33):
+- Uses a private `bgContext` (background Core Data context) with `performAndWait` for `getRecentMusclesWithDates()` and `getRecentSplitFamilies()`.
+- Methods that read `@MainActor`-isolated program services (`suggestForToday`, `contextualMotivationalMessage`, `smartQuestDescription`) are individually marked `@MainActor`.
+- The heavy Core Data work runs off-main; only lightweight program-state reads hop to main.
+
+**Workout generation context pattern** (unchanged):
+- `WorkoutGeneratorService.generateFromCoreData` remains `nonisolated`, runs via `Task.detached`.
+- `WorkoutGenerationContext` snapshots `@MainActor` state for background generation.

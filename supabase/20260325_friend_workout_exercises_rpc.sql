@@ -63,3 +63,5 @@ BEGIN
     ORDER BY COALESCE(e."order", 0);
 END;
 $$;
+
+GRANT EXECUTE ON FUNCTION get_friend_workout_exercises(TEXT) TO authenticated;

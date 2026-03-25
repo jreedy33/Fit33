@@ -345,3 +345,42 @@ user_notification_preferences (server-side push preference enforcement)
 ```
 
 **Migration**: `20260321_notification_preferences.sql`
+
+### 2026-03-25: SQL & Schema Updates
+
+**SQL RECORD type rule**:
+- In Postgres functions, NEVER use anonymous `ROW(0,0,0)` to initialize a `RECORD` variable — the fields have no names and `v_record.field_name` fails at runtime.
+- Use `SELECT 0 AS field_name, 0 AS other_field INTO v_record` instead.
+- This was the root cause of the `get_daily_quests` crash ("record v_streak has no field current_streak").
+
+**`get_daily_quests` function** (16 parameters):
+- New parameter: `p_active_step_challenge_target INT DEFAULT 0`
+- Old 15-arg overload was DROPped to avoid ambiguity.
+- Step quests (`walk_3k_steps`, `walk_5k_steps`, `walk_7500_steps`, `walk_10k_steps`, `hit_step_goal`) have their `target_value`, `title`, and `description` overridden when the user has an active step challenge.
+- `GRANT EXECUTE` updated for the new 16-param signature.
+
+**`accept_friend_request` function**:
+- Now inserts into `app_notifications` in addition to `push_notification_queue`.
+- `app_notifications` insert uses: `notification_type = 'friend_request_accepted'`, `reference_id = request_id`, `from_user_id = current_user_uuid`.
+- The table does NOT have a `data` JSONB column — use `reference_id` (UUID) and `from_user_id` (UUID).
+
+**`last_active_at` tracking**:
+- New migration adds `last_active_at TIMESTAMPTZ` to `user_profiles` for real-time login tracking.
+- Updated on every app foreground via `updateLastLogin()`.
+
+**Step tracking RLS**:
+- `step_tracking` table has RLS policies for `user_id = auth.uid()`.
+
+### 2026-03-25: Crash Report — RPC Fixes
+
+**`get_friend_workout_exercises` RPC** (NEW):
+- Migration: `20260325_friend_workout_exercises_rpc.sql`
+- `SECURITY DEFINER` function that returns workout exercises gated behind a friendship check.
+- `GRANT EXECUTE ON FUNCTION get_friend_workout_exercises(TEXT) TO authenticated` was missing — added.
+- **Must be deployed** to fix "Could not find the function" errors on the Stats Tab friend workout preview.
+
+**`nudge_group_challenge_member` overload conflict**:
+- Migration: `20260325_fix_nudge_overload.sql`
+- Root cause: Multiple overloads existed in the live DB — `(TEXT, TEXT)` and `(UUID, UUID)`. PostgREST could not resolve which to call.
+- Fix: Drop ALL overloads (`TEXT,TEXT` and `UUID,UUID`), then recreate canonical `(TEXT, TEXT)` version with GRANT.
+- **RULE**: When deploying RPC functions, always `DROP FUNCTION IF EXISTS` for ALL possible parameter type combinations before `CREATE OR REPLACE`. Postgres treats different parameter types as different overloads.

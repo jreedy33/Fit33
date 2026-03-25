@@ -489,6 +489,11 @@ class WeightTrackingService: ObservableObject {
             return false
         }
         
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[Weight] Cannot log weight — not authenticated", category: .health)
+            return false
+        }
+        
         // Convert based on unit preference
         let weightKg: Double
         let weightLbs: Double

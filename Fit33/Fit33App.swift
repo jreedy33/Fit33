@@ -97,22 +97,28 @@ struct Fit33App: App {
         // BGTaskScheduler.register must be called before app finishes launching
         BackgroundChallengeSyncService.shared.setup()
         
-        // One-time Core Data migration (skip if already done)
+        // One-time Core Data migration — moved off main thread to prevent startup freeze
         let needsExerciseRefresh = !UserDefaults.standard.bool(forKey: "exercise_lever_fix_applied_v1")
         if needsExerciseRefresh {
-            AppLogger.debug("FORCING EXERCISE REFRESH - CLEARING CACHED DATA", category: .general)
-            let context = PersistenceController.shared.container.viewContext
-            let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Exercise.fetchRequest()
-            let deleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
-            
-            do {
-                try context.execute(deleteRequest)
-                try context.save()
-                ExerciseLibraryService.shared.invalidateCache()
-                UserDefaults.standard.set(true, forKey: "exercise_lever_fix_applied_v1")
-                AppLogger.info("Core Data cleared - exercises will reload from Supabase automatically", category: .general)
-            } catch {
-                AppLogger.error("Error clearing exercises: \(error.localizedDescription)", category: .general)
+            let container = PersistenceController.shared.container
+            Task.detached(priority: .userInitiated) {
+                AppLogger.debug("FORCING EXERCISE REFRESH - CLEARING CACHED DATA", category: .general)
+                let bgContext = container.newBackgroundContext()
+                await bgContext.perform {
+                    let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Exercise.fetchRequest()
+                    let deleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+                    do {
+                        try bgContext.execute(deleteRequest)
+                        try bgContext.save()
+                    } catch {
+                        AppLogger.error("Error clearing exercises: \(error.localizedDescription)", category: .general)
+                    }
+                }
+                await MainActor.run {
+                    ExerciseLibraryService.shared.invalidateCache()
+                    UserDefaults.standard.set(true, forKey: "exercise_lever_fix_applied_v1")
+                    AppLogger.info("Core Data cleared - exercises will reload from Supabase automatically", category: .general)
+                }
             }
         }
         
@@ -431,6 +437,8 @@ struct Fit33App: App {
                 Text("The app's local database could not be loaded. Please try restarting the app. If the problem persists, contact support via the bug report tool.")
             }
                 .task {
+                    let startupStart = CFAbsoluteTimeGetCurrent()
+                    
                     // Check for Core Data fatal failure (notification may fire before view is ready)
                     if PersistenceController.storeLoadFailed {
                         showCoreDataFatalError = true
@@ -438,12 +446,17 @@ struct Fit33App: App {
                     
                     // FAST AUTH: Verify session only (<200ms). Dashboard renders from cached Core Data.
                     // Cloud sync is deferred so the UI is interactive immediately.
+                    let authStart = CFAbsoluteTimeGetCurrent()
                     await supabaseManager.checkAuthOnly()
+                    let authMs = Int((CFAbsoluteTimeGetCurrent() - authStart) * 1000)
+                    AppLogger.info("[STARTUP] checkAuthOnly completed in \(authMs)ms", category: .performance)
                     
                     // UI-critical post-auth work (fast, needs auth state)
                     if supabaseManager.isAuthenticated {
+                        let limStart = CFAbsoluteTimeGetCurrent()
                         await LimitationsService.shared.fetchUserLimitations()
-                        AppLogger.debug("User limitations loaded", category: .general)
+                        let limMs = Int((CFAbsoluteTimeGetCurrent() - limStart) * 1000)
+                        AppLogger.info("[STARTUP] fetchUserLimitations completed in \(limMs)ms", category: .performance)
                         
                         SessionLogManager.shared.log(.info, category: .profile, message: "User authenticated", metadata: [
                             "user_id": supabaseManager.currentUser?.id ?? "unknown"
@@ -458,6 +471,8 @@ struct Fit33App: App {
                     }
                     
                     // Mark critical path complete — UI is now interactive
+                    let criticalMs = Int((CFAbsoluteTimeGetCurrent() - startupStart) * 1000)
+                    AppLogger.info("[STARTUP] Critical path complete in \(criticalMs)ms (auth: \(authMs)ms)", category: .performance)
                     StartupCoordinator.shared.markPhaseComplete(.critical)
                     
                     // DEFERRED CLOUD SYNC: Runs after UI is interactive.
@@ -467,7 +482,10 @@ struct Fit33App: App {
                             try? await Task.sleep(for: .seconds(3))
                             guard !Task.isCancelled else { return }
                             
+                            let syncStart = CFAbsoluteTimeGetCurrent()
                             await supabaseManager.syncAllDataFromCloud()
+                            let syncMs = Int((CFAbsoluteTimeGetCurrent() - syncStart) * 1000)
+                            AppLogger.info("[STARTUP] syncAllDataFromCloud completed in \(syncMs)ms", category: .performance)
                             
                             if PersistenceController.storeWasReset {
                                 PersistenceController.storeWasReset = false
@@ -496,7 +514,8 @@ struct Fit33App: App {
                         StartupCoordinator.shared.markPhaseComplete(.essential)
                     }
                     
-                    await checkForComebackReminder()
+                    // Run off the main task chain — does not need to block startup
+                    Task { await checkForComebackReminder() }
                     
                     #if DEBUG
                     if !UserDefaults.standard.bool(forKey: "FAST_STARTUP_MODE") {
@@ -655,8 +674,13 @@ struct Fit33App: App {
                         // Consolidate into ONE Task to prevent 7+ concurrent Tasks
                         // competing for CPU on every foreground event
                         Task {
+                            if !supabaseManager.isAuthenticated {
+                                await supabaseManager.recoverSessionIfNeeded()
+                            }
                             guard supabaseManager.isAuthenticated else { return }
-                            
+
+                            await supabaseManager.recordLastActive()
+
                             // Priority 1: Reconnect realtime (instant social updates)
                             if !realtimeService.isConnected {
                                 realtimeService.setupDefaultCallbacks()
@@ -752,36 +776,37 @@ struct Fit33App: App {
         let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
         fetchRequest.fetchLimit = 1
         
-        do {
-            let users = try context.fetch(fetchRequest)
-            let cdDate = users.first?.lastWorkoutDate
-            
-            guard let lastWorkout = [udDate, cdDate].compactMap({ $0 }).max() else { return }
-            if Calendar.current.isDateInToday(lastWorkout) { return }
-            
-            let daysSinceLastWorkout = Calendar.current.dateComponents([.day], from: lastWorkout, to: Date()).day ?? 0
-                
-            if daysSinceLastWorkout >= 3 && daysSinceLastWorkout <= 30 {
-                let lastComebackReminder = UserDefaults.standard.object(forKey: "last_comeback_reminder") as? Date
-                
-                if daysSinceLastWorkout <= 7 {
-                    if let lastReminder = lastComebackReminder {
-                        let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
-                        if daysSinceReminder < 1 { return }
-                    }
-                } else {
-                    guard daysSinceLastWorkout == 14 || daysSinceLastWorkout == 30 else { return }
-                    if let lastReminder = lastComebackReminder {
-                        let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
-                        if daysSinceReminder < 1 { return }
-                    }
-                }
-                
-                notificationManager.sendComebackReminder(daysAway: daysSinceLastWorkout)
-                UserDefaults.standard.set(Date(), forKey: "last_comeback_reminder")
+        // Use context.perform to avoid blocking the main thread with a sync fetch
+        let cdDate: Date? = await withCheckedContinuation { continuation in
+            context.perform {
+                let users = try? context.fetch(fetchRequest)
+                continuation.resume(returning: users?.first?.lastWorkoutDate)
             }
-        } catch {
-            AppLogger.error("Error checking for comeback reminder: \(error.localizedDescription)", category: .general)
+        }
+        
+        guard let lastWorkout = [udDate, cdDate].compactMap({ $0 }).max() else { return }
+        if Calendar.current.isDateInToday(lastWorkout) { return }
+        
+        let daysSinceLastWorkout = Calendar.current.dateComponents([.day], from: lastWorkout, to: Date()).day ?? 0
+            
+        if daysSinceLastWorkout >= 3 && daysSinceLastWorkout <= 30 {
+            let lastComebackReminder = UserDefaults.standard.object(forKey: "last_comeback_reminder") as? Date
+            
+            if daysSinceLastWorkout <= 7 {
+                if let lastReminder = lastComebackReminder {
+                    let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
+                    if daysSinceReminder < 1 { return }
+                }
+            } else {
+                guard daysSinceLastWorkout == 14 || daysSinceLastWorkout == 30 else { return }
+                if let lastReminder = lastComebackReminder {
+                    let daysSinceReminder = Calendar.current.dateComponents([.day], from: lastReminder, to: Date()).day ?? 0
+                    if daysSinceReminder < 1 { return }
+                }
+            }
+            
+            notificationManager.sendComebackReminder(daysAway: daysSinceLastWorkout)
+            UserDefaults.standard.set(Date(), forKey: "last_comeback_reminder")
         }
     }
 }

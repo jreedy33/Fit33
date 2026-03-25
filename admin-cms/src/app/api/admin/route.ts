@@ -207,21 +207,13 @@ export async function POST(req: NextRequest) {
       case 'get_user': {
         const { user_id } = params
 
-        const [profileRes, authRes] = await Promise.all([
-          admin.from('user_profiles')
-            .select('*')
-            .eq('id', user_id)
-            .single(),
-          admin.auth.admin.getUserById(user_id),
-        ])
+        const { data: profile, error } = await admin.from('user_profiles')
+          .select('*')
+          .eq('id', user_id)
+          .single()
 
-        if (profileRes.error) {
-          return NextResponse.json({ error: profileRes.error.message }, { status: 404 })
-        }
-
-        const profile = {
-          ...profileRes.data,
-          last_sign_in_at: authRes.data?.user?.last_sign_in_at ?? null,
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 404 })
         }
 
         return NextResponse.json({ profile })

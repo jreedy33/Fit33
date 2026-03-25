@@ -213,12 +213,12 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
               <span
                 className="inline-block w-2 h-2 rounded-full"
                 style={{
-                  background: profile.last_sign_in_at && (Date.now() - new Date(profile.last_sign_in_at).getTime()) < 24 * 60 * 60 * 1000
+                  background: profile.last_active_at && (Date.now() - new Date(profile.last_active_at).getTime()) < 24 * 60 * 60 * 1000
                     ? 'var(--success)' : 'var(--text-muted)',
                 }}
               />
-              Last login {profile.last_sign_in_at
-                ? new Date(profile.last_sign_in_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
+              Last active {profile.last_active_at
+                ? new Date(profile.last_active_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
                 : '—'}
             </div>
           </div>

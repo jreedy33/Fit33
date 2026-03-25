@@ -104,6 +104,8 @@ class SupabaseManager: ObservableObject {
     @Published var isAuthenticated = false
     @Published var isLoading = false
     
+    private var authListenerTask: Task<Void, Never>?
+    
     private init() {
         // Initialize Supabase client
         guard let url = URL(string: supabaseURL) else {
@@ -115,6 +117,54 @@ class SupabaseManager: ObservableObject {
         
         // NOTE: Auth check is performed by Fit33App.swift's .task modifier
         // to avoid duplicate/racing auth+sync calls during startup.
+        
+        startAuthStateListener()
+    }
+    
+    /// Listens for Supabase auth state changes (token refresh, sign-out, etc.)
+    /// and keeps isAuthenticated in sync automatically.
+    private func startAuthStateListener() {
+        authListenerTask = Task { [weak self] in
+            guard let self else { return }
+            for await (event, session) in self.client.auth.authStateChanges {
+                switch event {
+                case .signedIn, .tokenRefreshed:
+                    if let user = session?.user {
+                        await MainActor.run {
+                            self.currentUser = user
+                            self.isAuthenticated = true
+                        }
+                        AppLogger.debug("[AUTH LISTENER] Session active (\(event))", category: .auth)
+                    }
+                case .signedOut:
+                    await MainActor.run {
+                        self.currentUser = nil
+                        self.isAuthenticated = false
+                    }
+                    AppLogger.debug("[AUTH LISTENER] Signed out", category: .auth)
+                default:
+                    break
+                }
+            }
+        }
+    }
+    
+    /// Attempts to recover an expired session. Call from foreground handler
+    /// when isAuthenticated is false so the app self-heals mid-session.
+    func recoverSessionIfNeeded() async {
+        guard !isAuthenticated else { return }
+        
+        AppLogger.info("[AUTH] Attempting session recovery...", category: .auth)
+        do {
+            let session = try await client.auth.refreshSession()
+            await MainActor.run {
+                currentUser = session.user
+                isAuthenticated = true
+            }
+            AppLogger.info("[AUTH] Session recovered for \(session.user.email ?? "unknown")", category: .auth)
+        } catch {
+            AppLogger.debug("[AUTH] Session recovery failed: \(error.localizedDescription)", category: .auth)
+        }
     }
     
     // MARK: - Authentication
@@ -145,6 +195,24 @@ class SupabaseManager: ObservableObject {
             }
             AppLogger.info("User already signed in: \(session.user.email ?? "unknown")", category: .auth)
         } catch {
+            // Session getter failed — try explicit refresh before giving up.
+            // The access token may have expired while the refresh token is still valid.
+            AppLogger.warning("Session check failed, attempting explicit refresh...", category: .auth)
+            do {
+                let refreshed = try await client.auth.refreshSession()
+                let userExists = await verifyUserExists(userId: refreshed.user.id)
+                if userExists {
+                    await MainActor.run {
+                        currentUser = refreshed.user
+                        isAuthenticated = true
+                    }
+                    AppLogger.info("Session recovered via refresh: \(refreshed.user.email ?? "unknown")", category: .auth)
+                    return
+                }
+            } catch {
+                AppLogger.debug("Session refresh also failed: \(error.localizedDescription)", category: .auth)
+            }
+            
             await MainActor.run {
                 isAuthenticated = false
                 currentUser = nil
@@ -1486,6 +1554,27 @@ class SupabaseManager: ObservableObject {
         AppLogger.info("User profile updated - Equipment: \(equipment ?? []), Days: \(availableDays ?? 0)", category: .network)
     }
     
+    // MARK: - Last Active Tracking
+
+    private var lastActiveRecordedAt: Date?
+
+    func recordLastActive() async {
+        guard let userId = currentUser?.id else { return }
+
+        if let last = lastActiveRecordedAt, Date().timeIntervalSince(last) < 60 { return }
+        lastActiveRecordedAt = Date()
+
+        do {
+            try await client
+                .from("user_profiles")
+                .update(["last_active_at": dateToISO(Date())])
+                .eq("id", value: userId.uuidString)
+                .execute()
+        } catch {
+            AppLogger.warning("Failed to record last_active_at: \(error.localizedDescription)", category: .network)
+        }
+    }
+
     // MARK: - Phone Number
     
     /// Update phone number for existing user (used for contact matching & 2FA)

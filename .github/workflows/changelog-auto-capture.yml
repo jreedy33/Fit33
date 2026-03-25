@@ -71,13 +71,31 @@ jobs:
           FILE_COUNT=$(echo "$ALL_FILES" | grep -c '.' || echo "0")
           echo "count=$FILE_COUNT" >> $GITHUB_OUTPUT
 
-      - name: Get Swift diff context
+      - name: Get per-file Swift diffs
         if: steps.changes.outputs.count != '0'
         id: swift_diff
         run: |
-          SWIFT_DIFF=$(git diff HEAD~1 -- '*.swift' | head -c 12000)
+          # Build per-file diff snippets (key context for each changed Swift file)
+          SWIFT_FILES="${{ steps.changes.outputs.swift_files }}"
+          > /tmp/per_file_diffs.txt
+
+          echo "$SWIFT_FILES" | while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            FILENAME=$(basename "$file")
+            FILE_DIFF=$(git diff HEAD~1 -- "$file" 2>/dev/null | head -c 3000)
+            if [ -n "$FILE_DIFF" ]; then
+              echo "=== $FILENAME ===" >> /tmp/per_file_diffs.txt
+              echo "$FILE_DIFF" >> /tmp/per_file_diffs.txt
+              echo "" >> /tmp/per_file_diffs.txt
+            fi
+          done
+
+          # Truncate total to 30KB to stay within Claude context limits
+          head -c 30000 /tmp/per_file_diffs.txt > /tmp/per_file_diffs_trimmed.txt
+
+          PER_FILE=$(cat /tmp/per_file_diffs_trimmed.txt)
           echo "diff<<EOF" >> $GITHUB_OUTPUT
-          echo "$SWIFT_DIFF" >> $GITHUB_OUTPUT
+          echo "$PER_FILE" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Analyze with Claude
@@ -86,7 +104,36 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          PROMPT="You are analyzing a code push to the Fit33 iOS fitness app. Provide a technical changelog.
+          # Write prompt to file to avoid shell expansion issues
+          cat > /tmp/changelog_prompt.txt <<'PROMPT_BOUNDARY'
+          You are analyzing a code push to the Fit33 iOS fitness app. For EACH changed Swift file, provide a code snippet showing the key change and explain WHY it was made.
+
+          Respond with ONLY valid JSON (no markdown fences):
+          {
+            "technical_summary": "2-4 sentence overall technical summary of what changed and why",
+            "user_facing_summary": "1-2 sentence user-facing description (empty string if purely internal)",
+            "areas_affected": ["dashboard", "workout", "healthkit", "challenges", "social", "nutrition", "auth", "notifications", "onboarding", "settings", "performance"],
+            "code_changes": [
+              {
+                "file": "FileName.swift",
+                "snippet": "the most important 3-10 lines of code that changed (the NEW code, not the old)",
+                "what_changed": "one sentence: what specifically was changed in this file",
+                "why": "one sentence: the reasoning / motivation — why this change was made (e.g. fix crash, improve performance, prevent race condition)",
+                "risk": "none | low | medium | high — how likely this change could introduce bugs"
+              }
+            ]
+          }
+
+          Rules:
+          - Include ALL changed Swift files, not just the important ones
+          - The snippet should be the NEW code (after the change), not a diff
+          - Keep snippets short but meaningful — show the actual fix/change, not boilerplate
+          - The "why" field is critical — explain the motivation, not just what the code does
+          - For "risk", consider: thread safety, data loss, UI regressions, API changes
+          PROMPT_BOUNDARY
+
+          # Append the actual data
+          cat >> /tmp/changelog_prompt.txt <<CONTEXT_BOUNDARY
 
           Commit: ${{ steps.info.outputs.commit_msg }}
           Version bump: ${{ steps.info.outputs.is_version_bump }}
@@ -97,31 +144,30 @@ jobs:
           Diff stats:
           ${{ steps.changes.outputs.diff_stats }}
 
-          Swift code diff (truncated):
+          Per-file Swift diffs:
           ${{ steps.swift_diff.outputs.diff }}
+          CONTEXT_BOUNDARY
 
-          Respond with ONLY valid JSON:
-          {
-            \"technical_summary\": \"2-4 sentence technical summary of what changed and why\",
-            \"user_facing_summary\": \"1-2 sentence user-facing description (empty string if purely internal)\",
-            \"areas_affected\": [\"list\", \"of\", \"app areas affected like: dashboard, workout, healthkit, challenges, social, nutrition, auth, notifications, onboarding, settings, performance\"]
-          }"
+          PROMPT_CONTENT=$(cat /tmp/changelog_prompt.txt)
 
-          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+          RESPONSE=$(jq -n --arg prompt "$PROMPT_CONTENT" '{
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 4000,
+            messages: [{role: "user", content: $prompt}]
+          }' | curl -s https://api.anthropic.com/v1/messages \
             -H "content-type: application/json" \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
-            -d "$(jq -n --arg prompt "$PROMPT" '{
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 1000,
-              messages: [{role: "user", content: $prompt}]
-            }')" \
-          )
+            -d @-)
 
           CONTENT=$(echo "$RESPONSE" | jq -r '.content[0].text // empty')
-          if [ -z "$CONTENT" ]; then
-            echo "No response from Claude, using empty analysis."
-            CONTENT='{"technical_summary":"Auto-capture failed — no Claude response","user_facing_summary":"","areas_affected":[]}'
+
+          # Strip markdown fences if Claude wrapped the JSON
+          CONTENT=$(echo "$CONTENT" | sed 's/^```json//;s/^```//;s/```$//')
+
+          if [ -z "$CONTENT" ] || ! echo "$CONTENT" | jq . >/dev/null 2>&1; then
+            echo "Claude response invalid or empty, using fallback."
+            CONTENT='{"technical_summary":"Auto-capture failed — no Claude response","user_facing_summary":"","areas_affected":[],"code_changes":[]}'
           fi
 
           echo "result<<EOF" >> $GITHUB_OUTPUT
@@ -138,35 +184,48 @@ jobs:
           TECH_SUMMARY=$(echo "$RESULT" | jq -r '.technical_summary // "No summary"')
           USER_SUMMARY=$(echo "$RESULT" | jq -r '.user_facing_summary // ""')
           AREAS=$(echo "$RESULT" | jq -c '.areas_affected // []')
+          CODE_CHANGES=$(echo "$RESULT" | jq -c '.code_changes // []')
+
+          # Validate JSON arrays
+          echo "$AREAS" | jq . >/dev/null 2>&1 || AREAS='[]'
+          echo "$CODE_CHANGES" | jq . >/dev/null 2>&1 || CODE_CHANGES='[]'
 
           # Build arrays for Supabase (PostgreSQL text[] format)
           ALL_FILES_JSON=$(echo '${{ steps.changes.outputs.all_files }}' | jq -R -s 'split("\n") | map(select(length > 0))')
           SWIFT_FILES_JSON=$(echo '${{ steps.changes.outputs.swift_files }}' | jq -R -s 'split("\n") | map(select(length > 0))')
 
-          # Construct payload
+          # Write JSON arrays to files for safe --slurpfile usage
+          echo "$AREAS" > /tmp/areas.json
+          echo "$CODE_CHANGES" > /tmp/code_changes.json
+          echo "$ALL_FILES_JSON" > /tmp/all_files.json
+          echo "$SWIFT_FILES_JSON" > /tmp/swift_files.json
+
+          # Construct payload using slurpfile for arrays
           PAYLOAD=$(jq -n \
             --arg version "${{ steps.info.outputs.version }}" \
             --arg build "${{ steps.info.outputs.build_number }}" \
             --arg sha "${{ steps.info.outputs.commit_sha }}" \
             --arg msg "${{ steps.info.outputs.commit_msg }}" \
-            --argjson files "$ALL_FILES_JSON" \
-            --argjson swift "$SWIFT_FILES_JSON" \
+            --slurpfile files /tmp/all_files.json \
+            --slurpfile swift /tmp/swift_files.json \
             --arg stats "${{ steps.changes.outputs.diff_stats }}" \
             --arg tech "$TECH_SUMMARY" \
             --arg user_facing "$USER_SUMMARY" \
-            --argjson areas "$AREAS" \
+            --slurpfile areas /tmp/areas.json \
+            --slurpfile code_changes /tmp/code_changes.json \
             --argjson is_bump "${{ steps.info.outputs.is_version_bump }}" \
             '{
               version: (if $version == "" then null else $version end),
               build_number: (if $build == "" then null else $build end),
               commit_sha: $sha,
               commit_message: $msg,
-              changed_files: $files,
-              swift_files_changed: $swift,
+              changed_files: $files[0],
+              swift_files_changed: $swift[0],
               diff_stats: $stats,
               technical_summary: $tech,
               user_facing_summary: $user_facing,
-              areas_affected: $areas,
+              areas_affected: $areas[0],
+              code_changes_detail: $code_changes[0],
               is_version_bump: $is_bump
             }')
 

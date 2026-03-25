@@ -74,6 +74,14 @@ interface TopIssue {
   status: string
 }
 
+interface CodeChangeDetail {
+  file: string
+  snippet: string
+  what_changed: string
+  why: string
+  risk: 'none' | 'low' | 'medium' | 'high'
+}
+
 interface VersionChangelog {
   id: string
   version: string | null
@@ -86,6 +94,7 @@ interface VersionChangelog {
   technical_summary: string | null
   user_facing_summary: string | null
   areas_affected: string[]
+  code_changes_detail: CodeChangeDetail[] | null
   is_version_bump: boolean
   created_at: string
 }
@@ -1443,8 +1452,15 @@ function VersionGroupTab({ crashes, loading, changelogs, onViewCrash }: {
         versionBreakdown[v] = (versionBreakdown[v] || 0) + 1
       }
 
-      // Gather changelog context for the versions involved
-      const relevantChangelogs: Array<{ version: string; summary: string; swift_files: string[]; areas: string[]; commit: string }> = []
+      // Gather changelog context for the versions involved (with per-file details)
+      const relevantChangelogs: Array<{
+        version: string
+        summary: string
+        swift_files: string[]
+        areas: string[]
+        commit: string
+        code_changes: Array<{ file: string; snippet: string; what_changed: string; why: string; risk: string }>
+      }> = []
       for (const v of Object.keys(versionBreakdown)) {
         const cls = changelogByVersion.get(v) || []
         for (const cl of cls) {
@@ -1454,12 +1470,19 @@ function VersionGroupTab({ crashes, loading, changelogs, onViewCrash }: {
             swift_files: cl.swift_files_changed || [],
             areas: cl.areas_affected || [],
             commit: cl.commit_message,
+            code_changes: (cl.code_changes_detail || []).map(c => ({
+              file: c.file,
+              snippet: c.snippet?.slice(0, 200) || '',
+              what_changed: c.what_changed,
+              why: c.why,
+              risk: c.risk,
+            })),
           })
         }
       }
 
       const changelogSection = relevantChangelogs.length > 0
-        ? `\n\nCode Changes Per Version (from auto-captured changelogs):\n${JSON.stringify(relevantChangelogs, null, 2)}\n\nUse these changelogs to correlate crashes with specific code changes. If a crash first appeared in a version, check what Swift files changed in that version's changelog — those are the likely culprits.`
+        ? `\n\nCode Changes Per Version (from auto-captured changelogs — includes actual code snippets and reasoning for each file):\n${JSON.stringify(relevantChangelogs, null, 2)}\n\nCRITICAL: Use these changelogs to correlate crashes with code changes. Each entry includes:\n- "code_changes": per-file snippets showing what changed and WHY\n- "risk": the assessed risk level of each change\n- If a crash first appeared in a version, check the code_changes for that version — match crash error domains/screens to the changed files and their snippets to identify the root cause.`
         : ''
 
       const prompt = `Analyze these ${selectedCrashes.length} crash reports from the Fit33 iOS fitness app, selected across these versions: ${Object.entries(versionBreakdown).map(([v, n]) => `v${v} (${n})`).join(', ')}.
@@ -1532,11 +1555,26 @@ Respond with structured analysis: version-by-version breakdown, regressions corr
         for (const [v, cls] of byVer) {
           lines.push(`### v${v}`, '')
           for (const cl of cls) {
-            lines.push(`- **Commit:** ${cl.commit}`)
-            lines.push(`- **Summary:** ${cl.summary}`)
-            if (cl.areas.length > 0) lines.push(`- **Areas:** ${cl.areas.join(', ')}`)
-            if (cl.swift_files.length > 0) lines.push(`- **Swift files:** ${cl.swift_files.map(f => f.split('/').pop()).join(', ')}`)
+            lines.push(`**Commit:** ${cl.commit}`)
+            lines.push(`**Summary:** ${cl.summary}`)
+            if (cl.areas.length > 0) lines.push(`**Areas:** ${cl.areas.join(', ')}`)
             lines.push('')
+            if (cl.code_changes && cl.code_changes.length > 0) {
+              for (const change of cl.code_changes) {
+                lines.push(`#### ${change.file} [risk: ${change.risk}]`)
+                lines.push(`**What:** ${change.what_changed}`)
+                lines.push(`**Why:** ${change.why}`)
+                if (change.snippet) {
+                  lines.push('```swift')
+                  lines.push(change.snippet)
+                  lines.push('```')
+                }
+                lines.push('')
+              }
+            } else if (cl.swift_files.length > 0) {
+              lines.push(`**Swift files:** ${cl.swift_files.map(f => f.split('/').pop()).join(', ')}`)
+              lines.push('')
+            }
           }
         }
         lines.push('---', '')
@@ -1747,10 +1785,39 @@ Respond with structured analysis: version-by-version breakdown, regressions corr
                         {cl.technical_summary && (
                           <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{cl.technical_summary}</p>
                         )}
-                        <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
-                          <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Commit:</span> {cl.commit_message.slice(0, 100)}
+                        <div className="text-xs font-mono mb-2" style={{ color: 'var(--text-muted)' }}>
+                          <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>Commit:</span> {cl.commit_message.slice(0, 120)}
                         </div>
-                        {cl.swift_files_changed && cl.swift_files_changed.length > 0 && (
+
+                        {/* Per-file code changes */}
+                        {cl.code_changes_detail && cl.code_changes_detail.length > 0 ? (
+                          <div className="space-y-2 mt-2">
+                            {cl.code_changes_detail.map((change, i) => {
+                              const riskColor = change.risk === 'high' ? '#ef4444' : change.risk === 'medium' ? '#f59e0b' : change.risk === 'low' ? '#3b82f6' : '#22c55e'
+                              return (
+                                <div key={i} className="rounded-md p-2.5" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                                  <div className="flex items-center gap-2 mb-1.5">
+                                    <span className="text-xs font-mono font-bold" style={{ color: 'var(--text-primary)' }}>{change.file}</span>
+                                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: riskColor + '18', color: riskColor, fontWeight: 600 }}>
+                                      {change.risk}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                                    <span style={{ fontWeight: 600 }}>What: </span>{change.what_changed}
+                                  </p>
+                                  <p className="text-xs mb-1.5" style={{ color: '#3b82f6' }}>
+                                    <span style={{ fontWeight: 600 }}>Why: </span>{change.why}
+                                  </p>
+                                  {change.snippet && (
+                                    <pre className="text-xs p-2 rounded overflow-x-auto" style={{ background: '#0d1117', color: '#c9d1d9', fontFamily: 'ui-monospace, monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 120 }}>
+                                      {change.snippet}
+                                    </pre>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : cl.swift_files_changed && cl.swift_files_changed.length > 0 ? (
                           <div className="mt-1.5">
                             <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Swift files ({cl.swift_files_changed.length}):</span>
                             <div className="flex flex-wrap gap-1 mt-1">
@@ -1761,7 +1828,8 @@ Respond with structured analysis: version-by-version breakdown, regressions corr
                               ))}
                             </div>
                           </div>
-                        )}
+                        ) : null}
+
                         {cl.diff_stats && (
                           <div className="text-xs mt-1.5 font-mono" style={{ color: 'var(--text-muted)' }}>{cl.diff_stats}</div>
                         )}

@@ -215,7 +215,6 @@ class SupabaseManager: ObservableObject {
         
         let startTime = Date()
         AppLogger.debug("[SUPABASE] Starting signup request for: \(email)", category: .auth)
-        AppLogger.debug("[SUPABASE] Timestamp: \(startTime)", category: .auth)
 
         do {
             AppLogger.debug("[SUPABASE] Calling client.auth.signUp...", category: .auth)
@@ -227,19 +226,25 @@ class SupabaseManager: ObservableObject {
             let user = response.user
             AppLogger.debug("[SUPABASE] User ID: \(user.id)", category: .auth)
             
-            // Create user profile
-            AppLogger.debug("[SUPABASE] Creating user profile...", category: .auth)
-            try await createUserProfile(userId: user.id, name: name, email: email)
-            AppLogger.info("[SUPABASE] Profile created successfully", category: .auth)
-            
+            // Set auth state BEFORE profile creation so subsequent API calls have a session
             await MainActor.run {
                 currentUser = user
                 isAuthenticated = true
-                isLoading = false
-                
-                // Clear the manual sign-out flag since user is signing up
                 UserDefaults.standard.removeObject(forKey: "user_manually_signed_out")
             }
+            
+            // Create user profile — if this fails, auth user still exists and can be recovered
+            do {
+                AppLogger.debug("[SUPABASE] Creating user profile...", category: .auth)
+                try await createUserProfile(userId: user.id, name: name, email: email)
+                AppLogger.info("[SUPABASE] Profile created successfully", category: .auth)
+            } catch {
+                AppLogger.error("[SUPABASE] Profile creation failed (auth user exists, recoverable): \(error)", category: .auth)
+                // Don't throw — the auth user is created and authenticated.
+                // Profile can be created/repaired later via ensureProfileExists().
+            }
+            
+            await MainActor.run { isLoading = false }
             
             let totalDuration = Date().timeIntervalSince(startTime)
             AppLogger.info("Sign up successful: \(email) (total: \(String(format: "%.2f", totalDuration))s)", category: .auth)
@@ -643,12 +648,12 @@ class SupabaseManager: ObservableObject {
     func signOut() async throws {
         await MainActor.run { isLoading = true }
         SessionLogManager.shared.logLogout()
-        
+
         do {
-            try await client.auth.signOut()
+            await PushNotificationService.shared.removeDeviceToken()
             
-            // Clear all local user data for security
-            // This ensures no data from this user is visible to another user
+            try await client.auth.signOut()
+
             await MainActor.run {
                 // Clear Core Data and UserDefaults
                 PersistenceController.shared.clearAllUserData()
@@ -1177,6 +1182,12 @@ class SupabaseManager: ObservableObject {
         try await createUserProgress(userId: userId)
         
         AppLogger.info("User profile created (onboarding: \(hasCompletedOnboarding ? "complete" : "pending"))", category: .network)
+    }
+    
+    /// Public helper: ensure a profile row exists for a user (idempotent upsert).
+    /// Used to recover from partial signup failures where auth user was created but profile wasn't.
+    func ensureProfileExists(userId: UUID, name: String, email: String) async throws {
+        try await createUserProfile(userId: userId, name: name, email: email)
     }
     
     // MARK: - Activity & Integration Tracking

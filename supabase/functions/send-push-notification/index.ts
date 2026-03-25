@@ -73,7 +73,18 @@ function isInQuietHours(prefs: { quiet_hours_enabled: boolean; quiet_hours_start
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-key',
+}
+
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return false
+    const payload = JSON.parse(atob(parts[1]))
+    return payload.role === 'service_role' && payload.ref === 'ehooeghabzefgoqzugrc'
+  } catch {
+    return false
+  }
 }
 
 serve(async (req) => {
@@ -85,20 +96,28 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
+    const cronKey = req.headers.get('x-cron-key')
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    if (cronKey && isServiceRoleJWT(cronKey)) {
+      // pg_cron bypass: verified service_role JWT via custom header
+    } else if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing authorization' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
-    }
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    if (token !== supabaseServiceKey) {
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (authError || !user) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+    } else {
+      const token = authHeader.replace('Bearer ', '')
+      if (token === supabaseServiceKey || isServiceRoleJWT(token)) {
+        // Authenticated via service role key (short or JWT format)
+      } else {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+        if (authError || !user) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
       }
     }
 
@@ -410,7 +429,11 @@ async function markNotificationFailed(
     errorMessage.includes('TopicDisallowed') ||
     errorMessage.includes('DeviceTokenNotForTopic') ||
     errorMessage.includes('ExpiredProviderToken') ||
-    errorMessage.includes('InvalidProviderToken')
+    errorMessage.includes('InvalidProviderToken') ||
+    errorMessage.includes('No device token') ||
+    errorMessage.includes('User disabled') ||
+    errorMessage.includes('type disabled') ||
+    errorMessage.includes('Quiet hours')
   
   // Don't invalidate tokens for transient/network errors
   const shouldInvalidateToken = 

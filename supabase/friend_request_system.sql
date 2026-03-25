@@ -219,23 +219,31 @@ BEGIN
     FROM user_profiles
     WHERE id = current_user_uuid;
     
-    -- Queue push notification to the original requester
+    -- Queue push notification to the original requester (with dedup guard)
     BEGIN
-        INSERT INTO push_notification_queue (
-            recipient_user_id, notification_type, title, body, data, status, created_at
-        ) VALUES (
-            request_record.requester_id,
-            'friend_accepted',
-            'Friend Request Accepted 🎉',
-            accepter_name || ' accepted your friend request!',
-            jsonb_build_object(
-                'type', 'friend_accepted',
-                'friendship_id', request_id::TEXT,
-                'friend_id', current_user_uuid::TEXT
-            ),
-            'pending',
-            NOW()
-        );
+        IF NOT EXISTS (
+            SELECT 1 FROM push_notification_queue
+            WHERE recipient_user_id = request_record.requester_id
+              AND notification_type = 'friend_accepted'
+              AND data->>'friendship_id' = request_id::TEXT
+              AND created_at > NOW() - INTERVAL '5 minutes'
+        ) THEN
+            INSERT INTO push_notification_queue (
+                recipient_user_id, notification_type, title, body, data, status, created_at
+            ) VALUES (
+                request_record.requester_id,
+                'friend_accepted',
+                'Friend Request Accepted 🎉',
+                accepter_name || ' accepted your friend request!',
+                jsonb_build_object(
+                    'type', 'friend_accepted',
+                    'friendship_id', request_id::TEXT,
+                    'friend_id', current_user_uuid::TEXT
+                ),
+                'pending',
+                NOW()
+            );
+        END IF;
     EXCEPTION WHEN OTHERS THEN
         RAISE WARNING 'Failed to queue accept notification: %', SQLERRM;
     END;

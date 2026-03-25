@@ -1083,9 +1083,9 @@ struct CommunityLeaderboardWidget: View {
                 
                 // Today's progress (live for current user, DB for others)
                 HStack(spacing: 2) {
-                    Text("\(displayProgress)")
+                    Text(!isMe && displayProgress == 0 ? "–" : "\(displayProgress)")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(displayTargetHit ? themeColor : .primary)
+                        .foregroundColor(!isMe && displayProgress == 0 ? .secondary.opacity(0.5) : (displayTargetHit ? themeColor : .primary))
                         .contentTransition(.numericText())
                     
                     if displayTargetHit {
@@ -1819,9 +1819,9 @@ struct CommunityLeaderboardView: View {
             
             // Today's progress
             HStack(spacing: 3) {
-                Text("\(entry.todayProgress)")
+                Text(!isCurrentUser && entry.todayProgress == 0 ? "–" : "\(entry.todayProgress)")
                     .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                    .foregroundColor(entry.targetHitToday ? .green : .primary)
+                    .foregroundColor(!isCurrentUser && entry.todayProgress == 0 ? .secondary.opacity(0.5) : (entry.targetHitToday ? .green : .primary))
                     .contentTransition(.numericText())
                 
                 if entry.targetHitToday {

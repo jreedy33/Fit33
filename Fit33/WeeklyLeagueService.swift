@@ -28,6 +28,16 @@ struct LeagueStanding: Codable {
     let groupSize: Int
     let leaderboard: [LeagueEntry]
     
+    var friendsInLeague: Int {
+        leaderboard.filter { $0.isFriend == true && !$0.isCurrentUser }.count
+    }
+    
+    var connectionsInLeague: Int {
+        leaderboard.filter {
+            !$0.isCurrentUser && ($0.isFriend == true || ($0.mutualFriendCount ?? 0) > 0)
+        }.count
+    }
+    
     enum CodingKeys: String, CodingKey {
         case groupId = "group_id"
         case tierRank = "tier_rank"
@@ -114,6 +124,8 @@ struct LeagueEntry: Codable, Identifiable {
     let workoutsCompleted: Int?
     let rank: Int
     let isCurrentUser: Bool
+    let isFriend: Bool?
+    let mutualFriendCount: Int?
     
     var id: UUID { userId }
     
@@ -135,6 +147,11 @@ struct LeagueEntry: Codable, Identifiable {
         return String(displayName.prefix(2)).uppercased()
     }
     
+    /// Whether this person is a social connection (friend or friend-of-friend)
+    var isConnection: Bool {
+        isFriend == true || (mutualFriendCount ?? 0) > 0
+    }
+    
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case name
@@ -144,6 +161,8 @@ struct LeagueEntry: Codable, Identifiable {
         case workoutsCompleted = "workouts_completed"
         case rank
         case isCurrentUser = "is_current_user"
+        case isFriend = "is_friend"
+        case mutualFriendCount = "mutual_friend_count"
     }
 }
 
@@ -306,7 +325,9 @@ class WeeklyLeagueService: ObservableObject {
                             points: newPoints,
                             workoutsCompleted: (old.workoutsCompleted ?? 0) + (source == .workout ? 1 : 0),
                             rank: old.rank,
-                            isCurrentUser: true
+                            isCurrentUser: true,
+                            isFriend: old.isFriend,
+                            mutualFriendCount: old.mutualFriendCount
                         )
                     }
                     // Note: rank may change — do a full refresh next time
@@ -405,6 +426,59 @@ class WeeklyLeagueService: ObservableObject {
         #if DEBUG
         AppLogger.debug("🏆 [LEAGUE] Daily login bonus awarded (+5 pts)", category: .social)
         #endif
+    }
+    
+    // MARK: - Hide / Unhide League Users
+    
+    @Published var hiddenUserIds: Set<UUID> = []
+    
+    func hideUser(_ userId: UUID) async {
+        hiddenUserIds.insert(userId)
+        
+        if let current = standing {
+            let filtered = current.leaderboard.filter { $0.userId != userId }
+            self.standing = LeagueStanding(
+                groupId: current.groupId,
+                tierRank: current.tierRank,
+                tierName: current.tierName,
+                tierEmoji: current.tierEmoji,
+                tierColor: current.tierColor,
+                promotionCount: current.promotionCount,
+                relegationCount: current.relegationCount,
+                weekStart: current.weekStart,
+                daysRemaining: current.daysRemaining,
+                myPoints: current.myPoints,
+                myRank: current.myRank,
+                groupSize: current.groupSize,
+                leaderboard: filtered
+            )
+        }
+        
+        do {
+            struct HideResult: Decodable { let success: Bool }
+            let _: HideResult = try await SupabaseManager.shared.supabaseClient
+                .rpc("hide_league_user", params: ["p_hidden_user_id": userId.uuidString])
+                .execute()
+                .value
+        } catch {
+            AppLogger.warning("Failed to hide league user: \(error)", category: .social)
+        }
+    }
+    
+    func unhideUser(_ userId: UUID) async {
+        hiddenUserIds.remove(userId)
+        
+        do {
+            struct UnhideResult: Decodable { let success: Bool }
+            let _: UnhideResult = try await SupabaseManager.shared.supabaseClient
+                .rpc("unhide_league_user", params: ["p_hidden_user_id": userId.uuidString])
+                .execute()
+                .value
+            
+            await fetchFullLeaderboard()
+        } catch {
+            AppLogger.warning("Failed to unhide league user: \(error)", category: .social)
+        }
     }
     
     // MARK: - Cache

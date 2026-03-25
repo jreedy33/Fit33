@@ -314,20 +314,22 @@ extension NewOnboardingView {
                     }
                     
                     // Auto-advance to weight when height is complete
-                    // 3 digits: always complete (e.g., 5'10")
-                    // 2 digits: complete if inches is 2-9 (can't be 10, 11, etc.)
+                    // 3 digits: always advance (e.g., 5'10") with short delay
+                    // 2 digits with inches 2-9: delay longer so user can type a third digit
+                    // 1 digit (feet only): never auto-advance, user may want to add inches
                     let inchValue = Int(inches) ?? 0
-                    let isComplete = limitedDigits.count == 3 || 
-                        (limitedDigits.count == 2 && !inches.isEmpty && inchValue >= 2)
-                    if isComplete && isHeightValid {
+                    if limitedDigits.count == 3 && isHeightValid {
                         Task { @MainActor in
-                            try? await Task.sleep(for: .seconds(0.1))
+                            try? await Task.sleep(for: .seconds(0.3))
                             guard !Task.isCancelled else { return }
                             focusedField = .weight
                         }
+                    } else if limitedDigits.count == 2 && !inches.isEmpty && inchValue >= 2 && isHeightValid {
                         Task { @MainActor in
-                            try? await Task.sleep(for: .seconds(0.2))
+                            try? await Task.sleep(for: .seconds(1.0))
                             guard !Task.isCancelled else { return }
+                            let currentDigits = heightFeetInchesDigits.filter { $0.isNumber }
+                            guard currentDigits.count == 2 else { return }
                             focusedField = .weight
                         }
                     }
@@ -339,22 +341,7 @@ extension NewOnboardingView {
                     let digits = newValue.filter { $0.isNumber }
                     if digits.count == 3 && isHeightValid {
                         Task { @MainActor in
-                            try? await Task.sleep(for: .seconds(0.1))
-                            guard !Task.isCancelled else { return }
-                            focusedField = .weight
-                        }
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .seconds(0.2))
-                            guard !Task.isCancelled else { return }
-                            focusedField = .weight
-                        }
-                    }
-                }
-                .onChange(of: isHeightValid) { oldValue, newValue in
-                    // Auto-advance when height becomes valid
-                    if newValue && !oldValue && focusedField == .height {
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .seconds(0.15))
+                            try? await Task.sleep(for: .seconds(0.3))
                             guard !Task.isCancelled else { return }
                             focusedField = .weight
                         }
@@ -534,56 +521,30 @@ extension NewOnboardingView {
     }
     
     var goalStepContent: some View {
-        let goals: [(String, String, String, Color)] = [
-            ("Build Muscle", "💪", "Gain size & strength", .blue),
-            ("Lose Weight", "🔥", "Burn fat & get lean", .orange),
-            ("Get Stronger", "🏋️", "Increase max lifts", .purple),
-            ("Stay Active", "⚡", "General fitness", .green),
-            ("Build Endurance", "🏃", "Improve stamina", .cyan),
-            ("Improve Health", "❤️", "Overall wellness", .red)
+        let goals: [(String, String, String)] = [
+            ("Build Muscle", "💪", "Gain size & strength"),
+            ("Lose Weight", "🔥", "Burn fat & get lean"),
+            ("Get Stronger", "🏋️", "Increase max lifts"),
+            ("Stay Active", "⚡", "General fitness"),
+            ("Build Endurance", "🏃", "Improve stamina"),
+            ("Improve Health", "❤️", "Overall wellness")
         ]
         
         return ScrollView(showsIndicators: false) {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(goals, id: \.0) { goal in
-                    Button(action: {
+                    OnboardingGoalCard(
+                        title: goal.0,
+                        emoji: goal.1,
+                        subtitle: goal.2,
+                        isSelected: selectedGoals.contains(goal.0)
+                    ) {
                         if selectedGoals.contains(goal.0) {
                             selectedGoals.remove(goal.0)
                         } else {
                             selectedGoals.insert(goal.0)
                         }
-                    }) {
-                        VStack(spacing: 8) {
-                            Text(goal.1)
-                                .font(.ds_heading1)
-                            Text(goal.0)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                            Text(goal.2)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.md)
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                                .fill(selectedGoals.contains(goal.0) 
-                                    ? AnyShapeStyle(goal.3.opacity(0.2))
-                                    : AnyShapeStyle(LinearGradient(
-                                        colors: colorScheme == .dark 
-                                            ? [Color(white: 0.14), Color(white: 0.10)]
-                                            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ))
-                                )
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                                .stroke(selectedGoals.contains(goal.0) ? goal.3 : Color.clear, lineWidth: 2)
-                        )
                     }
-                    .foregroundColor(.primary)
                 }
             }
             .padding(.horizontal, Spacing.lg)
@@ -601,43 +562,14 @@ extension NewOnboardingView {
         return ScrollView(showsIndicators: false) {
             VStack(spacing: 12) {
                 ForEach(levels, id: \.0) { level in
-                    Button(action: { selectedExperience = level.0 }) {
-                        HStack {
-                            Text(level.1)
-                                .font(.title)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(level.0)
-                                    .font(.headline)
-                                Text(level.2)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            if selectedExperience == level.0 {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.md)
-                                .fill(selectedExperience == level.0 
-                                    ? AnyShapeStyle(Color.blue.opacity(0.1))
-                                    : AnyShapeStyle(LinearGradient(
-                                        colors: colorScheme == .dark 
-                                            ? [Color(white: 0.14), Color(white: 0.10)]
-                                            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ))
-                                )
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.md)
-                                .stroke(selectedExperience == level.0 ? Color.blue : Color.clear, lineWidth: 2)
-                        )
+                    OnboardingExperienceCard(
+                        title: level.0,
+                        emoji: level.1,
+                        subtitle: level.2,
+                        isSelected: selectedExperience == level.0
+                    ) {
+                        selectedExperience = level.0
                     }
-                    .foregroundColor(.primary)
                 }
             }
             .padding(.horizontal, Spacing.lg)
@@ -649,43 +581,15 @@ extension NewOnboardingView {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 12) {
                 ForEach(StrengthProfileRecommendationEngine.StrengthLevel.allCases, id: \.self) { level in
-                    Button(action: { selectedStrengthLevel = level }) {
-                        HStack(spacing: 12) {
-                            Text(level.emoji)
-                                .font(.title2)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(level.displayName)
-                                    .font(.headline)
-                                Text(level.description)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            if selectedStrengthLevel == level {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.md)
-                                .fill(selectedStrengthLevel == level 
-                                    ? AnyShapeStyle(Color.orange.opacity(0.15))
-                                    : AnyShapeStyle(LinearGradient(
-                                        colors: colorScheme == .dark 
-                                            ? [Color(white: 0.14), Color(white: 0.10)]
-                                            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ))
-                                )
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.md)
-                                .stroke(selectedStrengthLevel == level ? Color.orange : Color.clear, lineWidth: 2)
-                        )
+                    StrengthLevelCard(
+                        level: level,
+                        emoji: level.emoji,
+                        title: level.displayName,
+                        subtitle: level.description,
+                        isSelected: selectedStrengthLevel == level
+                    ) {
+                        selectedStrengthLevel = level
                     }
-                    .foregroundColor(.primary)
                 }
             }
             .padding(.horizontal, Spacing.lg)
@@ -709,33 +613,27 @@ extension NewOnboardingView {
                         selectedWorkoutLocation = loc.0 
                     }) {
                         VStack(spacing: 8) {
-                            Text(loc.1)
-                                .font(.ds_heading1)
+                            ZStack {
+                                if selectedWorkoutLocation == loc.0 {
+                                    Circle()
+                                        .fill(loc.3.opacity(0.35))
+                                        .frame(width: 50, height: 50)
+                                        .blur(radius: 12)
+                                }
+                                Text(loc.1)
+                                    .font(.ds_heading1)
+                            }
                             Text(loc.2)
-                                .font(.subheadline)
-                                .fontWeight(.medium)
+                                .font(.ds_labelLarge)
+                                .foregroundColor(selectedWorkoutLocation == loc.0 ? loc.3 : .primary)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                                .fill(selectedWorkoutLocation == loc.0 
-                                    ? AnyShapeStyle(loc.3.opacity(0.2))
-                                    : AnyShapeStyle(LinearGradient(
-                                        colors: colorScheme == .dark 
-                                            ? [Color(white: 0.14), Color(white: 0.10)]
-                                            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ))
-                                )
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                                .stroke(selectedWorkoutLocation == loc.0 ? loc.3 : Color.clear, lineWidth: 2)
-                        )
+                        .onboardingCardStyle(accentColor: loc.3, secondaryColor: loc.3.opacity(0.7), isSelected: selectedWorkoutLocation == loc.0, cornerRadius: CornerRadius.lg)
                     }
-                    .foregroundColor(.primary)
+                    .buttonStyle(.plain)
+                    .scaleEffect(selectedWorkoutLocation == loc.0 ? 1.03 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedWorkoutLocation == loc.0)
                 }
             }
             .padding(.horizontal, Spacing.lg)
@@ -764,7 +662,6 @@ extension NewOnboardingView {
                     confirmedAccommodations.remove(area)
                 } else {
                     selectedLimitations.insert(area)
-                    // Default to "Be Careful" but mark as needing explicit selection
                     limitationAccommodations[area] = .beCareful
                 }
             }) {
@@ -774,11 +671,9 @@ extension NewOnboardingView {
                         .foregroundColor(area.color)
                         .frame(width: 30)
                     Text(area.rawValue)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                        .font(.ds_labelLarge)
                     Spacer()
                     
-                    // Show status indicator
                     if needsSelection {
                         Image(systemName: "exclamationmark.circle.fill")
                             .foregroundColor(.orange)
@@ -789,25 +684,16 @@ extension NewOnboardingView {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                        .fill(isSelected 
-                            ? AnyShapeStyle(needsSelection ? Color.orange.opacity(0.08) : Color.blue.opacity(0.1))
-                            : AnyShapeStyle(LinearGradient(
-                                colors: colorScheme == .dark 
-                                    ? [Color(white: 0.14), Color(white: 0.10)]
-                                    : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ))
-                        )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                        .stroke(isSelected ? (needsSelection ? Color.orange : Color.blue) : Color.clear, lineWidth: 1.5)
+                .onboardingCardStyle(
+                    accentColor: needsSelection ? .orange : .blue,
+                    secondaryColor: needsSelection ? .red : .cyan,
+                    isSelected: isSelected,
+                    cornerRadius: CornerRadius.md
                 )
             }
-            .foregroundColor(.primary)
+            .buttonStyle(.plain)
+            .scaleEffect(isSelected ? 1.01 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isSelected)
             
             // Auto-expanded options when selected
             if isSelected {
@@ -827,55 +713,33 @@ extension NewOnboardingView {
                         .padding(.leading, 12)
                     }
                     
-                    // Options as buttons (not dropdown)
                     ForEach(AccommodationLevel.allCases, id: \.self) { level in
+                        let isLevelSelected = limitationAccommodations[area] == level
                         Button(action: {
                             limitationAccommodations[area] = level
                             confirmedAccommodations.insert(area)
                         }) {
-                            HStack(spacing: 10) {
+                            HStack(spacing: 8) {
                                 Image(systemName: level.icon)
-                                    .font(.ds_bodyMedium)
-                                    .foregroundColor(level.color)
-                                    .frame(width: 22)
+                                    .font(.ds_bodySmall)
+                                    .foregroundColor(isLevelSelected ? level.color : .secondary)
+                                    .frame(width: 20)
                                 
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(level.displayName)
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                    Text(level.description)
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                }
+                                Text(level.displayName)
+                                    .font(.subheadline)
+                                    .foregroundColor(isLevelSelected ? .primary : .secondary)
                                 
                                 Spacer()
                                 
-                                if limitationAccommodations[area] == level {
+                                if isLevelSelected {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .font(.ds_heading3)
+                                        .font(.subheadline)
                                         .foregroundColor(level.color)
                                 }
                             }
                             .padding(.horizontal, Spacing.sm)
-                            .padding(.vertical, 9)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(limitationAccommodations[area] == level 
-                                        ? AnyShapeStyle(level.color.opacity(0.12))
-                                        : AnyShapeStyle(LinearGradient(
-                                            colors: colorScheme == .dark 
-                                                ? [Color(white: 0.14), Color(white: 0.10)]
-                                                : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ))
-                                    )
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(limitationAccommodations[area] == level ? level.color.opacity(0.5) : Color.clear, lineWidth: 1.5)
-                            )
+                            .padding(.vertical, Spacing.sm)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemGray6)))
                         }
                         .buttonStyle(.plain)
                     }
@@ -896,27 +760,12 @@ extension NewOnboardingView {
                 
                 HStack(spacing: 12) {
                     ForEach(2...6, id: \.self) { day in
-                        Button(action: { selectedDays = day }) {
-                            Text("\(day)")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .frame(width: 50, height: 50)
-                                .background(
-                                    Circle()
-                                        .fill(selectedDays == day 
-                                            ? AnyShapeStyle(Color.blue)
-                                            : AnyShapeStyle(LinearGradient(
-                                                colors: colorScheme == .dark 
-                                                    ? [Color(white: 0.14), Color(white: 0.10)]
-                                                    : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            ))
-                                        )
-                                )
-                                .foregroundColor(selectedDays == day ? .white : .primary)
+                        DaySelectorButtonLarge(
+                            day: day,
+                            isSelected: selectedDays == day
+                        ) {
+                            selectedDays = day
                         }
-                        .accessibilityLabel("\(day) days per week, \(selectedDays == day ? "selected" : "not selected")")
                     }
                 }
             }

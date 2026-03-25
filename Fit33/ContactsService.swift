@@ -391,17 +391,17 @@ class ContactsService: ObservableObject {
     /// Contacts who are also mutual friends (friends-of-friends) get boosted to the top.
     func allSuggestions(excludingFriendIds friendIds: Set<UUID>, excludingSentIds sentIds: Set<UUID>) -> [SuggestedFriend] {
         let excludeIds = friendIds.union(sentIds)
+        let blockedIds = FriendService.shared.blockedUserIds
         
         // Build a lookup of mutual friend counts from the friends-of-friends query
         let mutualCountByUserId = Dictionary(
             uniqueKeysWithValues: peopleYouMayKnow.map { ($0.userId, $0.mutualFriendCount ?? 0) }
         )
         
-        // Start with ONLY contact-based suggestions — no randoms
         let contacts = suggestedFriends.filter { suggestion in
             guard !excludeIds.contains(suggestion.userId) else { return false }
             guard !suggestion.isFriend else { return false }
-            guard !suggestion.hasOutgoingRequest else { return false }
+            guard !blockedIds.contains(suggestion.userId) else { return false }
             return true
         }
         

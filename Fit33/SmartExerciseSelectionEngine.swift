@@ -140,34 +140,7 @@ class SmartExerciseSelectionEngine {
     /// User selects: "Machines", "Cables", "Barbell", "Dumbbells"
     /// Database has: "Lever Machine", "Cable Machine", "Chest Press Machine", etc.
     private func normalizeEquipmentForMatching(_ equipment: String) -> [String] {
-        let equip = equipment.lowercased().trimmingCharacters(in: .whitespaces)
-        
-        // Map user-friendly equipment names to database patterns
-        switch equip {
-        case "machines", "machine":
-            return ["machine", "lever", "press machine", "curl machine", "row machine", 
-                    "extension machine", "pulldown", "leg press", "hack squat", "smith"]
-        case "cables", "cable":
-            return ["cable", "cable machine", "pulley"]
-        case "barbell", "barbells":
-            return ["barbell", "bar", "olympic"]
-        case "dumbbells", "dumbbell":
-            return ["dumbbell", "dumbbells", "db"]
-        case "bodyweight", "body weight":
-            return ["bodyweight", "body weight", ""]
-        case "kettlebell", "kettlebells":
-            return ["kettlebell", "kb"]
-        case "resistance bands", "resistance band", "bands":
-            return ["band", "resistance band", "resistance"]
-        case "smith machine":
-            return ["smith", "smith machine"]
-        case "trx", "suspension":
-            return ["trx", "suspension"]
-        case "pull-up bar", "pull up bar":
-            return ["pull-up bar", "pull up bar", "pullup bar"]
-        default:
-            return [equip]
-        }
+        return ExerciseFilterService.normalizeEquipmentForMatching(equipment)
     }
     
     /// Check if exercise equipment matches any of the user's available equipment

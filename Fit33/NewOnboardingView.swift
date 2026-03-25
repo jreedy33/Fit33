@@ -340,123 +340,13 @@ struct NewOnboardingView: View {
                 authStep
             }
             
-            // Auth step in standard mode (with shared header and button bar)
-            else if currentStep == .auth && hasStartedAuth {
-                let keyboardUp = keyboardObserver.keyboardHeight > 0
-                
-                ZStack(alignment: .bottom) {
-                    // Main content
-                    VStack(spacing: 0) {
-                        // Header
-                        onboardingSharedHeader(compact: keyboardUp)
-                        
-                        // Content
-                        ScrollView(showsIndicators: false) {
-                            VStack(spacing: 0) {
-                                authFormContent
-                                    .padding(.top, 8)
-                            }
-                        }
-                        .scrollDismissesKeyboard(.interactively)
-                        
-                        Spacer()
-                    }
-                    
-                    // Shared button bar
-                    VStack(spacing: 0) {
-                        HStack(spacing: 12) {
-                            // Back button logic for auth step
-                            if isSignUp && isOnConfirmPasswordStep {
-                                // If on confirm password, go back to first password
-                                Button(action: {
-                                    isOnConfirmPasswordStep = false
-                                    confirmPassword = ""  // Clear only confirm password, keep first password
-                                    // First password stays valid with all indicators lit
-                                    // onChange handler will manage focus to keep keyboard up
-                                }) {
-                                    Image(systemName: "chevron.left")
-                                        .font(.ds_labelLarge)
-                                        .foregroundColor(.gray)
-                                        .frame(width: 52, height: 52)
-                                        .background(Circle().fill(Color(.systemGray6)))
-                                        .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
-                                }
-                                .accessibilityLabel("Go back")
-                                .accessibilityHint("Returns to previous step")
-                            } else {
-                                // If on first password/email, go back to welcome screen
-                                Button(action: {
-                                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                                        hasStartedAuth = false
-                                        focusedField = nil  // Dismiss keyboard
-                                    }
-                                }) {
-                                    Image(systemName: "chevron.left")
-                                        .font(.ds_labelLarge)
-                                        .foregroundColor(.gray)
-                                        .frame(width: 52, height: 52)
-                                        .background(Circle().fill(Color(.systemGray6)))
-                                        .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
-                                }
-                                .accessibilityLabel("Go back")
-                                .accessibilityHint("Returns to previous step")
-                            }
-                            
-                            // Continue button
-                            Button(action: { 
-                                if isSignUp && !isOnConfirmPasswordStep && isPasswordValid {
-                                    // Advance to confirm password step
-                                    isOnConfirmPasswordStep = true
-                                } else {
-                                    handleAuth()
-                                }
-                            }) {
-                                HStack(spacing: 8) {
-                                    if supabaseManager.isLoading {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: isAuthFormValid ? .blue : .gray))
-                                            .scaleEffect(0.9)
-                                    }
-                                    Text(isSignUp ? "Continue" : "Sign In")
-                                        .font(.headline)
-                                        .fontWeight(.semibold)
-                                }
-                                .foregroundStyle(
-                                    isAuthFormValid
-                                        ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
-                                        : AnyShapeStyle(Color.gray)
-                                )
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, Spacing.md)
-                                .background(Capsule().fill(Color(.systemGray6)))
-                                .overlay(
-                                    Capsule()
-                                        .stroke(
-                                            isAuthFormValid
-                                                ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
-                                                : AnyShapeStyle(Color.gray.opacity(0.3)),
-                                            lineWidth: 2
-                                        )
-                                )
-                            }
-                            .disabled(!isAuthFormValid || supabaseManager.isLoading)
-                            .accessibilityLabel(isSignUp ? "Continue" : "Sign In")
-                            .accessibilityHint("Proceeds to next onboarding step")
-                        }
-                    }
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
-                    .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
-                    .animation(nil, value: isOnConfirmPasswordStep)  // No animation on button bar for password step changes
-                }
-            }
-            
             // Complete step has its own layout (celebration)
             else if currentStep == .complete {
                 completeStep
             }
             
-            // Main onboarding flow (shared header + sliding content + floating button)
+            // Main onboarding flow (auth standard mode + all other steps share the same layout
+            // so keyboard stays up seamlessly when transitioning between text-input steps)
             else if currentStep != .limitations && currentStep != .confirmation {
                 let keyboardUp = keyboardObserver.keyboardHeight > 0
                 
@@ -467,38 +357,101 @@ struct NewOnboardingView: View {
                         onboardingSharedHeader(compact: keyboardUp)
                             .animation(nil, value: currentStep)  // Don't animate header on step changes
                         
-                        // Content - use opacity transitions to avoid layout bouncing
-                        ZStack {
-                            if currentStep == .phoneNumber {
-                                let _ = AppLogger.verbose("Rendering phoneNumberStepContent for currentStep: \(currentStep)", category: .ui)
-                                phoneNumberStepContent
-                                    .transition(.opacity)
-                            }
-                            if currentStep == .username { usernameStepContent.transition(.opacity) }
-                            if currentStep == .basics { basicsStepContent.transition(.opacity) }
-                            if currentStep == .body { bodyStepContent.transition(.opacity) }
-                            if currentStep == .goal { goalStepContent.transition(.opacity) }
-                            if currentStep == .experience { experienceStepContent.transition(.opacity) }
-                            if currentStep == .strengthAssessment { strengthStepContent.transition(.opacity) }
-                            if currentStep == .workoutLocation { locationStepContent.transition(.opacity) }
-                            if currentStep == .equipment { equipmentStepContent.transition(.opacity) }
-                            if currentStep == .schedule { scheduleStepContent.transition(.opacity) }
-                            if currentStep == .profilePhoto { profilePhotoStepContent.transition(.opacity) }
-                            if currentStep == .contacts { contactsStepContent.transition(.opacity) }
-                            if currentStep == .addFriends { addFriendsStepContent.transition(.opacity) }
-                        }
-                        .animation(.easeInOut(duration: 0.25), value: currentStep)  // Smooth fade for content
+                        // Content (type-erased AnyView — NO .id() here, it would break @FocusState keyboard transfer)
+                        currentStepContent
+                            .animation(.easeInOut(duration: 0.25), value: currentStep)
                         
                         Spacer()
                     }
                     
-                    // Floating Continue button - IDENTICAL to auth step positioning
-                    onboardingSharedButtonBar
+                    // Floating button bar (auth step has custom buttons, others use shared bar)
+                    if currentStep == .auth && hasStartedAuth {
+                        VStack(spacing: 0) {
+                            HStack(spacing: 12) {
+                                if isSignUp && isOnConfirmPasswordStep {
+                                    Button(action: {
+                                        isOnConfirmPasswordStep = false
+                                        confirmPassword = ""
+                                    }) {
+                                        Image(systemName: "chevron.left")
+                                            .font(.ds_labelLarge)
+                                            .foregroundColor(.gray)
+                                            .frame(width: 52, height: 52)
+                                            .background(Circle().fill(Color(.systemGray6)))
+                                            .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
+                                    }
+                                    .accessibilityLabel("Go back")
+                                    .accessibilityHint("Returns to previous step")
+                                } else {
+                                    Button(action: {
+                                        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                                            hasStartedAuth = false
+                                            focusedField = nil
+                                        }
+                                    }) {
+                                        Image(systemName: "chevron.left")
+                                            .font(.ds_labelLarge)
+                                            .foregroundColor(.gray)
+                                            .frame(width: 52, height: 52)
+                                            .background(Circle().fill(Color(.systemGray6)))
+                                            .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
+                                    }
+                                    .accessibilityLabel("Go back")
+                                    .accessibilityHint("Returns to previous step")
+                                }
+                                
+                                Button(action: { 
+                                    if isSignUp && !isOnConfirmPasswordStep && isPasswordValid {
+                                        isOnConfirmPasswordStep = true
+                                    } else {
+                                        handleAuth()
+                                    }
+                                }) {
+                                    HStack(spacing: 8) {
+                                        if supabaseManager.isLoading {
+                                            ProgressView()
+                                                .progressViewStyle(CircularProgressViewStyle(tint: isAuthFormValid ? .blue : .gray))
+                                                .scaleEffect(0.9)
+                                        }
+                                        Text(isSignUp ? "Continue" : "Sign In")
+                                            .font(.headline)
+                                            .fontWeight(.semibold)
+                                    }
+                                    .foregroundStyle(
+                                        isAuthFormValid
+                                            ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                                            : AnyShapeStyle(Color.gray)
+                                    )
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, Spacing.md)
+                                    .background(Capsule().fill(Color(.systemGray6)))
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(
+                                                isAuthFormValid
+                                                    ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                                                    : AnyShapeStyle(Color.gray.opacity(0.3)),
+                                                lineWidth: 2
+                                            )
+                                    )
+                                }
+                                .disabled(!isAuthFormValid || supabaseManager.isLoading)
+                                .accessibilityLabel(isSignUp ? "Continue" : "Sign In")
+                                .accessibilityHint("Proceeds to next onboarding step")
+                            }
+                        }
                         .padding(.horizontal, Spacing.lg)
                         .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
                         .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
-                        .animation(nil, value: currentStep)  // Don't animate button bar on step changes
-                        .animation(nil, value: isCheckingUsername)  // Don't animate during username verification
+                        .animation(nil, value: isOnConfirmPasswordStep)
+                    } else {
+                        onboardingSharedButtonBar
+                            .padding(.horizontal, Spacing.lg)
+                            .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
+                            .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
+                            .animation(nil, value: currentStep)
+                            .animation(nil, value: isCheckingUsername)
+                    }
                 }
             }
             
@@ -716,25 +669,18 @@ struct NewOnboardingView: View {
                     UserDefaults.standard.removeObject(forKey: "pending_social_username")
                     AppLogger.debug("Pre-filled username from social login: @\(socialUsername)", category: .auth)
                 }
-                // Note: Focus is now handled in:
-                // - handleAuth() for email signup (keeps keyboard open)
-                // - handleAppleSignIn() for Apple auth
-                // - handleOAuthUserOnboarding() for Google auth
-                // Only set focus here if coming from non-auth steps (like phone or basics)
-                if oldStep != .auth && oldStep != .phoneNumber {
-                    let targetField: FocusedField = name.isEmpty ? .name : .username
-                    DispatchQueue.main.async {
-                        focusedField = targetField
-                    }
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(0.1))
-                        guard !Task.isCancelled else { return }
-                        focusedField = targetField
-                    }
+                // Transfer focus immediately so keyboard stays up when coming from auth/phone
+                let targetField: FocusedField = name.isEmpty ? .name : .username
+                focusedField = targetField
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.1))
+                    guard !Task.isCancelled else { return }
+                    focusedField = targetField
                 }
             case .basics:
                 focusedField = .birthday
             case .body:
+                focusedField = .height
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(0.1))
                     guard !Task.isCancelled else { return }

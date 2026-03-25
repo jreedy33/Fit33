@@ -420,11 +420,10 @@ struct StrengthLevelCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                // Emoji icon with gradient background and glow
                 ZStack {
                     if isSelected {
                         Circle()
-                            .fill(Color.orange.opacity(0.4))
+                            .fill(Color.blue.opacity(0.4))
                             .frame(width: 58, height: 58)
                             .blur(radius: 10)
                     }
@@ -432,7 +431,7 @@ struct StrengthLevelCard: View {
                     Circle()
                         .fill(
                             isSelected
-                                ? LinearGradient(colors: [.orange, .red.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                ? LinearGradient(colors: [.blue, .cyan.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 : LinearGradient(colors: [colorScheme == .dark ? Color(white: 0.22) : Color(.systemGray5), colorScheme == .dark ? Color(white: 0.18) : Color(.systemGray5)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .frame(width: 52, height: 52)
@@ -441,11 +440,10 @@ struct StrengthLevelCard: View {
                         .font(.ds_heading2)
                 }
                 
-                // Text content
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.ds_labelLarge)
-                        .foregroundColor(isSelected ? .orange : .primary)
+                        .foregroundColor(isSelected ? .blue : .primary)
                     
                     Text(subtitle)
                         .font(.ds_bodySmall)
@@ -454,17 +452,15 @@ struct StrengthLevelCard: View {
                 
                 Spacer()
                 
-                // Checkmark or strength indicator
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.ds_heading2)
-                        .foregroundColor(.orange)
+                        .foregroundColor(.blue)
                 } else {
-                    // Strength dots indicator
                     HStack(spacing: 4) {
                         ForEach(0..<5, id: \.self) { index in
                             Circle()
-                                .fill(index < strengthDots ? Color.orange.opacity(0.6) : Color(.systemGray4))
+                                .fill(index < strengthDots ? Color.blue.opacity(0.6) : Color(.systemGray4))
                                 .frame(width: 6, height: 6)
                         }
                     }
@@ -472,7 +468,7 @@ struct StrengthLevelCard: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
-            .onboardingCardStyle(accentColor: .orange, secondaryColor: .red, isSelected: isSelected, cornerRadius: 20)
+            .onboardingCardStyle(accentColor: .blue, secondaryColor: .cyan, isSelected: isSelected, cornerRadius: 20)
         }
         .scaleEffect(isSelected ? 1.02 : 1.0)
         .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isSelected)

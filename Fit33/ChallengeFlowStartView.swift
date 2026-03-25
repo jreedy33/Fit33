@@ -28,7 +28,7 @@ struct ChallengeFlowStartView: View {
     
     @State private var currentStep: FlowStep = .friendSelection
     @State private var selectedFriend: Friend? // Legacy single-select (still used for 1 friend)
-    @State private var selectedFriends: [Friend] = [] // Multi-select (up to 2)
+    @State private var selectedFriends: [Friend] = [] // Multi-select (up to 3)
     @State private var isGroupChallenge: Bool = true // true = one group, false = separate 1v1s
     @State private var selectedMode: ChallengeMode?
     @State private var selectedActivity: ChallengeActivityType?
@@ -48,7 +48,6 @@ struct ChallengeFlowStartView: View {
     @State private var loadingFriendRequests: Set<UUID> = []
     @State private var sentFriendRequests: Set<UUID> = []
     @State private var showingQRScanner = false
-    @State private var showCommunityHub = false
     @State private var showPrivateChallengeFlow = false
     
     private var filteredFriends: [Friend] {
@@ -535,10 +534,10 @@ struct ChallengeFlowStartView: View {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             if let idx = selectedFriends.firstIndex(where: { $0.friendId == friend.friendId }) {
                 selectedFriends.remove(at: idx)
-            } else if selectedFriends.count < 2 {
+            } else if selectedFriends.count < 3 {
                 selectedFriends.append(friend)
             } else {
-                // Already 2 selected — replace the oldest selection
+                // Already 3 selected — replace the oldest selection
                 selectedFriends.removeFirst()
                 selectedFriends.append(friend)
             }
@@ -707,7 +706,7 @@ struct ChallengeFlowStartView: View {
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                 
-                Text(selectedFriends.isEmpty ? "Pick a buddy (or two!)" : selectedFriends.count == 1 ? "1 buddy selected — add another?" : "\(selectedFriends.count) buddies selected")
+                Text(selectedFriends.isEmpty ? "Pick up to 3 buddies" : selectedFriends.count < 3 ? "\(selectedFriends.count) selected — add more?" : "3 buddies selected")
                     .font(.caption)
                     .foregroundColor(selectedFriends.isEmpty ? .white.opacity(0.6) : .cyan)
             }
@@ -1131,7 +1130,7 @@ struct ChallengeFlowStartView: View {
                                 .fontWeight(.bold)
                                 .foregroundColor(.white)
                             
-                            Text("Invite a group of friends to a private challenge community")
+                            Text("Invite 3+ friends to a private challenge community")
                                 .font(.caption)
                                 .foregroundColor(.white.opacity(0.7))
                         }
@@ -1162,50 +1161,6 @@ struct ChallengeFlowStartView: View {
                         .environmentObject(userManager)
                 }
                 
-                // Community Challenges option
-                Button(action: {
-                    HapticManager.impact(.medium)
-                    showCommunityHub = true
-                }) {
-                    HStack(spacing: 14) {
-                        Text("🌍")
-                            .font(.ds_heading1)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Community Challenges")
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                            
-                            Text("Join global leaderboards — unlimited players")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-                        
-                        Spacer()
-                        
-                        Image(systemName: "globe.americas.fill")
-                            .font(.ds_heading3)
-                            .foregroundColor(.blue)
-                    }
-                    .padding(Spacing.md)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.lg)
-                            .fill(Color.white.opacity(0.08))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: CornerRadius.lg)
-                                    .stroke(
-                                        LinearGradient(colors: [.blue.opacity(0.5), .cyan.opacity(0.3)],
-                                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                                        lineWidth: 1.5
-                                    )
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
-                .sheet(isPresented: $showCommunityHub) {
-                    CommunityChallengesHubView()
-                }
             }
         }
     }

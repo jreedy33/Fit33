@@ -62,6 +62,7 @@
 		7C0C42882F186B4A00F02E84 /* ProfilePhotoCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42872F186B4A00F02E84 /* ProfilePhotoCache.swift */; };
 		7C0C428A2F1897E400F02E84 /* ShareWorkoutSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42892F1897E400F02E84 /* ShareWorkoutSheet.swift */; };
 		7C0C428C2F18A4DA00F02E84 /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C428B2F18A4DA00F02E84 /* PushNotificationService.swift */; };
+		32912B2C4F82F346AF065386 /* PushNotificationDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAE31DB8143B34C9F67019D2 /* PushNotificationDebugView.swift */; };
 		7C0C42BE2F194EB700F02E84 /* NativeAdView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42BD2F194EB700F02E84 /* NativeAdView.swift */; };
 		7C1B0A372F4F74380094AF68 /* SupabaseDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1B0A362F4F74380094AF68 /* SupabaseDTOs.swift */; };
 		7C1B0A392F4F74520094AF68 /* Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1B0A382F4F74520094AF68 /* Secrets.swift */; };
@@ -438,6 +439,7 @@
 		7C0C42872F186B4A00F02E84 /* ProfilePhotoCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePhotoCache.swift; sourceTree = "<group>"; };
 		7C0C42892F1897E400F02E84 /* ShareWorkoutSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareWorkoutSheet.swift; sourceTree = "<group>"; };
 		7C0C428B2F18A4DA00F02E84 /* PushNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationService.swift; sourceTree = "<group>"; };
+		BAE31DB8143B34C9F67019D2 /* PushNotificationDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "PushNotificationDebugView.swift"; path = "Fit33/PushNotificationDebugView.swift"; sourceTree = SOURCE_ROOT; };
 		7C0C42BD2F194EB700F02E84 /* NativeAdView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAdView.swift; sourceTree = "<group>"; };
 		7C1B0A362F4F74380094AF68 /* SupabaseDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseDTOs.swift; sourceTree = "<group>"; };
 		7C1B0A382F4F74520094AF68 /* Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secrets.swift; sourceTree = "<group>"; };
@@ -1006,6 +1008,7 @@
 				7CAAA0062F5BF00100AAA007 /* ProgressPhotoViews.swift */,
 				7C792B012F2C2F7B0048A97E /* PulsingRedDot.swift */,
 				7C0C428B2F18A4DA00F02E84 /* PushNotificationService.swift */,
+				BAE31DB8143B34C9F67019D2 /* PushNotificationDebugView.swift */,
 				7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */,
 				7C53E21F2F33FD7500C2F7EC /* QRCodeService.swift */,
 				7C53E1DD2F31B27500C2F7EC /* RealtimeService.swift */,
@@ -1493,6 +1496,7 @@
 				7C792ACA2F2AB51C0048A97E /* RecipePreferenceService.swift in Sources */,
 				7CB08C7D2ED8B78A00236ECB /* FavoriteRoutinesView.swift in Sources */,
 				7C0C428C2F18A4DA00F02E84 /* PushNotificationService.swift in Sources */,
+				32912B2C4F82F346AF065386 /* PushNotificationDebugView.swift in Sources */,
 				7C6DE3C12F5BF98500BCA276 /* RecoveryDayViews.swift in Sources */,
 				7C6DE3C22F5BF98500BCA276 /* WhatToEatView.swift in Sources */,
 				7C6DE3C32F5BF98500BCA276 /* WorkoutReplayEngine.swift in Sources */,
@@ -1709,7 +1713,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1720,7 +1724,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.30.0;
+				MARKETING_VERSION = 1.31.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1739,7 +1743,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1750,7 +1754,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.30.0;
+				MARKETING_VERSION = 1.31.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1893,7 +1897,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1914,7 +1918,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.30.0;
+				MARKETING_VERSION = 1.31.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1930,7 +1934,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1951,7 +1955,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.30.0;
+				MARKETING_VERSION = 1.31.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

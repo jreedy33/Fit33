@@ -22,6 +22,7 @@ class FriendService: ObservableObject {
     @Published var isLoading = false
     @Published var searchResults: [UserSearchResult] = []
     @Published var searchResultDTOs: [UserSearchResultDTO] = [] // For compatibility
+    @Published var blockedUserIds: Set<UUID> = []
     
     // Computed property for unread workout count (unviewed pending workouts)
     var unreadWorkoutCount: Int {
@@ -271,6 +272,9 @@ class FriendService: ObservableObject {
                 .execute()
             
             friends.removeAll { $0.friendId == userId }
+            sentRequests.removeAll { $0.toUserId == userId }
+            pendingRequests.removeAll { $0.fromUserId == userId }
+            blockedUserIds.insert(userId)
             AppLogger.info("User blocked", category: .social)
             return true
         } catch {
@@ -288,6 +292,7 @@ class FriendService: ObservableObject {
                 .rpc("unblock_user", params: UnblockParams(p_target_user_id: userId.uuidString))
                 .execute()
             
+            blockedUserIds.remove(userId)
             AppLogger.info("User unblocked", category: .social)
             return true
         } catch {
@@ -347,10 +352,12 @@ class FriendService: ObservableObject {
             ])
             AppLogger.info("[FRIEND REQUEST] Request sent successfully! ID: \(requestId)", category: .social)
             await fetchUnreadCount()
-            await fetchSentRequests()  // Refresh sent requests list
+            await fetchSentRequests()
             
-            // Update daily quest progress for adding a friend
             await DailyQuestService.shared.onFriendRequestSent()
+            
+            SessionLogManager.shared.log(.info, category: .pushNotification, message: "Friend request sent — flushing push queue", metadata: ["to_user": toUserId.uuidString.prefix(8)])
+            PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "friend_request_sent")
             
             return true
         } catch {
@@ -382,12 +389,14 @@ class FriendService: ObservableObject {
                 .value
             
             if success {
-                // Update local state
                 pendingRequests.removeAll { $0.requestId == requestId }
                 await fetchFriends()
                 NotificationManager.shared.updateBadgeCount()
                 logger.log(.info, category: .social, message: "✅ Friend request ACCEPTED", metadata: ["request_id": requestId.uuidString.prefix(8)])
                 AppLogger.info("Friend request accepted", category: .social)
+                
+                SessionLogManager.shared.log(.info, category: .pushNotification, message: "Friend request accepted — flushing push queue", metadata: ["request_id": requestId.uuidString.prefix(8)])
+                PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "friend_request_accepted")
             }
             return success
         } catch {
@@ -481,26 +490,38 @@ class FriendService: ObservableObject {
     
     // MARK: - User Search
     
+    /// Exact username lookup only. Broad discovery is contacts-based (see ContactsService).
+    /// Only hits the server when the query looks like a valid username (no spaces, 3+ chars).
     func searchUsers(query: String) async {
         guard !query.isEmpty else {
             searchResults = []
             return
         }
         
+        let cleaned = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "@", with: "")
+        
+        guard cleaned.count >= 3,
+              !cleaned.contains(" "),
+              cleaned.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else {
+            searchResults = []
+            return
+        }
+        
         do {
-            // Define params struct for type safety
             struct SearchParams: Encodable {
                 let search_query: String
                 let result_limit: Int
             }
             
             let result: [UserSearchResult] = try await SupabaseManager.shared.supabaseClient
-                .rpc("search_users", params: SearchParams(search_query: query, result_limit: 20))
+                .rpc("search_users", params: SearchParams(search_query: cleaned, result_limit: 5))
                 .execute()
                 .value
             
             self.searchResults = result
-            AppLogger.info("Found \(result.count) users matching '\(query)'", category: .social)
+            AppLogger.info("Username lookup: \(result.count) users matching '@\(cleaned)'", category: .social)
         } catch {
             AppLogger.error("Error searching users: \(error.localizedDescription)", category: .social)
             searchResults = []
@@ -960,7 +981,7 @@ struct FriendRequest: Codable, Identifiable {
         case fromUserName = "from_user_name"
         case fromUserEmail = "from_user_email"
         case fromUserUsername = "from_user_username"
-        case profilePhotoUrl = "profile_photo_url"
+        case profilePhotoUrl = "from_user_profile_photo_url"
         case message
         case createdAt = "created_at"
     }

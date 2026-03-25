@@ -479,6 +479,8 @@ final class ExerciseFilterService {
         "bands": "Resistance Bands",
         "band": "Resistance Bands",
         "resistance bands": "Resistance Bands",
+        "dip bars": "Bodyweight",
+        "parallel bars": "Bodyweight",
         
         // Snake_case equipment_category values from DB
         "smith_machine": "Smith Machine",
@@ -730,6 +732,43 @@ final class ExerciseFilterService {
            equipment.contains("box") || equipment.contains("floor") || equipment.contains("mat") { return "Bodyweight" }
         
         return "Bodyweight"
+    }
+    
+    /// Maps user-friendly equipment names to database substring patterns for matching.
+    /// Use this when you have USER selections and need to match against database equipment strings.
+    /// Shared by both auto-gen (WorkoutGeneratorService) and program generation (SmartExerciseSelectionEngine).
+    static func normalizeEquipmentForMatching(_ equipment: String) -> [String] {
+        let equip = equipment.lowercased().trimmingCharacters(in: .whitespaces)
+        
+        switch equip {
+        case "machines", "machine":
+            return ["machine", "lever", "press machine", "curl machine", "row machine",
+                    "extension machine", "pulldown", "leg press", "hack squat"]
+        case "cables", "cable":
+            return ["cable", "cable machine", "pulley"]
+        case "barbell", "barbells":
+            return ["barbell", "bar", "olympic"]
+        case "dumbbells", "dumbbell":
+            return ["dumbbell", "dumbbells", "db"]
+        case "bodyweight", "body weight":
+            return ["bodyweight", "body weight", ""]
+        case "kettlebell", "kettlebells":
+            return ["kettlebell", "kb"]
+        case "resistance bands", "resistance band", "bands":
+            return ["band", "resistance band", "resistance"]
+        case "smith machine":
+            return ["smith", "smith machine"]
+        case "trx", "trx/rings", "suspension":
+            return ["trx", "suspension", "ring"]
+        case "pull-up bar", "pull up bar":
+            return ["pull-up bar", "pull up bar", "pullup bar"]
+        case "bench", "flat bench", "incline bench", "decline bench":
+            return ["bench"]
+        case "dip bars", "parallel bars":
+            return ["dip", "parallel bars"]
+        default:
+            return [equip]
+        }
     }
     
     /// Check if user has the required equipment for an exercise

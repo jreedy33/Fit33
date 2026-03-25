@@ -259,7 +259,7 @@ extension ActiveWorkoutView {
                             .clipShape(Capsule())
                         }
                         .padding(.top, 8)
-                        .padding(.bottom, 24)
+                        .padding(.bottom, showMusicPlayer ? 80 : 24)
                     }
                     .padding(.horizontal, Spacing.md + 8)
                     .padding(.top, 8)

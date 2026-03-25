@@ -737,8 +737,8 @@ struct WorkoutGeneratorSelectionView: View {
                 if hasGymEquipment {
                     let gymEssentials = [
                         "Bench", "Flat Bench", "Incline Bench", "Decline Bench",
-                        "Pull-Up Bar", "Dip Bars", "Hyperextension Bench", "Preacher Bench",
-                        "Smith Machine"  // Auto-included for gyms
+                        "Pull-Up Bar", "Hyperextension Bench", "Preacher Bench",
+                        "Smith Machine"
                     ]
                     for essential in gymEssentials {
                         if !equipment.contains(essential) {
@@ -811,17 +811,12 @@ struct WorkoutGeneratorSelectionView: View {
                 
                 if hasGymEquipment {
                     let gymEssentials = [
-                        // Benches (adjustable benches cover all these)
                         "Bench",
                         "Flat Bench",
-                        "Smith Machine",  // Auto-included for gyms
-                        "Smith Machine",  // Auto-included for gyms
+                        "Smith Machine",
                         "Incline Bench",
                         "Decline Bench",
-                        // Bodyweight stations
                         "Pull-Up Bar",
-                        "Dip Bars",
-                        // Common specialty benches
                         "Hyperextension Bench",
                         "Preacher Bench"
                     ]

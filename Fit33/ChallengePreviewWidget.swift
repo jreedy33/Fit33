@@ -56,35 +56,7 @@ struct ChallengePreviewWidget: View {
                 // Action buttons
                 actionButtonsSection
             }
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.cardBackground)
-                    
-                    // Subtle gradient glow overlay
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [themeColor.opacity(0.06), .clear, themeColor.opacity(0.03)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [gradientColors[0].opacity(0.6), gradientColors[1].opacity(0.2), gradientColors[0].opacity(0.4)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.5
-                    )
-            )
-            .shadow(color: themeColor.opacity(colorScheme == .dark ? 0.2 : 0.1), radius: 20, x: 0, y: 8)
-            .shadow(color: themeColor.opacity(0.08), radius: 40, x: 0, y: 16)
+            .onboardingCardStyle(accentColor: themeColor, secondaryColor: gradientColors.last ?? themeColor, isSelected: true, cornerRadius: 24)
         }
         .confirmationDialog(
             "Decline this challenge?",

@@ -276,6 +276,47 @@ extension NewOnboardingView {
         return "\(selectedCountryCode.dialingCode)\(digits)"
     }
 
+    // MARK: - Step Content
+    // Hybrid approach: text-input steps use simultaneous conditionals in a ZStack
+    // so @FocusState can transfer keyboard seamlessly between them. Non-text steps
+    // use an AnyView switch. Outer AnyView prevents stack overflow in the body.
+    var currentStepContent: AnyView {
+        return AnyView(
+            ZStack {
+                if currentStep == .auth && hasStartedAuth {
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 0) {
+                            authFormContent
+                                .padding(.top, 8)
+                        }
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+                }
+                if currentStep == .phoneNumber { phoneNumberStepContent }
+                if currentStep == .username { usernameStepContent }
+                if currentStep == .basics { basicsStepContent }
+                if currentStep == .body { bodyStepContent }
+
+                nonTextStepContent
+            }
+        )
+    }
+
+    private var nonTextStepContent: AnyView {
+        switch currentStep {
+        case .goal: return AnyView(goalStepContent)
+        case .experience: return AnyView(experienceStepContent)
+        case .strengthAssessment: return AnyView(strengthStepContent)
+        case .workoutLocation: return AnyView(locationStepContent)
+        case .equipment: return AnyView(equipmentStepContent)
+        case .schedule: return AnyView(scheduleStepContent)
+        case .profilePhoto: return AnyView(profilePhotoStepContent)
+        case .contacts: return AnyView(contactsStepContent)
+        case .addFriends: return AnyView(addFriendsStepContent)
+        default: return AnyView(EmptyView())
+        }
+    }
+
     // MARK: - Background with Animated Orbs
     var backgroundGradient: some View {
         AnimatedOrbBackground.onboarding(colorScheme: colorScheme)

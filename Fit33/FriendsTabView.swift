@@ -88,11 +88,6 @@ struct FriendsTabView: View {
                         // Community Challenges (leaderboard widgets)
                         communityChallengeWidget
                         
-                        // Recommended Challenge for You — only when no active community challenges
-                        if communityService.myChallenges.isEmpty {
-                            recommendedChallengeWidget
-                        }
-                        
                         // Friend Activity Feed (replaces Quick Actions)
                         FriendActivityFeedSection()
                         
@@ -138,25 +133,24 @@ struct FriendsTabView: View {
                 CommunityDetailView(challengeId: challenge.challengeId, challengeTitle: challenge.title)
             }
         }
-        // MARK: - Deep Link Route Handling
+        // MARK: - Deep Link Route Handling (single handler via onAppear + onChange)
         .onChange(of: deepLinkManager.pendingFriendsRoute) { _, route in
             guard let route = route else { return }
+            deepLinkManager.pendingFriendsRoute = nil
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(0.15))
                 guard !Task.isCancelled else { return }
                 navigationPath.append(route)
-                deepLinkManager.pendingFriendsRoute = nil
                 AppLogger.debug("👥 [DEEPLINK] Friends tab pushed route: \(route)", category: .social)
             }
         }
         .onAppear {
-            // Handle pending deep link route if FriendsTabView was just mounted
             if let route = deepLinkManager.pendingFriendsRoute {
+                deepLinkManager.pendingFriendsRoute = nil
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(0.3))
                     guard !Task.isCancelled else { return }
                     navigationPath.append(route)
-                    deepLinkManager.pendingFriendsRoute = nil
                     AppLogger.debug("👥 [DEEPLINK] Friends tab pushed route on appear: \(route)", category: .social)
                 }
             }
@@ -2309,47 +2303,114 @@ struct FriendsTabView: View {
                 }
             }
             
-            // ── Discover (only show if user has no challenges) ──
+            // ── Personalized Discover (only show if user has no challenges) ──
             if myChallenges.isEmpty {
-                if !featured.isEmpty {
-                    VStack(spacing: 10) {
-                        ForEach(Array(featured)) { challenge in
-                            communityDiscoverRow(challenge: challenge)
+                let friendCommunities = communityService.discoverableChallenges.prefix(2)
+                
+                if !friendCommunities.isEmpty {
+                    VStack(spacing: 12) {
+                        ForEach(Array(friendCommunities)) { challenge in
+                            FriendDiscoveryCard(challenge: challenge) {
+                                HapticManager.impact(.medium)
+                                Task {
+                                    _ = await communityService.joinChallengeFriendGated(challengeId: challenge.challengeId)
+                                }
+                            }
                         }
                     }
                 } else {
-                    // Empty state — no challenges at all
-                    VStack(spacing: 12) {
-                        Image(systemName: "globe.americas.fill")
-                            .font(.system(size: 36))
-                            .foregroundColor(.green.opacity(0.4))
-                        
-                        Text("Compete on global leaderboards")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        
-                        Button(action: {
-                            HapticManager.impact(.medium)
-                            showingCommunityHub = true
-                        }) {
-                            Text("Browse Challenges")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 10)
-                                .background(
-                                    LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
-                                )
-                                .cornerRadius(20)
+                    let goalAligned = goalAlignedFeaturedChallenges
+                    if !goalAligned.isEmpty {
+                        VStack(spacing: 12) {
+                            ForEach(goalAligned) { challenge in
+                                FeaturedChallengeCard(challenge: challenge) {
+                                    HapticManager.impact(.medium)
+                                    Task {
+                                        _ = await communityService.joinChallenge(code: challenge.joinCode)
+                                        await communityService.fetchFeaturedChallenges()
+                                        await communityService.fetchMyChallenges()
+                                    }
+                                }
+                            }
                         }
+                    } else if !featured.isEmpty {
+                        VStack(spacing: 12) {
+                            ForEach(Array(featured)) { challenge in
+                                FeaturedChallengeCard(challenge: challenge) {
+                                    HapticManager.impact(.medium)
+                                    Task {
+                                        _ = await communityService.joinChallenge(code: challenge.joinCode)
+                                        await communityService.fetchFeaturedChallenges()
+                                        await communityService.fetchMyChallenges()
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        VStack(spacing: 12) {
+                            Image(systemName: "globe.americas.fill")
+                                .font(.system(size: 36))
+                                .foregroundColor(.green.opacity(0.4))
+                            
+                            Text("Compete on global leaderboards")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Button(action: {
+                                HapticManager.impact(.medium)
+                                showingCommunityHub = true
+                            }) {
+                                Text("Browse Challenges")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
+                                    )
+                                    .cornerRadius(20)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(20)
+                        .sleekCard(cornerRadius: 24, accentColor: .green)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(20)
-                    .sleekCard(cornerRadius: 24, accentColor: .green)
                 }
             }
         }
+    }
+    
+    /// Top 2 featured challenges that align with the user's onboarding fitness goal.
+    /// Falls back to the first 2 unjoined featured challenges if no goal match is found.
+    private var goalAlignedFeaturedChallenges: [FeaturedCommunityChallenge] {
+        let unjoined = communityService.featuredChallenges.filter { !$0.alreadyJoined }
+        guard !unjoined.isEmpty else { return [] }
+        
+        let goal = userManager.currentUser?.fitnessGoal ?? "General Fitness"
+        let preferredTypes: Set<String> = {
+            switch goal {
+            case "Build Muscle":
+                return ["lift", "workout_streak", "protein"]
+            case "Get Lean":
+                return ["calories", "active_minutes", "steps"]
+            case "Maintain Weight":
+                return ["steps", "active_minutes", "hydrate"]
+            case "Improve Endurance":
+                return ["steps", "run", "walk", "active_minutes"]
+            default:
+                return ["steps", "active_minutes", "workout_streak", "hydrate"]
+            }
+        }()
+        
+        let matched = unjoined.filter { preferredTypes.contains($0.challengeType) }
+        if matched.count >= 2 {
+            return Array(matched.prefix(2))
+        } else if !matched.isEmpty {
+            let rest = unjoined.filter { !preferredTypes.contains($0.challengeType) }
+            return Array((matched + rest).prefix(2))
+        }
+        return Array(unjoined.prefix(2))
     }
     
     private func communityDiscoverRow(challenge: FeaturedCommunityChallenge) -> some View {

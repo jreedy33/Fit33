@@ -21,26 +21,36 @@ struct WeeklyLeagueWidget: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Section header (outside card)
-            HStack {
-                Image(systemName: "trophy.circle.fill")
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: standing?.tierGradient ?? [.yellow, .orange],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .font(.title3)
-                Text("Weekly League")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                
-                Button {
-                    showingLeagueInfo = true
-                } label: {
-                    Image(systemName: "info.circle")
-                        .font(.ds_bodyRegular).fontWeight(.medium)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "trophy.circle.fill")
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: standing?.tierGradient ?? [.yellow, .orange],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .font(.title3)
+                        Text("Weekly League")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                        
+                        Button {
+                            showingLeagueInfo = true
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .font(.ds_bodyRegular).fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Text(leagueSubtitle)
+                        .font(.caption)
                         .foregroundColor(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 
                 Spacer()
@@ -86,122 +96,133 @@ struct WeeklyLeagueWidget: View {
     
     private var standing: LeagueStanding? { leagueService.standing }
     
+    private var leagueSubtitle: String {
+        guard let standing = standing else {
+            return "Compete weekly with friends & nearby athletes. Earn points from workouts to climb tiers."
+        }
+        
+        let socialPrefix: String = {
+            let friends = standing.friendsInLeague
+            let connections = standing.connectionsInLeague
+            if friends > 0 {
+                return "You know \(friends) \(friends == 1 ? "person" : "people") here. "
+            } else if connections > 0 {
+                return "\(connections) mutual connection\(connections == 1 ? "" : "s") in your league. "
+            }
+            return ""
+        }()
+        
+        if standing.isInPromotionZone, let next = standing.nextTierName {
+            return "\(socialPrefix)Top \(standing.promotionCount) — on track to \(next)! \(standing.daysRemaining)d left."
+        } else if standing.isInRelegationZone {
+            return "\(socialPrefix)Bottom \(standing.relegationCount) get relegated. \(standing.daysRemaining)d left."
+        } else {
+            let promoSpots = standing.promotionCount > 0 ? "Top \(standing.promotionCount) promote each week." : "Climb the ranks each week."
+            return "\(socialPrefix)\(promoSpots)"
+        }
+    }
+    
     // MARK: - League Content (Joined)
     
     private func leagueContent(standing: LeagueStanding) -> some View {
-        VStack(spacing: 14) {
-            // Top row: Your rank + points + days remaining
-            HStack(spacing: 16) {
-                // Rank badge
-                VStack(spacing: 4) {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: standing.tierGradient,
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 52, height: 52)
-                            .shadow(color: standing.tierSwiftUIColor.opacity(0.4), radius: 8, x: 0, y: 2)
-                        
-                        VStack(spacing: 0) {
-                            Text("#\(standing.myRank)")
-                                .font(.system(size: 18, weight: .black, design: .rounded))
-                                .foregroundColor(.white)
-                        }
-                    }
-                    
-                    Text("of \(standing.groupSize)")
-                        .font(.ds_caption)
-                        .foregroundColor(.secondary)
-                }
+        VStack(spacing: 10) {
+            // Compact stats row
+            HStack(spacing: 0) {
+                // Rank
+                statCell(
+                    value: "#\(standing.myRank)",
+                    label: "of \(standing.groupSize)",
+                    valueColor: standing.tierSwiftUIColor
+                )
                 
-                // Points + status
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text("\(standing.myPoints)")
-                            .font(.ds_stat)
-                            .foregroundColor(.primary)
-                        Text("pts")
-                            .font(.caption)
-                            .fontWeight(.semibold)
+                thinDivider
+                
+                // Points
+                statCell(
+                    value: "\(standing.myPoints)",
+                    label: "pts",
+                    valueColor: .primary
+                )
+                
+                thinDivider
+                
+                // Status
+                VStack(spacing: 2) {
+                    if standing.isInPromotionZone {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.green)
+                        Text("Promoting")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.green)
+                    } else if standing.isInRelegationZone {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.red)
+                        Text("Relegation")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.red)
+                    } else {
+                        Image(systemName: "shield.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.secondary.opacity(0.6))
+                        Text("Safe zone")
+                            .font(.system(size: 9, weight: .medium))
                             .foregroundColor(.secondary)
                     }
-                    
-                    // Promotion / relegation status
-                    if standing.isInPromotionZone, let nextTier = standing.nextTierName {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.ds_labelSmall)
-                                .foregroundColor(.green)
-                            Text("Promoting to \(nextTier)!")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.green)
-                        }
-                    } else if standing.isInRelegationZone, let prevTier = standing.prevTierName {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.down.circle.fill")
-                                .font(.ds_labelSmall)
-                                .foregroundColor(.red)
-                            Text("Relegation zone — \(prevTier)")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.red)
-                        }
-                    } else {
-                        HStack(spacing: 4) {
-                            Image(systemName: "shield.fill")
-                                .font(.ds_labelSmall)
-                                .foregroundColor(.secondary)
-                            Text("Safe zone")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .foregroundColor(.secondary)
-                        }
-                    }
                 }
+                .frame(maxWidth: .infinity)
                 
-                Spacer()
+                thinDivider
                 
-                // Days remaining
-                VStack(spacing: 2) {
-                    Text("\(standing.daysRemaining)")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundColor(standing.daysRemaining <= 1 ? .red : .primary)
-                    Text(standing.daysRemaining == 1 ? "day left" : "days left")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.trailing, 4)
+                // Days left
+                statCell(
+                    value: "\(standing.daysRemaining)",
+                    label: standing.daysRemaining == 1 ? "day left" : "days left",
+                    valueColor: standing.daysRemaining <= 1 ? .red : .primary
+                )
             }
-            
-            // Divider
-            Rectangle()
-                .fill(Color.gray.opacity(0.15))
-                .frame(height: 1)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(standing.tierSwiftUIColor.opacity(colorScheme == .dark ? 0.06 : 0.04))
+            )
             
             // Mini leaderboard (top 3 + user if not in top 3)
             miniLeaderboard(standing: standing)
             
             // "View Full Leaderboard" hint
-            HStack {
+            HStack(spacing: 4) {
                 Spacer()
-                HStack(spacing: 4) {
-                    Text("View Full Leaderboard")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
-                }
-                .foregroundColor(standing.tierSwiftUIColor)
+                Text("View Full Leaderboard")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
                 Spacer()
             }
+            .foregroundColor(standing.tierSwiftUIColor)
         }
-        .padding(Spacing.md)
-        .sleekCard(cornerRadius: 24, accentColor: standing.tierSwiftUIColor)
+        .padding(Spacing.sm)
+        .sleekCard(cornerRadius: 20, accentColor: standing.tierSwiftUIColor)
+    }
+    
+    private func statCell(value: String, label: String, valueColor: Color) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundColor(valueColor)
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    private var thinDivider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 1, height: 28)
     }
     
     // MARK: - Mini Leaderboard
@@ -211,22 +232,21 @@ struct WeeklyLeagueWidget: View {
         let userInTop3 = top3.contains(where: { $0.isCurrentUser })
         let currentUserEntry = standing.leaderboard.first(where: { $0.isCurrentUser })
         
-        return VStack(spacing: 6) {
+        return VStack(spacing: 4) {
             ForEach(top3) { entry in
                 leaderboardRow(entry: entry, standing: standing)
             }
             
-            // Show user's row if not in top 3
             if !userInTop3, let userEntry = currentUserEntry {
-                HStack(spacing: 0) {
+                HStack(spacing: 4) {
                     ForEach(0..<3) { _ in
                         Circle()
                             .fill(Color.gray.opacity(0.3))
-                            .frame(width: 3, height: 3)
+                            .frame(width: 2.5, height: 2.5)
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 2)
+                .padding(.vertical, 1)
                 
                 leaderboardRow(entry: userEntry, standing: standing)
             }
@@ -237,63 +257,72 @@ struct WeeklyLeagueWidget: View {
         let isPromoZone = standing.promotionCount > 0 && entry.rank <= standing.promotionCount
         let isRelegZone = standing.relegationCount > 0 && entry.rank > (standing.groupSize - standing.relegationCount)
         
-        return HStack(spacing: 10) {
-            // Rank
+        return HStack(spacing: 8) {
             ZStack {
                 if entry.rank <= 3 {
                     Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
-                        .font(.ds_bodyRegular)
+                        .font(.system(size: 14))
                 } else {
                     Text("#\(entry.rank)")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .secondary)
                 }
             }
-            .frame(width: 28)
+            .frame(width: 24)
             
-            // Photo
             CachedFriendPhoto(
                 friendId: entry.userId.uuidString,
                 photoUrl: entry.profilePhotoUrl,
                 name: entry.displayName,
-                size: 30,
-                showGradientRing: entry.isCurrentUser,
-                gradientColors: entry.isCurrentUser ? standing.tierGradient : [.gray.opacity(0.3)]
+                size: 26,
+                showGradientRing: entry.isCurrentUser || entry.isFriend == true,
+                gradientColors: entry.isCurrentUser
+                    ? standing.tierGradient
+                    : entry.isFriend == true ? [.green, .green.opacity(0.6)] : [.gray.opacity(0.3)]
             )
             
-            // Name
-            Text(entry.isCurrentUser ? "You" : entry.firstName)
-                .font(.subheadline)
-                .fontWeight(entry.isCurrentUser ? .bold : .medium)
-                .foregroundColor(entry.isCurrentUser ? .primary : .secondary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(entry.isCurrentUser ? "You" : entry.firstName)
+                    .font(.system(size: 13, weight: entry.isCurrentUser ? .bold : .medium))
+                    .foregroundColor(entry.isCurrentUser ? .primary : .secondary)
+                    .lineLimit(1)
+                
+                if !entry.isCurrentUser, entry.isFriend == true {
+                    Text("Friend")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.green)
+                } else if !entry.isCurrentUser, let mc = entry.mutualFriendCount, mc > 0 {
+                    Text("\(mc) mutual")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.blue)
+                }
+            }
             
             Spacer()
             
-            // Zone indicator
             if isPromoZone {
                 Image(systemName: "arrow.up")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundColor(.green)
             } else if isRelegZone {
                 Image(systemName: "arrow.down")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundColor(.red)
             }
             
-            // Points
-            Text("\(entry.points)")
-                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
-            
-            Text("pts")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
+            HStack(spacing: 2) {
+                Text("\(entry.points)")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
+                Text("pts")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
         }
-        .padding(.vertical, Spacing.xxs)
+        .padding(.vertical, 5)
         .padding(.horizontal, Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(entry.isCurrentUser
                     ? standing.tierSwiftUIColor.opacity(colorScheme == .dark ? 0.12 : 0.08)
                     : Color.clear)
@@ -337,7 +366,7 @@ struct WeeklyLeagueWidget: View {
                     .font(.headline)
                     .fontWeight(.bold)
                 
-                Text("Compete with ~30 athletes. Earn points from workouts. Top 5 get promoted!")
+                Text("Compete with friends & ~30 athletes. Earn points from workouts. Top 5 get promoted!")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -443,32 +472,31 @@ struct WeeklyLeagueDetailView: View {
             .padding(.horizontal, Spacing.md)
             .padding(.top, 8)
             
-            // Stats bar
             if let standing = leagueService.standing {
                 HStack(spacing: 0) {
                     statPill(value: "#\(standing.myRank)", label: "Rank", color: standing.tierSwiftUIColor)
                     
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 1, height: 30)
+                    statDivider
                     
                     statPill(value: "\(standing.myPoints)", label: "Points", color: .primary)
                     
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 1, height: 30)
+                    statDivider
+                    
+                    if standing.connectionsInLeague > 0 {
+                        statPill(
+                            value: "\(standing.connectionsInLeague)",
+                            label: standing.friendsInLeague > 0 ? "Friends" : "Mutual",
+                            color: .green
+                        )
+                        
+                        statDivider
+                    }
                     
                     statPill(
                         value: "\(standing.daysRemaining)d",
                         label: "Remaining",
                         color: standing.daysRemaining <= 1 ? .red : .secondary
                     )
-                    
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 1, height: 30)
-                    
-                    statPill(value: "\(standing.groupSize)", label: "Athletes", color: .secondary)
                 }
                 .padding(.vertical, 10)
                 .background(
@@ -483,6 +511,12 @@ struct WeeklyLeagueDetailView: View {
             }
         }
         .padding(.bottom, 8)
+    }
+    
+    private var statDivider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 1, height: 30)
     }
     
     private func statPill(value: String, label: String, color: Color) -> some View {
@@ -580,9 +614,9 @@ struct WeeklyLeagueDetailView: View {
     private func fullLeaderboardRow(entry: LeagueEntry, standing: LeagueStanding) -> some View {
         let isPromoZone = standing.promotionCount > 0 && entry.rank <= standing.promotionCount
         let isRelegZone = standing.relegationCount > 0 && entry.rank > (standing.groupSize - standing.relegationCount)
+        let showHideOption = !entry.isCurrentUser && entry.isFriend != true
         
         return HStack(spacing: 12) {
-            // Rank
             ZStack {
                 if entry.rank <= 3 {
                     Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
@@ -595,34 +629,59 @@ struct WeeklyLeagueDetailView: View {
             }
             .frame(width: 32)
             
-            // Photo
             CachedFriendPhoto(
                 friendId: entry.userId.uuidString,
                 photoUrl: entry.profilePhotoUrl,
                 name: entry.displayName,
                 size: 40,
-                showGradientRing: entry.isCurrentUser,
-                gradientColors: entry.isCurrentUser ? standing.tierGradient : [.gray.opacity(0.3)]
+                showGradientRing: entry.isCurrentUser || entry.isFriend == true,
+                gradientColors: entry.isCurrentUser
+                    ? standing.tierGradient
+                    : entry.isFriend == true ? [.green, .green.opacity(0.6)] : [.gray.opacity(0.3)]
             )
             
-            // Name + workouts
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.isCurrentUser ? "You" : entry.displayName)
-                    .font(.subheadline)
-                    .fontWeight(entry.isCurrentUser ? .bold : .medium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(entry.isCurrentUser ? "You" : entry.displayName)
+                        .font(.subheadline)
+                        .fontWeight(entry.isCurrentUser ? .bold : .medium)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    if !entry.isCurrentUser, entry.isFriend == true {
+                        Text("Friend")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.green.opacity(0.15)))
+                    }
+                }
                 
                 if let workouts = entry.workoutsCompleted, workouts > 0 {
-                    Text("\(workouts) workout\(workouts == 1 ? "" : "s")")
+                    HStack(spacing: 4) {
+                        Text("\(workouts) workout\(workouts == 1 ? "" : "s")")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        
+                        if !entry.isCurrentUser, let mc = entry.mutualFriendCount, mc > 0 {
+                            Text("·")
+                                .font(.caption2)
+                                .foregroundColor(.secondary.opacity(0.5))
+                            Text("\(mc) mutual friend\(mc == 1 ? "" : "s")")
+                                .font(.caption2)
+                                .foregroundColor(.blue.opacity(0.8))
+                        }
+                    }
+                } else if !entry.isCurrentUser, let mc = entry.mutualFriendCount, mc > 0 {
+                    Text("\(mc) mutual friend\(mc == 1 ? "" : "s")")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.blue.opacity(0.8))
                 }
             }
             
             Spacer()
             
-            // Zone arrow
             if isPromoZone {
                 Image(systemName: "chevron.up")
                     .font(.ds_caption)
@@ -637,7 +696,6 @@ struct WeeklyLeagueDetailView: View {
                     .background(Circle().fill(Color.red.opacity(0.15)))
             }
             
-            // Points
             VStack(alignment: .trailing, spacing: 1) {
                 Text("\(entry.points)")
                     .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
@@ -654,7 +712,9 @@ struct WeeklyLeagueDetailView: View {
                 .fill(
                     entry.isCurrentUser
                         ? standing.tierSwiftUIColor.opacity(colorScheme == .dark ? 0.12 : 0.06)
-                        : Color.clear
+                        : entry.isFriend == true
+                            ? Color.green.opacity(colorScheme == .dark ? 0.06 : 0.03)
+                            : Color.clear
                 )
         )
         .overlay(
@@ -666,6 +726,15 @@ struct WeeklyLeagueDetailView: View {
                     lineWidth: 1
                 )
         )
+        .contextMenu {
+            if showHideOption {
+                Button(role: .destructive) {
+                    Task { await leagueService.hideUser(entry.userId) }
+                } label: {
+                    Label("Hide This Person", systemImage: "eye.slash")
+                }
+            }
+        }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, 1)
     }
@@ -885,7 +954,7 @@ struct WeeklyLeagueInfoSheet: View {
                 .font(.title2)
                 .fontWeight(.bold)
             
-            Text("Every week you're placed in a league of ~30 athletes at your tier. Work out to earn points and climb the leaderboard!")
+            Text("Every week you're placed in a league with friends and athletes at your tier. Work out to earn points and climb the leaderboard!")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

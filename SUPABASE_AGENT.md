@@ -221,6 +221,13 @@ user_favorite_foods (per-user hearted foods)
 4. **Return structured data** - Use JSONB or TABLE returns, not void
 5. **Add to edge function if complex** - Long-running operations belong in edge functions
 
+### When Creating a View
+
+1. **NEVER use `SECURITY DEFINER`** — Views default to `SECURITY INVOKER` in PG15+. Never explicitly set `security_definer = true`. SECURITY DEFINER views bypass RLS for ALL users, which Supabase flags as a critical vulnerability.
+2. **Filter by `auth.uid()` in the view definition** if the view is queried directly from the app via PostgREST (e.g., `WHERE user_id = auth.uid()`). This ensures RLS + view filtering are aligned.
+3. **Admin/analytics views** that aggregate across users should live in a non-public schema (e.g., `analytics`) or be accessed only via service-role queries. If they must be in `public`, ensure `security_invoker = on` so regular users see only their own data.
+4. **Verify with**: `SELECT schemaname, viewname, definition FROM pg_views WHERE schemaname = 'public';` — check no view has SECURITY DEFINER semantics.
+
 ### When Reviewing Another Agent's PR
 
 Check for:
@@ -294,7 +301,35 @@ When another agent needs data work:
 3. FK constraint audit (all `user_id` columns have FKs)
 4. RLS audit (all tables have RLS + policies)
 5. `SECURITY DEFINER` function audit (no functions accept `user_id` params that should use `auth.uid()`)
-6. Index audit (no full table scans on large tables)
+6. **SECURITY DEFINER view audit** — Run: `SELECT viewname FROM pg_views WHERE schemaname = 'public'` cross-referenced with `SELECT * FROM pg_catalog.pg_rewrite WHERE ...` to find views with security_definer. All public views must use `security_invoker = on`.
+7. Index audit (no full table scans on large tables)
+
+### 2026-03-24: Security Fix — RLS + SECURITY DEFINER Views
+
+**Migration**: `supabase/20260324_security_fixes.sql`
+
+**Tables fixed** (RLS was disabled):
+| Table | Fix | Rationale |
+|-------|-----|-----------|
+| `group_challenge_members` | RLS enabled + simple `user_id = auth.uid()` CRUD policies | Previously disabled due to infinite recursion. New policies avoid subqueries on same table. All app access is via SECURITY DEFINER RPCs (bypass RLS). |
+| `achievements` | RLS enabled + authenticated SELECT (read-only) | Static definition table. All users can read the achievement catalog. Writes only via `check_achievement` RPC. |
+
+**Views fixed** (19 SECURITY DEFINER → SECURITY INVOKER):
+All 19 views in public schema converted to `security_invoker = on`. This means:
+- App-queried views (`weight_statistics`, `body_composition_statistics`) still work because underlying tables have `user_id = auth.uid()` RLS policies.
+- Admin/analytics views return empty for regular users (correct) but work for service_role queries (bypass RLS).
+
+**Root cause**: Views were created with default PG14 behavior (security_definer) or explicitly set. Going forward, ALL new views must use `security_invoker = on` — see "When Creating a View" rules above.
+
+### 2026-03-25: signUp() Profile Creation — Resilience Change
+
+**`create_user_profile` RPC** is confirmed deployed and functional. However, the iOS `signUp()` flow had a timing issue where profile creation ran before the auth session was fully established on the client. The RPC uses `SECURITY DEFINER` so it should bypass RLS, but the Supabase Swift client may require a valid session token to make any API call.
+
+**Change**: `SupabaseManager.signUp()` now sets `currentUser` and `isAuthenticated = true` immediately after `client.auth.signUp()` returns, ensuring a valid session exists before `createUserProfile()` is called.
+
+**New public method**: `ensureProfileExists(userId:name:email:)` — idempotent wrapper around `createUserProfile()`. Uses the same RPC → fallback upsert chain. Used by the onboarding recovery path when a prior partial signup left an auth user without a profile.
+
+**No schema changes required** — the `create_user_profile` RPC and `user_profiles` table are unchanged.
 
 ### Notification Preferences Table (2026-03-21)
 

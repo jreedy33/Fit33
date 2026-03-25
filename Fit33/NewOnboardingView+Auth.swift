@@ -725,57 +725,53 @@ extension NewOnboardingView {
         }
         
         if isSignUp {
-            // For sign up: Create the Supabase account first
+            // Fallback: this path should rarely be reached since account is created after phone verification.
+            // But if the user arrives here unauthenticated, try signUp with recovery.
             Task {
                 do {
-                    // This code path should NOT be reached for email/password signups anymore
-                    // Account is now created after phone verification (earlier in the flow)
-                    AppLogger.warning("This signup path should not be reached - account should already exist!", category: .auth)
-                    AppLogger.debug("Starting signup for: \(email)", category: .auth)
-                    try await supabaseManager.signUp(email: email, password: password, name: name.isEmpty ? "User" : name)
+                    AppLogger.warning("Confirmation signup fallback — attempting signUp or recovery", category: .auth)
+                    
+                    // Try signUp; if user already exists, sign in instead
+                    do {
+                        try await supabaseManager.signUp(email: email, password: password, name: name.isEmpty ? "User" : name)
+                    } catch {
+                        let desc = error.localizedDescription.lowercased()
+                        let isAlreadyRegistered = desc.contains("already registered")
+                            || desc.contains("already exists")
+                            || desc.contains("user already")
+                            || desc.contains("email already")
+                        
+                        if isAlreadyRegistered {
+                            AppLogger.info("Auth user already exists — recovering via sign-in", category: .auth)
+                            try await supabaseManager.signIn(email: email, password: password)
+                            if let userId = supabaseManager.currentUser?.id {
+                                try? await supabaseManager.ensureProfileExists(
+                                    userId: userId,
+                                    name: name.isEmpty ? "User" : name,
+                                    email: email
+                                )
+                            }
+                        } else {
+                            throw error
+                        }
+                    }
+                    
                     AppLogger.info("Signup successful, authenticated: \(supabaseManager.isAuthenticated), userID: \(supabaseManager.currentUser?.id.uuidString ?? "nil")", category: .auth)
                     
-                    // Set the username after account creation
                     if !username.isEmpty {
-                        AppLogger.debug("Attempting to set username: @\(username)", category: .auth)
-                        
-                        // Small delay to ensure profile is created
-                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
-                        
-                        do {
-                            try await supabaseManager.setUsername(username)
-                            AppLogger.info("Username saved successfully: @\(username)", category: .auth)
-                        } catch {
-                            AppLogger.error("Failed to set username: \(error.localizedDescription)", category: .auth)
-                        }
-                    } else {
-                        AppLogger.warning("Username is empty, skipping", category: .auth)
+                        try? await supabaseManager.setUsername(username)
                     }
                     
                     await MainActor.run {
-                        // Account created successfully, now complete onboarding
-                        AppLogger.info("Completing onboarding flow...", category: .ui)
                         completeOnboarding()
                     }
                 } catch {
-                    // Log the auth failure for debugging
                     AppLogger.error("Signup failed: \(error.localizedDescription)", category: .auth)
                     SessionLogManager.shared.logAuthFailure(method: "email_signup", error: error.localizedDescription)
                     
                     await MainActor.run {
-                        let errorString = error.localizedDescription.lowercased()
-                        // Check if error indicates email already exists
-                        if errorString.contains("already registered") || 
-                           errorString.contains("already exists") ||
-                           errorString.contains("email already") ||
-                           errorString.contains("user already") {
-                            emailAlreadyExists = true
-                            // Navigate back to auth step to show the message
-                            currentStep = .auth
-                        } else {
-                            errorMessage = error.localizedDescription
-                            showError = true
-                        }
+                        errorMessage = error.localizedDescription
+                        showError = true
                     }
                 }
             }
@@ -866,23 +862,23 @@ extension NewOnboardingView {
             // For sign up: Just validate and proceed to username step
             // Account will be created on the confirmation screen
             AppLogger.debug("Sign up mode - navigating to username step", category: .auth)
-            // Clean up auth states
-            hasStartedAuth = false
             isOnConfirmPasswordStep = false
+            // NOTE: Do NOT set hasStartedAuth = false here. The auth and username views
+            // coexist in the same ZStack so @FocusState can transfer keyboard seamlessly.
+            // hasStartedAuth is managed by onChange(of: currentStep) when navigating back.
             
             // Determine which field should be focused based on name state
             let targetField: FocusedField = name.isEmpty ? .name : .username
             AppLogger.debug("Auth target field will be: \(targetField)", category: .auth)
             
-            // Navigate
+            // Set focus synchronously BEFORE navigating so all state changes are batched
+            focusedField = targetField
             navigateTo(.username)
             
-            // Aggressively maintain keyboard by setting focus multiple times
-            DispatchQueue.main.async {
-                focusedField = targetField
-                AppLogger.verbose("Auth focus set immediately: \(targetField)", category: .ui)
-            }
+            // Reinforcements as safety net
             Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.05))
+                guard !Task.isCancelled else { return }
                 focusedField = targetField
                 AppLogger.verbose("Auth focus reinforced at 50ms: \(targetField)", category: .ui)
             }
@@ -891,12 +887,6 @@ extension NewOnboardingView {
                 guard !Task.isCancelled else { return }
                 focusedField = targetField
                 AppLogger.verbose("Auth focus reinforced at 150ms: \(targetField)", category: .ui)
-            }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(0.3))
-                guard !Task.isCancelled else { return }
-                focusedField = targetField
-                AppLogger.verbose("Auth focus reinforced at 300ms: \(targetField)", category: .ui)
             }
             AppLogger.debug("Auth navigation initiated with focus on \(targetField)", category: .auth)
         } else {

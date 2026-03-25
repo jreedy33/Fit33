@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import UserNotifications
+import Supabase
 
 /// Service for managing push notifications and device token registration
 @MainActor
@@ -12,6 +13,60 @@ class PushNotificationService: ObservableObject {
     private let logger = SessionLogManager.shared
     
     private init() {}
+    
+    // MARK: - Flush Push Notification Queue
+    
+    /// Triggers the send-push-notification edge function to process pending notifications.
+    /// Call after any RPC that inserts into push_notification_queue.
+    /// Fire-and-forget — failures are logged but don't block the caller.
+    func flushPushNotificationQueue(triggeredBy source: String) {
+        Task {
+            await _flushQueue(source: source)
+        }
+    }
+    
+    func _flushQueue(source: String) async {
+        logger.log(.info, category: .pushNotification, message: "Flushing push queue", metadata: [
+            "trigger": source
+        ])
+        AppLogger.debug("[PUSH] Flushing notification queue (trigger: \(source))", category: .network)
+        
+        do {
+            struct FlushResponse: Decodable {
+                let message: String?
+                let processed: Int?
+                let success: Int?
+                let failed: Int?
+            }
+            
+            let response: FlushResponse = try await SupabaseManager.shared.supabaseClient
+                .functions
+                .invoke(
+                    "send-push-notification",
+                    options: FunctionInvokeOptions(
+                        body: ["batch": true]
+                    )
+                )
+            
+            let processed = response.processed ?? 0
+            let succeeded = response.success ?? 0
+            let failed = response.failed ?? 0
+            
+            logger.log(.info, category: .pushNotification, message: "Push queue flushed", metadata: [
+                "trigger": source,
+                "processed": "\(processed)",
+                "succeeded": "\(succeeded)",
+                "failed": "\(failed)"
+            ])
+            AppLogger.info("[PUSH] Queue flushed: \(processed) processed, \(succeeded) sent, \(failed) failed (trigger: \(source))", category: .network)
+        } catch {
+            logger.log(.error, category: .pushNotification, message: "Push queue flush FAILED", metadata: [
+                "trigger": source,
+                "error": error.localizedDescription
+            ])
+            AppLogger.error("[PUSH] Queue flush failed (trigger: \(source)): \(error.localizedDescription)", category: .network)
+        }
+    }
     
     // MARK: - Register for Push Notifications
     
@@ -189,9 +244,11 @@ class PushNotificationService: ObservableObject {
             self.isRegistered = false
             UserDefaults.standard.removeObject(forKey: "apns_device_token")
             
-            AppLogger.info("✅ [PUSH] Device token removed from Supabase", category: .network)
+            logger.log(.info, category: .pushNotification, message: "Device token removed (sign-out)")
+            AppLogger.info("[PUSH] Device token removed from Supabase", category: .network)
         } catch {
-            AppLogger.error("❌ [PUSH] Failed to remove token: \(error)", category: .network)
+            logger.log(.error, category: .pushNotification, message: "Failed to remove device token", metadata: ["error": error.localizedDescription])
+            AppLogger.error("[PUSH] Failed to remove token: \(error)", category: .network)
         }
     }
 }

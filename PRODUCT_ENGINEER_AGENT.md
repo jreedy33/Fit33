@@ -16,6 +16,8 @@
 8. **Network calls MUST be parallel**: All independent network calls in `.task` or `.onAppear` MUST use `async let` groups, NEVER sequential `await`. Dashboard network calls went from 20 sequential to 3 parallel batches.
 9. **FetchRequests MUST have limits**: All `@FetchRequest` displaying limited items MUST include `fetchLimit`. Never load entire history when only showing 10 items.
 10. **Cloud sync MUST be paginated**: `fetchWorkoutHistory()` and `fetchMealLogs()` use `.limit()` -- never fetch unbounded history.
+11. **Database security — tables**: Every new table MUST have `ENABLE ROW LEVEL SECURITY` + CRUD policies scoped to `user_id = auth.uid()`. Tables without RLS are publicly accessible via the anon key — a critical vulnerability.
+12. **Database security — views**: NEVER create views with `SECURITY DEFINER`. All public views MUST use `security_invoker = on`. SECURITY DEFINER views bypass RLS for all users. See `SUPABASE_AGENT.md` "When Creating a View".
 
 ---
 
@@ -837,11 +839,86 @@ Progress ring, bar, and label all use `liveProgress(for:)` — instant response 
 
 **Files changed**: `DailyQuestViews.swift`, `DailyQuestService.swift`, `HealthKitManager.swift`, `HealthKitService.swift`, `MealService.swift`
 
+### 2026-03-24: Push Notification Delivery Fix
+
+**Root cause**: SQL RPCs (`accept_friend_request`, `create_challenge`, etc.) correctly INSERT into `push_notification_queue`, but nothing invoked the `send-push-notification` edge function to process the queue. Only `notify-contacts-user-joined` had a working caller.
+
+**Fix — two layers**:
+1. **iOS app triggers**: `PushNotificationService.flushPushNotificationQueue(triggeredBy:)` calls the `send-push-notification` edge function via `.functions.invoke()`. Wired into:
+   - `FriendService.sendFriendRequest()`, `acceptFriendRequest()`
+   - `ChallengeService.postChallengeCreation()`, `respondToChallenge()`, `createGroupChallenge()`
+   - `CommunityChallengeService.joinChallenge()`, `joinChallengeFriendGated()`
+2. **pg_cron fallback**: `process_push_notification_queue()` runs every 30s via `pg_cron` + `pg_net`, catches any missed notifications (e.g., challenge progress from DB triggers)
+
+**pg_cron auth fix (2026-03-24)**: Three issues resolved for pg_net → edge function auth:
+- Gateway JWT verification must be **OFF** in dashboard (Edge Functions > send-push-notification > Settings)
+- `SUPABASE_SERVICE_ROLE_KEY` env var in edge functions is now short-format (`sb_secret_...`, 41 chars), NOT the JWT (219 chars). String `===` comparison fails.
+- Fix: `isServiceRoleJWT(token)` decodes JWT payload and verifies `role === 'service_role'` + `ref` match — format-agnostic
+- The `x-cron-key` custom header carries the JWT-format service role key from `internal_config`, bypassing gateway header mangling
+
+**Additional fixes**:
+- `PushNotificationService.removeDeviceToken()` now called in `SupabaseManager.signOut()` — logged-out users stop receiving pushes
+- `sendImmediateNotification()` logs to `SessionLogManager` (category `.pushNotification`) for all send/block/fail events
+- `didReceive` delegate logs notification taps with type and action context
+
+**Key files**: `PushNotificationService.swift`, `FriendService.swift`, `ChallengeService.swift`, `CommunityChallengeService.swift`, `SupabaseManager.swift`, `NotificationManager.swift`
+**Migration**: `supabase/20260324_push_notification_cron.sql` (pg_cron + test RPC)
+
+**Push notification delivery flow (after fix)**:
+```
+SQL RPC (e.g. accept_friend_request)
+  └─ INSERT INTO push_notification_queue (status: pending)
+       ├─ iOS app: flushPushNotificationQueue() ──→ send-push-notification edge function ──→ APNs
+       └─ pg_cron (30s fallback): process_push_notification_queue() ──→ same edge function ──→ APNs
+```
+
+### 2026-03-24: Push Notification Debug Tool
+
+**Location**: Dev Menu → "Push" tab (`PushNotificationDebugView.swift`, DEBUG-only)
+
+**Sections**:
+1. **Token Status** — device token, APNs environment, server `is_valid`, re-register button
+2. **Send Test Push** — 6 notification types (friend_request, friend_accepted, challenge_invite, challenge_accepted, challenge_progress, challenge_completed) through full pipeline via `insert_test_push_notification` RPC + flush
+3. **Queue Status** — recent `push_notification_queue` rows (type, status, timestamps, errors), manual flush button
+4. **Delivery Log** — `SessionLogManager` entries filtered to `.pushNotification` category
+5. **Notification Preferences** — server-side `user_notification_preferences` row (master toggle, disabled types, quiet hours)
+
+**Test RPC**: `insert_test_push_notification(p_notification_type, p_title, p_body)` — inserts into queue targeting `auth.uid()` for self-testing
+
+### 2026-03-25: Onboarding Signup Flow — Dead-End Recovery Fix (CRITICAL)
+
+**Problem**: Two beta testers hit a permanent dead-end during email/password signup. After OTP phone verification, `createMinimalAccountForEmailPasswordSignup()` would:
+1. Call `signUp()` which created the auth user in Supabase
+2. `createUserProfile()` failed (timing/session issue before auth state was set)
+3. Generic "Account creation failed" error shown, `isPhoneVerified` reset to false
+4. On retry: `signUp()` fails with "already registered" — **permanent dead end, user can never proceed**
+
+**Root cause**: `signUp()` in `SupabaseManager` set auth state (`isAuthenticated = true`) AFTER profile creation. If profile creation failed, the whole call threw, leaving an orphaned auth user with no profile and no session.
+
+**Fix — three layers**:
+
+1. **`SupabaseManager.signUp()`** — Auth state is now set IMMEDIATELY after `client.auth.signUp()` succeeds, BEFORE profile creation. Profile creation failure is no longer fatal (logged but not thrown). New public `ensureProfileExists()` method for recovery.
+
+2. **`createMinimalAccountForEmailPasswordSignup()`** — Rewritten with recovery logic. If `signUp()` fails with "already registered" (from prior partial failure), it signs in with the same credentials and ensures the profile exists. Error messages now show the actual error instead of a generic string.
+
+3. **`createAccountAndComplete()`** (confirmation screen fallback) — Same recovery pattern applied for users reaching confirmation unauthenticated.
+
+**Architecture flow (after fix)**:
+```
+OTP verified → createMinimalAccountForEmailPasswordSignup()
+  └─ signUpOrRecoverExistingAccount()
+       ├─ Try signUp() → set auth state → profile creation (best-effort)
+       └─ If "already registered" → signIn() → ensureProfileExists()
+  └─ updatePhoneAndUsername() (best-effort, non-fatal)
+```
+
+**Key files**: `NewOnboardingView+Verification.swift`, `NewOnboardingView+Auth.swift`, `SupabaseManager.swift`
+
 ### 2026-03-21: Notification System Audit — Bug Fixes & Enhancements
 
 **Architecture**: 25+ notification types across 5 categories (Workout, Social, Achievements, Health, Motivation). Local scheduling via `UNUserNotificationCenter` + server push via `push_notification_queue` → APNs.
 
-**Key files**: `NotificationManager.swift` (scheduling, toggling, smart check), `NotificationSettingsView.swift` (settings UI), `PushNotificationService.swift` (token registration), `Fit33App.swift` (comeback reminder with dedup)
+**Key files**: `NotificationManager.swift` (scheduling, toggling, smart check), `NotificationSettingsView.swift` (settings UI), `PushNotificationService.swift` (token registration + queue flush), `Fit33App.swift` (comeback reminder with dedup)
 
 **Critical fixes applied**:
 - `scheduleAllNotifications()` now checks `last_workout_date` before scheduling streak protection / workout reminder — prevents false "you haven't worked out" notifications

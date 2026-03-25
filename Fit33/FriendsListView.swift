@@ -690,37 +690,70 @@ struct FriendsListView: View {
             }
             .padding(.horizontal, 20)
             
-            // Results — scrollable, directly below search bar (no Find Friends filler)
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    if isSearching {
-                        ProgressView("Searching...")
-                            .padding(.top, 30)
-                    } else if friendService.searchResults.isEmpty && !searchText.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "person.crop.circle.badge.questionmark")
-                                .font(.system(size: 50))
-                                .foregroundColor(.gray.opacity(0.5))
-                            
-                            Text("No users found")
-                                .font(.headline)
-                            
-                            Text("Try a different username")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.top, 50)
-                    } else if searchText.isEmpty {
+                    if searchText.isEmpty {
                         contactSuggestionsSection
                     } else {
-                        ForEach(friendService.searchResults.filter { user in
-                            return !user.isFriend && user.hasOutgoingRequest != true
-                        }) { user in
-                            UserSearchResultCard(user: user, onRespondToRequest: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    selectedTab = 1
+                        // Always show filtered contact suggestions first
+                        let query = searchText.lowercased()
+                        let filteredContacts = contactsService.suggestedFriends.filter { contact in
+                            let name = (contact.name ?? "").lowercased()
+                            let user = (contact.username ?? "").lowercased()
+                            return name.contains(query) || user.contains(query)
+                        }
+                        
+                        if !filteredContacts.isEmpty {
+                            Section {
+                                ForEach(filteredContacts) { contact in
+                                    SuggestedFriendCard(friend: contact)
                                 }
-                            })
+                            } header: {
+                                Text("From Your Contacts")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        
+                        let usernameResults = friendService.searchResults.filter { user in
+                            !user.isFriend
+                        }
+                        
+                        if isSearching {
+                            ProgressView("Looking up username...")
+                                .padding(.top, filteredContacts.isEmpty ? 30 : 12)
+                        } else if !usernameResults.isEmpty {
+                            Section {
+                                ForEach(usernameResults) { user in
+                                    UserSearchResultCard(user: user, onRespondToRequest: {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                            selectedTab = 1
+                                        }
+                                    })
+                                }
+                            } header: {
+                                Text("Username Match")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        } else if filteredContacts.isEmpty {
+                            VStack(spacing: 12) {
+                                Image(systemName: "person.crop.circle.badge.questionmark")
+                                    .font(.system(size: 50))
+                                    .foregroundColor(.gray.opacity(0.5))
+                                
+                                Text("No one found")
+                                    .font(.headline)
+                                
+                                Text("Try an exact @username")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.top, 50)
                         }
                     }
                 }
@@ -897,12 +930,10 @@ struct FriendsListView: View {
     }
     
     private var suggestedFriendsSection: some View {
-        // Filter out existing friends and people with pending outgoing requests
         let existingFriendIds = Set(friendService.friends.map { $0.friendId })
         let filteredSuggestions = contactsService.suggestedFriends.filter { suggestion in
             !existingFriendIds.contains(suggestion.userId) &&
-            !suggestion.isFriend &&
-            !suggestion.hasOutgoingRequest
+            !suggestion.isFriend
         }
         
         return VStack(alignment: .leading, spacing: 12) {

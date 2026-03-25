@@ -1136,6 +1136,15 @@ final class SessionLogManager: ObservableObject {
         }
     }
     
+    /// Returns a snapshot of recent session log entries (thread-safe copy)
+    func getRecentLogs() -> [LogEntry] {
+        var snapshot: [LogEntry] = []
+        logQueue.sync {
+            snapshot = sessionLog
+        }
+        return snapshot
+    }
+    
     /// Clear all session logs
     func clearLogs() {
         logQueue.async { [weak self] in

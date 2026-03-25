@@ -453,6 +453,16 @@ struct DailyQuestsWidget: View {
             dl.pendingDestination = .hydration
         case .exerciseSets10, .exerciseSets20:
             dl.pendingDestination = .workout
+            
+        // Day 1 beginner quests
+        case .beginnerSyncContacts, .beginnerAddFriend:
+            dl.pendingDestination = .friendSearch
+        case .beginnerSendChallenge:
+            dl.pendingDestination = .challengeCreation
+        case .beginnerFirstWorkout:
+            dl.pendingDestination = .workout
+        case .beginnerExploreProgram:
+            dl.pendingDestination = .programs
         }
     }
     
@@ -552,6 +562,17 @@ struct DailyQuestsWidget: View {
             return "Hydrated before noon 💧"
         case .weeklyWeighIn:
             return "Weekly weigh-in done ✓"
+            
+        case .beginnerSyncContacts:
+            return "Contacts synced ✓"
+        case .beginnerAddFriend:
+            return "Friend added ✓"
+        case .beginnerSendChallenge:
+            return "Challenge sent ✓"
+        case .beginnerFirstWorkout:
+            return "First workout done! 💪"
+        case .beginnerExploreProgram:
+            return "Program explored ✓"
         }
     }
     
@@ -827,6 +848,10 @@ struct DailyQuestsWidget: View {
         case .watchAds:
             return quest.description
         case .logMeal, .logWater, .exerciseSets10, .exerciseSets20:
+            return quest.description
+            
+        case .beginnerSyncContacts, .beginnerAddFriend, .beginnerSendChallenge,
+             .beginnerFirstWorkout, .beginnerExploreProgram:
             return quest.description
         }
     }

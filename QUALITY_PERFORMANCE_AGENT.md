@@ -23,6 +23,8 @@
 9. **Sorting/filtering 1000+ items MUST run off main thread**: Use `Task.detached` or background Core Data context. The workout generator, swap graph, and filter cache all run 5000+ exercise iterations — these must NEVER block the main thread.
 10. **Suppress per-item debug logging during bulk operations**: Use `WorkoutGeneratorService.suppressPerExerciseLogs` pattern. Logging 1000+ items on the main thread was the #1 cause of generation freezes.
 11. **Tab switch handlers must be minimal**: Only critical state updates (tab selection, button hide) should be synchronous. All logging and analytics should use the single summary log at the end, not per-step logs.
+12. **Database security — tables**: Every new table MUST have `ENABLE ROW LEVEL SECURITY` + CRUD policies scoped to `user_id = auth.uid()`. Tables without RLS are publicly accessible via the anon key.
+13. **Database security — views**: NEVER create views with `SECURITY DEFINER`. All public views MUST use `security_invoker = on`. SECURITY DEFINER views bypass RLS for all callers.
 
 ---
 
@@ -563,6 +565,24 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 **Potential concern**: If `MealService.todaysMeals` or `HydrationService.todaySummary` publish changes frequently, the quest widget will re-evaluate. Monitor via Instruments Time Profiler if dashboard scrolling degrades after this change.
 
 **Calorie calculation timing**: `saveWorkoutToAppleHealth()` runs as an async Task after `saveWorkoutData()`. The `WorkoutCompletionView` polls `workout.caloriesBurned` every 0.5s for up to 5s. The MET-based calorie calculation is CPU-only (no network), typically completes in <50ms. The Core Data save after calculation triggers a context notification.
+
+### 2026-03-25: Onboarding Signup — Error Handling Fix
+
+**Problem**: `createMinimalAccountForEmailPasswordSignup()` caught all errors with a generic "Account creation failed. Please try again." message and reset `isPhoneVerified = false`. This:
+1. Swallowed the actual error (no diagnostic info for users or logs)
+2. Created a dead-end: auth user created but profile failed → retry fails "already registered" → permanent block
+
+**Fix**:
+- Actual error descriptions now shown to the user (rate limit, password strength, network errors distinguished)
+- Recovery logic: if signUp throws "already registered", signs in instead and ensures profile exists
+- Phone/username update separated into non-fatal `updatePhoneAndUsername()` — profile creation failure doesn't block onboarding
+- `signUp()` itself no longer throws on profile creation failure (auth state set first)
+
+**Test scenarios**:
+- [ ] New user email/password signup with valid OTP → account created, onboarding continues
+- [ ] Simulate profile creation failure → retry enters OTP → recovery signs in, creates profile
+- [ ] Invalid password (server-side rejection) → error message mentions password
+- [ ] Rate limited → error message mentions waiting
 
 ### 2026-03-21: USDA Food Search — Test Scenarios & Degradation Path
 

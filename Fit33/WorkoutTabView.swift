@@ -133,12 +133,16 @@ struct WorkoutTabView: View {
                 
             // These destinations are handled by ContentView + DashboardView/FriendsTabView
             // Don't handle or clear them here — let the correct tab consume them
-            case .friends, .friendRequests, .challenges, .challengeCreation, .challengeInvite, .challengeDetail:
+            case .friends, .friendRequests, .friendSearch, .challenges, .challengeCreation, .challengeInvite, .challengeDetail:
                 break  // Handled by ContentView → FriendsTabView / DashboardView
             case .communityChallenge:
                 break  // Handled by ContentView (join sheet)
             case .privateChallengeDetail, .privateChallengeInvite, .privateChallengeJoinByCode:
                 break  // Handled by ContentView → DashboardView (sheet)
+            case .programs:
+                navigationPath.append("PersonalizedPrograms")
+                deepLinkManager.pendingDestination = nil
+                AppLogger.debug("📋 Deep link: Navigating to programs", category: .workout)
             case .dashboard, .mealsTab, .statsTab, .hydration, .stepTracker, .weightTracker,
                  .workoutHistory, .personalRecord, .streakInfo, .addFood:
                 break  // Handled by ContentView (tab switch + scroll)

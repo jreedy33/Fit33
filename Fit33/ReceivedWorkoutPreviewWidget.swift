@@ -62,22 +62,7 @@ struct ReceivedWorkoutPreviewWidget: View {
                 // Action buttons
                 actionButtonsSection
             }
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color.cardBackground)
-                    .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: widgetBorderColors,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 2
-                    )
-            )
+            .onboardingCardStyle(accentColor: themeColor, secondaryColor: secondaryThemeColor, isSelected: true, cornerRadius: 20)
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isExpanded)
         .confirmationDialog(

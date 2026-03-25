@@ -893,6 +893,7 @@ class CommunityChallengeService: ObservableObject {
             #endif
             HapticManager.notification(.success)
             await fetchMyChallenges()
+            PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "community_challenge_joined")
             return id
         } catch {
             AppLogger.error("Error joining community challenge: \(error.localizedDescription)", category: .social)
@@ -926,6 +927,7 @@ class CommunityChallengeService: ObservableObject {
             HapticManager.notification(.success)
             await fetchMyChallenges()
             await fetchDiscoverableChallenges()
+            PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "community_challenge_friend_joined")
             return id
         } catch {
             AppLogger.error("Error joining friend-gated challenge: \(error.localizedDescription)", category: .social)

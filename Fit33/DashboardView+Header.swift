@@ -210,11 +210,7 @@ extension DashboardView {
             }
         }
         .padding(Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                .fill(Color.cardBackground)
-                .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
-        )
+        .onboardingCardStyle(accentColor: .orange, secondaryColor: .red, isSelected: true, cornerRadius: CornerRadius.lg)
         .transition(.opacity.combined(with: .scale(scale: 0.95)))
     }
     

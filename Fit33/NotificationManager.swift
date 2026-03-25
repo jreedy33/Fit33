@@ -1081,24 +1081,6 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         sendImmediateNotification(content: content, identifier: "friend_request_\(requestId)")
     }
     
-    /// Friend request accepted notification - when someone accepts your request
-    func sendFriendRequestAcceptedNotification(accepterName: String, friendId: String) {
-        guard isNotificationEnabled(.friendRequest) && isAuthorized else { return }
-        
-        let content = UNMutableNotificationContent()
-        content.title = "\(accepterName) accepted your request! 🎉"
-        content.body = "You're now workout buddies. Start training together!"
-        content.sound = .default
-        
-        content.userInfo = [
-            "type": "friend_request_accepted",
-            "friend_id": friendId,
-            "accepter_name": accepterName
-        ]
-        
-        sendImmediateNotification(content: content, identifier: "friend_accepted_\(friendId)")
-    }
-    
     /// Challenge invite notification - when a friend challenges you
     func sendChallengeInviteNotification(fromName: String, challengeTitle: String, challengeId: String) {
         guard isNotificationEnabled(.challengeInvite) && isAuthorized else { return }
@@ -1338,14 +1320,17 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     
     // MARK: - Helper
     private func sendImmediateNotification(content: UNMutableNotificationContent, identifier: String) {
+        let typeString = content.userInfo["type"] as? String ?? identifier
+        
         if quietHoursEnabled && isInQuietHours() {
+            SessionLogManager.shared.log(.info, category: .pushNotification, message: "Local notification blocked (quiet hours)", metadata: ["type": typeString])
             AppLogger.debug("Notification skipped - quiet hours active", category: .general)
             return
         }
         
-        let typeString = content.userInfo["type"] as? String ?? identifier
         let notifType = NotificationType(rawValue: typeString)
         if let notifType, isDailyCapped(for: notifType) {
+            SessionLogManager.shared.log(.info, category: .pushNotification, message: "Local notification blocked (daily cap)", metadata: ["type": typeString])
             AppLogger.debug("Notification skipped - daily cap reached (\(Self.dailyCapLimit))", category: .general)
             return
         }
@@ -1358,7 +1343,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
+                SessionLogManager.shared.log(.error, category: .pushNotification, message: "Local notification FAILED", metadata: ["type": typeString, "error": error.localizedDescription])
                 AppLogger.error("Failed to send notification: \(error.localizedDescription)", category: .general)
+            } else {
+                SessionLogManager.shared.log(.info, category: .pushNotification, message: "Local notification sent", metadata: [
+                    "type": typeString,
+                    "title": content.title
+                ])
             }
         }
         incrementDailyCap()
@@ -1610,6 +1601,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         let actionIdentifier = response.actionIdentifier
         let categoryIdentifier = response.notification.request.content.categoryIdentifier
         let userInfo = response.notification.request.content.userInfo
+        
+        let notifType = userInfo["type"] as? String ?? categoryIdentifier
+        SessionLogManager.shared.log(.info, category: .pushNotification, message: "Notification tapped", metadata: [
+            "type": notifType,
+            "action": actionIdentifier
+        ])
         
         Task { @MainActor in
             switch actionIdentifier {

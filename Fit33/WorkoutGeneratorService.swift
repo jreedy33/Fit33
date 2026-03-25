@@ -818,7 +818,7 @@ class WorkoutGeneratorService: ObservableObject {
         }
         
         let normalizedMuscles = expandedMuscles
-        let normalizedEquipment = Set(equipment.map { ExerciseFilterService.normalizeEquipment($0) })
+        let normalizedEquipment = Set(equipment.map { $0.trimmingCharacters(in: .whitespaces) })
         
         #if DEBUG
         AppLogger.debug("[SMART GEN] Starting intelligent workout generation: muscles=\(targetMuscles), expanded=\(normalizedMuscles), equipment=\(normalizedEquipment), level=\(userLevel), goal=\(userGoal), gender=\(preferredGender.uppercased()), weight=\(Int(userWeightLbs))lbs, age=\(userAge), favorites=\(favorites.count), library=\(allExercises.count)", category: .workout)
@@ -977,11 +977,11 @@ class WorkoutGeneratorService: ObservableObject {
             let normalizedExercisePrimary = normalizeMuscleName(exercisePrimaryMuscle)
             
             // Check if exercise's PRIMARY muscle matches ANY of user's target muscles
+            // Uses normalizeMuscleName on both sides for consistent synonym handling
             let primaryMuscleMatchesTarget = normalizedMuscles.contains { target in
                 let normalizedTarget = normalizeMuscleName(target)
                 return normalizedExercisePrimary == normalizedTarget ||
-                       exercisePrimaryMuscle.contains(target) || 
-                       target.contains(exercisePrimaryMuscle)
+                       exercisePrimaryMuscle == target
             }
             
             // Also check category as fallback (for exercises where muscle data might be incomplete)
@@ -1337,8 +1337,10 @@ class WorkoutGeneratorService: ObservableObject {
             var matchedTargets: [String] = []
             
             for target in normalizedMuscles {
+                let normalizedTarget = normalizeMuscleName(target)
                 let hits = allExerciseMuscles.contains { muscle in
-                    muscle == target || muscle.contains(target) || target.contains(muscle)
+                    let normalizedMuscle = normalizeMuscleName(muscle)
+                    return normalizedMuscle == normalizedTarget || muscle == target
                 }
                 if hits {
                     matchedTargetCount += 1
@@ -1451,11 +1453,9 @@ class WorkoutGeneratorService: ObservableObject {
                                      "front lever", "back lever", "human flag"]
             let isTechnicalExercise = technicalKeywords.contains(where: { name.contains($0) })
             
-            // Beginner-friendly exercise indicators
-            let beginnerKeywords = ["machine", "assisted", "supported", "seated", 
-                                    "lying", "leg press", "smith", "guided"]
-            let isBeginnerFriendly = beginnerKeywords.contains(where: { name.contains($0) }) ||
-                                     equipmentType.lowercased().contains("machine")
+            // Truly assisted/guided movement indicators (not equipment types or body positions)
+            let beginnerKeywords = ["assisted", "supported", "guided"]
+            let isBeginnerFriendly = beginnerKeywords.contains(where: { name.contains($0) })
             
             switch userLevel.lowercased() {
             case "beginner":
@@ -1475,12 +1475,12 @@ class WorkoutGeneratorService: ObservableObject {
                 if !isCompound { score += 25 }
                 
             case "advanced":
-                // Advanced: Prefer technical and compound, slight penalty for too-easy
+                // Advanced: Prefer technical and compound, slight penalty for truly assisted movements
                 if isTechnicalExercise {
                     score += 150  // Big boost for technical exercises
                 }
                 if isBeginnerFriendly {
-                    score -= 40  // Slight penalty for beginner exercises
+                    score -= 20  // Small penalty for assisted/guided movements only
                 }
                 if exerciseDifficulty >= 7 { 
                     score += 60  // Boost hard exercises
@@ -1489,10 +1489,6 @@ class WorkoutGeneratorService: ObservableObject {
                 }
                 // Strongly prefer compound movements
                 if isCompound { score += 50 }
-                // Prefer barbell/dumbbell over machines
-                if equipmentType == "Barbell" || equipmentType == "Dumbbells" {
-                    score += 30
-                }
                 
             default: // Intermediate
                 if isTechnicalExercise {
@@ -1508,12 +1504,14 @@ class WorkoutGeneratorService: ObservableObject {
             case "build muscle":
                 if isCompound { score += 25 }
                 if equipmentType == "Barbell" || equipmentType == "Dumbbells" { score += 15 }
+                if equipmentType == "Machines" || equipmentType == "Cables" { score += 10 }
             case "lose fat", "lose weight":
                 if category == "cardio" || category == "plyometrics" { score += 35 }
                 if name.contains("burpee") || name.contains("jump") { score += 20 }
             case "get stronger":
                 if isCompound { score += 35 }
                 if equipmentType == "Barbell" { score += 25 }
+                if equipmentType == "Machines" { score += 5 }
             default:
                 break
             }
@@ -2456,7 +2454,7 @@ class WorkoutGeneratorService: ObservableObject {
                     }
                     
                     // 🆕 Track equipment mix for targets
-                    let phase0EquipType = ExerciseFilterService.normalizeEquipment(equipment)
+                    let phase0EquipType = ExerciseFilterService.normalizeEquipment(equipment).lowercased()
                     if ["cable", "machine", "smith", "lever"].contains(where: { phase0EquipType.contains($0) }) {
                         machineOrCableCount += 1
                     } else if ["barbell", "dumbbell"].contains(where: { phase0EquipType.contains($0) }) {
@@ -2711,7 +2709,7 @@ class WorkoutGeneratorService: ObservableObject {
                         }
                         
                         // 🆕 EQUIPMENT MIX CHECK: Enforce balanced mix (machines, cables, free weights)
-                        let exerciseEquipType = ExerciseFilterService.normalizeEquipment(exercise.equipment)
+                        let exerciseEquipType = ExerciseFilterService.normalizeEquipment(exercise.equipment).lowercased()
                         let isMachineOrCable = ["cable", "machine", "smith", "lever"].contains { exerciseEquipType.contains($0) }
                         let isFreeWeight = ["barbell", "dumbbell"].contains { exerciseEquipType.contains($0) }
                         
@@ -2937,7 +2935,7 @@ class WorkoutGeneratorService: ObservableObject {
                         }
                         
                         // 🆕 EQUIPMENT MIX CAP: Max 3 free-weight exercises for fatigue management
-                        let exerciseEquipTypeCheck = ExerciseFilterService.normalizeEquipment(exercise.equipment)
+                        let exerciseEquipTypeCheck = ExerciseFilterService.normalizeEquipment(exercise.equipment).lowercased()
                         let isFreeWeightCheck = ["barbell", "dumbbell"].contains { exerciseEquipTypeCheck.contains($0) }
                         if isFreeWeightCheck && freeWeightCount >= maxFreeWeight {
                             continue  // At free-weight cap, skip
@@ -3019,7 +3017,7 @@ class WorkoutGeneratorService: ObservableObject {
                         addedThisRound = true
                         
                         // 🆕 Track equipment mix for targets
-                        let selectedEquipType = ExerciseFilterService.normalizeEquipment(exercise.equipment)
+                        let selectedEquipType = ExerciseFilterService.normalizeEquipment(exercise.equipment).lowercased()
                         if ["cable", "machine", "smith", "lever"].contains(where: { selectedEquipType.contains($0) }) {
                             machineOrCableCount += 1
                         } else if ["barbell", "dumbbell"].contains(where: { selectedEquipType.contains($0) }) {

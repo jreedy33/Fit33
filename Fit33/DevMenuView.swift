@@ -177,6 +177,9 @@ struct DevMenuView: View {
                     
                     SocialSystemSimulatorView()
                         .tag(5)
+                    
+                    PushNotificationDebugView()
+                        .tag(6)
                     #else
                     Text("Learning Engine Debug (Debug builds only)")
                         .tag(2)
@@ -189,6 +192,9 @@ struct DevMenuView: View {
                     
                     Text("Social Sim (Debug builds only)")
                         .tag(5)
+                    
+                    Text("Push Debug (Debug builds only)")
+                        .tag(6)
                     #endif
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -235,6 +241,7 @@ struct DevMenuView: View {
                 tabButton(title: "QA Test", icon: "checkmark.seal.fill", index: 3, colors: [.orange, .red])
                 tabButton(title: "Health", icon: "waveform.path.ecg", index: 4, colors: [.green, .cyan])
                 tabButton(title: "Social Sim", icon: "person.2.wave.2.fill", index: 5, colors: [.cyan, .blue])
+                tabButton(title: "Push", icon: "bell.badge.fill", index: 6, colors: [.orange, .yellow])
             }
         }
         .padding(.horizontal)

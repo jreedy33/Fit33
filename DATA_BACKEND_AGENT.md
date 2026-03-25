@@ -299,3 +299,36 @@ USDA API → Edge Function extracts nutrientNumber → `food_items` flat columns
 - Notifications blocked by preferences are marked as failed with descriptive reasons
 
 **Migration**: `supabase/20260321_notification_preferences.sql` — deployed March 2026
+
+### 2026-03-25: signUp() Resilience Fix (CRITICAL)
+
+**Problem**: `SupabaseManager.signUp()` set `isAuthenticated = true` AFTER both `client.auth.signUp()` AND `createUserProfile()` succeeded. If auth succeeded but profile creation failed, the error propagated up, leaving an orphaned auth user (no session, no profile). On retry, signUp failed with "already registered" — permanent dead end.
+
+**Fix**:
+- `signUp()` now sets `currentUser` and `isAuthenticated = true` IMMEDIATELY after `client.auth.signUp()` returns, BEFORE profile creation
+- Profile creation failure is caught and logged but no longer throws — the auth user exists and is authenticated
+- New public method `ensureProfileExists(userId:name:email:)` wraps `createUserProfile()` for external recovery use
+- `createUserProfile()` already uses upsert internally, so calling it again is idempotent
+
+**Impact on data layer**:
+- `signUp()` always returns successfully if auth succeeds (profile failure is non-fatal)
+- Callers that need the profile can call `ensureProfileExists()` as a repair step
+- The `createUserProfile` → `create_user_profile` RPC → fallback direct insert chain is unchanged
+
+**Key file**: `SupabaseManager.swift` (signUp method + new ensureProfileExists)
+
+### 2026-03-24: Security Fix — RLS + SECURITY DEFINER Views
+
+**Migration**: `supabase/20260324_security_fixes.sql`
+
+**What changed**:
+- `group_challenge_members`: RLS re-enabled with simple `user_id = auth.uid()` CRUD policies (no recursive subqueries). All app access remains via SECURITY DEFINER RPCs.
+- `achievements`: RLS enabled with authenticated SELECT-only (static definition table).
+- 19 views converted from SECURITY DEFINER to SECURITY INVOKER (`security_invoker = on`).
+
+**Impact on data layer**:
+- `weight_statistics` and `body_composition_statistics` (queried by app) still work — underlying tables (`weight_logs`, `body_composition_logs`) have `user_id = auth.uid()` SELECT policies.
+- Admin/analytics views return empty for regular users (correct behavior). Service-role queries unchanged.
+
+**NEW MANDATORY RULE — Views**:
+When creating views, NEVER use `SECURITY DEFINER`. All views in the `public` schema MUST use `security_invoker = on`. Views that aggregate across users should be in a non-public schema or accessed only via service-role. See `SUPABASE_AGENT.md` "When Creating a View" for full rules.

@@ -484,6 +484,12 @@ struct MainTabView: View {
             }
             deepLinkManager.pendingDestination = nil
             AppLogger.debug("[DEEPLINK] Navigating to Streak Info", category: .ui)
+
+        case .programs:
+            selectedTab = 2
+            workoutManager.shouldNavigateToPrograms = true
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Switched to Workout tab → opening program schedule", category: .ui)
             
         // Social - handled by Friends tab with deep push
         case .friends:
@@ -497,6 +503,12 @@ struct MainTabView: View {
             deepLinkManager.pendingFriendsRoute = "FriendRequests"
             deepLinkManager.pendingDestination = nil
             AppLogger.debug("[DEEPLINK] Switched to Friends tab → pushing FriendRequests", category: .ui)
+
+        case .friendSearch:
+            selectedTab = 4
+            deepLinkManager.pendingFriendsRoute = "FriendSearch"
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Switched to Friends tab → pushing FriendSearch", category: .ui)
             
         // Received workouts - handled by WorkoutTabView
         case .receivedWorkouts, .receivedWorkout, .sharedWorkout:

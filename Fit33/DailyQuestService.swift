@@ -259,6 +259,13 @@ enum QuestKey: String, CaseIterable {
     case logWater = "log_water"
     case exerciseSets10 = "exercise_sets_10"
     case exerciseSets20 = "exercise_sets_20"
+    
+    // MARK: - Day 1 beginner quests (hardcoded, not from server)
+    case beginnerSyncContacts = "beginner_sync_contacts"
+    case beginnerAddFriend = "beginner_add_friend"
+    case beginnerSendChallenge = "beginner_send_challenge"
+    case beginnerFirstWorkout = "beginner_first_workout"
+    case beginnerExploreProgram = "beginner_explore_program"
 }
 
 // MARK: - Daily Quest Service
@@ -387,6 +394,100 @@ class DailyQuestService: ObservableObject {
         )
     }
     
+    // MARK: - Day 1 Beginner Quests
+    
+    private func beginnerSocialQuest() -> DailyQuest {
+        let canAccess = ContactsService.shared.canAccessContacts
+        let hasFriends = !FriendService.shared.friends.isEmpty
+        
+        if !canAccess {
+            return DailyQuest(
+                id: UUID(),
+                questKey: QuestKey.beginnerSyncContacts.rawValue,
+                title: "Sync Your Contacts",
+                description: "Find friends already on Fit33 to challenge!",
+                icon: "person.crop.circle.badge.plus",
+                category: "social",
+                targetValue: 1, currentValue: 0,
+                targetUnit: "action",
+                xpReward: 50, leaguePoints: 10,
+                difficulty: "easy",
+                isCompleted: false, completedAt: nil,
+                funLabel: "Connect",
+                verificationType: "social"
+            )
+        } else if !hasFriends {
+            return DailyQuest(
+                id: UUID(),
+                questKey: QuestKey.beginnerAddFriend.rawValue,
+                title: "Add a Friend",
+                description: "Send a friend request to someone you know",
+                icon: "person.badge.plus",
+                category: "social",
+                targetValue: 1, currentValue: 0,
+                targetUnit: "friend",
+                xpReward: 50, leaguePoints: 10,
+                difficulty: "easy",
+                isCompleted: false, completedAt: nil,
+                funLabel: "Connect",
+                verificationType: "social"
+            )
+        } else {
+            let friendName = FriendService.shared.friends.first?.displayName ?? "a Friend"
+            return DailyQuest(
+                id: UUID(),
+                questKey: QuestKey.beginnerSendChallenge.rawValue,
+                title: "Send a Challenge",
+                description: "Challenge \(friendName) to a workout!",
+                icon: "flame.fill",
+                category: "social",
+                targetValue: 1, currentValue: 0,
+                targetUnit: "challenge",
+                xpReward: 75, leaguePoints: 15,
+                difficulty: "easy",
+                isCompleted: false, completedAt: nil,
+                funLabel: "Let's go",
+                verificationType: "social"
+            )
+        }
+    }
+    
+    private func beginnerWorkoutQuest() -> DailyQuest {
+        DailyQuest(
+            id: UUID(),
+            questKey: QuestKey.beginnerFirstWorkout.rawValue,
+            title: "Start Your First Workout",
+            description: "A custom workout made just for you",
+            icon: "dumbbell.fill",
+            category: "workout",
+            targetValue: 1, currentValue: 0,
+            targetUnit: "workout",
+            xpReward: 100, leaguePoints: 25,
+            difficulty: "easy",
+            isCompleted: false, completedAt: nil,
+            funLabel: "Let's lift",
+            verificationType: "social"
+        )
+    }
+    
+    private func beginnerProgramQuest() -> DailyQuest {
+        DailyQuest(
+            id: UUID(),
+            questKey: QuestKey.beginnerExploreProgram.rawValue,
+            title: "Explore Your Program",
+            description: "Check out the weekly plan built for your goals",
+            icon: "calendar.badge.clock",
+            category: "tracking",
+            targetValue: 1, currentValue: 0,
+            targetUnit: "action",
+            xpReward: 50, leaguePoints: 10,
+            difficulty: "easy",
+            isCompleted: false, completedAt: nil,
+            funLabel: "Take a look",
+            verificationType: "social"
+        )
+    }
+    
     // MARK: - Fetch Daily Quests
     
     func fetchDailyQuests(force: Bool = false) async {
@@ -409,6 +510,14 @@ class DailyQuestService: ObservableObject {
         
         // Gather user context for personalized quest selection
         let ctx = gatherUserContext()
+        
+        // Day 1: show hardcoded beginner quests instead of server quests
+        if ctx.totalWorkouts == 0 {
+            AppLogger.info("📋 [QUESTS] Day 1 — showing beginner goal cards", category: .general)
+            self.quests = [beginnerSocialQuest(), beginnerWorkoutQuest(), beginnerProgramQuest()]
+            self.isLoading = false
+            return
+        }
         
         do {
             struct GetDailyQuestsParams: Encodable {

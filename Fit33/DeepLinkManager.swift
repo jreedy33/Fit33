@@ -18,6 +18,7 @@ class DeepLinkManager: ObservableObject {
         // Social / Friends
         case friends
         case friendRequests     // Direct to friend requests tab
+        case friendSearch       // Direct to friend search tab
         case sharedWorkout(workoutId: String)
         case receivedWorkout(workoutId: String)
         case receivedWorkouts
@@ -46,6 +47,7 @@ class DeepLinkManager: ObservableObject {
         // Achievements/Progress
         case personalRecord     // Stats tab > achievements
         case streakInfo         // Home tab > streak popup
+        case programs           // Workout tab > program schedule
     }
     
     @Published var pendingDestination: Destination?

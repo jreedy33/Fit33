@@ -14,6 +14,8 @@
 3. **Design tokens**: Use `.ds_*` font tokens and `Color.cardBackground` — no hardcoded `.system(size:)` or local cardBackground properties.
 4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
 5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
+6. **Database security — tables**: Every new table MUST have `ENABLE ROW LEVEL SECURITY` + CRUD policies scoped to `user_id = auth.uid()`.
+7. **Database security — views**: NEVER create views with `SECURITY DEFINER`. All public views MUST use `security_invoker = on`.
 
 ---
 
@@ -189,6 +191,7 @@ The Support Agent maintains a living registry of user pain points:
 | PP-011 | Social features fail on cold launch | Critical | Auth race condition: MainTabView loads before `checkAuth()` completes; social fetches fire unauthenticated. **FIXED March 2026** — auth guards added to all social service methods |
 | PP-012 | Blank step/workout data with no guidance | High | HealthKit permission revoked shows empty data with no user guidance to re-enable. **FIXED March 2026** — `isAuthorized` checks added to all HealthKit fetches |
 | PP-013 | Exercise swap erases completed sets | High | `WorkoutManager.replaceExercise` discarded all set data. **FIXED March 2026** — completed sets now preserved during swap |
+| PP-014 | "Account creation failed" dead-end during signup | Critical | `signUp()` created auth user but profile creation failed. Retry fails with "already registered" — permanent dead end. **FIXED March 2026** — recovery logic signs in if user already exists, ensures profile, surfaces actual errors |
 
 ---
 

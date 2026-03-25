@@ -34,22 +34,7 @@ struct FriendRequestPreviewWidget: View {
                 // Action buttons
                 actionButtonsSection
             }
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.cardBackground)
-                    .shadow(color: themeColor.opacity(0.15), radius: 12, x: 0, y: 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [themeColor.opacity(0.4), secondaryThemeColor.opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.5
-                    )
-            )
+            .onboardingCardStyle(accentColor: themeColor, secondaryColor: secondaryThemeColor, isSelected: true, cornerRadius: 24)
         }
         .confirmationDialog(
             "Decline friend request?",

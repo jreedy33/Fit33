@@ -494,9 +494,9 @@ struct PrivateChallengeDetailView: View {
             
             // Today's progress (live for current user, DB for others)
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(displayProgress)")
+                Text(!isMe && displayProgress == 0 ? "–" : "\(displayProgress)")
                     .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                    .foregroundColor(.white)
+                    .foregroundColor(!isMe && displayProgress == 0 ? .white.opacity(0.3) : .white)
                 
                 if (isMe ? (displayProgress >= dailyTarget && dailyTarget > 0) : (member.targetHitToday ?? false)) {
                     Image(systemName: "checkmark.circle.fill")

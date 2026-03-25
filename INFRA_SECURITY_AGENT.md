@@ -236,6 +236,16 @@ This enables aggressive browser/CDN caching and eliminates conditional request o
 - RLS on `ai_chat_history`: user-scoped CRUD (admin can only see their own chats)
 - The `@anthropic-ai/sdk` package was added to admin-cms dependencies — verify no supply chain issues on next audit
 
+### 2026-03-25: Auth Flow — signUp() Resilience Fix
+
+**Change**: `SupabaseManager.signUp()` now sets `isAuthenticated = true` and `currentUser` IMMEDIATELY after `client.auth.signUp()` succeeds, before profile creation. Previously, if profile creation failed, auth state was never set — leaving the user in limbo with an orphaned auth record.
+
+**Security impact**: No change to auth boundaries. The auth user is created by Supabase's `signUp` endpoint (which validates email format, password strength, rate limits). The session token is valid as soon as signUp returns. Moving the auth state assignment earlier just reflects this reality on the client.
+
+**Recovery path**: New `ensureProfileExists()` method allows re-creating a profile for users whose initial profile creation failed. Uses the same `create_user_profile` SECURITY DEFINER RPC → fallback upsert chain. The onboarding flow's "already registered" recovery path signs in with the same credentials (password verified by Supabase auth) — no auth bypass.
+
+**Error surfacing**: Generic "Account creation failed" error replaced with actual error descriptions. Rate limit, password strength, and network errors now shown distinctly.
+
 ### 2026-03-20: Performance Audit — RLS Policy Remediation
 
 **7 analytics tables now have RLS enabled** with standard user_id-scoped policies:
@@ -276,3 +286,26 @@ Each table has: SELECT/INSERT/UPDATE/DELETE policies scoped to `user_id = auth.u
 **Preference enforcement**: Edge function checks `master_enabled` and `disabled_types` before sending. This ensures server-side push notifications respect the same toggles users set in the iOS notification settings UI.
 
 **RLS**: `user_notification_preferences` has standard `user_id = auth.uid()` policies for all CRUD operations. Service role access via edge function for read during push delivery.
+
+### 2026-03-24: Security Fix — RLS + SECURITY DEFINER Views
+
+**Supabase security linter flagged 2 tables without RLS and 19 SECURITY DEFINER views.**
+
+**Migration**: `supabase/20260324_security_fixes.sql` — deployed March 24, 2026
+
+**Tables fixed**:
+| Table | Issue | Fix |
+|-------|-------|-----|
+| `group_challenge_members` | RLS disabled (intentional workaround for recursion) | RLS re-enabled with simple `user_id = auth.uid()` policies. No subqueries = no recursion. All app access is via SECURITY DEFINER RPCs anyway. |
+| `achievements` | RLS never enabled (static definition table) | RLS enabled with authenticated SELECT-only policy. Writes only through `check_achievement` RPC. |
+
+**19 SECURITY DEFINER views → SECURITY INVOKER**:
+All public views converted to `security_invoker = on`. Regular users now see only their own data through RLS. Service-role queries (admin) still see everything.
+
+App-critical views: `weight_statistics`, `body_composition_statistics` — confirmed underlying tables have `user_id = auth.uid()` SELECT policies.
+
+**Prevention rules added**:
+- `SUPABASE_AGENT.md`: New "When Creating a View" section — NEVER use SECURITY DEFINER on views
+- `DATA_BACKEND_AGENT.md`: New view creation standard
+- `PRODUCT_ENGINEER_AGENT.md`: Updated mandatory standards
+- Quarterly health check now includes SECURITY DEFINER view audit

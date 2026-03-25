@@ -235,7 +235,7 @@ enum AffectedArea: String, Codable, CaseIterable, Identifiable {
     
     /// Common areas shown during onboarding (simplified selection)
     static var commonAreas: [AffectedArea] {
-        [.lowerBack, .shoulders, .knees, .hips, .neck, .wrists, .elbows, .ankles, .pregnancy, .other]
+        [.lowerBack, .shoulders, .knees, .hips, .neck, .wrists, .elbows, .ankles, .pregnancy]
     }
 }
 

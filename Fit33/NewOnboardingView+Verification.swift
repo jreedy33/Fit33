@@ -129,6 +129,17 @@ extension NewOnboardingView {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.blue.opacity(0.08))
                 )
+                
+                Button {
+                    skipPhoneVerification()
+                } label: {
+                    Text("Skip for now")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .accessibilityLabel("Skip phone verification")
+                .accessibilityHint("Continues without adding a phone number")
+                .padding(.top, 4)
             }
             
             // STATE 2: VERIFICATION CODE INPUT (after code sent)
@@ -498,6 +509,16 @@ extension NewOnboardingView {
         return String(verificationCode[idx])
     }
     
+    // Skip phone verification entirely — account creation deferred to confirmation step
+    func skipPhoneVerification() {
+        AppLogger.info("User chose to skip phone verification", category: .auth)
+        
+        isPhoneVerified = false
+        isVerificationCodeSent = false
+        
+        goToNextStep()
+    }
+    
     // Send verification code
     func sendVerificationCode() {
         AppLogger.debug("sendVerificationCode() - phone: '\(phoneNumber)', full: '\(fullPhoneNumber)', country: \(selectedCountryCode.rawValue), attempts: \(phoneVerificationAttempts)", category: .auth)
@@ -582,48 +603,93 @@ extension NewOnboardingView {
         AppLogger.debug("Creating minimal account for email/password signup...", category: .auth)
         
         do {
-            // Create account with minimal info (just like OAuth flow)
-            try await supabaseManager.signUp(
-                email: email,
-                password: password,
-                name: name.isEmpty ? "User" : name
-            )
+            try await signUpOrRecoverExistingAccount()
             AppLogger.info("Minimal account created! User ID: \(supabaseManager.currentUser?.id.uuidString ?? "nil")", category: .auth)
             
-            // Update profile with phone number for contact matching
-            if let userId = supabaseManager.currentUser?.id {
-                struct PhoneUpdate: Encodable {
-                    let phone_number: String
-                    let phone_verified: Bool
-                }
-                
-                let update = PhoneUpdate(
-                    phone_number: fullPhoneNumber,
-                    phone_verified: true
-                )
-                
-                try await supabaseManager.supabaseClient
-                    .from("user_profiles")
-                    .update(update)
-                    .eq("id", value: userId.uuidString)
-                    .execute()
-                AppLogger.info("Phone added - contact matching enabled!", category: .auth)
-            }
-            
-            // Set username if provided
-            if !username.isEmpty {
-                AppLogger.debug("Setting username: @\(username)", category: .auth)
-                try? await supabaseManager.setUsername(username)
-            }
+            await updatePhoneAndUsername()
             
             AppLogger.info("Minimal account ready - user can continue onboarding", category: .auth)
             
         } catch {
             AppLogger.error("Failed to create account: \(error)", category: .auth)
             await MainActor.run {
-                verificationError = "Account creation failed. Please try again."
+                let desc = error.localizedDescription.lowercased()
+                if desc.contains("password") && (desc.contains("weak") || desc.contains("strength") || desc.contains("short")) {
+                    verificationError = "Password is too weak. Please go back and choose a stronger password."
+                } else if desc.contains("rate") || desc.contains("limit") || desc.contains("too many") {
+                    verificationError = "Too many attempts. Please wait a minute and try again."
+                } else {
+                    verificationError = "Account creation failed: \(error.localizedDescription)"
+                }
                 isPhoneVerified = false
             }
+        }
+    }
+    
+    /// Attempt signUp; if the auth user already exists (from a prior partial failure), sign in instead.
+    private func signUpOrRecoverExistingAccount() async throws {
+        do {
+            try await supabaseManager.signUp(
+                email: email,
+                password: password,
+                name: name.isEmpty ? "User" : name
+            )
+        } catch {
+            let desc = error.localizedDescription.lowercased()
+            let isAlreadyRegistered = desc.contains("already registered")
+                || desc.contains("already exists")
+                || desc.contains("user already")
+                || desc.contains("email already")
+            
+            guard isAlreadyRegistered else { throw error }
+            
+            AppLogger.info("Auth user already exists (prior partial signup) — recovering via sign-in", category: .auth)
+            try await supabaseManager.signIn(email: email, password: password)
+            
+            guard let userId = supabaseManager.currentUser?.id else {
+                throw NSError(domain: "Onboarding", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "Sign-in succeeded but no user session. Please restart the app and try again."
+                ])
+            }
+            
+            // Ensure the profile row exists (it may have been the part that failed last time)
+            AppLogger.debug("Ensuring profile exists for recovered user \(userId.uuidString.prefix(8))...", category: .auth)
+            try? await supabaseManager.ensureProfileExists(
+                userId: userId,
+                name: name.isEmpty ? "User" : name,
+                email: email
+            )
+        }
+    }
+    
+    /// Update the profile with phone number and username (best-effort, non-fatal).
+    private func updatePhoneAndUsername() async {
+        guard let userId = supabaseManager.currentUser?.id else { return }
+        
+        do {
+            struct PhoneUpdate: Encodable {
+                let phone_number: String
+                let phone_verified: Bool
+            }
+            
+            let update = PhoneUpdate(
+                phone_number: fullPhoneNumber,
+                phone_verified: true
+            )
+            
+            try await supabaseManager.supabaseClient
+                .from("user_profiles")
+                .update(update)
+                .eq("id", value: userId.uuidString)
+                .execute()
+            AppLogger.info("Phone added - contact matching enabled!", category: .auth)
+        } catch {
+            AppLogger.error("Failed to update phone on profile (non-fatal): \(error.localizedDescription)", category: .auth)
+        }
+        
+        if !username.isEmpty {
+            AppLogger.debug("Setting username: @\(username)", category: .auth)
+            try? await supabaseManager.setUsername(username)
         }
     }
     

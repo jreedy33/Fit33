@@ -305,9 +305,9 @@ struct GroupChallengeDetailView: View {
             
             // Progress
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(displayProgress)")
+                Text(!isMe && displayProgress == 0 ? "–" : "\(displayProgress)")
                     .font(.ds_statSmall)
-                    .foregroundColor(completedToday ? .green : .primary)
+                    .foregroundColor(!isMe && displayProgress == 0 ? .secondary.opacity(0.5) : (completedToday ? .green : .primary))
                 
                 Text("today")
                     .font(.caption2)

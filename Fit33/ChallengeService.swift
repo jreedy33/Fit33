@@ -924,6 +924,8 @@ class ChallengeService: ObservableObject {
                 targetUnit: targetUnit
             )
         }
+        
+        PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "challenge_created")
     }
     
     // MARK: - Create Group Challenge
@@ -981,7 +983,6 @@ class ChallengeService: ObservableObject {
             
             AppLogger.info("Created group challenge: \(groupId)", category: .social)
             
-            // Log interactions for all members
             for memberId in memberIds {
                 await FriendRankingService.shared.logInteraction(
                     withFriendId: memberId,
@@ -991,8 +992,9 @@ class ChallengeService: ObservableObject {
                 )
             }
             
-            // Refresh group challenges
             await fetchActiveGroupChallenges()
+            
+            PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "group_challenge_created")
             
             return groupId
         } catch {
@@ -1463,8 +1465,9 @@ class ChallengeService: ObservableObject {
                 await fetchPendingInvites()  // Refresh to remove the declined one
             }
             
-            // Update app icon badge after clearing a pending invite
             await MainActor.run { NotificationManager.shared.updateBadgeCount() }
+            
+            PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: accept ? "challenge_accepted" : "challenge_declined")
             
             return true
         } catch {

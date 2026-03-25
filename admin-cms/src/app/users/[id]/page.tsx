@@ -217,7 +217,9 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                     ? 'var(--success)' : 'var(--text-muted)',
                 }}
               />
-              Last login {formatDate(profile.last_sign_in_at)}
+              Last login {profile.last_sign_in_at
+                ? new Date(profile.last_sign_in_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
+                : '—'}
             </div>
           </div>
         </div>

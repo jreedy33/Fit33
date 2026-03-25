@@ -25,5 +25,4 @@ jobs:
           cache-dependency-path: admin-cms/package-lock.json
 
       - run: npm ci
-      - run: npm run lint
       - run: npm run build

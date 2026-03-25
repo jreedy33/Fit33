@@ -207,13 +207,21 @@ export async function POST(req: NextRequest) {
       case 'get_user': {
         const { user_id } = params
 
-        const { data: profile, error } = await admin.from('user_profiles')
-          .select('*')
-          .eq('id', user_id)
-          .single()
+        const [profileRes, authRes] = await Promise.all([
+          admin.from('user_profiles')
+            .select('*')
+            .eq('id', user_id)
+            .single(),
+          admin.auth.admin.getUserById(user_id),
+        ])
 
-        if (error) {
-          return NextResponse.json({ error: error.message }, { status: 404 })
+        if (profileRes.error) {
+          return NextResponse.json({ error: profileRes.error.message }, { status: 404 })
+        }
+
+        const profile = {
+          ...profileRes.data,
+          last_sign_in_at: authRes.data?.user?.last_sign_in_at ?? null,
         }
 
         return NextResponse.json({ profile })
@@ -314,21 +322,50 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: pError.message }, { status: 500 })
         }
 
-        // Get challenge details
         const challengeIds = (participations || []).map(p => p.challenge_id)
         let challenges: Record<string, unknown>[] = []
+        let allParticipants: Record<string, unknown>[] = []
 
         if (challengeIds.length > 0) {
-          const { data: cData } = await admin.from('group_challenges')
-            .select('id, title, description, challenge_type, mode, daily_target, total_target, target_unit, start_date, end_date, duration_days, status, created_by, created_at')
-            .in('id', challengeIds)
+          const [cRes, pRes] = await Promise.all([
+            admin.from('group_challenges')
+              .select('id, title, description, challenge_type, mode, daily_target, total_target, target_unit, start_date, end_date, duration_days, status, created_by, created_at')
+              .in('id', challengeIds),
+            admin.from('challenge_participants')
+              .select('challenge_id, user_id, status, total_progress, days_completed, current_streak')
+              .in('challenge_id', challengeIds),
+          ])
 
-          challenges = cData || []
+          challenges = cRes.data || []
+          allParticipants = pRes.data || []
+
+          const memberUserIds = [...new Set(
+            allParticipants
+              .map((p: Record<string, unknown>) => p.user_id as string)
+              .filter(id => id !== user_id)
+          )]
+
+          let memberProfiles: Record<string, unknown>[] = []
+          if (memberUserIds.length > 0) {
+            const { data: profiles } = await admin.from('user_profiles')
+              .select('id, name, username, email, profile_photo_url')
+              .in('id', memberUserIds)
+            memberProfiles = profiles || []
+          }
+
+          allParticipants = allParticipants.map((p: Record<string, unknown>) => ({
+            ...p,
+            profile: p.user_id === user_id
+              ? null
+              : memberProfiles.find((mp: Record<string, unknown>) => mp.id === p.user_id) || null,
+          }))
         }
 
         const enriched = (participations || []).map(p => {
           const challenge = challenges.find((c: Record<string, unknown>) => c.id === p.challenge_id) || {}
-          return { ...p, challenge }
+          const members = allParticipants
+            .filter((ap: Record<string, unknown>) => ap.challenge_id === p.challenge_id && ap.user_id !== user_id)
+          return { ...p, challenge, members }
         })
 
         return NextResponse.json({ challenges: enriched })

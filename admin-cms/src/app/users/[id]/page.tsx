@@ -209,6 +209,16 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
           <div className="text-right text-xs" style={{ color: 'var(--text-muted)' }}>
             <div>ID: {userId.slice(0, 8)}...</div>
             <div>Joined {formatDate(profile.created_at)}</div>
+            <div className="mt-1 flex items-center gap-1.5 justify-end">
+              <span
+                className="inline-block w-2 h-2 rounded-full"
+                style={{
+                  background: profile.last_sign_in_at && (Date.now() - new Date(profile.last_sign_in_at).getTime()) < 24 * 60 * 60 * 1000
+                    ? 'var(--success)' : 'var(--text-muted)',
+                }}
+              />
+              Last login {formatDate(profile.last_sign_in_at)}
+            </div>
           </div>
         </div>
 
@@ -440,6 +450,44 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                         </div>
                         {c.challenge?.description && (
                           <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{c.challenge.description}</div>
+                        )}
+                        {/* Challenge Members */}
+                        {c.members && c.members.length > 0 && (
+                          <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                            <div className="text-xs font-medium mb-2" style={{ color: 'var(--text-muted)' }}>
+                              Members ({c.members.length + 1})
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {c.members.map((m: AnyRecord, mi: number) => (
+                                <button
+                                  key={mi}
+                                  onClick={() => router.push(`/users/${m.user_id}`)}
+                                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs transition-colors"
+                                  style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)' }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)' }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
+                                >
+                                  <div
+                                    className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                                    style={{
+                                      background: m.profile?.profile_photo_url ? 'transparent' : 'var(--bg-tertiary)',
+                                      color: 'var(--text-secondary)',
+                                      backgroundImage: m.profile?.profile_photo_url ? `url(${m.profile.profile_photo_url})` : undefined,
+                                      backgroundSize: 'cover',
+                                    }}
+                                  >
+                                    {!m.profile?.profile_photo_url && (m.profile?.name?.[0] || m.profile?.username?.[0] || '?')}
+                                  </div>
+                                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                                    {m.profile?.name || m.profile?.username || 'Unknown'}
+                                  </span>
+                                  <span style={{ color: 'var(--text-muted)' }}>
+                                    · {m.total_progress || 0} pts
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </div>
                     ))}

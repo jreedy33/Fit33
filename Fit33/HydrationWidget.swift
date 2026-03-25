@@ -874,33 +874,101 @@ struct WaterIntakeDetailView: View {
     @ObservedObject var hydrationService: HydrationService
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
-    
+    @State private var cardsAppeared = false
+
+    private var expectedProgress: Double {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let startHour = 8
+        let endHour = 22
+        if hour < startHour { return 0 }
+        if hour >= endHour { return 1.0 }
+        return Double(hour - startHour) / Double(endHour - startHour)
+    }
+
+    private var paceStatus: (label: String, color: Color, icon: String) {
+        let actual = hydrationService.todayProgress
+        let expected = expectedProgress
+        if expected == 0 { return ("Not Started", .gray, "moon.fill") }
+        let ratio = actual / expected
+        if ratio >= 1.1 { return ("Ahead", .green, "arrow.up.circle.fill") }
+        if ratio >= 0.85 { return ("On Track", .blue, "checkmark.circle.fill") }
+        return ("Behind", .orange, "exclamationmark.triangle.fill")
+    }
+
+    private var morningLogs: [HydrationLog] {
+        hydrationService.todayLogs.filter {
+            Calendar.current.component(.hour, from: $0.loggedAt) < 12
+        }
+    }
+
+    private var afternoonLogs: [HydrationLog] {
+        hydrationService.todayLogs.filter {
+            let h = Calendar.current.component(.hour, from: $0.loggedAt)
+            return h >= 12 && h < 17
+        }
+    }
+
+    private var eveningLogs: [HydrationLog] {
+        hydrationService.todayLogs.filter {
+            Calendar.current.component(.hour, from: $0.loggedAt) >= 17
+        }
+    }
+
+    private var daysGoalMet: Int {
+        hydrationService.weeklyData.filter { $0.goalMet }.count
+    }
+
+    private var weeklyAverage: Int {
+        let data = hydrationService.weeklyData
+        guard !data.isEmpty else { return 0 }
+        return data.reduce(0) { $0 + $1.totalMl } / data.count
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
-                // Dark background - matches Steps detail
-                Color(red: 0.06, green: 0.07, blue: 0.09)
+                AnimatedOrbBackground.stats(colorScheme: colorScheme)
                     .ignoresSafeArea()
-                
+
                 ScrollView {
-                    VStack(spacing: 24) {
-                        // Today's Progress Card
+                    VStack(spacing: Spacing.lg) {
                         todayProgressCard
                             .padding(.horizontal, 20)
                             .padding(.top, 20)
-                        
-                        // Stats Grid
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.05), value: cardsAppeared)
+
+                        paceTrackerCard
+                            .padding(.horizontal, 20)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.10), value: cardsAppeared)
+
                         statsGrid
                             .padding(.horizontal, 20)
-                        
-                        // Weekly Chart
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.15), value: cardsAppeared)
+
+                        weeklySummaryCard
+                            .padding(.horizontal, 20)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.20), value: cardsAppeared)
+
                         weeklyChart
                             .padding(.horizontal, 20)
-                        
-                        // Today's Log
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.25), value: cardsAppeared)
+
                         todayLogSection
                             .padding(.horizontal, 20)
                             .padding(.bottom, 40)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.30), value: cardsAppeared)
                     }
                 }
             }
@@ -912,21 +980,28 @@ struct WaterIntakeDetailView: View {
                         dismiss()
                     }
                     .foregroundColor(.blue)
+                    .accessibilityLabel("Done")
+                    .accessibilityHint("Dismiss water intake details")
+                }
+            }
+            .onAppear {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    cardsAppeared = true
                 }
             }
         }
     }
-    
+
+    // MARK: - Today Progress Card
+
     private var todayProgressCard: some View {
-        VStack(spacing: 16) {
-            // Large progress ring
+        VStack(spacing: Spacing.md) {
             ZStack {
-                // Background circle
                 Circle()
                     .stroke(Color.gray.opacity(0.25), lineWidth: 20)
                     .frame(width: 220, height: 220)
-                
-                // Progress circle
+
                 Circle()
                     .trim(from: 0, to: min(hydrationService.todayProgress, 1.0))
                     .stroke(
@@ -940,23 +1015,23 @@ struct WaterIntakeDetailView: View {
                     .frame(width: 220, height: 220)
                     .rotationEffect(.degrees(-90))
                     .animation(.spring(response: 0.6, dampingFraction: 0.7), value: hydrationService.todayProgress)
-                
-                // Center content
+
                 VStack(spacing: 8) {
                     Text("\(Int(hydrationService.todayProgress * 100))%")
-                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .font(.ds_displayMedium)
+                        .fontDesign(.rounded)
                         .foregroundColor(.white)
-                    
+
                     Text("\(formatMl(hydrationService.todayTotal)) of \(formatMl(hydrationService.settings.dailyGoalMl))")
-                        .font(.subheadline)
+                        .font(.ds_labelLarge)
                         .foregroundColor(.gray)
-                    
+
                     if hydrationService.todayGoalMet {
                         HStack(spacing: 4) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
                             Text("Goal achieved!")
-                                .font(.caption)
+                                .font(.ds_caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.green)
                         }
@@ -964,13 +1039,40 @@ struct WaterIntakeDetailView: View {
                     }
                 }
             }
-            
-            // Goal display
+
+            if let firstTime = hydrationService.todaySummary?.firstDrinkTime,
+               let lastTime = hydrationService.todaySummary?.lastDrinkTime {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "sunrise.fill")
+                        .foregroundColor(.orange)
+                        .font(.ds_caption)
+                        .accessibilityHidden(true)
+                    Text("First: \(formatISOTime(firstTime))")
+                        .font(.ds_caption)
+                        .foregroundColor(.gray)
+
+                    Text("|")
+                        .font(.ds_caption)
+                        .foregroundColor(.gray.opacity(0.5))
+
+                    Image(systemName: "sunset.fill")
+                        .foregroundColor(.purple)
+                        .font(.ds_caption)
+                        .accessibilityHidden(true)
+                    Text("Last: \(formatISOTime(lastTime))")
+                        .font(.ds_caption)
+                        .foregroundColor(.gray)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("First drink at \(formatISOTime(firstTime)), last drink at \(formatISOTime(lastTime))")
+            }
+
             HStack {
                 Image(systemName: "target")
                     .foregroundColor(.blue)
+                    .accessibilityHidden(true)
                 Text("Goal: \(formatMl(hydrationService.settings.dailyGoalMl))")
-                    .font(.subheadline)
+                    .font(.ds_labelLarge)
                     .foregroundColor(.gray)
             }
             .padding(.horizontal, Spacing.md)
@@ -980,11 +1082,94 @@ struct WaterIntakeDetailView: View {
         }
         .padding(Spacing.lg)
         .background(Color.cardBackground)
-        .cornerRadius(20)
+        .cornerRadius(CornerRadius.xl)
     }
-    
+
+    // MARK: - Pace Tracker Card
+
+    private var paceTrackerCard: some View {
+        let status = paceStatus
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack {
+                Image(systemName: "gauge.medium")
+                    .foregroundColor(.cyan)
+                    .accessibilityHidden(true)
+                Text("Daily Pace")
+                    .font(.ds_heading3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    Image(systemName: status.icon)
+                        .foregroundColor(status.color)
+                    Text(status.label)
+                        .font(.ds_caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(status.color)
+                }
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, 4)
+                .background(status.color.opacity(0.15))
+                .cornerRadius(CornerRadius.sm)
+            }
+
+            VStack(spacing: 6) {
+                HStack(spacing: Spacing.xs) {
+                    Text("Actual")
+                        .font(.ds_caption)
+                        .foregroundColor(.gray)
+                        .frame(width: 60, alignment: .leading)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.gray.opacity(0.2))
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: max(4, geo.size.width * min(hydrationService.todayProgress, 1.0)))
+                        }
+                    }
+                    .frame(height: 10)
+                    Text("\(Int(hydrationService.todayProgress * 100))%")
+                        .font(.ds_caption)
+                        .foregroundColor(.white)
+                        .frame(width: 40, alignment: .trailing)
+                }
+
+                HStack(spacing: Spacing.xs) {
+                    Text("Expected")
+                        .font(.ds_caption)
+                        .foregroundColor(.gray)
+                        .frame(width: 60, alignment: .leading)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.gray.opacity(0.2))
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.gray.opacity(0.5))
+                                .frame(width: max(4, geo.size.width * expectedProgress))
+                        }
+                    }
+                    .frame(height: 10)
+                    Text("\(Int(expectedProgress * 100))%")
+                        .font(.ds_caption)
+                        .foregroundColor(.gray)
+                        .frame(width: 40, alignment: .trailing)
+                }
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Color.cardBackground)
+        .cornerRadius(CornerRadius.xl)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Daily pace: \(paceStatus.label). Actual \(Int(hydrationService.todayProgress * 100))%, expected \(Int(expectedProgress * 100))%")
+    }
+
+    // MARK: - Stats Grid (2×3)
+
     private var statsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.sm) {
             DetailStatBox(
                 title: "Current Streak",
                 value: "\(hydrationService.streaks?.currentStreak ?? 0)",
@@ -992,7 +1177,7 @@ struct WaterIntakeDetailView: View {
                 icon: "flame.fill",
                 color: .orange
             )
-            
+
             DetailStatBox(
                 title: "Best Streak",
                 value: "\(hydrationService.streaks?.longestStreak ?? 0)",
@@ -1000,7 +1185,7 @@ struct WaterIntakeDetailView: View {
                 icon: "trophy.fill",
                 color: .yellow
             )
-            
+
             DetailStatBox(
                 title: "Avg Daily",
                 value: formatMlShort(hydrationService.streaks?.avgDailyIntakeMl ?? 0),
@@ -1008,7 +1193,7 @@ struct WaterIntakeDetailView: View {
                 icon: "chart.line.uptrend.xyaxis",
                 color: .blue
             )
-            
+
             DetailStatBox(
                 title: "Total",
                 value: String(format: "%.1f", hydrationService.streaks?.totalLitersConsumed ?? 0),
@@ -1016,29 +1201,121 @@ struct WaterIntakeDetailView: View {
                 icon: "drop.fill",
                 color: .blue
             )
+
+            DetailStatBox(
+                title: "Days Goal Met",
+                value: "\(hydrationService.streaks?.totalDaysGoalMet ?? 0)",
+                unit: "",
+                icon: "checkmark.circle.fill",
+                color: .green
+            )
+
+            DetailStatBox(
+                title: "Best Day",
+                value: formatMlShort(hydrationService.streaks?.bestDailyIntakeMl ?? 0),
+                unit: "",
+                icon: "star.fill",
+                color: .yellow
+            )
         }
     }
-    
-    private var weeklyChart: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("This Week")
-                .font(.headline)
+
+    // MARK: - Weekly Summary Card
+
+    private var weeklySummaryCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Weekly Summary")
+                .font(.ds_heading3)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-            
+
+            HStack(spacing: 0) {
+                weeklySummaryStat(
+                    icon: "checkmark.seal.fill",
+                    value: "\(daysGoalMet)/7",
+                    label: "Days Goal Met",
+                    color: .green
+                )
+
+                Divider()
+                    .frame(height: 40)
+                    .background(Color.gray.opacity(0.3))
+
+                weeklySummaryStat(
+                    icon: "chart.bar.fill",
+                    value: formatMl(weeklyAverage),
+                    label: "Avg Intake",
+                    color: .cyan
+                )
+
+                Divider()
+                    .frame(height: 40)
+                    .background(Color.gray.opacity(0.3))
+
+                weeklySummaryStat(
+                    icon: "star.fill",
+                    value: formatMl(hydrationService.streaks?.bestDailyIntakeMl ?? 0),
+                    label: bestDayLabel,
+                    color: .yellow
+                )
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Color.cardBackground)
+        .cornerRadius(CornerRadius.xl)
+    }
+
+    private func weeklySummaryStat(icon: String, value: String, label: String, color: Color) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .font(.ds_labelLarge)
+                .accessibilityHidden(true)
+            Text(value)
+                .font(.ds_heading3)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+            Text(label)
+                .font(.ds_caption)
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
+    }
+
+    private var bestDayLabel: String {
+        guard let dateStr = hydrationService.streaks?.bestDailyDate else { return "Best Day" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        guard let date = formatter.date(from: dateStr) else { return "Best Day" }
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date)
+    }
+
+    // MARK: - Weekly Chart
+
+    private var weeklyChart: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text("This Week")
+                .font(.ds_heading3)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+
             HStack(alignment: .bottom, spacing: 8) {
-                ForEach(0..<7) { index in
+                ForEach(0..<7, id: \.self) { index in
                     let dayData = weeklyDataForIndex(index)
                     VStack(spacing: 4) {
                         Text(formatMlShort(dayData.totalMl))
-                            .font(.system(size: 9))
+                            .font(.ds_caption)
                             .foregroundColor(.gray)
-                        
+
                         ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(Color.gray.opacity(0.2))
                                 .frame(height: 100)
-                            
+
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(
                                     dayData.goalMet
@@ -1048,155 +1325,222 @@ struct WaterIntakeDetailView: View {
                                 .frame(height: max(4, 100 * dayData.progress))
                         }
                         .frame(width: 36)
-                        
+
                         Text(dayLabel(for: index))
-                            .font(.caption2)
+                            .font(.ds_caption)
                             .foregroundColor(.gray)
                     }
                 }
             }
             .frame(maxWidth: .infinity)
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
-        .cornerRadius(20)
+        .cornerRadius(CornerRadius.xl)
     }
-    
+
+    // MARK: - Today's Log (Grouped by Time Period)
+
     private var todayLogSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text("Today's Log")
-                .font(.headline)
+                .font(.ds_heading3)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-            
+
             if hydrationService.todayLogs.isEmpty {
                 Text("No entries yet today")
-                    .font(.subheadline)
+                    .font(.ds_labelLarge)
                     .foregroundColor(.gray)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
             } else {
-                VStack(spacing: 12) {
-                    ForEach(hydrationService.todayLogs) { log in
-                        HStack {
-                            Image(systemName: "drop.fill")
-                                .foregroundColor(.blue)
-                                .frame(width: 30)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Water")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.white)
-                                Text(formatTime(log.loggedAt))
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                            }
-                            
-                            Spacer()
-                            
-                            Text("+\(log.amountMl)ml")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.cyan)
-                        }
-                        
-                        if log.id != hydrationService.todayLogs.last?.id {
-                            Divider()
-                                .background(Color.gray.opacity(0.3))
-                        }
+                let sortedLogs = hydrationService.todayLogs.sorted { $0.loggedAt < $1.loggedAt }
+                VStack(spacing: Spacing.md) {
+                    if !morningLogs.isEmpty {
+                        logGroup(title: "Morning", icon: "sunrise.fill", color: .orange,
+                                 logs: morningLogs, allSorted: sortedLogs)
+                    }
+                    if !afternoonLogs.isEmpty {
+                        logGroup(title: "Afternoon", icon: "sun.max.fill", color: .yellow,
+                                 logs: afternoonLogs, allSorted: sortedLogs)
+                    }
+                    if !eveningLogs.isEmpty {
+                        logGroup(title: "Evening", icon: "moon.fill", color: .indigo,
+                                 logs: eveningLogs, allSorted: sortedLogs)
                     }
                 }
             }
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
-        .cornerRadius(20)
+        .cornerRadius(CornerRadius.xl)
     }
-    
-    // Helpers
+
+    @ViewBuilder
+    private func logGroup(title: String, icon: String, color: Color,
+                          logs: [HydrationLog], allSorted: [HydrationLog]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                    .font(.ds_caption)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.ds_caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(color)
+            }
+
+            ForEach(logs) { log in
+                let running = runningTotalFor(log: log, in: allSorted)
+                HStack {
+                    Image(systemName: "drop.fill")
+                        .foregroundColor(.blue)
+                        .frame(width: 30)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Water")
+                            .font(.ds_labelLarge)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                        Text(formatTime(log.loggedAt))
+                            .font(.ds_caption)
+                            .foregroundColor(.gray)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("+\(formatMl(log.amountMl))")
+                            .font(.ds_labelLarge)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.cyan)
+                        Text("Total: \(formatMl(running))")
+                            .font(.ds_caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(formatMl(log.amountMl)) at \(formatTime(log.loggedAt)), running total \(formatMl(running))")
+
+                if log.id != logs.last?.id {
+                    Divider()
+                        .background(Color.gray.opacity(0.3))
+                }
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func runningTotalFor(log: HydrationLog, in sortedLogs: [HydrationLog]) -> Int {
+        var total = 0
+        for entry in sortedLogs {
+            total += entry.amountMl
+            if entry.id == log.id { break }
+        }
+        return total
+    }
+
     private func weeklyDataForIndex(_ index: Int) -> (progress: Double, goalMet: Bool, totalMl: Int) {
         let calendar = Calendar.current
         let today = Date()
-        let targetDate = calendar.date(byAdding: .day, value: index - 6, to: today)!
+        guard let targetDate = calendar.date(byAdding: .day, value: index - 6, to: today) else {
+            return (0, false, 0)
+        }
         let dateString = formatDate(targetDate)
-        
+
         if let data = hydrationService.weeklyData.first(where: { $0.date == dateString }) {
             return (data.progress, data.goalMet, data.totalMl)
         }
         return (0, false, 0)
     }
-    
+
     private func dayLabel(for index: Int) -> String {
         let calendar = Calendar.current
         let today = Date()
-        let targetDate = calendar.date(byAdding: .day, value: index - 6, to: today)!
-        
+        guard let targetDate = calendar.date(byAdding: .day, value: index - 6, to: today) else {
+            return ""
+        }
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE"
         return formatter.string(from: targetDate)
     }
-    
+
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
-    
+
     private func formatMl(_ ml: Int) -> String {
         if ml >= 1000 {
             return String(format: "%.1fL", Double(ml) / 1000.0)
         }
         return "\(ml)ml"
     }
-    
+
     private func formatMlShort(_ ml: Int) -> String {
         if ml >= 1000 {
             return String(format: "%.1fL", Double(ml) / 1000.0)
         }
         return "\(ml)"
     }
-    
+
     private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func formatISOTime(_ isoString: String) -> String {
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+        guard let date = isoFormatter.date(from: isoString) else { return isoString }
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
 }
 
-// MARK: - Hydration Stat Box (for detail view - no background)
+// MARK: - Hydration Stat Box (for detail view)
 struct DetailStatBox: View {
     let title: String
     let value: String
     let unit: String
     let icon: String
     let color: Color
-    
+
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.title2)
+                .font(.ds_heading2)
                 .foregroundColor(color)
-            
+                .accessibilityHidden(true)
+
             Text(value)
-                .font(.title2)
+                .font(.ds_heading2)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-            
+
             Text(unit.isEmpty ? title : unit)
-                .font(.caption)
+                .font(.ds_caption)
                 .foregroundColor(.gray)
-            
+
             if !unit.isEmpty {
                 Text(title)
-                    .font(.caption2)
+                    .font(.ds_caption)
                     .foregroundColor(.gray)
             }
         }
         .frame(maxWidth: .infinity)
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(14)
+        .cornerRadius(CornerRadius.md)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value) \(unit)")
     }
 }
 

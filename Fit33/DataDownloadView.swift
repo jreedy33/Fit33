@@ -642,6 +642,7 @@ struct DataDownloadView: View {
             }
         }
         
+        guard JSONSerialization.isValidJSONObject(data) else { return "{}" }
         if let jsonData = try? JSONSerialization.data(withJSONObject: data, options: .prettyPrinted),
            let jsonString = String(data: jsonData, encoding: .utf8) {
             return jsonString

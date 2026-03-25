@@ -119,6 +119,14 @@ extension DashboardView {
         var messages: [String] = []
         
         // ─────────────────────────────────────────────
+        // 🧠 CONTEXT-AWARE SUGGESTION (recovery + program)
+        // ─────────────────────────────────────────────
+        if let contextual = WorkoutSuggestionEngine.shared.contextualMotivationalMessage(firstName: firstName, crown: crown) {
+            messages.append(contextual)
+            messages.append(contextual)
+        }
+        
+        // ─────────────────────────────────────────────
         // 🏆 CHALLENGE-PERSONALIZED MESSAGES
         // ─────────────────────────────────────────────
         if let challenge = challengeService.activeChallenges.first {
@@ -358,29 +366,40 @@ extension DashboardView {
         }
         
         // ─────────────────────────────────────────────
-        // 🌿 WELLNESS REMINDERS (positive, never insulting)
+        // 🌿 WELLNESS REMINDERS (recovery-aware, never suggest fatigued muscles)
         // ─────────────────────────────────────────────
+        let recoveredMuscles = Set(WorkoutSuggestionEngine.shared.recoveredMuscles())
+        
         messages.append(contentsOf: [
-            "Core work today? Your whole body will thank you! 🎯",
             "Hydration check! Grab that water bottle, \(crown)! 💧",
             "Hit your step goal yet? Every step counts! 👟",
-            "Leg day is \(crown) behavior! 🦵👑",
             "Protein fuels progress! Hitting your macros? 🥩",
             "Stretch it out! Flexibility is a superpower! 🧘",
             "Sleep is where the magic happens – 7-8 hours tonight? 😴",
-            "Recovery day? Active rest still counts, \(crown)! 🌿",
             "Get that heart rate up today! Your heart loves you! ❤️",
             "Posture check! Stand tall, \(crown)! 👑",
             "Meal prep = future you saying 'thank you!' 🥗",
-            "Shoulder day builds confidence! Go get it! 🏋️",
-            "Strong core = strong everything! 🎯",
-            "Glutes are the powerhouse! Show them love today! 🍑",
             "Water before coffee! Your body will thank you! ☕",
             "Walking counts! 10K steps for the win! 🚶",
-            "Rest days build strength too! Listen to your body! 🛏️",
             "You're doing amazing, \(firstName)! Keep going! ✨",
             isFemale ? "Strong is beautiful – and you're proof! 💪✨" : "Putting in the work every day! Respect, \(crown)! 💪🔥"
         ])
+        
+        if recoveredMuscles.contains(.core) {
+            messages.append("Core work today? Your whole body will thank you! 🎯")
+            messages.append("Strong core = strong everything! 🎯")
+        }
+        if recoveredMuscles.contains(.quads) || recoveredMuscles.contains(.glutes) {
+            messages.append("Leg day is \(crown) behavior! 🦵👑")
+            messages.append("Glutes are the powerhouse! Show them love today! 🍑")
+        }
+        if recoveredMuscles.contains(.shoulders) {
+            messages.append("Shoulder day builds confidence! Go get it! 🏋️")
+        }
+        if recoveredMuscles.isEmpty || !recoveredMuscles.contains(.quads) {
+            messages.append("Recovery day? Active rest still counts, \(crown)! 🌿")
+            messages.append("Rest days build strength too! Listen to your body! 🛏️")
+        }
         
         // ─────────────────────────────────────────────
         // 🧠 SMART INSIGHTS (prioritized when available)

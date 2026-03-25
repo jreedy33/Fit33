@@ -74,6 +74,14 @@ var currentStepContent: AnyView {
 
 ---
 
+## Social System (v1.32+)
+
+- **ProfileUser** (`FriendProfileView.swift`): Universal model for any user profile. Inits from `Friend`, `UserSearchResult`, `SuggestedFriend`, `LeagueEntry`, `CommunityLeaderboardEntry`, `FriendActivity`. Use `ProfileUser` for all profile sheet bindings (`@State private var showingProfile: ProfileUser?`).
+- **FriendProfileView**: Accepts `ProfileUser`. Friends see full profile (stats, challenges, create workout, shared history, unfriend/block). Non-friends see compact card (photo, name, goal/level, add friend/pending/accept, block). Wired up in: `FriendsTabView`, `FriendsListView`, `FriendActivityFeedView`, `WeeklyLeagueViews`, `CommunityChallengeViews`.
+- **Daily Goals**: `DailyQuestService.defaultGoals()` returns fallback goals (Add Friend, Start Workout, Explore Program). Every code path that could leave `quests` empty now falls back to these. The generic placeholder view was deleted from `DailyQuestViews.swift`.
+
+---
+
 ## Recent Changes & Pending Issues
 
 ### Applied (needs device testing)

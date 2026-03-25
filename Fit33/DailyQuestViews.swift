@@ -30,8 +30,6 @@ struct DailyQuestsWidget: View {
             
             if questService.isLoading && questService.quests.isEmpty {
                 loadingContent
-            } else if questService.quests.isEmpty {
-                emptyContent
             } else {
                 questsCard
             }
@@ -671,6 +669,14 @@ struct DailyQuestsWidget: View {
         
         switch key {
         case .completeWorkout:
+            let suggestion = WorkoutSuggestionEngine.shared.suggestForToday()
+            if suggestion.isFromProgram, let dayName = suggestion.programDayName {
+                return "Your program says \(dayName) — let's go!"
+            }
+            if !suggestion.suggestedMuscles.isEmpty {
+                let names = suggestion.suggestedMuscles.prefix(2).map { $0.rawValue.capitalized }
+                return "\(names.joined(separator: " & ")) are fresh — great day to train!"
+            }
             return "Finish any workout today"
         case .completeProgramDay:
             if let day = GeneratedProgramService.shared.currentDay {
@@ -692,9 +698,9 @@ struct DailyQuestsWidget: View {
         case .tryNewExercise:
             return "Try an exercise you haven't done recently"
         case .upperBodyWorkout:
-            return "Focus on chest, back, or shoulders"
+            return WorkoutSuggestionEngine.shared.smartQuestDescription(isUpperBody: true)
         case .lowerBodyWorkout:
-            return "Focus on legs, glutes, or calves"
+            return WorkoutSuggestionEngine.shared.smartQuestDescription(isUpperBody: false)
             
         case .logBreakfast:
             return "Log your breakfast to start the day"
@@ -979,38 +985,6 @@ struct DailyQuestsWidget: View {
         .sleekCard(cornerRadius: 24, accentColor: .orange)
     }
     
-    private var emptyContent: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(colors: [.orange.opacity(0.2), .red.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .frame(width: 56, height: 56)
-                
-                Image(systemName: "star.fill")
-                    .font(.ds_heading2)
-                    .foregroundStyle(
-                        LinearGradient(colors: accentGradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-            }
-            
-            VStack(spacing: 4) {
-                Text("Daily Quests")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                
-                Text("Complete 3 mini-challenges each day for bonus XP and league points!")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity)
-        .sleekCard(cornerRadius: 24, accentColor: .orange)
-    }
     
     // MARK: - Helpers
     

@@ -434,11 +434,17 @@ class HealthKitManager: ObservableObject {
             guard let self = self else { return }
             
             if let error = error {
-                let desc = error.localizedDescription
-                if desc.contains("Protected health data") || desc.contains("No data available") {
-                    AppLogger.debug("Steps unavailable: \(desc)", category: .health)
+                let desc = error.localizedDescription.lowercased()
+                let isExpectedHKError = desc.contains("protected health data")
+                    || desc.contains("no data available")
+                    || desc.contains("authorization not determined")
+                    || desc.contains("no samples")
+                
+                if isExpectedHKError {
+                    AppLogger.debug("[STEPS] HealthKit unavailable (expected): \(error.localizedDescription)", category: .health)
                 } else {
-                    AppLogger.error("Error fetching today's steps: \(desc)", category: .health)
+                    let nsErr = error as NSError
+                    AppLogger.error("[STEPS] Unexpected HealthKit error (domain: \(nsErr.domain), code: \(nsErr.code)): \(error.localizedDescription)", category: .health)
                 }
                 Task { await MainActor.run { self.isLoading = false } }
                 return

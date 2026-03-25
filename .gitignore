@@ -121,3 +121,4 @@ r2_bucket_export.json
 # Deployment artifacts
 *.zip
 *.tar.gz
+.vercel

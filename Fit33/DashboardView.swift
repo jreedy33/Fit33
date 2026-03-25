@@ -565,13 +565,9 @@ struct DashboardView: View {
             }
         }
         .task(id: "dashboard_initial_load") {
-            // ⚡️ PERFORMANCE: Debounced initial data load - only runs once per view lifecycle
-            // Uses a stable ID to prevent re-running on every appear
+            let dashStart = CFAbsoluteTimeGetCurrent()
             
-            // Generate fresh motivational message each time app opens
-            currentMotivationalMessage = generateMotivationalMessage()
-            
-            // 🧠 Fetch personalized insights for smart rotating messages
+            // Fetch insights in a separate task (non-blocking)
             Task {
                 await insightsService.fetchActiveInsights()
                 await insightsService.fetchStreaks()
@@ -580,10 +576,34 @@ struct DashboardView: View {
             // Load personalized recommendation (use cached if available)
             await loadPersonalizedRecommendation()
             
+            // generateMotivationalMessage() is ~300 lines of pure sync logic —
+            // run it off the main actor to keep the UI responsive
+            let message = await Task.detached(priority: .userInitiated) { [self] in
+                return self.generateMotivationalMessage()
+            }.value
+            currentMotivationalMessage = message
+            
             // Load cardio workouts in background
             await loadRecentCardioWorkouts()
             
-            guard SupabaseManager.shared.isAuthenticated else { return }
+            // Wait for auth if it hasn't completed yet (checkAuthOnly runs in parallel).
+            // Without this, social fetches are skipped and challenges/friends never load.
+            if !SupabaseManager.shared.isAuthenticated {
+                AppLogger.info("[DASHBOARD] Auth not ready yet — waiting up to 10s...", category: .performance)
+                for _ in 0..<20 {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled else { return }
+                    if SupabaseManager.shared.isAuthenticated { break }
+                }
+            }
+            
+            guard SupabaseManager.shared.isAuthenticated else {
+                AppLogger.warning("[DASHBOARD] Auth still not available after wait — skipping social fetch", category: .performance)
+                return
+            }
+            
+            let authWaitMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
+            AppLogger.info("[DASHBOARD] Auth ready, starting social fetches (waited \(authWaitMs)ms total)", category: .performance)
             
             // Batch 1: Fast social data (parallel)
             async let friends: () = FriendService.shared.fetchFriends()
@@ -609,6 +629,9 @@ struct DashboardView: View {
             _ = await (rt, quests, contacts, photo)
             
             await HealthDataService.shared.syncAllHealthData(force: false)
+            
+            let dashMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
+            AppLogger.info("[DASHBOARD] Initial load completed in \(dashMs)ms", category: .performance)
         }
         .onChange(of: userManager.currentUser?.totalWorkouts) { _, _ in
             // Refresh recommendation after workout completion (debounced)

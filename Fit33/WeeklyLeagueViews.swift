@@ -16,6 +16,7 @@ struct WeeklyLeagueWidget: View {
     @ObservedObject var leagueService: WeeklyLeagueService
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingLeagueInfo = false
+    @State private var showingProfile: ProfileUser?
     let onTap: () -> Void
     
     var body: some View {
@@ -88,6 +89,11 @@ struct WeeklyLeagueWidget: View {
         .sheet(isPresented: $showingLeagueInfo) {
             WeeklyLeagueInfoSheet(standing: standing)
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $showingProfile) { profileUser in
+            NavigationStack {
+                FriendProfileView(user: profileUser)
+            }
         }
     }
     
@@ -264,7 +270,11 @@ struct WeeklyLeagueWidget: View {
         let isPromoZone = standing.promotionCount > 0 && entry.rank <= standing.promotionCount
         let isRelegZone = standing.relegationCount > 0 && entry.rank > (standing.groupSize - standing.relegationCount)
         
-        return HStack(spacing: 8) {
+        return Button {
+            guard !entry.isCurrentUser else { return }
+            showingProfile = ProfileUser(leagueEntry: entry)
+        } label: {
+        HStack(spacing: 8) {
             ZStack {
                 if entry.rank <= 3 {
                     Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
@@ -334,6 +344,8 @@ struct WeeklyLeagueWidget: View {
                     ? standing.tierSwiftUIColor.opacity(colorScheme == .dark ? 0.12 : 0.08)
                     : Color.clear)
         )
+        }
+        .buttonStyle(.plain)
     }
     
     // MARK: - Loading State
@@ -411,6 +423,7 @@ struct WeeklyLeagueDetailView: View {
     
     @State private var selectedTab = 0 // 0: Leaderboard, 1: History
     @State private var hasLoadedFull = false
+    @State private var showingProfile: ProfileUser?
     
     var body: some View {
         ZStack {
@@ -439,6 +452,11 @@ struct WeeklyLeagueDetailView: View {
                 await leagueService.fetchFullLeaderboard()
                 await leagueService.fetchHistory()
                 hasLoadedFull = true
+            }
+        }
+        .sheet(item: $showingProfile) { profileUser in
+            NavigationStack {
+                FriendProfileView(user: profileUser)
             }
         }
     }
@@ -623,7 +641,11 @@ struct WeeklyLeagueDetailView: View {
         let isRelegZone = standing.relegationCount > 0 && entry.rank > (standing.groupSize - standing.relegationCount)
         let showHideOption = !entry.isCurrentUser && entry.isFriend != true
         
-        return HStack(spacing: 12) {
+        return Button {
+            guard !entry.isCurrentUser else { return }
+            showingProfile = ProfileUser(leagueEntry: entry)
+        } label: {
+        HStack(spacing: 12) {
             ZStack {
                 if entry.rank <= 3 {
                     Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
@@ -742,6 +764,8 @@ struct WeeklyLeagueDetailView: View {
                 }
             }
         }
+        }
+        .buttonStyle(.plain)
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, 1)
     }
@@ -879,6 +903,7 @@ struct WeeklyLeagueInfoSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     let standing: LeagueStanding?
+    @State private var showingProfile: ProfileUser?
     
     private let tiers: [(emoji: String, name: String, rank: Int)] = [
         ("🥉", "Bronze", 1),
@@ -925,6 +950,11 @@ struct WeeklyLeagueInfoSheet: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
+                }
+            }
+            .sheet(item: $showingProfile) { profileUser in
+                NavigationStack {
+                    FriendProfileView(user: profileUser)
                 }
             }
         }

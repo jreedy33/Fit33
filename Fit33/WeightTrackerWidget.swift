@@ -974,6 +974,13 @@ struct QuickAdjustButton: View {
     }
 }
 
+// MARK: - Weight Detail Chart Range
+
+private enum ChartRange: String, CaseIterable {
+    case week = "7 Days"
+    case month = "30 Days"
+}
+
 // MARK: - Weight Detail View
 
 struct WeightDetailView: View {
@@ -982,39 +989,80 @@ struct WeightDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     
     @State private var showingGoalSheet = false
+    @State private var selectedChartRange: ChartRange = .month
+    @State private var cardsAppeared = false
     
     private let gradient: [Color] = [.orange, .yellow]
+    
+    private var insightText: String {
+        let (trend, change, isOnTrack) = weightService.getWeightTrendForRecommendations()
+        if let suggestion = weightService.getWorkoutAdjustmentSuggestion() {
+            return suggestion
+        }
+        let suffix = weightService.weightUnitSuffix
+        switch trend {
+        case "losing":
+            return "You're losing \(String(format: "%.1f", abs(change))) \(suffix)/week\(isOnTrack ? " — on track!" : "")"
+        case "gaining":
+            return "You're gaining \(String(format: "%.1f", abs(change))) \(suffix)/week\(isOnTrack ? " — on track!" : "")"
+        default:
+            return "Your weight is holding steady"
+        }
+    }
+    
+    private var insightIsPositive: Bool {
+        weightService.getWeightTrendForRecommendations().isOnTrack
+    }
+    
+    private var chartData: [WeightTrendPoint] {
+        selectedChartRange == .week ? weightService.weeklyTrend : weightService.monthlyTrend
+    }
     
     var body: some View {
         NavigationStack {
             ZStack {
-                // Dark background - matches Steps/Hydration detail
-                Color(red: 0.06, green: 0.07, blue: 0.09)
+                AnimatedOrbBackground.stats(colorScheme: colorScheme)
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    VStack(spacing: 24) {
-                        // Progress summary card
-                        progressSummaryCard
+                    VStack(spacing: Spacing.lg) {
+                        insightBanner
                             .padding(.horizontal, 20)
                             .padding(.top, 20)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4), value: cardsAppeared)
                         
-                        // Goal card
+                        progressSummaryCard
+                            .padding(.horizontal, 20)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.1), value: cardsAppeared)
+                        
                         goalCard
                             .padding(.horizontal, 20)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.2), value: cardsAppeared)
                         
-                        // Statistics grid
                         statisticsGrid
                             .padding(.horizontal, 20)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.3), value: cardsAppeared)
                         
-                        // Full chart
                         fullChartSection
                             .padding(.horizontal, 20)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.4), value: cardsAppeared)
                         
-                        // Recent entries
                         recentEntriesSection
                             .padding(.horizontal, 20)
                             .padding(.bottom, 40)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .offset(y: cardsAppeared ? 0 : 20)
+                            .animation(.easeOut(duration: 0.4).delay(0.5), value: cardsAppeared)
                     }
                 }
             }
@@ -1026,35 +1074,80 @@ struct WeightDetailView: View {
                         dismiss()
                     }
                     .foregroundColor(.orange)
+                    .accessibilityLabel("Done")
+                    .accessibilityHint("Dismiss weight tracker detail")
                 }
             }
             .sheet(isPresented: $showingGoalSheet) {
                 SetWeightGoalSheet(weightService: weightService)
             }
+            .onAppear {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    cardsAppeared = true
+                }
+            }
         }
+    }
+    
+    // MARK: - Insight Banner
+    private var insightBanner: some View {
+        HStack(spacing: Spacing.sm) {
+            let accentColor: Color = insightIsPositive ? .green : .orange
+            let iconName = insightIsPositive ? "brain.head.profile" : "lightbulb.fill"
+            
+            ZStack {
+                Circle()
+                    .fill(accentColor.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                
+                Image(systemName: iconName)
+                    .font(.ds_labelLarge)
+                    .foregroundColor(accentColor)
+            }
+            .accessibilityHidden(true)
+            
+            Text(insightText)
+                .font(.ds_labelLarge)
+                .foregroundColor(.white)
+                .lineLimit(2)
+            
+            Spacer()
+        }
+        .padding(Spacing.lg)
+        .background(Color.cardBackground)
+        .cornerRadius(CornerRadius.xl)
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
+                .stroke(
+                    (insightIsPositive ? Color.green : Color.orange).opacity(0.25),
+                    lineWidth: 1
+                )
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Weight insight: \(insightText)")
     }
     
     // MARK: - Progress Summary Card
     private var progressSummaryCard: some View {
         VStack(spacing: 16) {
-            // Current weight large display
             VStack(spacing: 4) {
                 Text("Current Weight")
-                    .font(.subheadline)
+                    .font(.ds_labelLarge)
                     .foregroundColor(.gray)
                 
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(String(format: "%.1f", weightService.currentWeight))
-                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .font(.ds_displayMedium)
+                        .fontDesign(.rounded)
                         .foregroundColor(.white)
                     
                     Text(weightService.weightUnitSuffix)
-                        .font(.title2)
+                        .font(.ds_heading2)
                         .foregroundColor(.gray)
                 }
             }
             
-            // Change indicators
             HStack(spacing: 24) {
                 DarkChangeIndicator(
                     title: "This Week",
@@ -1095,46 +1188,51 @@ struct WeightDetailView: View {
         VStack(spacing: 12) {
             HStack {
                 Text("Your Goal")
-                    .font(.headline)
-                    .fontWeight(.bold)
+                    .font(.ds_heading3)
                     .foregroundColor(.white)
                 
                 Spacer()
                 
                 Button(action: { showingGoalSheet = true }) {
                     Text(weightService.weightGoal == nil ? "Set Goal" : "Edit")
-                        .font(.subheadline)
+                        .font(.ds_labelLarge)
                         .foregroundColor(.orange)
                 }
+                .accessibilityLabel(weightService.weightGoal == nil ? "Set Goal" : "Edit Goal")
+                .accessibilityHint("Opens goal configuration")
             }
             
             if let goal = weightService.weightGoal {
                 HStack(spacing: 16) {
-                    // Goal type icon
                     ZStack {
                         Circle()
                             .fill(goal.goalType.color.opacity(0.2))
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: goal.goalType.icon)
-                            .font(.title2)
+                            .font(.ds_heading2)
                             .foregroundColor(goal.goalType.color)
                     }
+                    .accessibilityHidden(true)
                     
                     VStack(alignment: .leading, spacing: 4) {
                         Text(goal.goalType.displayName)
-                            .font(.subheadline)
+                            .font(.ds_labelLarge)
                             .foregroundColor(.gray)
                         
                         Text("\(String(format: "%.1f", goal.targetWeight)) \(weightService.weightUnitSuffix)")
-                            .font(.title3)
-                            .fontWeight(.bold)
+                            .font(.ds_heading3)
                             .foregroundColor(.white)
+                        
+                        if let estDate = weightService.estimatedGoalDate {
+                            Text("Est. arrival: \(estDate, format: .dateTime.month(.abbreviated).day().year())")
+                                .font(.ds_caption)
+                                .foregroundColor(.orange)
+                        }
                     }
                     
                     Spacer()
                     
-                    // Progress ring
                     ZStack {
                         Circle()
                             .stroke(Color.gray.opacity(0.3), lineWidth: 6)
@@ -1148,33 +1246,37 @@ struct WeightDetailView: View {
                             .rotationEffect(.degrees(-90))
                         
                         Text("\(Int(weightService.goalProgress * 100))%")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .font(.ds_caption)
+                            .fontWeight(.bold)
+                            .fontDesign(.rounded)
                             .foregroundColor(.white)
                     }
                     .frame(width: 50, height: 50)
+                    .accessibilityLabel("\(Int(weightService.goalProgress * 100)) percent complete")
                 }
             } else {
                 HStack {
                     Image(systemName: "target")
-                        .font(.title2)
+                        .font(.ds_heading2)
                         .foregroundColor(.gray)
+                        .accessibilityHidden(true)
                     
                     Text("Set a weight goal to track your progress")
-                        .font(.subheadline)
+                        .font(.ds_labelLarge)
                         .foregroundColor(.gray)
                     
                     Spacer()
                 }
             }
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
         .cornerRadius(CornerRadius.xl)
     }
     
     // MARK: - Statistics Grid
     private var statisticsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.sm) {
             DarkWeightStatBox(
                 title: "Starting",
                 value: String(format: "%.1f", weightService.statistics?.startingWeight ?? 0),
@@ -1206,68 +1308,100 @@ struct WeightDetailView: View {
                 icon: "list.bullet",
                 color: .purple
             )
+            
+            DarkWeightStatBox(
+                title: "Streak",
+                value: "\(weightService.statistics?.streakDays ?? 0)",
+                unit: "days",
+                icon: "flame.fill",
+                color: .orange
+            )
+            
+            DarkWeightStatBox(
+                title: "Average",
+                value: String(format: "%.1f", weightService.statistics?.averageWeight ?? 0),
+                unit: weightService.weightUnitSuffix,
+                icon: "chart.bar.fill",
+                color: .cyan
+            )
         }
     }
     
     // MARK: - Full Chart Section
     private var fullChartSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("30-Day Trend")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
+            HStack {
+                Text(selectedChartRange == .week ? "7-Day Trend" : "30-Day Trend")
+                    .font(.ds_heading3)
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                Picker("Chart Range", selection: $selectedChartRange) {
+                    ForEach(ChartRange.allCases, id: \.self) { range in
+                        Text(range.rawValue).tag(range)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+                .accessibilityLabel("Chart time range")
+                .accessibilityHint("Switch between 7-day and 30-day views")
+            }
             
-            if weightService.monthlyTrend.isEmpty {
+            if chartData.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 40))
+                        .font(.ds_displayMedium)
                         .foregroundColor(.gray.opacity(0.5))
+                        .accessibilityHidden(true)
                     
                     Text("Start logging to see your trend")
-                        .font(.subheadline)
+                        .font(.ds_labelLarge)
                         .foregroundColor(.gray)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 200)
             } else {
                 DetailedWeightChart(
-                    data: weightService.monthlyTrend,
+                    data: chartData,
                     usesLbs: weightService.usesLbs
                 )
                 .frame(height: 200)
             }
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
         .cornerRadius(CornerRadius.xl)
     }
     
     // MARK: - Recent Entries Section
     private var recentEntriesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let logs = Array(weightService.recentLogs.prefix(10))
+        return VStack(alignment: .leading, spacing: 16) {
             Text("Recent Entries")
-                .font(.headline)
-                .fontWeight(.bold)
+                .font(.ds_heading3)
                 .foregroundColor(.white)
             
-            if weightService.recentLogs.isEmpty {
+            if logs.isEmpty {
                 Text("No entries yet")
-                    .font(.subheadline)
+                    .font(.ds_labelLarge)
                     .foregroundColor(.gray)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
             } else {
                 VStack(spacing: 12) {
-                    ForEach(weightService.recentLogs.prefix(10)) { log in
+                    ForEach(Array(logs.enumerated()), id: \.element.id) { index, log in
+                        let previousLog = index + 1 < logs.count ? logs[index + 1] : nil
                         DarkWeightEntryRow(
                             log: log,
                             usesLbs: weightService.usesLbs,
+                            previousLog: previousLog,
                             onDelete: {
                                 Task { await weightService.deleteLog(log) }
                             }
                         )
                         
-                        if log.id != weightService.recentLogs.prefix(10).last?.id {
+                        if index < logs.count - 1 {
                             Divider()
                                 .background(Color.gray.opacity(0.3))
                         }
@@ -1275,7 +1409,7 @@ struct WeightDetailView: View {
                 }
             }
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
         .cornerRadius(CornerRadius.xl)
     }
@@ -1317,19 +1451,20 @@ struct DarkChangeIndicator: View {
     var body: some View {
         VStack(spacing: 4) {
             Text(title)
-                .font(.caption)
+                .font(.ds_caption)
                 .foregroundColor(.gray)
             
             HStack(spacing: 4) {
                 Image(systemName: change >= 0 ? "arrow.up" : "arrow.down")
-                    .font(.caption)
+                    .font(.ds_caption)
                 
                 Text(String(format: "%+.1f %@", change, suffix))
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(.ds_labelLarge)
             }
             .foregroundColor(change >= 0 ? .orange : .green)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(String(format: "%+.1f", change)) \(suffix)")
     }
 }
 
@@ -1345,26 +1480,28 @@ struct DarkWeightStatBox: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.title2)
+                .font(.ds_heading2)
                 .foregroundColor(color)
+                .accessibilityHidden(true)
             
             Text(value)
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(.ds_heading2)
                 .foregroundColor(.white)
             
             Text(unit)
-                .font(.caption)
+                .font(.ds_caption)
                 .foregroundColor(.gray)
             
             Text(title)
-                .font(.caption2)
+                .font(.ds_caption)
                 .foregroundColor(.gray)
         }
         .frame(maxWidth: .infinity)
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(14)
+        .cornerRadius(CornerRadius.md)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value) \(unit)")
     }
 }
 
@@ -1373,6 +1510,7 @@ struct DarkWeightStatBox: View {
 struct DarkWeightEntryRow: View {
     let log: WeightLog
     let usesLbs: Bool
+    let previousLog: WeightLog?
     let onDelete: () -> Void
     
     private var weight: Double {
@@ -1383,16 +1521,23 @@ struct DarkWeightEntryRow: View {
         usesLbs ? "lbs" : "kg"
     }
     
+    private var delta: Double? {
+        guard let prev = previousLog else { return nil }
+        let prevWeight = usesLbs ? prev.weightLbs : prev.weightKg
+        let diff = weight - prevWeight
+        return diff == 0 ? nil : diff
+    }
+    
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text(formatDate(log.loggedAt))
-                    .font(.subheadline)
+                    .font(.ds_labelLarge)
                     .foregroundColor(.white)
                 
                 if let notes = log.notes, !notes.isEmpty {
                     Text(notes)
-                        .font(.caption)
+                        .font(.ds_caption)
                         .foregroundColor(.gray)
                         .lineLimit(1)
                 }
@@ -1400,11 +1545,28 @@ struct DarkWeightEntryRow: View {
             
             Spacer()
             
+            if let delta = delta {
+                HStack(spacing: 2) {
+                    Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                        .font(.ds_caption)
+                    Text(String(format: "%.1f", abs(delta)))
+                        .font(.ds_caption)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(delta > 0 ? .orange : .green)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background((delta > 0 ? Color.orange : Color.green).opacity(0.15))
+                .cornerRadius(CornerRadius.sm)
+                .accessibilityLabel(delta > 0 ? "Up \(String(format: "%.1f", abs(delta)))" : "Down \(String(format: "%.1f", abs(delta)))")
+            }
+            
             Text("\(String(format: "%.1f", weight)) \(suffix)")
-                .font(.headline)
-                .fontWeight(.semibold)
+                .font(.ds_heading3)
                 .foregroundColor(.orange)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(formatDate(log.loggedAt)): \(String(format: "%.1f", weight)) \(suffix)")
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -1465,7 +1627,6 @@ struct DetailedWeightChart: View {
             let range = max(maxWeight - minWeight, 1)
             
             ZStack {
-                // Y-axis labels
                 VStack {
                     Text(String(format: "%.0f", maxWeight))
                         .font(.ds_caption)
@@ -1482,13 +1643,11 @@ struct DetailedWeightChart: View {
                 .frame(width: 35)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
-                // Chart area
                 HStack(spacing: 0) {
                     Spacer()
                         .frame(width: 40)
                     
                     ZStack {
-                        // Grid
                         VStack(spacing: 0) {
                             ForEach(0..<5, id: \.self) { _ in
                                 Divider().opacity(0.2)
@@ -1497,19 +1656,15 @@ struct DetailedWeightChart: View {
                             Divider().opacity(0.2)
                         }
                         
-                        // Area fill
                         if data.count > 1 {
                             Path { path in
                                 let chartWidth = geometry.size.width - 40
-                                
                                 path.move(to: CGPoint(x: 0, y: geometry.size.height))
-                                
                                 for (index, point) in data.enumerated() {
                                     let x = chartWidth * CGFloat(index) / CGFloat(data.count - 1)
                                     let y = geometry.size.height * (1 - CGFloat((point.weight - minWeight) / range))
                                     path.addLine(to: CGPoint(x: x, y: y))
                                 }
-                                
                                 path.addLine(to: CGPoint(x: geometry.size.width - 40, y: geometry.size.height))
                                 path.closeSubpath()
                             }
@@ -1521,14 +1676,11 @@ struct DetailedWeightChart: View {
                                 )
                             )
                             
-                            // Line
                             Path { path in
                                 let chartWidth = geometry.size.width - 40
-                                
                                 for (index, point) in data.enumerated() {
                                     let x = chartWidth * CGFloat(index) / CGFloat(data.count - 1)
                                     let y = geometry.size.height * (1 - CGFloat((point.weight - minWeight) / range))
-                                    
                                     if index == 0 {
                                         path.move(to: CGPoint(x: x, y: y))
                                     } else {
@@ -1542,7 +1694,6 @@ struct DetailedWeightChart: View {
                                 style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
                             )
                             
-                            // Data points
                             ForEach(Array(data.enumerated()), id: \.offset) { index, point in
                                 let chartWidth = geometry.size.width - 40
                                 let x = chartWidth * CGFloat(index) / CGFloat(data.count - 1)
@@ -1570,6 +1721,7 @@ struct DetailedWeightChart: View {
                 animateChart = true
             }
         }
+        .accessibilityLabel("Weight trend chart with \(data.count) data points")
     }
 }
 

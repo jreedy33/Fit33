@@ -53,7 +53,7 @@ class ExerciseBundleEngine {
             displayName: "Horizontal Press (Chest)",
             families: ["bench_press", "chest_press", "smith_chest_press", "pushup", "dip"],
             movementPattern: "horizontal_press",
-            maxPerWorkout: 2,   // 1 primary + 1 secondary at different angle
+            maxPerWorkout: 1,   // 1 press per workout — second chest slot should be a fly/crossover
             maxPerWeek: 4,
             cooldownDays: 3
         ),

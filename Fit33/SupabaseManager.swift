@@ -320,8 +320,15 @@ class SupabaseManager: ObservableObject {
         } catch {
             let duration = Date().timeIntervalSince(startTime)
             await MainActor.run { isLoading = false }
-            AppLogger.error("Sign up error after \(String(format: "%.2f", duration))s: \(error.localizedDescription)", category: .auth)
-            AppLogger.error("Sign up error details: \(error)", category: .auth)
+            
+            let desc = error.localizedDescription.lowercased()
+            let isRateLimit = desc.contains("rate limit") || desc.contains("rate_limit") || desc.contains("too many") || desc.contains("429")
+            
+            if isRateLimit {
+                AppLogger.warning("[AUTH] Sign up rate limited after \(String(format: "%.2f", duration))s — user should wait before retrying", category: .auth)
+            } else {
+                AppLogger.error("[AUTH] Sign up failed after \(String(format: "%.2f", duration))s: \(error.localizedDescription)", category: .auth)
+            }
             SessionLogManager.shared.logAuthFailure(method: "email_signup", error: "\(error.localizedDescription) | Duration: \(String(format: "%.2f", duration))s")
             throw error
         }

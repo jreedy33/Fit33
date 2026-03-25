@@ -449,6 +449,10 @@ class ContactsService: ObservableObject {
     
     /// Sync contact emails to database for "contact joined" notifications
     func syncContactsToDatabase() async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("Cannot sync contacts - not authenticated", category: .social)
+            return
+        }
         guard canAccessContacts, !contactEmails.isEmpty else {
             AppLogger.warning("Cannot sync - no access or no emails", category: .social)
             return

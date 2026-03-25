@@ -308,11 +308,17 @@ final class HealthKitService: ObservableObject {
             AppLogger.info("HealthKit synced \(workouts.count) workouts", category: .health)
             
         } catch {
-            let desc = error.localizedDescription
-            if desc.contains("Protected health data") {
-                AppLogger.debug("HealthKit workouts unavailable (device locked or permissions revoked)", category: .health)
+            let desc = error.localizedDescription.lowercased()
+            let isExpectedHKError = desc.contains("protected health data")
+                || desc.contains("no data available")
+                || desc.contains("authorization not determined")
+                || desc.contains("not available")
+            
+            if isExpectedHKError {
+                AppLogger.debug("[WORKOUTS] HealthKit unavailable (device locked or permissions revoked): \(error.localizedDescription)", category: .health)
             } else {
-                AppLogger.error("Failed to fetch HealthKit workouts: \(desc)", category: .health)
+                let nsErr = error as NSError
+                AppLogger.error("[WORKOUTS] Unexpected HealthKit error (domain: \(nsErr.domain), code: \(nsErr.code)): \(error.localizedDescription)", category: .health)
             }
         }
     }
@@ -453,7 +459,13 @@ final class HealthKitService: ObservableObject {
                 options: .cumulativeSum
             ) { _, result, error in
                 if let error = error {
-                    AppLogger.warning("HealthKit fetchSum(\(identifier.rawValue)) failed: \(error.localizedDescription)", category: .health)
+                    let desc = error.localizedDescription.lowercased()
+                    let isExpected = desc.contains("no data available") || desc.contains("protected health data") || desc.contains("authorization not determined")
+                    if isExpected {
+                        AppLogger.debug("[HK] fetchSum(\(identifier.rawValue)) — no data (expected)", category: .health)
+                    } else {
+                        AppLogger.warning("[HK] fetchSum(\(identifier.rawValue)) failed: \(error.localizedDescription)", category: .health)
+                    }
                     continuation.resume(returning: nil)
                     return
                 }

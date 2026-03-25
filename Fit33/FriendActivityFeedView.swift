@@ -138,6 +138,12 @@ class ActivityFeedService: ObservableObject {
                 self.activities = result
                 self.isLoading = false
             }
+        } catch is CancellationError {
+            AppLogger.debug("🔕 Activity feed fetch cancelled (tab switch)", category: .social)
+            await MainActor.run { self.isLoading = false }
+        } catch let error as URLError where error.code == .cancelled {
+            AppLogger.debug("🔕 Activity feed fetch cancelled (tab switch)", category: .social)
+            await MainActor.run { self.isLoading = false }
         } catch {
             AppLogger.error("❌ Failed to fetch activity feed: \(error)", category: .social)
             await MainActor.run { self.isLoading = false }
@@ -346,6 +352,7 @@ struct FriendActivityCard: View {
     @State private var showEmojiPicker = false
     @State private var isSendingReaction = false
     @State private var showWorkoutPreview = false
+    @State private var showingProfile: ProfileUser?
     
     private let quickEmojis = ["🔥", "💪", "🙌", "🏆", "👏", "🎯"]
     
@@ -431,23 +438,36 @@ struct FriendActivityCard: View {
                 .environmentObject(WorkoutManager.shared)
             }
         }
+        .sheet(item: $showingProfile) { profileUser in
+            NavigationStack {
+                FriendProfileView(user: profileUser)
+            }
+        }
     }
     
     // MARK: - Header
     
     private var headerSection: some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
-            // Profile photo
-            profilePhoto
-            
+            Button {
+                showingProfile = ProfileUser(activity: activity)
+            } label: {
+                profilePhoto
+            }
+            .buttonStyle(.plain)
+
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: Spacing.xxs) {
-                    Text(activity.displayName)
-                        .font(.ds_heading3)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    // Level badge
+                    Button {
+                        showingProfile = ProfileUser(activity: activity)
+                    } label: {
+                        Text(activity.displayName)
+                            .font(.ds_heading3)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+
                     levelBadge
                 }
                 

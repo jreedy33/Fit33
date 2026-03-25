@@ -1397,7 +1397,7 @@ struct CommunityLeaderboardView: View {
     @State private var isLoading = true
     @State private var showingShare = false
     @State private var showingLeave = false
-    
+    @State private var showingProfile: ProfileUser?
     
     var body: some View {
         ZStack {
@@ -1473,6 +1473,11 @@ struct CommunityLeaderboardView: View {
             }
         } message: {
             Text("You can always rejoin later.")
+        }
+        .sheet(item: $showingProfile) { profileUser in
+            NavigationStack {
+                FriendProfileView(user: profileUser)
+            }
         }
     }
     
@@ -1706,13 +1711,20 @@ struct CommunityLeaderboardView: View {
                 VStack(spacing: 0) {
                     let deltas = service.rankDeltas[lb.challengeId] ?? [:]
                     ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                        fullLeaderboardRow(
-                            entry: entry,
-                            dailyTarget: lb.dailyTarget,
-                            targetUnit: lb.targetUnit,
-                            isCurrentUser: entry.isCurrentUser ?? (entry.userId.uuidString == SupabaseManager.shared.currentUser?.id.uuidString),
-                            rankDelta: deltas[entry.userId] ?? 0
-                        )
+                        let isMe = entry.isCurrentUser ?? (entry.userId.uuidString == SupabaseManager.shared.currentUser?.id.uuidString)
+                        Button {
+                            guard !isMe else { return }
+                            showingProfile = ProfileUser(communityEntry: entry)
+                        } label: {
+                            fullLeaderboardRow(
+                                entry: entry,
+                                dailyTarget: lb.dailyTarget,
+                                targetUnit: lb.targetUnit,
+                                isCurrentUser: isMe,
+                                rankDelta: deltas[entry.userId] ?? 0
+                            )
+                        }
+                        .buttonStyle(.plain)
                         
                         if index < entries.count - 1 {
                             Divider()

@@ -68,6 +68,7 @@ extension DashboardView {
                                 // Then pending sent challenges
                                 ForEach(Array(pendingArray.enumerated()), id: \.offset) { index, pending in
                                     pendingSentChallengeWidget(challenge: pending)
+                                        .id("\(pending.challengeId)-\(pending.opponentId)")
                                         .frame(width: cardWidth)
                                         .opacity(safePageIndex == (activeCount + index) ? 1 : 0)
                                 }

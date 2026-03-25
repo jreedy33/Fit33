@@ -161,9 +161,9 @@ struct StreakData: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         streakType = try container.decode(String.self, forKey: .streakType)
-        currentStreak = try container.decode(Int.self, forKey: .currentStreak)
-        longestStreak = try container.decode(Int.self, forKey: .longestStreak)
-        totalDaysAchieved = try container.decode(Int.self, forKey: .totalDaysAchieved)
+        currentStreak = try container.decodeIfPresent(Int.self, forKey: .currentStreak) ?? 0
+        longestStreak = try container.decodeIfPresent(Int.self, forKey: .longestStreak) ?? 0
+        totalDaysAchieved = try container.decodeIfPresent(Int.self, forKey: .totalDaysAchieved) ?? 0
         
         // Try decoding as string first, then parse flexibly
         if let dateString = try container.decodeIfPresent(String.self, forKey: .lastAchievedDate) {

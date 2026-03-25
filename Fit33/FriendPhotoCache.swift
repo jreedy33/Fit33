@@ -263,6 +263,10 @@ struct CachedFriendPhoto: View {
         .onAppear {
             loadImage()
         }
+        .onChange(of: friendId) { _, newId in
+            image = FriendPhotoCache.shared.getImage(for: newId)
+            loadImage()
+        }
         .onChange(of: photoUrl) { _, _ in
             loadImage()
         }

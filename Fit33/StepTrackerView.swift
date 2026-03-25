@@ -335,34 +335,88 @@ struct StepTrackerDetailView: View {
     @ObservedObject var healthKitManager = HealthKitManager.shared
     @State private var showingGoalEditor = false
     @State private var selectedTimeRange: TimeRange = .week
-    
+    @State private var cardsAppeared = false
+
     enum TimeRange: String, CaseIterable {
         case week = "Week"
         case month = "Month"
     }
-    
+
+    // MARK: - Computed helpers
+
+    private var weeklyTotal: Int {
+        healthKitManager.weeklySteps.reduce(0) { $0 + $1.steps }
+    }
+
+    private var daysGoalMet: Int {
+        healthKitManager.weeklySteps.filter { $0.steps >= healthKitManager.stepGoal }.count
+    }
+
+    private var weeklyDailyAverage: Int {
+        let count = healthKitManager.weeklySteps.count
+        guard count > 0 else { return 0 }
+        return weeklyTotal / count
+    }
+
+    private var bestDay: HealthKitManager.DailySteps? {
+        healthKitManager.weeklySteps.max(by: { $0.steps < $1.steps })
+    }
+
+    private var trendPercentage: Double? {
+        guard healthKitManager.monthlyAverage > 0 else { return nil }
+        let diff = Double(healthKitManager.todaySteps) - Double(healthKitManager.monthlyAverage)
+        return (diff / Double(healthKitManager.monthlyAverage)) * 100
+    }
+
+    private func bestDayName(_ day: HealthKitManager.DailySteps) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return formatter.string(from: day.date)
+    }
+
+    // MARK: - Body
+
     var body: some View {
         NavigationStack {
             ZStack {
-                // Animated orb background (consistent with other screens)
                 AnimatedOrbBackground.stats(colorScheme: colorScheme)
                     .ignoresSafeArea()
-                
+
                 ScrollView {
-                    VStack(spacing: 24) {
-                        // Today's progress card
+                    VStack(spacing: Spacing.lg) {
                         todayProgressCard
                             .padding(.horizontal, 20)
                             .padding(.top, 20)
-                        
-                        // Weekly chart
+                            .offset(y: cardsAppeared ? 0 : 30)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.05), value: cardsAppeared)
+
+                        if let best = bestDay, !healthKitManager.weeklySteps.isEmpty {
+                            bestDayCard(best)
+                                .padding(.horizontal, 20)
+                                .offset(y: cardsAppeared ? 0 : 30)
+                                .opacity(cardsAppeared ? 1 : 0)
+                                .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.12), value: cardsAppeared)
+                        }
+
+                        weeklySummaryRow
+                            .padding(.horizontal, 20)
+                            .offset(y: cardsAppeared ? 0 : 30)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.19), value: cardsAppeared)
+
                         weeklyChartCard
                             .padding(.horizontal, 20)
-                        
-                        // Statistics
+                            .offset(y: cardsAppeared ? 0 : 30)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.26), value: cardsAppeared)
+
                         statisticsCard
                             .padding(.horizontal, 20)
                             .padding(.bottom, 40)
+                            .offset(y: cardsAppeared ? 0 : 30)
+                            .opacity(cardsAppeared ? 1 : 0)
+                            .animation(.spring(response: 0.5, dampingFraction: 0.8).delay(0.33), value: cardsAppeared)
                     }
                 }
             }
@@ -374,8 +428,10 @@ struct StepTrackerDetailView: View {
                         dismiss()
                     }
                     .foregroundColor(.blue)
+                    .accessibilityLabel("Close")
+                    .accessibilityHint("Dismisses the step tracking detail view")
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         showingGoalEditor = true
@@ -383,25 +439,27 @@ struct StepTrackerDetailView: View {
                         Image(systemName: "target")
                             .foregroundColor(.blue)
                     }
+                    .accessibilityLabel("Edit Step Goal")
+                    .accessibilityHint("Opens the step goal editor")
                 }
             }
             .sheet(isPresented: $showingGoalEditor) {
                 StepGoalEditorView()
             }
+            .onAppear {
+                cardsAppeared = true
+            }
         }
     }
-    
+
     // MARK: - Today's Progress Card
     private var todayProgressCard: some View {
-        VStack(spacing: 16) {
-            // Large circular progress
+        VStack(spacing: Spacing.md) {
             ZStack {
-                // Background circle
                 Circle()
                     .stroke(Color.gray.opacity(0.25), lineWidth: 20)
                     .frame(width: 220, height: 220)
-                
-                // Progress circle
+
                 Circle()
                     .trim(from: 0, to: healthKitManager.progressPercentage())
                     .stroke(
@@ -415,24 +473,23 @@ struct StepTrackerDetailView: View {
                     .frame(width: 220, height: 220)
                     .rotationEffect(.degrees(-90))
                     .animation(.spring(response: 0.6, dampingFraction: 0.7), value: healthKitManager.todaySteps)
-                
-                // Center content
+
                 VStack(spacing: 8) {
                     Text(healthKitManager.formattedSteps(healthKitManager.todaySteps))
-                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .font(.ds_displayMedium).fontDesign(.rounded)
                         .foregroundColor(.white)
                         .contentTransition(.numericText())
-                    
+
                     Text("steps today")
-                        .font(.subheadline)
+                        .font(.ds_labelLarge)
                         .foregroundColor(.gray)
-                    
+
                     if healthKitManager.isGoalAchieved() {
                         HStack(spacing: 4) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
                             Text("Goal achieved!")
-                                .font(.caption)
+                                .font(.ds_caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.green)
                         }
@@ -440,13 +497,29 @@ struct StepTrackerDetailView: View {
                     }
                 }
             }
-            
-            // Goal display
+
+            if let trend = trendPercentage {
+                let isAbove = trend >= 0
+                HStack(spacing: 4) {
+                    Image(systemName: isAbove ? "arrow.up.right" : "arrow.down.right")
+                        .font(.ds_caption)
+                    Text("\(abs(Int(trend)))% \(isAbove ? "above" : "below") your monthly average")
+                        .font(.ds_caption)
+                }
+                .foregroundColor(isAbove ? .green : .orange)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, 6)
+                .background((isAbove ? Color.green : Color.orange).opacity(0.15))
+                .clipShape(Capsule())
+                .accessibilityLabel("Trend: \(abs(Int(trend))) percent \(isAbove ? "above" : "below") your monthly average")
+                .accessibilityHidden(false)
+            }
+
             HStack {
                 Image(systemName: "target")
                     .foregroundColor(.blue)
                 Text("Goal: \(healthKitManager.formattedSteps(healthKitManager.stepGoal)) steps")
-                    .font(.subheadline)
+                    .font(.ds_labelLarge)
                     .foregroundColor(.gray)
             }
             .padding(.horizontal, Spacing.md)
@@ -456,17 +529,109 @@ struct StepTrackerDetailView: View {
         }
         .padding(Spacing.lg)
         .background(Color.cardBackground)
-        .cornerRadius(20)
+        .cornerRadius(CornerRadius.xl)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Today's step progress")
     }
-    
+
+    // MARK: - Best Day Card
+    private func bestDayCard(_ day: HealthKitManager.DailySteps) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "trophy.fill")
+                .font(.ds_heading3)
+                .foregroundStyle(
+                    LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Best Day This Week")
+                    .font(.ds_caption)
+                    .foregroundColor(.gray)
+                HStack(spacing: 6) {
+                    Text(bestDayName(day))
+                        .font(.ds_heading3)
+                        .foregroundColor(.white)
+                    Text("·")
+                        .foregroundColor(.gray)
+                    Text("\(healthKitManager.formattedSteps(day.steps)) steps")
+                        .font(.ds_labelLarge)
+                        .foregroundColor(.cyan)
+                }
+            }
+
+            Spacer()
+        }
+        .padding(Spacing.lg)
+        .background(
+            LinearGradient(
+                colors: [Color.orange.opacity(0.12), Color.yellow.opacity(0.06)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .background(Color.cardBackground)
+        .cornerRadius(CornerRadius.xl)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Best day this week: \(bestDayName(day)) with \(day.steps) steps")
+    }
+
+    // MARK: - Weekly Summary Row
+    private var weeklySummaryRow: some View {
+        HStack(spacing: Spacing.sm) {
+            summaryBadge(
+                icon: "sum",
+                label: "Weekly Total",
+                value: healthKitManager.formattedSteps(weeklyTotal),
+                tint: .cyan
+            )
+            summaryBadge(
+                icon: "checkmark.seal.fill",
+                label: "Days Goal Met",
+                value: "\(daysGoalMet)",
+                tint: .green
+            )
+            summaryBadge(
+                icon: "chart.bar.fill",
+                label: "Daily Avg",
+                value: healthKitManager.formattedSteps(weeklyDailyAverage),
+                tint: .purple
+            )
+        }
+    }
+
+    private func summaryBadge(icon: String, label: String, value: String, tint: Color) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.ds_labelLarge)
+                .foregroundColor(tint)
+            Text(value)
+                .font(.ds_heading3)
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.ds_caption)
+                .foregroundColor(.gray)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, Spacing.xs)
+        .background(Color.cardBackground)
+        .cornerRadius(CornerRadius.xl)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
+    }
+
     // MARK: - Weekly Chart Card
     private var weeklyChartCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text("This Week")
-                .font(.headline)
+                .font(.ds_heading3)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-            
+
             if healthKitManager.weeklySteps.isEmpty {
                 HStack {
                     Spacer()
@@ -474,7 +639,7 @@ struct StepTrackerDetailView: View {
                         ProgressView()
                             .tint(.white)
                         Text("Loading step data...")
-                            .font(.caption)
+                            .font(.ds_caption)
                             .foregroundColor(.gray)
                     }
                     .padding(.vertical, 40)
@@ -484,51 +649,101 @@ struct StepTrackerDetailView: View {
                 WeeklyStepChart(weeklyData: healthKitManager.weeklySteps, goal: healthKitManager.stepGoal)
             }
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
-        .cornerRadius(20)
+        .cornerRadius(CornerRadius.xl)
     }
-    
-    // MARK: - Statistics Card
+
+    // MARK: - Statistics Card (2×3 Grid)
     private var statisticsCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             Text("Statistics")
-                .font(.headline)
+                .font(.ds_heading3)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
-            
-            VStack(spacing: 12) {
-                StatRow(
+
+            let columns = [
+                GridItem(.flexible(), spacing: Spacing.sm),
+                GridItem(.flexible(), spacing: Spacing.sm)
+            ]
+
+            LazyVGrid(columns: columns, spacing: Spacing.sm) {
+                DetailStatCard(
                     icon: "calendar",
                     title: "Monthly Average",
-                    value: "\(healthKitManager.formattedSteps(healthKitManager.monthlyAverage))",
-                    color: .orange
+                    value: healthKitManager.formattedSteps(healthKitManager.monthlyAverage),
+                    tint: .orange
                 )
-                
-                Divider()
-                    .background(Color.gray.opacity(0.3))
-                
-                StatRow(
+                DetailStatCard(
                     icon: "flame.fill",
                     title: "Today's Progress",
                     value: "\(Int(healthKitManager.progressPercentage() * 100))%",
-                    color: .red
+                    tint: .red
                 )
-                
-                Divider()
-                    .background(Color.gray.opacity(0.3))
-                
-                StatRow(
+                DetailStatCard(
                     icon: "arrow.up.circle.fill",
                     title: "Steps to Goal",
-                    value: "\(healthKitManager.formattedSteps(max(0, healthKitManager.stepGoal - healthKitManager.todaySteps)))",
-                    color: .blue
+                    value: healthKitManager.formattedSteps(max(0, healthKitManager.stepGoal - healthKitManager.todaySteps)),
+                    tint: .blue
+                )
+                DetailStatCard(
+                    icon: "figure.walk",
+                    title: "Weekly Total",
+                    value: healthKitManager.formattedSteps(weeklyTotal),
+                    tint: .cyan
+                )
+                DetailStatCard(
+                    icon: "trophy.fill",
+                    title: "Best Day",
+                    value: bestDay.map { healthKitManager.formattedSteps($0.steps) } ?? "—",
+                    tint: .yellow
+                )
+                DetailStatCard(
+                    icon: "checkmark.seal.fill",
+                    title: "Days Goal Met",
+                    value: "\(daysGoalMet) / \(healthKitManager.weeklySteps.count)",
+                    tint: .green
                 )
             }
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .background(Color.cardBackground)
-        .cornerRadius(20)
+        .cornerRadius(CornerRadius.xl)
+    }
+}
+
+// MARK: - Detail Stat Card (grid item)
+private struct DetailStatCard: View {
+    let icon: String
+    let title: String
+    let value: String
+    let tint: Color
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.ds_heading3)
+                .foregroundColor(tint)
+
+            Text(value)
+                .font(.ds_heading3)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(title)
+                .font(.ds_caption)
+                .foregroundColor(.gray)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.md)
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(CornerRadius.lg)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
     }
 }
 
@@ -536,98 +751,81 @@ struct StepTrackerDetailView: View {
 struct WeeklyStepChart: View {
     let weeklyData: [HealthKitManager.DailySteps]
     let goal: Int
-    
+
     private var maxSteps: Int {
         max(weeklyData.map { $0.steps }.max() ?? goal, goal)
     }
-    
+
+    private let chartHeight: CGFloat = 140
+
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            ForEach(weeklyData) { day in
-                VStack(spacing: 8) {
-                    // Bar
-                    VStack {
-                        Spacer()
-                        
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(
-                                LinearGradient(
-                                    colors: day.steps >= goal ? 
-                                        [.green, .cyan] : [.blue.opacity(0.8), .blue.opacity(0.5)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .frame(height: CGFloat(day.steps) / CGFloat(maxSteps) * 120)
-                            .overlay(
-                                day.steps >= goal ?
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.caption2)
-                                        .foregroundColor(.white)
-                                        .offset(y: -15)
-                                    : nil
-                            )
-                    }
-                    .frame(height: 120)
-                    
-                    // Day label
-                    Text(dayLabel(for: day.date))
-                        .font(.caption2)
-                        .fontWeight(day.isToday ? .bold : .regular)
-                        .foregroundColor(day.isToday ? .blue : .gray)
-                    
-                    // Step count
-                    Text(shortStepLabel(day.steps))
-                        .font(.caption2)
-                        .foregroundColor(.gray)
+        ZStack(alignment: .leading) {
+            // Dashed goal line
+            GeometryReader { geo in
+                let goalY = chartHeight - (CGFloat(goal) / CGFloat(maxSteps) * chartHeight)
+                Path { path in
+                    path.move(to: CGPoint(x: 0, y: goalY))
+                    path.addLine(to: CGPoint(x: geo.size.width, y: goalY))
                 }
-                .frame(maxWidth: .infinity)
+                .stroke(Color.green.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [6, 4]))
+
+                Text("Goal")
+                    .font(.ds_caption)
+                    .foregroundColor(.green.opacity(0.7))
+                    .position(x: geo.size.width - 20, y: goalY - 10)
+            }
+            .frame(height: chartHeight)
+            .padding(.bottom, 40)
+
+            // Bars
+            HStack(alignment: .bottom, spacing: 8) {
+                ForEach(weeklyData) { day in
+                    VStack(spacing: 4) {
+                        Text(shortStepLabel(day.steps))
+                            .font(.ds_caption)
+                            .foregroundColor(.gray)
+
+                        VStack {
+                            Spacer()
+
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(
+                                    LinearGradient(
+                                        colors: day.steps >= goal
+                                            ? [.green, .cyan] : [.blue.opacity(0.8), .blue.opacity(0.5)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .frame(height: max(4, CGFloat(day.steps) / CGFloat(maxSteps) * chartHeight))
+                        }
+                        .frame(height: chartHeight)
+
+                        Text(dayLabel(for: day.date))
+                            .font(.ds_caption)
+                            .fontWeight(day.isToday ? .bold : .regular)
+                            .foregroundColor(day.isToday ? .blue : .gray)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(dayLabel(for: day.date)): \(day.steps) steps")
+                }
             }
         }
         .padding(.vertical, Spacing.xs)
     }
-    
+
     private func dayLabel(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE"
         return formatter.string(from: date)
     }
-    
+
     private func shortStepLabel(_ steps: Int) -> String {
         if steps >= 1000 {
             return String(format: "%.1fK", Double(steps) / 1000.0)
         }
         return "\(steps)"
-    }
-}
-
-// MARK: - Stat Row
-struct StatRow: View {
-    let icon: String
-    let title: String
-    let value: String
-    let color: Color
-    
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(color)
-                .frame(width: 32)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                
-                Text(value)
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-            }
-            
-            Spacer()
-        }
     }
 }
 

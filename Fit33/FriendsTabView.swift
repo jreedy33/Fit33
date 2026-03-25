@@ -23,7 +23,7 @@ struct FriendsTabView: View {
     
     @State private var showingFriendsList = false
     @State private var showingFriendSearch = false
-    @State private var showingFriendProfile: Friend?
+    @State private var showingFriendProfile: ProfileUser?
     @State private var showingCommunityHub = false
     @State private var showingChallengeCreation = false
     @State private var activeChallengePageIndex = 0
@@ -44,6 +44,7 @@ struct FriendsTabView: View {
     @State private var lastContactsRefreshAt: Date?
     @State private var isManualRefreshing = false
     @State private var autoRefreshTimer: Timer?
+    @State private var activeRefreshTask: Task<Void, Never>?
     
     /// Staggered auto-refresh: ticks every 30s, alternating between 1v1/league and community/private.
     /// This gives each category a 60s polling cycle without doubling network load at any tick.
@@ -97,6 +98,7 @@ struct FriendsTabView: View {
                 .padding(.bottom, 20)
             }
             .refreshable {
+                activeRefreshTask?.cancel()
                 await ChallengeService.shared.syncAllTrackingToChallenges()
                 await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
                 await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
@@ -161,8 +163,12 @@ struct FriendsTabView: View {
             guard !Task.isCancelled else { return }
             guard SupabaseManager.shared.isAuthenticated else { return }
             
-            await refreshAllFriendsData(force: false)
-            lastRefreshedAt = Date()
+            activeRefreshTask?.cancel()
+            activeRefreshTask = Task {
+                await refreshAllFriendsData(force: false)
+                lastRefreshedAt = Date()
+            }
+            _ = await activeRefreshTask?.value
             hasAppearedBefore = true
             updateCachedSuggestions()
             
@@ -185,7 +191,8 @@ struct FriendsTabView: View {
                 // Quick tab switches (< 30s apart) just re-start the timer.
                 let isStale = lastRefreshedAt.map { Date().timeIntervalSince($0) > 30 } ?? true
                 if isStale {
-                    Task {
+                    activeRefreshTask?.cancel()
+                    activeRefreshTask = Task {
                         await refreshAllFriendsData(force: false)
                         lastRefreshedAt = Date()
                     }
@@ -198,7 +205,8 @@ struct FriendsTabView: View {
             // Preserve rank deltas — user will see accumulated changes on return
             communityService.markCommunityViewHidden()
             
-            // Stop auto-refresh when leaving the tab to save battery
+            // Cancel in-flight refresh and stop timer to save battery
+            activeRefreshTask?.cancel()
             stopAutoRefreshTimer()
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
@@ -208,7 +216,8 @@ struct FriendsTabView: View {
                 // foreground handler. We just need to refresh the display data here.
                 let isStale = lastRefreshedAt.map { Date().timeIntervalSince($0) > 30 } ?? true
                 if isStale {
-                    Task {
+                    activeRefreshTask?.cancel()
+                    activeRefreshTask = Task {
                         await refreshAllFriendsData(force: false)
                         lastRefreshedAt = Date()
                     }
@@ -218,9 +227,9 @@ struct FriendsTabView: View {
                 stopAutoRefreshTimer()
             }
         }
-        .sheet(item: $showingFriendProfile) { friend in
+        .sheet(item: $showingFriendProfile) { profileUser in
             NavigationStack {
-                FriendProfileView(friend: friend)
+                FriendProfileView(user: profileUser)
             }
         }
         .sheet(isPresented: $showingFriendsList) {
@@ -535,30 +544,8 @@ struct FriendsTabView: View {
         
         return Button(action: {
             guard !isSent else { return }
-            HapticManager.impact(.medium)
-            
-            // Show "Request Sent" animation
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                requestSentAnimationIds.insert(suggestion.userId)
-            }
-            
-            // Send friend request
-            Task {
-                let success = await friendService.sendFriendRequest(toUserId: suggestion.userId)
-                if !success {
-                    // Revert animation if failed
-                    withAnimation(.spring(response: 0.3)) {
-                        requestSentAnimationIds.remove(suggestion.userId)
-                    }
-                } else {
-                    // After brief delay, slide out and replace with next suggestion
-                    try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        sentRequestIds.insert(suggestion.userId)
-                        requestSentAnimationIds.remove(suggestion.userId)
-                    }
-                }
-            }
+            HapticManager.selectionChanged()
+            showingFriendProfile = ProfileUser(suggested: suggestion)
         }) {
             VStack(spacing: 5) {
                 ZStack {
@@ -724,7 +711,7 @@ struct FriendsTabView: View {
         
         return Button(action: {
             HapticManager.selectionChanged()
-            showingFriendProfile = friend
+            showingFriendProfile = ProfileUser(friend: friend)
         }) {
             VStack(spacing: 8) {
                 ZStack(alignment: .bottomTrailing) {

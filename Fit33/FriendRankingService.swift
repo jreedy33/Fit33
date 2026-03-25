@@ -95,6 +95,10 @@ class FriendRankingService: ObservableObject {
             for (index, friend) in result.prefix(3).enumerated() {
                 AppLogger.debug("   #\(index + 1): \(friend.friendName ?? friend.friendUsername ?? "Unknown") - Score: \(friend.relationshipScore)", category: .social)
             }
+        } catch is CancellationError {
+            AppLogger.debug("🔕 [RANKING] Ranked friends fetch cancelled (tab switch)", category: .social)
+        } catch let error as URLError where error.code == .cancelled {
+            AppLogger.debug("🔕 [RANKING] Ranked friends fetch cancelled (tab switch)", category: .social)
         } catch {
             AppLogger.error("❌ [RANKING] Error fetching ranked friends: \(error)", category: .social)
         }
@@ -137,6 +141,10 @@ class FriendRankingService: ObservableObject {
             
             friendsFromContacts = result
             AppLogger.info("✅ [RANKING] Fetched \(result.count) friends from contacts", category: .social)
+        } catch is CancellationError {
+            AppLogger.debug("🔕 [RANKING] Contacts friends fetch cancelled (tab switch)", category: .social)
+        } catch let error as URLError where error.code == .cancelled {
+            AppLogger.debug("🔕 [RANKING] Contacts friends fetch cancelled (tab switch)", category: .social)
         } catch {
             AppLogger.error("❌ [RANKING] Error fetching friends from contacts: \(error)", category: .social)
         }

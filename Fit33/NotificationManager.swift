@@ -1681,7 +1681,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             DeepLinkManager.shared.pendingDestination = .friendRequests
             AppLogger.debug("Opening friend requests tab", category: .general)
             
-        case "friend_request_accepted":
+        case "friend_request_accepted", "friend_accepted":
             await FriendService.shared.fetchFriends()
             DeepLinkManager.shared.pendingDestination = .friends
             AppLogger.debug("Opening friends list - request accepted!", category: .general)

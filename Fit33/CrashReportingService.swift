@@ -630,6 +630,11 @@ final class CrashReportingService {
     /// Upload a single crash report to Supabase
     @discardableResult
     private func uploadReport(_ report: CrashReportInsert) async -> Bool {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug("🛡️ [CrashReporter] Skipping upload — not authenticated (will retry later)", category: .general)
+            return false
+        }
+        
         do {
             try await SupabaseManager.shared.supabaseClient
                 .from("crash_reports")
@@ -638,7 +643,6 @@ final class CrashReportingService {
             
             return true
         } catch {
-            // If upload fails, persist to disk for retry
             AppLogger.error("🛡️ [CrashReporter] Upload failed: \(error.localizedDescription)", category: .general)
             return false
         }

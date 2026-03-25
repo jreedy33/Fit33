@@ -259,6 +259,7 @@
 		7CB08C612ED69E4D00236ECB /* WorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C602ED69E4D00236ECB /* WorkoutManager.swift */; };
 		7CB08C632ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C622ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift */; };
 		7CB08C652ED6A33C00236ECB /* WorkoutGeneratorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C642ED6A33C00236ECB /* WorkoutGeneratorService.swift */; };
+		DDA48A0D52DCCDCB7D45FBC6 /* WorkoutSuggestionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B474F023D738A7C1970275 /* WorkoutSuggestionEngine.swift */; };
 		7CB08C672ED6A34F00236ECB /* AutoWorkoutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C662ED6A34F00236ECB /* AutoWorkoutPreviewView.swift */; };
 		7CB08C6B2ED73A6F00236ECB /* CloudProgramService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C6A2ED73A6F00236ECB /* CloudProgramService.swift */; };
 		7CB08C6C2ED73A6F00236ECB /* CloudProgramLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C682ED73A6F00236ECB /* CloudProgramLibraryView.swift */; };
@@ -641,6 +642,7 @@
 		7CB08C602ED69E4D00236ECB /* WorkoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutManager.swift; sourceTree = "<group>"; };
 		7CB08C622ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutGeneratorSelectionView.swift; sourceTree = "<group>"; };
 		7CB08C642ED6A33C00236ECB /* WorkoutGeneratorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutGeneratorService.swift; sourceTree = "<group>"; };
+		11B474F023D738A7C1970275 /* WorkoutSuggestionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSuggestionEngine.swift; sourceTree = "<group>"; };
 		7CB08C662ED6A34F00236ECB /* AutoWorkoutPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoWorkoutPreviewView.swift; sourceTree = "<group>"; };
 		7CB08C682ED73A6F00236ECB /* CloudProgramLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudProgramLibraryView.swift; sourceTree = "<group>"; };
 		7CB08C692ED73A6F00236ECB /* CloudProgramScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudProgramScheduleView.swift; sourceTree = "<group>"; };
@@ -1103,6 +1105,7 @@
 				7CB08C622ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift */,
 				A12345678901234567890271 /* WorkoutGeneratorSelectionView.swift */,
 				7CB08C642ED6A33C00236ECB /* WorkoutGeneratorService.swift */,
+				11B474F023D738A7C1970275 /* WorkoutSuggestionEngine.swift */,
 				A12345678901234567890281 /* WorkoutHistoryDetailView.swift */,
 				A2B3C4D5E6F7890123456701 /* WorkoutInsightsView.swift */,
 				7CB08C602ED69E4D00236ECB /* WorkoutManager.swift */,
@@ -1381,6 +1384,7 @@
 				7CB08C672ED6A34F00236ECB /* AutoWorkoutPreviewView.swift in Sources */,
 				7C0C41F02F09C91A00F02E84 /* CardioLandingView.swift in Sources */,
 				7CB08C652ED6A33C00236ECB /* WorkoutGeneratorService.swift in Sources */,
+				DDA48A0D52DCCDCB7D45FBC6 /* WorkoutSuggestionEngine.swift in Sources */,
 				7C558B1F2ED5027200A01E1F /* FoodDetailsView.swift in Sources */,
 				7CAA1F1B2F3ACBB2008200B9 /* VideoStreamingService.swift in Sources */,
 				7C81611E2EF86F29007556A7 /* RunningActivityAttributes.swift in Sources */,
@@ -1713,7 +1717,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1724,7 +1728,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.32.0;
+				MARKETING_VERSION = 1.33.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1743,7 +1747,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1754,7 +1758,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.32.0;
+				MARKETING_VERSION = 1.33.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1897,7 +1901,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1918,7 +1922,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.32.0;
+				MARKETING_VERSION = 1.33.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1934,7 +1938,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1955,7 +1959,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.32.0;
+				MARKETING_VERSION = 1.33.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

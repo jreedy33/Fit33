@@ -112,12 +112,12 @@ struct HydrationStreaks: Codable {
     let id: UUID?
     let userId: UUID
     let currentStreak: Int
-    let longestStreak: Int
+    let longestStreak: Int?
     let totalDaysLogged: Int
     let totalDaysGoalMet: Int
-    let totalLitersConsumed: Double
-    let avgDailyIntakeMl: Int
-    let bestDailyIntakeMl: Int
+    let totalLitersConsumed: Double?
+    let avgDailyIntakeMl: Int?
+    let bestDailyIntakeMl: Int?
     let bestDailyDate: String?
     let lastGoalMetDate: String?
     

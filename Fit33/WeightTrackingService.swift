@@ -578,7 +578,13 @@ class WeightTrackingService: ObservableObject {
             AppLogger.info("✅ [Weight] Save complete, todayLog retained", category: .health)
             return true
         } catch {
-            AppLogger.error("❌ [Weight] Failed to log weight: \(error)", category: .health)
+            let errorString = String(describing: error)
+            let isTypeMismatch = errorString.contains("uuid = text") || errorString.contains("operator does not exist")
+            if isTypeMismatch {
+                AppLogger.error("[Weight] UUID type mismatch in weight_logs insert — user_id sent as text to uuid column. Error: \(error)", category: .health)
+            } else {
+                AppLogger.error("[Weight] Failed to log weight: \(error)", category: .health)
+            }
             return false
         }
     }

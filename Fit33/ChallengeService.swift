@@ -132,6 +132,7 @@ class ChallengeService: ObservableObject {
     // MARK: - Cache Keys
     
     private let activeChallengesCacheKey = "fit33_cached_active_challenges"
+    private let groupChallengesCacheKey = "fit33_cached_group_challenges"
     private let pendingInvitesCacheKey = "fit33_cached_pending_invites"
     private let pendingSentCacheKey = "fit33_cached_pending_sent_challenges"
     private let cacheDateKey = "fit33_challenges_cache_date"
@@ -171,12 +172,12 @@ class ChallengeService: ObservableObject {
     
     // MARK: - Local Challenge Caching (survives force quit)
     
-    /// Cache active challenges to UserDefaults for instant display on app restart
+    /// Cache active challenges to UserDefaults for instant display on app restart.
+    /// Only updates cache on successful fetches — never clears good cache on transient failures.
     private func cacheActiveChallenges() {
-        guard !activeChallenges.isEmpty else {
-            // Clear cache if no active challenges
+        if activeChallenges.isEmpty {
             UserDefaults.standard.removeObject(forKey: activeChallengesCacheKey)
-            AppLogger.debug("Cleared cached active challenges", category: .social)
+            AppLogger.debug("Cleared cached active challenges (server confirmed 0)", category: .social)
             return
         }
         
@@ -185,7 +186,7 @@ class ChallengeService: ObservableObject {
             let data = try encoder.encode(activeChallenges)
             UserDefaults.standard.set(data, forKey: activeChallengesCacheKey)
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: cacheDateKey)
-            UserDefaults.standard.synchronize() // Force immediate write
+            UserDefaults.standard.synchronize()
             AppLogger.debug("Cached \(activeChallenges.count) active challenges", category: .social)
         } catch {
             AppLogger.error("Failed to cache active challenges: \(error.localizedDescription)", category: .social)
@@ -211,6 +212,26 @@ class ChallengeService: ObservableObject {
         }
     }
     
+    /// Cache group challenges to UserDefaults for instant display on app restart.
+    /// Only updates cache on successful fetches — never clears good cache on transient failures.
+    private func cacheGroupChallenges() {
+        if activeGroupChallenges.isEmpty {
+            UserDefaults.standard.removeObject(forKey: groupChallengesCacheKey)
+            AppLogger.debug("Cleared cached group challenges (server confirmed 0)", category: .social)
+            return
+        }
+
+        do {
+            let data = try JSONEncoder().encode(activeGroupChallenges)
+            UserDefaults.standard.set(data, forKey: groupChallengesCacheKey)
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: cacheDateKey)
+            UserDefaults.standard.synchronize()
+            AppLogger.debug("Cached \(activeGroupChallenges.count) group challenges", category: .social)
+        } catch {
+            AppLogger.error("Failed to cache group challenges: \(error.localizedDescription)", category: .social)
+        }
+    }
+
     /// Load cached challenges from UserDefaults (called on init for instant display)
     private func loadCachedChallenges() {
         AppLogger.debug("Loading cached challenges...", category: .social)
@@ -298,16 +319,36 @@ class ChallengeService: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: pendingSentCacheKey)
             }
         }
+
+        // Load cached group challenges
+        if let data = UserDefaults.standard.data(forKey: groupChallengesCacheKey) {
+            do {
+                var cached = try JSONDecoder().decode([ActiveGroupChallenge].self, from: data)
+                if !isCacheFromToday && !cached.isEmpty {
+                    AppLogger.debug("Group cache from previous day — zeroing today's member progress", category: .social)
+                    cached = cached.map { $0.withZeroedTodayProgress() }
+                }
+                self.activeGroupChallenges = cached
+                AppLogger.info("Loaded \(cached.count) cached group challenges instantly\(isCacheFromToday ? "" : " (today progress zeroed)")", category: .social)
+            } catch {
+                AppLogger.warning("Failed to decode cached group challenges: \(error.localizedDescription)", category: .social)
+                UserDefaults.standard.removeObject(forKey: groupChallengesCacheKey)
+            }
+        } else {
+            AppLogger.debug("No cached group challenges found", category: .social)
+        }
     }
     
     /// Clear all challenge caches (call on logout)
     func clearCache() {
         UserDefaults.standard.removeObject(forKey: activeChallengesCacheKey)
+        UserDefaults.standard.removeObject(forKey: groupChallengesCacheKey)
         UserDefaults.standard.removeObject(forKey: pendingInvitesCacheKey)
         UserDefaults.standard.removeObject(forKey: pendingSentCacheKey)
         UserDefaults.standard.removeObject(forKey: cacheDateKey)
         UserDefaults.standard.synchronize()
         activeChallenges = []
+        activeGroupChallenges = []
         pendingInvites = []
         pendingSentChallenges = []
         AppLogger.debug("Cleared all challenge caches", category: .social)
@@ -562,8 +603,9 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Fetched \(result.count) active challenges", category: .social)
         } catch {
             if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
-            logger.log(.error, category: .challenge, message: "Failed to fetch active challenges", metadata: ["error": "\(error)"])
-            AppLogger.error("Error fetching active challenges: \(error.localizedDescription)", category: .social)
+            // Preserve existing cached challenges on fetch failure
+            logger.log(.error, category: .challenge, message: "Failed to fetch active challenges (keeping \(activeChallenges.count) cached)", metadata: ["error": "\(error)"])
+            AppLogger.error("[CHALLENGES] Fetch failed (keeping \(activeChallenges.count) cached): \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -1111,10 +1153,17 @@ class ChallengeService: ObservableObject {
     // MARK: - Fetch Active Group Challenges
     
     func fetchActiveGroupChallenges() async {
-        guard SupabaseManager.shared.isAuthenticated else { return }
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug("[GROUP] Skipping fetch — not authenticated", category: .social)
+            return
+        }
         let now = Date()
-        guard now.timeIntervalSince(lastGroupFetchTime) > fetchMinInterval else { return }
+        guard now.timeIntervalSince(lastGroupFetchTime) > fetchMinInterval else {
+            AppLogger.debug("[GROUP] Skipping fetch — throttled (\(Int(now.timeIntervalSince(lastGroupFetchTime)))s ago)", category: .social)
+            return
+        }
         lastGroupFetchTime = now
+        AppLogger.debug("[GROUP] Fetching active group challenges via RPC...", category: .social)
         do {
             struct TimezoneParams: Encodable {
                 let p_timezone: String
@@ -1130,6 +1179,7 @@ class ChallengeService: ObservableObject {
             }
             
             activeGroupChallenges = result
+            cacheGroupChallenges()
             
             // Preload member photos for instant display on group challenge widgets
             var memberPhotos: [(id: String, url: String?)] = []
@@ -1146,8 +1196,12 @@ class ChallengeService: ObservableObject {
             
             AppLogger.info("Fetched \(result.count) active group challenges", category: .social)
         } catch {
-            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
-            AppLogger.error("Error fetching group challenges: \(error.localizedDescription)", category: .social)
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled {
+                AppLogger.debug("[GROUP] Fetch cancelled (task cancellation)", category: .social)
+                return
+            }
+            // Preserve existing cached challenges on fetch failure
+            AppLogger.error("[GROUP] Fetch failed (keeping \(activeGroupChallenges.count) cached): \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -1676,6 +1730,11 @@ class ChallengeService: ObservableObject {
         workoutId: UUID? = nil,
         allowDecrease: Bool = false
     ) async -> Bool {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug("[CHALLENGE] Skipping logProgress — not authenticated (source: \(source), challenge: \(challengeId.uuidString.prefix(8)))", category: .social)
+            return false
+        }
+        
         struct LogProgressParams: Encodable {
             let p_challenge_id: String
             let p_progress_value: Int
@@ -1692,7 +1751,7 @@ class ChallengeService: ObservableObject {
         // Only pass an explicit date for simulator/backfill scenarios.
         let dateStr: String? = date.map { ChallengeFormatters.localDateOnly.string(from: $0) }
         
-        let maxRetries = 5
+        let maxRetries = 3
         for attempt in 1...maxRetries {
             do {
                 let _: Bool = try await SupabaseManager.shared.supabaseClient
@@ -1725,12 +1784,20 @@ class ChallengeService: ObservableObject {
                     return false
                 }
                 let nsError = error as NSError
+                let errorDesc = error.localizedDescription
+                
+                // "Not authenticated" from server means session expired — don't retry
+                if errorDesc.localizedCaseInsensitiveContains("not authenticated") || errorDesc.localizedCaseInsensitiveContains("JWT") {
+                    AppLogger.warning("[CHALLENGE] logProgress auth expired (challenge: \(challengeId.uuidString.prefix(8)), source: \(source))", category: .social)
+                    return false
+                }
+                
                 if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
                     let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
                     AppLogger.warning("log_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                 } else {
-                    AppLogger.error("Error logging progress: \(error.localizedDescription)", category: .social)
+                    AppLogger.error("[CHALLENGE] logProgress failed (attempt \(attempt)/\(maxRetries), source: \(source)): \(errorDesc)", category: .social)
                     return false
                 }
             }
@@ -1743,6 +1810,10 @@ class ChallengeService: ObservableObject {
     /// Sync HealthKit data to all active challenges
     /// Call this when HealthKit data updates (steps, workouts, active minutes)
     func syncHealthKitDataToChallenges() async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug("[CHALLENGE SYNC] Skipping HK sync — not authenticated", category: .social)
+            return
+        }
         guard !activeChallenges.isEmpty else {
             AppLogger.debug("No active challenges to sync", category: .social)
             return
@@ -3152,21 +3223,29 @@ struct GroupChallengeMember: Codable, Identifiable {
     let name: String?
     let username: String?
     let profilePhotoUrl: String?
-    
+
     var id: UUID { userId }
-    
+
     var displayName: String {
         if let username = username, !username.isEmpty { return "@\(username)" }
         return name ?? "Unknown"
     }
-    
+
     var firstName: String {
         name?.components(separatedBy: " ").first ?? username ?? "Friend"
     }
-    
+
     var isAccepted: Bool { status == "accepted" }
     var isPending: Bool { status == "pending" }
-    
+
+    func withZeroedTodayProgress() -> GroupChallengeMember {
+        GroupChallengeMember(
+            userId: userId, status: status, totalProgress: totalProgress,
+            todayProgress: 0, daysCompleted: daysCompleted, currentStreak: currentStreak,
+            name: name, username: username, profilePhotoUrl: profilePhotoUrl
+        )
+    }
+
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case status
@@ -3271,7 +3350,19 @@ struct ActiveGroupChallenge: Codable, Identifiable, Hashable, ChallengeTypeResol
         guard let target = dailyTarget, target > 0, let members = members else { return false }
         return members.filter(\.isAccepted).allSatisfy { $0.todayProgress >= target }
     }
-    
+
+    func withZeroedTodayProgress() -> ActiveGroupChallenge {
+        ActiveGroupChallenge(
+            challengeId: challengeId, title: title, description: description,
+            challengeType: challengeType, mode: mode, dailyTarget: dailyTarget,
+            totalTarget: totalTarget, targetUnit: targetUnit,
+            startDateString: startDateString, endDateString: endDateString,
+            durationDays: durationDays, daysElapsed: daysElapsed, daysRemaining: daysRemaining,
+            status: status, createdBy: createdBy, memberCount: memberCount,
+            members: members?.map { $0.withZeroedTodayProgress() }
+        )
+    }
+
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
         case title, description

@@ -277,6 +277,10 @@ class WeeklyLeagueService: ObservableObject {
             // Award daily login points (once per day)
             await awardDailyLoginPoints()
             
+        } catch is CancellationError {
+            AppLogger.debug("🔕 [LEAGUE] League fetch cancelled (tab switch)", category: .social)
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            AppLogger.debug("🔕 [LEAGUE] League fetch cancelled (tab switch)", category: .social)
         } catch {
             self.error = error.localizedDescription
             #if DEBUG
@@ -380,6 +384,10 @@ class WeeklyLeagueService: ObservableObject {
             self.standing = result
             cacheStanding(result)
             
+        } catch is CancellationError {
+            AppLogger.debug("🔕 [LEAGUE] Leaderboard fetch cancelled (tab switch)", category: .social)
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            AppLogger.debug("🔕 [LEAGUE] Leaderboard fetch cancelled (tab switch)", category: .social)
         } catch {
             #if DEBUG
             AppLogger.error("❌ [LEAGUE] Failed to fetch leaderboard: \(error)", category: .social)

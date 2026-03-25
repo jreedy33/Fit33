@@ -252,6 +252,15 @@ final class AdvancedSessionLogger: ObservableObject {
         batchIndex += 1
         
         do {
+            guard JSONSerialization.isValidJSONObject(batch) else {
+                AppLogger.warning("[SESSION_LOG] batch is not valid JSON — skipping flush (\(batch.count) entries)", category: .performance)
+                return
+            }
+            guard JSONSerialization.isValidJSONObject(deviceInfo) else {
+                AppLogger.warning("[SESSION_LOG] deviceInfo is not valid JSON — skipping flush", category: .performance)
+                return
+            }
+            
             let entriesData = try JSONSerialization.data(withJSONObject: batch)
             let entriesString = String(data: entriesData, encoding: .utf8) ?? "[]"
             

@@ -117,9 +117,12 @@ extension ActiveWorkoutView {
     /// 🍎 Save workout to Apple Health - Fills Exercise Ring!
     /// Uses Apple Fitness-quality calorie calculation and persists calories to Core Data
     func saveWorkoutToAppleHealth(startDate: Date, duration: TimeInterval, exerciseCount: Int) {
+        // Capture calorie data synchronously while exerciseSetsData is still available.
+        // The async Task below may run after SwiftUI invalidates this view.
+        let exerciseCalorieData = buildExerciseCalorieData()
+
         // Always calculate and store calories locally, even if HealthKit sync is off
         Task {
-            let exerciseCalorieData = buildExerciseCalorieData()
             let calorieResult = await HealthKitManager.shared.calculateDetailedCalories(
                 exercises: exerciseCalorieData,
                 totalDurationSeconds: duration

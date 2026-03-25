@@ -517,61 +517,65 @@ class WorkoutGeneratorService: ObservableObject {
     }
     
     func generateSurpriseWorkout(equipment: [String] = [], count: Int = 5) async throws -> [GeneratedExercise] {
-        // Get user profile for personalization
         let userGoal = UserManager.shared.currentUser?.fitnessGoal?.lowercased() ?? "build muscle"
         let userLevel = UserManager.shared.currentUser?.experienceLevel ?? "Intermediate"
         let userEquipment = equipment.isEmpty 
             ? ((UserManager.shared.currentUser?.equipment as? [String]) ?? ["Barbell", "Dumbbells", "Bodyweight", "Cables"])
             : equipment
         
-        // Smart workout splits based on user goal
-        let workoutSplits: [(name: String, muscles: [String], forGoals: [String])] = [
-            // Muscle building splits
-            ("Push Day", ["Chest", "Shoulders", "Triceps", "Quads"], ["build muscle", "get stronger"]),
-            ("Pull Day", ["Back", "Biceps", "Hamstrings", "Glutes"], ["build muscle", "get stronger"]),
-            ("Leg Day", ["Quads", "Hamstrings", "Glutes", "Calves"], ["build muscle", "get stronger"]),
-            ("Chest & Triceps", ["Chest", "Triceps"], ["build muscle"]),
-            ("Back & Biceps", ["Back", "Biceps"], ["build muscle"]),
-            ("Shoulders & Arms", ["Shoulders", "Biceps", "Triceps"], ["build muscle"]),
-            
-            // Strength splits
-            ("Upper Body Strength", ["Chest", "Back", "Shoulders"], ["get stronger"]),
-            ("Lower Body Strength", ["Quads", "Hamstrings", "Glutes"], ["get stronger"]),
-            
-            // Fat loss / cardio splits
-            ("HIIT Full Body", ["Full Body", "Cardio"], ["lose fat", "lose weight", "improve endurance"]),
-            ("Cardio Blast", ["Cardio", "Plyometrics"], ["lose fat", "lose weight"]),
-            ("Metabolic Circuit", ["Full Body", "Core"], ["lose fat", "lose weight"]),
-            
-            // General fitness
-            ("Full Body", ["Chest", "Back", "Legs", "Shoulders"], ["general fitness", "stay active"]),
-            ("Core & Functional", ["Core", "Abs", "Obliques"], ["general fitness", "improve flexibility"]),
-            
-            // Flexibility
-            ("Flexibility & Mobility", ["Stretch"], ["improve flexibility", "general fitness"]),
-            
-            // Universal (good for anyone)
-            ("Upper Body", ["Chest", "Back", "Shoulders"], ["build muscle", "get stronger", "general fitness"]),
-            ("Chest & Back Superset", ["Chest", "Back"], ["build muscle", "lose fat"])
+        let workoutSplits: [(name: String, muscles: [String], forGoals: [String], family: WorkoutSuggestionEngine.SplitFamily)] = [
+            ("Push Day", ["Chest", "Shoulders", "Triceps"], ["build muscle", "get stronger"], .push),
+            ("Pull Day", ["Back", "Biceps"], ["build muscle", "get stronger"], .pull),
+            ("Leg Day", ["Quads", "Hamstrings", "Glutes", "Calves"], ["build muscle", "get stronger"], .legs),
+            ("Chest & Triceps", ["Chest", "Triceps"], ["build muscle"], .push),
+            ("Back & Biceps", ["Back", "Biceps"], ["build muscle"], .pull),
+            ("Shoulders & Arms", ["Shoulders", "Biceps", "Triceps"], ["build muscle"], .upperBody),
+            ("Upper Body Strength", ["Chest", "Back", "Shoulders"], ["get stronger"], .upperBody),
+            ("Lower Body Strength", ["Quads", "Hamstrings", "Glutes"], ["get stronger"], .legs),
+            ("HIIT Full Body", ["Full Body", "Cardio"], ["lose fat", "lose weight", "improve endurance"], .fullBody),
+            ("Cardio Blast", ["Cardio", "Plyometrics"], ["lose fat", "lose weight"], .coreCardio),
+            ("Metabolic Circuit", ["Full Body", "Core"], ["lose fat", "lose weight"], .fullBody),
+            ("Full Body", ["Chest", "Back", "Legs", "Shoulders"], ["general fitness", "stay active"], .fullBody),
+            ("Core & Functional", ["Core", "Abs", "Obliques"], ["general fitness", "improve flexibility"], .coreCardio),
+            ("Flexibility & Mobility", ["Stretch"], ["improve flexibility", "general fitness"], .coreCardio),
+            ("Upper Body", ["Chest", "Back", "Shoulders"], ["build muscle", "get stronger", "general fitness"], .upperBody),
+            ("Chest & Back Superset", ["Chest", "Back"], ["build muscle", "lose fat"], .upperBody)
         ]
         
-        // Filter splits based on user goal
+        // Filter by user goal
         var relevantSplits = workoutSplits.filter { split in
             split.forGoals.contains { userGoal.contains($0) }
         }
+        if relevantSplits.isEmpty { relevantSplits = workoutSplits }
         
-        // If no matches, use all splits
-        if relevantSplits.isEmpty {
-            relevantSplits = workoutSplits
+        // Recovery + anti-repetition: exclude the last Surprise Me family and fatigued muscles
+        let engine = WorkoutSuggestionEngine.shared
+        let excludedFamily = engine.surpriseMeExclusion()
+        let recoveredMuscles = Set(engine.recoveredMuscles().map { $0.rawValue.capitalized })
+        
+        let smartSplits = relevantSplits.filter { split in
+            if let excluded = excludedFamily, split.family == excluded { return false }
+            let splitMuscles = split.muscles.map { $0.lowercased() }
+            let hasFatigued = splitMuscles.contains { muscle in
+                let canonical = muscle.lowercased()
+                if ["full body", "cardio", "plyometrics", "stretch"].contains(canonical) { return false }
+                return !recoveredMuscles.contains { $0.lowercased() == canonical }
+            }
+            return !hasFatigued
         }
         
-        // Weighted selection: prefer splits that match the user's goal more closely
-        // and avoid recently used splits for variety
-        let weightedSplits = relevantSplits.map { split -> (split: (name: String, muscles: [String], forGoals: [String]), weight: Int) in
+        let candidateSplits = smartSplits.isEmpty ? relevantSplits : smartSplits
+        
+        let weightedSplits = candidateSplits.map { split -> (split: (name: String, muscles: [String], forGoals: [String], family: WorkoutSuggestionEngine.SplitFamily), weight: Int) in
             var weight = 1
             let goalMatchCount = split.forGoals.filter { userGoal.contains($0) }.count
             weight += goalMatchCount * 2
             if split.muscles.count >= 3 { weight += 1 }
+            
+            let splitMuscleSet = Set(split.muscles.map { $0.lowercased() })
+            let recoveredOverlap = splitMuscleSet.intersection(recoveredMuscles.map { $0.lowercased() }).count
+            weight += recoveredOverlap
+            
             return (split, weight)
         }
         let totalWeight = weightedSplits.reduce(0) { $0 + $1.weight }
@@ -585,8 +589,10 @@ class WorkoutGeneratorService: ObservableObject {
             }
         }
         
+        engine.recordSurpriseSplit(selectedSplit.family)
+        
         #if DEBUG
-        AppLogger.debug("Surprise workout (Goal-Optimized): goal=\(userGoal), level=\(userLevel), split=\(selectedSplit.name), muscles=\(selectedSplit.muscles), equipment=\(userEquipment)", category: .workout)
+        AppLogger.debug("Surprise workout (Smart): goal=\(userGoal), level=\(userLevel), split=\(selectedSplit.name), muscles=\(selectedSplit.muscles), excluded=\(excludedFamily?.rawValue ?? "none"), equipment=\(userEquipment)", category: .workout)
         #endif
         
         // ⚡️ PERF: Snapshot then generate on background (Agent Rule 9)
@@ -610,7 +616,6 @@ class WorkoutGeneratorService: ObservableObject {
             return coreDataExercises
         }
         
-        // Fallback to standard generation
         return try await generateWorkout(
             primaryMuscles: selectedSplit.muscles,
             secondaryMuscles: [],

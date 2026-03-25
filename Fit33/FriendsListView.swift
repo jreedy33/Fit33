@@ -18,7 +18,7 @@ struct FriendsListView: View {
     @State private var selectedTab = 0 // 0: Friends, 1: Requests, 2: Search
     @State private var searchText = ""
     @State private var isSearching = false
-    @State private var showingFriendProfile: Friend?
+    @State private var showingFriendProfile: ProfileUser?
     @State private var showingReceivedWorkouts = false
     @State private var hasLoadedInitialData = false // Prevent navigation reset from data reloading
     @State private var isRefreshingRequests = false // For pull-to-refresh on requests tab
@@ -83,9 +83,9 @@ struct FriendsListView: View {
                 }
             }
         }
-        .sheet(item: $showingFriendProfile) { friend in
+        .sheet(item: $showingFriendProfile) { profileUser in
             NavigationStack {
-                FriendProfileView(friend: friend)
+                FriendProfileView(user: profileUser)
             }
         }
         .sheet(isPresented: $showingReceivedWorkouts) {
@@ -269,7 +269,7 @@ struct FriendsListView: View {
                         // Original alphabetical view
                         ForEach(friendService.friends) { friend in
                             FriendCard(friend: friend) {
-                                showingFriendProfile = friend
+                                showingFriendProfile = ProfileUser(friend: friend)
                             }
                         }
                     }
@@ -344,9 +344,8 @@ struct FriendsListView: View {
                         ContactFriendChip(
                             friend: contactFriend,
                             onTap: {
-                                // Find the matching Friend object to show profile
                                 if let friend = friendService.friends.first(where: { $0.friendId == contactFriend.friendId }) {
-                                    showingFriendProfile = friend
+                                    showingFriendProfile = ProfileUser(friend: friend)
                                 }
                             }
                         )
@@ -394,7 +393,7 @@ struct FriendsListView: View {
                         rankedFriend: rankedFriend,
                         isFromContacts: rankingService.isFromContacts(friendId: friend.friendId)
                     ) {
-                        showingFriendProfile = friend
+                        showingFriendProfile = ProfileUser(friend: friend)
                     }
                 }
             }
@@ -425,7 +424,7 @@ struct FriendsListView: View {
                                     friend: friend,
                                     rankedFriend: rankedFriend
                                 ) {
-                                    showingFriendProfile = friend
+                                    showingFriendProfile = ProfileUser(friend: friend)
                                 }
                             }
                         }
@@ -453,7 +452,7 @@ struct FriendsListView: View {
                                     rank: index + 1
                                 )
                             ) {
-                                showingFriendProfile = friend
+                                showingFriendProfile = ProfileUser(friend: friend)
                             }
                         }
                     }
@@ -707,6 +706,9 @@ struct FriendsListView: View {
                             Section {
                                 ForEach(filteredContacts) { contact in
                                     SuggestedFriendCard(friend: contact)
+                                        .onTapGesture {
+                                            showingFriendProfile = ProfileUser(suggested: contact)
+                                        }
                                 }
                             } header: {
                                 Text("From Your Contacts")
@@ -732,6 +734,9 @@ struct FriendsListView: View {
                                             selectedTab = 1
                                         }
                                     })
+                                    .onTapGesture {
+                                        showingFriendProfile = ProfileUser(searchResult: user)
+                                    }
                                 }
                             } header: {
                                 Text("Username Match")
@@ -963,13 +968,15 @@ struct FriendsListView: View {
                             }
                         },
                         onActionCompleted: {
-                            // Refresh suggestions and sent requests after sending
                             Task {
                                 await contactsService.refreshSuggestions()
                                 await friendService.fetchSentRequests()
                             }
                         }
                     )
+                    .onTapGesture {
+                        showingFriendProfile = ProfileUser(suggested: friend)
+                    }
                 }
             }
         }

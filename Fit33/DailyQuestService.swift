@@ -349,6 +349,7 @@ class DailyQuestService: ObservableObject {
         let hasFriends: Bool
         let hasChallenge: Bool
         let stepGoal: Int
+        let activeStepChallengeTarget: Int
         let fitnessGoal: String
         let workoutStreak: Int
         let totalWorkouts: Int
@@ -370,6 +371,17 @@ class DailyQuestService: ObservableObject {
         let stepGoal = HealthKitManager.shared.stepGoal
         let fitnessGoal = UserManager.shared.currentUser?.fitnessGoal ?? "general"
         
+        let stepTypes: Set<String> = ["steps", "walk"]
+        let oneOnOneStepTarget = ChallengeService.shared.activeChallenges
+            .filter { stepTypes.contains($0.challengeType) }
+            .compactMap(\.dailyTarget)
+            .max() ?? 0
+        let groupStepTarget = ChallengeService.shared.activeGroupChallenges
+            .filter { stepTypes.contains($0.challengeType) }
+            .compactMap(\.dailyTarget)
+            .max() ?? 0
+        let activeStepChallengeTarget = max(oneOnOneStepTarget, groupStepTarget)
+        
         let workoutStreak = Int(UserManager.shared.currentUser?.currentStreak ?? 0)
         let totalWorkouts = Int(UserManager.shared.currentUser?.totalWorkouts ?? 0)
         let preferredTime = UserBehaviorLearningEngine.shared.userPreferences?.preferredTimeOfDay ?? "any"
@@ -383,6 +395,7 @@ class DailyQuestService: ObservableObject {
             hasFriends: hasFriends,
             hasChallenge: hasChallenge,
             stepGoal: stepGoal,
+            activeStepChallengeTarget: activeStepChallengeTarget,
             fitnessGoal: fitnessGoal,
             workoutStreak: workoutStreak,
             totalWorkouts: totalWorkouts,
@@ -488,11 +501,20 @@ class DailyQuestService: ObservableObject {
         )
     }
     
+    /// Fallback goals that are always returned when the server returns empty or errors.
+    /// Ensures the widget never shows a generic placeholder.
+    private func defaultGoals() -> [DailyQuest] {
+        [beginnerSocialQuest(), beginnerWorkoutQuest(), beginnerProgramQuest()]
+    }
+    
     // MARK: - Fetch Daily Quests
     
     func fetchDailyQuests(force: Bool = false) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else {
             AppLogger.warning("📋 [QUESTS] ⚠️ No currentUser — skipping fetch", category: .general)
+            if quests.isEmpty {
+                self.quests = defaultGoals()
+            }
             return
         }
         
@@ -536,6 +558,7 @@ class DailyQuestService: ObservableObject {
                 let p_has_weight_log: Bool
                 let p_hydration_active: Bool
                 let p_league_rank: Int
+                let p_active_step_challenge_target: Int
             }
             
             let params = GetDailyQuestsParams(
@@ -553,7 +576,8 @@ class DailyQuestService: ObservableObject {
                 p_avg_duration: ctx.avgDuration,
                 p_has_weight_log: ctx.hasWeightLog,
                 p_hydration_active: ctx.hydrationActive,
-                p_league_rank: ctx.leagueRank
+                p_league_rank: ctx.leagueRank,
+                p_active_step_challenge_target: ctx.activeStepChallengeTarget
             )
             
             let response: DailyQuestsResponse = try await SupabaseManager.shared.supabaseClient
@@ -561,7 +585,8 @@ class DailyQuestService: ObservableObject {
                 .execute()
                 .value
             
-            self.quests = response.quests ?? []
+            let serverQuests = response.quests ?? []
+            self.quests = serverQuests.isEmpty ? defaultGoals() : serverQuests
             self.allComplete = response.allComplete
             self.bonusXp = response.bonusXp
             self.bonusLeaguePoints = response.bonusLeaguePoints
@@ -587,8 +612,25 @@ class DailyQuestService: ObservableObject {
             
         } catch {
             self.error = error.localizedDescription
-            AppLogger.error("❌ [QUESTS] Failed to fetch: \(error)", category: .general)
-            AppLogger.error("❌ [QUESTS] Error details: \(error.localizedDescription)", category: .general)
+            
+            // Extract Postgres error code for diagnostics (e.g. "42703" = undefined column)
+            let errorString = String(describing: error)
+            let isStreakFieldError = errorString.contains("current_streak") || errorString.contains("v_streak")
+            let isAuthError = errorString.localizedCaseInsensitiveContains("not authenticated") || errorString.localizedCaseInsensitiveContains("JWT")
+            
+            if isStreakFieldError {
+                AppLogger.warning("[QUESTS] Known v_streak field error — SQL migration may not be deployed yet. Error: \(error.localizedDescription)", category: .general)
+            } else if isAuthError {
+                AppLogger.warning("[QUESTS] Auth expired during quest fetch — will retry on next session", category: .general)
+            } else {
+                AppLogger.error("[QUESTS] Failed to fetch: \(error)", category: .general)
+                AppLogger.error("[QUESTS] Error details (raw): \(errorString)", category: .general)
+            }
+            
+            if quests.isEmpty {
+                AppLogger.info("[QUESTS] Fetch failed with empty goals — activating defaults (\(isStreakFieldError ? "streak_field" : isAuthError ? "auth" : "unknown") cause)", category: .general)
+                self.quests = defaultGoals()
+            }
         }
         
         isLoading = false
@@ -1007,6 +1049,7 @@ class DailyQuestService: ObservableObject {
     private func loadCachedQuests() {
         guard let data = UserDefaults.standard.data(forKey: cacheKey),
               let cached = try? JSONDecoder().decode(DailyQuestsResponse.self, from: data) else {
+            self.quests = defaultGoals()
             return
         }
         
@@ -1014,7 +1057,8 @@ class DailyQuestService: ObservableObject {
         let today = Calendar.current.startOfDay(for: Date())
         if let cacheDate = UserDefaults.standard.object(forKey: cacheDateKey) as? Date,
            Calendar.current.isDate(cacheDate, inSameDayAs: today) {
-            self.quests = cached.quests ?? []
+            let cachedQuests = cached.quests ?? []
+            self.quests = cachedQuests.isEmpty ? defaultGoals() : cachedQuests
             self.allComplete = cached.allComplete
             self.bonusXp = cached.bonusXp
             self.bonusLeaguePoints = cached.bonusLeaguePoints
@@ -1022,6 +1066,8 @@ class DailyQuestService: ObservableObject {
             self.longestStreak = cached.longestStreak
             self.totalCompleted = cached.totalCompleted
             self.difficultyProfile = cached.difficultyProfile
+        } else {
+            self.quests = defaultGoals()
         }
     }
 }

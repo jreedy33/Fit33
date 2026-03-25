@@ -15,6 +15,9 @@ struct ChallengeFlowStartView: View {
     @ObservedObject private var friendService = FriendService.shared
     @ObservedObject private var contactsService = ContactsService.shared
     
+    /// When set, the friend is auto-selected and the flow starts at mode selection
+    var preSelectedFriend: Friend? = nil
+    
     enum FlowStep {
         case contactSync       // Shown first when user has no friends
         case friendSelection
@@ -221,12 +224,19 @@ struct ChallengeFlowStartView: View {
         }
     }
     
+    private var isFirstStep: Bool {
+        if preSelectedFriend != nil {
+            return currentStep == .modeSelection
+        }
+        return currentStep == .friendSelection || currentStep == .contactSync
+    }
+    
     private var toolbarIcon: String {
-        (currentStep == .friendSelection || currentStep == .contactSync) ? "xmark" : "chevron.left"
+        isFirstStep ? "xmark" : "chevron.left"
     }
     
     private func handleToolbarTap() {
-        if currentStep == .friendSelection || currentStep == .contactSync {
+        if isFirstStep {
             dismiss()
         } else {
             goBack()
@@ -274,9 +284,13 @@ struct ChallengeFlowStartView: View {
             AppLogger.debug("   └─ hasCheckedContacts: \(contactsService.hasCheckedContacts)", category: .social)
             AppLogger.debug("   └─ canAccessContacts: \(contactsService.canAccessContacts)", category: .social)
             
-            // If user has friends OR has suggested friends from contacts → go to friend selection
-            // Only show contact sync if no friends AND no suggested friends AND hasn't synced
-            if friendService.friends.isEmpty && contactsService.suggestedFriends.isEmpty && !contactsService.canAccessContacts {
+            if let friend = preSelectedFriend {
+                // Auto-select the friend and skip straight to mode selection
+                selectedFriends = [friend]
+                selectedFriend = friend
+                currentStep = .modeSelection
+                AppLogger.debug("   └─ Pre-selected friend: \(friend.displayName), skipping to modeSelection", category: .social)
+            } else if friendService.friends.isEmpty && contactsService.suggestedFriends.isEmpty && !contactsService.canAccessContacts {
                 currentStep = .contactSync
             } else {
                 currentStep = .friendSelection
@@ -313,21 +327,25 @@ struct ChallengeFlowStartView: View {
     // MARK: - Progress Header
     
     private var progressHeader: some View {
-        let hasContactSyncStep = currentStep == .contactSync || friendService.friends.isEmpty
+        let hasContactSyncStep = preSelectedFriend == nil && (currentStep == .contactSync || friendService.friends.isEmpty)
+        let hasFriendSelectionStep = preSelectedFriend == nil
         let stepNumber: Int = {
             switch currentStep {
             case .contactSync: return 1
             case .friendSelection: return hasContactSyncStep ? 2 : 1
-            case .groupOrSeparate: return hasContactSyncStep ? 3 : 2
-            case .modeSelection: return hasContactSyncStep ? 4 : 3
-            case .activityType: return hasContactSyncStep ? 5 : 4
-            case .challengeOptions: return hasContactSyncStep ? 6 : 5
-            case .duration: return hasContactSyncStep ? 7 : 6
-            case .review: return hasContactSyncStep ? 8 : 7
+            case .groupOrSeparate: return hasContactSyncStep ? 3 : (hasFriendSelectionStep ? 2 : 1)
+            case .modeSelection: return hasContactSyncStep ? 4 : (hasFriendSelectionStep ? 3 : 1)
+            case .activityType: return hasContactSyncStep ? 5 : (hasFriendSelectionStep ? 4 : 2)
+            case .challengeOptions: return hasContactSyncStep ? 6 : (hasFriendSelectionStep ? 5 : 3)
+            case .duration: return hasContactSyncStep ? 7 : (hasFriendSelectionStep ? 6 : 4)
+            case .review: return hasContactSyncStep ? 8 : (hasFriendSelectionStep ? 7 : 5)
             }
         }()
         
-        let baseSteps = selectedFriends.count > 1 ? 7 : 6
+        let baseSteps: Int = {
+            if !hasFriendSelectionStep { return 5 }
+            return selectedFriends.count > 1 ? 7 : 6
+        }()
         let totalSteps = hasContactSyncStep ? baseSteps + 1 : baseSteps
         let progress = Double(stepNumber) / Double(totalSteps)
         
@@ -389,7 +407,7 @@ struct ChallengeFlowStartView: View {
         
         return HStack(spacing: 12) {
             // Back button (grey circular) — matches auto-gen & onboarding
-            if currentStep != .friendSelection && currentStep != .contactSync {
+            if !isFirstStep {
                 Button(action: {
                     goBack()
                 }) {
@@ -508,7 +526,10 @@ struct ChallengeFlowStartView: View {
             case .groupOrSeparate:
                 currentStep = .friendSelection
             case .modeSelection:
-                if selectedFriends.count > 1 {
+                if preSelectedFriend != nil {
+                    dismiss()
+                    return
+                } else if selectedFriends.count > 1 {
                     currentStep = .groupOrSeparate
                 } else {
                     currentStep = .friendSelection

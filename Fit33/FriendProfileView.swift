@@ -1,17 +1,169 @@
 import SwiftUI
 import CoreData
 
+// MARK: - ProfileUser (universal model for any user profile)
+
+struct ProfileUser: Identifiable {
+    let userId: UUID
+    let name: String?
+    let username: String?
+    let email: String?
+    let fitnessGoal: String?
+    let experienceLevel: String?
+    let profilePhotoUrl: String?
+    let isFriend: Bool
+    let hasOutgoingRequest: Bool
+    let hasIncomingRequest: Bool
+    let friendshipId: UUID?
+    let friendsSince: Date?
+    let totalWorkoutsShared: Int
+
+    var id: UUID { userId }
+
+    var displayName: String {
+        if let username = username, !username.isEmpty {
+            return "@\(username)"
+        }
+        return name ?? email ?? "Unknown"
+    }
+
+    var initials: String {
+        if let name = name, !name.isEmpty {
+            let components = name.split(separator: " ")
+            if components.count >= 2 {
+                return "\(components[0].prefix(1))\(components[1].prefix(1))".uppercased()
+            }
+            return String(name.prefix(2)).uppercased()
+        }
+        if let username = username, !username.isEmpty {
+            return String(username.prefix(2)).uppercased()
+        }
+        return "?"
+    }
+
+    init(friend: Friend) {
+        self.userId = friend.friendId
+        self.name = friend.friendName
+        self.username = friend.friendUsername
+        self.email = friend.friendEmail
+        self.fitnessGoal = friend.fitnessGoal
+        self.experienceLevel = friend.experienceLevel
+        self.profilePhotoUrl = friend.profilePhotoUrl
+        self.isFriend = true
+        self.hasOutgoingRequest = false
+        self.hasIncomingRequest = false
+        self.friendshipId = friend.friendshipId
+        self.friendsSince = friend.friendsSince
+        self.totalWorkoutsShared = friend.totalWorkoutsShared
+    }
+
+    init(searchResult: UserSearchResult) {
+        self.userId = searchResult.userId
+        self.name = searchResult.name
+        self.username = searchResult.username
+        self.email = searchResult.email
+        self.fitnessGoal = searchResult.fitnessGoal
+        self.experienceLevel = searchResult.experienceLevel
+        self.profilePhotoUrl = searchResult.profilePhotoUrl
+        self.isFriend = searchResult.isFriend
+        self.hasOutgoingRequest = searchResult.hasOutgoingRequest ?? searchResult.hasPendingRequest
+        self.hasIncomingRequest = searchResult.hasIncomingRequest ?? false
+        self.friendshipId = nil
+        self.friendsSince = nil
+        self.totalWorkoutsShared = 0
+    }
+
+    init(suggested: SuggestedFriend) {
+        self.userId = suggested.userId
+        self.name = suggested.name
+        self.username = suggested.username
+        self.email = suggested.email
+        self.fitnessGoal = suggested.fitnessGoal
+        self.experienceLevel = nil
+        self.profilePhotoUrl = suggested.profilePhotoUrl
+        self.isFriend = suggested.isFriend
+        self.hasOutgoingRequest = suggested.hasOutgoingRequest
+        self.hasIncomingRequest = suggested.hasIncomingRequest
+        self.friendshipId = nil
+        self.friendsSince = nil
+        self.totalWorkoutsShared = 0
+    }
+
+    init(leagueEntry: LeagueEntry) {
+        self.userId = leagueEntry.userId
+        self.name = leagueEntry.name
+        self.username = leagueEntry.username
+        self.email = nil
+        self.fitnessGoal = nil
+        self.experienceLevel = nil
+        self.profilePhotoUrl = leagueEntry.profilePhotoUrl
+        self.isFriend = leagueEntry.isFriend ?? false
+        self.hasOutgoingRequest = false
+        self.hasIncomingRequest = false
+        self.friendshipId = nil
+        self.friendsSince = nil
+        self.totalWorkoutsShared = 0
+    }
+
+    init(communityEntry: CommunityLeaderboardEntry) {
+        self.userId = communityEntry.userId
+        self.name = communityEntry.name
+        self.username = communityEntry.username
+        self.email = nil
+        self.fitnessGoal = nil
+        self.experienceLevel = nil
+        self.profilePhotoUrl = communityEntry.profilePhotoUrl
+        self.isFriend = false
+        self.hasOutgoingRequest = false
+        self.hasIncomingRequest = false
+        self.friendshipId = nil
+        self.friendsSince = nil
+        self.totalWorkoutsShared = 0
+    }
+
+    @MainActor
+    init(activity: FriendActivity) {
+        let matchedFriend = FriendService.shared.friends.first(where: { $0.friendId == activity.userId })
+        self.userId = activity.userId
+        self.name = activity.userName
+        self.username = activity.userUsername
+        self.email = nil
+        self.fitnessGoal = matchedFriend?.fitnessGoal
+        self.experienceLevel = matchedFriend?.experienceLevel
+        self.profilePhotoUrl = activity.userProfilePhotoUrl
+        self.isFriend = matchedFriend != nil
+        self.hasOutgoingRequest = false
+        self.hasIncomingRequest = false
+        self.friendshipId = matchedFriend?.friendshipId
+        self.friendsSince = matchedFriend?.friendsSince
+        self.totalWorkoutsShared = matchedFriend?.totalWorkoutsShared ?? 0
+    }
+
+    /// Look up the full Friend model from FriendService (needed for actions like create workout/challenge)
+    @MainActor
+    var asFriend: Friend? {
+        FriendService.shared.friends.first(where: { $0.friendId == userId })
+    }
+}
+
 // MARK: - Friend Profile View
-/// Shows a friend's profile with option to create and send workouts
+/// Shows a friend's or non-friend's profile with contextual actions
 struct FriendProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var userManager: UserManager
     
-    // NOTE: Removed @ObservedObject for FriendService and ChallengeService
-    // to prevent sheet dismissal when these services update in the background.
-    // Instead, we load data once into local state.
-    
-    let friend: Friend
+    let user: ProfileUser
+
+    /// Convenience init that wraps a Friend into a ProfileUser
+    init(friend: Friend) {
+        self.user = ProfileUser(friend: friend)
+    }
+
+    /// Primary init accepting any ProfileUser
+    init(user: ProfileUser) {
+        self.user = user
+    }
     
     @State private var showingCreateWorkout = false
     @State private var showingCreateChallenge = false
@@ -20,15 +172,13 @@ struct FriendProfileView: View {
     @State private var showingBlockConfirmation = false
     @State private var isUnfriending = false
     @State private var isBlocking = false
+    @State private var isSendingRequest = false
+    @State private var requestSent = false
     @State private var friendChallenges: [FriendChallenge] = []
     @State private var selectedChallenge: ActiveChallenge?
     @State private var showingChallengeDetail = false
     @State private var activeChallengesWithFriend: [ActiveChallenge] = []
     @State private var sentWorkoutsToFriend: [SentWorkout] = []
-    
-    
-    
-    // activeChallengesWithFriend is now a @State variable loaded on appear
     
     var body: some View {
         NavigationStack {
@@ -39,34 +189,31 @@ struct FriendProfileView: View {
                 
                 ScrollView {
                     VStack(spacing: 24) {
-                        // Profile Header
                         profileHeader
-                        
-                        // Stats
-                        statsSection
-                        
-                        // Active Challenge Widget (if any)
-                        if let activeChallenge = activeChallengesWithFriend.first {
-                            activeChallengeSection(challenge: activeChallenge)
-                        }
-                        
-                        // Create Workout Button
-                        createWorkoutButton
-                        
-                        // Create Challenge Button
-                        createChallengeButton
-                        
-                        // Past Challenges Section
-                        if !friendChallenges.isEmpty {
-                            challengeHistorySection
-                        }
-                        
-                        // Shared Workouts History
-                        sharedHistorySection
-                        
-                        // Unfriend & Block Buttons
-                        VStack(spacing: Spacing.xs) {
-                            unfriendButton
+
+                        if user.isFriend {
+                            statsSection
+
+                            if let activeChallenge = activeChallengesWithFriend.first {
+                                activeChallengeSection(challenge: activeChallenge)
+                            }
+
+                            createWorkoutButton
+                            createChallengeButton
+
+                            if !friendChallenges.isEmpty {
+                                challengeHistorySection
+                            }
+
+                            sharedHistorySection
+
+                            VStack(spacing: Spacing.xs) {
+                                unfriendButton
+                                blockButton
+                            }
+                        } else {
+                            nonFriendStatsSection
+                            addFriendButton
                             blockButton
                         }
                     }
@@ -83,15 +230,19 @@ struct FriendProfileView: View {
                 }
             }
             .sheet(isPresented: $showingCreateWorkout) {
-                CreateWorkoutForFriendView(friend: friend)
+                if let friend = user.asFriend {
+                    CreateWorkoutForFriendView(friend: friend)
+                }
             }
             .sheet(isPresented: $showingCreateChallenge, onDismiss: {
                 AppLogger.debug("🔔 [CHALLENGE SHEET] onDismiss callback triggered", category: .social)
             }) {
-                ChallengeSetupView(friend: friend)
-                    .onAppear {
-                        AppLogger.debug("🔔 [CHALLENGE SHEET] Sheet content appeared", category: .social)
-                    }
+                if let friend = user.asFriend {
+                    ChallengeSetupView(friend: friend)
+                        .onAppear {
+                            AppLogger.debug("🔔 [CHALLENGE SHEET] Sheet content appeared", category: .social)
+                        }
+                }
             }
             .onChange(of: showingCreateChallenge) { oldValue, newValue in
                 AppLogger.debug("🔔 [CHALLENGE SHEET] State changed: \(oldValue) → \(newValue)", category: .social)
@@ -100,10 +251,12 @@ struct FriendProfileView: View {
                 }
             }
             .fullScreenCover(isPresented: $showingChallengeFlow) {
-                NavigationStack {
-                    ChallengeCreationFlow(friend: friend)
+                if let friend = user.asFriend {
+                    NavigationStack {
+                        ChallengeFlowStartView(preSelectedFriend: friend)
+                            .environmentObject(userManager)
+                    }
                 }
-                // NavigationStack doesn't need .navigationViewStyle
             }
             .sheet(isPresented: $showingChallengeDetail) {
                 if let challenge = selectedChallenge {
@@ -119,7 +272,7 @@ struct FriendProfileView: View {
                     }
                 }
             }
-            .alert("Unfriend \(friend.displayName)?", isPresented: $showingUnfriendConfirmation) {
+            .alert("Unfriend \(user.displayName)?", isPresented: $showingUnfriendConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Unfriend", role: .destructive) {
                     unfriend()
@@ -127,7 +280,7 @@ struct FriendProfileView: View {
             } message: {
                 Text("You will no longer be able to share workouts with each other.")
             }
-            .alert("Block \(friend.displayName)?", isPresented: $showingBlockConfirmation) {
+            .alert("Block \(user.displayName)?", isPresented: $showingBlockConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Block", role: .destructive) {
                     blockUser()
@@ -136,8 +289,10 @@ struct FriendProfileView: View {
                 Text("They won't be able to find you, send you requests, or see your activity. You will also be unfriended.")
             }
             .onAppear {
-                AppLogger.debug("📱 [FRIEND PROFILE] View appeared for \(friend.friendName ?? "friend")", category: .social)
-                loadData()
+                AppLogger.debug("📱 [PROFILE] View appeared for \(user.name ?? user.username ?? "user")", category: .social)
+                if user.isFriend {
+                    loadData()
+                }
             }
         }
     }
@@ -145,27 +300,18 @@ struct FriendProfileView: View {
     // MARK: - Load Data
     
     private func loadData() {
-        // Load data into local state to avoid re-renders from service updates
-        // which can cause sheet dismissal
+        activeChallengesWithFriend = ChallengeService.shared.activeChallenges.filter { $0.opponentId == user.userId }
+        sentWorkoutsToFriend = FriendService.shared.sentWorkouts.filter { $0.toUserId == user.userId }
         
-        // Load active challenges with this friend
-        activeChallengesWithFriend = ChallengeService.shared.activeChallenges.filter { $0.opponentId == friend.friendId }
-        
-        // Load sent workouts to this friend
-        sentWorkoutsToFriend = FriendService.shared.sentWorkouts.filter { $0.toUserId == friend.friendId }
-        
-        // Load challenge history and log profile view interaction
         Task {
-            friendChallenges = await ChallengeService.shared.getChallengesWithFriend(friendId: friend.friendId)
-            
-            // Log profile view interaction for friend ranking
+            friendChallenges = await ChallengeService.shared.getChallengesWithFriend(friendId: user.userId)
             await FriendRankingService.shared.logInteraction(
-                withFriendId: friend.friendId,
+                withFriendId: user.userId,
                 type: .profileViewed
             )
         }
         
-        AppLogger.debug("📱 [FRIEND PROFILE] Loaded \(activeChallengesWithFriend.count) active challenges, \(sentWorkoutsToFriend.count) sent workouts", category: .social)
+        AppLogger.debug("📱 [PROFILE] Loaded \(activeChallengesWithFriend.count) active challenges, \(sentWorkoutsToFriend.count) sent workouts", category: .social)
     }
     
     // MARK: - Active Challenge Section
@@ -192,29 +338,32 @@ struct FriendProfileView: View {
     
     private var profileHeader: some View {
         VStack(spacing: 16) {
-            // Large Avatar with cached photo
             LargeCachedFriendPhoto(
-                friendId: friend.friendId.uuidString,
-                photoUrl: friend.profilePhotoUrl,
-                name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                friendId: user.userId.uuidString,
+                photoUrl: user.profilePhotoUrl,
+                name: user.name ?? user.username ?? "User",
                 size: 100,
                 gradientColors: [.blue, .purple.opacity(0.8)]
             )
             
-            // Name
-            Text(friend.displayName)
+            Text(user.displayName)
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
             
-            // Friends since
-            HStack(spacing: 6) {
-                Image(systemName: "person.2.fill")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Text("Friends since \(formatDate(friend.friendsSince))")
-                    .font(.caption)
+            if user.isFriend, let since = user.friendsSince {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.2.fill")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text("Friends since \(formatDate(since))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } else if let username = user.username, !username.isEmpty, user.displayName != "@\(username)" {
+                Text("@\(username)")
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
             }
         }
@@ -224,29 +373,48 @@ struct FriendProfileView: View {
     
     private var statsSection: some View {
         HStack(spacing: 12) {
-            // Fitness Goal
             statCard(
                 icon: "flame.fill",
                 gradientColors: [.orange, .red],
-                value: friend.fitnessGoal ?? "Not set",
+                value: user.fitnessGoal ?? "Not set",
                 label: "Goal"
             )
             
-            // Experience Level
             statCard(
                 icon: "chart.bar.fill",
                 gradientColors: [.green, .mint],
-                value: friend.experienceLevel ?? "Not set",
+                value: user.experienceLevel ?? "Not set",
                 label: "Level"
             )
             
-            // Workouts Shared
             statCard(
                 icon: "arrow.left.arrow.right",
                 gradientColors: [.blue, .cyan],
-                value: "\(friend.totalWorkoutsShared)",
+                value: "\(user.totalWorkoutsShared)",
                 label: "Shared"
             )
+        }
+    }
+    
+    private var nonFriendStatsSection: some View {
+        HStack(spacing: 12) {
+            if let goal = user.fitnessGoal, !goal.isEmpty {
+                statCard(
+                    icon: "flame.fill",
+                    gradientColors: [.orange, .red],
+                    value: goal,
+                    label: "Goal"
+                )
+            }
+            
+            if let level = user.experienceLevel, !level.isEmpty {
+                statCard(
+                    icon: "chart.bar.fill",
+                    gradientColors: [.green, .mint],
+                    value: level,
+                    label: "Level"
+                )
+            }
         }
     }
     
@@ -333,7 +501,7 @@ struct FriendProfileView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Create Workout for \(friend.friendName?.components(separatedBy: " ").first ?? "Friend")")
+                    Text("Create Workout for \(user.name?.components(separatedBy: " ").first ?? "Friend")")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
@@ -444,7 +612,7 @@ struct FriendProfileView: View {
             }
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("Create Challenge with \(friend.friendName?.components(separatedBy: " ").first ?? "Friend")")
+                Text("Create Challenge with \(user.name?.components(separatedBy: " ").first ?? "Friend")")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
@@ -779,6 +947,86 @@ struct FriendProfileView: View {
         .disabled(isBlocking)
     }
     
+    // MARK: - Add Friend Button (non-friend state)
+    
+    private var addFriendButton: some View {
+        Group {
+            if requestSent || user.hasOutgoingRequest {
+                HStack {
+                    Image(systemName: "clock.fill")
+                    Text("Request Sent")
+                }
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
+                        .fill(Color.gray.opacity(0.1))
+                )
+            } else if user.hasIncomingRequest {
+                Button {
+                    Task {
+                        if let request = FriendService.shared.pendingRequests.first(where: { $0.fromUserId == user.userId }) {
+                            _ = await FriendService.shared.acceptFriendRequest(requestId: request.requestId)
+                            dismiss()
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.badge.checkmark")
+                        Text("Accept Friend Request")
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.blue, .purple],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    )
+                }
+            } else {
+                Button(action: sendFriendRequest) {
+                    HStack(spacing: 8) {
+                        if isSendingRequest {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "person.badge.plus")
+                            Text("Add Friend")
+                        }
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.blue, .cyan],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                    )
+                }
+                .disabled(isSendingRequest)
+            }
+        }
+    }
+    
     // MARK: - Helpers
     
     private func formatDate(_ date: Date) -> String {
@@ -788,9 +1036,10 @@ struct FriendProfileView: View {
     }
     
     private func unfriend() {
+        guard let friendshipId = user.friendshipId else { return }
         isUnfriending = true
         Task {
-            let success = await FriendService.shared.removeFriend(friendshipId: friend.friendshipId)
+            let success = await FriendService.shared.removeFriend(friendshipId: friendshipId)
             if success {
                 dismiss()
             }
@@ -801,11 +1050,22 @@ struct FriendProfileView: View {
     private func blockUser() {
         isBlocking = true
         Task {
-            let success = await FriendService.shared.blockUser(userId: friend.friendId)
+            let success = await FriendService.shared.blockUser(userId: user.userId)
             if success {
                 dismiss()
             }
             isBlocking = false
+        }
+    }
+    
+    private func sendFriendRequest() {
+        isSendingRequest = true
+        Task {
+            let success = await FriendService.shared.sendFriendRequest(toUserId: user.userId)
+            if success {
+                requestSent = true
+            }
+            isSendingRequest = false
         }
     }
 }

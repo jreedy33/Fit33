@@ -17,6 +17,14 @@ final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
     func didReceive(_ payloads: [MXMetricPayload]) {
         for payload in payloads {
             let json = payload.jsonRepresentation()
+            
+            // isValidJSONObject guards against NSInvalidArgumentException (ObjC exception
+            // that bypasses Swift try/catch and causes SIGABRT)
+            guard JSONSerialization.isValidJSONObject(json) else {
+                AppLogger.warning("[METRICKIT] Payload failed isValidJSONObject check — skipping serialization (type: \(type(of: json)))", category: .performance)
+                continue
+            }
+            
             if let data = try? JSONSerialization.data(withJSONObject: json, options: []),
                let summary = String(data: data, encoding: .utf8) {
                 AppLogger.info("[METRICKIT] Daily metrics received (\(summary.count) bytes)", category: .performance)

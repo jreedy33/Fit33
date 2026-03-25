@@ -12,6 +12,13 @@ class PushNotificationService: ObservableObject {
     @Published var isRegistered = false
     private let logger = SessionLogManager.shared
     
+    private struct FlushResponse: Decodable {
+        let message: String?
+        let processed: Int?
+        let success: Int?
+        let failed: Int?
+    }
+    
     private init() {}
     
     // MARK: - Flush Push Notification Queue
@@ -32,13 +39,6 @@ class PushNotificationService: ObservableObject {
         AppLogger.debug("[PUSH] Flushing notification queue (trigger: \(source))", category: .network)
         
         do {
-            struct FlushResponse: Decodable {
-                let message: String?
-                let processed: Int?
-                let success: Int?
-                let failed: Int?
-            }
-            
             let response: FlushResponse = try await SupabaseManager.shared.supabaseClient
                 .functions
                 .invoke(
@@ -48,24 +48,48 @@ class PushNotificationService: ObservableObject {
                     )
                 )
             
-            let processed = response.processed ?? 0
-            let succeeded = response.success ?? 0
-            let failed = response.failed ?? 0
-            
-            logger.log(.info, category: .pushNotification, message: "Push queue flushed", metadata: [
-                "trigger": source,
-                "processed": "\(processed)",
-                "succeeded": "\(succeeded)",
-                "failed": "\(failed)"
-            ])
-            AppLogger.info("[PUSH] Queue flushed: \(processed) processed, \(succeeded) sent, \(failed) failed (trigger: \(source))", category: .network)
+            logFlushSuccess(response, source: source)
         } catch {
+            let is401 = error.localizedDescription.contains("401")
+                || error.localizedDescription.contains("non-2xx")
+            
+            if is401 {
+                AppLogger.warning("[PUSH] Auth expired, refreshing session and retrying (trigger: \(source))", category: .network)
+                do {
+                    try await SupabaseManager.shared.supabaseClient.auth.refreshSession()
+                    let retryResponse: FlushResponse = try await SupabaseManager.shared.supabaseClient
+                        .functions
+                        .invoke(
+                            "send-push-notification",
+                            options: FunctionInvokeOptions(body: ["batch": true])
+                        )
+                    logFlushSuccess(retryResponse, source: "\(source)_retry")
+                    return
+                } catch {
+                    AppLogger.error("[PUSH] Retry after session refresh also failed (trigger: \(source)): \(error.localizedDescription)", category: .network)
+                }
+            }
+            
             logger.log(.error, category: .pushNotification, message: "Push queue flush FAILED", metadata: [
                 "trigger": source,
                 "error": error.localizedDescription
             ])
             AppLogger.error("[PUSH] Queue flush failed (trigger: \(source)): \(error.localizedDescription)", category: .network)
         }
+    }
+    
+    private func logFlushSuccess(_ response: FlushResponse, source: String) {
+        let processed = response.processed ?? 0
+        let succeeded = response.success ?? 0
+        let failed = response.failed ?? 0
+        
+        logger.log(.info, category: .pushNotification, message: "Push queue flushed", metadata: [
+            "trigger": source,
+            "processed": "\(processed)",
+            "succeeded": "\(succeeded)",
+            "failed": "\(failed)"
+        ])
+        AppLogger.info("[PUSH] Queue flushed: \(processed) processed, \(succeeded) sent, \(failed) failed (trigger: \(source))", category: .network)
     }
     
     // MARK: - Register for Push Notifications

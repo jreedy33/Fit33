@@ -32,7 +32,7 @@ export function middleware(request: NextRequest) {
   response.headers.set('X-XSS-Protection', '1; mode=block')
   response.headers.set(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; frame-ancestors 'none'"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev; font-src 'self' data:; frame-ancestors 'none'"
   )
 
   return response

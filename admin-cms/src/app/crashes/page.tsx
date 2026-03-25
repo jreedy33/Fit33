@@ -1656,6 +1656,147 @@ Respond with structured analysis: version-by-version breakdown, regressions corr
         )}
       </div>
 
+      {/* Version crash chart */}
+      {groups.length > 1 && (
+        <div className="rounded-xl p-5" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Crashes by Version</h3>
+          {(() => {
+            const chartData = [...groups].reverse().map(g => ({
+              version: g.version,
+              total: g.crashes.length,
+              newIssues: g.newIssueCount,
+              recurring: g.crashes.length > 0 ? new Set(g.crashes.map(c => c.fingerprint)).size - g.newIssueCount : 0,
+            }))
+            const maxTotal = Math.max(...chartData.map(d => d.total), 1)
+            const chartHeight = 140
+
+            return (
+              <div>
+                {/* Chart area */}
+                <div style={{ position: 'relative', height: chartHeight, marginBottom: 4 }}>
+                  {/* Horizontal grid lines */}
+                  {[0, 0.25, 0.5, 0.75, 1].map(pct => (
+                    <div key={pct} style={{ position: 'absolute', left: 0, right: 0, bottom: `${pct * 100}%`, borderBottom: '1px solid var(--border)', opacity: 0.5 }}>
+                      <span className="text-xs" style={{ position: 'absolute', left: -4, transform: 'translateX(-100%) translateY(50%)', color: 'var(--text-muted)', fontSize: 10 }}>
+                        {Math.round(maxTotal * pct)}
+                      </span>
+                    </div>
+                  ))}
+
+                  {/* SVG lines */}
+                  <svg width="100%" height="100%" viewBox={`0 0 ${chartData.length * 100} ${chartHeight}`} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0 }}>
+                    {/* Total crashes line */}
+                    <polyline
+                      fill="none"
+                      stroke="#ef4444"
+                      strokeWidth="2.5"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      points={chartData.map((d, i) => {
+                        const x = (i / (chartData.length - 1)) * (chartData.length * 100 - 20) + 10
+                        const y = chartHeight - (d.total / maxTotal) * (chartHeight - 10) - 5
+                        return `${x},${y}`
+                      }).join(' ')}
+                    />
+                    {/* New issues line */}
+                    <polyline
+                      fill="none"
+                      stroke="#f97316"
+                      strokeWidth="2"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      strokeDasharray="6,3"
+                      points={chartData.map((d, i) => {
+                        const x = (i / (chartData.length - 1)) * (chartData.length * 100 - 20) + 10
+                        const y = chartHeight - (d.newIssues / maxTotal) * (chartHeight - 10) - 5
+                        return `${x},${y}`
+                      }).join(' ')}
+                    />
+                    {/* Recurring line */}
+                    <polyline
+                      fill="none"
+                      stroke="#6b7280"
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      strokeDasharray="3,3"
+                      points={chartData.map((d, i) => {
+                        const x = (i / (chartData.length - 1)) * (chartData.length * 100 - 20) + 10
+                        const y = chartHeight - (d.recurring / maxTotal) * (chartHeight - 10) - 5
+                        return `${x},${y}`
+                      }).join(' ')}
+                    />
+                    {/* Data points for total */}
+                    {chartData.map((d, i) => {
+                      const x = (i / (chartData.length - 1)) * (chartData.length * 100 - 20) + 10
+                      const y = chartHeight - (d.total / maxTotal) * (chartHeight - 10) - 5
+                      return <circle key={`t-${i}`} cx={x} cy={y} r="3.5" fill="#ef4444" />
+                    })}
+                    {/* Data points for new */}
+                    {chartData.map((d, i) => {
+                      const x = (i / (chartData.length - 1)) * (chartData.length * 100 - 20) + 10
+                      const y = chartHeight - (d.newIssues / maxTotal) * (chartHeight - 10) - 5
+                      return <circle key={`n-${i}`} cx={x} cy={y} r="3" fill="#f97316" />
+                    })}
+                  </svg>
+
+                  {/* Hover labels */}
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
+                    {chartData.map((d, i) => (
+                      <div
+                        key={i}
+                        className="flex-1 relative group"
+                        style={{ cursor: 'default' }}
+                      >
+                        <div
+                          className="hidden group-hover:block absolute z-10 rounded-lg px-2.5 py-1.5 text-xs whitespace-nowrap"
+                          style={{
+                            background: 'var(--bg-primary)', border: '1px solid var(--border)',
+                            bottom: `${(d.total / maxTotal) * 100 + 8}%`,
+                            left: '50%', transform: 'translateX(-50%)',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>v{d.version}</div>
+                          <div style={{ color: '#ef4444' }}>{d.total} total</div>
+                          <div style={{ color: '#f97316' }}>{d.newIssues} new</div>
+                          <div style={{ color: '#6b7280' }}>{d.recurring} recurring</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* X-axis labels */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 4 }}>
+                  {chartData.map((d, i) => (
+                    <span key={i} className="text-xs font-mono" style={{ color: d.version === latestVersion ? 'var(--accent)' : 'var(--text-muted)', fontWeight: d.version === latestVersion ? 700 : 400, fontSize: 10 }}>
+                      v{d.version}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center gap-4 mt-3">
+                  <div className="flex items-center gap-1.5">
+                    <div style={{ width: 16, height: 2.5, background: '#ef4444', borderRadius: 2 }} />
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Total crashes</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div style={{ width: 16, height: 2, background: '#f97316', borderRadius: 2, borderTop: '2px dashed #f97316' }} />
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>New issues</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div style={{ width: 16, height: 2, background: '#6b7280', borderRadius: 2, borderTop: '2px dashed #6b7280' }} />
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Recurring</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
       {/* Selection action bar */}
       {checkedCrashIds.size > 0 && (
         <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: '#7c3aed15', border: '1px solid #7c3aed33' }}>

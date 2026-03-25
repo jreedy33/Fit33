@@ -7,6 +7,7 @@ import { logout } from '@/lib/api'
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: '📊' },
   { href: '/users', label: 'Users', icon: '👥' },
+  { href: '/exercises', label: 'Exercises', icon: '💪' },
   { href: '/metrics', label: 'Metrics', icon: '📈' },
   { href: '/insights', label: 'AI Insights', icon: '🧠' },
   { href: '/dev-logs', label: 'Dev Logs', icon: '🔬' },

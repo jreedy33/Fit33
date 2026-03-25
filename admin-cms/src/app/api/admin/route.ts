@@ -19,6 +19,7 @@ const WRITE_ACTIONS = new Set([
   'update_crash_report', 'delete_crash_report',
   'create_faq_entry', 'update_faq_entry', 'delete_faq_entry', 'publish_faq_entry',
   'create_faq_category', 'update_faq_category', 'delete_faq_category',
+  'update_exercise', 'delete_exercise',
 ])
 const BULK_ACTIONS = new Set([
   'bulk_update_bug_reports', 'bulk_update_crash_reports',
@@ -1529,6 +1530,207 @@ export async function POST(req: NextRequest) {
         const { error } = await admin.from('faq_categories').delete().eq('id', delCatId)
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         return NextResponse.json({ success: true })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // EXERCISE LIBRARY MANAGEMENT
+      // ═══════════════════════════════════════════════════
+
+      case 'get_exercises': {
+        const { workout_type, category, equipment, search, page = 0 } = params
+        const lim = safeLimit(params.limit, 100)
+        const pg = Math.max(0, Number(page) || 0)
+
+        let query = admin.from('exercises')
+          .select('id, name, category, equipment, workout_type, primary_muscles, secondary_muscles, video_filename, video_code, gender, difficulty_level, is_custom, movement_pattern, force_type, equipment_category, home_gym_friendly, exercise_family, is_compound, duration_based', { count: 'exact' })
+          .eq('is_custom', false)
+          .order('name', { ascending: true })
+          .range(pg * lim, (pg + 1) * lim - 1)
+
+        if (workout_type && workout_type !== 'all') {
+          query = query.ilike('workout_type', `%${workout_type}%`)
+        }
+        if (category && category !== 'all') {
+          query = query.ilike('category', `%${sanitizeSearch(category)}%`)
+        }
+        if (equipment && equipment !== 'all') {
+          query = query.ilike('equipment', `%${sanitizeSearch(equipment)}%`)
+        }
+        if (search && search.trim()) {
+          const q = sanitizeSearch(search)
+          query = query.or(`name.ilike.%${q}%,category.ilike.%${q}%,primary_muscles.ilike.%${q}%,equipment.ilike.%${q}%,exercise_family.ilike.%${q}%`)
+        }
+
+        const { data, error, count } = await query
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        return NextResponse.json({ exercises: data || [], total: count || 0 })
+      }
+
+      case 'get_exercise_filters': {
+        const [catRes, equipRes, typeRes] = await Promise.all([
+          admin.from('exercises').select('category').eq('is_custom', false).not('category', 'is', null),
+          admin.from('exercises').select('equipment').eq('is_custom', false).not('equipment', 'is', null),
+          admin.from('exercises').select('workout_type').eq('is_custom', false).not('workout_type', 'is', null),
+        ])
+
+        const unique = (arr: Record<string, unknown>[] | null, field: string) => {
+          const vals = new Set<string>()
+          for (const row of arr || []) {
+            const v = row[field] as string
+            if (v && v.trim()) vals.add(v.trim())
+          }
+          return Array.from(vals).sort()
+        }
+
+        return NextResponse.json({
+          categories: unique(catRes.data, 'category'),
+          equipment: unique(equipRes.data, 'equipment'),
+          workout_types: unique(typeRes.data, 'workout_type'),
+        })
+      }
+
+      case 'get_exercise': {
+        const { exercise_id } = params
+
+        const { data, error } = await admin.from('exercises')
+          .select('*')
+          .eq('id', exercise_id)
+          .single()
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 404 })
+        }
+
+        return NextResponse.json({ exercise: data })
+      }
+
+      case 'update_exercise': {
+        const { exercise_id, updates } = params
+
+        const allowedFields = [
+          'name', 'category', 'equipment', 'primary_muscles', 'secondary_muscles',
+          'description', 'instructions', 'steps_to_perform', 'video_code', 'video_filename',
+          'gender', 'workout_type', 'movement_pattern', 'force_type', 'movement_type',
+          'laterality', 'plane_of_motion', 'difficulty_level', 'complexity_score',
+          'strength_rating', 'hypertrophy_rating', 'power_rating', 'endurance_rating',
+          'body_position', 'bench_angle', 'grip_type', 'grip_width',
+          'optimal_rep_range_min', 'optimal_rep_range_max', 'placement_in_workout',
+          'fatigability', 'popularity_score', 'home_gym_friendly', 'practicality_score',
+          'fat_loss_rating', 'general_fitness_rating', 'is_compound', 'supersetable',
+          'exercise_family', 'base_exercise_name', 'complementary_families',
+          'is_equipment_primary', 'equipment_category', 'duration_based',
+          'recommended_sets', 'rest_seconds', 'muscles_worked_count',
+          'priority_build_muscle', 'priority_get_lean', 'priority_home', 'priority_gym',
+        ]
+
+        const sanitized: Record<string, unknown> = {}
+        for (const [key, value] of Object.entries(updates)) {
+          if (allowedFields.includes(key)) {
+            sanitized[key] = value
+          }
+        }
+
+        if (Object.keys(sanitized).length === 0) {
+          return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+        }
+
+        const { data, error } = await admin.from('exercises')
+          .update(sanitized)
+          .eq('id', exercise_id)
+          .select()
+          .single()
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        return NextResponse.json({ exercise: data })
+      }
+
+      case 'delete_exercise': {
+        const { exercise_id } = params
+
+        const { error } = await admin.from('exercises')
+          .delete()
+          .eq('id', exercise_id)
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        return NextResponse.json({ success: true })
+      }
+
+      case 'get_exercise_suggestions': {
+        const [muscleRes, catRes, equipRes, eqCatRes, moveRes, forceRes, moveTypeRes, latRes, planeRes, bodyPosRes, benchRes, gripRes, gripWRes, familyRes, placementRes] = await Promise.all([
+          admin.from('exercises').select('primary_muscles, secondary_muscles').eq('is_custom', false).not('primary_muscles', 'is', null).limit(4000),
+          admin.from('exercises').select('category').eq('is_custom', false).not('category', 'is', null),
+          admin.from('exercises').select('equipment').eq('is_custom', false).not('equipment', 'is', null),
+          admin.from('exercises').select('equipment_category').eq('is_custom', false).not('equipment_category', 'is', null),
+          admin.from('exercises').select('movement_pattern').eq('is_custom', false).not('movement_pattern', 'is', null),
+          admin.from('exercises').select('force_type').eq('is_custom', false).not('force_type', 'is', null),
+          admin.from('exercises').select('movement_type').eq('is_custom', false).not('movement_type', 'is', null),
+          admin.from('exercises').select('laterality').eq('is_custom', false).not('laterality', 'is', null),
+          admin.from('exercises').select('plane_of_motion').eq('is_custom', false).not('plane_of_motion', 'is', null),
+          admin.from('exercises').select('body_position').eq('is_custom', false).not('body_position', 'is', null),
+          admin.from('exercises').select('bench_angle').eq('is_custom', false).not('bench_angle', 'is', null),
+          admin.from('exercises').select('grip_type').eq('is_custom', false).not('grip_type', 'is', null),
+          admin.from('exercises').select('grip_width').eq('is_custom', false).not('grip_width', 'is', null),
+          admin.from('exercises').select('exercise_family').eq('is_custom', false).not('exercise_family', 'is', null),
+          admin.from('exercises').select('placement_in_workout').eq('is_custom', false).not('placement_in_workout', 'is', null),
+        ])
+
+        const unique = (arr: Record<string, unknown>[] | null, field: string) => {
+          const vals = new Set<string>()
+          for (const row of arr || []) {
+            const v = row[field] as string
+            if (v && v.trim()) vals.add(v.trim())
+          }
+          return Array.from(vals).sort()
+        }
+
+        const muscles = new Set<string>()
+        for (const row of muscleRes.data || []) {
+          for (const field of ['primary_muscles', 'secondary_muscles'] as const) {
+            const val = (row as Record<string, unknown>)[field]
+            if (Array.isArray(val)) {
+              for (const m of val) { if (m && typeof m === 'string' && m.trim()) muscles.add(m.trim()) }
+            } else if (typeof val === 'string') {
+              try {
+                const parsed = JSON.parse(val)
+                if (Array.isArray(parsed)) {
+                  for (const m of parsed) { if (m && typeof m === 'string' && m.trim()) muscles.add(m.trim()) }
+                } else if (val.trim()) {
+                  muscles.add(val.trim())
+                }
+              } catch {
+                if (val.trim()) muscles.add(val.trim())
+              }
+            }
+          }
+        }
+
+        return NextResponse.json({
+          muscles: Array.from(muscles).sort(),
+          categories: unique(catRes.data, 'category'),
+          equipment: unique(equipRes.data, 'equipment'),
+          equipment_categories: unique(eqCatRes.data, 'equipment_category'),
+          movement_patterns: unique(moveRes.data, 'movement_pattern'),
+          force_types: unique(forceRes.data, 'force_type'),
+          movement_types: unique(moveTypeRes.data, 'movement_type'),
+          lateralities: unique(latRes.data, 'laterality'),
+          planes_of_motion: unique(planeRes.data, 'plane_of_motion'),
+          body_positions: unique(bodyPosRes.data, 'body_position'),
+          bench_angles: unique(benchRes.data, 'bench_angle'),
+          grip_types: unique(gripRes.data, 'grip_type'),
+          grip_widths: unique(gripWRes.data, 'grip_width'),
+          exercise_families: unique(familyRes.data, 'exercise_family'),
+          placements: unique(placementRes.data, 'placement_in_workout'),
+        })
       }
 
       default:

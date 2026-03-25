@@ -204,86 +204,106 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        shell: bash
         run: |
-          # Find all version bump commits
-          VERSION_COMMITS=$(git log --oneline --all | grep -E '^[a-f0-9]+ v[0-9]+\.[0-9]+' | head -20)
+          set +e
 
-          echo "Found version commits:"
-          echo "$VERSION_COMMITS"
+          git log --oneline --all | grep -E '^[a-f0-9]+ v[0-9]+\.[0-9]+' | head -20 > /tmp/version_commits.txt
+
+          TOTAL=$(wc -l < /tmp/version_commits.txt | tr -d ' ')
+          echo "Found $TOTAL version commits"
+          cat /tmp/version_commits.txt
           echo "---"
 
-          echo "$VERSION_COMMITS" | while IFS= read -r line; do
+          COUNT=0
+          while IFS= read -r line; do
             SHORT_SHA=$(echo "$line" | awk '{print $1}')
-            FULL_SHA=$(git rev-parse "$SHORT_SHA")
-            COMMIT_MSG=$(git log -1 --format='%s' "$FULL_SHA")
-
-            # Check if already in Supabase
-            EXISTS=$(curl -s \
-              -H "apikey: $SUPABASE_KEY" \
-              -H "Authorization: Bearer $SUPABASE_KEY" \
-              "$SUPABASE_URL/rest/v1/version_changelogs?commit_sha=eq.$FULL_SHA&select=id" \
-              | jq 'length')
-
-            if [ "$EXISTS" != "0" ]; then
-              echo "Skipping $SHORT_SHA ($COMMIT_MSG) — already exists"
+            FULL_SHA=$(git rev-parse "$SHORT_SHA" 2>/dev/null || echo "")
+            if [ -z "$FULL_SHA" ]; then
+              echo "Could not resolve $SHORT_SHA, skipping"
               continue
             fi
 
-            # Extract version
-            VERSION=$(echo "$COMMIT_MSG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-            BUILD=$(echo "$COMMIT_MSG" | grep -oE 'build ([0-9]+)' | grep -oE '[0-9]+' || echo "")
+            COMMIT_MSG=$(git log -1 --format='%s' "$FULL_SHA")
+            echo ""
+            echo "=== Processing: $COMMIT_MSG ==="
 
-            # Get diff (against parent)
+            # Check if already in Supabase
+            EXISTS_RESP=$(curl -s \
+              -H "apikey: $SUPABASE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_KEY" \
+              "$SUPABASE_URL/rest/v1/version_changelogs?commit_sha=eq.$FULL_SHA&select=id")
+
+            EXISTS=$(echo "$EXISTS_RESP" | jq 'length' 2>/dev/null || echo "0")
+            if [ "$EXISTS" != "0" ]; then
+              echo "Already exists, skipping"
+              continue
+            fi
+
+            # Extract version and build
+            VERSION=$(echo "$COMMIT_MSG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
+            BUILD=$(echo "$COMMIT_MSG" | grep -oE 'build ([0-9]+)' | head -1 | grep -oE '[0-9]+' || echo "")
+
+            # Get diff against parent
             PARENT="${FULL_SHA}~1"
-            ALL_FILES=$(git diff "$PARENT" "$FULL_SHA" --name-only --diff-filter=ACDMR 2>/dev/null | head -100)
+            ALL_FILES=$(git diff "$PARENT" "$FULL_SHA" --name-only --diff-filter=ACDMR 2>/dev/null | head -100 || echo "")
             SWIFT_FILES=$(echo "$ALL_FILES" | grep '\.swift$' || echo "")
-            DIFF_STATS=$(git diff "$PARENT" "$FULL_SHA" --stat 2>/dev/null | tail -3)
-            SWIFT_DIFF=$(git diff "$PARENT" "$FULL_SHA" -- '*.swift' 2>/dev/null | head -c 10000)
+            DIFF_STATS=$(git diff "$PARENT" "$FULL_SHA" --stat 2>/dev/null | tail -3 || echo "")
+            SWIFT_DIFF=$(git diff "$PARENT" "$FULL_SHA" -- '*.swift' 2>/dev/null | head -c 8000 || echo "")
 
-            # Claude analysis
-            PROMPT="You are analyzing a version release of the Fit33 iOS fitness app.
+            echo "  Version: $VERSION | Build: $BUILD"
+            echo "  Files changed: $(echo "$ALL_FILES" | grep -c '.' || echo 0)"
+            echo "  Swift files: $(echo "$SWIFT_FILES" | grep -c '.' || echo 0)"
 
-            Commit: $COMMIT_MSG
-            Version: $VERSION
+            # Build prompt via temp file to avoid shell expansion issues
+            cat > /tmp/prompt.txt <<PROMPT_END
+          You are analyzing a version release of the Fit33 iOS fitness app.
 
-            Changed files:
-            $ALL_FILES
+          Commit: $COMMIT_MSG
+          Version: $VERSION
 
-            Diff stats:
-            $DIFF_STATS
+          Changed files:
+          $ALL_FILES
 
-            Swift code diff (truncated):
-            $SWIFT_DIFF
+          Diff stats:
+          $DIFF_STATS
 
-            Respond with ONLY valid JSON:
-            {
-              \"technical_summary\": \"2-4 sentence technical summary of what changed\",
-              \"user_facing_summary\": \"1-2 sentence user-facing description\",
-              \"areas_affected\": [\"list of app areas affected\"]
-            }"
+          Swift code diff (truncated):
+          $SWIFT_DIFF
 
-            RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+          Respond with ONLY valid JSON (no markdown fences, no explanation):
+          {"technical_summary": "2-4 sentence technical summary", "user_facing_summary": "1-2 sentence user description", "areas_affected": ["area1", "area2"]}
+          PROMPT_END
+
+            PROMPT_CONTENT=$(cat /tmp/prompt.txt)
+
+            # Call Claude
+            RESPONSE=$(jq -n --arg prompt "$PROMPT_CONTENT" '{
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 1000,
+              messages: [{role: "user", content: $prompt}]
+            }' | curl -s https://api.anthropic.com/v1/messages \
               -H "content-type: application/json" \
               -H "x-api-key: $ANTHROPIC_API_KEY" \
               -H "anthropic-version: 2023-06-01" \
-              -d "$(jq -n --arg prompt "$PROMPT" '{
-                model: "claude-sonnet-4-20250514",
-                max_tokens: 1000,
-                messages: [{role: "user", content: $prompt}]
-              }')" \
-            )
+              -d @-)
 
-            CONTENT=$(echo "$RESPONSE" | jq -r '.content[0].text // empty')
-            if [ -z "$CONTENT" ]; then
-              CONTENT='{"technical_summary":"Backfill — no Claude response","user_facing_summary":"","areas_affected":[]}'
+            CONTENT=$(echo "$RESPONSE" | jq -r '.content[0].text // empty' 2>/dev/null || echo "")
+
+            # Strip markdown fences if present
+            CONTENT=$(echo "$CONTENT" | sed 's/^```json//;s/^```//;s/```$//' | tr -d '\n')
+
+            if [ -z "$CONTENT" ] || ! echo "$CONTENT" | jq . >/dev/null 2>&1; then
+              echo "  Claude response invalid or empty, using fallback"
+              CONTENT='{"technical_summary":"Version release — automated backfill","user_facing_summary":"","areas_affected":[]}'
             fi
 
-            TECH_SUMMARY=$(echo "$CONTENT" | jq -r '.technical_summary // "No summary"')
-            USER_SUMMARY=$(echo "$CONTENT" | jq -r '.user_facing_summary // ""')
-            AREAS=$(echo "$CONTENT" | jq -c '.areas_affected // []')
+            TECH_SUMMARY=$(echo "$CONTENT" | jq -r '.technical_summary // "No summary"' 2>/dev/null || echo "No summary")
+            USER_SUMMARY=$(echo "$CONTENT" | jq -r '.user_facing_summary // ""' 2>/dev/null || echo "")
+            AREAS=$(echo "$CONTENT" | jq -c '.areas_affected // []' 2>/dev/null || echo '[]')
 
-            ALL_FILES_JSON=$(echo "$ALL_FILES" | jq -R -s 'split("\n") | map(select(length > 0))')
-            SWIFT_FILES_JSON=$(echo "$SWIFT_FILES" | jq -R -s 'split("\n") | map(select(length > 0))')
+            ALL_FILES_JSON=$(echo "$ALL_FILES" | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || echo '[]')
+            SWIFT_FILES_JSON=$(echo "$SWIFT_FILES" | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || echo '[]')
 
             PAYLOAD=$(jq -n \
               --arg version "$VERSION" \
@@ -308,19 +328,31 @@ jobs:
                 user_facing_summary: $user_facing,
                 areas_affected: $areas,
                 is_version_bump: true
-              }')
+              }' 2>/dev/null)
 
-            echo "Inserting changelog for v$VERSION ($SHORT_SHA)"
-            curl -s -X POST \
+            if [ -z "$PAYLOAD" ]; then
+              echo "  Failed to build payload, skipping"
+              continue
+            fi
+
+            echo "  Inserting changelog for v$VERSION..."
+            HTTP_CODE=$(curl -s -o /tmp/sb_resp.txt -w "%{http_code}" -X POST \
               -H "apikey: $SUPABASE_KEY" \
               -H "Authorization: Bearer $SUPABASE_KEY" \
               -H "Content-Type: application/json" \
               -H "Prefer: return=minimal" \
               "$SUPABASE_URL/rest/v1/version_changelogs" \
-              -d "$PAYLOAD"
+              -d "$PAYLOAD")
 
-            echo " Done."
+            if [ "$HTTP_CODE" = "201" ]; then
+              echo "  Inserted successfully"
+              COUNT=$((COUNT + 1))
+            else
+              echo "  Supabase returned HTTP $HTTP_CODE: $(cat /tmp/sb_resp.txt)"
+            fi
+
             sleep 2
-          done
+          done < /tmp/version_commits.txt
 
-          echo "Backfill complete."
+          echo ""
+          echo "Backfill complete. Inserted $COUNT changelogs."

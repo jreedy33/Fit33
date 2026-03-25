@@ -217,14 +217,37 @@ class ActivityFeedService: ObservableObject {
 struct FriendActivityFeedSection: View {
     @StateObject private var feedService = ActivityFeedService.shared
     @Environment(\.colorScheme) private var colorScheme
+    @State private var showFullLog = false
+    
+    private let previewLimit = 3
     
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            SectionHeader(
-                title: "Friend Activity",
-                icon: "person.2.wave.2.fill",
-                iconColor: .cyan
-            )
+            HStack {
+                SectionHeader(
+                    title: "Friend Activity",
+                    icon: "person.2.wave.2.fill",
+                    iconColor: .cyan
+                )
+                
+                Spacer()
+                
+                if feedService.activities.count > previewLimit {
+                    Button {
+                        showFullLog = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("See More")
+                                .font(.ds_labelMedium)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(.cyan)
+                    }
+                    .accessibilityLabel("See more friend activity")
+                    .accessibilityHint("Opens the full activity log")
+                }
+            }
             
             if feedService.isLoading && feedService.activities.isEmpty {
                 loadingState
@@ -232,7 +255,7 @@ struct FriendActivityFeedSection: View {
                 emptyState
             } else {
                 LazyVStack(spacing: Spacing.sm) {
-                    ForEach(feedService.activities) { activity in
+                    ForEach(feedService.activities.prefix(previewLimit)) { activity in
                         FriendActivityCard(activity: activity)
                     }
                 }
@@ -240,6 +263,9 @@ struct FriendActivityFeedSection: View {
         }
         .task {
             await feedService.fetchFeed()
+        }
+        .sheet(isPresented: $showFullLog) {
+            FriendActivityLogView()
         }
     }
     
@@ -270,6 +296,45 @@ struct FriendActivityFeedSection: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.xl)
         .padding(.horizontal, Spacing.md)
+    }
+}
+
+// MARK: - Full Activity Log View
+
+struct FriendActivityLogView: View {
+    @StateObject private var feedService = ActivityFeedService.shared
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: Spacing.sm) {
+                        ForEach(feedService.activities.prefix(20)) { activity in
+                            FriendActivityCard(activity: activity)
+                        }
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, Spacing.sm)
+                    .padding(.bottom, 40)
+                }
+                .refreshable {
+                    await feedService.fetchFeed()
+                }
+            }
+            .navigationTitle("Friend Activity")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(.ds_labelLarge)
+                        .foregroundColor(.cyan)
+                }
+            }
+        }
     }
 }
 

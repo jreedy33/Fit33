@@ -14,6 +14,9 @@ struct WidgetSettingsSheet: View {
     
     var body: some View {
         NavigationStack {
+            ZStack {
+                AnimatedOrbBackground.home(colorScheme: colorScheme)
+                
             ScrollView {
                 VStack(spacing: 0) {
                     // Subtitle
@@ -110,6 +113,7 @@ struct WidgetSettingsSheet: View {
                 }
                 .padding(.top, 16)
             }
+            } // ZStack
             .navigationTitle("Add Widgets")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

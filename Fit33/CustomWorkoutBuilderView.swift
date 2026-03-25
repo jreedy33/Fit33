@@ -75,6 +75,7 @@ struct CustomWorkoutBuilderView: View {
     @State private var filterUpdateTask: Task<Void, Never>?
     
     enum ExerciseFilterType: String, CaseIterable {
+        case recommended = "Recommended"
         case all = "All Exercises"
         case favorites = "Favorites"
         case custom = "Custom Added"
@@ -100,6 +101,8 @@ struct CustomWorkoutBuilderView: View {
     
     private var filterIcon: String {
         switch exerciseFilter {
+        case .recommended:
+            return "line.3.horizontal.decrease.circle"
         case .all:
             return "line.3.horizontal.decrease.circle"
         case .favorites:
@@ -108,9 +111,11 @@ struct CustomWorkoutBuilderView: View {
             return "person.crop.circle.badge.plus"
         }
     }
-    
+
     private var filterColor: Color {
         switch exerciseFilter {
+        case .recommended:
+            return .orange
         case .all:
             return Color(.systemGray5)
         case .favorites:
@@ -328,6 +333,16 @@ struct CustomWorkoutBuilderView: View {
         var filtered = exercises
         
         switch exerciseFilter {
+        case .recommended:
+            if let replacing = replacingExercise {
+                let targetCategory = replacing.category?.lowercased()
+                let targetEquipment = replacing.equipment?.lowercased()
+                filtered = filtered.filter { exercise in
+                    let matchesCategory = exercise.category?.lowercased() == targetCategory
+                    let matchesEquipment = targetEquipment == nil || exercise.equipment?.lowercased() == targetEquipment
+                    return matchesCategory || matchesEquipment
+                }
+            }
         case .favorites:
             filtered = filtered.filter { $0.isFavorite }
         case .custom:
@@ -567,12 +582,14 @@ struct CustomWorkoutBuilderView: View {
                         "selected_count": selectedExercises.count
                     ])
                     
-                    // Reset filters to defaults when presented as a replace/add sheet
                     if mode.isSingleSelect {
                         selectedCategories.removeAll()
                         selectedEquipmentItems.removeAll()
                         selectedMuscleGroups.removeAll()
                         searchText = ""
+                        if replacingExercise != nil {
+                            exerciseFilter = .recommended
+                        }
                     }
                     
                     // Load exercises from cache/Core Data (cloud sync handles population)
@@ -760,12 +777,25 @@ struct CustomWorkoutBuilderView: View {
                             Image(systemName: "chevron.down")
                                 .font(.ds_caption).fontWeight(.semibold)
                         }
-                        .foregroundColor(exerciseFilter != .all ? .white : .secondary)
+                        .foregroundColor(
+                            exerciseFilter == .recommended ? .blue
+                            : exerciseFilter != .all ? .white
+                            : .secondary
+                        )
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(
                             Capsule()
-                                .fill(exerciseFilter != .all ? filterColor : Color(.systemGray5))
+                                .fill(
+                                    exerciseFilter == .recommended ? Color.clear
+                                    : exerciseFilter != .all ? filterColor
+                                    : Color(.systemGray5)
+                                )
+                        )
+                        .overlay(
+                            exerciseFilter == .recommended
+                            ? Capsule().stroke(Color.blue, lineWidth: 1.5)
+                            : nil
                         )
                     }
                     
@@ -940,25 +970,23 @@ struct CustomWorkoutBuilderView: View {
     // MARK: - Replace Mode Views
     
     private func replaceHeaderView(exercise: Exercise) -> some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.swap")
-                    .font(.ds_bodyMedium)
-                    .foregroundColor(.blue)
-                Text("Replacing:")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondary)
-                Text(exercise.name ?? "Exercise")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                Spacer()
-            }
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.swap")
+                .font(.ds_bodySmall)
+                .foregroundColor(.blue)
+            Text("Swapping:")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.secondary)
+            Text(exercise.name ?? "Exercise")
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+            Spacer()
         }
         .padding(.horizontal, Spacing.md + Spacing.md)
-        .padding(.top, 8)
+        .padding(.top, 10)
         .padding(.bottom, 4)
     }
     
@@ -976,63 +1004,21 @@ struct CustomWorkoutBuilderView: View {
             .padding(.horizontal, Spacing.md)
             
             ForEach(suggestedSwaps) { suggestion in
-                Button {
-                    HapticManager.impact(.medium)
-                    toggleExerciseSelection(suggestion.exercise)
-                } label: {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(swapTypeColor(suggestion.swapType).opacity(0.15))
-                                .frame(width: 36, height: 36)
-                            Image(systemName: suggestion.swapType.icon)
-                                .font(.ds_bodyMedium)
-                                .foregroundColor(swapTypeColor(suggestion.swapType))
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(suggestion.exercise.displayName)
-                                .font(.body)
-                                .fontWeight(.medium)
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                            HStack(spacing: 6) {
-                                Text(suggestion.swapType.rawValue)
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(swapTypeColor(suggestion.swapType))
-                                if !suggestion.reason.isEmpty {
-                                    Text("·")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                    Text(suggestion.reason)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                SuggestedSwapRowWithNav(
+                    exercise: suggestion.exercise,
+                    isSelected: selectedExercises.contains(where: { $0.id == suggestion.exercise.id }),
+                    onToggle: {
+                        HapticManager.impact(.medium)
+                        toggleExerciseSelection(suggestion.exercise)
                     }
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.md)
-                            .fill(Color.cardBackground)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.md)
-                            .stroke(swapTypeColor(suggestion.swapType).opacity(0.2), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(PlainButtonStyle())
+                )
                 .padding(.horizontal, Spacing.md)
             }
+            
+            Divider()
+                .foregroundColor(.gray.opacity(0.3))
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, 4)
         }
         .padding(.top, 8)
         .padding(.bottom, 4)
@@ -1869,6 +1855,41 @@ struct IconPickerView: View {
     }
 }
 struct CustomWorkoutExerciseRowWithNav: View {
+    let exercise: Exercise
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    @State private var showingDetail = false
+
+    var body: some View {
+        Button(action: { HapticManager.selectionChanged(); onToggle() }) {
+            ExerciseCardRow(
+                exercise: exercise,
+                showCheckbox: true,
+                isSelected: isSelected,
+                showInfoButton: true,
+                onInfo: { showingDetail = true }
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .fullScreenCover(isPresented: $showingDetail) {
+            NavigationStack {
+                ExerciseDetailView(exercise: exercise)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button(action: { HapticManager.selectionChanged(); showingDetail = false }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+            }
+        }
+    }
+}
+
+struct SuggestedSwapRowWithNav: View {
     let exercise: Exercise
     let isSelected: Bool
     let onToggle: () -> Void

@@ -62,7 +62,7 @@ struct DailyQuestsWidget: View {
             
             // Streak badge
             if questService.questStreak > 0 {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Image(systemName: "flame.fill")
                         .font(.ds_bodySmall)
                         .foregroundColor(.orange)
@@ -71,12 +71,6 @@ struct DailyQuestsWidget: View {
                         .fontWeight(.bold)
                         .foregroundColor(.orange)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, Spacing.xxs)
-                .background(
-                    Capsule()
-                        .fill(Color.orange.opacity(0.15))
-                )
             }
         }
     }
@@ -110,15 +104,14 @@ struct DailyQuestsWidget: View {
             } else {
                 ForEach(0..<3, id: \.self) { index in
                     let isComplete = index < quests.count && quests[index].isCompleted
-                    let questColor = index < quests.count ? quests[index].categoryColor : Color.gray
                     
                     Circle()
-                        .fill(isComplete ? questColor : Color.clear)
+                        .fill(isComplete ? Color.blue : Color.clear)
                         .frame(width: 10, height: 10)
                         .overlay(
                             Circle()
                                 .stroke(
-                                    isComplete ? questColor : Color.gray.opacity(0.3),
+                                    isComplete ? Color.blue : Color.blue.opacity(0.3),
                                     lineWidth: 1.5
                                 )
                         )

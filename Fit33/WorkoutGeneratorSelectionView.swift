@@ -1090,16 +1090,16 @@ struct DurationStepView: View {
                                 Text("\(mins)")
                                     .font(.title3)
                                     .fontWeight(.bold)
-                                    .foregroundColor(isSelected ? .purple : .primary)
+                                    .foregroundColor(isSelected ? .blue : .primary)
                                 
                                 Text("min")
                                     .font(.caption2)
                                     .fontWeight(.medium)
-                                    .foregroundColor(isSelected ? .purple.opacity(0.8) : .secondary)
+                                    .foregroundColor(isSelected ? .blue.opacity(0.8) : .secondary)
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .purple : Color(white: 0.4))
+                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
                             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1192,7 +1192,7 @@ struct DurationCard: View {
                     // Soft glow when selected
                     if isSelected {
                         Circle()
-                            .fill(duration.color.opacity(0.3))
+                            .fill(.blue.opacity(0.3))
                             .frame(width: 44, height: 44)
                             .blur(radius: 8)
                     }
@@ -1200,7 +1200,7 @@ struct DurationCard: View {
                     Circle()
                         .fill(
                             isSelected
-                                ? LinearGradient(colors: [duration.color, duration.color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                ? LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 : LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .frame(width: 40, height: 40)
@@ -1214,7 +1214,7 @@ struct DurationCard: View {
                     Text(duration.displayName)
                         .font(.subheadline)
                         .fontWeight(.bold)
-                        .foregroundColor(isSelected ? duration.color : .primary)
+                        .foregroundColor(isSelected ? .blue : .primary)
                     
                     Text(duration.subtitle)
                         .font(.caption2)
@@ -1224,12 +1224,12 @@ struct DurationCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? duration.color : Color(white: 0.4))
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
-                        isSelected ? duration.color.opacity(0.6) : Color.clear,
+                        isSelected ? .blue.opacity(0.6) : Color.clear,
                         lineWidth: 2
                     )
             )
@@ -1420,7 +1420,7 @@ struct PrimaryMuscleCard: View {
                     // Soft glow when selected
                     if isSelected {
                         Circle()
-                            .fill(color.opacity(0.4))
+                            .fill(Color.blue.opacity(0.4))
                             .frame(width: 60, height: 60)
                             .blur(radius: 12)
                     }
@@ -1428,7 +1428,7 @@ struct PrimaryMuscleCard: View {
                     Circle()
                         .fill(
                             isSelected
-                                ? LinearGradient(colors: [color, color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                ? LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 : LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .frame(width: 54, height: 54)
@@ -1450,18 +1450,18 @@ struct PrimaryMuscleCard: View {
                 Text(title)
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(isSelected ? color : .primary)
+                    .foregroundColor(isSelected ? .blue : .primary)
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(isSelected ? color.opacity(0.6) : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? .blue.opacity(0.6) : Color.clear, lineWidth: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -1728,7 +1728,7 @@ struct SecondaryMuscleCard: View {
                     // Soft glow when selected
                     if isSelected {
                         Circle()
-                            .fill(color.opacity(0.4))
+                            .fill(Color.blue.opacity(0.4))
                             .frame(width: 54, height: 54)
                             .blur(radius: 10)
                     }
@@ -1736,7 +1736,7 @@ struct SecondaryMuscleCard: View {
                     Circle()
                         .fill(
                             isSelected
-                                ? LinearGradient(colors: [color, color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                ? LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 : LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .frame(width: 46, height: 46)
@@ -1758,18 +1758,18 @@ struct SecondaryMuscleCard: View {
                 Text(title)
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(isSelected ? color : .primary)
+                    .foregroundColor(isSelected ? .blue : .primary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .frame(height: 28)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(isSelected ? color.opacity(0.6) : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? .blue.opacity(0.6) : Color.clear, lineWidth: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -1795,7 +1795,7 @@ struct SmallSecondaryMuscleCard: View {
                     // Soft glow when selected
                     if isSelected {
                         Circle()
-                            .fill(color.opacity(0.4))
+                            .fill(Color.blue.opacity(0.4))
                             .frame(width: 50, height: 50)
                             .blur(radius: 10)
                     }
@@ -1803,7 +1803,7 @@ struct SmallSecondaryMuscleCard: View {
                     Circle()
                         .fill(
                             isSelected
-                                ? LinearGradient(colors: [color, color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                ? LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 : LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .frame(width: 44, height: 44)
@@ -1825,18 +1825,18 @@ struct SmallSecondaryMuscleCard: View {
                 Text(title)
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(isSelected ? color : .primary)
+                    .foregroundColor(isSelected ? .blue : .primary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(isSelected ? color.opacity(0.6) : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? .blue.opacity(0.6) : Color.clear, lineWidth: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -2159,7 +2159,7 @@ struct AutoWorkoutEquipmentCard: View {
                     // Soft glow when selected
                     if isSelected {
                         Circle()
-                            .fill(color.opacity(0.4))
+                            .fill(Color.blue.opacity(0.4))
                             .frame(width: 54, height: 54)
                             .blur(radius: 10)
                     }
@@ -2167,7 +2167,7 @@ struct AutoWorkoutEquipmentCard: View {
                     Circle()
                         .fill(
                             isSelected
-                                ? LinearGradient(colors: [color, color.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                ? LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
                                 : LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                         .frame(width: 46, height: 46)
@@ -2180,18 +2180,18 @@ struct AutoWorkoutEquipmentCard: View {
                 Text(title)
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(isSelected ? color : .primary)
+                    .foregroundColor(isSelected ? .blue : .primary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .frame(height: 28)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? color : Color(white: 0.4))
+            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(isSelected ? color.opacity(0.6) : Color.clear, lineWidth: 2)
+                    .stroke(isSelected ? .blue.opacity(0.6) : Color.clear, lineWidth: 2)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -2288,22 +2288,22 @@ struct DurationStepContentView: View {
                                 Text("\(mins)")
                                     .font(.title3)
                                     .fontWeight(.bold)
-                                    .foregroundColor(isSelected ? .purple : .primary)
+                                    .foregroundColor(isSelected ? .blue : .primary)
                                 
                                 Text("min")
                                     .font(.caption2)
                                     .fontWeight(.medium)
-                                    .foregroundColor(isSelected ? .purple.opacity(0.8) : .secondary)
+                                    .foregroundColor(isSelected ? .blue.opacity(0.8) : .secondary)
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .purple : Color(white: 0.4))
+                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
                             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                                     .stroke(isSelected ? Color.purple.opacity(0.6) : Color.clear, lineWidth: 2)
                             )
-                            .shadow(color: isSelected ? .purple.opacity(0.4) : .black.opacity(0.1), radius: isSelected ? 10 : 6, x: 0, y: isSelected ? 5 : 3)
+                            .shadow(color: isSelected ? .blue.opacity(0.4) : .black.opacity(0.1), radius: isSelected ? 10 : 6, x: 0, y: isSelected ? 5 : 3)
                         }
                         .buttonStyle(PlainButtonStyle())
                         .scaleEffect(isSelected ? 1.03 : 1.0)
@@ -2706,13 +2706,13 @@ struct DurationTilesView: View {
                         }) {
                             VStack(spacing: 4) {
                                 Text("\(mins)").font(.title3).fontWeight(.bold)
-                                    .foregroundColor(isSelected ? .purple : .primary)
+                                    .foregroundColor(isSelected ? .blue : .primary)
                                 Text("min").font(.caption2).fontWeight(.medium)
-                                    .foregroundColor(isSelected ? .purple.opacity(0.8) : .secondary)
+                                    .foregroundColor(isSelected ? .blue.opacity(0.8) : .secondary)
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .purple : Color(white: 0.4))
+                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
                             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)

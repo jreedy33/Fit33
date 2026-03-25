@@ -875,20 +875,89 @@ struct WorkoutHomeView: View {
         return dayDetails.exercises.map { $0.exercise.exerciseName }
     }
     
-    // MARK: - Smart Program Recommendation Widget (Legacy)
+    // MARK: - Compact Program Recommendation
     private var recommendedWorkoutSection: some View {
-        SmartProgramWidget(
-            user: userManager.currentUser,
-            onViewProgram: { programId in
-                if let programId = programId {
-                    // Navigate directly to the program detail page
-                    navigationPath.append("ProgramDetail:\(programId)")
-                } else {
-                    // Fallback to program library
-                    navigationPath.append("ProgramLibrary")
+        let programs = SmartProgramEngine.shared
+            .getPersonalizedPrograms(for: userManager.currentUser)
+            .filter { !$0.isCompleted && $0.isUnlocked }
+        
+        return Group {
+            if let top = programs.first {
+                let template = top.template
+                let totalWeeks = (template.totalDays + 6) / 7
+                
+                Button {
+                    HapticManager.impact(.light)
+                    navigationPath.append("ProgramDetail:\(template.id)")
+                } label: {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.green, .mint],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 50, height: 50)
+                            
+                            Image(systemName: "figure.strengthtraining.traditional")
+                                .font(.ds_heading2)
+                                .foregroundColor(.white)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(top.personalizedName)
+                                .font(.ds_labelLarge)
+                                .foregroundColor(.primary)
+                                .lineLimit(2)
+                            
+                            HStack(spacing: 8) {
+                                Text("\(totalWeeks)wk • \(template.daysPerWeek)x/wk")
+                                Text("•")
+                                Text("\(top.matchPercentage)% match")
+                                    .foregroundColor(.green)
+                            }
+                            .font(.ds_labelSmall)
+                            .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.ds_labelMedium)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(Spacing.md)
+                    .sleekCard(cornerRadius: 20, accentColor: .green)
                 }
+                .buttonStyle(PlainButtonStyle())
+            } else {
+                Button {
+                    HapticManager.impact(.light)
+                    navigationPath.append("ProgramLibrary")
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Explore Programs")
+                                .font(.ds_labelLarge)
+                                .foregroundColor(.primary)
+                            Text("Find the perfect program for your goals")
+                                .font(.ds_labelSmall)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .padding(Spacing.md)
+                    .sleekCard(cornerRadius: 20, accentColor: .blue)
+                }
+                .buttonStyle(PlainButtonStyle())
             }
-        )
+        }
     }
     
     // MARK: - Next Goals Section (Revamped "Almost There!")

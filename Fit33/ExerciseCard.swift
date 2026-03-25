@@ -137,7 +137,7 @@ struct ExerciseCard: View {
         .sheet(isPresented: $showingRestTimerSheet) {
             RestTimerSetupView(onSetTimer: onSetRestTimer)
         }
-        .sheet(isPresented: $showingReplaceExercise) {
+        .fullScreenCover(isPresented: $showingReplaceExercise) {
             NavigationStack {
                 CustomWorkoutBuilderView(
                     replacing: exercise,

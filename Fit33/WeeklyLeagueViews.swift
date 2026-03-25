@@ -21,55 +21,52 @@ struct WeeklyLeagueWidget: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Section header (outside card)
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "trophy.circle.fill")
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: standing?.tierGradient ?? [.yellow, .orange],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "trophy.circle.fill")
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: standing?.tierGradient ?? [.yellow, .orange],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
                             )
-                            .font(.title3)
-                        Text("Weekly League")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        
-                        Button {
-                            showingLeagueInfo = true
-                        } label: {
-                            Image(systemName: "info.circle")
-                                .font(.ds_bodyRegular).fontWeight(.medium)
+                        )
+                        .font(.title3)
+                    Text("Weekly League")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    Button {
+                        showingLeagueInfo = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.ds_bodyRegular).fontWeight(.medium)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                HStack(alignment: .top) {
+                    let lines = leagueSubtitleLines
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                     }
                     
-                    Text(leagueSubtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                
-                Spacer()
-                
-                if let standing = standing {
-                    HStack(spacing: 4) {
-                        Text(standing.tierEmoji)
-                            .font(.ds_bodySmall)
-                        Text(standing.tierName)
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundColor(standing.tierSwiftUIColor)
+                    Spacer()
+                    
+                    if let standing = standing {
+                        HStack(spacing: 4) {
+                            Text(standing.tierEmoji)
+                                .font(.ds_bodySmall)
+                            Text(standing.tierName)
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(standing.tierSwiftUIColor)
+                        }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, Spacing.xxs)
-                    .background(
-                        Capsule()
-                            .fill(standing.tierSwiftUIColor.opacity(0.15))
-                    )
                 }
             }
             
@@ -96,30 +93,40 @@ struct WeeklyLeagueWidget: View {
     
     private var standing: LeagueStanding? { leagueService.standing }
     
-    private var leagueSubtitle: String {
+    private var leagueSubtitleLines: [String] {
         guard let standing = standing else {
-            return "Compete weekly with friends & nearby athletes. Earn points from workouts to climb tiers."
+            return [
+                "Compete weekly with friends & nearby athletes.",
+                "Earn points from workouts to climb tiers."
+            ]
         }
         
-        let socialPrefix: String = {
+        let socialLine: String? = {
             let friends = standing.friendsInLeague
             let connections = standing.connectionsInLeague
             if friends > 0 {
-                return "You know \(friends) \(friends == 1 ? "person" : "people") here. "
+                return "You know \(friends) \(friends == 1 ? "person" : "people") here."
             } else if connections > 0 {
-                return "\(connections) mutual connection\(connections == 1 ? "" : "s") in your league. "
+                return "\(connections) mutual connection\(connections == 1 ? "" : "s") in your league."
             }
-            return ""
+            return nil
         }()
         
-        if standing.isInPromotionZone, let next = standing.nextTierName {
-            return "\(socialPrefix)Top \(standing.promotionCount) — on track to \(next)! \(standing.daysRemaining)d left."
-        } else if standing.isInRelegationZone {
-            return "\(socialPrefix)Bottom \(standing.relegationCount) get relegated. \(standing.daysRemaining)d left."
-        } else {
-            let promoSpots = standing.promotionCount > 0 ? "Top \(standing.promotionCount) promote each week." : "Climb the ranks each week."
-            return "\(socialPrefix)\(promoSpots)"
+        let statusLine: String = {
+            if standing.isInPromotionZone, let next = standing.nextTierName {
+                return "Top \(standing.promotionCount) — on track to \(next)! \(standing.daysRemaining)d left."
+            } else if standing.isInRelegationZone {
+                return "Bottom \(standing.relegationCount) get relegated. \(standing.daysRemaining)d left."
+            } else {
+                let promoSpots = standing.promotionCount > 0 ? "Top \(standing.promotionCount) promote each week." : "Climb the ranks each week."
+                return promoSpots
+            }
+        }()
+        
+        if let social = socialLine {
+            return [social, statusLine]
         }
+        return [statusLine]
     }
     
     // MARK: - League Content (Joined)

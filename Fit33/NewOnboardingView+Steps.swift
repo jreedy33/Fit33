@@ -598,25 +598,26 @@ extension NewOnboardingView {
     }
     
     var locationStepContent: some View {
-        let locations: [(WorkoutEnvironmentService.WorkoutEnvironment, String, String, Color)] = [
-            (.gym, "🏋️", "Full Gym", .blue),
-            (.home, "🏠", "Home", .green),
-            (.outdoor, "🌳", "Outdoor", .orange),
-            (.hybrid, "🔄", "Hybrid", .purple)
+        let locations: [(WorkoutEnvironmentService.WorkoutEnvironment, String, String)] = [
+            (.gym, "🏋️", "Full Gym"),
+            (.home, "🏠", "Home"),
+            (.outdoor, "🌳", "Outdoor"),
+            (.hybrid, "🔄", "Hybrid")
         ]
         
         return ScrollView(showsIndicators: false) {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(locations, id: \.0) { loc in
+                    let isSelected = selectedWorkoutLocation == loc.0
                     Button(action: { 
                         selectionFeedback.selectionChanged()
                         selectedWorkoutLocation = loc.0 
                     }) {
                         VStack(spacing: 8) {
                             ZStack {
-                                if selectedWorkoutLocation == loc.0 {
+                                if isSelected {
                                     Circle()
-                                        .fill(loc.3.opacity(0.35))
+                                        .fill(Color.blue.opacity(0.35))
                                         .frame(width: 50, height: 50)
                                         .blur(radius: 12)
                                 }
@@ -625,15 +626,15 @@ extension NewOnboardingView {
                             }
                             Text(loc.2)
                                 .font(.ds_labelLarge)
-                                .foregroundColor(selectedWorkoutLocation == loc.0 ? loc.3 : .primary)
+                                .foregroundColor(isSelected ? .blue : .primary)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 20)
-                        .onboardingCardStyle(accentColor: loc.3, secondaryColor: loc.3.opacity(0.7), isSelected: selectedWorkoutLocation == loc.0, cornerRadius: CornerRadius.lg)
+                        .onboardingCardStyle(accentColor: isSelected ? .blue : Color(white: 0.4), secondaryColor: isSelected ? .blue.opacity(0.7) : Color(white: 0.3), isSelected: isSelected, cornerRadius: CornerRadius.lg)
                     }
                     .buttonStyle(.plain)
-                    .scaleEffect(selectedWorkoutLocation == loc.0 ? 1.03 : 1.0)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedWorkoutLocation == loc.0)
+                    .scaleEffect(isSelected ? 1.03 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
                 }
             }
             .padding(.horizontal, Spacing.lg)
@@ -692,8 +693,6 @@ extension NewOnboardingView {
                 )
             }
             .buttonStyle(.plain)
-            .scaleEffect(isSelected ? 1.01 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isSelected)
             
             // Auto-expanded options when selected
             if isSelected {

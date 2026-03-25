@@ -1329,19 +1329,16 @@ struct FriendCard: View {
                     gradientColors: [.blue, .purple.opacity(0.8)]
                 )
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    // Username (primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(friend.friendName ?? friend.friendUsername ?? "Friend")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
                     if let username = friend.friendUsername, !username.isEmpty {
                         Text("@\(username)")
-                            .font(.headline)
-                            .foregroundColor(.blue)
-                    }
-                    
-                    // Name (secondary)
-                    if let name = friend.friendName, !name.isEmpty {
-                        Text(name)
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
                 
@@ -1390,20 +1387,18 @@ struct FriendRequestCard: View {
                 gradientColors: [.blue, .cyan]
             )
             
-            VStack(alignment: .leading, spacing: 4) {
-                // Name
+            VStack(alignment: .leading, spacing: 2) {
                 Text(request.displayName)
-                    .font(.headline)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
                     .foregroundColor(.primary)
                 
-                // Username
                 if let username = request.fromUserUsername {
                     Text("@\(username)")
-                        .font(.subheadline)
-                        .foregroundColor(.blue)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 
-                // Time ago
                 Text(timeAgoString(from: request.createdAt))
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -1507,19 +1502,16 @@ struct SentFriendRequestCard: View {
                 gradientColors: [.blue, .cyan]
             )
             
-            VStack(alignment: .leading, spacing: 4) {
-                // Username first (primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(request.toUserName ?? request.toUserUsername ?? "User")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
                 if let username = request.toUserUsername, !username.isEmpty {
                     Text("@\(username)")
-                        .font(.headline)
-                        .foregroundColor(.blue)
-                }
-                
-                // Name (secondary)
-                if let name = request.toUserName, !name.isEmpty {
-                    Text(name)
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 
                 // Time ago + pending status
@@ -1614,25 +1606,21 @@ struct UserSearchResultCard: View {
                 gradientColors: [.indigo, .purple]
             )
             
-            VStack(alignment: .leading, spacing: 4) {
-                // Username (primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(user.name ?? user.username ?? "User")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
                 if let username = user.username, !username.isEmpty {
                     Text("@\(username)")
-                        .font(.headline)
-                        .foregroundColor(.blue)
-                }
-                
-                // Name (secondary)
-                if let name = user.name, !name.isEmpty {
-                    Text(name)
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
             
             Spacer()
             
-            // Action button based on status
             actionButton
         }
         .padding(Spacing.md)
@@ -1860,19 +1848,16 @@ struct RankedFriendCard: View {
                     }
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    // Username (primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(friend.friendName ?? friend.friendUsername ?? "Friend")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
                     if let username = friend.friendUsername, !username.isEmpty {
                         Text("@\(username)")
-                            .font(.headline)
-                            .foregroundColor(.blue)
-                    }
-                    
-                    // Name (secondary)
-                    if let name = friend.friendName, !name.isEmpty {
-                        Text(name)
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
                 

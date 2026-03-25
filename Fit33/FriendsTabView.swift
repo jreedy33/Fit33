@@ -26,7 +26,6 @@ struct FriendsTabView: View {
     @State private var showingFriendProfile: Friend?
     @State private var showingCommunityHub = false
     @State private var showingChallengeCreation = false
-    @State private var showingLeagueDetail = false
     @State private var activeChallengePageIndex = 0
     @State private var sentRecommendedChallenge = false
     @State private var showingSentConfirmation = false
@@ -35,6 +34,7 @@ struct FriendsTabView: View {
     @State private var requestSentAnimationIds: Set<UUID> = [] // Temporary "Request Sent" animation state
     @State private var selectedCommunityChallenge: CommunityChallenge?
     @State private var showingAllCommunities = false
+    @State private var cachedSuggestions: [SuggestedFriend] = []
     @State private var hasAppearedBefore = false
     @State private var challengeGlowPhase: Double = 0
     @State private var challengeToCancel: UUID?
@@ -54,20 +54,17 @@ struct FriendsTabView: View {
         NavigationStack(path: $navigationPath) {
             ZStack {
             ScrollView(.vertical) {
-                // ⚡️ PERF FIX: LazyVStack defers off-screen sections (community widgets,
-            // challenge carousel, quick actions) until the user scrolls to them.
-            // Previously a regular VStack rendered ALL ~10 sections synchronously
-            // on first visit, blocking the main thread for ~1.7s.
-            LazyVStack(spacing: 0) {
-                    // Custom header
+                VStack(spacing: 0) {
+                    // Header + stories bar always rendered (not lazy) so they never disappear
                     friendsHeaderView
                         .padding(.top, 4)
                         .padding(.bottom, 16)
                     
+                    friendStoriesBar
+                        .padding(.bottom, 24)
+                    
+                    // Remaining sections deferred via LazyVStack
                     LazyVStack(spacing: 24) {
-                        // Instagram-style friend stories bar
-                        friendStoriesBar
-                        
                         // Top 3 Best Friends spotlight
                         topFriendsSpotlight
                         
@@ -100,16 +97,17 @@ struct FriendsTabView: View {
                 .padding(.bottom, 20)
             }
             .refreshable {
-                // Pull-to-refresh: push own data + pull fresh data for everyone
                 await ChallengeService.shared.syncAllTrackingToChallenges()
                 await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
                 await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
                 await refreshAllFriendsData(force: true)
                 lastRefreshedAt = Date()
+                updateCachedSuggestions()
             }
             .background(
                 AnimatedOrbBackground.friends(colorScheme: colorScheme)
             )
+                
             }
             .navigationBarHidden(true)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -122,6 +120,8 @@ struct FriendsTabView: View {
                     FriendsListView(initialTab: 2)
                 } else if destination == "CommunityHub" {
                     CommunityChallengesHubView()
+                } else if destination == "LeagueDetail" {
+                    WeeklyLeagueDetailView()
                 } else if destination.hasPrefix("PrivateChallenge_") {
                     let idStr = String(destination.dropFirst("PrivateChallenge_".count))
                     if let challenge = privateChallengeService.myChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
@@ -164,6 +164,7 @@ struct FriendsTabView: View {
             await refreshAllFriendsData(force: false)
             lastRefreshedAt = Date()
             hasAppearedBefore = true
+            updateCachedSuggestions()
             
             // Start auto-refresh polling for live opponent data
             startAutoRefreshTimer()
@@ -174,8 +175,10 @@ struct FriendsTabView: View {
             
             // Auto-refresh when returning to this tab (after initial load)
             if hasAppearedBefore {
-                // Clear sent IDs so stale markers don't block refreshed suggestions
-                sentRequestIds.removeAll()
+                // Keep sentRequestIds (local sends this session) and merge with server-confirmed sent requests
+                // so suggestions that already have pending requests stay hidden
+                let confirmedSentIds = Set(friendService.sentRequests.map { $0.toUserId })
+                sentRequestIds.formUnion(confirmedSentIds)
                 requestSentAnimationIds.removeAll()
                 
                 // ⚡️ PERF FIX: Only do a FULL refresh if stale (> 30s since last).
@@ -242,11 +245,6 @@ struct FriendsTabView: View {
                     .environmentObject(userManager)
             }
         }
-        .sheet(isPresented: $showingLeagueDetail) {
-            NavigationStack {
-                WeeklyLeagueDetailView()
-            }
-        }
         .overlay(
             sentConfirmationOverlay
         )
@@ -295,10 +293,24 @@ struct FriendsTabView: View {
     
     // MARK: - Header
     
+    // MARK: - Suggestion Cache
+    
+    private func updateCachedSuggestions() {
+        let existingFriendIds = Set(friendService.friends.map { $0.friendId })
+        let serverSentIds = Set(friendService.sentRequests.map { $0.toUserId })
+        let allExcludedSentIds = sentRequestIds.union(serverSentIds)
+        let fresh = contactsService.allSuggestions(
+            excludingFriendIds: existingFriendIds,
+            excludingSentIds: allExcludedSentIds
+        )
+        if !fresh.isEmpty {
+            cachedSuggestions = fresh
+        }
+    }
+    
     // MARK: - Refresh Helper
     
     /// Central refresh for all Friends tab data.
-    /// Uses throttling in CommunityChallengeService/PrivateChallengeService to avoid redundant calls.
     private func refreshAllFriendsData(force: Bool) async {
         // Batch 1: Fast social data (parallel) — lightweight, always fetch
         async let friends: () = friendService.fetchFriends()
@@ -334,102 +346,94 @@ struct FriendsTabView: View {
     // MARK: - Header
     
     private var friendsHeaderView: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Friends")
-                    .font(.ds_displayLarge)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.cyan, .blue, Color(red: 0.5, green: 0.3, blue: 0.95).opacity(0.9)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+        HStack(alignment: .center) {
+            Text("Friends")
+                .font(.ds_displayLarge)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.cyan, .blue, Color(red: 0.5, green: 0.3, blue: 0.95).opacity(0.9)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-                    .shadow(color: Color.cyan.opacity(0.4), radius: 6, x: 0, y: 2)
-                
-                Spacer()
-                
-                // Add Friend button
-                Button(action: {
-                    HapticManager.selectionChanged()
-                    showingFriendsList = true
-                }) {
-                    Image(systemName: "person.badge.plus")
-                        .font(.ds_heading3).fontWeight(.semibold)
-                        .foregroundStyle(
-                            LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                        .padding(10)
-                        .background(
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                                .shadow(color: Color.cyan.opacity(0.2), radius: 8, x: 0, y: 2)
-                        )
-                }
-                
-                // Manual refresh button
-                Button(action: {
-                    guard !isManualRefreshing else { return }
-                    HapticManager.impact(.medium)
-                    isManualRefreshing = true
-                    Task {
-                        // Push our own data first, then pull everyone's fresh data
-                        await ChallengeService.shared.syncAllTrackingToChallenges()
-                        await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
-                        await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
-                        await refreshAllFriendsData(force: true)
-                        lastRefreshedAt = Date()
-                        isManualRefreshing = false
-                    }
-                }) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.ds_labelMedium)
-                            .rotationEffect(.degrees(isManualRefreshing ? 360 : 0))
-                            .animation(isManualRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isManualRefreshing)
-                        
-                        if isManualRefreshing {
-                            Text("Syncing...")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .foregroundStyle(
-                        LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .padding(.horizontal, Spacing.sm)
-                    .padding(.vertical, Spacing.xs)
-                    .background(
-                        Capsule()
-                            .fill(Color.cyan.opacity(0.12))
-                    )
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
-                    )
-                }
-                .disabled(isManualRefreshing)
-            }
+                )
+                .shadow(color: Color.cyan.opacity(0.4), radius: 6, x: 0, y: 2)
+            
+            Spacer()
+            
+            friendsRequestsBadge
         }
         .padding(.leading, 4)
+    }
+    
+    private var friendsRequestsBadge: some View {
+        let friendCount = friendService.friends.count
+        let requestCount = friendService.pendingRequests.count
+        
+        return HStack(spacing: 0) {
+            Button {
+                HapticManager.selectionChanged()
+                navigationPath.append("FriendsList")
+            } label: {
+                HStack(spacing: 4) {
+                    Text("\(friendCount)")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    Text("Friends")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(friendCount) friends")
+            .accessibilityHint("Opens your friends list")
+            
+            Rectangle()
+                .fill(Color.gray.opacity(0.3))
+                .frame(width: 1, height: 16)
+                .padding(.horizontal, 8)
+            
+            Button {
+                HapticManager.selectionChanged()
+                navigationPath.append("FriendRequests")
+            } label: {
+                HStack(spacing: 4) {
+                    Text("\(requestCount)")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(requestCount > 0 ? .blue : .primary)
+                    Text("Requests")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(requestCount) friend requests")
+            .accessibilityHint("Opens your friend requests")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(.ultraThinMaterial)
+        )
     }
     
     // MARK: - Add Friends Bar (Non-Friends from Contacts)
     
     private var friendStoriesBar: some View {
         // Combined suggestions: mutual friends (friends-of-friends) first, then contacts
-        // Cross-reference against actual FriendService.friends to exclude existing friends
         let existingFriendIds = Set(friendService.friends.map { $0.friendId })
-        let suggestions = contactsService.allSuggestions(
+        let serverSentIds = Set(friendService.sentRequests.map { $0.toUserId })
+        let allExcludedSentIds = sentRequestIds.union(serverSentIds)
+        let freshSuggestions = contactsService.allSuggestions(
             excludingFriendIds: existingFriendIds,
-            excludingSentIds: sentRequestIds
+            excludingSentIds: allExcludedSentIds
         )
+        let suggestions = freshSuggestions.isEmpty ? cachedSuggestions : freshSuggestions
         
         return Group {
             if !suggestions.isEmpty || contactsService.canAccessContacts {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {
-                        // Search / Find friends circle
                         Button(action: {
                             HapticManager.selectionChanged()
                             showingFriendSearch = true
@@ -852,13 +856,12 @@ struct FriendsTabView: View {
             leagueService: leagueService,
             onTap: {
                 if leagueService.standing != nil {
-                    showingLeagueDetail = true
+                    navigationPath.append("LeagueDetail")
                 } else {
-                    // First tap → join the league
                     Task {
                         await leagueService.fetchOrJoinLeague(force: true)
                         if leagueService.standing != nil {
-                            showingLeagueDetail = true
+                            navigationPath.append("LeagueDetail")
                         }
                     }
                 }

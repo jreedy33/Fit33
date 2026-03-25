@@ -1938,20 +1938,16 @@ struct ChallengeFlowFriendCard: View {
                     gradientColors: [.blue, .cyan]
                 )
                 
-                // Friend info
-                VStack(alignment: .leading, spacing: 4) {
-                    // Username (primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(friend.friendName ?? friend.friendUsername ?? "Friend")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
                     if let username = friend.friendUsername, !username.isEmpty {
                         Text("@\(username)")
-                            .font(.headline)
-                            .foregroundColor(.blue)
-                    }
-                    
-                    // Name (secondary)
-                    if let name = friend.friendName, !name.isEmpty {
-                        Text(name)
-                            .font(.subheadline)
-                            .foregroundColor(.primary)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
                 

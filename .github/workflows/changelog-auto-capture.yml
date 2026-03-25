@@ -207,19 +207,10 @@ jobs:
         shell: bash
         run: |
           set +e
+          set +o pipefail
 
-          git log --oneline --all | grep -E '^[a-f0-9]+ v[0-9]+\.[0-9]+' | head -20 > /tmp/version_commits_raw.txt
-
-          # Filter to v1.24.0+ only
-          > /tmp/version_commits.txt
-          while IFS= read -r line; do
-            VER=$(echo "$line" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "0.0.0")
-            MAJOR=$(echo "$VER" | cut -d. -f1)
-            MINOR=$(echo "$VER" | cut -d. -f2)
-            if [ "$MAJOR" -ge 1 ] 2>/dev/null && [ "$MINOR" -ge 24 ] 2>/dev/null; then
-              echo "$line" >> /tmp/version_commits.txt
-            fi
-          done < /tmp/version_commits_raw.txt
+          # Only match v1.24+ (regex: v1. followed by 24-29 or 3x-9x)
+          git log --oneline --all | grep -E '^[a-f0-9]+ v1\.(2[4-9]|[3-9][0-9])\.' | head -20 > /tmp/version_commits.txt
 
           TOTAL=$(wc -l < /tmp/version_commits.txt | tr -d ' ')
           echo "Found $TOTAL version commits (v1.24+)"

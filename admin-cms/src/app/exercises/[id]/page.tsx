@@ -231,10 +231,10 @@ export default function ExerciseDetailPage() {
           <div style={{ width: 300, flexShrink: 0, position: 'sticky', top: 20 }}>
             {videoUrl ? (
               <video key={videoUrl} src={videoUrl} autoPlay loop muted playsInline
-                style={{ width: '100%', aspectRatio: '9/16', objectFit: 'cover', background: '#000', borderRadius: 12 }}
+                style={{ width: '100%', borderRadius: 12, background: '#000' }}
               />
             ) : (
-              <div style={{ width: '100%', aspectRatio: '9/16', background: 'var(--bg-tertiary)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 40 }}>
+              <div style={{ width: '100%', aspectRatio: '3/4', background: 'var(--bg-tertiary)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 40 }}>
                 🏋️
               </div>
             )}

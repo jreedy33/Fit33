@@ -199,9 +199,11 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold">{profile.name || 'Unnamed User'}</h1>
-                {getVal('is_verified') && (
+                {getVal('is_gold_verified') ? (
+                  <span title="Gold Verified" style={{ color: '#D4A017', fontSize: 18 }}>✓</span>
+                ) : getVal('is_verified') ? (
                   <span title="Verified" style={{ color: '#1DA1F2', fontSize: 18 }}>✓</span>
-                )}
+                ) : null}
                 <button
                   onClick={() => editField('is_verified', !getVal('is_verified'))}
                   className="ml-1 px-2 py-0.5 rounded-full text-xs font-semibold transition-colors"
@@ -212,6 +214,17 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                   }}
                 >
                   {getVal('is_verified') ? '✓ Verified' : 'Set Verified'}
+                </button>
+                <button
+                  onClick={() => editField('is_gold_verified', !getVal('is_gold_verified'))}
+                  className="px-2 py-0.5 rounded-full text-xs font-semibold transition-colors"
+                  style={{
+                    background: getVal('is_gold_verified') ? 'rgba(212, 160, 23, 0.15)' : 'var(--bg-tertiary)',
+                    color: getVal('is_gold_verified') ? '#D4A017' : 'var(--text-muted)',
+                    border: `1px solid ${getVal('is_gold_verified') ? '#D4A017' : 'var(--border)'}`,
+                  }}
+                >
+                  {getVal('is_gold_verified') ? '★ Gold Verified' : 'Set Gold'}
                 </button>
               </div>
               <div className="flex items-center gap-3 mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>

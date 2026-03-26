@@ -197,7 +197,23 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
               {!profile.profile_photo_url && (profile.name?.[0] || '?')}
             </div>
             <div>
-              <h1 className="text-xl font-bold">{profile.name || 'Unnamed User'}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold">{profile.name || 'Unnamed User'}</h1>
+                {getVal('is_verified') && (
+                  <span title="Verified" style={{ color: '#1DA1F2', fontSize: 18 }}>✓</span>
+                )}
+                <button
+                  onClick={() => editField('is_verified', !getVal('is_verified'))}
+                  className="ml-1 px-2 py-0.5 rounded-full text-xs font-semibold transition-colors"
+                  style={{
+                    background: getVal('is_verified') ? 'rgba(29, 161, 242, 0.15)' : 'var(--bg-tertiary)',
+                    color: getVal('is_verified') ? '#1DA1F2' : 'var(--text-muted)',
+                    border: `1px solid ${getVal('is_verified') ? '#1DA1F2' : 'var(--border)'}`,
+                  }}
+                >
+                  {getVal('is_verified') ? '✓ Verified' : 'Set Verified'}
+                </button>
+              </div>
               <div className="flex items-center gap-3 mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
                 <span>@{profile.username || '—'}</span>
                 <span>•</span>

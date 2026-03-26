@@ -233,7 +233,7 @@ export async function POST(req: NextRequest) {
           'fitness_goal', 'experience_level', 'strength_level',
           'workout_environment', 'equipment', 'available_days',
           'current_streak', 'longest_streak', 'total_workouts', 'xp',
-          'last_workout_date', 'has_completed_onboarding',
+          'last_workout_date', 'has_completed_onboarding', 'is_verified',
           'weight_unit', 'height_unit', 'distance_unit', 'week_start_day',
           'daily_calorie_goal', 'daily_protein_goal', 'daily_carbs_goal', 'daily_fat_goal',
           'bmr', 'tdee', 'protein_goal_g', 'carbs_goal_g', 'fat_goal_g',

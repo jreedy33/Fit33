@@ -50,7 +50,7 @@ function actionBadgeClass(action: string): string {
   return 'badge badge-info'
 }
 
-export function timeAgo(iso: string): string {
+function timeAgo(iso: string): string {
   const t = new Date(iso).getTime()
   if (Number.isNaN(t)) return '—'
   const diff = Date.now() - t

@@ -613,9 +613,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         ])
     }
     
+    private var lastScheduledAt: Date?
+    
     // MARK: - Schedule All Notifications
     func scheduleAllNotifications() {
         guard masterNotificationsEnabled && isAuthorized else { return }
+        
+        if let last = lastScheduledAt, Date().timeIntervalSince(last) < 30 { return }
+        lastScheduledAt = Date()
         
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         

@@ -35,6 +35,7 @@ class ExerciseLibraryService: ObservableObject {
     // MARK: - Caching
     private var cachedExercises: [Exercise]?
     private var cachedExercisesByName: [String: Exercise]? // For O(1) name lookups
+    private var cachedExercisesById: [UUID: Exercise]?     // For O(1) ID lookups (shared workouts)
     private var fuzzyNameCache: [String: Exercise]?        // Alternate name forms → Exercise
     private var cacheTimestamp: Date?
     
@@ -87,24 +88,25 @@ class ExerciseLibraryService: ObservableObject {
                 }
             }
             
-            // Build filter cache: fetch objectIDs on background context, resolve on view context
-            // (Exercise managed objects must be accessed on their owning context's queue)
+            // Build filter cache: extract names+IDs on background, match in background,
+            // only resolve the ~800 matched exercises on the main thread (not all 5501).
             if nameList.count > 100 {
                 let bgCtx = PersistenceController.shared.container.newBackgroundContext()
                 bgCtx.automaticallyMergesChangesFromParent = true
-                let objectIDs: [NSManagedObjectID] = await bgCtx.perform {
+                let exerciseIndex: [(name: String, objectID: NSManagedObjectID)] = await bgCtx.perform {
                     let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                     request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
                     let exercises = (try? bgCtx.fetch(request)) ?? []
-                    return exercises.map { $0.objectID }
+                    return exercises.compactMap { ex in
+                        guard let name = ex.name else { return nil }
+                        return (name: name, objectID: ex.objectID)
+                    }
                 }
                 await MainActor.run { [weak self] in
                     guard let self = self else { return }
                     let filterCache = ExerciseLibraryFilterCache.shared
                     if !filterCache.isReady {
-                        let viewCtx = self.viewContext
-                        let exercises = objectIDs.compactMap { viewCtx.object(with: $0) as? Exercise }
-                        filterCache.precomputeRecommendedList(allExercises: exercises)
+                        filterCache.precomputeFromIndex(exerciseIndex: exerciseIndex, viewContext: self.viewContext)
                     }
                 }
             }
@@ -127,6 +129,7 @@ class ExerciseLibraryService: ObservableObject {
                 },
                 uniquingKeysWith: { first, _ in first }
             )
+            cachedExercisesById = nil
             fuzzyNameCache = nil
         }
         
@@ -139,8 +142,9 @@ class ExerciseLibraryService: ObservableObject {
         // Fuzzy fallback for renamed/reformatted exercises
         if let fuzzyResult = fuzzyMatchExercise(name: lower) {
             #if DEBUG
-            AppLogger.debug("🔧 [ExerciseLibrary] Fuzzy matched '\(name)' → '\(fuzzyResult.name ?? "")'", category: .data)
+            AppLogger.debug("🔧 [ExerciseLibrary] Fuzzy matched '\(name)' → '\(fuzzyResult.name ?? "")' (cached for future lookups)", category: .data)
             #endif
+            cachedExercisesByName?[lower] = fuzzyResult
             return fuzzyResult
         }
         
@@ -148,6 +152,32 @@ class ExerciseLibraryService: ObservableObject {
         AppLogger.warning("⚠️ [ExerciseLibrary] Exercise not found: '\(name)' (cache size: \(cachedExercisesByName?.count ?? 0))", category: .data)
         #endif
         return nil
+    }
+    
+    /// Get exercise by its Supabase UUID — O(1) lookup using cached dictionary
+    func getExercise(byId id: UUID) -> Exercise? {
+        if cachedExercisesById == nil {
+            let allExercises = getAllExercises()
+            cachedExercisesById = Dictionary(
+                allExercises.compactMap { exercise -> (UUID, Exercise)? in
+                    guard let exerciseId = exercise.id, !exercise.isDeleted else { return nil }
+                    return (exerciseId, exercise)
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
+        return cachedExercisesById?[id]
+    }
+    
+    /// Resolve exercises from shared workout data — tries ID first, falls back to name
+    func getExercises(byIdsAndNames pairs: [(id: String?, name: String)]) -> [Exercise] {
+        return pairs.compactMap { pair in
+            if let idString = pair.id, let uuid = UUID(uuidString: idString),
+               let exercise = getExercise(byId: uuid) {
+                return exercise
+            }
+            return getExercise(byName: pair.name)
+        }
     }
     
     // MARK: - Fuzzy Name Matching
@@ -293,6 +323,7 @@ class ExerciseLibraryService: ObservableObject {
     func invalidateCache() {
         cachedExercises = nil
         cachedExercisesByName = nil
+        cachedExercisesById = nil
         fuzzyNameCache = nil
         cacheTimestamp = nil
         #if DEBUG
@@ -570,8 +601,11 @@ class ExerciseLibraryService: ObservableObject {
                 seenExerciseNames.insert(normalizedName)
                 
                 let exercise = Exercise(context: viewContext)
-                // Generate new UUID for Core Data (cloud uses different ID system)
-                exercise.id = UUID()
+                if let cloudId = cloudExercise.id, let uuid = UUID(uuidString: cloudId) {
+                    exercise.id = uuid
+                } else {
+                    exercise.id = UUID()
+                }
                 exercise.name = cloudExercise.name
                 exercise.category = cloudExercise.category.isEmpty ? "General" : cloudExercise.category
                 
@@ -811,11 +845,7 @@ class ExerciseLibraryService: ObservableObject {
     }
     
     func getAllExercises() -> [Exercise] {
-        // Return cached exercises if valid
         if isCacheValid, let cached = cachedExercises {
-            #if DEBUG
-            AppLogger.debug("📦 [ExerciseLibrary] Returning \(cached.count) cached exercises", category: .data)
-            #endif
             return cached
         }
         

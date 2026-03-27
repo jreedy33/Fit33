@@ -107,10 +107,15 @@ final class TabPreloader: ObservableObject {
     private func preloadPhase1_CoreData(context: NSManagedObjectContext) async {
         let startTime = CACurrentMediaTime()
         
-        // Run all Core Data fetches in parallel
-        async let exercisesFetch = fetchExercisesForLibrary(context: context)
-        async let workoutsFetch = fetchRecentWorkouts(context: context)
-        async let userFetch = fetchUserData(context: context)
+        // Use a background context so fetches don't block the main queue.
+        // The passed-in context is often viewContext (main-queue); context.perform
+        // on main-queue context runs work ON the main thread.
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
+        
+        async let exercisesFetch = fetchExercisesForLibrary(context: bgContext)
+        async let workoutsFetch = fetchRecentWorkouts(context: bgContext)
+        async let userFetch = fetchUserData(context: bgContext)
         
         // Await all results
         let exercises = await exercisesFetch
@@ -689,6 +694,71 @@ final class ExerciseLibraryFilterCache: ObservableObject {
                     guard idx < allExercises.count else { return nil }
                     return allExercises[idx]
                 }
+                self.preFilteredRecommended = matched
+                self.isReady = true
+                self.isComputing = false
+                
+                StartupWaterfall.shared.end("FilterCache.precompute")
+                let elapsed = (CACurrentMediaTime() - startTime) * 1000
+                AppLogger.debug("⚡️ [FILTER CACHE] Pre-computed \(matched.count) recommended exercises in \(String(format: "%.1f", elapsed))ms", category: .ui)
+            }
+        }
+    }
+    
+    /// Lightweight path: receives names+objectIDs, does all matching/sorting in background,
+    /// then resolves only the ~800 matched exercises on the main thread (not all 5501).
+    func precomputeFromIndex(exerciseIndex: [(name: String, objectID: NSManagedObjectID)], viewContext: NSManagedObjectContext) {
+        guard !isReady, !isComputing else { return }
+        guard !exerciseIndex.isEmpty else { return }
+        isComputing = true
+        
+        StartupWaterfall.shared.mark("FilterCache.precompute")
+        let startTime = CACurrentMediaTime()
+        
+        let recSet = recommendedExerciseNames
+        let usageCounts = personalUsageCounts
+        let (popCache, favCache) = ExercisePopularityService.shared.snapshotPopularityData()
+        
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var matchedEntries: [(name: String, objectID: NSManagedObjectID)] = []
+            matchedEntries.reserveCapacity(250)
+            
+            for (name, objectID) in exerciseIndex {
+                let lower = name.lowercased()
+                var found = recSet.contains(lower)
+                if !found {
+                    for rec in recSet {
+                        if lower.hasPrefix(rec + " ") || lower.hasPrefix(rec + "(") {
+                            found = true
+                            break
+                        }
+                    }
+                }
+                if found {
+                    matchedEntries.append((name: lower, objectID: objectID))
+                }
+            }
+            
+            var popularityScores: [String: Int] = [:]
+            var communityFavorites: Set<String> = []
+            for (name, _) in matchedEntries {
+                let score = popCache[name] ?? 50
+                if score > 0 { popularityScores[name] = score }
+                if favCache.contains(name) { communityFavorites.insert(name) }
+            }
+            
+            matchedEntries.sort { a, b in
+                let scoreA = Self.blendedScoreStatic(name: a.name, usageCounts: usageCounts, popularityScores: popularityScores, communityFavorites: communityFavorites)
+                let scoreB = Self.blendedScoreStatic(name: b.name, usageCounts: usageCounts, popularityScores: popularityScores, communityFavorites: communityFavorites)
+                if scoreA != scoreB { return scoreA > scoreB }
+                return a.name < b.name
+            }
+            
+            let sortedIDs = matchedEntries.map { $0.objectID }
+            
+            await MainActor.run {
+                guard let self = self else { return }
+                let matched = sortedIDs.compactMap { viewContext.object(with: $0) as? Exercise }
                 self.preFilteredRecommended = matched
                 self.isReady = true
                 self.isComputing = false

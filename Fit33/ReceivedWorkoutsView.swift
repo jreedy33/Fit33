@@ -790,8 +790,9 @@ struct ReceivedWorkoutDetailView: View {
         isStartingWorkout = true
         HapticManager.impact(.heavy)
         
-        // Lookup Core Data exercises
-        let coreDataExercises = ExerciseLibraryService.shared.getExercises(byNames: workout.exerciseNames)
+        let coreDataExercises = ExerciseLibraryService.shared.getExercises(
+            byIdsAndNames: workout.exerciseIdNamePairs
+        )
         
         guard !coreDataExercises.isEmpty else {
                 AppLogger.error("❌ No exercises found in Core Data", category: .workout)

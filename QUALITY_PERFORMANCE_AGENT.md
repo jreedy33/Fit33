@@ -861,6 +861,12 @@ Every Supabase INSERT/UPDATE/DELETE/RPC call MUST check `SupabaseManager.shared.
 **Fix 6 — Missing `isCompleted` predicates on secondary `@FetchRequest` sites**:
 - `TrainingHubView` and `WorkoutProgressView` had no predicate — in-progress workout mutations triggered re-fetches. Added `isCompleted == YES`.
 
+**Fix 7 — ExerciseLibrary.preWarmCache resolving 5501 objects on main thread**:
+- `preWarmCache()` Stage D fetched 5501 objectIDs on a background context, then resolved ALL of them via `viewContext.object(with:)` on the main actor — faulting each one and blocking the main thread for ~5.5s.
+- Refactored: extract exercise names + objectIDs on the background context, do all matching/sorting in `Task.detached`, then resolve only the ~832 matched exercises on the main thread (85% reduction).
+- Added `ExerciseLibraryFilterCache.precomputeFromIndex(exerciseIndex:viewContext:)` which accepts `[(name: String, objectID: NSManagedObjectID)]` and avoids the 5501-object main-thread resolution entirely.
+- **Rule**: When building filter caches from Core Data, extract lightweight data (names, IDs) on background contexts and only resolve the filtered subset on the main thread.
+
 ### 2026-03-27: CMS System Health Dashboard
 
 **New CMS page**: `/health` (`admin-cms/src/app/health/page.tsx`) — primary owner: Quality & Performance.
@@ -880,3 +886,47 @@ Provides real-time visibility into backend health:
 - `admin_get_index_health()` — `pg_stat_user_indexes` ordered by scan count
 - `admin_get_rpc_stats()` — `pg_stat_user_functions` top 50 by total time
 - `admin_get_push_pipeline_stats()` — aggregates from `push_notification_queue` + `push_notification_delivery_log`
+
+### 2026-03-27: RestTimer wall-clock fix
+
+**Bug**: Rest timer between sets froze when user switched tabs during an active workout. Timer showed the same value when returning instead of reflecting elapsed time.
+
+**Root cause**: `RestTimer` (`RestTimerViews.swift`) used `CADisplayLink` with frame-delta subtraction (`dt = link.timestamp - lastTimestamp`). A `guard dt < 0.5` rejected large deltas after the display link paused during tab switches, so elapsed time was never subtracted.
+
+**Fix**: Replaced delta-time accumulation with wall-clock `endDate: Date`. `tick()` now computes `timeRemaining = endDate.timeIntervalSinceNow`. On pause, `endDate` is nilled and `timeRemaining` preserved; on resume, `endDate = Date() + timeRemaining`. This handles tab switches, app backgrounding, and any CADisplayLink gaps.
+
+**Rule**: Never use frame-delta accumulation for user-facing timers — always anchor to wall-clock `Date` so elapsed time survives display link interruptions.
+
+### 2026-03-27: Log noise & duplicate work cleanup
+
+**ExerciseLibraryService fuzzy match caching**: `getExercise(byName:)` now writes successful fuzzy match results back into `cachedExercisesByName` under the input key. This prevents repeat O(n) fuzzy searches for stale exercise names (e.g. "Decline Bench Press (Dumbbell)") — previously logged hundreds of times per workout session due to `WorkoutManager.currentTime` ticking every second and re-rendering `WorkoutHomeView`'s program widget.
+
+**Duplicate work eliminated**:
+- Tab switch timing: single log source in `AppPerformanceSystem.TabSwitchOptimizer` (removed duplicate in `MainTabView`)
+- HealthKit observers: `startObservingSteps()`/`startObservingWorkouts()` now guard with `isObservingSteps`/`isObservingWorkouts` flags — prevents duplicate `HKObserverQuery` instances on foreground re-checks
+- Notification scheduling: removed redundant `scheduleAllNotifications()` in `MainTabView` (already handled by `Fit33App` post-auth)
+- Private/community challenge sync: `Fit33App` now snapshots which services had challenges before `HealthDataService.syncAllHealthData()` and only re-syncs services that were empty at that time
+- Realtime callbacks: `setupDefaultCallbacks()` guards with `hasConfiguredCallbacks` flag
+- Push token logging: removed dual `SessionLogManager` + `AppLogger` pattern, kept only `AppLogger` per coding rules
+
+**ChallengeService init**: Changed `Task {}` (inherits `@MainActor`) to `Task.detached` for UserDefaults JSON decode, then `await MainActor.run {}` for `@Published` property assignment. Decode work now runs off the main thread.
+
+**Error level fix**: `HealthKitManager.loadStepGoal()` now catches `CancellationError` and `URLError.cancelled` at `.debug` level instead of `.error`.
+
+**Rule**: `ExerciseLibraryService.getExercise(byName:)` fuzzy matches are now cached — never add a debug log inside the fuzzy match path without also caching the result, or it will spam during active workouts.
+
+### 2026-03-27: Crash fixes (v1.35.0 report — 44 crashes)
+
+**P1 FIXED: Nudge database constraint (10 crashes)** — `nudge_group_challenge_member` RPC inserted into `challenge_id` but table still had a NOT NULL `group_challenge_id` column from the old schema. Fixed by inserting both `challenge_id` AND `group_challenge_id` (same UUID value) for backward compatibility. Migration `20260326_fix_nudge_column_mismatch.sql` should also be applied to drop the redundant column.
+
+**P0 MITIGATED: Main thread freezes (32 crashes, 19-158s)** — Multiple synchronous Core Data operations were blocking the main thread:
+
+1. **`WorkoutManager.init()`** — `loadActiveWorkoutFromStorage()` did sync `viewContext.fetch` during singleton init. Wrapped in `Task {}` so init returns instantly; the async function uses `context.perform` to yield the main thread.
+
+2. **`TabPreloader` Phase 1** — `fetchExercisesForLibrary`, `fetchRecentWorkouts`, `fetchUserData` all used `context.perform` on the **viewContext** (main-queue context), which means fetches ran ON the main thread. Changed to use `newBackgroundContext()`.
+
+3. **`SmartPrefetch.prefetchExerciseLibrary`** — Used `MainActor.run` + `viewContext.fetch(100 exercises)` on tab switch. Converted to background context with `bgContext.perform`.
+
+4. **`SupabaseManager.syncUserProfileToCoreData` + `syncWorkoutHistoryToCoreData`** — Both wrapped entire Core Data operations in `MainActor.run` with `viewContext`. The workout history sync processes 126+ workouts with exercises and sets — all on the main thread. Converted both to `newBackgroundContext()` with `bgContext.perform`. Background saves auto-merge via `automaticallyMergesChangesFromParent`.
+
+**Rule**: NEVER use `MainActor.run` for Core Data sync operations. Use `newBackgroundContext()` + `bgContext.perform {}` for all batch Core Data work (fetch + insert + save). The viewContext should only be used for `@FetchRequest` in SwiftUI views — never for bulk operations. When a `viewContext.perform {}` block is used, remember it runs on the **main queue** — it does NOT run on a background thread.

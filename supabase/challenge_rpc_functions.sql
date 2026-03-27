@@ -1229,9 +1229,9 @@ BEGIN
         RETURN FALSE; -- Already nudged today
     END IF;
 
-    -- Record the nudge
-    INSERT INTO group_challenge_nudges (challenge_id, sender_id, recipient_id, created_at)
-    VALUES (challenge_uuid, current_user_uuid, recipient_uuid, NOW());
+    -- Record the nudge (include group_challenge_id for backward compat with old schema)
+    INSERT INTO group_challenge_nudges (challenge_id, group_challenge_id, sender_id, recipient_id, created_at)
+    VALUES (challenge_uuid, challenge_uuid, current_user_uuid, recipient_uuid, NOW());
 
     -- Get names
     SELECT name INTO sender_name FROM user_profiles WHERE id = current_user_uuid;

@@ -59,9 +59,9 @@ struct SwipeableSetRow<Content: View>: View {
                         }
                         .onEnded { value in
                             withAnimation(.easeOut(duration: 0.2)) {
-                                // If swiped more than 60% of delete button width, show delete button
                                 if value.translation.width < -deleteButtonWidth * 0.6 {
                                     offset = -deleteButtonWidth
+                                    if !isShowingDelete { HapticManager.impact(.medium) }
                                     isShowingDelete = true
                                 } else {
                                     offset = 0

@@ -300,8 +300,10 @@ class DailyQuestService: ObservableObject {
     private let cacheDuration: TimeInterval = 60 // 1 minute
     
     private init() {
-        loadCachedQuests()
-        restoreLastReportedSteps()
+        Task { [self] in
+            loadCachedQuests()
+            restoreLastReportedSteps()
+        }
     }
     
     // MARK: - Computed Properties

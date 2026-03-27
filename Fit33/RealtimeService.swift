@@ -70,6 +70,8 @@ class RealtimeService: ObservableObject {
     /// Timestamp when community view became visible — used for adaptive refresh cadence
     private var communityViewBecameVisibleAt: Date?
     
+    private var hasConfiguredCallbacks = false
+    
     // MARK: - Throttle State (prevent cascading fetches)
     
     /// Last time we fetched community challenges from a realtime event.
@@ -1329,6 +1331,9 @@ extension RealtimeService {
     /// Setup default callbacks for notifications
     /// Call this after authentication
     func setupDefaultCallbacks() {
+        guard !hasConfiguredCallbacks else { return }
+        hasConfiguredCallbacks = true
+        
         // Friend request received → refresh data (push notification handles the alert)
         onFriendRequestReceived = { payload in
             Task { @MainActor in

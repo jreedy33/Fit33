@@ -278,17 +278,8 @@ struct MainTabView: View {
                 
                 // ⚡️ End transition tracking (async to not block)
                 DispatchQueue.main.async { [self] in
-                    let endTime = CACurrentMediaTime()
-                    let totalMs = (endTime - switchStartTime) * 1000
                     tabSwitchOptimizer.endTransition()
                     MainThreadWatchdog.shared.clearContext()
-                    if totalMs > 300 {
-                        AppLogger.warning("⚠️ [TAB SWITCH] Slow transition: \(String(format: "%.1f", totalMs))ms", category: .ui)
-                    } else if totalMs > 150 {
-                        AppLogger.debug("🟡 [TAB SWITCH] Transition: \(String(format: "%.1f", totalMs))ms", category: .ui)
-                    } else {
-                        AppLogger.debug("✅ [TAB SWITCH] Fast transition: \(String(format: "%.1f", totalMs))ms", category: .ui)
-                    }
                 }
             }
             if newValue == 0 && HealthKitManager.shared.isAuthorized {
@@ -386,10 +377,8 @@ struct MainTabView: View {
                     }
                 }
             case .authorized, .provisional, .ephemeral:
-                // Already authorized - ensure notifications are scheduled
-                await MainActor.run {
-                    notificationManager.scheduleAllNotifications()
-                }
+                // Already handled by Fit33App post-auth startup
+                break
             @unknown default:
                 break
             }

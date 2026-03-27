@@ -190,32 +190,34 @@ final class StartupCache: ObservableObject {
     
     // MARK: - Warm Up (Call from Fit33App.swift)
     
-    /// Call this early in app lifecycle to pre-warm caches
+    /// Call this early in app lifecycle to pre-warm caches.
+    /// All Core Data fetches run on a background context to avoid blocking the main thread.
     func warmUp(context: NSManagedObjectContext) async {
         guard !isWarmed || isCacheStale else { return }
         
         let startTime = CACurrentMediaTime()
-        AppLogger.debug("🚀 [STARTUP CACHE] Beginning warm-up...", category: .performance)
+        AppLogger.debug("🚀 [STARTUP CACHE] Beginning warm-up (background)...", category: .performance)
+        
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
         
         // Stage 1: User stats (fastest, most critical)
-        await warmUserStats(context: context)
+        await warmUserStats(context: bgContext)
         warmupProgress = 0.25
         
         // Stage 2: Exercise metadata (categories, equipment)
-        await warmExerciseMetadata(context: context)
+        await warmExerciseMetadata(context: bgContext)
         warmupProgress = 0.50
         
         // Stage 3: Recent workouts (IDs only, not full objects)
-        await warmRecentWorkouts(context: context)
+        await warmRecentWorkouts(context: bgContext)
         warmupProgress = 0.75
         
         // Stage 4: Exercise count
-        await warmExerciseCount(context: context)
+        await warmExerciseCount(context: bgContext)
         warmupProgress = 0.90
         
         // Stage 5: Pre-warm exercise library so Exercise tab has data immediately
-        // This triggers ExerciseLibraryService init (eager Core Data check) + cache build
-        // at ~T=500ms instead of waiting for TabPreloader Phase 4 at T=4s
         ExerciseLibraryService.shared.preWarmCache()
         warmupProgress = 1.0
         
@@ -232,15 +234,16 @@ final class StartupCache: ObservableObject {
     }
     
     // MARK: - Individual Warm Functions
-    // Note: These run on MainActor with the viewContext, which is safe for reads
+    // All fetches use bgContext.perform to run off the main thread.
     
     private func warmUserStats(context: NSManagedObjectContext) async {
         let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
         fetchRequest.fetchLimit = 1
         
         do {
-            if let user = try context.fetch(fetchRequest).first {
-                self.cachedUserStats = CachedUserStats(
+            let stats: CachedUserStats? = try await context.perform {
+                guard let user = try context.fetch(fetchRequest).first else { return nil }
+                return CachedUserStats(
                     totalWorkouts: Int(user.totalWorkouts),
                     currentStreak: Int(user.currentStreak),
                     longestStreak: Int(user.longestStreak),
@@ -248,62 +251,65 @@ final class StartupCache: ObservableObject {
                     lastWorkoutDate: user.lastWorkoutDate
                 )
             }
+            self.cachedUserStats = stats
         } catch {
             AppLogger.error("⚠️ [STARTUP CACHE] User stats warm failed: \(error)", category: .performance)
         }
     }
     
     private func warmExerciseMetadata(context: NSManagedObjectContext) async {
-        // Get unique categories
-        let categoryRequest: NSFetchRequest<NSDictionary> = NSFetchRequest(entityName: "Exercise")
-        categoryRequest.resultType = .dictionaryResultType
-        categoryRequest.propertiesToFetch = ["category"]
-        categoryRequest.returnsDistinctResults = true
-        
         do {
-            let results = try context.fetch(categoryRequest)
-            self.cachedCategories = results.compactMap { $0["category"] as? String }.sorted()
+            let (categories, equipment) = try await context.perform {
+                let categoryRequest: NSFetchRequest<NSDictionary> = NSFetchRequest(entityName: "Exercise")
+                categoryRequest.resultType = .dictionaryResultType
+                categoryRequest.propertiesToFetch = ["category"]
+                categoryRequest.returnsDistinctResults = true
+                let catResults = try context.fetch(categoryRequest)
+                let cats = catResults.compactMap { $0["category"] as? String }.sorted()
+                
+                let equipmentRequest: NSFetchRequest<NSDictionary> = NSFetchRequest(entityName: "Exercise")
+                equipmentRequest.resultType = .dictionaryResultType
+                equipmentRequest.propertiesToFetch = ["equipment"]
+                equipmentRequest.returnsDistinctResults = true
+                let eqResults = try context.fetch(equipmentRequest)
+                let eqs = eqResults.compactMap { $0["equipment"] as? String }.sorted()
+                
+                return (cats, eqs)
+            }
+            self.cachedCategories = categories
+            self.cachedEquipment = equipment
         } catch {
-            AppLogger.error("⚠️ [STARTUP CACHE] Categories warm failed: \(error)", category: .performance)
+            AppLogger.error("⚠️ [STARTUP CACHE] Metadata warm failed: \(error)", category: .performance)
         }
         
-        // Get unique equipment
-        let equipmentRequest: NSFetchRequest<NSDictionary> = NSFetchRequest(entityName: "Exercise")
-        equipmentRequest.resultType = .dictionaryResultType
-        equipmentRequest.propertiesToFetch = ["equipment"]
-        equipmentRequest.returnsDistinctResults = true
-        
-        do {
-            let results = try context.fetch(equipmentRequest)
-            self.cachedEquipment = results.compactMap { $0["equipment"] as? String }.sorted()
-        } catch {
-            AppLogger.error("⚠️ [STARTUP CACHE] Equipment warm failed: \(error)", category: .performance)
-        }
-        
-        // Muscle groups are static, cache them directly
         self.cachedMuscleGroups = ["All", "Biceps", "Triceps", "Forearms", "Quads", "Hamstrings", 
                                    "Glutes", "Calves", "Lats", "Upper Back", "Traps", "Lower Back", 
                                    "Front Delts", "Side Delts", "Rear Delts", "Abs", "Obliques"]
     }
     
     private func warmRecentWorkouts(context: NSManagedObjectContext) async {
-        let fetchRequest: NSFetchRequest<Workout> = Workout.fetchRequest()
-        fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
-        fetchRequest.fetchLimit = 20
-        fetchRequest.predicate = NSPredicate(format: "isCompleted == true")
-        
         do {
-            let workouts = try context.fetch(fetchRequest)
-            self.cachedRecentWorkouts = workouts.map { $0.objectID }
+            let ids: [NSManagedObjectID] = try await context.perform {
+                let fetchRequest: NSFetchRequest<Workout> = Workout.fetchRequest()
+                fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+                fetchRequest.fetchLimit = 20
+                fetchRequest.predicate = NSPredicate(format: "isCompleted == true")
+                let workouts = try context.fetch(fetchRequest)
+                return workouts.map { $0.objectID }
+            }
+            self.cachedRecentWorkouts = ids
         } catch {
             AppLogger.error("⚠️ [STARTUP CACHE] Workouts warm failed: \(error)", category: .performance)
         }
     }
     
     private func warmExerciseCount(context: NSManagedObjectContext) async {
-        let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
         do {
-            self.cachedExerciseCount = try context.count(for: fetchRequest)
+            let count: Int = try await context.perform {
+                let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+                return try context.count(for: fetchRequest)
+            }
+            self.cachedExerciseCount = count
         } catch {
             AppLogger.error("⚠️ [STARTUP CACHE] Exercise count warm failed: \(error)", category: .performance)
         }
@@ -533,21 +539,26 @@ final class SmartPrefetch: ObservableObject {
         guard prefetchTasks["exercises"] == nil else { return }
         
         prefetchTasks["exercises"] = Task(priority: .userInitiated) {
-            // Pre-load exercise categories and counts on main actor (viewContext is main thread)
-            await MainActor.run {
-                let context = PersistenceController.shared.container.viewContext
-                let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
-                fetchRequest.fetchLimit = 100 // First batch
-                fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
-                
-                do {
-                    let exercises = try context.fetch(fetchRequest)
-                    self.prefetchedData["exercises_first_batch"] = exercises.map { $0.objectID }
-                } catch {
-                    AppLogger.error("⚠️ [PREFETCH] Exercise prefetch failed: \(error)", category: .performance)
+            let bgContext = PersistenceController.shared.container.newBackgroundContext()
+            let objectIDs: [NSManagedObjectID] = await withCheckedContinuation { continuation in
+                bgContext.perform {
+                    let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+                    fetchRequest.fetchLimit = 100
+                    fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
+                    
+                    do {
+                        let exercises = try bgContext.fetch(fetchRequest)
+                        continuation.resume(returning: exercises.map { $0.objectID })
+                    } catch {
+                        AppLogger.error("⚠️ [PREFETCH] Exercise prefetch failed: \(error)", category: .performance)
+                        continuation.resume(returning: [])
+                    }
                 }
             }
             
+            await MainActor.run {
+                self.prefetchedData["exercises_first_batch"] = objectIDs
+            }
             self.prefetchTasks["exercises"] = nil
         }
     }
@@ -791,6 +802,7 @@ final class TabSwitchOptimizer: ObservableObject {
     
     /// Call when tab switch animation completes
     func endTransition() {
+        guard isTransitioning else { return }
         let elapsed = (CACurrentMediaTime() - transitionStartTime) * 1000
         let seq = transitionSequence
         isTransitioning = false

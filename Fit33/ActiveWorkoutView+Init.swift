@@ -134,11 +134,12 @@ extension ActiveWorkoutView {
                     
                     // Heavy computation happens on background thread
                     let progWeek = workoutManager.currentProgramWeek
+                    let defaultCount = WorkoutManager.userDefaultSetCount
                     let recs = await MainActor.run {
                         StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                             exerciseName: exerciseName,
                             user: user,
-                            numberOfSets: 3,
+                            numberOfSets: defaultCount,
                             context: context,
                             programWeek: progWeek
                         )
@@ -150,12 +151,14 @@ extension ActiveWorkoutView {
                     
                     var smartSets: [WorkoutSetData]? = nil
                     if !recs.isEmpty {
-                        // Pre-populate sets with recommended weight/reps so fields aren't empty
                         smartSets = recs.map { rec in
                             let setData = WorkoutSetData()
                             setData.weight = rec.weight
                             setData.reps = rec.reps
                             return setData
+                        }
+                        while smartSets!.count < defaultCount {
+                            smartSets!.append(WorkoutSetData())
                         }
                     }
                     
@@ -233,13 +236,12 @@ extension ActiveWorkoutView {
                     }
                     updates.append((exerciseId: exerciseId, data: previousData))
                 } else if let user = currentUser {
-                    // Fallback: generate smart recs (on main thread since it needs Core Data context)
                     let progWeek2 = workoutManager.currentProgramWeek
                     let recommendations = await MainActor.run {
                         StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                             exerciseName: exerciseName,
                             user: user,
-                            numberOfSets: 3,
+                            numberOfSets: WorkoutManager.userDefaultSetCount,
                             context: ctx,
                             programWeek: progWeek2
                         )
@@ -337,13 +339,13 @@ extension ActiveWorkoutView {
                     #endif
                 }
             } else if let user = currentUser {
-                // No historical data - generate smart recommendations
                 let progWeek3 = await MainActor.run { workoutManager.currentProgramWeek }
+                let defaultCount = WorkoutManager.userDefaultSetCount
                 let recommendations = await MainActor.run {
                     StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                         exerciseName: exerciseName,
                         user: user,
-                        numberOfSets: 3,
+                        numberOfSets: defaultCount,
                         context: ctx,
                         programWeek: progWeek3
                     )
@@ -355,14 +357,16 @@ extension ActiveWorkoutView {
 
                 await MainActor.run {
                     previousExerciseSets[exerciseId] = smartPreviousData
-                    // Pre-populate sets with smart recommendation values
                     let currentSets = wm.getSetsForExercise(id: exerciseId)
                     if currentSets.allSatisfy({ $0.weight == 0 && $0.reps == 0 && !$0.isCompleted }) {
-                        let smartSets = recommendations.map { rec in
+                        var smartSets = recommendations.map { rec in
                             let setData = WorkoutSetData()
                             setData.weight = rec.weight
                             setData.reps = rec.reps
                             return setData
+                        }
+                        while smartSets.count < defaultCount {
+                            smartSets.append(WorkoutSetData())
                         }
                         wm.updateSetsForExercise(id: exerciseId, sets: smartSets)
                     }
@@ -379,14 +383,17 @@ extension ActiveWorkoutView {
         let currentSets = wm.getSetsForExercise(id: exerciseId)
         let allEmpty = currentSets.allSatisfy { $0.weight == 0 && $0.reps == 0 && !$0.isCompleted }
 
-        guard allEmpty else { return } // Don't overwrite user's in-progress data
+        guard allEmpty else { return }
 
-        // Create sets matching the previous workout's count with pre-filled weight/reps
-        let newSets = previousData.map { prev in
+        let defaultCount = WorkoutManager.userDefaultSetCount
+        var newSets = previousData.map { prev in
             let setData = WorkoutSetData()
             setData.weight = prev.weight
             setData.reps = prev.reps
             return setData
+        }
+        while newSets.count < defaultCount {
+            newSets.append(WorkoutSetData())
         }
 
         if !newSets.isEmpty {

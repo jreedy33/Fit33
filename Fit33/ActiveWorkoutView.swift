@@ -63,6 +63,7 @@ struct ActiveWorkoutView: View {
     @AppStorage("workoutPerSideMode") var isPerSideGlobal: Bool = false
     @AppStorage("defaultRestSeconds") var defaultRestSeconds: Int = 90
     @AppStorage("autoStartRestTimer") var autoStartRestTimer: Bool = true
+    @AppStorage("defaultSetCount") var defaultSetCount: Int = 3
     @AppStorage("keepScreenOnDuringWorkout") var keepScreenOn: Bool = true
     @AppStorage("workoutSoundEffects") var soundEffects: Bool = true
     @AppStorage("showMusicPlayer") var showMusicPlayer: Bool = true

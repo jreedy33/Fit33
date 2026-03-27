@@ -451,9 +451,7 @@ final class HealthKitService: ObservableObject {
                 if let error = error {
                     let desc = error.localizedDescription.lowercased()
                     let isExpected = desc.contains("no data available") || desc.contains("protected health data") || desc.contains("authorization not determined")
-                    if isExpected {
-                        AppLogger.debug("[HK] fetchSum(\(identifier.rawValue)) — no data (expected)", category: .health)
-                    } else {
+                    if !isExpected {
                         AppLogger.warning("[HK] fetchSum(\(identifier.rawValue)) failed: \(error.localizedDescription)", category: .health)
                     }
                     continuation.resume(returning: nil)

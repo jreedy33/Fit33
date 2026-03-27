@@ -482,7 +482,8 @@ struct WorkoutProgressView: View {
     @StateObject private var cloudProgramService = CloudProgramService.shared
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        animation: .none)  // Disable animation for faster updates
+        predicate: NSPredicate(format: "isCompleted == YES"),
+        animation: .none)
     private var workouts: FetchedResults<Workout>
     
     @State private var selectedTimeFrame: TimeFrame = .month

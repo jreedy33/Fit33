@@ -624,6 +624,7 @@ struct ShareWorkoutSheet: View {
             }
             
             return SharedExercise(
+                exerciseId: we.exercise?.id?.uuidString,
                 name: name,
                 sets: completedSets.count,
                 reps: repsString,

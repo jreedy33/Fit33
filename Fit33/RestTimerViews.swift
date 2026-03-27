@@ -114,7 +114,8 @@ class RestTimer: ObservableObject {
     @Published var shouldAnimate: Bool = true
     
     private var displayLink: CADisplayLink?
-    private var lastTimestamp: CFTimeInterval = 0
+    private var endDate: Date?
+    private var foregroundObserver: NSObjectProtocol?
     
     var visualProgress: CGFloat {
         guard originalTotalTime > 0 else { return 0 }
@@ -123,6 +124,39 @@ class RestTimer: ObservableObject {
     
     var visualRemainingProgress: CGFloat {
         1.0 - visualProgress
+    }
+    
+    init() {
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.syncToWallClock()
+        }
+    }
+    
+    deinit {
+        displayLink?.invalidate()
+        if let observer = foregroundObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+    
+    func syncToWallClock() {
+        guard let endDate = endDate else { return }
+        let remaining = endDate.timeIntervalSinceNow
+        if remaining <= 0 {
+            timeRemaining = 0
+            stop()
+        } else {
+            timeRemaining = remaining
+            if !isActive { isActive = true }
+            if displayLink == nil {
+                displayLink = CADisplayLink(target: self, selector: #selector(tick))
+                displayLink?.add(to: .main, forMode: .common)
+            }
+        }
     }
     
     func start(duration: TimeInterval) {
@@ -138,7 +172,7 @@ class RestTimer: ObservableObject {
         adElapsedTime = adTime
         isActive = true
         shouldAnimate = true
-        lastTimestamp = 0
+        endDate = Date().addingTimeInterval(duration)
         
         displayLink = CADisplayLink(target: self, selector: #selector(tick))
         displayLink?.add(to: .main, forMode: .common)
@@ -149,26 +183,20 @@ class RestTimer: ObservableObject {
     }
     
     @objc private func tick(_ link: CADisplayLink) {
-        if lastTimestamp == 0 {
-            lastTimestamp = link.timestamp
-            return
-        }
-        let dt = link.timestamp - lastTimestamp
-        lastTimestamp = link.timestamp
-        
-        guard dt > 0, dt < 0.5 else { return }
-        
-        timeRemaining -= dt
-        if timeRemaining <= 0 {
+        guard let endDate = endDate else { return }
+        let remaining = endDate.timeIntervalSinceNow
+        if remaining <= 0 {
             timeRemaining = 0
             stop()
+        } else {
+            timeRemaining = remaining
         }
     }
     
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
-        lastTimestamp = 0
+        endDate = nil
         isActive = false
         timeRemaining = 0
         adElapsedTime = 0
@@ -178,14 +206,14 @@ class RestTimer: ObservableObject {
     func pause() {
         displayLink?.invalidate()
         displayLink = nil
-        lastTimestamp = 0
+        endDate = nil
         isActive = false
     }
     
     func resume() {
         guard timeRemaining > 0 else { return }
         isActive = true
-        lastTimestamp = 0
+        endDate = Date().addingTimeInterval(timeRemaining)
         displayLink = CADisplayLink(target: self, selector: #selector(tick))
         displayLink?.add(to: .main, forMode: .common)
     }

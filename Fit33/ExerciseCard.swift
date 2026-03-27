@@ -164,6 +164,7 @@ struct ExerciseCard: View {
         .onAppear {
             // ⚡ PERF: Minimal work in onAppear for instant rendering
             guard !exercise.isFault else { return }
+            cardRestTimer.syncToWallClock()
             isFavorite = exercise.isFavorite
             
             Task { @MainActor in
@@ -171,9 +172,6 @@ struct ExerciseCard: View {
                 guard !Task.isCancelled else { return }
                 hasAppeared = true
             }
-            
-            // ⚡️ PERF: Do NOT prefetch alternatives here - it's lazy now
-            // Alternatives are only fetched when user actually taps shuffle
         }
         .onChange(of: exercise.id) { _, newId in
             // Clear prefetch cache when exercise changes (after shuffle)

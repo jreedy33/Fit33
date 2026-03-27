@@ -3,30 +3,39 @@ import CoreData
 
 extension DashboardView {
     var recentWorkoutsSection: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack {
-                Image(systemName: "clock.fill")
-                    .foregroundStyle(
-                        LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .font(.title3)
-                Text("Recent Activity")
-                    .font(.title3)
-                    .fontWeight(.bold)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.fill")
+                        .foregroundStyle(
+                            LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .font(.title3)
+                    Text("Recent Activity")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                }
                 
-                Spacer()
-                
-                NavigationLink(value: DashboardRoute.workoutHistory) {
-                    Text("View All")
+                HStack {
+                    Text("\(totalCombinedWorkouts) workouts completed")
                         .font(.caption)
-                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 28)
+                    
+                    Spacer()
+                    
+                    NavigationLink(value: DashboardRoute.workoutHistory) {
+                        HStack(spacing: 4) {
+                            Text("View All")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
                         .foregroundColor(.blue)
+                    }
                 }
             }
-            
-            Text("\(totalCombinedWorkouts) workouts completed")
-                .font(.caption)
-                .foregroundColor(.secondary)
             
             VStack(spacing: Spacing.sm) {
                 ForEach(combinedRecentWorkouts.prefix(3), id: \.id) { item in

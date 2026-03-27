@@ -19,6 +19,12 @@ final class WorkoutSuggestionEngine: ObservableObject {
         return ctx
     }()
 
+    // Cached recovery data — populated by async methods, read by sync callers (view bodies)
+    private var cachedRecoveryStates: [MuscleRecoveryState]?
+    private var cachedSplitFamilies: [SplitFamily]?
+    private var cacheTimestamp: Date?
+    private let cacheTTL: TimeInterval = 30
+
     // MARK: - Muscle Group Taxonomy
 
     enum MuscleCategory: String, CaseIterable {
@@ -89,12 +95,12 @@ final class WorkoutSuggestionEngine: ObservableObject {
 
     // MARK: - Recovery Analysis
 
-    /// Returns the recovery state of every muscle group based on the last 5 days of workouts.
-    func getMuscleRecoveryStates() -> [MuscleRecoveryState] {
-        let recentMusclesByDate = getRecentMusclesWithDates(days: 5)
+    /// Async version — fetches from Core Data without blocking the calling thread.
+    func getMuscleRecoveryStatesAsync() async -> [MuscleRecoveryState] {
+        let recentMusclesByDate = await getRecentMusclesWithDatesAsync(days: 5)
         let now = Date()
 
-        return MuscleCategory.allCases.map { cat in
+        let states = MuscleCategory.allCases.map { cat in
             let lastDate = recentMusclesByDate[cat]
             let hours = lastDate.map { Int(now.timeIntervalSince($0) / 3600) } ?? Int.max
             let recovery = Self.recoveryHours[cat] ?? 48
@@ -105,6 +111,27 @@ final class WorkoutSuggestionEngine: ObservableObject {
                 recoveryHours: recovery
             )
         }
+        cachedRecoveryStates = states
+        cacheTimestamp = Date()
+        return states
+    }
+
+    /// Sync version — reads from cache populated by the async path.
+    /// Falls back to an empty "all recovered" state if cache is cold (never blocks main thread).
+    func getMuscleRecoveryStates() -> [MuscleRecoveryState] {
+        if let cached = cachedRecoveryStates,
+           let ts = cacheTimestamp,
+           Date().timeIntervalSince(ts) < cacheTTL {
+            return cached
+        }
+        return MuscleCategory.allCases.map { cat in
+            MuscleRecoveryState(
+                category: cat,
+                lastTrainedDate: nil,
+                hoursElapsed: Int.max,
+                recoveryHours: Self.recoveryHours[cat] ?? 48
+            )
+        }
     }
 
     /// Muscle categories that are ready to train (fully recovered).
@@ -112,9 +139,22 @@ final class WorkoutSuggestionEngine: ObservableObject {
         getMuscleRecoveryStates().filter(\.isRecovered).map(\.category)
     }
 
+    /// Async version — uses async Core Data fetch.
+    func recoveredMusclesAsync() async -> [MuscleCategory] {
+        await getMuscleRecoveryStatesAsync().filter(\.isRecovered).map(\.category)
+    }
+
     // MARK: - Smart Suggestion for Today
 
-    /// Primary entry point: "What should the user do today?"
+    /// Async entry point — fetches recovery data off the main thread.
+    @MainActor func suggestForTodayAsync() async -> TodaySuggestion {
+        if let programSuggestion = programBasedSuggestion() {
+            return programSuggestion
+        }
+        return await recoveryBasedSuggestionAsync()
+    }
+
+    /// Sync entry point — uses cached recovery data (never blocks main thread).
     @MainActor func suggestForToday() -> TodaySuggestion {
         if let programSuggestion = programBasedSuggestion() {
             return programSuggestion
@@ -186,11 +226,22 @@ final class WorkoutSuggestionEngine: ObservableObject {
 
     // MARK: - Recovery-Based Suggestion (no active program)
 
+    private func recoveryBasedSuggestionAsync() async -> TodaySuggestion {
+        let states = await getMuscleRecoveryStatesAsync()
+        let recovered = states.filter(\.isRecovered)
+        let recentSplits = await getRecentSplitFamiliesAsync(days: 3)
+        return buildRecoverySuggestion(states: states, recovered: recovered, recentSplits: recentSplits)
+    }
+
+    /// Sync version — uses cached data, never blocks.
     private func recoveryBasedSuggestion() -> TodaySuggestion {
         let states = getMuscleRecoveryStates()
         let recovered = states.filter(\.isRecovered)
-        let recentSplits = getRecentSplitFamilies(days: 3)
+        let recentSplits = cachedSplitFamilies ?? []
+        return buildRecoverySuggestion(states: states, recovered: recovered, recentSplits: recentSplits)
+    }
 
+    private func buildRecoverySuggestion(states: [MuscleRecoveryState], recovered: [MuscleRecoveryState], recentSplits: [SplitFamily]) -> TodaySuggestion {
         let preferredFamilies: [SplitFamily] = [.push, .pull, .legs, .upperBody, .fullBody, .coreCardio]
         let familyCandidates = preferredFamilies.filter { family in
             let muscles = musclesForFamily(family)
@@ -254,7 +305,27 @@ final class WorkoutSuggestionEngine: ObservableObject {
 
     // MARK: - Motivational Message Helpers
 
-    /// Returns a context-aware motivational string based on recovery + recent training.
+    /// Async version — fetches recovery data off the main thread, then builds the message.
+    @MainActor func contextualMotivationalMessageAsync(firstName: String, crown: String) async -> String? {
+        let suggestion = await suggestForTodayAsync()
+
+        if suggestion.isFromProgram {
+            if let dayName = suggestion.programDayName {
+                let templates = [
+                    "\(dayName) day! Stay on track, \(crown)! 🎯",
+                    "Your program says \(dayName) — let's get it, \(firstName)! 💪",
+                    "Stick to the plan! \(dayName) is calling, \(crown)! 🔥",
+                    "Program day: \(dayName). Consistency builds champions! 🏆"
+                ]
+                return templates.randomElement()
+            }
+        }
+
+        let states = await getMuscleRecoveryStatesAsync()
+        return buildMotivationalMessage(states: states, firstName: firstName, crown: crown)
+    }
+
+    /// Sync version — uses cached recovery data for view-body callers.
     @MainActor func contextualMotivationalMessage(firstName: String, crown: String) -> String? {
         let suggestion = suggestForToday()
 
@@ -271,6 +342,10 @@ final class WorkoutSuggestionEngine: ObservableObject {
         }
 
         let states = getMuscleRecoveryStates()
+        return buildMotivationalMessage(states: states, firstName: firstName, crown: crown)
+    }
+
+    private func buildMotivationalMessage(states: [MuscleRecoveryState], firstName: String, crown: String) -> String? {
         let recovering = states.filter { !$0.isRecovered && $0.lastTrainedDate != nil }
         let bestRecovered = states.filter(\.isRecovered)
             .filter { $0.lastTrainedDate != nil }
@@ -298,6 +373,7 @@ final class WorkoutSuggestionEngine: ObservableObject {
     }
 
     /// Returns a smart description for upper/lower body daily quest based on recovery.
+    /// Uses cached recovery states — never blocks the main thread.
     @MainActor func smartQuestDescription(isUpperBody: Bool) -> String {
         let states = getMuscleRecoveryStates()
 
@@ -382,14 +458,12 @@ final class WorkoutSuggestionEngine: ObservableObject {
         }
     }
 
-    /// Fetches the most recent training date for each muscle category from Core Data.
-    /// Uses a background context so this can run off the main thread.
-    private func getRecentMusclesWithDates(days: Int) -> [MuscleCategory: Date] {
+    /// Async fetch — runs on the background context queue, never blocks the caller.
+    private func getRecentMusclesWithDatesAsync(days: Int) async -> [MuscleCategory: Date] {
         let startDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
 
-        var latest: [MuscleCategory: Date] = [:]
-
-        bgContext.performAndWait {
+        return await bgContext.perform {
+            var latest: [MuscleCategory: Date] = [:]
             let request: NSFetchRequest<Workout> = Workout.fetchRequest()
             request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
                 NSPredicate(format: "isCompleted == YES"),
@@ -414,19 +488,15 @@ final class WorkoutSuggestionEngine: ObservableObject {
             } catch {
                 AppLogger.error("WorkoutSuggestionEngine: failed to fetch workouts: \(error.localizedDescription)", category: .workout)
             }
+            return latest
         }
-
-        return latest
     }
 
-    /// Returns the split families of the last N days of workouts, oldest to newest.
-    /// Uses a background context so this can run off the main thread.
-    private func getRecentSplitFamilies(days: Int) -> [SplitFamily] {
+    /// Async fetch — runs on the background context queue, never blocks the caller.
+    private func getRecentSplitFamiliesAsync(days: Int) async -> [SplitFamily] {
         let startDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
 
-        var result: [SplitFamily] = []
-
-        bgContext.performAndWait {
+        let result: [SplitFamily] = await bgContext.perform {
             let request: NSFetchRequest<Workout> = Workout.fetchRequest()
             request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
                 NSPredicate(format: "isCompleted == YES"),
@@ -436,16 +506,16 @@ final class WorkoutSuggestionEngine: ObservableObject {
 
             do {
                 let workouts = try self.bgContext.fetch(request)
-                result = workouts.map { workout -> SplitFamily in
+                return workouts.map { workout -> SplitFamily in
                     let muscles: [MuscleCategory] = (workout.exercises?.allObjects as? [WorkoutExercise] ?? [])
                         .flatMap { $0.safeMuscleGroups.compactMap { self.canonicalize($0) } }
                     return self.splitFamilyFor(muscles)
                 }
             } catch {
-                // Return empty on failure
+                return []
             }
         }
-
+        cachedSplitFamilies = result
         return result
     }
 }

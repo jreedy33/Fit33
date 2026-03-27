@@ -95,6 +95,26 @@ class WorkoutManager: ObservableObject {
     // The WorkoutSetData objects themselves have stable UUIDs and persist across view rebuilds
     @Published var exerciseSetsData: [String: [WorkoutSetData]] = [:]
     
+    static var userDefaultSetCount: Int {
+        let stored = UserDefaults.standard.integer(forKey: "defaultSetCount")
+        return stored > 0 ? stored : 3
+    }
+    
+    @MainActor func padAllExercisesToSetCount(_ targetCount: Int) {
+        var didUpdate = false
+        for (exerciseId, sets) in exerciseSetsData {
+            if sets.count < targetCount {
+                var updated = sets
+                for _ in sets.count..<targetCount {
+                    updated.append(WorkoutSetData())
+                }
+                exerciseSetsData[exerciseId] = updated
+                didUpdate = true
+            }
+        }
+        if didUpdate { throttledSave() }
+    }
+    
     // Get sets for an exercise ID (read-only, does NOT create if missing)
     func getSetsForExercise(id: String) -> [WorkoutSetData] {
         if let existingSets = exerciseSetsData[id], !existingSets.isEmpty {
@@ -109,14 +129,12 @@ class WorkoutManager: ObservableObject {
     // UPDATED: Now creates 3 sets by default instead of 1
     @MainActor func initializeSetsForExercise(id: String, exerciseName: String = "") {
         if exerciseSetsData[id] == nil || exerciseSetsData[id]?.isEmpty == true {
-            // Check previous workout set count from cache
-            var setCount = 3 // Default
+            let defaultCount = Self.userDefaultSetCount
             var prefilledSets: [WorkoutSetData]? = nil
 
             if !exerciseName.isEmpty {
                 if let preWarmed = PreviewWarmupService.shared.getPreviousSets(forExerciseId: id, exerciseName: exerciseName),
                    !preWarmed.isEmpty {
-                    setCount = preWarmed.count
                     prefilledSets = preWarmed.map { prev in
                         let setData = WorkoutSetData()
                         setData.weight = prev.weight
@@ -125,7 +143,6 @@ class WorkoutManager: ObservableObject {
                     }
                 } else if let cached = ExerciseHistoryService.shared.previousSetsCache[exerciseName],
                           !cached.isEmpty {
-                    setCount = cached.count
                     prefilledSets = cached.map { cloudSet in
                         let setData = WorkoutSetData()
                         setData.weight = cloudSet.weight
@@ -135,10 +152,13 @@ class WorkoutManager: ObservableObject {
                 }
             }
 
-            let sets = prefilledSets ?? (0..<setCount).map { _ in WorkoutSetData() }
+            var sets = prefilledSets ?? (0..<defaultCount).map { _ in WorkoutSetData() }
+            while sets.count < defaultCount {
+                sets.append(WorkoutSetData())
+            }
             exerciseSetsData[id] = sets
             #if DEBUG
-            AppLogger.debug("📦 Initialized \(setCount) sets for exercise \(id.prefix(8))", category: .data)
+            AppLogger.debug("📦 Initialized \(sets.count) sets for exercise \(id.prefix(8))", category: .data)
             #endif
         }
     }
@@ -187,17 +207,13 @@ class WorkoutManager: ObservableObject {
         for exercise in exercises {
             if let exerciseId = exercise.id?.uuidString {
                 if exerciseSetsData[exerciseId] == nil || exerciseSetsData[exerciseId]?.isEmpty == true {
-                    // Check previous workout set count from cache or warmup
                     let exerciseName = exercise.name ?? ""
-                    var setCount = 3 // Default
+                    let defaultCount = Self.userDefaultSetCount
 
-                    // Check PreviewWarmupService for pre-warmed previous sets
                     var prefilledSets: [WorkoutSetData]? = nil
 
                     if let preWarmed = PreviewWarmupService.shared.getPreviousSets(forExerciseId: exerciseId, exerciseName: exerciseName),
                        !preWarmed.isEmpty {
-                        setCount = preWarmed.count
-                        // Pre-fill weight/reps from previous workout data
                         prefilledSets = preWarmed.map { prev in
                             let setData = WorkoutSetData()
                             setData.weight = prev.weight
@@ -205,11 +221,8 @@ class WorkoutManager: ObservableObject {
                             return setData
                         }
                     }
-                    // Check ExerciseHistoryService cache for previous set count
                     else if let cached = ExerciseHistoryService.shared.previousSetsCache[exerciseName],
                             !cached.isEmpty {
-                        setCount = cached.count
-                        // Pre-fill weight/reps from cached history
                         prefilledSets = cached.map { cloudSet in
                             let setData = WorkoutSetData()
                             setData.weight = cloudSet.weight
@@ -218,12 +231,14 @@ class WorkoutManager: ObservableObject {
                         }
                     }
 
-                    // Use pre-filled sets if available, otherwise create empty sets
-                    let sets = prefilledSets ?? (0..<setCount).map { _ in WorkoutSetData() }
+                    var sets = prefilledSets ?? (0..<defaultCount).map { _ in WorkoutSetData() }
+                    while sets.count < defaultCount {
+                        sets.append(WorkoutSetData())
+                    }
                     updates[exerciseId] = sets
-                    totalSets += setCount
+                    totalSets += sets.count
                     #if DEBUG
-                    AppLogger.debug("📦 Initialized \(setCount) sets for exercise \(exerciseId.prefix(8)) (\(exerciseName))", category: .data)
+                    AppLogger.debug("📦 Initialized \(sets.count) sets for exercise \(exerciseId.prefix(8)) (\(exerciseName))", category: .data)
                     #endif
                 }
             }
@@ -402,13 +417,13 @@ class WorkoutManager: ObservableObject {
     private let maxWorkoutDuration: TimeInterval = 4 * 60 * 60
     
     private init() {
-        // Load saved program on init
         loadActiveProgramFromStorage()
         
-        // ⚡️ PERSISTENCE: Load any saved active workout
-        loadActiveWorkoutFromStorage()
+        // Defer Core Data work to background — sync fetch in init() blocks the main thread
+        Task { [weak self] in
+            await self?.loadActiveWorkoutFromStorage()
+        }
         
-        // Start timer when workout becomes active
         $isWorkoutActive
             .sink { [weak self] isActive in
                 if isActive {
@@ -540,15 +555,10 @@ class WorkoutManager: ObservableObject {
             smartProgramId: currentSmartProgramId
         )
         
-        // Save workout state
         if let encoded = try? JSONEncoder().encode(state) {
             UserDefaults.standard.set(encoded, forKey: activeWorkoutKey)
-            #if DEBUG
-            AppLogger.debug("💾 [WORKOUT] Saved active workout state", category: .data)
-            #endif
         }
         
-        // Save sets data
         var persistedSets: [String: [PersistedSetData]] = [:]
         for (exerciseId, sets) in exerciseSetsData {
             persistedSets[exerciseId] = sets.map { set in
@@ -567,14 +577,13 @@ class WorkoutManager: ObservableObject {
         
         if let setsEncoded = try? JSONEncoder().encode(persistedSets) {
             UserDefaults.standard.set(setsEncoded, forKey: workoutSetsDataKey)
-            #if DEBUG
-            AppLogger.debug("💾 [WORKOUT] Saved \(exerciseSetsData.count) exercise sets", category: .data)
-            #endif
         }
     }
     
-    /// Load active workout state from UserDefaults (call on app launch)
-    private func loadActiveWorkoutFromStorage() {
+    /// Load active workout state from UserDefaults (call on app launch).
+    /// Uses the main-queue viewContext but runs inside an async Task so init() returns instantly.
+    @MainActor
+    private func loadActiveWorkoutFromStorage() async {
         AppLogger.debug("📂 [WORKOUT] Checking for saved active workout...", category: .data)
         
         guard let data = UserDefaults.standard.data(forKey: activeWorkoutKey) else {
@@ -587,7 +596,6 @@ class WorkoutManager: ObservableObject {
             return
         }
         
-        // Check if workout is too old (auto-timeout after 4 hours)
         let elapsedTime = Date().timeIntervalSince(state.startTime)
         let hoursElapsed = elapsedTime / 3600
         let minutesElapsed = Int(elapsedTime / 60)
@@ -602,38 +610,38 @@ class WorkoutManager: ObservableObject {
         AppLogger.debug("📂 [WORKOUT] Workout ID: \(state.workoutId)", category: .data)
         AppLogger.debug("📂 [WORKOUT] Exercise IDs: \(state.exerciseIds.count) exercises", category: .data)
         
-        // Fetch the workout and exercises from Core Data
         let context = PersistenceController.shared.container.viewContext
+        let exerciseUUIDs = state.exerciseIds.compactMap { UUID(uuidString: $0) }
+        AppLogger.debug("📂 [WORKOUT] Looking for exercises with IDs: \(exerciseUUIDs.map { $0.uuidString.prefix(8) })", category: .data)
         
-        // Fetch workout
-        let workoutFetch: NSFetchRequest<Workout> = Workout.fetchRequest()
-        workoutFetch.predicate = NSPredicate(format: "id == %@", state.workoutId)
-        workoutFetch.fetchLimit = 1
-        
-        var workout: Workout?
-        do {
-            workout = try context.fetch(workoutFetch).first
-        } catch {
-            AppLogger.error("❌ [WORKOUT] Core Data fetch error for workout: \(error)", category: .network)
+        // Run Core Data fetches inside context.perform to yield the main thread between frames
+        let (workout, exercises): (Workout?, [Exercise]) = await withCheckedContinuation { continuation in
+            context.perform {
+                let workoutFetch: NSFetchRequest<Workout> = Workout.fetchRequest()
+                workoutFetch.predicate = NSPredicate(format: "id == %@", state.workoutId)
+                workoutFetch.fetchLimit = 1
+                let fetchedWorkout = try? context.fetch(workoutFetch).first
+                
+                let exerciseFetch: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+                exerciseFetch.predicate = NSPredicate(format: "id IN %@", exerciseUUIDs)
+                let fetchedExercises = (try? context.fetch(exerciseFetch)) ?? []
+                
+                continuation.resume(returning: (fetchedWorkout, fetchedExercises))
+            }
         }
         
-        // If workout not found, try to create a placeholder
-        if workout == nil {
-            AppLogger.error("⚠️ [WORKOUT] Could not find saved workout in Core Data (ID: \(state.workoutId))", category: .data)
-            AppLogger.warning("⚠️ [WORKOUT] This can happen if app data was cleared. Creating placeholder workout...", category: .data)
-            
-            // Create a new placeholder workout to continue
+        var resolvedWorkout = workout
+        
+        if resolvedWorkout == nil {
+            AppLogger.warning("⚠️ [WORKOUT] Could not find saved workout in Core Data — creating placeholder...", category: .data)
             let newWorkout = Workout(context: context)
             newWorkout.id = UUID(uuidString: state.workoutId) ?? UUID()
             newWorkout.name = "Workout"
             newWorkout.date = state.startTime
             newWorkout.isCompleted = false
-            
-            workout = newWorkout
-            
+            resolvedWorkout = newWorkout
             do {
                 try context.save()
-                AppLogger.debug("✅ [WORKOUT] Created placeholder workout", category: .data)
             } catch {
                 AppLogger.error("❌ [WORKOUT] Failed to create placeholder workout: \(error)", category: .data)
                 clearActiveWorkoutStorage()
@@ -641,36 +649,18 @@ class WorkoutManager: ObservableObject {
             }
         }
         
-        // At this point workout should exist (either fetched or created)
-        guard let resolvedWorkout = workout else {
-            AppLogger.error("❌ [WORKOUT] Unexpected: workout is still nil after creation attempt", category: .data)
+        guard let finalWorkout = resolvedWorkout else {
             clearActiveWorkoutStorage()
             return
         }
         
-        // ⚠️ CRITICAL FIX: Reset isCompleted to false for restored workouts
-        // This ensures the user can finish the workout even if it was previously marked complete
-        // (e.g., app crashed after saveWorkoutData() but before completion view dismissed)
-        if resolvedWorkout.isCompleted {
-            AppLogger.warning("⚠️ [WORKOUT] Restored workout was marked as completed - resetting to allow finishing", category: .data)
-            resolvedWorkout.isCompleted = false
+        if finalWorkout.isCompleted {
+            AppLogger.warning("⚠️ [WORKOUT] Restored workout was marked as completed - resetting", category: .data)
+            finalWorkout.isCompleted = false
             try? context.save()
         }
         
-        // Fetch exercises
-        let exerciseIds = state.exerciseIds.compactMap { UUID(uuidString: $0) }
-        AppLogger.debug("📂 [WORKOUT] Looking for exercises with IDs: \(exerciseIds.map { $0.uuidString.prefix(8) })", category: .data)
-        
-        let exerciseFetch: NSFetchRequest<Exercise> = Exercise.fetchRequest()
-        exerciseFetch.predicate = NSPredicate(format: "id IN %@", exerciseIds)
-        
-        var exercises: [Exercise] = []
-        do {
-            exercises = try context.fetch(exerciseFetch)
-            AppLogger.debug("📂 [WORKOUT] Found \(exercises.count) exercises in Core Data", category: .data)
-        } catch {
-            AppLogger.error("❌ [WORKOUT] Core Data fetch error for exercises: \(error)", category: .network)
-        }
+        AppLogger.debug("📂 [WORKOUT] Found \(exercises.count) exercises in Core Data", category: .data)
         
         if exercises.isEmpty {
             AppLogger.error("⚠️ [WORKOUT] Could not find any saved exercises in Core Data", category: .data)
@@ -842,13 +832,12 @@ class WorkoutManager: ObservableObject {
             .sink { [weak self] time in
                 self?.currentTime = time
                 
-                // ⚡️ PERSISTENCE: Auto-save workout state every 15 seconds (more frequent for safety)
                 self?.saveCounter += 1
                 if self?.saveCounter ?? 0 >= 15 {
                     self?.saveCounter = 0
                     self?.saveActiveWorkoutToStorage()
                     #if DEBUG
-                    AppLogger.debug("💾 [WORKOUT] Auto-saved workout state (periodic)", category: .data)
+                    AppLogger.debug("💾 [WORKOUT] Auto-saved (\(self?.exerciseSetsData.count ?? 0) exercises, periodic)", category: .data)
                     #endif
                 }
             }

@@ -37,6 +37,9 @@ class HealthKitManager: ObservableObject {
     private let stepSyncDebounceInterval: TimeInterval = 30 // Only sync every 30 seconds max
     private var isSyncingSteps = false // Prevent concurrent syncs
     
+    private var isObservingSteps = false
+    private var isObservingWorkouts = false
+    
     // Step data structure
     struct DailySteps: Identifiable {
         let id = UUID()
@@ -357,6 +360,8 @@ class HealthKitManager: ObservableObject {
     
     /// Observe step changes in real-time
     private func startObservingSteps() {
+        guard !isObservingSteps else { return }
+        isObservingSteps = true
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         
         // Create an observer query that fires whenever new step data is available
@@ -389,6 +394,8 @@ class HealthKitManager: ObservableObject {
     /// When a new workout is recorded in any connected app and synced to Apple Health,
     /// this observer fires and triggers a sync to create a Recent Activity card.
     private func startObservingWorkouts() {
+        guard !isObservingWorkouts else { return }
+        isObservingWorkouts = true
         let workoutType = HKObjectType.workoutType()
         
         let query = HKObserverQuery(sampleType: workoutType, predicate: nil) { [weak self] _, completionHandler, error in
@@ -441,7 +448,7 @@ class HealthKitManager: ObservableObject {
                     || desc.contains("no samples")
                 
                 if isExpectedHKError {
-                    AppLogger.debug("[STEPS] HealthKit unavailable (expected): \(error.localizedDescription)", category: .health)
+                    // Silent — expected on simulator and when no data exists
                 } else {
                     let nsErr = error as NSError
                     AppLogger.error("[STEPS] Unexpected HealthKit error (domain: \(nsErr.domain), code: \(nsErr.code)): \(error.localizedDescription)", category: .health)
@@ -534,7 +541,7 @@ class HealthKitManager: ObservableObject {
             if let error = error {
                 let desc = error.localizedDescription
                 if desc.contains("Protected health data") || desc.contains("No data available") {
-                    AppLogger.debug("Monthly steps unavailable: \(desc)", category: .health)
+                    // Silent — expected on simulator and when no data exists
                 } else {
                     AppLogger.error("Error fetching monthly steps: \(desc)", category: .health)
                 }
@@ -686,6 +693,10 @@ class HealthKitManager: ObservableObject {
                     }
                     UserDefaults.standard.set(cloudGoal, forKey: "dailyStepGoal")
                 }
+            } catch is CancellationError {
+                AppLogger.debug("Step goal cloud fetch cancelled (expected)", category: .health)
+            } catch let urlError as URLError where urlError.code == .cancelled {
+                AppLogger.debug("Step goal cloud fetch cancelled (expected)", category: .health)
             } catch {
                 AppLogger.error("Error loading step goal from cloud: \(error.localizedDescription)", category: .health)
             }

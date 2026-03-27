@@ -635,6 +635,11 @@ struct Fit33App: App {
                             
                             // Priority 3: Health sync FIRST so HealthKit values are fresh
                             // (must run BEFORE community/private refresh so leaderboard data is current)
+                            // Snapshot which challenge types were loaded BEFORE health sync.
+                            // HealthDataService.syncAllSourcesToChallenges() skips empty services,
+                            // so we only re-sync after refresh for services that were empty.
+                            let hadCommunity = !CommunityChallengeService.shared.myChallenges.isEmpty
+                            let hadPrivate = !PrivateChallengeService.shared.myChallenges.isEmpty
                             await HealthDataService.shared.syncAllHealthData()
                             
                             // Priority 4: Community + Private challenge leaderboards (now has up-to-date health data)
@@ -642,13 +647,14 @@ struct Fit33App: App {
                             async let privateRefresh: () = PrivateChallengeService.shared.refreshAll(force: false)
                             _ = await (communityRefresh, privateRefresh)
                             
-                            // Priority 4.5: Sync tracking data to community/private challenges.
-                            // HealthDataService's syncAllSourcesToChallenges() ran BEFORE these
-                            // challenges were loaded (so it skipped them). Now that they're loaded,
-                            // push fresh protein/hydration/calories/steps so stale yesterday values
-                            // get overwritten in the DB.
-                            await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
-                            await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
+                            // Priority 4.5: Only re-sync tracking for services that were empty during
+                            // HealthDataService's sync (challenges weren't loaded yet).
+                            if !hadCommunity && !CommunityChallengeService.shared.myChallenges.isEmpty {
+                                await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
+                            }
+                            if !hadPrivate && !PrivateChallengeService.shared.myChallenges.isEmpty {
+                                await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
+                            }
                             
                             // Priority 5: Background work (lower urgency)
                             await pushNotificationService.recheckAndRegister()

@@ -3890,21 +3890,21 @@ class SupabaseManager: ObservableObject {
     
     /// Restores user profile from cloud to Core Data
     private func syncUserProfileToCoreData(profile: UserProfileDTO) async {
-        let viewContext = PersistenceController.shared.container.viewContext
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
         
-        await MainActor.run {
-            // Check if user already exists
+        await bgContext.perform {
             let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
             
             do {
-                let existingUsers = try viewContext.fetch(fetchRequest)
+                let existingUsers = try bgContext.fetch(fetchRequest)
                 let user: User
                 
                 if let existingUser = existingUsers.first {
                     user = existingUser
                     AppLogger.debug("Updating existing user from cloud profile", category: .network)
                 } else {
-                    user = User(context: viewContext)
+                    user = User(context: bgContext)
                     user.id = UUID(uuidString: profile.id) ?? UUID()
                     user.createdAt = Date()
                     AppLogger.debug("Creating new user from cloud profile", category: .network)
@@ -3919,8 +3919,6 @@ class SupabaseManager: ObservableObject {
                 // Use the cloud's onboarding status - new social users will have this as false
                 // Only set to true if the cloud says so (meaning they completed onboarding before)
                 user.hasCompletedOnboarding = profile.hasCompletedOnboarding ?? false
-                UserManager.shared.isVerified = profile.isVerified ?? false
-                UserManager.shared.isGoldVerified = profile.isGoldVerified ?? false
 
                 // Sync all profile data
                 if let birthday = profile.birthday {
@@ -3988,28 +3986,24 @@ class SupabaseManager: ObservableObject {
                     UserDefaults.standard.set(gender, forKey: "userGender")
                 }
                 
-                // Restore unit preferences from cloud (using loadFromCloud to prevent sync loops)
-                UnitSettingsManager.shared.loadFromCloud(
-                    weightUnit: profile.weightUnit,
-                    heightUnit: profile.heightUnit,
-                    distanceUnit: profile.distanceUnit,
-                    weekStartDay: profile.weekStartDay
-                )
-                
-                try viewContext.save()
+                try bgContext.save()
                 AppLogger.info("Full user profile synced from cloud: Name=\(profile.name ?? "nil"), Age=\(profile.age ?? 0), Height=\(profile.heightCm ?? 0)cm, Weight=\(profile.weightKg ?? 0)kg, Goal=\(profile.fitnessGoal ?? "nil"), Level=\(profile.experienceLevel ?? "nil"), Equipment=\(profile.equipment ?? []), Days=\(profile.availableDays ?? 0), XP=\(profile.xp ?? 0), Streak=\(profile.currentStreak ?? 0), Workouts=\(profile.totalWorkouts ?? 0)", category: .network)
-                
-                // CRITICAL: Notify UserManager to reload its state
-                // This ensures hasCompletedOnboarding is updated after login sync
-                UserManager.shared.reloadCurrentUser()
-
-                // After syncing streak data from cloud, check if streak should be broken
-                // (cloud may have stale lastWorkoutDate that exceeds the allowed gap)
-                UserManager.shared.checkAndBreakStreakIfNeeded()
-                
             } catch {
                 AppLogger.error("Error syncing user profile to Core Data: \(error)", category: .network)
             }
+        }
+        
+        await MainActor.run {
+            UserManager.shared.isVerified = profile.isVerified ?? false
+            UserManager.shared.isGoldVerified = profile.isGoldVerified ?? false
+            UnitSettingsManager.shared.loadFromCloud(
+                weightUnit: profile.weightUnit,
+                heightUnit: profile.heightUnit,
+                distanceUnit: profile.distanceUnit,
+                weekStartDay: profile.weekStartDay
+            )
+            UserManager.shared.reloadCurrentUser()
+            UserManager.shared.checkAndBreakStreakIfNeeded()
         }
     }
     
@@ -4126,14 +4120,14 @@ class SupabaseManager: ObservableObject {
     
     /// Syncs workout history from cloud to Core Data
     private func syncWorkoutHistoryToCoreData(workouts: [WorkoutHistoryDTO]) async {
-        let viewContext = PersistenceController.shared.container.viewContext
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
         
-        await MainActor.run {
-            // Get or create user
+        await bgContext.perform {
             let userRequest: NSFetchRequest<User> = User.fetchRequest()
             userRequest.fetchLimit = 1
             
-            guard let user = try? viewContext.fetch(userRequest).first else {
+            guard let user = try? bgContext.fetch(userRequest).first else {
                 AppLogger.warning("No user found for workout history sync", category: .network)
                 return
             }
@@ -4144,56 +4138,38 @@ class SupabaseManager: ObservableObject {
                 fetchRequest.predicate = NSPredicate(format: "id == %@", UUID(uuidString: workoutDTO.id) as CVarArg? ?? UUID() as CVarArg)
                 
                 do {
-                    let existing = try viewContext.fetch(fetchRequest)
+                    let existing = try bgContext.fetch(fetchRequest)
                     let workout: Workout
                     
                     if let existingWorkout = existing.first {
-                        // Workout exists - check if exercises need to be synced
                         workout = existingWorkout
                         let existingExerciseCount = workout.exercises?.count ?? 0
                         let cloudExerciseCount = workoutDTO.exercises.count
                         
-                        // Only sync exercises if they're missing (cloud has more than local)
                         if cloudExerciseCount > existingExerciseCount {
-                            AppLogger.debug("Syncing \(cloudExerciseCount) exercises for existing workout '\(workout.name ?? "")'", category: .network)
-                            
-                            // Remove old exercises if any
                             if let oldExercises = workout.exercises?.allObjects as? [WorkoutExercise] {
                                 for oldExercise in oldExercises {
-                                    viewContext.delete(oldExercise)
+                                    bgContext.delete(oldExercise)
                                 }
                             }
                             
-                            // Add exercises from cloud
                             for exerciseDTO in workoutDTO.exercises {
-                                // Use ExerciseLibraryService for fuzzy name matching
-                                // (handles renamed exercises, equipment-prefix/suffix swaps, etc.)
                                 let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseDTO.exerciseName)
                                 
-                                // Create WorkoutExercise even if exercise relationship is nil
-                                // (we cache the name so the UI can still display it)
-                                let workoutExercise = WorkoutExercise(context: viewContext)
+                                let workoutExercise = WorkoutExercise(context: bgContext)
                                 let workoutExerciseId = UUID(uuidString: exerciseDTO.id) ?? UUID()
                                 workoutExercise.id = workoutExerciseId
                                 workoutExercise.order = Int16(exerciseDTO.order)
                                 workoutExercise.workout = workout
                                 workoutExercise.exercise = exercise
                                 
-                                // ⚡️ Cache exercise name for fallback display
                                 ExerciseNameCache.shared.cacheName(
                                     exerciseDTO.exerciseName,
                                     forWorkoutExerciseId: workoutExerciseId.uuidString
                                 )
                                 
-                                if exercise == nil {
-                                    #if DEBUG
-                                    AppLogger.warning("[WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB — no exact or fuzzy match", category: .network)
-                                    #endif
-                                }
-                                
-                                // Create sets
                                 for setDTO in exerciseDTO.sets {
-                                    let workoutSet = WorkoutSet(context: viewContext)
+                                    let workoutSet = WorkoutSet(context: bgContext)
                                     workoutSet.id = UUID(uuidString: setDTO.id) ?? UUID()
                                     workoutSet.setNumber = Int16(setDTO.setNumber)
                                     workoutSet.reps = Int16(setDTO.reps)
@@ -4205,8 +4181,7 @@ class SupabaseManager: ObservableObject {
                             }
                         }
                     } else {
-                        // Create new workout
-                        workout = Workout(context: viewContext)
+                        workout = Workout(context: bgContext)
                         workout.id = UUID(uuidString: workoutDTO.id) ?? UUID()
                         workout.name = workoutDTO.name
                         workout.date = ISO8601DateFormatter().date(from: workoutDTO.date)
@@ -4216,36 +4191,25 @@ class SupabaseManager: ObservableObject {
                         workout.notes = workoutDTO.notes
                         workout.user = user
                         
-                        // Create exercises and sets
                         for exerciseDTO in workoutDTO.exercises {
-                            // Try to find the exercise by name
                             let exerciseRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                             exerciseRequest.predicate = NSPredicate(format: "name == %@", exerciseDTO.exerciseName)
-                            let exercise = try? viewContext.fetch(exerciseRequest).first
+                            let exercise = try? bgContext.fetch(exerciseRequest).first
                             
-                            // Create WorkoutExercise even if exercise relationship is nil
-                            let workoutExercise = WorkoutExercise(context: viewContext)
+                            let workoutExercise = WorkoutExercise(context: bgContext)
                             let workoutExerciseId = UUID(uuidString: exerciseDTO.id) ?? UUID()
                             workoutExercise.id = workoutExerciseId
                             workoutExercise.order = Int16(exerciseDTO.order)
                             workoutExercise.workout = workout
-                            workoutExercise.exercise = exercise // May be nil
+                            workoutExercise.exercise = exercise
                             
-                            // ⚡️ Cache exercise name for fallback display
                             ExerciseNameCache.shared.cacheName(
                                 exerciseDTO.exerciseName,
                                 forWorkoutExerciseId: workoutExerciseId.uuidString
                             )
                             
-                            if exercise == nil {
-                                #if DEBUG
-                                AppLogger.warning("[WORKOUT SYNC] Exercise '\(exerciseDTO.exerciseName)' not in DB yet - will retry later", category: .network)
-                                #endif
-                            }
-                            
-                            // Create sets
                             for setDTO in exerciseDTO.sets {
-                                let workoutSet = WorkoutSet(context: viewContext)
+                                let workoutSet = WorkoutSet(context: bgContext)
                                 workoutSet.id = UUID(uuidString: setDTO.id) ?? UUID()
                                 workoutSet.setNumber = Int16(setDTO.setNumber)
                                 workoutSet.reps = Int16(setDTO.reps)
@@ -4262,7 +4226,7 @@ class SupabaseManager: ObservableObject {
             }
             
             do {
-                try viewContext.save()
+                try bgContext.save()
                 AppLogger.info("Synced \(workouts.count) workouts from cloud", category: .network)
             } catch {
                 AppLogger.error("Error saving workout history: \(error)", category: .network)
@@ -4336,28 +4300,26 @@ class SupabaseManager: ObservableObject {
     
     /// Syncs meal logs from cloud to Core Data
     private func syncMealLogsToCoreData(meals: [MealLogDTO]) async {
-        let viewContext = PersistenceController.shared.container.viewContext
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
         
-        await MainActor.run {
-            // Get or create user
+        await bgContext.perform {
             let userRequest: NSFetchRequest<User> = User.fetchRequest()
             userRequest.fetchLimit = 1
             
-            guard let user = try? viewContext.fetch(userRequest).first else {
+            guard let user = try? bgContext.fetch(userRequest).first else {
                 AppLogger.warning("No user found for meal logs sync", category: .network)
                 return
             }
             
             for mealDTO in meals {
-                // Check if meal already exists
                 let fetchRequest: NSFetchRequest<MealEntry> = MealEntry.fetchRequest()
                 fetchRequest.predicate = NSPredicate(format: "id == %@", UUID(uuidString: mealDTO.id) as CVarArg? ?? UUID() as CVarArg)
                 
                 do {
-                    let existing = try viewContext.fetch(fetchRequest)
+                    let existing = try bgContext.fetch(fetchRequest)
                     if existing.isEmpty {
-                        // Create new meal
-                        let meal = MealEntry(context: viewContext)
+                        let meal = MealEntry(context: bgContext)
                         meal.id = UUID(uuidString: mealDTO.id) ?? UUID()
                         meal.date = ISO8601DateFormatter().date(from: mealDTO.date)
                         meal.mealType = mealDTO.mealType
@@ -4377,7 +4339,7 @@ class SupabaseManager: ObservableObject {
             }
             
             do {
-                try viewContext.save()
+                try bgContext.save()
                 AppLogger.info("Synced \(meals.count) meals from cloud", category: .network)
             } catch {
                 AppLogger.error("Error saving meal logs: \(error)", category: .network)
@@ -4387,16 +4349,16 @@ class SupabaseManager: ObservableObject {
     
     /// Sync favorites to Core Data - matches by exercise NAME (not ID, since IDs change on sync)
     private func syncFavoritesToCoreData(favoriteNames: [String]) async {
-        let viewContext = PersistenceController.shared.container.viewContext
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
         
-        // Normalize names for case-insensitive matching
         let normalizedFavoriteNames = Set(favoriteNames.map { $0.lowercased().trimmingCharacters(in: .whitespaces) })
         
-        await MainActor.run {
+        await bgContext.perform {
             let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
             
             do {
-                let allExercises = try viewContext.fetch(fetchRequest)
+                let allExercises = try bgContext.fetch(fetchRequest)
                 var matchedCount = 0
                 
                 for exercise in allExercises {
@@ -4410,7 +4372,7 @@ class SupabaseManager: ObservableObject {
                     }
                 }
                 
-                try viewContext.save()
+                try bgContext.save()
                 AppLogger.info("Synced \(matchedCount)/\(favoriteNames.count) favorites to Core Data (matched by name)", category: .network)
             } catch {
                 AppLogger.error("Error syncing favorites to Core Data: \(error)", category: .network)
@@ -4419,24 +4381,22 @@ class SupabaseManager: ObservableObject {
     }
     
     private func syncCustomExercisesToCoreData(customExercises: [CustomExerciseDTO]) async {
-        let viewContext = PersistenceController.shared.container.viewContext
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
         
-        await MainActor.run {
+        await bgContext.perform {
             for customExercise in customExercises {
-                // Check if exercise already exists
                 let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                 fetchRequest.predicate = NSPredicate(format: "name == %@", customExercise.name)
                 
                 do {
-                    let existing = try viewContext.fetch(fetchRequest)
+                    let existing = try bgContext.fetch(fetchRequest)
                     if existing.isEmpty {
-                        // Create new exercise
-                        let exercise = Exercise(context: viewContext)
+                        let exercise = Exercise(context: bgContext)
                         exercise.id = UUID(uuidString: customExercise.id) ?? UUID()
                         exercise.name = customExercise.name
                         exercise.category = customExercise.category
                         
-                        // Combine primary and secondary muscles into muscleGroups
                         var allMuscles = customExercise.primaryMuscles ?? []
                         if let secondaryMuscles = customExercise.secondaryMuscles {
                             allMuscles.append(contentsOf: secondaryMuscles)
@@ -4444,8 +4404,6 @@ class SupabaseManager: ObservableObject {
                         exercise.muscleGroups = allMuscles as NSObject
                         
                         exercise.equipment = customExercise.equipment
-                        exercise.instructions = customExercise.instructions
-                        // Store custom indicator in instructions with a special marker
                         let customMarker = "[CUSTOM_EXERCISE|ICON:\(customExercise.iconName ?? "figure.walk")]"
                         if let existingInstructions = customExercise.instructions {
                             exercise.instructions = "\(customMarker)\n\(existingInstructions)"
@@ -4461,7 +4419,7 @@ class SupabaseManager: ObservableObject {
             }
             
             do {
-                try viewContext.save()
+                try bgContext.save()
                 AppLogger.info("Synced \(customExercises.count) custom exercises to Core Data", category: .network)
             } catch {
                 AppLogger.error("Error saving custom exercises to Core Data: \(error)", category: .network)
@@ -4470,22 +4428,20 @@ class SupabaseManager: ObservableObject {
     }
     
     private func syncFavoriteWorkoutsToCoreData(favoriteWorkouts: [FavoriteWorkoutDTO]) async {
-        let viewContext = PersistenceController.shared.container.viewContext
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.automaticallyMergesChangesFromParent = true
         
-        await MainActor.run {
-            // Get all the original workout IDs from cloud favorites
-            let cloudFavoriteIds = Set(favoriteWorkouts.map { $0.originalWorkoutId })
-            
-            // Fetch all completed workouts
+        let cloudFavoriteIds = Set(favoriteWorkouts.map { $0.originalWorkoutId })
+        
+        await bgContext.perform {
             let fetchRequest: NSFetchRequest<Workout> = Workout.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "isCompleted == YES")
             
             do {
-                let allWorkouts = try viewContext.fetch(fetchRequest)
+                let allWorkouts = try bgContext.fetch(fetchRequest)
                 
                 for workout in allWorkouts {
                     if let workoutId = workout.id?.uuidString {
-                        // Mark as favorite if in cloud favorites, otherwise unfavorite
                         let shouldBeFavorite = cloudFavoriteIds.contains(workoutId)
                         if workout.isFavorite != shouldBeFavorite {
                             workout.isFavorite = shouldBeFavorite
@@ -4493,7 +4449,7 @@ class SupabaseManager: ObservableObject {
                     }
                 }
                 
-                try viewContext.save()
+                try bgContext.save()
                 AppLogger.info("Synced \(favoriteWorkouts.count) favorite workouts to Core Data", category: .network)
             } catch {
                 AppLogger.error("Error syncing favorite workouts to Core Data: \(error)", category: .network)

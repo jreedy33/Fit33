@@ -9,6 +9,7 @@ struct DashboardChallengesWrapper: View {
     @State private var challengeToCancel: UUID?
     @AppStorage("showChallengeWidget") private var showChallengeWidget = true
     @Binding var showingChallengeCreation: Bool
+    var reducedGlow: Bool = false
     
     // MARK: - Body
     
@@ -204,17 +205,17 @@ struct DashboardChallengesWrapper: View {
                         .padding(.vertical, Spacing.xxs)
                     }
                 }
-                // Reset to first page when data changes
-                .onChange(of: challengeService.activeChallenges.count) { _, _ in
-                    selectedWidgetPage = 0
+                .onChange(of: challengeService.activeChallenges.count) { _, newCount in
+                    let total = newCount + challengeService.pendingSentChallenges.count + (newCount + challengeService.pendingSentChallenges.count < 3 ? 1 : 0)
+                    if selectedWidgetPage >= total {
+                        selectedWidgetPage = max(0, total - 1)
+                    }
                 }
-                .onChange(of: challengeService.pendingSentChallenges.count) { _, _ in
-                    // Reset page when pending count changes to avoid out of bounds
-                    selectedWidgetPage = 0
-                }
-                .onAppear {
-                    // Default to page 0 when section appears
-                    selectedWidgetPage = 0
+                .onChange(of: challengeService.pendingSentChallenges.count) { _, newCount in
+                    let total = challengeService.activeChallenges.count + newCount + (challengeService.activeChallenges.count + newCount < 3 ? 1 : 0)
+                    if selectedWidgetPage >= total {
+                        selectedWidgetPage = max(0, total - 1)
+                    }
                 }
             } else {
                 // Fallback: no cards at all (shouldn't happen since showDefaultInCarousel covers < 3)
@@ -352,30 +353,19 @@ struct DashboardChallengesWrapper: View {
         }
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
-                    .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [
-                                Color.orange.opacity(0.7),
-                                Color.orange.opacity(0.5),
-                                Color.orange.opacity(0.3),
-                                Color.clear,
-                                Color.clear,
-                                Color.orange.opacity(0.2),
-                                Color.yellow.opacity(0.4),
-                                Color.orange.opacity(0.6)
-                            ]),
-                            center: .center,
-                            angle: .degrees(challengeGlowPhase)
-                        ),
-                        lineWidth: 2
-                    )
-                    .blur(radius: 2)
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 4, style: .continuous)
+                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                    .offset(y: 6)
+                    .blur(radius: 3)
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 2, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark 
+                            colors: colorScheme == .dark
                                 ? [Color(white: 0.16), Color(white: 0.10)]
                                 : [Color.white, Color(white: 0.98)],
                             startPoint: .top,
@@ -383,10 +373,22 @@ struct DashboardChallengesWrapper: View {
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [Color.orange.opacity(0.5), Color.orange.opacity(0.3), Color.orange.opacity(0.2)],
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.orange.opacity(colorScheme == .dark ? 0.35 : 0.25), Color.orange.opacity(colorScheme == .dark ? 0.25 : 0.15)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -394,8 +396,7 @@ struct DashboardChallengesWrapper: View {
                     )
             }
         )
-        .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
+        .shadow(color: Color.orange.opacity(colorScheme == .dark ? 0.1 : 0.06), radius: 12, x: 0, y: 3)
         .confirmationDialog(
             "Cancel Challenge?",
             isPresented: isShowingCancelForThis,
@@ -511,28 +512,16 @@ struct DashboardChallengesWrapper: View {
         }
         .background(
             ZStack {
-                // Animated glowing border — type-colored
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
-                    .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [
-                                typeColor.opacity(0.7),
-                                typeGradient.last?.opacity(0.5) ?? typeColor.opacity(0.5),
-                                typeColor.opacity(0.3),
-                                Color.clear,
-                                Color.clear,
-                                typeColor.opacity(0.2),
-                                typeGradient.last?.opacity(0.4) ?? typeColor.opacity(0.4),
-                                typeColor.opacity(0.6)
-                            ]),
-                            center: .center,
-                            angle: .degrees(challengeGlowPhase)
-                        ),
-                        lineWidth: 2
-                    )
-                    .blur(radius: 2)
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 4, style: .continuous)
+                    .fill(typeColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                    .offset(y: 6)
+                    .blur(radius: 3)
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 2, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -543,10 +532,22 @@ struct DashboardChallengesWrapper: View {
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [typeColor.opacity(0.5), typeGradient.last?.opacity(0.3) ?? typeColor.opacity(0.3), typeColor.opacity(0.2)],
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [typeColor.opacity(colorScheme == .dark ? 0.35 : 0.25), typeColor.opacity(colorScheme == .dark ? 0.25 : 0.15)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -554,8 +555,7 @@ struct DashboardChallengesWrapper: View {
                     )
             }
         )
-        .shadow(color: typeColor.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: typeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .shadow(color: typeColor.opacity(colorScheme == .dark ? 0.1 : 0.06), radius: 12, x: 0, y: 3)
     }
     
     // MARK: - Accountability Progress (buddy check-in)
@@ -1083,27 +1083,27 @@ struct DashboardChallengesWrapper: View {
         .frame(height: cardHeight)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: CornerRadius.xl + 4)
-                    .fill(challengeColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 4, style: .continuous)
+                    .fill(challengeColor.opacity(colorScheme == .dark ? (reducedGlow ? 0.15 : 0.12) : (reducedGlow ? 0.08 : 0.06)))
                     .offset(y: 6)
-                    .blur(radius: 3)
+                    .blur(radius: reducedGlow ? 4 : 3)
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl + 2)
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 2, style: .continuous)
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
+                    .offset(y: reducedGlow ? 3 : 4)
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
-                                ? [Color(white: 0.16), Color(white: 0.10)]
-                                : [Color.white, Color(white: 0.98)],
+                                ? [Color(white: reducedGlow ? 0.14 : 0.16), Color(white: reducedGlow ? 0.09 : 0.10)]
+                                : [Color.white, reducedGlow ? Color.white.opacity(0.95) : Color(white: 0.98)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -1115,10 +1115,10 @@ struct DashboardChallengesWrapper: View {
                         lineWidth: 1.5
                     )
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [challengeColor.opacity(colorScheme == .dark ? 0.35 : 0.25), Color.teal.opacity(colorScheme == .dark ? 0.25 : 0.15)],
+                            colors: [challengeColor.opacity(colorScheme == .dark ? (reducedGlow ? 0.4 : 0.35) : (reducedGlow ? 0.3 : 0.25)), Color.teal.opacity(colorScheme == .dark ? (reducedGlow ? 0.3 : 0.25) : (reducedGlow ? 0.2 : 0.15))],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -1126,8 +1126,8 @@ struct DashboardChallengesWrapper: View {
                     )
             }
         )
-        .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .shadow(color: reducedGlow ? .black.opacity(colorScheme == .dark ? 0.3 : 0.08) : challengeColor.opacity(0.15), radius: reducedGlow ? 12 : 15, x: 0, y: reducedGlow ? 6 : 0)
+        .shadow(color: reducedGlow ? challengeColor.opacity(colorScheme == .dark ? 0.2 : 0.12) : challengeColor.opacity(0.08), radius: reducedGlow ? 20 : 25, x: 0, y: reducedGlow ? 10 : 4)
         .frame(height: 156)
     }
     

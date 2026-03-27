@@ -12,6 +12,7 @@ struct WorkoutSettingsPanel: View {
     @AppStorage("defaultBarWeight") private var barWeight: Double = 45
     @AppStorage("defaultRestSeconds") private var defaultRestSeconds: Int = 90
     @AppStorage("autoStartRestTimer") private var autoStartRestTimer: Bool = true
+    @AppStorage("defaultSetCount") private var defaultSetCount: Int = 3
     @AppStorage("keepScreenOnDuringWorkout") private var keepScreenOn: Bool = true
     @AppStorage("workoutSoundEffects") private var soundEffects: Bool = true
     @AppStorage("showMusicPlayer") private var showMusicPlayer: Bool = true
@@ -27,6 +28,7 @@ struct WorkoutSettingsPanel: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
                     weightSection
+                    defaultSetsSection
                     restTimerSection
                     generalSection
                     removeAdsButton
@@ -101,6 +103,53 @@ struct WorkoutSettingsPanel: View {
                 }
                 .pickerStyle(.segmented)
             }
+        }
+    }
+    
+    // MARK: - Default Sets Section
+    
+    private var defaultSetsSection: some View {
+        sectionCard {
+            sectionLabel("DEFAULT SETS")
+            
+            VStack(spacing: 6) {
+                Text("Sets Per Exercise")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                HStack {
+                    Button {
+                        if defaultSetCount > 1 { defaultSetCount -= 1; HapticManager.selectionChanged() }
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(defaultSetCount > 1 ? .blue : .secondary.opacity(0.3))
+                    }
+                    .disabled(defaultSetCount <= 1)
+                    
+                    Spacer()
+                    
+                    Text("\(defaultSetCount)")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .fontDesign(.rounded)
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Button {
+                        if defaultSetCount < 10 { defaultSetCount += 1; HapticManager.selectionChanged() }
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(defaultSetCount < 10 ? .blue : .secondary.opacity(0.3))
+                    }
+                    .disabled(defaultSetCount >= 10)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
         }
     }
     

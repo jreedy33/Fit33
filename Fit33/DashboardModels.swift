@@ -84,7 +84,6 @@ struct DashboardNotificationCarousel: View {
     @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
     @Environment(\.colorScheme) var colorScheme
     
-    @State private var currentPage: Int = 0
     @State private var selectedWorkout: ReceivedWorkoutDTO?
     @State private var navigateToDetail = false
     
@@ -151,52 +150,45 @@ struct DashboardNotificationCarousel: View {
     }
     
     private var totalCards: Int { notifications.count }
-    private var safePage: Int { totalCards > 0 ? min(currentPage, totalCards - 1) : 0 }
+    @State private var scrolledID: String?
+    
+    private var activeIndex: Int {
+        guard let scrolledID, totalCards > 0 else { return 0 }
+        return notifications.firstIndex(where: { $0.id == scrolledID }) ?? 0
+    }
     
     // MARK: - Body
     
     var body: some View {
         if totalCards > 0 {
             VStack(spacing: 8) {
-                ZStack {
-                    ForEach(Array(notifications.enumerated()), id: \.element.id) { index, item in
-                        if safePage == index {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(notifications) { item in
                             notificationCard(for: item)
-                                .transition(.opacity)
+                                .containerRelativeFrame(.horizontal, count: 1, spacing: 0)
                         }
                     }
+                    .scrollTargetLayout()
                 }
-                .animation(.easeInOut(duration: 0.25), value: safePage)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 25)
-                        .onEnded { value in
-                            let hAmount = value.translation.width
-                            let vAmount = abs(value.translation.height)
-                            guard abs(hAmount) > vAmount * 1.5 && abs(hAmount) > 20 && totalCards > 1 else { return }
-                            HapticManager.impact(.medium)
-                            if hAmount < 0 && currentPage < totalCards - 1 {
-                                currentPage += 1
-                            } else if hAmount > 0 && currentPage > 0 {
-                                currentPage -= 1
-                            }
-                        }
-                )
+                .scrollTargetBehavior(.viewAligned)
+                .scrollPosition(id: $scrolledID)
+                .scrollClipDisabled()
                 
-                HStack(spacing: 6) {
-                    ForEach(0..<max(totalCards, 1), id: \.self) { index in
-                        Capsule()
-                            .fill(safePage == index ? Color.blue : Color.gray.opacity(0.3))
-                            .frame(width: safePage == index ? 20 : 8, height: 6)
-                            .animation(.easeOut(duration: 0.2), value: safePage)
-                            .onTapGesture {
-                                guard totalCards > 1 else { return }
-                                HapticManager.impact(.light)
-                                currentPage = index
-                            }
+                if totalCards > 1 {
+                    HStack(spacing: 6) {
+                        ForEach(0..<totalCards, id: \.self) { index in
+                            Capsule()
+                                .fill(activeIndex == index ? Color.blue : Color.gray.opacity(0.3))
+                                .frame(width: activeIndex == index ? 20 : 8, height: 6)
+                                .animation(.easeOut(duration: 0.2), value: activeIndex)
+                        }
                     }
+                    .padding(.vertical, Spacing.xxs)
                 }
-                .padding(.vertical, Spacing.xxs)
-                .opacity(totalCards > 1 ? 1 : 0)
+            }
+            .onChange(of: scrolledID) { _, _ in
+                HapticManager.impact(.light)
             }
             .background(
                 NavigationLink(
@@ -211,11 +203,6 @@ struct DashboardNotificationCarousel: View {
                 }
                 .hidden()
             )
-            .onChange(of: totalCards) { oldValue, newValue in
-                if newValue < oldValue {
-                    currentPage = min(currentPage, max(0, newValue - 1))
-                }
-            }
         }
     }
     

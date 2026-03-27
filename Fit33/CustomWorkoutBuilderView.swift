@@ -13,7 +13,7 @@ struct CustomWorkoutBuilderView: View {
     enum Mode {
         case build          // Default: multi-select to build a workout
         case replace(Exercise, (Exercise) -> Void)  // Single-select to replace an exercise
-        case addToWorkout((Exercise) -> Void)       // Single-select to add to active workout
+        case addToWorkout([Exercise], (Exercise) -> Void)  // Single-select to add to active workout
         
         var title: String {
             switch self {
@@ -44,8 +44,8 @@ struct CustomWorkoutBuilderView: View {
     }
     
     // Initializer for add to workout mode
-    init(onAddExercise: @escaping (Exercise) -> Void) {
-        self.mode = .addToWorkout(onAddExercise)
+    init(currentExercises: [Exercise] = [], onAddExercise: @escaping (Exercise) -> Void) {
+        self.mode = .addToWorkout(currentExercises, onAddExercise)
     }
     
     @State private var exercises: [Exercise] = []
@@ -65,6 +65,11 @@ struct CustomWorkoutBuilderView: View {
     private var replacingExercise: Exercise? {
         if case .replace(let exercise, _) = mode { return exercise }
         return nil
+    }
+    
+    private var currentWorkoutExercises: [Exercise] {
+        if case .addToWorkout(let exercises, _) = mode { return exercises }
+        return []
     }
     
     // ⚡️ SNAPPY SEARCH: Focus state for instant keyboard dismiss
@@ -342,6 +347,16 @@ struct CustomWorkoutBuilderView: View {
                     let matchesEquipment = targetEquipment == nil || exercise.equipment?.lowercased() == targetEquipment
                     return matchesCategory || matchesEquipment
                 }
+            } else if !currentWorkoutExercises.isEmpty {
+                let workoutCategories = Set(currentWorkoutExercises.compactMap { $0.category?.lowercased() })
+                let workoutEquipment = Set(currentWorkoutExercises.compactMap { $0.equipment?.lowercased() })
+                let workoutIds = Set(currentWorkoutExercises.compactMap { $0.id })
+                filtered = filtered.filter { exercise in
+                    if let eid = exercise.id, workoutIds.contains(eid) { return false }
+                    let matchesCategory = workoutCategories.contains(exercise.category?.lowercased() ?? "")
+                    let matchesEquipment = workoutEquipment.contains(exercise.equipment?.lowercased() ?? "")
+                    return matchesCategory || matchesEquipment
+                }
             }
         case .favorites:
             filtered = filtered.filter { $0.isFavorite }
@@ -528,7 +543,6 @@ struct CustomWorkoutBuilderView: View {
                         }
                         .frame(height: 0)
                         
-                        // Suggested replacements (replace mode only)
                         if !suggestedSwaps.isEmpty {
                             suggestedReplacementsSection
                         }
@@ -587,7 +601,7 @@ struct CustomWorkoutBuilderView: View {
                         selectedEquipmentItems.removeAll()
                         selectedMuscleGroups.removeAll()
                         searchText = ""
-                        if replacingExercise != nil {
+                        if replacingExercise != nil || !currentWorkoutExercises.isEmpty {
                             exerciseFilter = .recommended
                         }
                     }
@@ -603,6 +617,10 @@ struct CustomWorkoutBuilderView: View {
                     // Load suggested swaps for replace mode
                     if let replacing = replacingExercise {
                         loadSuggestedSwaps(for: replacing)
+                    }
+                    
+                    if !currentWorkoutExercises.isEmpty {
+                        loadComplementarySuggestions(for: currentWorkoutExercises)
                     }
                     
                     // Check for pre-selected exercise (from "Add to workout" button on ExerciseDetailView)
@@ -996,7 +1014,7 @@ struct CustomWorkoutBuilderView: View {
                 Image(systemName: "sparkles")
                     .font(.ds_bodySmall)
                     .foregroundColor(.orange)
-                Text("Suggested Replacements")
+                Text(replacingExercise != nil ? "Suggested Replacements" : "Complements Your Workout")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
@@ -1061,6 +1079,47 @@ struct CustomWorkoutBuilderView: View {
         }
         
         suggestedSwaps = swaps
+    }
+    
+    private func loadComplementarySuggestions(for workoutExercises: [Exercise]) {
+        let workoutIds = Set(workoutExercises.compactMap { $0.id })
+        var candidates: [SwapSuggestion] = []
+        var seenIds = Set<UUID>()
+        
+        for exercise in workoutExercises {
+            let sections = ExerciseSwapService.shared.getSwapSuggestions(
+                for: exercise,
+                excludeIds: workoutIds
+            )
+            for section in sections {
+                for suggestion in section.suggestions where suggestion.swapType == .complementary {
+                    guard let id = suggestion.exercise.id, !seenIds.contains(id), !workoutIds.contains(id) else { continue }
+                    seenIds.insert(id)
+                    candidates.append(suggestion)
+                }
+            }
+        }
+        
+        if candidates.count < 3 {
+            for exercise in workoutExercises {
+                let sections = ExerciseSwapService.shared.getSwapSuggestions(
+                    for: exercise,
+                    excludeIds: workoutIds
+                )
+                for section in sections {
+                    for suggestion in section.suggestions {
+                        guard let id = suggestion.exercise.id, !seenIds.contains(id), !workoutIds.contains(id) else { continue }
+                        seenIds.insert(id)
+                        candidates.append(suggestion)
+                        if candidates.count >= 3 { break }
+                    }
+                    if candidates.count >= 3 { break }
+                }
+                if candidates.count >= 3 { break }
+            }
+        }
+        
+        suggestedSwaps = Array(candidates.prefix(3))
     }
     
     // MARK: - Helper Functions
@@ -1145,7 +1204,7 @@ struct CustomWorkoutBuilderView: View {
             case .replace(_, let onSelect):
                 onSelect(exercise)
                 dismiss()
-            case .addToWorkout(let onSelect):
+            case .addToWorkout(_, let onSelect):
                 onSelect(exercise)
                 dismiss()
             case .build:

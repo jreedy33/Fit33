@@ -1022,7 +1022,7 @@ final class PreviewWarmupService: ObservableObject {
             let recs = StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                 exerciseName: exerciseName,
                 user: user,
-                numberOfSets: 3,
+                numberOfSets: WorkoutManager.userDefaultSetCount,
                 context: context
             )
             
@@ -1044,7 +1044,7 @@ final class PreviewWarmupService: ObservableObject {
         
         for exercise in exercises {
             guard let exerciseId = exercise.id?.uuidString else { continue }
-            preInitializedSets[exerciseId] = [WorkoutSetData(), WorkoutSetData(), WorkoutSetData()]
+            preInitializedSets[exerciseId] = (0..<WorkoutManager.userDefaultSetCount).map { _ in WorkoutSetData() }
         }
     }
 }

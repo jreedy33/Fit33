@@ -381,58 +381,6 @@ struct SettingsView: View {
                         // Integrations Section
                         settingsSection(title: "Integrations") {
                             VStack(spacing: 0) {
-                                // InBody Integration
-                                NavigationLink(destination: InBodySettingsView()) {
-                                    HStack(spacing: 16) {
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                                .fill(
-                                                    LinearGradient(
-                                                        colors: [Color(red: 0, green: 0.48, blue: 0.8).opacity(0.15), Color.cyan.opacity(0.15)],
-                                                        startPoint: .topLeading,
-                                                        endPoint: .bottomTrailing
-                                                    )
-                                                )
-                                                .frame(width: 36, height: 36)
-                                            Image(systemName: "figure.stand")
-                                                .font(.ds_bodyRegular)
-                                                .foregroundStyle(
-                                                    LinearGradient(
-                                                        colors: [Color(red: 0, green: 0.48, blue: 0.8), Color.cyan],
-                                                        startPoint: .topLeading,
-                                                        endPoint: .bottomTrailing
-                                                    )
-                                                )
-                                        }
-                                        
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("InBody")
-                                                .font(.body)
-                                                .foregroundColor(.primary)
-                                            Text(InBodyService.shared.isConnected ? "Connected • Body composition synced" : "Sync body composition data")
-                                                .font(.caption)
-                                                .foregroundColor(InBodyService.shared.isConnected ? .green : .secondary)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        if InBodyService.shared.isConnected {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(.green)
-                                                .font(.ds_bodySmall)
-                                        }
-                                        
-                                        Image(systemName: "chevron.right")
-                                            .font(.ds_bodySmall).fontWeight(.medium)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .padding(.vertical, Spacing.sm)
-                                    .padding(.horizontal, Spacing.md)
-                                }
-                                .buttonStyle(.plain)
-                                
-                                Divider().padding(.leading, 52)
-                                
                                 // Strava Integration
                                 NavigationLink(destination: StravaSettingsView()) {
                                     HStack(spacing: 16) {

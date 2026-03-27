@@ -207,13 +207,18 @@ struct DashboardView: View {
                             .padding(.bottom, 16)
                     }
                     
-                    // "Ready for today's workout?" title
-                    Text("Ready for today's workout?")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.bottom, 12)
+                    HStack(spacing: 10) {
+                        Image(systemName: "dumbbell.fill")
+                            .foregroundStyle(
+                                LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .font(.title3)
+                        Text("Ready for today's workout?")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                        Spacer()
+                    }
+                    .padding(.bottom, 12)
                     
                     // Challenge Cards (1v1 active, group active, pending sent, get started)
                     DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation)
@@ -520,8 +525,8 @@ struct DashboardView: View {
                 await insightsService.fetchStreaks()
             }
             
-            // 2. Motivational message (runs on main actor — reads service state + recovery data)
-            let messageTask = Task { self.generateMotivationalMessage() }
+            // 2. Motivational message (async — Core Data fetches run off main thread)
+            let messageTask = Task { await self.generateMotivationalMessage() }
             
             // 3. Recommendation + cardio (independent, parallel)
             Task { await loadPersonalizedRecommendation() }

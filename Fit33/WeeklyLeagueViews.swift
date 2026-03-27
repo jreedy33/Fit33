@@ -731,22 +731,13 @@ struct WeeklyLeagueDetailView: View {
                     }
                 }
                 
-                if let workouts = entry.workoutsCompleted, workouts > 0 {
-                    HStack(spacing: 4) {
+                if entry.isCurrentUser || entry.isFriend == true {
+                    if let workouts = entry.workoutsCompleted, workouts > 0 {
                         Text("\(workouts) workout\(workouts == 1 ? "" : "s")")
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                        
-                        if !entry.isCurrentUser, let mc = entry.mutualFriendCount, mc > 0 {
-                            Text("·")
-                                .font(.caption2)
-                                .foregroundColor(.secondary.opacity(0.5))
-                            Text("\(mc) mutual friend\(mc == 1 ? "" : "s")")
-                                .font(.caption2)
-                                .foregroundColor(.blue.opacity(0.8))
-                        }
                     }
-                } else if !entry.isCurrentUser, let mc = entry.mutualFriendCount, mc > 0 {
+                } else if let mc = entry.mutualFriendCount, mc > 0 {
                     Text("\(mc) mutual friend\(mc == 1 ? "" : "s")")
                         .font(.caption2)
                         .foregroundColor(.blue.opacity(0.8))

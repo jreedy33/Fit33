@@ -296,7 +296,8 @@ struct WorkoutHomeView: View {
     @Binding var showingStretchModeOverlay: Bool
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        animation: .none)  // Disable animation for faster updates
+        predicate: NSPredicate(format: "isCompleted == YES"),
+        animation: .none)
     private var workouts: FetchedResults<Workout>
     @State private var forceRenderID = UUID()
     @State private var isNavigating = false  // 🔧 Debounce protection
@@ -920,7 +921,7 @@ struct WorkoutHomeView: View {
     private func generateNextGoals() -> [NextGoal] {
         var goals: [NextGoal] = []
         
-        let totalWorkouts = workouts.count
+        let totalWorkouts = Int(userManager.currentUser?.totalWorkouts ?? 0)
         let currentStreak = Int(userManager.currentUser?.currentStreak ?? 0)
         let longestStreak = Int(userManager.currentUser?.longestStreak ?? 0)
         let userLevel = userManager.getLevel()
@@ -1215,7 +1216,7 @@ struct WorkoutHomeView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
                     
-                    Text("\(workouts.count) workouts completed")
+                    Text("\(Int(userManager.currentUser?.totalWorkouts ?? 0)) workouts completed")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

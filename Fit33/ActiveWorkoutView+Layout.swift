@@ -26,6 +26,9 @@ extension ActiveWorkoutView {
                 }
             }
             .onAppear { handleWorkoutAppear() }
+            .onChange(of: defaultSetCount) { _, newCount in
+                workoutManager.padAllExercisesToSetCount(newCount)
+            }
             .onChange(of: workoutManager.currentExercises) { oldExercises, newExercises in
                 let oldIds = Set(oldExercises.compactMap { $0.id })
                 let newIds = Set(newExercises.compactMap { $0.id })
@@ -275,20 +278,20 @@ extension ActiveWorkoutView {
             // Dismiss keyboard when tapping outside text fields
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
-        .sheet(isPresented: $showingExerciseSelection) {
-            AddExerciseDuringWorkoutView(
-                exercises: $exercises,
-                onExercisesAdded: { newExercises in
-                    // Initialize sets for new exercises
-                    for exercise in newExercises {
-                        let exerciseId = exercise.id?.uuidString ?? ""
-                        if workoutManager.getSetsForExercise(id: exerciseId).isEmpty {
-                            let initialSet = WorkoutSetData()
-                            workoutManager.addSetToExercise(id: exerciseId, set: initialSet)
-                        }
+        .fullScreenCover(isPresented: $showingExerciseSelection) {
+            NavigationStack {
+                CustomWorkoutBuilderView(currentExercises: exercises, onAddExercise: { newExercise in
+                    exercises.append(newExercise)
+                    let exerciseId = newExercise.id?.uuidString ?? ""
+                    if workoutManager.getSetsForExercise(id: exerciseId).isEmpty {
+                        let count = WorkoutManager.userDefaultSetCount
+                        workoutManager.exerciseSetsData[exerciseId] = (0..<count).map { _ in WorkoutSetData() }
                     }
-                }
-            )
+                    UserBehaviorLearningEngine.shared.recordCustomWorkoutAddition(exerciseName: newExercise.name ?? "")
+                })
+                .environmentObject(workoutManager)
+                .environmentObject(UserManager.shared)
+            }
         }
             .safeAreaInset(edge: .top) { workoutHeaderBar }
             .frame(width: geometry.size.width, height: geometry.size.height)

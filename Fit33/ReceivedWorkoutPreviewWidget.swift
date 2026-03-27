@@ -284,9 +284,9 @@ struct ReceivedWorkoutPreviewWidget: View {
                 onStart()
             }) {
                 HStack(spacing: 4) {
-                    Image(systemName: "play.fill")
+                    Image(systemName: "eye.fill")
                         .font(.ds_labelMedium)
-                    Text("Start Workout")
+                    Text("View Workout")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                 }

@@ -104,7 +104,7 @@ extension DashboardView {
         }
     }
 
-    func generateMotivationalMessage() -> String {
+    func generateMotivationalMessage() async -> String {
         let streak = userManager.currentUser?.currentStreak ?? 0
         let hour = Calendar.current.component(.hour, from: Date())
         let dayOfWeek = Calendar.current.component(.weekday, from: Date())
@@ -121,7 +121,7 @@ extension DashboardView {
         // ─────────────────────────────────────────────
         // 🧠 CONTEXT-AWARE SUGGESTION (recovery + program)
         // ─────────────────────────────────────────────
-        if let contextual = WorkoutSuggestionEngine.shared.contextualMotivationalMessage(firstName: firstName, crown: crown) {
+        if let contextual = await WorkoutSuggestionEngine.shared.contextualMotivationalMessageAsync(firstName: firstName, crown: crown) {
             messages.append(contextual)
             messages.append(contextual)
         }
@@ -368,7 +368,7 @@ extension DashboardView {
         // ─────────────────────────────────────────────
         // 🌿 WELLNESS REMINDERS (recovery-aware, never suggest fatigued muscles)
         // ─────────────────────────────────────────────
-        let recoveredMuscles = Set(WorkoutSuggestionEngine.shared.recoveredMuscles())
+        let recoveredMuscles = await Set(WorkoutSuggestionEngine.shared.recoveredMusclesAsync())
         
         messages.append(contentsOf: [
             "Hydration check! Grab that water bottle, \(crown)! 💧",

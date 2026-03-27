@@ -350,8 +350,7 @@ extension ActiveWorkoutView {
         // Transfer any sets data to the new exercise (or initialize fresh)
         let existingSets = workoutManager.exerciseSetsData[oldExerciseId] ?? []
         if existingSets.isEmpty || existingSets.allSatisfy({ !$0.isCompleted && $0.weight == 0 && $0.reps == 0 }) {
-            // No meaningful data - initialize with proper set count (match old exercise or default 3)
-            let setCount = max(existingSets.count, 3)
+            let setCount = max(existingSets.count, WorkoutManager.userDefaultSetCount)
             workoutManager.exerciseSetsData[newExerciseId] = (0..<setCount).map { _ in WorkoutSetData() }
         } else {
             // Transfer existing sets to new exercise

@@ -162,23 +162,20 @@ class PushNotificationService: ObservableObject {
     /// Called when APNs returns the device token
     func handleDeviceToken(_ deviceToken: Data) {
         let tokenString = deviceToken.map { String(format: "%02.2hhx", $0) }.joined()
+        let isNewToken = self.deviceToken != tokenString
         self.deviceToken = tokenString
         self.isRegistered = true
         
-        logger.log(.info, category: .pushNotification, message: "📱 Device token received", metadata: [
-            "token_prefix": String(tokenString.prefix(12))
-        ])
-        AppLogger.info("✅ [PUSH] Device token received: \(tokenString.prefix(20))...", category: .network)
-        
-        // Store token in Supabase
-        Task {
-            await saveDeviceTokenToSupabase(tokenString)
+        if isNewToken {
+            AppLogger.info("✅ [PUSH] Device token received: \(tokenString.prefix(20))...", category: .network)
+            Task {
+                await saveDeviceTokenToSupabase(tokenString)
+            }
         }
     }
     
     /// Called when APNs registration fails
     func handleRegistrationError(_ error: Error) {
-        logger.log(.error, category: .pushNotification, message: "APNs registration FAILED", metadata: ["error": error.localizedDescription])
         AppLogger.error("❌ [PUSH] Failed to register: \(error.localizedDescription)", category: .network)
         self.isRegistered = false
     }
@@ -225,10 +222,6 @@ class PushNotificationService: ObservableObject {
                 .upsert(record, onConflict: "user_id, device_token")
                 .execute()
             
-            logger.log(.info, category: .pushNotification, message: "Token saved to Supabase", metadata: [
-                "environment": apnsEnvironment,
-                "user_id": userId.uuidString.prefix(8)
-            ])
             AppLogger.info("✅ [PUSH] Device token saved to Supabase (env: \(apnsEnvironment))", category: .network)
             
             // Store locally for reference

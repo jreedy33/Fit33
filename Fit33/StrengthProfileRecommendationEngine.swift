@@ -714,11 +714,10 @@ class StrengthProfileRecommendationEngine {
             guard let exerciseName = exercise.name,
                   let exerciseId = exercise.id?.uuidString else { continue }
             
-            // Get 3 set recommendations
             let recs = getRecommendationsForSets(
                 exerciseName: exerciseName,
                 user: user,
-                numberOfSets: 3,
+                numberOfSets: WorkoutManager.userDefaultSetCount,
                 context: context
             )
             

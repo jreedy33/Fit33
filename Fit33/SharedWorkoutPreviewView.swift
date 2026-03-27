@@ -306,6 +306,7 @@ struct SharedWorkoutPreviewView: View {
             do {
                 let sharedExercises = exercises.map { exercise in
                     SharedExerciseDTO(
+                        exerciseId: exercise.exerciseId,
                         name: exercise.name,
                         sets: exercise.sets,
                         reps: exercise.reps,

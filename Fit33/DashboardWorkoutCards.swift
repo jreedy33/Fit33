@@ -783,64 +783,7 @@ struct RecentCardioWorkoutCard: View {
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 18)
-                .background(
-                    // Premium layered background for cardio workout cards
-                    ZStack {
-                        // Bottom shadow layer (deepest) - color glow ONLY for most recent
-                        if isMostRecent {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(activityInfo.color.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                                .offset(y: 6)
-                                .blur(radius: 4)
-                        }
-                        
-                        // Middle shadow layer
-                        RoundedRectangle(cornerRadius: 17, style: .continuous)
-                            .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                            .offset(y: 3)
-                        
-                        // Main card background with gradient
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: colorScheme == .dark
-                                        ? [Color(white: 0.18), Color.cardBackground]
-                                        : [Color.white, Color.white.opacity(0.95)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                        
-                        // Inner highlight (top edge glow)
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: colorScheme == .dark
-                                        ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                        : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                ),
-                                lineWidth: 1.5
-                            )
-                        
-                        // Colored accent border - stronger for most recent, subtle for others
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: isMostRecent
-                                        ? [activityInfo.color.opacity(colorScheme == .dark ? 0.4 : 0.3), activityInfo.color.opacity(colorScheme == .dark ? 0.25 : 0.15)]
-                                        : [Color.gray.opacity(colorScheme == .dark ? 0.2 : 0.1), Color.gray.opacity(colorScheme == .dark ? 0.1 : 0.05)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    }
-                )
-                // Shadow effects - color glow only for most recent
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-                .shadow(color: isMostRecent ? activityInfo.color.opacity(colorScheme == .dark ? 0.2 : 0.12) : Color.clear, radius: 20, x: 0, y: 10)
+                .sleekCard(cornerRadius: CornerRadius.xl, accentColor: activityInfo.color)
             }
             .buttonStyle(PlainButtonStyle())
     }

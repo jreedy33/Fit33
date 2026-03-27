@@ -19,6 +19,7 @@ struct ProfileUser: Identifiable {
     let totalWorkoutsShared: Int
     let isVerified: Bool
     let isGoldVerified: Bool
+    let mutualFriendCount: Int?
 
     var id: UUID { userId }
 
@@ -59,6 +60,7 @@ struct ProfileUser: Identifiable {
         self.totalWorkoutsShared = friend.totalWorkoutsShared
         self.isVerified = friend.isVerified ?? false
         self.isGoldVerified = friend.isGoldVerified ?? false
+        self.mutualFriendCount = nil
     }
 
     init(searchResult: UserSearchResult) {
@@ -77,6 +79,7 @@ struct ProfileUser: Identifiable {
         self.totalWorkoutsShared = 0
         self.isVerified = searchResult.isVerified ?? false
         self.isGoldVerified = searchResult.isGoldVerified ?? false
+        self.mutualFriendCount = nil
     }
 
     init(suggested: SuggestedFriend) {
@@ -95,6 +98,7 @@ struct ProfileUser: Identifiable {
         self.totalWorkoutsShared = 0
         self.isVerified = suggested.isVerified ?? false
         self.isGoldVerified = suggested.isGoldVerified ?? false
+        self.mutualFriendCount = suggested.mutualFriendCount
     }
 
     init(leagueEntry: LeagueEntry) {
@@ -113,6 +117,7 @@ struct ProfileUser: Identifiable {
         self.totalWorkoutsShared = 0
         self.isVerified = leagueEntry.isVerified ?? false
         self.isGoldVerified = leagueEntry.isGoldVerified ?? false
+        self.mutualFriendCount = leagueEntry.mutualFriendCount
     }
 
     init(communityEntry: CommunityLeaderboardEntry) {
@@ -131,6 +136,7 @@ struct ProfileUser: Identifiable {
         self.totalWorkoutsShared = 0
         self.isVerified = communityEntry.isVerified ?? false
         self.isGoldVerified = communityEntry.isGoldVerified ?? false
+        self.mutualFriendCount = nil
     }
 
     @MainActor
@@ -151,6 +157,7 @@ struct ProfileUser: Identifiable {
         self.totalWorkoutsShared = matchedFriend?.totalWorkoutsShared ?? 0
         self.isVerified = false
         self.isGoldVerified = false
+        self.mutualFriendCount = nil
     }
 
     /// Look up the full Friend model from FriendService (needed for actions like create workout/challenge)
@@ -193,6 +200,7 @@ struct FriendProfileView: View {
     @State private var showingChallengeDetail = false
     @State private var activeChallengesWithFriend: [ActiveChallenge] = []
     @State private var sentWorkoutsToFriend: [SentWorkout] = []
+    @State private var mutualFriends: [MutualFriend] = []
     
     var body: some View {
         NavigationStack {
@@ -227,6 +235,11 @@ struct FriendProfileView: View {
                             }
                         } else {
                             nonFriendStatsSection
+
+                            if !mutualFriends.isEmpty {
+                                mutualFriendsSection
+                            }
+
                             addFriendButton
                             blockButton
                         }
@@ -306,6 +319,10 @@ struct FriendProfileView: View {
                 AppLogger.debug("📱 [PROFILE] View appeared for \(user.name ?? user.username ?? "user")", category: .social)
                 if user.isFriend {
                     loadData()
+                } else {
+                    Task {
+                        mutualFriends = await FriendService.shared.fetchMutualFriends(for: user.userId)
+                    }
                 }
             }
         }
@@ -438,6 +455,71 @@ struct FriendProfileView: View {
         }
     }
     
+    private var mutualFriendsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "person.2.fill")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                Text("\(mutualFriends.count) Mutual Friend\(mutualFriends.count == 1 ? "" : "s")")
+                    .font(.ds_bodySmall)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+            }
+            .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(mutualFriends.enumerated()), id: \.element.id) { index, mutual in
+                    HStack(spacing: 12) {
+                        CachedFriendPhoto(
+                            friendId: mutual.userId.uuidString,
+                            photoUrl: mutual.profilePhotoUrl,
+                            name: mutual.displayName,
+                            size: 36,
+                            showGradientRing: true,
+                            gradientColors: [.green, .green.opacity(0.6)]
+                        )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(mutual.name ?? "Unknown")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+
+                            if let username = mutual.username, !username.isEmpty {
+                                Text("@\(username)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+
+                        Spacer()
+
+                        Text("Friends")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.green.opacity(0.15)))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+
+                    if index < mutualFriends.count - 1 {
+                        Divider()
+                            .padding(.leading, 60)
+                    }
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .fill(Color.cardBackground)
+            )
+        }
+    }
+
     private func statCard(icon: String, gradientColors: [Color], value: String, label: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
@@ -1572,6 +1654,7 @@ struct CreateWorkoutForFriendView: View {
         selectedExercises.map { exercise in
             let config = exerciseConfigs[exercise.id ?? UUID()] ?? ExerciseConfig()
             return SelectedExerciseForFriend(
+                exerciseId: exercise.id?.uuidString,
                 name: exercise.name ?? "Unknown",
                 category: exercise.category,
                 sets: config.sets,

@@ -9,6 +9,7 @@ struct TrainingHubView: View {
     @ObservedObject private var cloudProgramService = CloudProgramService.shared
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
+        predicate: NSPredicate(format: "isCompleted == YES"),
         animation: .default)
     private var workouts: FetchedResults<Workout>
     

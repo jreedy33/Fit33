@@ -12,13 +12,16 @@ struct FriendsTabView: View {
     @EnvironmentObject var userManager: UserManager
     @EnvironmentObject var workoutManager: WorkoutManager
     
-    @StateObject private var friendService = FriendService.shared
-    @StateObject private var rankingService = FriendRankingService.shared
-    @StateObject private var challengeService = ChallengeService.shared
-    @StateObject private var communityService = CommunityChallengeService.shared
-    @StateObject private var privateChallengeService = PrivateChallengeService.shared
-    @StateObject private var contactsService = ContactsService.shared
-    @StateObject private var leagueService = WeeklyLeagueService.shared
+    // Services as non-subscribing references — only used in lifecycle modifiers and helpers.
+    // Each body section that needs live data owns its own @StateObject via a wrapper view,
+    // so a @Published change only recomputes that section, not the entire 2800-line body.
+    private let friendService = FriendService.shared
+    private let rankingService = FriendRankingService.shared
+    private let challengeService = ChallengeService.shared
+    private let communityService = CommunityChallengeService.shared
+    private let privateChallengeService = PrivateChallengeService.shared
+    private let contactsService = ContactsService.shared
+    private let leagueService = WeeklyLeagueService.shared
     @ObservedObject private var deepLinkManager = DeepLinkManager.shared
     
     @State private var showingFriendsList = false
@@ -58,49 +61,46 @@ struct FriendsTabView: View {
             ScrollView(.vertical) {
                 VStack(spacing: 0) {
                     // Header + stories bar always rendered (not lazy) so they never disappear
-                    friendsHeaderView
+                    FriendsHeaderWrapper(navigationPath: $navigationPath)
                         .padding(.top, 4)
                         .padding(.bottom, 16)
                     
-                    friendStoriesBar
+                    FriendsStoriesWrapper(
+                        sentRequestIds: $sentRequestIds,
+                        requestSentAnimationIds: $requestSentAnimationIds,
+                        cachedSuggestions: $cachedSuggestions,
+                        showingFriendProfile: $showingFriendProfile
+                    )
                         .padding(.bottom, 24)
                     
                     // Remaining sections deferred via LazyVStack
                     LazyVStack(spacing: 24) {
                         // Top 3 Best Friends spotlight
-                        topFriendsSpotlight
+                        FriendsSpotlightWrapper(showingFriendProfile: $showingFriendProfile)
                         
                         // Quick action tiles: Add Friend, New Challenge, Join Community
                         friendsQuickActionTiles
                         
                         // Weekly League widget
-                        weeklyLeagueSection
+                        FriendsLeagueWrapper(navigationPath: $navigationPath)
                         
-                        // Active Challenges carousel (shared with Home tab)
-                        if !challengeService.activeChallenges.isEmpty || !challengeService.activeGroupChallenges.isEmpty || !challengeService.pendingSentChallenges.isEmpty {
-                            HStack(spacing: 6) {
-                                Image(systemName: "flame.fill")
-                                    .foregroundStyle(
-                                        LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    )
-                                    .font(.title3)
-                                Text("Active Challenges")
-                                    .font(.title3)
-                                    .fontWeight(.bold)
-                                Spacer()
-                            }
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.top, Spacing.sm)
+                        // Active Challenges carousel (matching Private Challenges layout)
+                        VStack(alignment: .leading, spacing: 12) {
+                            FriendsChallengeHeaderWrapper()
+                            DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation, reducedGlow: true)
                         }
-                        DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation)
                         
                         // Private Challenges (invite-only communities)
-                        if !privateChallengeService.myChallenges.isEmpty {
-                            privateChallengeWidget
-                        }
+                        FriendsPrivateChallengeWrapper(
+                            navigationPath: $navigationPath,
+                            showingPrivateChallengeCreation: $showingPrivateChallengeCreation
+                        )
                         
                         // Community Challenges (leaderboard widgets)
-                        communityChallengeWidget
+                        FriendsCommunityWrapper(
+                            selectedCommunityChallenge: $selectedCommunityChallenge,
+                            showingAllCommunities: $showingAllCommunities
+                        )
                         
                         // Friend Activity Feed (replaces Quick Actions)
                         FriendActivityFeedSection()
@@ -142,7 +142,7 @@ struct FriendsTabView: View {
                     WeeklyLeagueDetailView()
                 } else if destination.hasPrefix("PrivateChallenge_") {
                     let idStr = String(destination.dropFirst("PrivateChallenge_".count))
-                    if let challenge = privateChallengeService.myChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+                    if let challenge = PrivateChallengeService.shared.myChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
                         PrivateChallengeDetailView(challenge: challenge)
                     }
                 }
@@ -263,9 +263,11 @@ struct FriendsTabView: View {
         .sheet(isPresented: $showingAllCommunities) {
             AllCommunityChallengesView()
         }
-        .sheet(isPresented: $showingPrivateChallengeCreation) {
-            PrivateChallengeCreationFlow()
-                .environmentObject(userManager)
+        .fullScreenCover(isPresented: $showingPrivateChallengeCreation) {
+            NavigationStack {
+                PrivateChallengeCreationFlow()
+                    .environmentObject(userManager)
+            }
         }
         .fullScreenCover(isPresented: $showingChallengeCreation) {
             NavigationStack {
@@ -2141,7 +2143,7 @@ struct FriendsTabView: View {
                     showingPrivateChallengeCreation = true
                 } label: {
                     HStack(spacing: 4) {
-                        Text("Create New >")
+                        Text("Create New")
                             .font(.caption)
                             .fontWeight(.semibold)
                         Image(systemName: "chevron.right")
@@ -2337,10 +2339,14 @@ struct FriendsTabView: View {
                     HapticManager.selectionChanged()
                     showingCommunityHub = true
                 }) {
-                    Text("Browse")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.green)
+                    HStack(spacing: 4) {
+                        Text("Browse")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundColor(.green)
                 }
             }
             
@@ -2797,6 +2803,917 @@ struct FriendsQuickTile: View {
             .shadow(color: gradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 16, x: 0, y: 8)
         }
         .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Isolated Wrapper Views
+// Each wrapper owns its own @StateObject so a @Published change only recomputes
+// the wrapper's subtree, not the entire FriendsTabView body.
+
+struct FriendsHeaderWrapper: View {
+    @StateObject private var friendService = FriendService.shared
+    @Binding var navigationPath: NavigationPath
+    
+    var body: some View {
+        HStack(alignment: .center) {
+            Text("Friends")
+                .font(.ds_displayLarge)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [.cyan, .blue, Color(red: 0.5, green: 0.3, blue: 0.95).opacity(0.9)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .shadow(color: Color.cyan.opacity(0.4), radius: 6, x: 0, y: 2)
+            
+            Spacer()
+            
+            let friendCount = friendService.friends.count
+            let requestCount = friendService.pendingRequests.count
+            
+            HStack(spacing: 0) {
+                Button {
+                    HapticManager.selectionChanged()
+                    navigationPath.append("FriendsList")
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("\(friendCount)")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                        Text("Friends")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(friendCount) friends")
+                .accessibilityHint("Opens your friends list")
+                
+                Rectangle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 1, height: 16)
+                    .padding(.horizontal, 8)
+                
+                Button {
+                    HapticManager.selectionChanged()
+                    navigationPath.append("FriendRequests")
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("\(requestCount)")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(requestCount > 0 ? .blue : .primary)
+                        Text("Requests")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                        
+                        if requestCount > 0 {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 8, height: 8)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(requestCount) friend requests")
+                .accessibilityHint("Opens your friend requests")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+            )
+        }
+        .padding(.leading, 4)
+    }
+}
+
+struct FriendsStoriesWrapper: View {
+    @StateObject private var friendService = FriendService.shared
+    @StateObject private var contactsService = ContactsService.shared
+    @Binding var sentRequestIds: Set<UUID>
+    @Binding var requestSentAnimationIds: Set<UUID>
+    @Binding var cachedSuggestions: [SuggestedFriend]
+    @Binding var showingFriendProfile: ProfileUser?
+    @State private var showingFriendSearch = false
+    @State private var showingFriendsList = false
+    
+    var body: some View {
+        let existingFriendIds = Set(friendService.friends.map { $0.friendId })
+        let serverSentIds = Set(friendService.sentRequests.map { $0.toUserId })
+        let allExcludedSentIds = sentRequestIds.union(serverSentIds)
+        let freshSuggestions = contactsService.allSuggestions(
+            excludingFriendIds: existingFriendIds,
+            excludingSentIds: allExcludedSentIds
+        )
+        let suggestions = freshSuggestions.isEmpty ? cachedSuggestions : freshSuggestions
+        
+        Group {
+            if !suggestions.isEmpty || contactsService.canAccessContacts {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        Button(action: {
+                            HapticManager.selectionChanged()
+                            showingFriendSearch = true
+                        }) {
+                            VStack(spacing: 5) {
+                                ZStack {
+                                    Circle()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [.blue.opacity(0.2), .cyan.opacity(0.15)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(width: 58, height: 58)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(
+                                                    LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                                    style: StrokeStyle(lineWidth: 2.5, dash: [6, 4])
+                                                )
+                                                .frame(width: 66, height: 66)
+                                        )
+                                    
+                                    Image(systemName: "person.badge.plus")
+                                        .font(.ds_heading2)
+                                        .foregroundStyle(
+                                            LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                        )
+                                }
+                                .frame(width: 64, height: 64)
+                                
+                                Text("Add Friends")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 72)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        ForEach(suggestions.prefix(15)) { suggestion in
+                            FriendsSuggestionCircle(
+                                suggestion: suggestion,
+                                isSent: requestSentAnimationIds.contains(suggestion.userId),
+                                onTap: {
+                                    showingFriendProfile = ProfileUser(suggested: suggestion)
+                                }
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal: .scale(scale: 0.5).combined(with: .opacity)
+                            ))
+                        }
+                    }
+                    .padding(.horizontal, Spacing.xxs)
+                    .padding(.vertical, Spacing.xxs)
+                }
+            } else if !contactsService.canAccessContacts {
+                Button(action: {
+                    HapticManager.selectionChanged()
+                    showingFriendsList = true
+                }) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    LinearGradient(colors: [.blue.opacity(0.2), .cyan.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                                .frame(width: 44, height: 44)
+                            Image(systemName: "person.crop.rectangle.stack")
+                                .font(.ds_heading3)
+                                .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Find friends from contacts")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                            Text("See who's already on Fit33")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(14)
+                    .sleekCard(cornerRadius: 18, accentColor: .blue)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $showingFriendSearch) {
+            NavigationStack { FriendsListView(initialTab: 2) }
+        }
+        .sheet(isPresented: $showingFriendsList) {
+            NavigationStack { FriendsListView() }
+        }
+    }
+}
+
+struct FriendsSuggestionCircle: View {
+    let suggestion: SuggestedFriend
+    let isSent: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: {
+            guard !isSent else { return }
+            HapticManager.selectionChanged()
+            onTap()
+        }) {
+            VStack(spacing: 5) {
+                ZStack {
+                    CachedFriendPhoto(
+                        friendId: suggestion.userId.uuidString,
+                        photoUrl: suggestion.profilePhotoUrl,
+                        name: suggestion.name ?? suggestion.username ?? "?",
+                        size: 58,
+                        showGradientRing: false,
+                        gradientColors: [.blue.opacity(0.6), .cyan.opacity(0.4)]
+                    )
+                    
+                    if isSent {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 58, height: 58)
+                        
+                        VStack(spacing: 2) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.ds_heading3)
+                                .foregroundColor(.green)
+                            Text("Sent")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.green)
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .frame(width: 64, height: 64)
+                .overlay(
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: isSent ? [.green.opacity(0.6), .green.opacity(0.3)] : [.blue.opacity(0.5), .cyan.opacity(0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2.5
+                        )
+                        .frame(width: 66, height: 66)
+                )
+                .overlay(alignment: .bottomTrailing) {
+                    if !isSent {
+                        ZStack {
+                            Circle()
+                                .fill(Color(.systemBackground))
+                                .frame(width: 22, height: 22)
+                            
+                            Image(systemName: "plus.circle.fill")
+                                .font(.ds_heading3)
+                                .foregroundStyle(
+                                    LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                )
+                        }
+                        .offset(x: 2, y: 2)
+                    }
+                }
+                
+                Text(suggestion.name?.components(separatedBy: " ").first ?? suggestion.username ?? "Add")
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSent ? .green : .primary)
+                    .lineLimit(1)
+            }
+            .frame(width: 72)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct FriendsSpotlightWrapper: View {
+    @StateObject private var rankingService = FriendRankingService.shared
+    @Binding var showingFriendProfile: ProfileUser?
+    @State private var showingFriendsList = false
+    
+    var body: some View {
+        let topThree = Array(rankingService.rankedFriends.prefix(3))
+        let friends = FriendService.shared.friends
+        
+        Group {
+            if topThree.count >= 1 {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "star.circle.fill")
+                            .foregroundStyle(
+                                LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .font(.title3)
+                        Text("Your Inner Circle")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                        Spacer()
+                    }
+                    
+                    HStack(spacing: 12) {
+                        ForEach(Array(topThree.enumerated()), id: \.element.id) { index, rankedFriend in
+                            if let friend = friends.first(where: { $0.friendId == rankedFriend.friendId }) {
+                                FriendsSpotlightCard(
+                                    friend: friend,
+                                    rankedFriend: rankedFriend,
+                                    rank: index + 1,
+                                    onTap: { showingFriendProfile = ProfileUser(friend: friend) }
+                                )
+                            }
+                        }
+                        
+                        if topThree.count < 3 {
+                            ForEach(topThree.count..<3, id: \.self) { _ in
+                                Button(action: {
+                                    HapticManager.selectionChanged()
+                                    showingFriendsList = true
+                                }) {
+                                    VStack(spacing: 8) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(LinearGradient(colors: [Color.gray.opacity(0.15), Color.gray.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                                .frame(width: 52, height: 52)
+                                                .overlay(Circle().stroke(Color.gray.opacity(0.2), style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
+                                            Image(systemName: "plus")
+                                                .font(.ds_heading3)
+                                                .foregroundColor(.gray.opacity(0.5))
+                                        }
+                                        Text("Add").font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+                                        Text("friend").font(.caption2).foregroundColor(.secondary)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(Spacing.md)
+                    .sleekCard(cornerRadius: 24, accentColor: .yellow)
+                }
+            } else {
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: [.cyan.opacity(0.2), .blue.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 72, height: 72)
+                        Image(systemName: "person.2.fill")
+                            .font(.ds_heading1)
+                            .foregroundStyle(LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    }
+                    VStack(spacing: 6) {
+                        Text("Find Your Fit Friends").font(.title3).fontWeight(.bold)
+                        Text("Add friends to challenge, compete, and motivate each other!")
+                            .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
+                    }
+                    Button(action: { HapticManager.impact(.medium); showingFriendsList = true }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.badge.plus")
+                            Text("Find Friends").fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, Spacing.lg).padding(.vertical, Spacing.sm)
+                        .background(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
+                        .cornerRadius(25)
+                        .shadow(color: .cyan.opacity(0.3), radius: 10, x: 0, y: 4)
+                    }
+                }
+                .padding(Spacing.lg)
+                .frame(maxWidth: .infinity)
+                .sleekCard(cornerRadius: 24, accentColor: .cyan)
+            }
+        }
+        .sheet(isPresented: $showingFriendsList) {
+            NavigationStack { FriendsListView() }
+        }
+    }
+}
+
+struct FriendsSpotlightCard: View {
+    let friend: Friend
+    let rankedFriend: RankedFriend
+    let rank: Int
+    let onTap: () -> Void
+    
+    var body: some View {
+        let medalColor: [Color] = {
+            switch rank {
+            case 1: return [.yellow, .orange]
+            case 2: return [.gray, .white]
+            case 3: return [.orange, .brown]
+            default: return [.blue, .cyan]
+            }
+        }()
+        let medalEmoji = rank == 1 ? "🥇" : rank == 2 ? "🥈" : "🥉"
+        
+        Button(action: { HapticManager.selectionChanged(); onTap() }) {
+            VStack(spacing: 8) {
+                ZStack(alignment: .bottomTrailing) {
+                    CachedFriendPhoto(
+                        friendId: friend.friendId.uuidString,
+                        photoUrl: friend.profilePhotoUrl,
+                        name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                        size: 52,
+                        showGradientRing: true,
+                        gradientColors: medalColor
+                    )
+                    Text(medalEmoji).font(.ds_bodyRegular).offset(x: 4, y: 4)
+                }
+                HStack(spacing: 2) {
+                    Text(rankedFriend.displayName.components(separatedBy: " ").first ?? "Friend")
+                        .font(.caption).fontWeight(.semibold).foregroundColor(.primary).lineLimit(1)
+                    if friend.isVerified == true || friend.isGoldVerified == true {
+                        VerifiedBadge(size: 10, isGold: friend.isGoldVerified == true)
+                    }
+                }
+                Text("\(rankedFriend.challengesTogether) challenges")
+                    .font(.caption2).foregroundColor(.secondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct FriendsLeagueWrapper: View {
+    @StateObject private var leagueService = WeeklyLeagueService.shared
+    @Binding var navigationPath: NavigationPath
+    
+    var body: some View {
+        WeeklyLeagueWidget(
+            leagueService: leagueService,
+            onTap: {
+                if leagueService.standing != nil {
+                    navigationPath.append("LeagueDetail")
+                } else {
+                    Task {
+                        await leagueService.fetchOrJoinLeague(force: true)
+                        if leagueService.standing != nil {
+                            navigationPath.append("LeagueDetail")
+                        }
+                    }
+                }
+            }
+        )
+    }
+}
+
+struct FriendsChallengeHeaderWrapper: View {
+    @StateObject private var challengeService = ChallengeService.shared
+    
+    var body: some View {
+        if !challengeService.activeChallenges.isEmpty || !challengeService.activeGroupChallenges.isEmpty || !challengeService.pendingSentChallenges.isEmpty {
+            HStack {
+                Image(systemName: "flame.fill")
+                    .foregroundStyle(
+                        LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .font(.title3)
+                Text("Active Challenges")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                Spacer()
+            }
+        }
+    }
+}
+
+struct FriendsPrivateChallengeWrapper: View {
+    @StateObject private var privateChallengeService = PrivateChallengeService.shared
+    @Binding var navigationPath: NavigationPath
+    @Binding var showingPrivateChallengeCreation: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var showingAllPrivateChallenges = false
+    
+    var body: some View {
+        let challenges = privateChallengeService.myChallenges
+        if !challenges.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "lock.shield.fill")
+                        .foregroundStyle(
+                            LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .font(.title3)
+                    Text("Private Challenges")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    Spacer()
+                    
+                    if challenges.count > 3 {
+                        Button {
+                            HapticManager.impact(.light)
+                            showingAllPrivateChallenges = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("See All")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundColor(.purple)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button {
+                            HapticManager.impact(.light)
+                            showingPrivateChallengeCreation = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("Create New")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundColor(.purple)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                
+                ForEach(challenges.prefix(3)) { challenge in
+                    NavigationLink(value: "PrivateChallenge_\(challenge.challengeId.uuidString)") {
+                        FriendsPrivateChallengeRow(challenge: challenge)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .fullScreenCover(isPresented: $showingAllPrivateChallenges) {
+                AllPrivateChallengesView(showingCreation: $showingPrivateChallengeCreation)
+            }
+        }
+    }
+}
+
+struct FriendsPrivateChallengeRow: View {
+    let challenge: PrivateChallenge
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        let resolver = ChallengeProgressResolver.shared
+        let liveValue = resolver.liveProgress(for: challenge)
+        let progress = challenge.dailyTarget > 0 ? min(1.0, Double(liveValue) / Double(challenge.dailyTarget)) : 0
+        let liveTargetHit = liveValue >= challenge.dailyTarget
+        
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .stroke(Color.purple.opacity(0.15), lineWidth: 4)
+                    .frame(width: 48, height: 48)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(
+                        LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                    )
+                    .frame(width: 48, height: 48)
+                    .rotationEffect(.degrees(-90))
+                Text(challenge.displayEmoji)
+                    .font(.ds_heading3)
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(challenge.title)
+                    .font(.subheadline).fontWeight(.bold).foregroundColor(.primary).lineLimit(1)
+                HStack(spacing: 6) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "person.2.fill").font(.system(size: 9))
+                        Text("\(challenge.formattedMemberCount)").font(.caption2)
+                    }.foregroundColor(.secondary)
+                    Text("•").font(.caption2).foregroundColor(.secondary)
+                    Text("\(liveValue)/\(challenge.dailyTarget) \(challenge.targetUnit)")
+                        .font(.caption2).fontWeight(.medium)
+                        .foregroundColor(liveTargetHit ? .green : .secondary)
+                    if liveTargetHit {
+                        Image(systemName: "checkmark.circle.fill").font(.ds_caption).foregroundColor(.green)
+                    }
+                    if let streak = challenge.myCurrentStreak, streak > 0 {
+                        Text("•").font(.caption2).foregroundColor(.secondary)
+                        HStack(spacing: 2) {
+                            Text("🔥").font(.system(size: 9))
+                            Text("\(streak)").font(.caption2).fontWeight(.semibold).foregroundColor(.orange)
+                        }
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            if let rank = challenge.myRank, rank > 0 {
+                VStack(spacing: 2) {
+                    Text(rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : "#\(rank)")
+                        .font(.system(size: rank <= 3 ? 16 : 12, weight: .bold))
+                    if rank > 3 {
+                        Text("rank").font(.system(size: 8)).foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            Image(systemName: "chevron.right").font(.ds_labelMedium).foregroundColor(.secondary)
+        }
+        .padding(14)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.purple.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    .offset(y: 6).blur(radius: 4)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 3)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: colorScheme == .dark ? [Color(white: 0.14), Color(white: 0.09)] : [Color.white, Color.white.opacity(0.95)],
+                        startPoint: .top, endPoint: .bottom
+                    ))
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LinearGradient(
+                        colors: colorScheme == .dark ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear] : [Color.white, Color.white.opacity(0.5), Color.clear],
+                        startPoint: .top, endPoint: .bottom
+                    ), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LinearGradient(
+                        colors: [Color.purple.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.pink.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ), lineWidth: 1)
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: .purple.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+    }
+}
+
+// MARK: - All Private Challenges View
+
+struct AllPrivateChallengesView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var privateChallengeService = PrivateChallengeService.shared
+    @Binding var showingCreation: Bool
+
+    private var groupedChallenges: [(type: ChallengeType, challenges: [PrivateChallenge])] {
+        let challenges = privateChallengeService.myChallenges
+        let grouped = Dictionary(grouping: challenges) { $0.resolvedType }
+        return grouped
+            .map { (type: $0.key, challenges: $0.value) }
+            .sorted { $0.type.displayName < $1.type.displayName }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        ForEach(groupedChallenges, id: \.type) { group in
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 8) {
+                                    Text(group.type.emoji)
+                                        .font(.title3)
+                                    Text(group.type.displayName)
+                                        .font(.headline)
+                                        .fontWeight(.bold)
+                                    Spacer()
+                                    Text("\(group.challenges.count)")
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.purple)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Capsule().fill(Color.purple.opacity(0.15)))
+                                }
+                                .padding(.horizontal, 4)
+
+                                ForEach(group.challenges) { challenge in
+                                    NavigationLink(value: "PrivateChallenge_\(challenge.challengeId.uuidString)") {
+                                        FriendsPrivateChallengeRow(challenge: challenge)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, 12)
+                    .padding(.bottom, 40)
+                }
+            }
+            .navigationTitle("Private Challenges")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: String.self) { destination in
+                if destination.hasPrefix("PrivateChallenge_") {
+                    let idStr = String(destination.dropFirst("PrivateChallenge_".count))
+                    if let challenge = PrivateChallengeService.shared.myChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+                        PrivateChallengeDetailView(challenge: challenge)
+                    }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        HapticManager.impact(.light)
+                        dismiss()
+                        Task {
+                            try? await Task.sleep(for: .milliseconds(350))
+                            showingCreation = true
+                        }
+                    } label: {
+                        Text("Create New")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.purple)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct FriendsCommunityWrapper: View {
+    @StateObject private var communityService = CommunityChallengeService.shared
+    @EnvironmentObject var userManager: UserManager
+    @Binding var selectedCommunityChallenge: CommunityChallenge?
+    @Binding var showingAllCommunities: Bool
+    @State private var showingCommunityHub = false
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        let myChallenges = communityService.myChallenges
+        let featured = communityService.featuredChallenges.filter { !$0.alreadyJoined }.prefix(2)
+        
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "globe.americas.fill")
+                    .foregroundStyle(
+                        LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .font(.title3)
+                Text("Community Challenges")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button(action: {
+                    HapticManager.selectionChanged()
+                    showingCommunityHub = true
+                }) {
+                    HStack(spacing: 4) {
+                        Text("Browse")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundColor(.green)
+                }
+            }
+            
+            if !myChallenges.isEmpty {
+                ForEach(myChallenges.prefix(3)) { challenge in
+                    Button {
+                        selectedCommunityChallenge = challenge
+                    } label: {
+                        CommunityLeaderboardWidget(challenge: challenge)
+                    }
+                    .buttonStyle(.plain)
+                }
+                
+                if myChallenges.count > 3 {
+                    Button(action: {
+                        HapticManager.selectionChanged()
+                        showingAllCommunities = true
+                    }) {
+                        HStack(spacing: 8) {
+                            Text("See all \(myChallenges.count) challenges")
+                                .font(.subheadline).fontWeight(.semibold)
+                            Image(systemName: "chevron.right").font(.ds_caption)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.sm)
+                        .background(LinearGradient(colors: [.green.opacity(0.8), .mint.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+                        .cornerRadius(14)
+                    }
+                }
+            }
+            
+            if myChallenges.isEmpty {
+                let friendCommunities = communityService.discoverableChallenges.prefix(2)
+                
+                if !friendCommunities.isEmpty {
+                    VStack(spacing: 12) {
+                        ForEach(Array(friendCommunities)) { challenge in
+                            FriendDiscoveryCard(challenge: challenge) {
+                                HapticManager.impact(.medium)
+                                Task {
+                                    _ = await communityService.joinChallengeFriendGated(challengeId: challenge.challengeId)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    let goalAligned = goalAlignedFeatured
+                    if !goalAligned.isEmpty {
+                        VStack(spacing: 12) {
+                            ForEach(goalAligned) { challenge in
+                                FeaturedChallengeCard(challenge: challenge) {
+                                    HapticManager.impact(.medium)
+                                    Task {
+                                        _ = await communityService.joinChallenge(code: challenge.joinCode)
+                                        await communityService.fetchFeaturedChallenges()
+                                        await communityService.fetchMyChallenges()
+                                    }
+                                }
+                            }
+                        }
+                    } else if !featured.isEmpty {
+                        VStack(spacing: 12) {
+                            ForEach(Array(featured)) { challenge in
+                                FeaturedChallengeCard(challenge: challenge) {
+                                    HapticManager.impact(.medium)
+                                    Task {
+                                        _ = await communityService.joinChallenge(code: challenge.joinCode)
+                                        await communityService.fetchFeaturedChallenges()
+                                        await communityService.fetchMyChallenges()
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        VStack(spacing: 12) {
+                            Image(systemName: "globe.americas.fill")
+                                .font(.system(size: 36))
+                                .foregroundColor(.green.opacity(0.4))
+                            Text("Compete on global leaderboards")
+                                .font(.subheadline).foregroundColor(.secondary)
+                            Button(action: {
+                                HapticManager.impact(.medium)
+                                showingCommunityHub = true
+                            }) {
+                                Text("Browse Challenges")
+                                    .font(.subheadline).fontWeight(.semibold).foregroundColor(.white)
+                                    .padding(.horizontal, 20).padding(.vertical, 10)
+                                    .background(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+                                    .cornerRadius(20)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(20)
+                        .sleekCard(cornerRadius: 24, accentColor: .green)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingCommunityHub) {
+            CommunityChallengesHubView()
+        }
+    }
+    
+    private var goalAlignedFeatured: [FeaturedCommunityChallenge] {
+        let unjoined = communityService.featuredChallenges.filter { !$0.alreadyJoined }
+        guard !unjoined.isEmpty else { return [] }
+        let goal = userManager.currentUser?.fitnessGoal ?? "General Fitness"
+        let preferredTypes: Set<String> = {
+            switch goal {
+            case "Build Muscle": return ["lift", "workout_streak", "protein"]
+            case "Get Lean": return ["calories", "active_minutes", "steps"]
+            case "Maintain Weight": return ["steps", "active_minutes", "hydrate"]
+            case "Improve Endurance": return ["steps", "run", "walk", "active_minutes"]
+            default: return ["steps", "active_minutes", "workout_streak", "hydrate"]
+            }
+        }()
+        let matched = unjoined.filter { preferredTypes.contains($0.challengeType) }
+        if matched.count >= 2 { return Array(matched.prefix(2)) }
+        if !matched.isEmpty {
+            let rest = unjoined.filter { !preferredTypes.contains($0.challengeType) }
+            return Array((matched + rest).prefix(2))
+        }
+        return Array(unjoined.prefix(2))
     }
 }
 

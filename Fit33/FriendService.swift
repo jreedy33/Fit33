@@ -819,9 +819,9 @@ class FriendService: ObservableObject {
             throw NSError(domain: "FriendService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid friend ID"])
         }
         
-        // Convert SharedExerciseDTO to SharedExercise
         let sharedExercises = exercises.map { dto in
             SharedExercise(
+                exerciseId: dto.exerciseId,
                 name: dto.name,
                 sets: dto.sets,
                 reps: dto.reps,
@@ -910,9 +910,45 @@ class FriendService: ObservableObject {
             AppLogger.error("Error marking all notifications read: \(error.localizedDescription)", category: .social)
         }
     }
+
+    // MARK: - Mutual Friends
+
+    func fetchMutualFriends(for targetUserId: UUID) async -> [MutualFriend] {
+        guard SupabaseManager.shared.isAuthenticated else { return [] }
+        do {
+            let result: [MutualFriend] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_mutual_friends", params: ["p_target_user_id": targetUserId.uuidString])
+                .execute()
+                .value
+            return result
+        } catch {
+            AppLogger.error("Failed to fetch mutual friends: \(error.localizedDescription)", category: .social)
+            return []
+        }
+    }
 }
 
 // MARK: - Data Models
+
+struct MutualFriend: Codable, Identifiable {
+    let userId: UUID
+    let name: String?
+    let username: String?
+    let profilePhotoUrl: String?
+
+    var id: UUID { userId }
+
+    var displayName: String {
+        name ?? username ?? "Unknown"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case name
+        case username
+        case profilePhotoUrl = "profile_photo_url"
+    }
+}
 
 struct Friend: Codable, Identifiable {
     let friendshipId: UUID
@@ -1153,6 +1189,7 @@ struct SharedWorkout: Codable, Identifiable {
 
 struct SharedExercise: Codable, Identifiable {
     var id: UUID = UUID()
+    let exerciseId: String?
     let name: String
     let sets: Int
     let reps: String
@@ -1160,6 +1197,7 @@ struct SharedExercise: Codable, Identifiable {
     let notes: String?
     
     enum CodingKeys: String, CodingKey {
+        case exerciseId = "exercise_id"
         case name
         case sets
         case reps
@@ -1167,7 +1205,8 @@ struct SharedExercise: Codable, Identifiable {
         case notes
     }
     
-    init(name: String, sets: Int, reps: String, restSeconds: Int? = nil, notes: String? = nil) {
+    init(exerciseId: String? = nil, name: String, sets: Int, reps: String, restSeconds: Int? = nil, notes: String? = nil) {
+        self.exerciseId = exerciseId
         self.name = name
         self.sets = sets
         self.reps = reps
@@ -1177,6 +1216,7 @@ struct SharedExercise: Codable, Identifiable {
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.exerciseId = try container.decodeIfPresent(String.self, forKey: .exerciseId)
         self.name = try container.decode(String.self, forKey: .name)
         self.sets = try container.decode(Int.self, forKey: .sets)
         self.reps = try container.decode(String.self, forKey: .reps)
@@ -1423,11 +1463,17 @@ struct ReceivedWorkoutDTO: Codable, Identifiable {
     }
     
     var exerciseNames: [String] {
-        // Prefer parsed exercises, fall back to exercise_names array
         if let exercises = exercises, !exercises.isEmpty {
             return exercises.map { $0.name }
         }
         return exerciseNamesArray ?? []
+    }
+
+    var exerciseIdNamePairs: [(id: String?, name: String)] {
+        if let exercises = exercises, !exercises.isEmpty {
+            return exercises.map { (id: $0.exerciseId, name: $0.name) }
+        }
+        return (exerciseNamesArray ?? []).map { (id: nil, name: $0) }
     }
     
     var exerciseSets: [Int] {
@@ -1478,13 +1524,15 @@ struct ReceivedWorkoutDTO: Codable, Identifiable {
 
 struct SharedExerciseDTO: Codable, Identifiable {
     var id: UUID = UUID()
+    let exerciseId: String?
     let name: String
     let sets: Int
     let reps: String
     var restSeconds: Int? = nil
     var notes: String? = nil
     
-    init(name: String, sets: Int, reps: String, restSeconds: Int? = nil, notes: String? = nil) {
+    init(exerciseId: String? = nil, name: String, sets: Int, reps: String, restSeconds: Int? = nil, notes: String? = nil) {
+        self.exerciseId = exerciseId
         self.name = name
         self.sets = sets
         self.reps = reps
@@ -1493,6 +1541,7 @@ struct SharedExerciseDTO: Codable, Identifiable {
     }
     
     enum CodingKeys: String, CodingKey {
+        case exerciseId = "exercise_id"
         case name
         case sets
         case reps
@@ -1503,6 +1552,7 @@ struct SharedExerciseDTO: Codable, Identifiable {
 
 struct SelectedExerciseForFriend: Identifiable {
     var id = UUID()
+    var exerciseId: String? = nil
     let name: String
     var category: String?
     var sets: Int = 3

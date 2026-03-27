@@ -158,15 +158,21 @@ struct DashboardNotificationCarousel: View {
     var body: some View {
         if totalCards > 0 {
             VStack(spacing: 8) {
-                ZStack {
-                    ForEach(Array(notifications.enumerated()), id: \.element.id) { index, item in
-                        if safePage == index {
+                GeometryReader { geometry in
+                    let cardWidth = geometry.size.width
+                    let spacing: CGFloat = 16
+                    
+                    HStack(spacing: spacing) {
+                        ForEach(Array(notifications.enumerated()), id: \.element.id) { index, item in
                             notificationCard(for: item)
-                                .transition(.opacity)
+                                .frame(width: cardWidth)
+                                .opacity(safePage == index ? 1 : 0)
                         }
                     }
+                    .offset(x: -CGFloat(safePage) * (cardWidth + spacing))
                 }
-                .animation(.easeInOut(duration: 0.25), value: safePage)
+                .frame(height: 230)
+                .animation(.easeOut(duration: 0.2), value: safePage)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 25)
                         .onEnded { value in
@@ -183,20 +189,18 @@ struct DashboardNotificationCarousel: View {
                 )
                 
                 HStack(spacing: 6) {
-                    ForEach(0..<max(totalCards, 1), id: \.self) { index in
+                    ForEach(0..<totalCards, id: \.self) { index in
                         Capsule()
                             .fill(safePage == index ? Color.blue : Color.gray.opacity(0.3))
                             .frame(width: safePage == index ? 20 : 8, height: 6)
                             .animation(.easeOut(duration: 0.2), value: safePage)
                             .onTapGesture {
-                                guard totalCards > 1 else { return }
                                 HapticManager.impact(.light)
                                 currentPage = index
                             }
                     }
                 }
                 .padding(.vertical, Spacing.xxs)
-                .opacity(totalCards > 1 ? 1 : 0)
             }
             .background(
                 NavigationLink(

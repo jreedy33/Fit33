@@ -485,3 +485,17 @@ Never use `user.id?.uuidString ?? ""` or `user.id ?? UUID()` as fallbacks for us
 **Enhanced**: `admin_audit_log` gained `details JSONB` and `admin_email TEXT` columns. `logAdminAction()` in route.ts now captures both.
 
 **Migrations**: `supabase/20260327_enhance_audit_log.sql`, `20260327_feature_flags.sql`, `20260327_system_health_rpcs.sql`, `20260327_moderation_system.sql`, `20260327_push_campaigns.sql`, `20260327_engagement_scoring.sql`.
+
+### 2026-03-27: WHOOP Integration
+
+**New table**: `whoop_recovery_data` — daily recovery score, HRV, RHR, SpO2, skin temp, strain, kilojoules, avg/max HR. Keyed by `(user_id, date)`. RLS enabled. FK to `user_profiles` with CASCADE delete.
+
+**Enhanced table**: `sleep_logs` gained nullable columns: `sleep_performance_pct`, `sleep_consistency_pct`, `sleep_efficiency_pct`, `respiratory_rate`, `disturbance_count`, `sleep_debt_milli`, `light_sleep_milli`, `deep_sleep_milli`, `rem_sleep_milli`, `awake_milli`. Populated by WHOOP source; NULL for HealthKit/Fitbit.
+
+**Enhanced table**: `user_profiles` gained `is_whoop_connected BOOLEAN DEFAULT false`.
+
+**Data flow**: `WhoopService.shared` → `HealthDataService.syncWhoopData()` → upserts to `whoop_recovery_data`, `sleep_logs` (source: "whoop"), `cardio_workouts` (source: "whoop"), `daily_activity_summary` (source merge). All writes are auth-guarded.
+
+**Migration**: `supabase/20260327_whoop_integration.sql`
+
+**Key files**: `WhoopService.swift` (API client + DTOs), `HealthDataService.swift` (sync pipeline), `WhoopSettingsView.swift` (settings UI), `DashboardWhoopWidget.swift` (dashboard widget).

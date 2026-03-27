@@ -15,7 +15,9 @@ class MealService: ObservableObject {
     private var lastLoadDate: Date?
     
     private init() {
-        loadTodaysMeals()
+        Task { @MainActor in
+            self.loadTodaysMeals()
+        }
     }
     
     /// Ensures todaysMeals is fresh — re-fetches from Core Data if the last load was on a

@@ -1094,65 +1094,64 @@ struct ExerciseDetailView: View {
         guard !hasLoadedHistory else { return }
         hasLoadedHistory = true
         
-        // Fetch all workout exercises for this exercise
         guard let exerciseName = exercise.name else { return }
         
-        let request: NSFetchRequest<WorkoutExercise> = WorkoutExercise.fetchRequest()
-        request.predicate = NSPredicate(format: "exercise.name == %@ AND workout.isCompleted == YES", exerciseName)
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \WorkoutExercise.workout?.date, ascending: false)]
-        
-        do {
-            let workoutExercises = try viewContext.fetch(request)
-            totalTimesPerformed = workoutExercises.count
-            
-            // Find PR (heaviest weight × reps)
-            var bestWeight: Double = 0
-            var bestReps: Int = 0
-            var bestDate: Date?
-            
-            // Find most recent performance
-            var lastWeight: Double = 0
-            var lastReps: Int = 0
-            var lastSets: Int = 0
-            var lastDate: Date?
-            
-            for (index, we) in workoutExercises.enumerated() {
-                guard let sets = we.sets?.allObjects as? [WorkoutSet] else { continue }
-                let completedSets = sets.filter { $0.isCompleted }
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        Task {
+            let result: (total: Int, pr: (weight: Double, reps: Int, date: Date)?, last: (weight: Double, reps: Int, sets: Int, date: Date)?)? = await bgContext.perform {
+                let request: NSFetchRequest<WorkoutExercise> = WorkoutExercise.fetchRequest()
+                request.predicate = NSPredicate(format: "exercise.name == %@ AND workout.isCompleted == YES", exerciseName)
+                request.sortDescriptors = [NSSortDescriptor(keyPath: \WorkoutExercise.workout?.date, ascending: false)]
                 
-                for set in completedSets {
-                    // Track PR (highest weight with at least 1 rep)
-                    if set.weight > bestWeight && set.reps > 0 {
-                        bestWeight = set.weight
-                        bestReps = Int(set.reps)
-                        bestDate = we.workout?.date
+                guard let workoutExercises = try? bgContext.fetch(request) else { return nil }
+                let total = workoutExercises.count
+                
+                var bestWeight: Double = 0
+                var bestReps: Int = 0
+                var bestDate: Date?
+                var lastWeight: Double = 0
+                var lastReps: Int = 0
+                var lastSets: Int = 0
+                var lastDate: Date?
+                
+                for (index, we) in workoutExercises.enumerated() {
+                    guard let sets = we.sets?.allObjects as? [WorkoutSet] else { continue }
+                    let completedSets = sets.filter { $0.isCompleted }
+                    
+                    for set in completedSets {
+                        if set.weight > bestWeight && set.reps > 0 {
+                            bestWeight = set.weight
+                            bestReps = Int(set.reps)
+                            bestDate = we.workout?.date
+                        }
+                    }
+                    
+                    if index == 0, !completedSets.isEmpty {
+                        if let heaviestSet = completedSets.max(by: { $0.weight < $1.weight }) {
+                            lastWeight = heaviestSet.weight
+                            lastReps = Int(heaviestSet.reps)
+                            lastSets = completedSets.count
+                            lastDate = we.workout?.date
+                        }
                     }
                 }
                 
-                // Track most recent (first in array since sorted by date desc)
-                if index == 0, !completedSets.isEmpty {
-                    // Get the average/typical performance from the most recent workout
-                    if let heaviestSet = completedSets.max(by: { $0.weight < $1.weight }) {
-                        lastWeight = heaviestSet.weight
-                        lastReps = Int(heaviestSet.reps)
-                        lastSets = completedSets.count
-                        lastDate = we.workout?.date
+                let pr: (weight: Double, reps: Int, date: Date)? = bestWeight > 0 && bestDate != nil ? (bestWeight, bestReps, bestDate!) : nil
+                let last: (weight: Double, reps: Int, sets: Int, date: Date)? = lastWeight > 0 && lastDate != nil ? (lastWeight, lastReps, lastSets, lastDate!) : nil
+                return (total, pr, last)
+            }
+            
+            if let result = result {
+                await MainActor.run {
+                    self.totalTimesPerformed = result.total
+                    if let pr = result.pr {
+                        self.personalRecord = (weight: pr.weight, reps: pr.reps, date: pr.date)
+                    }
+                    if let last = result.last {
+                        self.lastPerformance = (weight: last.weight, reps: last.reps, sets: last.sets, date: last.date)
                     }
                 }
             }
-            
-            // Set PR if found
-            if bestWeight > 0, let date = bestDate {
-                personalRecord = (weight: bestWeight, reps: bestReps, date: date)
-            }
-            
-            // Set last performance if found
-            if lastWeight > 0, let date = lastDate {
-                lastPerformance = (weight: lastWeight, reps: lastReps, sets: lastSets, date: date)
-            }
-            
-        } catch {
-            AppLogger.error("❌ Error loading exercise history: \(error)", category: .workout)
         }
     }
     

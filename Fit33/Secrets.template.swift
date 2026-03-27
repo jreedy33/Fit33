@@ -31,6 +31,10 @@ enum Secrets {
     static let fitbitClientId = "<FITBIT_CLIENT_ID>"
     static let fitbitClientSecret = "<FITBIT_CLIENT_SECRET>"
     
+    // MARK: - WHOOP OAuth
+    static let whoopClientId = "<WHOOP_CLIENT_ID>"
+    static let whoopClientSecret = "<WHOOP_CLIENT_SECRET>"
+    
     // MARK: - InBody OAuth
     static let inbodyClientId = "<INBODY_CLIENT_ID>"
     static let inbodyClientSecret = "<INBODY_CLIENT_SECRET>"

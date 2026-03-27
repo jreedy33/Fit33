@@ -126,7 +126,7 @@ class PushNotificationService: ObservableObject {
         
         guard settings.authorizationStatus == .authorized || 
               settings.authorizationStatus == .provisional else {
-            AppLogger.error("❌ [PUSH] Notifications not authorized (status: \(settings.authorizationStatus.rawValue))", category: .network)
+            AppLogger.info("[PUSH] Notifications not authorized (status: \(settings.authorizationStatus.rawValue))", category: .network)
             return
         }
         

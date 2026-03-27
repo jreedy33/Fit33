@@ -7,6 +7,7 @@ struct WidgetSettingsSheet: View {
     @Binding var showMacros: Bool
     @Binding var showChallenge: Bool
     @Binding var showRecommended: Bool
+    @Binding var showWhoop: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var premiumManager = PremiumManager.shared
@@ -73,6 +74,14 @@ struct WidgetSettingsSheet: View {
                             subtitle: "Track your daily water intake",
                             gradientColors: [Color.cyan, Color.blue],
                             isSelected: $showHydration
+                        )
+                        
+                        widgetOptionRow(
+                            icon: "waveform.path.ecg",
+                            title: "WHOOP Recovery",
+                            subtitle: "Recovery score, HRV & strain",
+                            gradientColors: [Color.green, Color.cyan],
+                            isSelected: $showWhoop
                         )
                         
                         // Challenge widget - show for all users, but locked for free users
@@ -335,9 +344,11 @@ struct WidgetSettingsSheet: View {
                             .fill(isSelected.wrappedValue ? Color.green : Color.gray.opacity(0.3))
                             .frame(width: 28, height: 28)
                         
-                        Image(systemName: isSelected.wrappedValue ? "checkmark" : "")
-                            .font(.ds_bodySmall).fontWeight(.bold)
-                            .foregroundColor(.white)
+                        if isSelected.wrappedValue {
+                            Image(systemName: "checkmark")
+                                .font(.ds_bodySmall).fontWeight(.bold)
+                                .foregroundColor(.white)
+                        }
                     }
                 } else {
                     // Always ON indicator for free users (can't toggle)
@@ -458,9 +469,11 @@ struct WidgetSettingsSheet: View {
                             .fill(isSelected.wrappedValue ? Color.green : Color.gray.opacity(0.3))
                             .frame(width: 28, height: 28)
                         
-                        Image(systemName: isSelected.wrappedValue ? "checkmark" : "")
-                            .font(.ds_bodySmall).fontWeight(.bold)
-                            .foregroundColor(.white)
+                        if isSelected.wrappedValue {
+                            Image(systemName: "checkmark")
+                                .font(.ds_bodySmall).fontWeight(.bold)
+                                .foregroundColor(.white)
+                        }
                     }
                 } else {
                     // Always ON indicator for free users (can't toggle)

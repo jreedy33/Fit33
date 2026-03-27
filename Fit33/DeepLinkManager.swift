@@ -156,9 +156,15 @@ class DeepLinkManager: ObservableObject {
         case "fitbit":
             // Handle Fitbit OAuth callback
             // Format: fit33://fitbit?code=xxx
-            AppLogger.debug("⌚ [DEEPLINK] Fitbit OAuth callback received - forwarding to FitbitService", category: .network)
-            // Post notification for any listening views
+            AppLogger.debug("[DEEPLINK] Fitbit OAuth callback received - forwarding to FitbitService", category: .network)
             NotificationCenter.default.post(name: Notification.Name("FitbitCallback"), object: url)
+            return true
+            
+        case "whoop":
+            // Handle WHOOP OAuth callback
+            // Format: fit33://whoop?code=xxx
+            AppLogger.debug("[DEEPLINK] WHOOP OAuth callback received - forwarding to WhoopService", category: .network)
+            NotificationCenter.default.post(name: Notification.Name("WhoopCallback"), object: url)
             return true
             
         case "login-callback":

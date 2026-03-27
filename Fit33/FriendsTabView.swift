@@ -39,6 +39,7 @@ struct FriendsTabView: View {
     @State private var showingAllCommunities = false
     @State private var cachedSuggestions: [SuggestedFriend] = []
     @State private var hasAppearedBefore = false
+    @State private var showOrbBackground = false
     @State private var challengeGlowPhase: Double = 0
     @State private var challengeToCancel: UUID?
     @State private var showingPrivateChallengeCreation = false
@@ -122,9 +123,12 @@ struct FriendsTabView: View {
                 lastRefreshedAt = Date()
                 updateCachedSuggestions()
             }
-            .background(
-                AnimatedOrbBackground.friends(colorScheme: colorScheme)
-            )
+            .background {
+                if showOrbBackground {
+                    AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                        .transition(.opacity)
+                }
+            }
                 
             }
             .navigationBarHidden(true)
@@ -174,12 +178,15 @@ struct FriendsTabView: View {
             }
         }
         .task {
-            guard SupabaseManager.shared.isAuthenticated else { return }
+            if !showOrbBackground {
+                try? await Task.sleep(for: .milliseconds(150))
+                withAnimation(.easeIn(duration: 0.3)) {
+                    showOrbBackground = true
+                }
+            }
             
-            // Only do the full data refresh when the Friends tab is actually visible.
-            // SwiftUI's .task fires for ALL tabs on launch — the Dashboard already fetches
-            // friends/challenges/invites, so duplicating here wastes network + CPU.
-            // Batch 1+2 data is already cached from Dashboard's initial load.
+            guard SupabaseManager.shared.isAuthenticated else { return }
+
             hasAppearedBefore = true
             updateCachedSuggestions()
             startAutoRefreshTimer()

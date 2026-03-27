@@ -421,18 +421,31 @@ class AdvancedIntelligenceService: ObservableObject {
     
     /// Track daily activity for recovery analysis
     /// ⚡️ PERFORMANCE: Deduplicated to prevent multiple calls for same date
+    /// When WHOOP is connected, enriches with physiological recovery data (recovery_score, HRV).
     func trackActivityForRecovery(userId: UUID, date: Date, steps: Int) async {
         let dateString = formatDate(date)
-        
-        // ⚡️ PERFORMANCE: Skip if already tracking or already tracked this date
+
         guard !isTrackingActivity else { return }
         guard lastActivityTrackDate != dateString else { return }
-        
+
         isTrackingActivity = true
         defer { isTrackingActivity = false }
-        
-        let activityLevel = getActivityLevel(steps: steps)
-        
+
+        let activityLevel: String
+        let whoopConnected = await MainActor.run { WhoopService.shared.isConnected }
+
+        if whoopConnected {
+            let recoveryLevel = await MainActor.run { WhoopService.shared.currentRecoveryLevel }
+            switch recoveryLevel {
+            case .red: activityLevel = "fatigued"
+            case .yellow: activityLevel = "moderate"
+            case .green: activityLevel = "well_rested"
+            case .unknown: activityLevel = getActivityLevel(steps: steps)
+            }
+        } else {
+            activityLevel = getActivityLevel(steps: steps)
+        }
+
         do {
             let data: [String: AnyJSON] = [
                 "user_id": .string(userId.uuidString),
@@ -440,16 +453,16 @@ class AdvancedIntelligenceService: ObservableObject {
                 "steps": .integer(steps),
                 "activity_level": .string(activityLevel)
             ]
-            
+
             try await supabase
                 .from("activity_recovery_correlation")
                 .upsert(data, onConflict: "user_id,date")
                 .execute()
-            
+
             lastActivityTrackDate = dateString
-            AppLogger.debug("👣 [INTELLIGENCE] Tracked activity: \(steps) steps (\(activityLevel))", category: .general)
+            AppLogger.debug("[INTELLIGENCE] Tracked activity: \(steps) steps (\(activityLevel))", category: .general)
         } catch {
-            AppLogger.warning("⚠️ [INTELLIGENCE] Failed to track activity: \(error)", category: .general)
+            AppLogger.warning("[INTELLIGENCE] Failed to track activity: \(error)", category: .general)
         }
     }
     
@@ -1145,7 +1158,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 sampleSize: withProtein.count
             )
         } catch {
-            AppLogger.warning("⚠️ [INTELLIGENCE] Nutrition correlation query failed: \(error)", category: .general)
+            if !Task.isCancelled {
+                AppLogger.warning("⚠️ [INTELLIGENCE] Nutrition correlation query failed: \(error)", category: .general)
+            }
             return nil
         }
     }
@@ -1188,7 +1203,9 @@ class AdvancedIntelligenceService: ObservableObject {
                 sampleSize: valid.count
             )
         } catch {
-            AppLogger.warning("⚠️ [INTELLIGENCE] Hydration correlation query failed: \(error)", category: .general)
+            if !Task.isCancelled {
+                AppLogger.warning("⚠️ [INTELLIGENCE] Hydration correlation query failed: \(error)", category: .general)
+            }
             return nil
         }
     }
@@ -1245,7 +1262,9 @@ class AdvancedIntelligenceService: ObservableObject {
 
             return CompletionRateInsight(avgRate: avgRate, lowestCategory: lowestCat, lowestRate: lowestAvg)
         } catch {
-            AppLogger.warning("⚠️ [INTELLIGENCE] Completion rate query failed: \(error)", category: .general)
+            if !Task.isCancelled {
+                AppLogger.warning("⚠️ [INTELLIGENCE] Completion rate query failed: \(error)", category: .general)
+            }
             return nil
         }
     }

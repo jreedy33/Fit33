@@ -189,12 +189,10 @@ class WeightTrackingService: ObservableObject {
     /// Cache today's weight to UserDefaults for instant display on app restart
     private func cacheTodayWeight() {
         guard let log = todayLog else {
-            // Clear cache if no weight today
             UserDefaults.standard.removeObject(forKey: todayWeightKgKey)
             UserDefaults.standard.removeObject(forKey: todayWeightLbsKey)
             UserDefaults.standard.removeObject(forKey: todayWeightDateKey)
-            UserDefaults.standard.synchronize() // Force immediate write
-            AppLogger.debug("🗑️ [Weight] Cleared cached weight", category: .health)
+            AppLogger.debug("[Weight] Cleared cached weight", category: .health)
             return
         }
         
@@ -202,14 +200,7 @@ class WeightTrackingService: ObservableObject {
         UserDefaults.standard.set(log.weightKg, forKey: todayWeightKgKey)
         UserDefaults.standard.set(log.weightLbs, forKey: todayWeightLbsKey)
         UserDefaults.standard.set(today.timeIntervalSince1970, forKey: todayWeightDateKey)
-        UserDefaults.standard.synchronize() // Force immediate write to disk
-        AppLogger.debug("💾 [Weight] Cached weight: \(log.weightKg) kg / \(log.weightLbs) lbs (source: \(log.source))", category: .health)
-        
-        // Verify it was saved
-        let verifyKg = UserDefaults.standard.double(forKey: todayWeightKgKey)
-        let verifyLbs = UserDefaults.standard.double(forKey: todayWeightLbsKey)
-        let verifyDate = UserDefaults.standard.double(forKey: todayWeightDateKey)
-        AppLogger.info("✅ [Weight] Verified cache - kg:\(verifyKg) lbs:\(verifyLbs) date:\(verifyDate)", category: .health)
+        AppLogger.debug("[Weight] Cached weight: \(log.weightKg) kg / \(log.weightLbs) lbs (source: \(log.source))", category: .health)
     }
     
     /// Load cached today's weight from UserDefaults (called on init for instant display)
@@ -354,26 +345,32 @@ class WeightTrackingService: ObservableObject {
     }
     
     private func loadLocalData() {
-        let viewContext = PersistenceController.shared.container.viewContext
-        let request: NSFetchRequest<User> = User.fetchRequest()
-        
-        if let user = try? viewContext.fetch(request).first {
-            let weightKg = Double(user.weight)
-            let weightLbs = user.weightLbs
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        Task {
+            let result: (kg: Double, lbs: Double, userId: UUID)? = await bgContext.perform {
+                let request: NSFetchRequest<User> = User.fetchRequest()
+                request.fetchLimit = 1
+                guard let user = try? bgContext.fetch(request).first else { return nil }
+                let weightKg = Double(user.weight)
+                let weightLbs = user.weightLbs
+                guard weightKg > 0 || weightLbs > 0 else { return nil }
+                return (kg: weightKg, lbs: weightLbs, userId: user.id ?? UUID())
+            }
             
-            if weightKg > 0 || weightLbs > 0 {
-                // Create a synthetic log from stored profile weight
-                let syntheticLog = WeightLog(
-                    id: UUID(),
-                    userId: user.id ?? UUID(),
-                    weightKg: weightKg,
-                    weightLbs: weightLbs,
-                    loggedAt: Date(),
-                    notes: nil,
-                    source: "profile",
-                    createdAt: Date()
-                )
-                recentLogs = [syntheticLog]
+            if let result = result {
+                await MainActor.run {
+                    let syntheticLog = WeightLog(
+                        id: UUID(),
+                        userId: result.userId,
+                        weightKg: result.kg,
+                        weightLbs: result.lbs,
+                        loggedAt: Date(),
+                        notes: nil,
+                        source: "profile",
+                        createdAt: Date()
+                    )
+                    self.recentLogs = [syntheticLog]
+                }
             }
         }
     }
@@ -666,12 +663,26 @@ class WeightTrackingService: ObservableObject {
     
     // MARK: - Helper Methods
     
+    private var cachedStoredWeight: Double?
+    
     private func getUserStoredWeight() -> Double {
-        let viewContext = PersistenceController.shared.container.viewContext
-        let request: NSFetchRequest<User> = User.fetchRequest()
+        if let cached = cachedStoredWeight { return cached }
         
-        if let user = try? viewContext.fetch(request).first {
-            return usesLbs ? user.weightLbs : Double(user.weight)
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        let useLbs = usesLbs
+        Task {
+            let weight: Double = await bgContext.perform {
+                let request: NSFetchRequest<User> = User.fetchRequest()
+                request.fetchLimit = 1
+                guard let user = try? bgContext.fetch(request).first else { return 0.0 }
+                return useLbs ? user.weightLbs : Double(user.weight)
+            }
+            if weight > 0 {
+                await MainActor.run {
+                    self.cachedStoredWeight = weight
+                    self.objectWillChange.send()
+                }
+            }
         }
         return 0
     }

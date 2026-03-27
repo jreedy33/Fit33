@@ -420,3 +420,16 @@ Squat (467) · Curl (271) · Press (15) · Push Up (9) · Fly (8) · Hip Hinge (
 **Workout generation context pattern** (unchanged):
 - `WorkoutGeneratorService.generateFromCoreData` remains `nonisolated`, runs via `Task.detached`.
 - `WorkoutGenerationContext` snapshots `@MainActor` state for background generation.
+
+### 2026-03-27: WHOOP Recovery-Aware Workout Suggestions
+
+**New capability**: When a WHOOP band is connected, `WorkoutSuggestionEngine.buildRecoverySuggestion()` checks WHOOP physiological recovery before suggesting a muscle-group split.
+
+**Recovery zones and training response**:
+- **Red (0-33%)**: Override to recovery day. Suggest stretching, mobility, light walking, or yoga. Skip heavy compounds and high volume. This is a WHOOP-specific override — muscle recovery may say "chest is ready" but the nervous system says "rest."
+- **Yellow (34-66%)**: Normal training with a contextual note to listen to the body. Don't suggest max-effort or deload — just the standard programmed workout.
+- **Green (67-100%)**: Encourage pushing harder. Progressive overload, add volume, go for PRs. The body is physiologically ready.
+
+**Key distinction from muscle recovery**: The existing `RecoveryDayEngine` tracks muscle-group recovery (48-72h windows based on training volume). WHOOP adds nervous system recovery (HRV, resting HR, SpO2). A user can have fully recovered muscles but a red WHOOP score (e.g., poor sleep, high stress, illness). The WHOOP override catches this.
+
+**`AdvancedIntelligenceService` enhancement**: `trackActivityForRecovery()` now uses WHOOP recovery level instead of step-based heuristics when connected. "fatigued" (red), "moderate" (yellow), "well_rested" (green) replace the step-count-based activity levels.

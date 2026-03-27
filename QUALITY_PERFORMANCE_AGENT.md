@@ -554,7 +554,7 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 
 ### 2026-03-24: Daily Quest Live Progress — Performance Notes
 
-**Observer count in DailyQuestsWidget**: Now observes 5 `ObservableObject`s: `questService`, `adManager`, `healthKitManager`, `healthKitService`, `mealService`, `hydrationService`. Each `@Published` property change on any of these triggers a view re-evaluation.
+**Observer count in DailyQuestsWidget**: Now observes 6 `ObservableObject`s: `questService`, `adManager`, `healthKitManager`, `healthKitService`, `mealService`, `hydrationService`. Each `@Published` property change on any of these triggers a view re-evaluation.
 
 **Why this is acceptable**:
 - The widget is only on screen when the dashboard is visible (not in background tabs)
@@ -563,6 +563,19 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 - `HealthKitManager.todaySteps` updates infrequently (step observer fires when HealthKit aggregates new data, not per-step)
 
 **Potential concern**: If `MealService.todaysMeals` or `HydrationService.todaySummary` publish changes frequently, the quest widget will re-evaluate. Monitor via Instruments Time Profiler if dashboard scrolling degrades after this change.
+
+### 2026-03-27: Daily Quest Live Progress — Server Fallback Fix
+
+**Bug fixed**: Step quests (`walk3kSteps`, `walk5kSteps`, `walk7500Steps`, `walk10kSteps`, `hitStepGoal`) used only live HealthKit data without falling back to `quest.currentValue` (the server-synced value). When HealthKit hadn't loaded yet on app open (`todaySteps == 0`), progress bars showed 0% even if the server knew about thousands of steps. Fix: all step cases now use `max(liveSteps, quest.currentValue)` before capping at `targetValue`.
+
+**New live quest types added**: `liveCurrentValue(for:)` now covers 20+ quest types (was 8):
+- `logBreakfast/Lunch/Dinner/Snack/Meal` — checks `mealService.todaysMeals` for matching meal type
+- `logHighProteinMeal` — checks if any meal has 30g+ protein
+- `logAllMacros` — checks if protein, carbs, and fat have all been logged
+- `hydrationBeforeNoon` — uses live hydration entry count
+- `sleep7Hours` — uses `healthKitService.lastNightSleep`
+
+**Rule**: Every `liveCurrentValue` case MUST use `max(localValue, quest.currentValue)` so progress never regresses below the last server-synced value. The only exceptions are binary quests where the local check is authoritative (e.g., `logBreakfast` checks `todaysMeals` directly).
 
 **Calorie calculation timing**: `saveWorkoutToAppleHealth()` runs as an async Task after `saveWorkoutData()`. The `WorkoutCompletionView` polls `workout.caloriesBurned` every 0.5s for up to 5s. The MET-based calorie calculation is CPU-only (no network), typically completes in <50ms. The Core Data save after calculation triggers a context notification.
 
@@ -930,3 +943,127 @@ Provides real-time visibility into backend health:
 4. **`SupabaseManager.syncUserProfileToCoreData` + `syncWorkoutHistoryToCoreData`** — Both wrapped entire Core Data operations in `MainActor.run` with `viewContext`. The workout history sync processes 126+ workouts with exercises and sets — all on the main thread. Converted both to `newBackgroundContext()` with `bgContext.perform`. Background saves auto-merge via `automaticallyMergesChangesFromParent`.
 
 **Rule**: NEVER use `MainActor.run` for Core Data sync operations. Use `newBackgroundContext()` + `bgContext.perform {}` for all batch Core Data work (fetch + insert + save). The viewContext should only be used for `@FetchRequest` in SwiftUI views — never for bulk operations. When a `viewContext.perform {}` block is used, remember it runs on the **main queue** — it does NOT run on a background thread.
+
+### 2026-03-27: Crash fixes (v1.34/v1.36 report — 200 crashes, 51 bug reports)
+
+**P0 FIXED: Cold start main thread freeze (18+ crashes across 5 users)** — All crashes showed `Fit33 + 7413108` offset during app initialization (0 min session duration). Multiple compounding causes on the Dashboard's first render:
+
+1. **`MealService.init()`** — `loadTodaysMeals()` did synchronous `viewContext.fetch()` during singleton init. Wrapped in `Task { @MainActor in }` so init returns instantly; meals load async.
+
+2. **`WeightTrackingService.cacheTodayWeight()`** — Called `UserDefaults.standard.synchronize()` (forced synchronous disk I/O) every time `todayLog` was set, including during init. Removed all `.synchronize()` calls — iOS batches UserDefaults writes automatically and `.synchronize()` is documented as unnecessary.
+
+3. **`WeightTrackingService.loadLocalData()`** — Synchronous `viewContext.fetch(User)` on the main thread when user not authenticated. Converted to `newBackgroundContext()` + `bgContext.perform {}`.
+
+4. **`WeightTrackingService.getUserStoredWeight()`** — Synchronous `viewContext.fetch(User)` in a computed property called during body evaluation. Converted to async background fetch with `cachedStoredWeight` for instant return.
+
+**P0 FIXED: Exercise Detail FPS drops (17 drops, as low as 13fps)** — Joseph Reed's device showed 1+ second freezes during exercise detail viewing:
+
+1. **`ExerciseDetailView.loadUserHistory()`** — Synchronous unbounded `viewContext.fetch(WorkoutExercise)` in `.onAppear`. Converted to async `bgContext.perform {}` with results published back to main actor.
+
+2. **`RemoteVideoPlayerManager.loadVideo()`** — Called `getPlayerWithLooper()` synchronously on the main thread, including `GenderFilterService` O(n) fuzzy scan and potential `createInstantStartPlayerWithLooper()`. Wrapped entire method body in `Task.detached` so gender filter lookup and player resolution happen off main thread.
+
+3. **`RemoteVideoPlayerManager.createDirectPlayer()`** — Created `AVURLAsset`, `AVPlayerItem`, `AVQueuePlayer`, `AVPlayerLooper` synchronously on the main thread. Moved asset/item creation to `Task.detached`; only the final player assignment runs on `MainActor.run`.
+
+**P1 FIXED: HealthKit workout save timeouts (2 crashes)** — `saveWorkoutToHealth()` and `saveRunningWorkoutToHealth()` had no retry logic. Added 3-attempt exponential backoff (2s, 4s delays) for timeout errors.
+
+**P1 FIXED: Push notification authorization noise (3 crashes)** — `PushNotificationService.registerForPushNotifications()` logged "Notifications not authorized (status: 1)" at `.error` level. User denying notifications is normal behavior. Changed to `.info` level.
+
+**P2 FIXED: MetricKit version mismatch logging** — `MXCrashDiagnostic` payloads from previous app versions logged at `.error` level, creating false crash noise. Now compares `crash.applicationVersion` with current version: same-version logs at `.error`, cross-version at `.warning`.
+
+**New rules established**:
+- NEVER call `UserDefaults.standard.synchronize()` — iOS auto-batches writes. Explicit sync forces synchronous disk I/O on the calling thread.
+- Computed properties accessed during SwiftUI body evaluation MUST NOT do synchronous Core Data fetches. Cache results from async background fetches.
+- Video player creation (AVURLAsset, AVPlayerItem) MUST happen off the main thread via `Task.detached`. Only the final player/looper assignment to `@Published` properties should use `MainActor.run`.
+- `MealService.init()` pattern: wrap `loadTodaysMeals()` in `Task { @MainActor in }` to match `ChallengeService`/`CloudProgramService`/`SmartProgramEngine` deferred init pattern.
+- HealthKit save methods MUST retry with exponential backoff (3 attempts, 2s/4s) for timeout errors.
+- User-action log levels: notification denial, permission refusal, and other expected user choices MUST log at `.info` or `.debug`, never `.error`.
+
+### 2026-03-27: Cross-Context Crash + Regression Prevention Infrastructure
+
+**P0 FIXED: `syncWorkoutHistoryToCoreData` cross-context crash** — The "update existing workout" path used `ExerciseLibraryService.shared.getExercise(byName:)` which returns `Exercise` objects from the viewContext cache. These were then assigned as relationships on `WorkoutExercise` objects created on `bgContext`. Core Data threw `NSInvalidArgumentException: Illegal attempt to establish a relationship between objects in different contexts`. Fixed by replacing with `bgContext.fetch(exerciseRequest)` matching the "new workout" path that was already correct.
+
+**Root cause of the regression**: A previous performance fix moved `syncWorkoutHistoryToCoreData` from `viewContext` to `newBackgroundContext()` to stop freezing the UI. The "new workout" code path was updated to fetch from `bgContext`, but the "update existing workout" path was missed — it still used the service singleton cache which holds viewContext objects.
+
+**CloudProgramService init fix** — `Task { [self] in loadCachedProgram() }` inherited `@MainActor` isolation, so JSON decode ran on the main thread (log showed `off-main: false`). Changed to `Task.detached` with `MainActor.run` only for `objectWillChange.send()`.
+
+**Removed ALL `UserDefaults.synchronize()` calls** — 8 call sites across `ChallengeService` (4), `Fit33App` (2), `SupabaseManager` (2). Each forced synchronous disk I/O on the calling thread.
+
+**Regression Prevention Tools (NEW)**:
+
+1. **`scripts/perf_lint.sh`** — Build-phase script. Add to Xcode Build Phases before "Compile Sources". Scans for:
+   - `UserDefaults.synchronize()` → **error** (build fails)
+   - `ExerciseLibraryService.shared` in files with `bgContext.perform` → **warning** (manual review)
+   - `performAndWait` → **warning** (verify not @MainActor)
+   - `viewContext.fetch` near `private init()` → **warning** (singleton freeze risk)
+
+2. **`NSManagedObject.assertContext(_:)` (DEBUG-only)** — Extension in `PersistenceController.swift`. Call before assigning cross-object relationships in `bgContext.perform` blocks. Asserts at runtime if the object belongs to a different context. Zero overhead in production.
+
+Usage:
+```swift
+await bgContext.perform {
+    let exercise = try? bgContext.fetch(exerciseRequest).first
+    let workoutExercise = WorkoutExercise(context: bgContext)
+    #if DEBUG
+    exercise?.assertContext(bgContext)  // Crashes in DEBUG if wrong context
+    #endif
+    workoutExercise.exercise = exercise
+}
+```
+
+**New rules**:
+- When moving Core Data work to `newBackgroundContext()`, audit EVERY managed object reference in the block — service singleton caches (`.shared.getExercise`, `.shared.getAllExercises`) return viewContext objects and MUST NOT be used inside `bgContext.perform`.
+- `Task { [self] in }` on `@MainActor` types inherits main actor isolation. Use `Task.detached` for work that must run off main.
+- Add `scripts/perf_lint.sh` as an Xcode build phase to catch these patterns automatically.
+
+**Remaining known warnings (pre-existing, tracked)**:
+- `SmartExercisePairingEngine:718` — uses `ExerciseLibraryService.shared.getAllExercises()` outside bgContext.perform but on a non-MainActor class (threading review needed)
+- `HydrationService:205` — `calculateSmartGoal()` does viewContext.fetch in a deferred Task near init (low risk, runs after init)
+- `UserManager.loadCurrentUser()` — sync viewContext.fetch in init (needed for onboarding gate, requires UserDefaults cache approach to fix safely)
+
+### 2026-03-27: Dashboard Instant Data Population Fix
+
+**Problem**: Daily goals, challenge cards, and other dashboard elements took 1-3 seconds to populate on first load. Users saw blank/skeleton content for multiple frames after launch.
+
+**Root cause**: Three compounding issues:
+1. `DailyQuestService.init()` wrapped `loadCachedQuests()` in `Task {}` — the `@Published quests` started as `[]` and wasn't populated until the next run loop iteration. The loading function only reads UserDefaults (no Core Data), so the async wrapper was unnecessary.
+2. `ChallengeService.init()` used `Task.detached` + `MainActor.run` for UserDefaults cache load. The detached decode + hop back to main added latency before `@Published` arrays were populated.
+3. Dashboard auth wait used a 500ms polling loop (`Task.sleep(for: .milliseconds(500))` × 20 iterations). If auth completed 1ms after a poll check, the next social fetch was delayed by 499ms.
+
+**Fix 1 — DailyQuestService synchronous cache load**:
+- Removed `Task {}` wrapper. `loadCachedQuests()` and `restoreLastReportedSteps()` now run synchronously in `init()`. Both only read UserDefaults (fast, no Core Data), so `quests` is populated with cached data or `defaultGoals()` before the first frame renders.
+- **Rule clarification**: The "Singleton init() must return instantly" rule applies to Core Data fetches and heavy work. UserDefaults reads + small JSON decodes (<1ms) are acceptable synchronously.
+
+**Fix 2 — ChallengeService synchronous cache load**:
+- Replaced `Task.detached` + `MainActor.run` with synchronous `loadCachedChallengesSync()`. UserDefaults read + JSON decode of 1-5 challenge objects is <1ms. All `@Published` arrays populated before first frame.
+- Today-progress zeroing logic preserved for stale (non-today) cache dates.
+
+**Fix 3 — Dashboard auth wait via Combine publisher**:
+- Replaced 500ms polling loop with `SupabaseManager.shared.$isAuthenticated.first(where: { $0 })` Combine subscription. Social/quest fetches now fire the instant auth becomes true (0ms latency vs up to 500ms polling gap).
+- NSLock-guarded continuation ensures exactly one resume (publisher vs 10s timeout race safety).
+
+**Impact**: Cached quests and challenges appear on the very first frame. Social data fetches start the instant auth is ready instead of waiting for the next poll cycle.
+
+**New rule — UserDefaults cache loading in singleton init**:
+- UserDefaults reads + JSON decode of small payloads (< ~50KB) are safe to run synchronously in `@MainActor` singleton `init()`. This provides instant `@Published` data for the first SwiftUI frame.
+- Core Data fetches remain prohibited in `init()` — use `Task {}` or `Task.detached` for those.
+- When converting async cache loads to synchronous, ensure the `@Published` property assignment happens in the same synchronous call (no `MainActor.run` needed when already on `@MainActor`).
+
+### 2026-03-27: Tab Switch Performance — Deferred Orb Backgrounds
+
+**Problem**: First-visit tab switches to Nutrition (411ms, 32fps) and Friends (499ms, 35fps) were GPU-bound. `AnimatedOrbBackground` (GeometryReader + 3 animated circles with RadialGradient + `.drawingGroup()`) rendered immediately on first visit, competing with heavy view tree construction.
+
+**Fix — Deferred AnimatedOrbBackground on non-Dashboard tabs**:
+- **SimpleMealPlanView**: `AnimatedOrbBackground` gated behind existing `showSecondaryWidgets` flag (already deferred 150ms). Orbs fade in with `.transition(.opacity)` + `.easeIn(0.3)` animation after the tab switch animation completes.
+- **FriendsTabView**: Added `showOrbBackground` state, deferred 150ms via `.task`, same fade-in pattern.
+- Dashboard tab keeps immediate orb rendering since it's the first visible tab.
+
+**Rule — AnimatedOrbBackground on non-primary tabs**:
+- Tabs that aren't visible at app launch (Nutrition, Friends, Workout) SHOULD defer `AnimatedOrbBackground` behind a `@State` flag with ~150ms delay. This eliminates GPU contention during the first-visit view construction frame. Use `.transition(.opacity)` for smooth appearance.
+
+### 2026-03-27: Daily Quest Widget Celebration Fix
+
+**Root cause**: Celebration overlays (quest completion toast, bonus unlocked banner) in `DashboardView` read `@Published` properties (`showQuestCompletionCelebration`, `showBonusCelebration`, `lastCompletedQuest`) from `dailyQuestService` — a plain `let` reference per the widget isolation rules. SwiftUI does NOT subscribe to `@Published` changes on plain `let` references, so the overlays never appeared.
+
+**Fix**: Extracted celebration overlay to `DashboardQuestCelebrationWrapper` (own `@StateObject`), consistent with all other dashboard wrappers. This struct independently observes the quest service and re-renders when celebrations fire.
+
+**Rule — Overlay + isolated service = own wrapper**: Any `.overlay` that reads `@Published` properties from a service must be its own View struct with `@StateObject`. The widget isolation pattern (converting services to `let` in parent) means ALL live-updating UI — including overlays, not just inline content — must be wrapped.

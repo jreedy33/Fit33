@@ -321,7 +321,9 @@ class FriendService: ObservableObject {
             self.pendingRequests = result
             AppLogger.info("Fetched \(result.count) pending friend requests", category: .social)
         } catch {
-            AppLogger.error("Error fetching friend requests: \(error.localizedDescription)", category: .social)
+            if !Task.isCancelled {
+                AppLogger.error("Error fetching friend requests: \(error.localizedDescription)", category: .social)
+            }
         }
     }
     
@@ -552,7 +554,9 @@ class FriendService: ObservableObject {
             self.receivedWorkouts = filteredResult
             AppLogger.info("Fetched \(result.count) received workouts (\(result.count - filteredResult.count) filtered as addressed)", category: .social)
         } catch {
-            AppLogger.error("Error fetching received workouts: \(error.localizedDescription)", category: .social)
+            if !Task.isCancelled {
+                AppLogger.error("Error fetching received workouts: \(error.localizedDescription)", category: .social)
+            }
         }
     }
     

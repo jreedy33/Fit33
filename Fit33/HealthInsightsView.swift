@@ -16,6 +16,7 @@ struct HealthInsightsView: View {
     @StateObject private var healthService = HealthDataService.shared
     @StateObject private var fitbit = FitbitService.shared
     @StateObject private var strava = StravaService.shared
+    @StateObject private var whoop = WhoopService.shared
     
     @State private var selectedTimeRange: TimeRange = .week
     
@@ -46,8 +47,17 @@ struct HealthInsightsView: View {
                 }
                 
                 // Sleep Section
-                if !healthService.recentSleepLogs.isEmpty || fitbit.isConnected {
+                if !healthService.recentSleepLogs.isEmpty || fitbit.isConnected || whoop.isConnected {
                     sleepCard
+                }
+                
+                // WHOOP Insights (only when connected)
+                if whoop.isConnected {
+                    whoopRecoveryTrendCard
+                    whoopStrainTrendCard
+                    if let recovery = whoop.todayRecovery, recovery.spo2Percentage != nil || recovery.skinTempCelsius != nil {
+                        whoopVitalsCard
+                    }
                 }
                 
                 // Weekly Workout Summary
@@ -619,8 +629,172 @@ struct HealthInsightsView: View {
         }
     }
     
+    // MARK: - WHOOP Insights
+
+    private var whoopRecoveryTrendCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack {
+                Image(systemName: "arrow.up.heart.fill")
+                    .foregroundColor(.green)
+                Text("Recovery Trend")
+                    .font(.ds_heading3)
+                Spacer()
+                Text("WHOOP")
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+            }
+
+            if whoop.recentRecoveries.isEmpty {
+                Text("Syncing recovery data...")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+            } else {
+                let scored = whoop.recentRecoveries
+                    .filter { $0.scoreState == "SCORED" && $0.score?.recoveryScore != nil }
+                    .prefix(7)
+                    .reversed()
+
+                HStack(alignment: .bottom, spacing: Spacing.xs) {
+                    ForEach(Array(scored), id: \.cycleId) { record in
+                        let score = record.score?.recoveryScore ?? 0
+                        let level = WhoopService.RecoveryLevel(score: score)
+                        VStack(spacing: Spacing.xxxs) {
+                            Text("\(score)")
+                                .font(.ds_labelSmall)
+                                .foregroundColor(level.color)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(level.color)
+                                .frame(width: 28, height: CGFloat(max(score, 5)) * 0.8)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(height: 100)
+
+                // HRV summary
+                if let hrv = whoop.todayRecovery?.hrvRmssdMilli {
+                    HStack {
+                        Text("Today's HRV")
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(String(format: "%.0f", hrv)) ms")
+                            .font(.ds_labelLarge)
+                            .foregroundColor(.cyan)
+                    }
+                }
+            }
+        }
+        .padding(Spacing.md)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("WHOOP recovery trend over the last 7 days")
+    }
+
+    private var whoopStrainTrendCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack {
+                Image(systemName: "flame.fill")
+                    .foregroundColor(.blue)
+                Text("Strain Trend")
+                    .font(.ds_heading3)
+                Spacer()
+                Text("WHOOP")
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+            }
+
+            if whoop.recentCycles.isEmpty {
+                Text("Syncing strain data...")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+            } else {
+                let scored = whoop.recentCycles
+                    .filter { $0.scoreState == "SCORED" && $0.score?.strain != nil }
+                    .prefix(7)
+                    .reversed()
+
+                HStack(alignment: .bottom, spacing: Spacing.xs) {
+                    ForEach(Array(scored), id: \.id) { cycle in
+                        let strain = cycle.score?.strain ?? 0
+                        let barColor: Color = strain > 14 ? .red : strain > 10 ? .orange : .blue
+                        VStack(spacing: Spacing.xxxs) {
+                            Text(String(format: "%.0f", strain))
+                                .font(.ds_labelSmall)
+                                .foregroundColor(barColor)
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(barColor)
+                                .frame(width: 28, height: CGFloat(max(strain, 1)) * 4)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(height: 100)
+            }
+        }
+        .padding(Spacing.md)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("WHOOP strain trend over the last 7 days")
+    }
+
+    private var whoopVitalsCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack {
+                Image(systemName: "waveform.path.ecg")
+                    .foregroundColor(.purple)
+                Text("Vitals")
+                    .font(.ds_heading3)
+                Spacer()
+                Text("WHOOP")
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+            }
+
+            if let recovery = whoop.todayRecovery {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.sm) {
+                    if let spo2 = recovery.spo2Percentage {
+                        vitalTile(label: "SpO2", value: "\(String(format: "%.1f", spo2))%", icon: "lungs.fill", color: .teal)
+                    }
+                    if let temp = recovery.skinTempCelsius {
+                        vitalTile(label: "Skin Temp", value: "\(String(format: "%.1f", temp))°C", icon: "thermometer.medium", color: .orange)
+                    }
+                    if let rhr = recovery.restingHeartRate {
+                        vitalTile(label: "Resting HR", value: "\(rhr) bpm", icon: "heart.fill", color: .red)
+                    }
+                    if let hrv = recovery.hrvRmssdMilli {
+                        vitalTile(label: "HRV", value: "\(String(format: "%.0f", hrv)) ms", icon: "waveform.path.ecg", color: .cyan)
+                    }
+                }
+            }
+        }
+        .padding(Spacing.md)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .purple)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("WHOOP vitals including SpO2 and skin temperature")
+    }
+
+    private func vitalTile(label: String, value: String, icon: String, color: Color) -> some View {
+        VStack(spacing: Spacing.xs) {
+            Image(systemName: icon)
+                .font(.ds_heading3)
+                .foregroundColor(color)
+            Text(value)
+                .font(.ds_statSmall)
+            Text(label)
+                .font(.ds_labelSmall)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(color.opacity(0.08))
+        )
+    }
+
     // MARK: - Data Sources Footer
-    
+
     private var dataSourcesFooter: some View {
         VStack(spacing: 12) {
             Text("Data Sources")

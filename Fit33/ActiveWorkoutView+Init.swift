@@ -427,22 +427,21 @@ extension ActiveWorkoutView {
     }
     
     func startTimer() {
-        // ⚡️ PERFORMANCE: Use workoutManager's start time (set when GO was tapped)
-        // This ensures accurate timing even if view render was delayed
         guard let startTime = workoutManager.workoutStartTime else {
             AppLogger.warning("⚠️ [TIMER] No workout start time available, using current time", category: .workout)
             timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [self] _ in
                 elapsedTime += 1
             }
+            if let t = timer { RunLoop.main.add(t, forMode: .common) }
             return
         }
         
-        // ⚡️ INSTANT: Set initial elapsed time immediately (no waiting for first tick)
         elapsedTime = Date().timeIntervalSince(startTime)
         
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [self] _ in
             elapsedTime = Date().timeIntervalSince(startTime)
         }
+        if let t = timer { RunLoop.main.add(t, forMode: .common) }
     }
     
     func stopTimer() {

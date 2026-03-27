@@ -497,11 +497,9 @@ struct Fit33App: App {
                                     if isNewUser {
                                         if let fullName = supabaseManager.currentUser?.userMetadata["full_name"] as? String, !fullName.isEmpty {
                                             UserDefaults.standard.set(fullName, forKey: "pending_oauth_name")
-                                            UserDefaults.standard.synchronize() // Force immediate write
                                             AppLogger.debug("Stored OAuth name (full_name) for onboarding: \(fullName)", category: .auth)
                                         } else if let name = supabaseManager.currentUser?.userMetadata["name"] as? String, !name.isEmpty {
                                             UserDefaults.standard.set(name, forKey: "pending_oauth_name")
-                                            UserDefaults.standard.synchronize() // Force immediate write
                                             AppLogger.debug("Stored OAuth name (name) for onboarding: \(name)", category: .auth)
                                         }
                                         

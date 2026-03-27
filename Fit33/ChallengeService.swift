@@ -166,69 +166,59 @@ class ChallengeService: ObservableObject {
     #endif
     
     private init() {
-        let activeKey = activeChallengesCacheKey
-        let groupKey = groupChallengesCacheKey
-        let invitesKey = pendingInvitesCacheKey
-        let sentKey = pendingSentCacheKey
-        let dateKey = cacheDateKey
+        loadCachedChallengesSync()
+    }
+    
+    /// Synchronous cache load from UserDefaults — no Core Data, safe for init().
+    /// Typically decodes 1-5 challenge objects per array (<1ms).
+    private func loadCachedChallengesSync() {
+        let cacheTimestamp = UserDefaults.standard.double(forKey: cacheDateKey)
+        let cacheDate = cacheTimestamp > 0 ? Date(timeIntervalSince1970: cacheTimestamp) : nil
+        let isCacheFromToday = cacheDate.map { Calendar.current.isDateInToday($0) } ?? false
         
-        Task.detached(priority: .userInitiated) {
-            AppLogger.debug("[ChallengeService] Cache load started (off-main: \(!Thread.isMainThread))", category: .performance)
-            
-            let cacheTimestamp = UserDefaults.standard.double(forKey: dateKey)
-            let cacheDate = cacheTimestamp > 0 ? Date(timeIntervalSince1970: cacheTimestamp) : nil
-            let isCacheFromToday = cacheDate.map { Calendar.current.isDateInToday($0) } ?? false
-            
-            let activeData = UserDefaults.standard.data(forKey: activeKey)
-            let groupData = UserDefaults.standard.data(forKey: groupKey)
-            let invitesData = UserDefaults.standard.data(forKey: invitesKey)
-            let sentData = UserDefaults.standard.data(forKey: sentKey)
-            
-            let decoder = JSONDecoder()
-            let active: [ActiveChallenge]? = activeData.flatMap { try? decoder.decode([ActiveChallenge].self, from: $0) }
-            let groups: [ActiveGroupChallenge]? = groupData.flatMap { try? decoder.decode([ActiveGroupChallenge].self, from: $0) }
-            let invites: [ChallengeInvite]? = invitesData.flatMap { try? decoder.decode([ChallengeInvite].self, from: $0) }
-            let sent: [PendingSentChallenge]? = sentData.flatMap { try? decoder.decode([PendingSentChallenge].self, from: $0) }
-            
-            await MainActor.run { [active, groups, invites, sent] in
-                if var cached = active {
-                    if !isCacheFromToday && !cached.isEmpty {
-                        cached = cached.map { challenge in
-                            ActiveChallenge(
-                                challengeId: challenge.challengeId, challengeType: challenge.challengeType,
-                                title: challenge.title, description: challenge.description,
-                                dailyTarget: challenge.dailyTarget, totalTarget: challenge.totalTarget,
-                                targetUnit: challenge.targetUnit, startDate: challenge.startDate,
-                                endDate: challenge.endDate, durationDays: challenge.durationDays,
-                                daysElapsed: challenge.daysElapsed, daysRemaining: challenge.daysRemaining,
-                                status: challenge.status, myTotalProgress: challenge.myTotalProgress,
-                                myTodayProgress: 0, myDaysCompleted: challenge.myDaysCompleted,
-                                myCurrentStreak: challenge.myCurrentStreak, opponentId: challenge.opponentId,
-                                opponentName: challenge.opponentName, opponentUsername: challenge.opponentUsername,
-                                opponentPhotoUrl: challenge.opponentPhotoUrl,
-                                opponentTotalProgress: challenge.opponentTotalProgress,
-                                opponentTodayProgress: 0, opponentDaysCompleted: challenge.opponentDaysCompleted,
-                                amWinning: challenge.amWinning, amWinningToday: nil
-                            )
-                        }
-                    }
-                    self.activeChallenges = cached
-                    AppLogger.info("Loaded \(cached.count) cached active challenges instantly", category: .social)
-                }
-                if var cached = groups {
-                    if !isCacheFromToday && !cached.isEmpty {
-                        cached = cached.map { $0.withZeroedTodayProgress() }
-                    }
-                    self.activeGroupChallenges = cached
-                    AppLogger.info("Loaded \(cached.count) cached group challenges instantly", category: .social)
-                }
-                if let cached = invites {
-                    self.pendingInvites = cached
-                }
-                if let cached = sent {
-                    self.pendingSentChallenges = cached
+        let decoder = JSONDecoder()
+        
+        if let activeData = UserDefaults.standard.data(forKey: activeChallengesCacheKey),
+           var cached = try? decoder.decode([ActiveChallenge].self, from: activeData) {
+            if !isCacheFromToday && !cached.isEmpty {
+                cached = cached.map { challenge in
+                    ActiveChallenge(
+                        challengeId: challenge.challengeId, challengeType: challenge.challengeType,
+                        title: challenge.title, description: challenge.description,
+                        dailyTarget: challenge.dailyTarget, totalTarget: challenge.totalTarget,
+                        targetUnit: challenge.targetUnit, startDate: challenge.startDate,
+                        endDate: challenge.endDate, durationDays: challenge.durationDays,
+                        daysElapsed: challenge.daysElapsed, daysRemaining: challenge.daysRemaining,
+                        status: challenge.status, myTotalProgress: challenge.myTotalProgress,
+                        myTodayProgress: 0, myDaysCompleted: challenge.myDaysCompleted,
+                        myCurrentStreak: challenge.myCurrentStreak, opponentId: challenge.opponentId,
+                        opponentName: challenge.opponentName, opponentUsername: challenge.opponentUsername,
+                        opponentPhotoUrl: challenge.opponentPhotoUrl,
+                        opponentTotalProgress: challenge.opponentTotalProgress,
+                        opponentTodayProgress: 0, opponentDaysCompleted: challenge.opponentDaysCompleted,
+                        amWinning: challenge.amWinning, amWinningToday: nil
+                    )
                 }
             }
+            self.activeChallenges = cached
+        }
+        
+        if let groupData = UserDefaults.standard.data(forKey: groupChallengesCacheKey),
+           var cached = try? decoder.decode([ActiveGroupChallenge].self, from: groupData) {
+            if !isCacheFromToday && !cached.isEmpty {
+                cached = cached.map { $0.withZeroedTodayProgress() }
+            }
+            self.activeGroupChallenges = cached
+        }
+        
+        if let invitesData = UserDefaults.standard.data(forKey: pendingInvitesCacheKey),
+           let cached = try? decoder.decode([ChallengeInvite].self, from: invitesData) {
+            self.pendingInvites = cached
+        }
+        
+        if let sentData = UserDefaults.standard.data(forKey: pendingSentCacheKey),
+           let cached = try? decoder.decode([PendingSentChallenge].self, from: sentData) {
+            self.pendingSentChallenges = cached
         }
     }
     
@@ -248,7 +238,6 @@ class ChallengeService: ObservableObject {
             let data = try encoder.encode(activeChallenges)
             UserDefaults.standard.set(data, forKey: activeChallengesCacheKey)
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: cacheDateKey)
-            UserDefaults.standard.synchronize()
             AppLogger.debug("Cached \(activeChallenges.count) active challenges", category: .social)
         } catch {
             AppLogger.error("Failed to cache active challenges: \(error.localizedDescription)", category: .social)
@@ -267,7 +256,6 @@ class ChallengeService: ObservableObject {
             let encoder = JSONEncoder()
             let data = try encoder.encode(pendingInvites)
             UserDefaults.standard.set(data, forKey: pendingInvitesCacheKey)
-            UserDefaults.standard.synchronize()
             AppLogger.debug("Cached \(pendingInvites.count) pending invites", category: .social)
         } catch {
             AppLogger.error("Failed to cache pending invites: \(error.localizedDescription)", category: .social)
@@ -287,7 +275,6 @@ class ChallengeService: ObservableObject {
             let data = try JSONEncoder().encode(activeGroupChallenges)
             UserDefaults.standard.set(data, forKey: groupChallengesCacheKey)
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: cacheDateKey)
-            UserDefaults.standard.synchronize()
             AppLogger.debug("Cached \(activeGroupChallenges.count) group challenges", category: .social)
         } catch {
             AppLogger.error("Failed to cache group challenges: \(error.localizedDescription)", category: .social)
@@ -408,7 +395,6 @@ class ChallengeService: ObservableObject {
         UserDefaults.standard.removeObject(forKey: pendingInvitesCacheKey)
         UserDefaults.standard.removeObject(forKey: pendingSentCacheKey)
         UserDefaults.standard.removeObject(forKey: cacheDateKey)
-        UserDefaults.standard.synchronize()
         activeChallenges = []
         activeGroupChallenges = []
         pendingInvites = []

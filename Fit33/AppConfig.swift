@@ -80,6 +80,18 @@ enum AppConfig {
         static let scopes = "activity heartrate sleep weight profile"
     }
     
+    // MARK: - WHOOP Configuration
+    
+    enum Whoop {
+        static let clientId = Secrets.whoopClientId
+        static let clientSecret = Secrets.whoopClientSecret
+        static let redirectUri = "fit33://whoop"
+        static let authorizationUrl = "https://api.prod.whoop.com/oauth/oauth2/auth"
+        static let tokenUrl = "https://api.prod.whoop.com/oauth/oauth2/token"
+        static let apiBaseUrl = "https://api.prod.whoop.com/developer"
+        static let scopes = "read:recovery read:cycles read:workout read:sleep read:profile read:body_measurement"
+    }
+    
     // MARK: - InBody Configuration
     
     enum InBody {

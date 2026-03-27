@@ -148,27 +148,43 @@ class HealthKitManager: ObservableObject {
             ]
         )
         
-        do {
-            try await healthStore.save(workout)
-            AppLogger.info("Workout saved to Apple Health: \(workoutName), \(Int(durationSeconds / 60))min, \(Int(caloriesBurned))kcal, \(exerciseCount) exercises, type: \(activityType.name)", category: .health)
-            
-            // Update UI for confirmation
-            await MainActor.run {
-                self.lastSavedWorkoutName = workoutName
-                self.showHealthSaveConfirmation = true
+        var lastError: Error?
+        for attempt in 0..<3 {
+            do {
+                try await healthStore.save(workout)
+                AppLogger.info("Workout saved to Apple Health: \(workoutName), \(Int(durationSeconds / 60))min, \(Int(caloriesBurned))kcal, \(exerciseCount) exercises, type: \(activityType.name)", category: .health)
                 
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(3))
-                    guard !Task.isCancelled else { return }
-                    self.showHealthSaveConfirmation = false
-                }
+                await MainActor.run {
+                    self.lastSavedWorkoutName = workoutName
+                    self.showHealthSaveConfirmation = true
+                    
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(3))
+                        guard !Task.isCancelled else { return }
+                        self.showHealthSaveConfirmation = false
+                    }
 
-                NotificationCenter.default.post(name: NSNotification.Name("WorkoutSavedToHealth"), object: nil)
+                    NotificationCenter.default.post(name: NSNotification.Name("WorkoutSavedToHealth"), object: nil)
+                }
+                return
+            } catch {
+                lastError = error
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+                let isTimedOutMessage = error.localizedDescription.lowercased().contains("timed out")
+                
+                if (isTimeout || isTimedOutMessage) && attempt < 2 {
+                    let delay = UInt64(pow(2.0, Double(attempt + 1))) * 1_000_000_000
+                    AppLogger.warning("HealthKit workout save timed out (attempt \(attempt + 1)/3) — retrying in \(Int(pow(2.0, Double(attempt + 1))))s", category: .health)
+                    try? await Task.sleep(nanoseconds: delay)
+                    continue
+                }
+                break
             }
-        } catch {
-            AppLogger.error("Failed to save workout: \(error.localizedDescription)", category: .health)
-            throw HealthKitError.saveFailed(error)
         }
+        
+        AppLogger.error("Failed to save workout after retries: \(lastError?.localizedDescription ?? "unknown")", category: .health)
+        throw HealthKitError.saveFailed(lastError ?? NSError(domain: "HealthKit", code: -1))
     }
     
     /// Save a running workout to Apple Health with distance
@@ -197,41 +213,55 @@ class HealthKitManager: ObservableObject {
             ]
         )
         
-        do {
-            try await healthStore.save(workout)
-            
-            let distanceKm = distanceMeters / 1000.0
-            
-            // Safely calculate pace - avoid division by zero
-            var paceString = "--:--"
-            if distanceKm > 0.01 { // At least 10 meters
-                let paceSecondsPerKm = durationSeconds / distanceKm
-                if paceSecondsPerKm.isFinite && paceSecondsPerKm > 0 && paceSecondsPerKm < 3600 {
-                    let paceMin = Int(paceSecondsPerKm) / 60
-                    let paceSec = Int(paceSecondsPerKm) % 60
-                    paceString = "\(paceMin):\(String(format: "%02d", paceSec))"
-                }
-            }
-            
-            AppLogger.info("Running workout saved to Apple Health: \(String(format: "%.2f", distanceKm))km, \(Int(durationSeconds / 60))min, pace \(paceString)/km, \(Int(caloriesBurned))kcal", category: .health)
-            
-            // Update UI for confirmation
-            await MainActor.run {
-                self.lastSavedWorkoutName = "Outdoor Run"
-                self.showHealthSaveConfirmation = true
+        var lastError: Error?
+        for attempt in 0..<3 {
+            do {
+                try await healthStore.save(workout)
                 
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(3))
-                    guard !Task.isCancelled else { return }
-                    self.showHealthSaveConfirmation = false
+                let distanceKm = distanceMeters / 1000.0
+                var paceString = "--:--"
+                if distanceKm > 0.01 {
+                    let paceSecondsPerKm = durationSeconds / distanceKm
+                    if paceSecondsPerKm.isFinite && paceSecondsPerKm > 0 && paceSecondsPerKm < 3600 {
+                        let paceMin = Int(paceSecondsPerKm) / 60
+                        let paceSec = Int(paceSecondsPerKm) % 60
+                        paceString = "\(paceMin):\(String(format: "%02d", paceSec))"
+                    }
                 }
+                
+                AppLogger.info("Running workout saved to Apple Health: \(String(format: "%.2f", distanceKm))km, \(Int(durationSeconds / 60))min, pace \(paceString)/km, \(Int(caloriesBurned))kcal", category: .health)
+                
+                await MainActor.run {
+                    self.lastSavedWorkoutName = "Outdoor Run"
+                    self.showHealthSaveConfirmation = true
+                    
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(3))
+                        guard !Task.isCancelled else { return }
+                        self.showHealthSaveConfirmation = false
+                    }
 
-                NotificationCenter.default.post(name: NSNotification.Name("WorkoutSavedToHealth"), object: nil)
+                    NotificationCenter.default.post(name: NSNotification.Name("WorkoutSavedToHealth"), object: nil)
+                }
+                return
+            } catch {
+                lastError = error
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+                let isTimedOutMessage = error.localizedDescription.lowercased().contains("timed out")
+                
+                if (isTimeout || isTimedOutMessage) && attempt < 2 {
+                    let delay = UInt64(pow(2.0, Double(attempt + 1))) * 1_000_000_000
+                    AppLogger.warning("HealthKit running workout save timed out (attempt \(attempt + 1)/3) — retrying in \(Int(pow(2.0, Double(attempt + 1))))s", category: .health)
+                    try? await Task.sleep(nanoseconds: delay)
+                    continue
+                }
+                break
             }
-        } catch {
-            AppLogger.error("Failed to save running workout: \(error.localizedDescription)", category: .health)
-            throw HealthKitError.saveFailed(error)
         }
+        
+        AppLogger.error("Failed to save running workout after retries: \(lastError?.localizedDescription ?? "unknown")", category: .health)
+        throw HealthKitError.saveFailed(lastError ?? NSError(domain: "HealthKit", code: -1))
     }
     
     /// Estimate calories burned for a strength training workout (simplified method)

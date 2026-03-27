@@ -300,10 +300,8 @@ class DailyQuestService: ObservableObject {
     private let cacheDuration: TimeInterval = 60 // 1 minute
     
     private init() {
-        Task { [self] in
-            loadCachedQuests()
-            restoreLastReportedSteps()
-        }
+        loadCachedQuests()
+        restoreLastReportedSteps()
     }
     
     // MARK: - Computed Properties
@@ -504,9 +502,63 @@ class DailyQuestService: ObservableObject {
     }
     
     /// Fallback goals that are always returned when the server returns empty or errors.
-    /// Ensures the widget never shows a generic placeholder.
+    /// Context-aware: experienced users get real generic quests, beginners get onboarding quests.
     private func defaultGoals() -> [DailyQuest] {
-        [beginnerSocialQuest(), beginnerWorkoutQuest(), beginnerProgramQuest()]
+        let totalWorkouts = Int(UserManager.shared.currentUser?.totalWorkouts ?? 0)
+        if totalWorkouts > 0 {
+            return experiencedUserFallbackGoals()
+        }
+        return [beginnerSocialQuest(), beginnerWorkoutQuest(), beginnerProgramQuest()]
+    }
+    
+    private func experiencedUserFallbackGoals() -> [DailyQuest] {
+        [
+            DailyQuest(
+                id: UUID(),
+                questKey: QuestKey.completeWorkout.rawValue,
+                title: "Crush a Workout",
+                description: "Complete any workout today",
+                icon: "dumbbell.fill",
+                category: "workout",
+                targetValue: 1, currentValue: 0,
+                targetUnit: "workout",
+                xpReward: 30, leaguePoints: 20,
+                difficulty: "easy",
+                isCompleted: false, completedAt: nil,
+                funLabel: "💪 Just show up",
+                verificationType: "auto"
+            ),
+            DailyQuest(
+                id: UUID(),
+                questKey: QuestKey.walk5kSteps.rawValue,
+                title: "Halfway There",
+                description: "Walk 5,000 steps today",
+                icon: "figure.walk.motion",
+                category: "steps",
+                targetValue: 5000, currentValue: 0,
+                targetUnit: "steps",
+                xpReward: 30, leaguePoints: 18,
+                difficulty: "medium",
+                isCompleted: false, completedAt: nil,
+                funLabel: "👟 Solid effort",
+                verificationType: "auto"
+            ),
+            DailyQuest(
+                id: UUID(),
+                questKey: QuestKey.logBreakfast.rawValue,
+                title: "Breakfast Check-in",
+                description: "Log your breakfast to start the day right",
+                icon: "sunrise.fill",
+                category: "nutrition",
+                targetValue: 1, currentValue: 0,
+                targetUnit: "meal",
+                xpReward: 20, leaguePoints: 12,
+                difficulty: "easy",
+                isCompleted: false, completedAt: nil,
+                funLabel: "🌅 Morning fuel",
+                verificationType: "manual"
+            )
+        ]
     }
     
     // MARK: - Fetch Daily Quests
@@ -560,7 +612,37 @@ class DailyQuestService: ObservableObject {
                 let p_has_weight_log: Bool
                 let p_hydration_active: Bool
                 let p_league_rank: Int
-                let p_active_step_challenge_target: Int
+                let p_active_step_challenge_target: Int?
+                
+                enum CodingKeys: String, CodingKey {
+                    case p_user_id, p_timezone, p_has_program, p_has_friends, p_has_challenge
+                    case p_step_goal, p_fitness_goal, p_is_subscriber, p_workout_streak
+                    case p_total_workouts, p_preferred_time, p_avg_duration
+                    case p_has_weight_log, p_hydration_active, p_league_rank
+                    case p_active_step_challenge_target
+                }
+                
+                func encode(to encoder: Encoder) throws {
+                    var container = encoder.container(keyedBy: CodingKeys.self)
+                    try container.encode(p_user_id, forKey: .p_user_id)
+                    try container.encode(p_timezone, forKey: .p_timezone)
+                    try container.encode(p_has_program, forKey: .p_has_program)
+                    try container.encode(p_has_friends, forKey: .p_has_friends)
+                    try container.encode(p_has_challenge, forKey: .p_has_challenge)
+                    try container.encode(p_step_goal, forKey: .p_step_goal)
+                    try container.encode(p_fitness_goal, forKey: .p_fitness_goal)
+                    try container.encode(p_is_subscriber, forKey: .p_is_subscriber)
+                    try container.encode(p_workout_streak, forKey: .p_workout_streak)
+                    try container.encode(p_total_workouts, forKey: .p_total_workouts)
+                    try container.encode(p_preferred_time, forKey: .p_preferred_time)
+                    try container.encode(p_avg_duration, forKey: .p_avg_duration)
+                    try container.encode(p_has_weight_log, forKey: .p_has_weight_log)
+                    try container.encode(p_hydration_active, forKey: .p_hydration_active)
+                    try container.encode(p_league_rank, forKey: .p_league_rank)
+                    if let stepTarget = p_active_step_challenge_target, stepTarget > 0 {
+                        try container.encode(stepTarget, forKey: .p_active_step_challenge_target)
+                    }
+                }
             }
             
             let params = GetDailyQuestsParams(
@@ -579,7 +661,7 @@ class DailyQuestService: ObservableObject {
                 p_has_weight_log: ctx.hasWeightLog,
                 p_hydration_active: ctx.hydrationActive,
                 p_league_rank: ctx.leagueRank,
-                p_active_step_challenge_target: ctx.activeStepChallengeTarget
+                p_active_step_challenge_target: ctx.activeStepChallengeTarget > 0 ? ctx.activeStepChallengeTarget : nil
             )
             
             let response: DailyQuestsResponse = try await SupabaseManager.shared.supabaseClient

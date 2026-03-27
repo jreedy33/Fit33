@@ -844,6 +844,25 @@ Progress ring, bar, and label all use `liveProgress(for:)` — instant response 
 
 **Files changed**: `DailyQuestViews.swift`, `DailyQuestService.swift`, `HealthKitManager.swift`, `HealthKitService.swift`, `MealService.swift`
 
+### 2026-03-27: Daily Quest Live Progress — Server Fallback + Expanded Coverage
+
+**Bug fixed**: Step quest progress bars showed 0% on app launch when HealthKit hadn't loaded yet, even though the server had the correct step count. Root cause: `liveCurrentValue` for step quests did `min(liveSteps, targetValue)` without `max(liveSteps, quest.currentValue)`.
+
+**Fix**: All `liveCurrentValue` cases now use `max(localValue, quest.currentValue)` as the baseline, so progress never appears lower than the last server sync.
+
+**Expanded live tracking** (new quest types in `liveCurrentValue`):
+
+| Quest Type | Live Data Source |
+|---|---|
+| Log breakfast/lunch/dinner/snack | `MealService.todaysMeals` filtered by meal type |
+| Log a meal | `MealService.todaysMeals.count` |
+| High protein meal | `MealService.todaysMeals.contains { protein >= 30 }` |
+| Log all macros | Checks protein/carbs/fat > 0 in `todaysMeals` |
+| Hydration before noon | `HydrationService.todaySummary.entryCount` |
+| Sleep 7 hours | `HealthKitService.lastNightSleep` |
+
+**Rule**: Every `liveCurrentValue` switch case MUST include `max(localValue, quest.currentValue)` unless the local check is authoritative for binary quests. Never return a bare local value that could be 0 when HealthKit/services haven't loaded.
+
 ### 2026-03-24: Push Notification Delivery Fix
 
 **Root cause**: SQL RPCs (`accept_friend_request`, `create_challenge`, etc.) correctly INSERT into `push_notification_queue`, but nothing invoked the `send-push-notification` edge function to process the queue. Only `notify-contacts-user-joined` had a working caller.
@@ -1067,3 +1086,34 @@ OTP verified → createMinimalAccountForEmailPasswordSignup()
 **AdminShell nav** now has 14 items (was 9). New: Engagement, System Health, Push Manager, Feature Flags, Moderation, Audit Log.
 
 **User detail page** (`/users/[id]`) gained two new tabs: Engagement (score + breakdown) and Moderation (reports + suspensions).
+
+### 2026-03-27: WHOOP Integration
+
+**New files created**:
+- `WhoopService.swift` — `@MainActor final class WhoopService: ObservableObject` singleton. OAuth 2.0 flow, token management (Keychain), API client for recovery/cycles/sleep/workouts/body/profile, sync orchestration with throttling. DTOs for all WHOOP API responses defined in same file.
+- `WhoopSettingsView.swift` — Connect/disconnect/sync UI with recovery preview card. Uses `ASWebAuthenticationSession` for OAuth. Added to `SettingsView.swift` alongside Fitbit/Strava.
+- `DashboardWhoopWidget.swift` — Isolated `DashboardWhoopWrapper` (widget isolation pattern). Shows recovery score, HRV, strain, RHR, and sleep performance. Only renders when WHOOP is connected.
+
+**Modified files**:
+- `AppConfig.swift` — `enum Whoop` with clientId, clientSecret, redirectUri, URLs, scopes.
+- `DeepLinkManager.swift` — `case "whoop"` handles `fit33://whoop?code=...` callback.
+- `HealthDataService.swift` — `syncWhoopData()` added to parallel `withTaskGroup`. Saves recovery to `whoop_recovery_data`, sleep to `sleep_logs` (enhanced), workouts to `cardio_workouts`. `updateConnectedSources()` includes "whoop".
+- `SettingsView.swift` — `@StateObject whoopService` + NavigationLink to `WhoopSettingsView`.
+- `DashboardView.swift` — `DashboardWhoopWrapper()` added after step tracker card.
+- `WorkoutSuggestionEngine.swift` — `buildRecoverySuggestion()` checks WHOOP recovery level. Red zone overrides to recovery day suggestion. Yellow/green adds contextual message. New `whoopRecoveryOverride` field on `TodaySuggestion`.
+- `AdvancedIntelligenceService.swift` — `trackActivityForRecovery()` uses WHOOP recovery level (red/yellow/green) for `activity_level` when connected, falling back to step-based heuristic when not.
+- `HealthInsightsView.swift` — Three new WHOOP cards: recovery trend (7-day bar chart), strain trend (7-day bars), vitals (SpO2, skin temp, RHR, HRV grid).
+
+**Navigation**: Settings > WHOOP (connect/disconnect/sync/preview) and Dashboard (recovery widget).
+
+**Recovery-aware workout suggestions**: `WorkoutSuggestionEngine` now has a `whoopRecoveryLevel()` check. Red zone (0-33%) suggests recovery day with override message. Yellow zone (34-66%) appends a "listen to your body" note. Green zone (67-100%) encourages pushing harder. The override only applies when not in a program (programs take priority).
+
+### 2026-03-27: Daily Quest Widget Fixes (3 bugs)
+
+**Bug 1 — Celebration overlay never appeared**: The quest completion and bonus celebration overlays in `DashboardView` read from `dailyQuestService` (a plain `let`, per widget isolation rules). Since `let` references don't trigger re-renders, the overlays never showed when `showQuestCompletionCelebration`/`showBonusCelebration` changed. Fixed: extracted to `DashboardQuestCelebrationWrapper` (own `@StateObject`) in `DashboardView+Helpers.swift`, following the same pattern as `DashboardQuestsWrapper`.
+
+**Bug 2 — Experienced users saw beginner fallback quests**: When the `get_daily_quests` RPC failed (network error, auth expiry, SQL mismatch), `defaultGoals()` always returned beginner quests ("Sync Contacts", "Start First Workout", "Explore Program") regardless of user experience. For users with workout history, this looked completely broken. Fixed: `defaultGoals()` now checks `UserManager.shared.currentUser?.totalWorkouts` — experienced users get real generic quests (Complete Workout, Walk 5K Steps, Log Breakfast) while beginners still get onboarding quests.
+
+**Bug 3 — RPC parameter compatibility**: `GetDailyQuestsParams` always sent `p_active_step_challenge_target` even when 0. If the deployed SQL had only the 15-param version (before the challenge sync migration), PostgREST would fail to match the function signature. Fixed: custom `encode(to:)` omits the parameter when the value is 0, so the call works with both 15-param and 16-param SQL versions.
+
+**Rule — Celebration overlays with isolated services**: Any overlay that reads from a service singleton (celebrations, toasts, banners) MUST be wrapped in its own View struct with `@StateObject` — never read from a plain `let` reference in the parent. Pattern: `DashboardQuestCelebrationWrapper`.

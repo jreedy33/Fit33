@@ -91,6 +91,16 @@ final class WorkoutSuggestionEngine: ObservableObject {
         let splitFamily: SplitFamily
         let isFromProgram: Bool
         let programDayName: String?
+        let whoopRecoveryOverride: Bool
+
+        init(primaryMessage: String, suggestedMuscles: [MuscleCategory], splitFamily: SplitFamily, isFromProgram: Bool, programDayName: String?, whoopRecoveryOverride: Bool = false) {
+            self.primaryMessage = primaryMessage
+            self.suggestedMuscles = suggestedMuscles
+            self.splitFamily = splitFamily
+            self.isFromProgram = isFromProgram
+            self.programDayName = programDayName
+            self.whoopRecoveryOverride = whoopRecoveryOverride
+        }
     }
 
     // MARK: - Recovery Analysis
@@ -230,18 +240,41 @@ final class WorkoutSuggestionEngine: ObservableObject {
         let states = await getMuscleRecoveryStatesAsync()
         let recovered = states.filter(\.isRecovered)
         let recentSplits = await getRecentSplitFamiliesAsync(days: 3)
-        return buildRecoverySuggestion(states: states, recovered: recovered, recentSplits: recentSplits)
+        let whoop = await WhoopSnapshot.fromService()
+        return buildRecoverySuggestion(states: states, recovered: recovered, recentSplits: recentSplits, whoop: whoop)
     }
 
     /// Sync version — uses cached data, never blocks.
-    private func recoveryBasedSuggestion() -> TodaySuggestion {
+    @MainActor private func recoveryBasedSuggestion() -> TodaySuggestion {
         let states = getMuscleRecoveryStates()
         let recovered = states.filter(\.isRecovered)
         let recentSplits = cachedSplitFamilies ?? []
-        return buildRecoverySuggestion(states: states, recovered: recovered, recentSplits: recentSplits)
+        let whoop = WhoopSnapshot.fromServiceSync()
+        return buildRecoverySuggestion(states: states, recovered: recovered, recentSplits: recentSplits, whoop: whoop)
     }
 
-    private func buildRecoverySuggestion(states: [MuscleRecoveryState], recovered: [MuscleRecoveryState], recentSplits: [SplitFamily]) -> TodaySuggestion {
+    /// Snapshot of WHOOP data captured on @MainActor for use in nonisolated methods.
+    private struct WhoopSnapshot {
+        let level: WhoopService.RecoveryLevel
+        let recoveryScore: Int
+        
+        @MainActor static func fromServiceSync() -> WhoopSnapshot {
+            let service = WhoopService.shared
+            let level: WhoopService.RecoveryLevel = service.isConnected ? service.currentRecoveryLevel : .unknown
+            let score = service.todayRecovery?.recoveryScore ?? 0
+            return WhoopSnapshot(level: level, recoveryScore: score)
+        }
+        
+        @MainActor static func fromService() async -> WhoopSnapshot {
+            fromServiceSync()
+        }
+    }
+
+    private func buildRecoverySuggestion(states: [MuscleRecoveryState], recovered: [MuscleRecoveryState], recentSplits: [SplitFamily], whoop: WhoopSnapshot) -> TodaySuggestion {
+        if let whoopOverride = whoopRecoveryOverrideSuggestion(whoop: whoop) {
+            return whoopOverride
+        }
+
         let preferredFamilies: [SplitFamily] = [.push, .pull, .legs, .upperBody, .fullBody, .coreCardio]
         let familyCandidates = preferredFamilies.filter { family in
             let muscles = musclesForFamily(family)
@@ -253,7 +286,13 @@ final class WorkoutSuggestionEngine: ObservableObject {
 
         let chosen = familyCandidates.first ?? bestAvailableFamily(states: states, avoiding: recentSplits)
         let muscles = musclesForFamily(chosen)
-        let message = motivationalMessageFor(family: chosen, states: states)
+        var message = motivationalMessageFor(family: chosen, states: states)
+
+        if whoop.level == .yellow {
+            message = "WHOOP says moderate recovery — listen to your body. " + message
+        } else if whoop.level == .green {
+            message = "WHOOP says you're fully recovered — push it today! " + message
+        }
 
         return TodaySuggestion(
             primaryMessage: message,
@@ -261,6 +300,27 @@ final class WorkoutSuggestionEngine: ObservableObject {
             splitFamily: chosen,
             isFromProgram: false,
             programDayName: nil
+        )
+    }
+
+    /// Returns a recovery-day suggestion when WHOOP recovery score is in the red zone.
+    private func whoopRecoveryOverrideSuggestion(whoop: WhoopSnapshot) -> TodaySuggestion? {
+        guard whoop.level == .red else { return nil }
+
+        let score = whoop.recoveryScore
+        let messages = [
+            "Your WHOOP recovery is \(score)% — your body needs rest. Try stretching or a walk.",
+            "Recovery score: \(score)%. A light day will help you bounce back stronger.",
+            "WHOOP says take it easy (\(score)%). Mobility work or yoga would be ideal."
+        ]
+
+        return TodaySuggestion(
+            primaryMessage: messages.randomElement() ?? messages[0],
+            suggestedMuscles: [],
+            splitFamily: .coreCardio,
+            isFromProgram: false,
+            programDayName: nil,
+            whoopRecoveryOverride: true
         )
     }
 

@@ -418,3 +418,26 @@ struct PersistenceController {
         }
     }
 }
+
+// MARK: - DEBUG Context Safety
+
+#if DEBUG
+extension NSManagedObject {
+    /// Assert that this object belongs to the expected context before setting relationships.
+    /// Call this before assigning cross-object relationships in bgContext.perform blocks.
+    /// Only runs in DEBUG builds — zero overhead in production.
+    func assertContext(_ expectedContext: NSManagedObjectContext, file: StaticString = #file, line: UInt = #line) {
+        guard let myContext = self.managedObjectContext else {
+            assertionFailure(
+                "[CONTEXT GUARD] \(entity.name ?? "Unknown") has nil context — was it deleted? (\(file):\(line))",
+                file: file, line: line
+            )
+            return
+        }
+        assert(
+            myContext === expectedContext,
+            "[CONTEXT GUARD] \(entity.name ?? "Unknown") is on wrong context. Expected \(expectedContext.description), got \(myContext.description). Fetch from the correct context before assigning relationships. (\(file):\(line))"
+        )
+    }
+}
+#endif

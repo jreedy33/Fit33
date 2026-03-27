@@ -110,67 +110,127 @@ struct WeeklyLeagueWidget: View {
     
     private var standing: LeagueStanding? { leagueService.standing }
     
-    private var leagueSubtitleLines: [String] {
-        guard let standing = standing else {
-            return [
-                "Compete weekly with friends & nearby athletes.",
-                "Earn points from workouts to climb tiers."
-            ]
-        }
-        
-        let socialLine: String? = {
-            let friends = standing.friendsInLeague
-            let connections = standing.connectionsInLeague
-            if friends > 0 {
-                return "You know \(friends) \(friends == 1 ? "person" : "people") here."
-            } else if connections > 0 {
-                return "\(connections) mutual connection\(connections == 1 ? "" : "s") in your league."
-            }
-            return nil
-        }()
-        
-        let statusLine: String = {
-            if standing.isInPromotionZone, let next = standing.nextTierName {
-                return "Top \(standing.promotionCount) — on track to \(next)! \(standing.daysRemaining)d left."
-            } else if standing.isInRelegationZone {
-                return "Bottom \(standing.relegationCount) get relegated. \(standing.daysRemaining)d left."
-            } else {
-                let promoSpots = standing.promotionCount > 0 ? "Top \(standing.promotionCount) promote each week." : "Climb the ranks each week."
-                return promoSpots
-            }
-        }()
-        
-        if let social = socialLine {
-            return [social, statusLine]
-        }
-        return [statusLine]
+    // MARK: - League Content (Joined)
+    
+    private var myWorkoutsThisWeek: Int {
+        guard let standing = standing else { return 0 }
+        return standing.leaderboard.first(where: { $0.isCurrentUser })?.workoutsCompleted ?? 0
     }
     
-    // MARK: - League Content (Joined)
+    private var pointsGapText: String? {
+        guard let standing = standing else { return nil }
+        if standing.myRank == 1 {
+            if let second = standing.leaderboard.first(where: { $0.rank == 2 }) {
+                let gap = standing.myPoints - second.points
+                return gap > 0 ? "Leading by \(gap) pts" : "Tied for 1st"
+            }
+            return nil
+        }
+        if let above = standing.leaderboard.first(where: { $0.rank == standing.myRank - 1 }) {
+            let gap = above.points - standing.myPoints
+            return gap > 0 ? "\(gap) pts behind #\(standing.myRank - 1)" : "Tied at #\(standing.myRank)"
+        }
+        return nil
+    }
     
     private func leagueContent(standing: LeagueStanding) -> some View {
         VStack(spacing: 10) {
-            // Subheader with tier badge (inside card)
-            HStack(alignment: .top) {
-                let lines = leagueSubtitleLines
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                        Text(line)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                HStack(spacing: 4) {
+            // Tier banner + motivational context
+            HStack(spacing: 10) {
+                // Tier badge capsule
+                HStack(spacing: 5) {
                     Text(standing.tierEmoji)
-                        .font(.ds_bodySmall)
+                        .font(.system(size: 16))
                     Text(standing.tierName)
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(standing.tierSwiftUIColor)
+                        .foregroundColor(.white)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: standing.tierGradient,
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                )
+                
+                Spacer()
+                
+                // Workouts this week
+                HStack(spacing: 3) {
+                    Image(systemName: "dumbbell.fill")
+                        .font(.system(size: 9))
+                        .foregroundColor(standing.tierSwiftUIColor)
+                    Text("\(myWorkoutsThisWeek)")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    Text("this week")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                
+                if standing.daysRemaining <= 2 {
+                    Text("⏰")
+                        .font(.system(size: 12))
+                }
+            }
+            
+            // Points gap + position bar
+            VStack(spacing: 6) {
+                if let gapText = pointsGapText {
+                    HStack(spacing: 4) {
+                        Image(systemName: standing.myRank == 1 ? "crown.fill" : "arrow.up.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(standing.myRank == 1 ? .yellow : standing.tierSwiftUIColor)
+                        Text(gapText)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(standing.myRank == 1 ? .primary : .secondary)
+                        Spacer()
+                    }
+                }
+                
+                // Rank position bar
+                GeometryReader { geo in
+                    let total = max(standing.groupSize, 1)
+                    let promoFraction = CGFloat(standing.promotionCount) / CGFloat(total)
+                    let relegFraction = CGFloat(standing.relegationCount) / CGFloat(total)
+                    let safeFraction = 1.0 - promoFraction - relegFraction
+                    let userPosition = CGFloat(standing.myRank - 1) / CGFloat(max(total - 1, 1))
+                    
+                    ZStack(alignment: .leading) {
+                        // Zone segments
+                        HStack(spacing: 1) {
+                            if promoFraction > 0 {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.green.opacity(colorScheme == .dark ? 0.25 : 0.2))
+                                    .frame(width: max(geo.size.width * promoFraction - 1, 4))
+                            }
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.gray.opacity(colorScheme == .dark ? 0.15 : 0.1))
+                                .frame(width: max(geo.size.width * safeFraction - (promoFraction > 0 ? 1 : 0) - (relegFraction > 0 ? 1 : 0), 4))
+                            if relegFraction > 0 {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.red.opacity(colorScheme == .dark ? 0.25 : 0.2))
+                                    .frame(width: max(geo.size.width * relegFraction - 1, 4))
+                            }
+                        }
+                        .frame(height: 6)
+                        .clipShape(Capsule())
+                        
+                        // User marker
+                        Circle()
+                            .fill(standing.tierSwiftUIColor)
+                            .frame(width: 10, height: 10)
+                            .shadow(color: standing.tierSwiftUIColor.opacity(0.5), radius: 3)
+                            .offset(x: max(0, min(geo.size.width - 10, geo.size.width * userPosition - 5)))
+                    }
+                }
+                .frame(height: 10)
             }
             
             // Compact stats row

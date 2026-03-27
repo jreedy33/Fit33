@@ -749,7 +749,9 @@ class CommunityChallengeService: ObservableObject {
             AppLogger.info("Successfully fetched \(sorted.count) discoverable friend communities", category: .social)
             #endif
         } catch {
-            AppLogger.error("Error fetching discoverable challenges: \(error.localizedDescription)", category: .social)
+            if !Task.isCancelled {
+                AppLogger.error("Error fetching discoverable challenges: \(error.localizedDescription)", category: .social)
+            }
         }
     }
     
@@ -815,7 +817,9 @@ class CommunityChallengeService: ObservableObject {
             AppLogger.info("Successfully fetched \(result.count) featured challenges", category: .social)
             #endif
         } catch {
-            AppLogger.error("Error fetching featured challenges: \(error.localizedDescription)", category: .social)
+            if !Task.isCancelled {
+                AppLogger.error("Error fetching featured challenges: \(error.localizedDescription)", category: .social)
+            }
         }
     }
     

@@ -509,7 +509,6 @@ class SupabaseManager: ObservableObject {
                     AppLogger.info("[APPLE] Then sign in again - Apple will provide your name on the FIRST sign-in with a new connection", category: .auth)
                 }
                 UserDefaults.standard.set(appleEmail, forKey: "pending_oauth_email")
-                UserDefaults.standard.synchronize()
                 
                 isNewUser = true
                 AppLogger.debug("New Apple user - needs onboarding", category: .auth)
@@ -639,7 +638,6 @@ class SupabaseManager: ObservableObject {
                     if let avatar = avatarUrl {
                         UserDefaults.standard.set(avatar, forKey: "pending_oauth_avatar")
                     }
-                    UserDefaults.standard.synchronize()
                     AppLogger.debug("[OAUTH] Stored pending profile data (will create on onboarding completion)", category: .auth)
                     AppLogger.debug("[OAUTH] Pending name: \(userName), email: \(userEmail)", category: .auth)
                 }
@@ -1307,24 +1305,26 @@ class SupabaseManager: ObservableObject {
             case "fitbit": columnName = "is_fitbit_connected"
             case "apple_health": columnName = "is_apple_health_connected"
             case "inbody": columnName = "is_inbody_connected"
+            case "whoop": columnName = "is_whoop_connected"
             default:
                 AppLogger.warning("[INTEGRATIONS] Unknown integration: \(integration)", category: .network)
                 return
             }
-            
-            // Create typed update struct for each integration
+
             struct IntegrationUpdate: Encodable {
                 let is_strava_connected: Bool?
                 let is_fitbit_connected: Bool?
                 let is_apple_health_connected: Bool?
                 let is_inbody_connected: Bool?
+                let is_whoop_connected: Bool?
             }
-            
+
             let update = IntegrationUpdate(
                 is_strava_connected: integration == "strava" ? isConnected : nil,
                 is_fitbit_connected: integration == "fitbit" ? isConnected : nil,
                 is_apple_health_connected: integration == "apple_health" ? isConnected : nil,
-                is_inbody_connected: integration == "inbody" ? isConnected : nil
+                is_inbody_connected: integration == "inbody" ? isConnected : nil,
+                is_whoop_connected: integration == "whoop" ? isConnected : nil
             )
             
             try await client
@@ -1342,23 +1342,23 @@ class SupabaseManager: ObservableObject {
     func syncAllIntegrationStatuses() async {
         guard currentUser != nil else { return }
         
-        // Check each integration's current connection status (MainActor isolated)
-        let (stravaConnected, fitbitConnected, appleHealthConnected, inbodyConnected) = await MainActor.run {
+        let (stravaConnected, fitbitConnected, appleHealthConnected, inbodyConnected, whoopConnected) = await MainActor.run {
             (
                 StravaService.shared.isConnected,
                 FitbitService.shared.isConnected,
                 HealthKitManager.shared.isAuthorized,
-                InBodyService.shared.isConnected
+                InBodyService.shared.isConnected,
+                WhoopService.shared.isConnected
             )
         }
-        
-        // Update each status
+
         await updateIntegrationStatus(integration: "strava", isConnected: stravaConnected)
         await updateIntegrationStatus(integration: "fitbit", isConnected: fitbitConnected)
         await updateIntegrationStatus(integration: "apple_health", isConnected: appleHealthConnected)
         await updateIntegrationStatus(integration: "inbody", isConnected: inbodyConnected)
-        
-        AppLogger.info("[INTEGRATIONS] Synced all integration statuses - Strava: \(stravaConnected), Fitbit: \(fitbitConnected), Apple Health: \(appleHealthConnected), InBody: \(inbodyConnected)", category: .network)
+        await updateIntegrationStatus(integration: "whoop", isConnected: whoopConnected)
+
+        AppLogger.info("[INTEGRATIONS] Synced all integration statuses - Strava: \(stravaConnected), Fitbit: \(fitbitConnected), Apple Health: \(appleHealthConnected), InBody: \(inbodyConnected), WHOOP: \(whoopConnected)", category: .network)
     }
     
     /// Public function to create user profile for OAuth users when they complete onboarding
@@ -4154,7 +4154,10 @@ class SupabaseManager: ObservableObject {
                             }
                             
                             for exerciseDTO in workoutDTO.exercises {
-                                let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseDTO.exerciseName)
+                                let exerciseRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+                                exerciseRequest.predicate = NSPredicate(format: "name == %@", exerciseDTO.exerciseName)
+                                exerciseRequest.fetchLimit = 1
+                                let exercise = try? bgContext.fetch(exerciseRequest).first
                                 
                                 let workoutExercise = WorkoutExercise(context: bgContext)
                                 let workoutExerciseId = UUID(uuidString: exerciseDTO.id) ?? UUID()

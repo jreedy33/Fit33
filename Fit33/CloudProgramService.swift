@@ -259,9 +259,25 @@ class CloudProgramService: ObservableObject {
     private var generatedExercisesCache: [Int: [ExerciseData]] = [:]
     
     private init() {
-        Task { [self] in
+        let key = cacheKey
+        Task.detached {
             AppLogger.debug("[CloudProgramService] Cache load started (off-main: \(!Thread.isMainThread))", category: .performance)
-            loadCachedProgram()
+            
+            let programData = UserDefaults.standard.data(forKey: key)
+            let activeData = UserDefaults.standard.data(forKey: "\(key)_active")
+            
+            let decoder = JSONDecoder()
+            let cachedProgram = programData.flatMap { try? decoder.decode(FullCloudProgram.self, from: $0) }
+            let activeState = activeData.flatMap { try? decoder.decode(UserActiveProgram.self, from: $0) }
+            
+            if let cached = cachedProgram, !cached.days.isEmpty {
+                await MainActor.run { [cached, activeState] in
+                    CloudProgramService.shared.cachedFullProgram = cached
+                    CloudProgramService.shared.activeProgramDetails = cached
+                    CloudProgramService.shared.activeProgram = activeState
+                    AppLogger.info("Successfully loaded cached program: \(cached.program.name) with \(cached.days.count) days", category: .workout)
+                }
+            }
         }
     }
     

@@ -352,3 +352,15 @@ App-critical views: `weight_statistics`, `body_composition_statistics` — confi
 - New BULK_ACTIONS: `send_push_campaign`.
 
 **SQL migrations**: `supabase/20260327_enhance_audit_log.sql`, `20260327_feature_flags.sql`, `20260327_system_health_rpcs.sql`, `20260327_moderation_system.sql`, `20260327_push_campaigns.sql`, `20260327_engagement_scoring.sql`.
+
+### 2026-03-27: WHOOP Integration — Security Notes
+
+**New OAuth integration**: WHOOP uses standard OAuth 2.0 authorization code flow. Tokens stored in Keychain via `KeychainHelper` (same pattern as Fitbit/Strava). Client ID and secret stored in `Secrets.swift` (gitignored), accessed via `AppConfig.Whoop`.
+
+**Token management**: Access token, refresh token, and expiry stored as `whoop_access_token`, `whoop_refresh_token`, `whoop_token_expires_at` in Keychain. 5-minute pre-expiry refresh window matches Fitbit/Strava pattern. On refresh failure, `disconnect()` clears all tokens.
+
+**OAuth callback**: `fit33://whoop` registered in `DeepLinkManager.swift`. `ASWebAuthenticationSession` handles the browser flow with `callbackURLScheme: "fit33"`.
+
+**Secrets required**: Register at https://developer.whoop.com, add client_id and client_secret to `Secrets.swift`. Template entries added to `Secrets.template.swift`.
+
+**RLS**: `whoop_recovery_data` table has full user-scoped RLS. All Supabase writes are auth-guarded via `SupabaseManager.shared.isAuthenticated`.

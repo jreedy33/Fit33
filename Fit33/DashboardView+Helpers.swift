@@ -49,7 +49,9 @@ extension DashboardView {
                 AppLogger.debug("[DASHBOARD] Loaded \(cardioWorkouts.count) recent cardio workouts (\(allTimeCount) total all-time)", category: .ui)
             }
         } catch {
-            AppLogger.warning("[DASHBOARD] Failed to load cardio workouts: \(error.localizedDescription)", category: .ui)
+            if !Task.isCancelled {
+                AppLogger.warning("[DASHBOARD] Failed to load cardio workouts: \(error.localizedDescription)", category: .ui)
+            }
         }
     }
     
@@ -561,6 +563,24 @@ struct DashboardQuestsWrapper: View {
     
     var body: some View {
         DailyQuestsWidget(questService: questService)
+    }
+}
+
+struct DashboardQuestCelebrationWrapper: View {
+    @StateObject private var questService = DailyQuestService.shared
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            if let quest = questService.lastCompletedQuest {
+                QuestCompletionCelebration(
+                    quest: quest,
+                    isShowing: $questService.showQuestCompletionCelebration
+                )
+            }
+            QuestBonusCelebration(
+                isShowing: $questService.showBonusCelebration
+            )
+        }
     }
 }
 

@@ -41,7 +41,7 @@ final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
             if let hangDiagnostics = payload.hangDiagnostics {
                 for hang in hangDiagnostics {
                     let durationMs = Int(hang.hangDuration.converted(to: .milliseconds).value)
-                    AppLogger.error("[METRICKIT] Hang diagnostic: \(durationMs)ms hang detected", category: .performance)
+                    AppLogger.warning("[METRICKIT] Hang diagnostic: \(durationMs)ms hang detected", category: .performance)
                     
                     if AdvancedSessionLogger.isActive {
                         Task { @MainActor in
@@ -55,8 +55,10 @@ final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
             }
             
             if let crashDiagnostics = payload.crashDiagnostics {
+                let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
                 for crash in crashDiagnostics {
-                    AppLogger.error("[METRICKIT] Crash diagnostic received: \(crash.applicationVersion)", category: .performance)
+                    let crashVersion = crash.applicationVersion
+                    AppLogger.warning("[METRICKIT] Crash diagnostic v\(crashVersion) (current: v\(currentVersion)), signal: \(crash.signal?.description ?? "unknown")", category: .performance)
                 }
             }
             

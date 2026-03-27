@@ -767,10 +767,12 @@ private struct ExerciseVideoMapping: Codable {
 
 struct VideoPlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
+    var onFirstFrameRendered: (() -> Void)?
     
     func makeUIView(context: Context) -> PlayerContainerView {
         let view = PlayerContainerView()
         view.backgroundColor = .white
+        view.onFirstFrameRendered = onFirstFrameRendered
         
         let playerLayer = AVPlayerLayer(player: player)
         playerLayer.videoGravity = .resizeAspectFill
@@ -778,20 +780,52 @@ struct VideoPlayerLayerView: UIViewRepresentable {
         view.layer.addSublayer(playerLayer)
         
         view.playerLayer = playerLayer
+        view.startObservingReadiness()
         
         return view
     }
     
     func updateUIView(_ uiView: PlayerContainerView, context: Context) {
-        // Frame will be updated in layoutSubviews
+        uiView.onFirstFrameRendered = onFirstFrameRendered
     }
     
     class PlayerContainerView: UIView {
         var playerLayer: AVPlayerLayer?
+        var onFirstFrameRendered: (() -> Void)?
+        private var readinessObservation: NSKeyValueObservation?
+        private var hasFiredCallback = false
+        
+        func startObservingReadiness() {
+            guard let playerLayer = playerLayer else { return }
+            
+            if playerLayer.isReadyForDisplay {
+                fireCallbackOnce()
+                return
+            }
+            
+            readinessObservation = playerLayer.observe(\.isReadyForDisplay, options: [.new]) { [weak self] layer, _ in
+                guard layer.isReadyForDisplay else { return }
+                DispatchQueue.main.async {
+                    self?.fireCallbackOnce()
+                }
+            }
+        }
+        
+        private func fireCallbackOnce() {
+            guard !hasFiredCallback else { return }
+            hasFiredCallback = true
+            readinessObservation?.invalidate()
+            readinessObservation = nil
+            onFirstFrameRendered?()
+        }
         
         override func layoutSubviews() {
             super.layoutSubviews()
             playerLayer?.frame = bounds
+        }
+        
+        deinit {
+            readinessObservation?.invalidate()
         }
     }
 }
@@ -803,35 +837,38 @@ import SwiftUI
 struct RemoteVideoPlayerView: View {
     let exerciseName: String
     let categoryColor: Color
-    var videoFilename: String? = nil  // Direct video filename from Exercise entity
+    var videoFilename: String? = nil
     @Environment(\.colorScheme) var colorScheme
     
     @StateObject private var playerManager = RemoteVideoPlayerManager()
     @State private var hasAppeared = false
-    @State private var showPlayer = false
-    @State private var posterImage: UIImage?  // 🖼️ YouTube-style poster frame
-    
-    private var backgroundColor: Color {
-        .white // Pure white to match exercise video content backgrounds
-    }
+    @State private var firstFrameRendered = false
+    @State private var posterImage: UIImage?
     
     var body: some View {
         ZStack(alignment: .center) {
-            backgroundColor
+            Color.white
             
-            if let player = playerManager.player, showPlayer {
-                VideoPlayerLayerView(player: player)
-                    .aspectRatio(16/9, contentMode: .fill)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity.animation(.easeIn(duration: 0.15)))
-            } else if let poster = posterImage {
+            // Poster layer: always underneath, hidden only after first video frame paints
+            if let poster = posterImage, !firstFrameRendered {
                 Image(uiImage: poster)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity)
-            } else if !playerManager.isLoading, playerManager.player == nil {
-                // 🚫 No video available
+            }
+            
+            // Video layer: always on top once player exists
+            // The poster stays visible underneath until AVPlayerLayer.isReadyForDisplay fires
+            if let player = playerManager.player {
+                VideoPlayerLayerView(player: player) {
+                    firstFrameRendered = true
+                }
+                .aspectRatio(16/9, contentMode: .fill)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            
+            // No-video placeholder (only when confirmed no video exists)
+            if !playerManager.isLoading, playerManager.player == nil, posterImage == nil {
                 VStack(spacing: 14) {
                     Image(systemName: "figure.strengthtraining.traditional")
                         .font(.system(size: 64))
@@ -853,18 +890,10 @@ struct RemoteVideoPlayerView: View {
             posterImage = VideoThumbnailService.shared.getPosterFrame(for: exerciseName)
             playerManager.loadVideo(for: exerciseName, videoFilename: videoFilename)
         }
-        .onReceive(playerManager.$isReadyToDisplay) { ready in
-            guard ready, !showPlayer else { return }
-            withAnimation(.easeIn(duration: 0.15)) {
-                showPlayer = true
-            }
-        }
         .onDisappear {
             playerManager.pause()
         }
-        // 🖼️ Auto-capture poster frame when video finishes loading
         .onReceive(playerManager.$isLoading) { isLoading in
-            // When loading transitions from true → false and we have a player, capture the poster
             if !isLoading, let player = playerManager.player {
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(0.8))
@@ -873,9 +902,8 @@ struct RemoteVideoPlayerView: View {
             }
         }
         .task {
-            // Periodic check to ensure looping stays active while view is visible
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 10_000_000_000) // Every 10 seconds
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
                 if playerManager.player?.timeControlStatus == .paused {
                     playerManager.ensureLooping()
                 }
@@ -889,103 +917,94 @@ struct RemoteVideoPlayerView: View {
 class RemoteVideoPlayerManager: ObservableObject {
     @Published var player: AVPlayer?
     @Published var isLoading = false
-    @Published var isReadyToDisplay = false
     @Published var error: Error?
     
     var queuePlayer: AVQueuePlayer?
     var playerLooper: AVPlayerLooper?
-    private var readinessCancellable: AnyCancellable?
     
     func loadVideo(for exerciseName: String, videoFilename: String? = nil) {
         isLoading = true
-        isReadyToDisplay = false
         hasRetriedLooper = false
         
-        let genderAwareFilename = GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true) ?? videoFilename
-        
-        if let playerWithLooper = VideoPlaybackEngine.shared.getPlayerWithLooper(for: exerciseName, videoFilename: genderAwareFilename) {
-            DispatchQueue.main.async { [weak self] in
-                self?.queuePlayer = playerWithLooper.player
-                self?.player = playerWithLooper.player
-                self?.playerLooper = playerWithLooper.looper
-                self?.hasRetriedLooper = false
-                self?.isLoading = false
-                self?.observePlayerReadiness(playerWithLooper.player)
-                
-                let cacheStatus = VideoPlaybackEngine.shared.isReadyForInstantPlay(exerciseName: exerciseName) ? "cached" : "new"
-                let genderMatch = GenderFilterService.shared.hasPreferredGenderVideo(for: exerciseName) ? "preferred" : "fallback"
-                AppLogger.debug("Video ready (\(cacheStatus), \(genderMatch) gender, looper: active): \(exerciseName)", category: .general)
-            }
-            return
-        }
-        
-        if let preloadedPlayer = VideoStreamingService.shared.getPreloadedPlayer(for: exerciseName) {
-            setupLegacyPlayer(from: preloadedPlayer, exerciseName: exerciseName)
-            isLoading = false
-            return
-        }
-        
-        if let filename = genderAwareFilename, !filename.isEmpty {
-            let storageBaseURL = "https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev"
-            let urlString = "\(storageBaseURL)/\(filename)"
-            if let videoURL = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
-                createDirectPlayer(url: videoURL, exerciseName: exerciseName)
+        Task.detached { [weak self] in
+            let genderAwareFilename = GenderFilterService.shared.getVideoFilename(for: exerciseName, fallbackToOpposite: true) ?? videoFilename
+            
+            if let playerWithLooper = VideoPlaybackEngine.shared.getPlayerWithLooper(for: exerciseName, videoFilename: genderAwareFilename) {
+                await MainActor.run {
+                    guard let self = self else { return }
+                    self.queuePlayer = playerWithLooper.player
+                    self.player = playerWithLooper.player
+                    self.playerLooper = playerWithLooper.looper
+                    self.hasRetriedLooper = false
+                    self.isLoading = false
+                    
+                    AppLogger.debug("Video ready (looper: active): \(exerciseName)", category: .general)
+                }
                 return
             }
-        }
-        
-        if let videoURL = VideoStreamingService.shared.getGenderAwareVideoURL(for: exerciseName) {
-            createDirectPlayer(url: videoURL, exerciseName: exerciseName)
-            return
-        }
-        
-        AppLogger.warning("No video found for: \(exerciseName)", category: .general)
-        isLoading = false
-    }
-    
-    private func observePlayerReadiness(_ player: AVPlayer) {
-        readinessCancellable?.cancel()
-        
-        if player.currentItem?.status == .readyToPlay {
-            isReadyToDisplay = true
-            return
-        }
-        
-        readinessCancellable = player.currentItem?.publisher(for: \.status)
-            .filter { $0 == .readyToPlay }
-            .first()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.isReadyToDisplay = true
+            
+            if let preloadedPlayer = VideoStreamingService.shared.getPreloadedPlayer(for: exerciseName) {
+                await MainActor.run {
+                    self?.setupLegacyPlayer(from: preloadedPlayer, exerciseName: exerciseName)
+                    self?.isLoading = false
+                }
+                return
             }
-        
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2.0))
-            guard !Task.isCancelled, let self = self, !self.isReadyToDisplay else { return }
-            self.isReadyToDisplay = true
+            
+            if let filename = genderAwareFilename, !filename.isEmpty {
+                let storageBaseURL = "https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev"
+                let urlString = "\(storageBaseURL)/\(filename)"
+                if let videoURL = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
+                    let asset = AVURLAsset(url: videoURL, options: [
+                        AVURLAssetPreferPreciseDurationAndTimingKey: false,
+                        "AVURLAssetOutOfBandMIMETypeKey": "video/mp4"
+                    ])
+                    let playerItem = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: ["playable"])
+                    playerItem.preferredForwardBufferDuration = 2
+                    
+                    await MainActor.run {
+                        guard let self = self else { return }
+                        let qp = AVQueuePlayer(playerItem: playerItem)
+                        self.playerLooper = AVPlayerLooper(player: qp, templateItem: playerItem)
+                        qp.automaticallyWaitsToMinimizeStalling = false
+                        qp.play()
+                        self.queuePlayer = qp
+                        self.player = qp
+                        self.isLoading = false
+                    }
+                    return
+                }
+            }
+            
+            if let videoURL = VideoStreamingService.shared.getGenderAwareVideoURL(for: exerciseName) {
+                let asset = AVURLAsset(url: videoURL, options: [
+                    AVURLAssetPreferPreciseDurationAndTimingKey: false,
+                    "AVURLAssetOutOfBandMIMETypeKey": "video/mp4"
+                ])
+                let playerItem = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: ["playable"])
+                playerItem.preferredForwardBufferDuration = 2
+                
+                await MainActor.run {
+                    guard let self = self else { return }
+                    let qp = AVQueuePlayer(playerItem: playerItem)
+                    self.playerLooper = AVPlayerLooper(player: qp, templateItem: playerItem)
+                    qp.automaticallyWaitsToMinimizeStalling = false
+                    qp.play()
+                    self.queuePlayer = qp
+                    self.player = qp
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            await MainActor.run {
+                AppLogger.warning("No video found for: \(exerciseName)", category: .general)
+                self?.isLoading = false
+            }
         }
     }
     
-    private func createDirectPlayer(url: URL, exerciseName: String) {
-        let asset = AVURLAsset(url: url, options: [
-            AVURLAssetPreferPreciseDurationAndTimingKey: false,
-            "AVURLAssetOutOfBandMIMETypeKey": "video/mp4"
-        ])
-        
-        let playerItem = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: ["playable"])
-        playerItem.preferredForwardBufferDuration = 2
-        
-        let qp = AVQueuePlayer(playerItem: playerItem)
-        self.playerLooper = AVPlayerLooper(player: qp, templateItem: playerItem)
-        
-        qp.automaticallyWaitsToMinimizeStalling = false
-        qp.play()
-        
-        self.queuePlayer = qp
-        self.player = qp
-        self.isLoading = false
-        observePlayerReadiness(qp)
-    }
+    
     
     private func setupLegacyPlayer(from sourcePlayer: AVPlayer, exerciseName: String) {
         guard let currentItem = sourcePlayer.currentItem else { return }
@@ -1000,7 +1019,6 @@ class RemoteVideoPlayerManager: ObservableObject {
         self.queuePlayer = qp
         self.player = qp
         qp.play()
-        observePlayerReadiness(qp)
     }
     
     func pause() {
@@ -1008,10 +1026,8 @@ class RemoteVideoPlayerManager: ObservableObject {
     }
     
     func play() {
-        // Ensure player plays and looper is still active
         if let looper = playerLooper, looper.status != .ready {
             AppLogger.warning("Video looper not ready, recreating", category: .general)
-            // Looper might have failed, recreate it
             if let qp = queuePlayer, let currentItem = qp.currentItem {
                 self.playerLooper = AVPlayerLooper(player: qp, templateItem: currentItem)
             }
@@ -1022,12 +1038,10 @@ class RemoteVideoPlayerManager: ObservableObject {
     private var hasRetriedLooper = false
     
     func ensureLooping() {
-        // Simple check: if video is paused and has content, restart it
         guard let qp = queuePlayer,
               qp.currentItem != nil,
               qp.timeControlStatus == .paused else { return }
         
-        // If no looper and we haven't tried yet, create one
         if playerLooper == nil && !hasRetriedLooper {
             AppLogger.debug("Creating looper for continuous playback", category: .general)
             if let currentItem = qp.currentItem {
@@ -1036,12 +1050,10 @@ class RemoteVideoPlayerManager: ObservableObject {
             }
         }
         
-        // Always try to play if paused
         qp.play()
     }
     
     deinit {
-        readinessCancellable?.cancel()
         pause()
     }
 }

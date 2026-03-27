@@ -89,6 +89,7 @@ final class HealthDataService: ObservableObject {
         let hkAuthorized = HealthKitService.shared.isAuthorized
         let fitbitConnected = FitbitService.shared.isConnected
         let stravaConnected = StravaService.shared.isConnected
+        let whoopConnected = WhoopService.shared.isConnected
         
         // Run health source syncs off main thread to avoid blocking UI
         await Task.detached(priority: .userInitiated) { [self] in
@@ -101,6 +102,9 @@ final class HealthDataService: ObservableObject {
                 }
                 if stravaConnected {
                     group.addTask { await self.syncStravaData() }
+                }
+                if whoopConnected {
+                    group.addTask { await self.syncWhoopData() }
                 }
                 group.addTask { await self.fetchWeeklyData() }
             }
@@ -254,6 +258,246 @@ final class HealthDataService: ObservableObject {
             
             AppLogger.info("Strava synced \(todayActivities.count) activities from today", category: .health)
         }
+    }
+    
+    // MARK: - WHOOP Data Sync
+    
+    private func syncWhoopData() async {
+        guard WhoopService.shared.isConnected else { return }
+        
+        await WhoopService.shared.syncAllData()
+        
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id else { return }
+        
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "yyyy-MM-dd"
+        
+        let isoFmt = ISO8601DateFormatter()
+        isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        
+        // Save recovery + strain data to whoop_recovery_data
+        for recovery in WhoopService.shared.recentRecoveries {
+            guard recovery.scoreState == "SCORED", let score = recovery.score else { continue }
+            
+            let matchingCycle = WhoopService.shared.recentCycles.first { $0.id == recovery.cycleId }
+            let cycleScore = matchingCycle?.score
+            
+            let dateStr: String
+            if let cycleStart = matchingCycle?.start, let parsed = isoFmt.date(from: cycleStart) {
+                dateStr = dateFmt.string(from: parsed)
+            } else {
+                dateStr = dateFmt.string(from: Date())
+            }
+            
+            let insert = WhoopRecoveryInsert(
+                userId: userId.uuidString,
+                date: dateStr,
+                cycleId: Int(recovery.cycleId),
+                recoveryScore: score.recoveryScore,
+                hrvRmssdMilli: score.hrvRmssdMilli,
+                restingHeartRate: score.restingHeartRate,
+                spo2Percentage: score.spo2Percentage,
+                skinTempCelsius: score.skinTempCelsius,
+                strain: cycleScore?.strain,
+                kilojoules: cycleScore?.kilojoule,
+                avgHeartRate: cycleScore?.averageHeartRate,
+                maxHeartRate: cycleScore?.maxHeartRate
+            )
+            
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("whoop_recovery_data")
+                    .upsert(insert, onConflict: "user_id,date")
+                    .execute()
+            } catch {
+                AppLogger.warning("[WHOOP] Failed to save recovery for \(dateStr): \(error)", category: .health)
+            }
+        }
+        
+        // Save WHOOP sleep data to sleep_logs with enhanced fields
+        for sleep in WhoopService.shared.recentSleeps {
+            guard !sleep.nap, sleep.scoreState == "SCORED", let score = sleep.score else { continue }
+            
+            guard let startStr = sleep.start, let parsed = isoFmt.date(from: startStr) else { continue }
+            let sleepDate = dateFmt.string(from: parsed)
+            
+            let totalSleepMilli = (score.stageSummary?.totalLightSleepTimeMilli ?? 0)
+                + (score.stageSummary?.totalSlowWaveSleepTimeMilli ?? 0)
+                + (score.stageSummary?.totalRemSleepTimeMilli ?? 0)
+            let totalSleepHours = Double(totalSleepMilli) / 3_600_000.0
+            
+            let insert = WhoopSleepInsert(
+                userId: userId.uuidString,
+                date: sleepDate,
+                totalSleepHours: totalSleepHours,
+                source: "whoop",
+                externalId: sleep.id,
+                sleepPerformancePct: score.sleepPerformancePercentage,
+                sleepConsistencyPct: score.sleepConsistencyPercentage,
+                sleepEfficiencyPct: score.sleepEfficiencyPercentage,
+                respiratoryRate: score.respiratoryRate,
+                disturbanceCount: score.stageSummary?.disturbanceCount,
+                sleepDebtMilli: score.sleepNeeded?.needFromSleepDebtMilli ?? 0,
+                lightSleepMilli: score.stageSummary?.totalLightSleepTimeMilli ?? 0,
+                deepSleepMilli: score.stageSummary?.totalSlowWaveSleepTimeMilli ?? 0,
+                remSleepMilli: score.stageSummary?.totalRemSleepTimeMilli ?? 0,
+                awakeMilli: score.stageSummary?.totalAwakeTimeMilli ?? 0
+            )
+            
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("sleep_logs")
+                    .upsert(insert, onConflict: "user_id,date,source")
+                    .execute()
+            } catch {
+                AppLogger.warning("[WHOOP] Failed to save sleep for \(sleepDate): \(error)", category: .health)
+            }
+        }
+        
+        // Save WHOOP workouts to cardio_workouts (using existing FitbitCardioWorkoutInsert)
+        var savedWorkouts = 0
+        for workout in WhoopService.shared.recentWorkouts {
+            guard workout.scoreState == "SCORED" else { continue }
+            
+            let startDate = workout.start.flatMap { isoFmt.date(from: $0) } ?? Date()
+            let endDate = workout.end.flatMap { isoFmt.date(from: $0) } ?? startDate
+            let durationSeconds = Int(endDate.timeIntervalSince(startDate))
+            
+            let kilojoules = workout.score?.kilojoule ?? 0
+            let calories = kilojoules / 4.184
+            
+            let insert = FitbitCardioWorkoutInsert(
+                userId: userId.uuidString,
+                activityType: mapWhoopSportToActivityType(workout.sportName),
+                workoutName: workout.sportName ?? "WHOOP Workout",
+                goalType: "open_goal",
+                goalAchieved: true,
+                durationSeconds: durationSeconds,
+                distanceMeters: workout.score?.distanceMeter ?? 0,
+                caloriesBurned: calories,
+                averageSpeed: nil,
+                maxSpeed: nil,
+                averageHeartRate: workout.score?.averageHeartRate,
+                maxHeartRate: workout.score?.maxHeartRate,
+                totalElevationGain: workout.score?.altitudeGainMeter,
+                startedAt: ISO8601DateFormatter().string(from: startDate),
+                completedAt: ISO8601DateFormatter().string(from: endDate),
+                source: "whoop",
+                externalId: workout.id,
+                externalUrl: nil
+            )
+            
+            do {
+                let existing: [CardioWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
+                    .from("cardio_workouts")
+                    .select()
+                    .eq("user_id", value: userId.uuidString)
+                    .eq("source", value: "whoop")
+                    .eq("external_id", value: workout.id)
+                    .execute()
+                    .value
+                
+                if existing.isEmpty {
+                    try await SupabaseManager.shared.supabaseClient
+                        .from("cardio_workouts")
+                        .insert(insert)
+                        .execute()
+                    savedWorkouts += 1
+                }
+            } catch {
+                AppLogger.warning("[WHOOP] Failed to save workout \(workout.id): \(error)", category: .health)
+            }
+        }
+        
+        if savedWorkouts > 0 {
+            await MainActor.run {
+                NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
+            }
+        }
+        
+        AppLogger.info("[WHOOP] HealthDataService sync complete", category: .health)
+    }
+    
+    // MARK: - WHOOP Insert Models
+
+    private struct WhoopRecoveryInsert: Codable {
+        let userId: String
+        let date: String
+        let cycleId: Int?
+        let recoveryScore: Int?
+        let hrvRmssdMilli: Double?
+        let restingHeartRate: Int?
+        let spo2Percentage: Double?
+        let skinTempCelsius: Double?
+        let strain: Double?
+        let kilojoules: Double?
+        let avgHeartRate: Int?
+        let maxHeartRate: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case userId = "user_id"
+            case date
+            case cycleId = "cycle_id"
+            case recoveryScore = "recovery_score"
+            case hrvRmssdMilli = "hrv_rmssd_milli"
+            case restingHeartRate = "resting_heart_rate"
+            case spo2Percentage = "spo2_percentage"
+            case skinTempCelsius = "skin_temp_celsius"
+            case strain, kilojoules
+            case avgHeartRate = "avg_heart_rate"
+            case maxHeartRate = "max_heart_rate"
+        }
+    }
+
+    private struct WhoopSleepInsert: Codable {
+        let userId: String
+        let date: String
+        let totalSleepHours: Double
+        let source: String
+        let externalId: String
+        let sleepPerformancePct: Double?
+        let sleepConsistencyPct: Double?
+        let sleepEfficiencyPct: Double?
+        let respiratoryRate: Double?
+        let disturbanceCount: Int?
+        let sleepDebtMilli: Int
+        let lightSleepMilli: Int
+        let deepSleepMilli: Int
+        let remSleepMilli: Int
+        let awakeMilli: Int
+
+        enum CodingKeys: String, CodingKey {
+            case userId = "user_id"
+            case date
+            case totalSleepHours = "total_sleep_hours"
+            case source
+            case externalId = "external_id"
+            case sleepPerformancePct = "sleep_performance_pct"
+            case sleepConsistencyPct = "sleep_consistency_pct"
+            case sleepEfficiencyPct = "sleep_efficiency_pct"
+            case respiratoryRate = "respiratory_rate"
+            case disturbanceCount = "disturbance_count"
+            case sleepDebtMilli = "sleep_debt_milli"
+            case lightSleepMilli = "light_sleep_milli"
+            case deepSleepMilli = "deep_sleep_milli"
+            case remSleepMilli = "rem_sleep_milli"
+            case awakeMilli = "awake_milli"
+        }
+    }
+
+    private func mapWhoopSportToActivityType(_ sport: String?) -> String {
+        guard let sport = sport?.lowercased() else { return "other" }
+        if sport.contains("run") { return sport.contains("treadmill") ? "treadmill" : "outdoor_run" }
+        if sport.contains("cycling") || sport.contains("bike") { return "outdoor_cycle" }
+        if sport.contains("swim") { return "swimming" }
+        if sport.contains("walk") || sport.contains("hike") { return "walk" }
+        if sport.contains("yoga") || sport.contains("pilates") { return "yoga" }
+        if sport.contains("rowing") { return "rowing" }
+        if sport.contains("strength") || sport.contains("weight") { return "strength_training" }
+        if sport.contains("hiit") || sport.contains("crossfit") || sport.contains("functional") { return "hiit" }
+        if sport.contains("elliptical") { return "elliptical" }
+        return "other"
     }
     
     // MARK: - HealthKit Data Sync (Nike Run Club, Apple Watch, etc.)
@@ -803,6 +1047,7 @@ final class HealthDataService: ObservableObject {
         if HealthKitService.shared.isAuthorized { sources.append("healthkit") }
         if FitbitService.shared.isConnected { sources.append("fitbit") }
         if StravaService.shared.isConnected { sources.append("strava") }
+        if WhoopService.shared.isConnected { sources.append("whoop") }
         connectedSources = sources
     }
     

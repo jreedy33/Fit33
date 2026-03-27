@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreData
 import UserNotifications
+import Combine
 
 struct DashboardView: View {
     @Environment(\.managedObjectContext) var viewContext
@@ -123,6 +124,7 @@ struct DashboardView: View {
     @AppStorage("showMacrosWidget") var showMacrosWidget = false  // Nutrition macros quick-access
     @AppStorage("showChallengeWidget") var showChallengeWidget = true  // Challenge a Friend widget (premium can hide)
     @AppStorage("showRecommendedWidget") var showRecommendedWidget = true  // Recommended For You widget (premium can hide)
+    @AppStorage("showWhoopWidget") var showWhoopWidget = true  // WHOOP Recovery widget (only renders when connected)
     
     // Nutrition data for macros widget (plain let — macros widget wraps its own @ObservedObject)
     let mealService = MealService.shared
@@ -242,11 +244,17 @@ struct DashboardView: View {
                             .padding(.bottom, 16)
                     }
                     
+                    // WHOOP Recovery Widget (isolated — only renders when WHOOP connected + widget enabled)
+                    if showWhoopWidget {
+                        DashboardWhoopWrapper()
+                            .padding(.bottom, 16)
+                    }
+
                     // Step Tracker Card
                     StepTrackerCard()
                         .id("stepTracker")
                         .padding(.bottom, 20)
-                    
+
                     // Recent workouts section (in-app + synced HealthKit/Strava/Fitbit)
                     if !recentWorkouts.isEmpty || !recentCardioWorkouts.isEmpty {
                         recentWorkoutsSection
@@ -336,7 +344,8 @@ struct DashboardView: View {
                     showHydration: $showHydrationWidget,
                     showMacros: $showMacrosWidget,
                     showChallenge: $showChallengeWidget,
-                    showRecommended: $showRecommendedWidget
+                    showRecommended: $showRecommendedWidget,
+                    showWhoop: $showWhoopWidget
                 )
                 .presentationDragIndicator(.visible)
             }
@@ -371,18 +380,8 @@ struct DashboardView: View {
                 programConflictAlert
             )
             .overlay(alignment: .top) {
-                VStack(spacing: 8) {
-                    if let quest = dailyQuestService.lastCompletedQuest {
-                        QuestCompletionCelebration(
-                            quest: quest,
-                            isShowing: Binding(get: { dailyQuestService.showQuestCompletionCelebration }, set: { dailyQuestService.showQuestCompletionCelebration = $0 })
-                        )
-                    }
-                    QuestBonusCelebration(
-                        isShowing: Binding(get: { dailyQuestService.showBonusCelebration }, set: { dailyQuestService.showBonusCelebration = $0 })
-                    )
-                }
-                .padding(.top, 60)
+                DashboardQuestCelebrationWrapper()
+                    .padding(.top, 60)
             }
         }
         .id(navigationViewId)  // Forces NavigationStack to reset when ID changes
@@ -538,11 +537,38 @@ struct DashboardView: View {
             // 5. Social/challenge data (needs auth — wait only for these)
             Task {
                 if !SupabaseManager.shared.isAuthenticated {
-                    AppLogger.info("[DASHBOARD] Auth not ready — waiting up to 10s...", category: .performance)
-                    for _ in 0..<20 {
-                        try? await Task.sleep(for: .milliseconds(500))
-                        guard !Task.isCancelled else { return }
-                        if SupabaseManager.shared.isAuthenticated { break }
+                    AppLogger.info("[DASHBOARD] Auth not ready — waiting via publisher (up to 10s)...", category: .performance)
+                    let authReady = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                        let resumed = NSLock()
+                        var hasResumed = false
+                        var cancellable: AnyCancellable?
+                        
+                        let timeout = DispatchWorkItem {
+                            resumed.lock()
+                            guard !hasResumed else { resumed.unlock(); return }
+                            hasResumed = true
+                            resumed.unlock()
+                            cancellable?.cancel()
+                            continuation.resume(returning: false)
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: timeout)
+                        
+                        cancellable = SupabaseManager.shared.$isAuthenticated
+                            .first(where: { $0 })
+                            .sink { _ in
+                                resumed.lock()
+                                guard !hasResumed else { resumed.unlock(); return }
+                                hasResumed = true
+                                resumed.unlock()
+                                timeout.cancel()
+                                continuation.resume(returning: true)
+                            }
+                    }
+                    guard !Task.isCancelled, authReady else {
+                        if !authReady {
+                            AppLogger.warning("[DASHBOARD] Auth not available — skipping social fetch", category: .performance)
+                        }
+                        return
                     }
                 }
                 

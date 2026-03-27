@@ -403,3 +403,39 @@ user_notification_preferences (server-side push preference enforcement)
 - `admin_get_table_sizes()`, `admin_get_connection_stats()`, `admin_get_index_health()`, `admin_get_rpc_stats()`, `admin_get_push_pipeline_stats()`.
 
 **Critical**: Materialized views use `REFRESH MATERIALIZED VIEW CONCURRENTLY` which requires a UNIQUE index. Both `mv_user_engagement_scores` and `mv_retention_cohorts` have these.
+
+### 2026-03-27: WHOOP Integration Tables
+
+**New table: `whoop_recovery_data`**
+- Columns: `id` (UUID PK), `user_id` (UUID FK → user_profiles, CASCADE), `date` (DATE), `cycle_id` (BIGINT), `recovery_score` (INT 0-100), `hrv_rmssd_milli` (DOUBLE), `resting_heart_rate` (INT), `spo2_percentage` (DOUBLE), `skin_temp_celsius` (DOUBLE), `strain` (DOUBLE 0-21), `kilojoules` (DOUBLE), `avg_heart_rate` (INT), `max_heart_rate` (INT), `created_at`, `updated_at`.
+- UNIQUE constraint on `(user_id, date)`. Indexes on `user_id` and `(user_id, date DESC)`.
+- RLS: standard `user_id = auth.uid()` CRUD policies.
+- Added to Health table category. Cleanup handled by FK CASCADE on `user_profiles`.
+
+**Modified: `sleep_logs`** — 10 new nullable columns for WHOOP sleep stage data. No impact on existing HealthKit/Fitbit rows (columns stay NULL).
+
+**Modified: `user_profiles`** — `is_whoop_connected BOOLEAN DEFAULT false`.
+
+**Migration**: `supabase/20260327_whoop_integration.sql`
+
+### 2026-03-27: Gold Verified Badge — All RPCs Patched
+
+**Problem**: `20260326_add_is_verified_everywhere.sql` was run AFTER `20260326_add_gold_verified_to_rpcs.sql`, overwriting the gold-verified versions of challenge/friend/search RPCs. Community and private challenge RPCs never had `is_gold_verified`.
+
+**Fix**: `supabase/20260327_gold_verified_all_rpcs.sql` — adds `COALESCE(up.is_gold_verified, FALSE)` to ALL 12 RPCs:
+- `get_active_challenges` (RETURNS TABLE: `opponent_is_gold_verified`)
+- `get_pending_sent_challenges` (RETURNS TABLE: `opponent_is_gold_verified`)
+- `get_active_group_challenges` (JSON member field)
+- `get_received_workouts` (RETURNS TABLE: `sender_is_gold_verified`)
+- `get_pending_friend_requests` (RETURNS TABLE column)
+- `get_sent_friend_requests` (RETURNS TABLE column)
+- `search_users` (RETURNS TABLE column)
+- `get_community_challenge_leaderboard` (JSON entry field)
+- `get_my_community_challenges` (JSON entry field)
+- `get_community_challenge_detail` (JSON entry field)
+- `get_private_challenge_detail` (JSON entry field)
+- `get_my_private_challenges` (JSON entry field)
+
+**Rule**: When adding a new column to social RPCs, patch ALL RPCs in a SINGLE migration to prevent ordering issues. Never split `is_verified` and `is_gold_verified` across separate files.
+
+**Swift DTOs**: All already have `isGoldVerified: Bool?` with `is_gold_verified` coding key — no Swift changes needed. League RPCs (`get_or_join_weekly_league`, `get_league_leaderboard`) and `get_friends`/`get_friend_activity_feed` were unaffected (not overwritten).

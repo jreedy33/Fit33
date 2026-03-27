@@ -303,11 +303,16 @@ extension DashboardView {
                 
                 // User info section - moved to the right
                 VStack(alignment: .leading, spacing: 6) {
-                    // First name only (streak is now in the flame icon)
-                    Text(getFirstName())
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
+                    HStack(spacing: 4) {
+                        Text(getFirstName())
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        if userManager.isVerified || userManager.isGoldVerified {
+                            VerifiedBadge(size: 16, isGold: userManager.isGoldVerified)
+                        }
+                    }
                     
                     // Motivational message - now prominent
                     Text(personalizedRecommendation?.message ?? currentMotivationalMessage)

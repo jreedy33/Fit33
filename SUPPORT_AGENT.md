@@ -330,3 +330,17 @@ The Support Agent owns and maintains the FAQ page. See `FAQ_PLAN.md` for the com
 - **CMS Moderation page tabs**: Queue, Overview (stats/repeat offenders), Suspensions (active/history/lift), Blocks (from existing `user_blocks` table).
 - **User detail integration**: `/users/[id]` now has Moderation tab showing reports against user + suspension history.
 - **FAQ impact**: May need new FAQ entries for "How do I report someone?", "Why was my account suspended?", "How do I appeal a suspension?".
+
+### 2026-03-27: WHOOP Integration
+
+**New integration**: WHOOP band support added. Users connect in Settings > WHOOP via OAuth. Syncs recovery score, HRV, strain, sleep stages, workouts, SpO2, and skin temperature.
+
+**FAQ entries needed**:
+- "How do I connect my WHOOP?" — Settings > WHOOP > Connect WHOOP > sign in with WHOOP credentials
+- "What data does WHOOP sync?" — Recovery score, HRV, strain, sleep (stages, performance, consistency), workouts, SpO2, skin temp
+- "Where do I see my WHOOP data?" — Dashboard (recovery widget), Health Insights (recovery/strain trends, vitals), workout suggestions are recovery-aware
+- "Why does the app suggest a recovery day?" — When WHOOP recovery score is below 33% (red zone), the app suggests light activity instead of heavy training
+- "How do I disconnect WHOOP?" — Settings > WHOOP > Disconnect
+
+**Health Integrations table update**:
+| WHOOP | Recovery, strain, HRV, sleep stages, SpO2, workouts via `WhoopService` | "How do I connect WHOOP?" |

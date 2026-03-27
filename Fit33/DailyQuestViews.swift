@@ -148,33 +148,69 @@ struct DailyQuestsWidget: View {
     
     /// Returns the live current value for a quest using local data (HealthKit, meals, hydration)
     /// rather than the server-side currentValue which may lag behind.
+    /// Always uses max(localValue, quest.currentValue) so progress never appears lower than
+    /// the last server-synced value (e.g. when HealthKit hasn't loaded yet on app open).
     private func liveCurrentValue(for quest: DailyQuest) -> Int {
         guard !quest.isCompleted else { return quest.currentValue }
         guard let key = QuestKey(rawValue: quest.questKey) else { return quest.currentValue }
         
         switch key {
-        // Step quests — use live HealthKit step count
+        // Step quests — live HealthKit step count with server fallback
         case .walk3kSteps, .walk5kSteps, .walk7500Steps, .walk10kSteps:
             let liveSteps = max(healthKitManager.todaySteps, healthKitService.todaySteps)
-            return min(liveSteps, quest.targetValue)
+            let best = max(liveSteps, quest.currentValue)
+            return min(best, quest.targetValue)
         case .hitStepGoal:
             let liveSteps = max(healthKitManager.todaySteps, healthKitService.todaySteps)
-            return liveSteps >= healthKitManager.stepGoal ? 1 : 0
+            if liveSteps >= healthKitManager.stepGoal { return 1 }
+            return quest.currentValue
             
-        // Water quests — use live hydration data
+        // Water quests — live hydration data
         case .logWater3, .logWater8, .logWater:
             let glasses = hydrationService.todaySummary?.entryCount ?? 0
             return max(glasses, quest.currentValue)
             
-        // Meal count quests — use live meal data
+        // Hydration before noon
+        case .hydrationBeforeNoon:
+            let glasses = hydrationService.todaySummary?.entryCount ?? 0
+            return max(glasses, quest.currentValue)
+            
+        // Meal count quests — live meal data
         case .log3Meals:
             let mealCount = mealService.todaysMeals.count
             return max(mealCount, quest.currentValue)
             
-        // Protein quest — use live meal protein total
+        // Individual meal type quests — check todaysMeals for matching type
+        case .logBreakfast:
+            let has = mealService.todaysMeals.contains { $0.mealType == .breakfast }
+            return has ? 1 : quest.currentValue
+        case .logLunch:
+            let has = mealService.todaysMeals.contains { $0.mealType == .lunch }
+            return has ? 1 : quest.currentValue
+        case .logDinner:
+            let has = mealService.todaysMeals.contains { $0.mealType == .dinner }
+            return has ? 1 : quest.currentValue
+        case .logSnack:
+            let has = mealService.todaysMeals.contains { $0.mealType == .snacks }
+            return has ? 1 : quest.currentValue
+        case .logMeal:
+            let mealCount = mealService.todaysMeals.count
+            return max(mealCount, quest.currentValue)
+            
+        // Protein quests — live meal protein total
         case .hitProteinGoal:
             let todayProtein = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
             return max(todayProtein, quest.currentValue)
+        case .logHighProteinMeal:
+            let has = mealService.todaysMeals.contains { $0.protein >= 30 }
+            return has ? 1 : quest.currentValue
+        case .logAllMacros:
+            let meals = mealService.todaysMeals
+            let hasProtein = meals.contains { $0.protein > 0 }
+            let hasCarbs = meals.contains { $0.carbs > 0 }
+            let hasFat = meals.contains { $0.fat > 0 }
+            let logged = (hasProtein ? 1 : 0) + (hasCarbs ? 1 : 0) + (hasFat ? 1 : 0)
+            return max(logged, quest.currentValue)
             
         // Active calories quest
         case .burn300Calories:
@@ -185,6 +221,20 @@ struct DailyQuestsWidget: View {
         case .activeMinutes30:
             let liveMinutes = healthKitService.todayActiveMinutes
             return max(liveMinutes, quest.currentValue)
+            
+        // Sleep quest — live HealthKit sleep data
+        case .sleep7Hours:
+            if let sleepHours = healthKitService.lastNightSleep {
+                return sleepHours >= 7.0 ? 1 : 0
+            }
+            return quest.currentValue
+            
+        // Workout quests — check completed workout count today
+        case .completeWorkout, .completeProgramDay, .earlyBirdWorkout,
+             .beginnerFirstWorkout, .logCardio, .stretchSession:
+            return quest.currentValue
+        case .complete2Workouts, .league3Workouts:
+            return quest.currentValue
             
         default:
             return quest.currentValue
@@ -206,7 +256,7 @@ struct DailyQuestsWidget: View {
         case "steps":
             if quest.targetValue >= 1000 {
                 let currentK = Double(current) / 1000.0
-                let targetK = Double(current >= 1000 ? quest.targetValue : quest.targetValue) / 1000.0
+                let targetK = Double(quest.targetValue) / 1000.0
                 if current >= 1000 {
                     return String(format: "%.1fk / %.0fk steps", currentK, targetK)
                 }

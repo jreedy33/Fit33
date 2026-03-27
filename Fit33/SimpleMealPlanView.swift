@@ -106,7 +106,10 @@ struct SimpleMealPlanView: View {
                     .padding(.bottom, 20)
                 }
                 .background {
-                    AnimatedOrbBackground.home(colorScheme: colorScheme)
+                    if showSecondaryWidgets {
+                        AnimatedOrbBackground.home(colorScheme: colorScheme)
+                            .transition(.opacity)
+                    }
                 }
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
@@ -599,7 +602,9 @@ struct SimpleMealPlanView: View {
         .task {
             if !showSecondaryWidgets {
                 try? await Task.sleep(for: .milliseconds(150))
-                showSecondaryWidgets = true
+                withAnimation(.easeIn(duration: 0.3)) {
+                    showSecondaryWidgets = true
+                }
             }
         }
     }

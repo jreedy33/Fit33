@@ -1337,10 +1337,16 @@ struct FriendCard: View {
                 )
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(friend.friendName ?? friend.friendUsername ?? "Friend")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                    HStack(spacing: 4) {
+                        Text(friend.friendName ?? friend.friendUsername ?? "Friend")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        if friend.isVerified == true || friend.isGoldVerified == true {
+                            VerifiedBadge(size: 13, isGold: friend.isGoldVerified == true)
+                    }
+                    }
                     
                     if let username = friend.friendUsername, !username.isEmpty {
                         Text("@\(username)")
@@ -1395,10 +1401,15 @@ struct FriendRequestCard: View {
             )
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(request.displayName)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                HStack(spacing: 4) {
+                    Text(request.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    if request.isVerified == true || request.isGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: request.isGoldVerified == true)
+                    }
+                }
                 
                 if let username = request.fromUserUsername {
                     Text("@\(username)")
@@ -1510,10 +1521,15 @@ struct SentFriendRequestCard: View {
             )
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(request.toUserName ?? request.toUserUsername ?? "User")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                HStack(spacing: 4) {
+                    Text(request.toUserName ?? request.toUserUsername ?? "User")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    if request.isVerified == true || request.isGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: request.isGoldVerified == true)
+                    }
+                }
                 
                 if let username = request.toUserUsername, !username.isEmpty {
                     Text("@\(username)")
@@ -1614,10 +1630,15 @@ struct UserSearchResultCard: View {
             )
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(user.name ?? user.username ?? "User")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                HStack(spacing: 4) {
+                    Text(user.name ?? user.username ?? "User")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    if user.isVerified == true || user.isGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: user.isGoldVerified == true)
+                    }
+                }
                 
                 if let username = user.username, !username.isEmpty {
                     Text("@\(username)")
@@ -1856,10 +1877,16 @@ struct RankedFriendCard: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(friend.friendName ?? friend.friendUsername ?? "Friend")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                    HStack(spacing: 4) {
+                        Text(friend.friendName ?? friend.friendUsername ?? "Friend")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        
+                        if friend.isVerified == true || friend.isGoldVerified == true {
+                            VerifiedBadge(size: 13, isGold: friend.isGoldVerified == true)
+                    }
+                    }
                     
                     if let username = friend.friendUsername, !username.isEmpty {
                         Text("@\(username)")

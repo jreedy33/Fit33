@@ -317,8 +317,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     // Daily notification cap
     private static let dailyCapKey = "daily_notification_count"
     private static let dailyCapDateKey = "daily_notification_date"
-    private static let dailyCapLimit = 4
-    private static let criticalTypes: Set<NotificationType> = [.friendRequest, .challengeInvite, .privateChallengeInvite]
+    private static let dailyCapLimit = 15
+    private static let criticalTypes: Set<NotificationType> = [
+        .friendRequest, .challengeInvite, .privateChallengeInvite,
+        .groupChallengeInvite, .sharedWorkout, .challengeUpdate,
+        .challengeReaction, .challengeCancelled, .privateChallengeUpdate
+    ]
     
     // MARK: - Initialization
     private override init() {
@@ -1172,8 +1176,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         guard isNotificationEnabled(.privateChallengeInvite) && isAuthorized else { return }
         
         let content = UNMutableNotificationContent()
-        content.title = "🔒 \(fromName) invited you!"
-        content.body = "Join \"\(challengeTitle)\" — a private challenge community."
+        content.title = "🔒 \(fromName) invited you to a private community"
+        content.body = "Join \"\(challengeTitle)\" — tap to accept or decline."
         content.sound = .default
         content.categoryIdentifier = "PRIVATE_CHALLENGE_INVITE"
         

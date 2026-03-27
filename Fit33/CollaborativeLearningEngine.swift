@@ -135,6 +135,14 @@ class CollaborativeLearningEngine: ObservableObject {
         programId: String? = nil,
         wasSuccessful: Bool = true  // Did user complete the full workout?
     ) async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[COLLABORATIVE] Skipping workout record — not authenticated", category: .auth)
+            return
+        }
+        guard !userId.isEmpty else {
+            AppLogger.warning("[COLLABORATIVE] Skipping workout record — empty userId", category: .auth)
+            return
+        }
         do {
             // 1. Record the workout completion
             let workoutData: [String: AnyJSON] = [

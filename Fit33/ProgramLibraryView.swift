@@ -264,6 +264,7 @@ struct ProgramDetailView: View {
     @EnvironmentObject var workoutManager: WorkoutManager
     let program: WorkoutProgram
     @State private var navigateToDay1 = false
+    @State private var showingStartConfirmation = false
     
     var body: some View {
         ScrollView {
@@ -484,16 +485,8 @@ struct ProgramDetailView: View {
             
             // Visible Button
             Button(action: {
-                AppLogger.debug("🔵 START BUTTON TAPPED", category: .workout)
-                workoutManager.startProgram(program)
-                AppLogger.info("✅ Started program: \(program.name)", category: .workout)
-                
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(0.1))
-                    guard !Task.isCancelled else { return }
-                    AppLogger.debug("🚀 Activating navigation to Day 1", category: .workout)
-                    navigateToDay1 = true
-                }
+                HapticManager.impact(.medium)
+                showingStartConfirmation = true
             }) {
                 HStack(spacing: 12) {
                     Image(systemName: "play.fill")
@@ -516,6 +509,23 @@ struct ProgramDetailView: View {
                 .shadow(color: programColor.opacity(0.4), radius: 12, x: 0, y: 6)
             }
             .buttonStyle(PlainButtonStyle())
+            .alert("Start Program?", isPresented: $showingStartConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Start Program") {
+                    AppLogger.debug("🔵 START BUTTON CONFIRMED", category: .workout)
+                    workoutManager.startProgram(program)
+                    AppLogger.info("✅ Started program: \(program.name)", category: .workout)
+                    HapticManager.notification(.success)
+                    
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.1))
+                        guard !Task.isCancelled else { return }
+                        navigateToDay1 = true
+                    }
+                }
+            } message: {
+                Text("Ready to begin \(program.name)? This \(program.duration)-day program will become your active program.")
+            }
         }
     }
     

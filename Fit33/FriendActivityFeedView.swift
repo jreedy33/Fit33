@@ -14,7 +14,9 @@ struct FriendActivity: Codable, Identifiable {
     let metadata: ActivityMetadata
     let createdAt: String
     let reactions: [ActivityReaction]
-    
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
+
     var id: UUID { activityId }
     
     var displayName: String {
@@ -49,6 +51,8 @@ struct FriendActivity: Codable, Identifiable {
         case metadata
         case createdAt = "created_at"
         case reactions
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 
@@ -461,10 +465,16 @@ struct FriendActivityCard: View {
                     Button {
                         showingProfile = ProfileUser(activity: activity)
                     } label: {
-                        Text(activity.displayName)
-                            .font(.ds_heading3)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(activity.displayName)
+                                .font(.ds_heading3)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                            
+                            if activity.isVerified == true || activity.isGoldVerified == true {
+                                VerifiedBadge(size: 13, isGold: activity.isGoldVerified == true)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
 

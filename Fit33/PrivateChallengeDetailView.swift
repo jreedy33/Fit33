@@ -457,6 +457,10 @@ struct PrivateChallengeDetailView: View {
                         .fontWeight(isMe ? .bold : .semibold)
                         .foregroundColor(isMe ? .purple : .white)
                     
+                    if member.isVerified == true || member.isGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: member.isGoldVerified == true)
+                    }
+                    
                     if member.isAdmin {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 8))
@@ -561,6 +565,10 @@ struct PrivateChallengeDetailView: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
+                    
+                    if member.isVerified == true || member.isGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: member.isGoldVerified == true)
+                    }
                     
                     if member.isAdmin {
                         Text("Admin")

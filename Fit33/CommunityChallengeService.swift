@@ -28,6 +28,8 @@ struct LeaderboardSnippetEntry: Codable, Identifiable {
     let bestStreak: Int
     let targetHitToday: Bool
     let isCurrentUser: Bool
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
     
     var id: UUID { userId }
     
@@ -56,6 +58,8 @@ struct LeaderboardSnippetEntry: Codable, Identifiable {
         case bestStreak = "best_streak"
         case targetHitToday = "target_hit_today"
         case isCurrentUser = "is_current_user"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 
@@ -402,6 +406,8 @@ struct CommunityLeaderboardEntry: Codable, Identifiable {
     let targetHitToday: Bool
     let totalProgress: Int?
     let isCurrentUser: Bool?
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
     
     var id: UUID { userId }
     
@@ -431,6 +437,8 @@ struct CommunityLeaderboardEntry: Codable, Identifiable {
         case targetHitToday = "target_hit_today"
         case totalProgress = "total_progress"
         case isCurrentUser = "is_current_user"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 
@@ -1033,14 +1041,19 @@ class CommunityChallengeService: ObservableObject {
     // MARK: - Log Progress
     
     func logProgress(challengeId: UUID, progressValue: Int, allowDecrease: Bool = false) async -> Bool {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[COMMUNITY CHALLENGE] Skipping progress log — not authenticated", category: .auth)
+            return false
+        }
+        
         struct LogParams: Encodable {
             let p_challenge_id: String
             let p_progress: Int
             let p_timezone: String
             let p_allow_decrease: Bool
         }
-        
-        let maxRetries = 5
+
+        let maxRetries = 3
         for attempt in 1...maxRetries {
             do {
                 let _: Bool = try await SupabaseManager.shared.supabaseClient
@@ -1052,7 +1065,7 @@ class CommunityChallengeService: ObservableObject {
                     ))
                     .execute()
                     .value
-                
+
                 #if DEBUG
                 AppLogger.info("Successfully logged community progress: \(progressValue) for \(challengeId) (allowDecrease: \(allowDecrease))", category: .social)
                 #endif
@@ -1060,9 +1073,10 @@ class CommunityChallengeService: ObservableObject {
             } catch {
                 guard !Task.isCancelled else { return false }
                 let nsError = error as NSError
-                if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled && attempt < maxRetries {
+                let isTimeout = nsError.domain == NSURLErrorDomain && (nsError.code == NSURLErrorTimedOut || nsError.code == NSURLErrorCancelled)
+                if isTimeout && attempt < maxRetries {
                     let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
-                    AppLogger.warning("log_community_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...", category: .social)
+                    AppLogger.warning("log_community_challenge_progress timeout (attempt \(attempt)/\(maxRetries)), retrying...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                 } else {
                     AppLogger.error("Error logging community progress: \(error.localizedDescription)", category: .social)

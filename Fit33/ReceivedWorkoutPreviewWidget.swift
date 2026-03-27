@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Received Workout Preview Widget
 /// Shows a preview of pending received workouts on the home screen
-/// Appears above the program widget until user addresses it (start/save/delete)
+/// Styled to match GroupChallengeInviteWidget for unified notification carousel
 
 struct ReceivedWorkoutPreviewWidget: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -22,7 +22,6 @@ struct ReceivedWorkoutPreviewWidget: View {
     @State private var isSaving = false
     @State private var isDeleting = false
     
-    // Theme colors (matching ReceivedWorkoutDetailView)
     private let themeColor: Color = .blue
     private let secondaryThemeColor: Color = .purple
     
@@ -36,43 +35,32 @@ struct ReceivedWorkoutPreviewWidget: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Main card content
+            headerSection
+            
+            Divider().padding(.horizontal, Spacing.md)
+            
+            detailsSection
+            
             VStack(spacing: 0) {
-                // Header - Sender info
-                headerSection
-                
-                Divider()
-                    .padding(.horizontal, Spacing.md)
-                
-                // Workout preview section
-                workoutPreviewSection
-                
-                // Expandable exercises section
                 if isExpanded {
-                    Divider()
-                        .padding(.horizontal, Spacing.md)
-                    
                     exerciseListSection
-                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                
-                Divider()
-                    .padding(.horizontal, Spacing.md)
-                
-                // Action buttons
-                actionButtonsSection
             }
-            .onboardingCardStyle(accentColor: themeColor, secondaryColor: secondaryThemeColor, isSelected: true, cornerRadius: 20)
+            .clipped()
+            
+            Divider().padding(.horizontal, Spacing.md)
+            
+            actionButtonsSection
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isExpanded)
+        .background(staticCardBackground(accentColor: themeColor, secondaryColor: secondaryThemeColor))
+        .shadow(color: themeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: themeColor.opacity(0.08), radius: 25, x: 0, y: 4)
         .confirmationDialog(
             "Delete this workout?",
             isPresented: $showingDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) {
-                deleteWorkout()
-            }
+            Button("Delete", role: .destructive) { deleteWorkout() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will permanently remove the workout from your inbox.")
@@ -85,32 +73,38 @@ struct ReceivedWorkoutPreviewWidget: View {
     // MARK: - Header Section
     
     private var headerSection: some View {
-        HStack(spacing: 10) {
-            // Sender avatar
-            senderAvatarView
+        HStack(spacing: 12) {
+            ZStack(alignment: .topTrailing) {
+                CachedFriendPhoto(
+                    friendId: workout.senderId.uuidString,
+                    photoUrl: workout.senderProfilePhotoUrl,
+                    name: workout.senderName,
+                    size: 48,
+                    showGradientRing: true,
+                    gradientColors: [themeColor, secondaryThemeColor]
+                )
+                if workout.viewedAt == nil {
+                    PulsingRedDot(size: 10)
+                        .offset(x: 2, y: -2)
+                }
+            }
             
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(workout.senderName)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text("Received Workout")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(themeColor)
                     
-                    Text("sent you a workout")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    // NEW badge
                     if workout.isPending && workout.viewedAt == nil {
                         Text("NEW")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 5)
+                            .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(themeColor))
                     }
                     
-                    // PRO badge for free users
                     if !premiumManager.isPremiumUser {
                         HStack(spacing: 2) {
                             Image(systemName: "crown.fill")
@@ -133,324 +127,186 @@ struct ReceivedWorkoutPreviewWidget: View {
                     }
                 }
                 
-                Text(formatSmartDate(workout.createdAt))
-                    .font(.caption2)
-                    .foregroundColor(.secondary.opacity(0.7))
-            }
-            
-            Spacer()
-            
-            // Delete button
-            Button(action: {
-                HapticManager.impact(.light)
-                showingDeleteConfirmation = true
-            }) {
-                Image(systemName: "xmark")
-                    .font(.ds_bodySmall).fontWeight(.medium)
-                    .foregroundColor(.secondary)
-                    .padding(6)
-                    .background(Color.secondary.opacity(0.1))
-                    .clipShape(Circle())
-            }
-            .disabled(isDeleting)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, Spacing.sm)
-    }
-    
-    // MARK: - Sender Avatar View
-    
-    private var senderAvatarView: some View {
-        ZStack(alignment: .topTrailing) {
-            CachedFriendPhoto(
-                friendId: workout.senderId.uuidString,
-                photoUrl: workout.senderProfilePhotoUrl,
-                name: workout.senderName,
-                size: 36,
-                showGradientRing: true,
-                gradientColors: [themeColor, secondaryThemeColor]
-            )
-            
-            // Pulsing red dot for unviewed workouts
-            if workout.viewedAt == nil {
-                PulsingRedDot(size: 10)
-                    .offset(x: 2, y: -2)
-            }
-        }
-    }
-    
-    // MARK: - Workout Preview Section
-    
-    /// Calculate top muscle groups from exercises (max 3)
-    private var topMuscleGroups: [String] {
-        var muscleCount: [String: Int] = [:]
-        var firstSeen: [String: Int] = [:]
-        var order = 0
-
-        for exerciseName in workout.exerciseNames {
-            if let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseName),
-               let muscles = exercise.muscleGroups as? [String] {
-                for muscle in muscles {
-                    let key = normalizeMuscleGroup(muscle)
-                    muscleCount[key, default: 0] += 1
-                    if firstSeen[key] == nil {
-                        firstSeen[key] = order
-                        order += 1
-                    }
-                }
-            }
-        }
-
-        let sorted = muscleCount.sorted {
-            if $0.value != $1.value { return $0.value > $1.value }
-            return (firstSeen[$0.key] ?? 0) < (firstSeen[$1.key] ?? 0)
-        }
-        return Array(sorted.prefix(3).map { $0.key })
-    }
-    
-    /// Normalize muscle group names to user-friendly format
-    private func normalizeMuscleGroup(_ muscle: String) -> String {
-        let lowercased = muscle.lowercased()
-        
-        // Map specific muscle groups to common display names
-        if lowercased.contains("pectoralis") || lowercased.contains("chest") {
-            return "Chest"
-        } else if lowercased.contains("bicep") || lowercased.contains("brachialis") {
-            return "Biceps"
-        } else if lowercased.contains("tricep") {
-            return "Triceps"
-        } else if lowercased.contains("deltoid") || lowercased.contains("delt") || lowercased.contains("shoulder") {
-            return "Shoulders"
-        } else if lowercased.contains("lat") || lowercased.contains("latissimus") {
-            return "Lats"
-        } else if lowercased.contains("rhomboid") || lowercased.contains("upper back") {
-            return "Upper Back"
-        } else if lowercased.contains("erector") || lowercased.contains("lower back") {
-            return "Lower Back"
-        } else if lowercased.contains("trap") {
-            return "Traps"
-        } else if lowercased.contains("quad") || lowercased.contains("vastus") {
-            return "Quads"
-        } else if lowercased.contains("hamstring") || lowercased.contains("biceps femoris") {
-            return "Hamstrings"
-        } else if lowercased.contains("glute") {
-            return "Glutes"
-        } else if lowercased.contains("calf") || lowercased.contains("gastrocnemius") || lowercased.contains("soleus") {
-            return "Calves"
-        } else if lowercased.contains("rectus abdominis") || lowercased.contains("abs") {
-            return "Abs"
-        } else if lowercased.contains("oblique") {
-            return "Obliques"
-        } else if lowercased.contains("forearm") || lowercased.contains("wrist") {
-            return "Forearms"
-        } else if lowercased.contains("core") || lowercased.contains("abdominal") {
-            return "Core"
-        }
-        
-        // Capitalize first letter for display
-        return muscle.prefix(1).uppercased() + muscle.dropFirst().lowercased()
-    }
-    
-    /// Cohesive color scheme - all badges use the same accent color
-    private var muscleAccentColor: Color {
-        themeColor // Use consistent blue theme color for all badges
-    }
-    
-    /// Border colors for the widget - cohesive blue/purple gradient
-    private var widgetBorderColors: [Color] {
-        [themeColor.opacity(0.7), secondaryThemeColor.opacity(0.5)]
-    }
-    
-    private var workoutPreviewSection: some View {
-        VStack(spacing: 8) {
-            // Workout title row
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(workout.workoutName)
+                HStack(spacing: 4) {
+                    Text(workout.senderName)
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                         .lineLimit(1)
-                    
-                    // Description if available (takes priority over message)
-                    if let description = workout.workoutDescription, !description.isEmpty {
-                        Text(description)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                    // Message preview if available (and no description)
-                    else if let message = workout.message, !message.isEmpty {
-                        Text("\"\(message)\"")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .italic()
-                            .lineLimit(1)
-                    }
-                    
-                    // Muscle group badges (max 3) - cohesive color scheme
-                    if !topMuscleGroups.isEmpty {
-                        HStack(spacing: 6) {
-                            ForEach(topMuscleGroups, id: \.self) { muscle in
-                                Text(muscle)
-                                    .font(.ds_caption)
-                                    .foregroundColor(muscleAccentColor)
-                                    .padding(.horizontal, Spacing.xs)
-                                    .padding(.vertical, 3)
-                                    .background(
-                                        Capsule()
-                                            .stroke(muscleAccentColor.opacity(0.4), lineWidth: 1)
-                                            .background(
-                                                Capsule()
-                                                    .fill(muscleAccentColor.opacity(0.1))
-                                            )
-                                    )
-                            }
-                        }
+                    if workout.senderIsVerified == true || workout.senderIsGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: workout.senderIsGoldVerified == true)
                     }
                 }
                 
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 8) {
-                    // Compact stats inline
-                    HStack(spacing: 12) {
-                        Label("\(workout.exerciseCount)", systemImage: "dumbbell.fill")
-                        Label("\(estimatedMinutes)m", systemImage: "clock")
-                    }
+                Text("sent you a workout")
                     .font(.caption)
                     .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "dumbbell.fill")
+                .font(.ds_heading1)
+                .foregroundColor(themeColor)
+        }
+        .padding(Spacing.md)
+    }
+    
+    // MARK: - Details Section
+    
+    private var detailsSection: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(workout.workoutName)
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                
+                HStack(spacing: 8) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "dumbbell.fill")
+                            .font(.caption2)
+                        Text("\(workout.exerciseCount) exercises")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.secondary)
                     
-                    // Expand/collapse chevron
-                    Button(action: {
-                        HapticManager.impact(.light)
-                        withAnimation {
-                            isExpanded.toggle()
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                        Text("~\(estimatedMinutes)m")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.secondary)
+                }
+                
+                if !topMuscleGroups.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(topMuscleGroups, id: \.self) { muscle in
+                            Text(muscle)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(themeColor)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().stroke(themeColor.opacity(0.4), lineWidth: 1).background(Capsule().fill(themeColor.opacity(0.1))))
                         }
-                    }) {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.ds_labelMedium)
-                            .foregroundColor(.secondary)
-                            .padding(6)
-                            .background(Color.secondary.opacity(0.1))
-                            .clipShape(Circle())
                     }
                 }
             }
+            
+            Spacer()
+            
+            Button {
+                HapticManager.impact(.light)
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.secondary)
+                    .padding(8)
+                    .background(Color.secondary.opacity(0.1))
+                    .clipShape(Circle())
+            }
         }
         .padding(.horizontal, Spacing.md)
-        .padding(.vertical, 10)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Exercise List Section
     
     private var exerciseListSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            VStack(spacing: 2) {
-                ForEach(Array(workout.exerciseNames.enumerated()), id: \.offset) { index, name in
-                    HStack(spacing: 8) {
-                        Text("\(index + 1).")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                            .frame(width: 18, alignment: .trailing)
-                        
-                        Text(name)
-                            .font(.caption)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        Spacer()
-                        
-                        // Sets x Reps
-                        if workout.exerciseSets.indices.contains(index) {
-                            let sets = workout.exerciseSets[index]
-                            let reps = workout.exerciseReps.indices.contains(index) ? workout.exerciseReps[index] : "10"
-                            Text("\(sets)×\(reps)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary.opacity(0.7))
-                        }
+        VStack(spacing: 2) {
+            Divider().padding(.horizontal, Spacing.md)
+            
+            ForEach(Array(workout.exerciseNames.enumerated()), id: \.offset) { index, name in
+                HStack(spacing: 8) {
+                    Text("\(index + 1).")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .frame(width: 18, alignment: .trailing)
+                    
+                    Text(name)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    Spacer()
+                    
+                    if workout.exerciseSets.indices.contains(index) {
+                        let sets = workout.exerciseSets[index]
+                        let reps = workout.exerciseReps.indices.contains(index) ? workout.exerciseReps[index] : "10"
+                        Text("\(sets)×\(reps)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary.opacity(0.7))
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, Spacing.xxs)
                 }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, 3)
             }
-            .padding(.vertical, Spacing.xs)
         }
+        .padding(.vertical, Spacing.xs)
     }
     
     // MARK: - Action Buttons Section
     
     private var actionButtonsSection: some View {
-        HStack(spacing: 10) {
-            // Save for Later button
+        HStack(spacing: 12) {
             Button(action: saveForLater) {
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     if isSaving {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .tint(.primary)
+                        ProgressView().scaleEffect(0.7).tint(.secondary)
                     } else {
                         Image(systemName: "bookmark")
                             .font(.ds_labelMedium)
                     }
                     Text("Save")
-                        .font(.caption)
+                        .font(.subheadline)
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(.primary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.secondary.opacity(0.12))
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.gray.opacity(0.12))
                 )
             }
             .disabled(isSaving || isDeleting)
             
-            // Start button
             Button(action: {
-                // Check if user is premium - free users must upgrade to start received workouts
                 guard premiumManager.isPremiumUser else {
                     HapticManager.impact(.light)
                     showingPremiumUpgrade = true
                     return
                 }
-                
                 HapticManager.impact(.heavy)
                 onStart()
             }) {
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     Image(systemName: "play.fill")
-                        .font(.ds_caption)
-                    Text("Start")
-                        .font(.caption)
+                        .font(.ds_labelMedium)
+                    Text("Start Workout")
+                        .font(.subheadline)
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(
-                            LinearGradient(
-                                colors: [themeColor, secondaryThemeColor],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(LinearGradient(colors: [themeColor, secondaryThemeColor], startPoint: .leading, endPoint: .trailing))
                 )
             }
             .disabled(isSaving || isDeleting)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, Spacing.sm)
+        .padding(Spacing.md)
     }
     
     // MARK: - Actions
     
     private func saveForLater() {
-        // Free users CAN save workouts - premium check is when starting saved workouts
         HapticManager.impact(.medium)
         isSaving = true
         
@@ -485,10 +341,56 @@ struct ReceivedWorkoutPreviewWidget: View {
     
     // MARK: - Helpers
     
+    private var topMuscleGroups: [String] {
+        var muscleCount: [String: Int] = [:]
+        var firstSeen: [String: Int] = [:]
+        var order = 0
+
+        for exerciseName in workout.exerciseNames {
+            if let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseName),
+               let muscles = exercise.muscleGroups as? [String] {
+                for muscle in muscles {
+                    let key = normalizeMuscleGroup(muscle)
+                    muscleCount[key, default: 0] += 1
+                    if firstSeen[key] == nil {
+                        firstSeen[key] = order
+                        order += 1
+                    }
+                }
+            }
+        }
+
+        let sorted = muscleCount.sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            return (firstSeen[$0.key] ?? 0) < (firstSeen[$1.key] ?? 0)
+        }
+        return Array(sorted.prefix(3).map { $0.key })
+    }
+    
+    private func normalizeMuscleGroup(_ muscle: String) -> String {
+        let lowercased = muscle.lowercased()
+        if lowercased.contains("pectoralis") || lowercased.contains("chest") { return "Chest" }
+        else if lowercased.contains("bicep") || lowercased.contains("brachialis") { return "Biceps" }
+        else if lowercased.contains("tricep") { return "Triceps" }
+        else if lowercased.contains("deltoid") || lowercased.contains("delt") || lowercased.contains("shoulder") { return "Shoulders" }
+        else if lowercased.contains("lat") || lowercased.contains("latissimus") { return "Lats" }
+        else if lowercased.contains("rhomboid") || lowercased.contains("upper back") { return "Upper Back" }
+        else if lowercased.contains("erector") || lowercased.contains("lower back") { return "Lower Back" }
+        else if lowercased.contains("trap") { return "Traps" }
+        else if lowercased.contains("quad") || lowercased.contains("vastus") { return "Quads" }
+        else if lowercased.contains("hamstring") || lowercased.contains("biceps femoris") { return "Hamstrings" }
+        else if lowercased.contains("glute") { return "Glutes" }
+        else if lowercased.contains("calf") || lowercased.contains("gastrocnemius") || lowercased.contains("soleus") { return "Calves" }
+        else if lowercased.contains("rectus abdominis") || lowercased.contains("abs") { return "Abs" }
+        else if lowercased.contains("oblique") { return "Obliques" }
+        else if lowercased.contains("forearm") || lowercased.contains("wrist") { return "Forearms" }
+        else if lowercased.contains("core") || lowercased.contains("abdominal") { return "Core" }
+        return muscle.prefix(1).uppercased() + muscle.dropFirst().lowercased()
+    }
+    
     private func formatSmartDate(_ date: Date) -> String {
         let calendar = Calendar.current
         let now = Date()
-        
         if calendar.isDateInToday(date) {
             let formatter = DateFormatter()
             formatter.dateFormat = "h:mm a"
@@ -507,25 +409,82 @@ struct ReceivedWorkoutPreviewWidget: View {
     }
 }
 
-// MARK: - Container View for Multiple Pending Workouts
-/// Shows the most recent pending workout, with ability to show more
+// MARK: - Static Card Background (shared pattern for all notification cards)
+
+struct StaticCardBackground: View {
+    let accentColor: Color
+    let secondaryColor: Color
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: CornerRadius.xl + 4)
+                .fill(accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                .offset(y: 5)
+                .blur(radius: 3)
+            
+            RoundedRectangle(cornerRadius: CornerRadius.xl + 2)
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.18 : 0.04))
+                .offset(y: 3)
+            
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
+                .fill(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color(white: 0.15), Color(white: 0.11)]
+                            : [Color.white, Color(white: 0.98)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                            : [Color.white, Color.white.opacity(0.5), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1.5
+                )
+            
+            RoundedRectangle(cornerRadius: CornerRadius.xl)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            accentColor.opacity(colorScheme == .dark ? 0.3 : 0.2),
+                            secondaryColor.opacity(colorScheme == .dark ? 0.15 : 0.1)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+    }
+}
+
+func staticCardBackground(accentColor: Color, secondaryColor: Color) -> some View {
+    StaticCardBackground(accentColor: accentColor, secondaryColor: secondaryColor)
+}
+
+// MARK: - Container (kept for backward compat, carousel replaces this on dashboard)
 
 struct ReceivedWorkoutPreviewContainer: View {
     @ObservedObject private var friendService = FriendService.shared
     
     @State private var selectedWorkout: ReceivedWorkoutDTO?
     @State private var navigateToDetail = false
+    @State private var selectedPage: Int = 0
     
-    // Filter for pending workouts only (not saved or completed)
     private var pendingWorkouts: [ReceivedWorkoutDTO] {
         friendService.receivedWorkouts.filter { $0.isPending }
     }
     
     var body: some View {
-        // CRITICAL: NavigationLink must be at root level, outside any conditional
-        // This ensures it persists even when pendingWorkouts changes
         ZStack {
-            // Hidden navigation link - ALWAYS present at root level
             NavigationLink(
                 destination: Group {
                     if let workout = selectedWorkout {
@@ -538,43 +497,83 @@ struct ReceivedWorkoutPreviewContainer: View {
             }
             .hidden()
             
-            // Visible content - only shows when there are pending workouts
-            if let firstPending = pendingWorkouts.first {
-                VStack(spacing: 12) {
-                    ReceivedWorkoutPreviewWidget(
-                        workout: firstPending,
-                        onStart: {
-                            // CRITICAL: Set navigation state FIRST, THEN mark as started
-                            // Store workout reference before any async operations
-                            selectedWorkout = firstPending
-                            
-                            // Trigger navigation immediately
-                            navigateToDetail = true
-                            
-                            // Mark as started with a delay so navigation happens first
-                            Task {
-                                // Wait for navigation animation to begin
-                                try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
-                                await friendService.markWorkoutStarted(workoutId: firstPending.id)
+            if !pendingWorkouts.isEmpty {
+                let workouts = Array(pendingWorkouts.prefix(3))
+                let safeIndex = min(max(0, selectedPage), workouts.count - 1)
+                
+                VStack(spacing: 4) {
+                    if workouts.count > 1 {
+                        ZStack {
+                            ForEach(Array(workouts.enumerated()), id: \.element.id) { index, workout in
+                                if safeIndex == index {
+                                    ReceivedWorkoutPreviewWidget(
+                                        workout: workout,
+                                        onStart: {
+                                            selectedWorkout = workout
+                                            navigateToDetail = true
+                                            Task {
+                                                try? await Task.sleep(nanoseconds: 200_000_000)
+                                                await friendService.markWorkoutStarted(workoutId: workout.id)
+                                            }
+                                        },
+                                        onDismiss: {
+                                            if selectedPage >= workouts.count - 1 {
+                                                selectedPage = max(0, selectedPage - 1)
+                                            }
+                                        }
+                                    )
+                                    .transition(.opacity)
+                                }
                             }
-                        },
-                        onDismiss: {
-                            // Widget will auto-refresh via FriendService
                         }
-                    )
-                    
-                    // If there are more pending workouts, show count
-                    if pendingWorkouts.count > 1 {
+                        .animation(.easeInOut(duration: 0.25), value: safeIndex)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 25)
+                                .onEnded { value in
+                                    let horizontalAmount = value.translation.width
+                                    let verticalAmount = abs(value.translation.height)
+                                    
+                                    if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
+                                        HapticManager.impact(.medium)
+                                        if horizontalAmount < 0 && selectedPage < workouts.count - 1 {
+                                            selectedPage += 1
+                                        } else if horizontalAmount > 0 && selectedPage > 0 {
+                                            selectedPage -= 1
+                                        }
+                                    }
+                                }
+                        )
+                        
                         HStack(spacing: 6) {
-                            Image(systemName: "tray.full.fill")
-                                .font(.ds_bodySmall)
-                                .foregroundColor(.secondary)
-                            Text("\(pendingWorkouts.count - 1) more workout\(pendingWorkouts.count > 2 ? "s" : "") waiting")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            ForEach(0..<workouts.count, id: \.self) { index in
+                                Capsule()
+                                    .fill(safeIndex == index ? Color.blue : Color.gray.opacity(0.3))
+                                    .frame(width: safeIndex == index ? 20 : 8, height: 6)
+                                    .animation(.easeOut(duration: 0.2), value: safeIndex)
+                                    .onTapGesture {
+                                        HapticManager.impact(.light)
+                                        selectedPage = index
+                                    }
+                            }
                         }
-                        .padding(.top, 4)
+                        .padding(.vertical, Spacing.xxs)
+                    } else {
+                        ReceivedWorkoutPreviewWidget(
+                            workout: workouts[0],
+                            onStart: {
+                                selectedWorkout = workouts[0]
+                                navigateToDetail = true
+                                Task {
+                                    try? await Task.sleep(nanoseconds: 200_000_000)
+                                    await friendService.markWorkoutStarted(workoutId: workouts[0].id)
+                                }
+                            },
+                            onDismiss: {}
+                        )
                     }
+                }
+                .onChange(of: pendingWorkouts.count) { _, _ in
+                    selectedPage = 0
                 }
             }
         }

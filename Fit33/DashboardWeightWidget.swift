@@ -106,9 +106,44 @@ struct DashboardWeightWidget: View {
         .frame(width: isCompact ? 160 : nil, height: isCompact ? 140 : 80)
         .frame(maxWidth: isCompact ? nil : .infinity)
         .padding(.horizontal, isCompact ? 0 : 20)
-        .background(widgetBackground)
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: gradientColors[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(gradientColors[0].opacity(colorScheme == .dark ? 0.08 : 0.04))
+                    .offset(y: 6)
+                    .blur(radius: 3)
+                
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
+                
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(Color.cardBackground)
+                
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [gradientColors[0].opacity(colorScheme == .dark ? 0.25 : 0.18), gradientColors[0].opacity(colorScheme == .dark ? 0.15 : 0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: gradientColors[0].opacity(colorScheme == .dark ? 0.1 : 0.06), radius: 12, x: 0, y: 3)
     }
     
     private var compactLayout: some View {
@@ -147,14 +182,12 @@ struct DashboardWeightWidget: View {
                     // 7-day trend
                     trendLabel
                 } else {
-                    Text("_ _")
+                    Text("Tap to add")
                         .font(.headline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.secondary.opacity(0.5))
-                    
-                    Text("Tap to log")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(
+                            LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing)
+                        )
                 }
             }
         }
@@ -235,10 +268,12 @@ struct DashboardWeightWidget: View {
                     )
                     .id(todayWeight.id) // Force refresh when weight changes
             } else {
-                Text("_ _")
+                Text("Tap to add")
                     .font(.title2)
                     .fontWeight(.bold)
-                    .foregroundColor(.secondary.opacity(0.4))
+                    .foregroundStyle(
+                        LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing)
+                    )
             }
         }
     }
@@ -246,7 +281,7 @@ struct DashboardWeightWidget: View {
     @ViewBuilder
     private var expandedTrendLabel: some View {
         if weightService.todayLog == nil {
-            Text("Tap to log today's weight")
+            Text("Log today's weight")
                 .font(.caption)
                 .foregroundColor(.secondary)
         } else {

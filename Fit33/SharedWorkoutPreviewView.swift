@@ -347,7 +347,9 @@ struct SharedWorkoutPreviewView: View {
                 experienceLevel: nil,
                 profilePhotoUrl: nil,
                 friendsSince: Date(),
-                totalWorkoutsShared: 0
+                totalWorkoutsShared: 0,
+                isVerified: false,
+                isGoldVerified: false
             ),
             workoutName: "Chest Day",
             workoutDescription: "A great chest workout to build strength",

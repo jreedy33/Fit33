@@ -48,7 +48,9 @@ struct UserProfileDTO: Codable {
     let heightUnit: String?
     let distanceUnit: String?
     let weekStartDay: String?
-    
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
+
     enum CodingKeys: String, CodingKey {
         case id, name, email, birthday, age, gender, bmr, tdee, equipment, xp
         case heightCm = "height_cm"
@@ -77,6 +79,8 @@ struct UserProfileDTO: Codable {
         case weekStartDay = "week_start_day"
         case hasCompletedOnboarding = "has_completed_onboarding"
         case profilePhotoUrl = "profile_photo_url"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 

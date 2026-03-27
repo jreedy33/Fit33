@@ -1074,6 +1074,8 @@ struct TemplateRow: View {
         experienceLevel: "Intermediate",
         profilePhotoUrl: nil,
         friendsSince: Date(),
-        totalWorkoutsShared: 5
+        totalWorkoutsShared: 5,
+        isVerified: false,
+        isGoldVerified: false
     ))
 }

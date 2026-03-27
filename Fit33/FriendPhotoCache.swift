@@ -101,6 +101,24 @@ final class FriendPhotoCache {
         return nil
     }
     
+    /// Warm memory cache from disk for given friend IDs (no network, background thread).
+    /// Call early at startup so photos are in memory before Friends tab opens.
+    func warmMemoryCacheFromDisk(for friendIds: [String]) {
+        Task.detached(priority: .utility) {
+            var warmed = 0
+            for id in friendIds {
+                if self.memoryCache.object(forKey: id as NSString) != nil { continue }
+                if let diskImage = self.loadFromDisk(friendId: id) {
+                    self.memoryCache.setObject(diskImage, forKey: id as NSString)
+                    warmed += 1
+                }
+            }
+            if warmed > 0 {
+                AppLogger.debug("📸 [FRIEND CACHE] Warmed \(warmed) photos from disk to memory", category: .social)
+            }
+        }
+    }
+    
     /// Preload photos for multiple friends concurrently (also refreshes stale photos)
     func preloadPhotos(for friends: [(id: String, url: String?)]) {
         // Filter to only those that need downloading

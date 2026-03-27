@@ -271,7 +271,7 @@ USDA API → Edge Function extracts nutrientNumber → `food_items` flat columns
 
 **DTO change**: `WorkoutHistoryDTO` in `SupabaseDTOs.swift` now includes `caloriesBurned: Double?` (CodingKey: `calories_burned`). The `saveWorkoutToCloud()` method in `SupabaseManager.swift` passes `workout.caloriesBurned > 0 ? workout.caloriesBurned : nil`.
 
-**Calorie write path**: `ActiveWorkoutView+Persistence.saveWorkoutToAppleHealth()` calculates calories via `HealthKitManager.calculateDetailedCalories()`, saves to `workout.caloriesBurned` on Core Data, then re-upserts to Supabase with the calorie value. This runs as an async Task after `saveWorkoutData()`.
+**Calorie write path** (v1.35 fix): `ActiveWorkoutView+Persistence.saveWorkoutToAppleHealth()` calculates calories via `HealthKitManager.calculateDetailedCalories()`, saves to `workout.caloriesBurned` on Core Data, then calls `SupabaseManager.updateWorkoutCalories(workoutId:calories:)` — a targeted `.update(["calories_burned"])` on the existing row. Previously this called `saveWorkoutToCloud(workout:)` which re-upserted the entire workout, creating duplicate rows when combined with the primary `syncWorkoutToCloud()` save path in `saveWorkoutData()`. NEVER re-save the full workout from the calorie path — only patch the calorie field.
 
 **Third-party workouts**: Calories for HealthKit-sourced workouts already stored via `HealthDataService.saveHealthKitWorkout()` → `cardio_workouts.calories_burned` (from `HKWorkout.totalEnergyBurned`). No changes needed.
 
@@ -403,3 +403,61 @@ When creating views, NEVER use `SECURITY DEFINER`. All views in the `public` sch
 - `user_active_programs.completed_days` — **`[Int]` JSON array** (list of completed day numbers), used by `CloudProgramService`
 
 These are different tables for different program systems. Do not unify.
+
+### 2026-03-26: Crash Regression Fix — SQL Migrations
+
+**Migration**: `supabase/20260326_fix_user_programs_program_id.sql`
+- `user_programs.program_id` changed from NOT NULL to nullable. `SmartProgramEngine.saveProgramsToCloud()` sends `template_id` but not `program_id`, causing NOT NULL constraint violations (3 crashes in v1.35).
+
+**Migration**: `supabase/20260326_fix_nudge_table.sql`
+- Creates `group_challenge_nudges` table if missing, adds `challenge_id`, `sender_id`, `recipient_id`, `created_at` columns with `IF NOT EXISTS`. Adds RLS policies and index. Fixes "column challenge_id does not exist" error (2 crashes in v1.35, first seen v1.32).
+
+**Migration**: `supabase/20260326_fix_friend_workout_uuid_cast.sql`
+- Rewrites `get_friend_workout_exercises` RPC to cast `p_workout_id::uuid` into a local variable before using in WHERE/JOIN clauses. Fixes "operator does not exist: uuid = text" error (1 crash in v1.35). Also adds graceful handling for invalid UUID input.
+
+**New rule — Auth guard on ALL Supabase writes (mandatory)**:
+Every Swift method that performs INSERT/UPDATE/DELETE/UPSERT against Supabase MUST check `SupabaseManager.shared.isAuthenticated` before executing. The existing `currentUser?.id` guard is insufficient — a user object can persist in Core Data with an expired Supabase session token. When `auth.uid()` returns NULL server-side, RLS policies reject with code 42501. This was causing 9 errors across 7 analytics tables during a single workout save (JW Clark, v1.34).
+
+Affected tables fixed: `exercise_performance_history`, `collaborative_workout_data`, `user_performance_trends`, `workout_time_performance`, `set_completion_patterns`, `weekly_volume_trends`, `user_strength_ratios`, `exercise_user_effectiveness`.
+
+**New rule — No empty-string or synthetic UUID fallbacks**:
+Never use `user.id?.uuidString ?? ""` or `user.id ?? UUID()` as fallbacks for userId. Empty strings cause Postgres `uuid = text` type errors. Synthetic UUIDs write data under a nonexistent user. Always use `guard let userId = user.id else { return }`.
+
+### 2026-03-26: Push Notification Reliability Overhaul
+
+**7 root causes of inconsistent delivery identified and fixed**:
+
+1. **`apns-expiration: 0` → 24h TTL**: The APNs expiration was set to `0`, telling Apple to discard notifications immediately if device is unreachable. Changed to 24-hour TTL so Apple retries delivery.
+
+2. **`.single()` token query → multi-token**: Edge function used `.single()` on `user_push_tokens`, which errors when a user has multiple tokens (multi-device, reinstall). Now queries all valid tokens and sends to each.
+
+3. **Quiet hours deferred, not failed**: Notifications during quiet hours were permanently marked `failed`. Now set back to `pending` with `next_retry_at` = quiet hours end time.
+
+4. **Stuck processing recovery**: Rows stuck in `processing` status (edge function crash/timeout) are now recovered to `pending` after 5 minutes at the start of each batch.
+
+5. **Per-token invalidation**: `BadDeviceToken` errors previously invalidated ALL tokens for a user. Now only the specific bad token is marked `is_valid = false`.
+
+6. **Local notification daily cap raised**: Cap raised from 4 to 15. Social notification types (shared workouts, challenge updates, reactions) added to the critical bypass list that ignores the cap entirely.
+
+**New infrastructure**:
+
+- **`push_notification_delivery_log` table**: Tracks each step of the pipeline (queued, claimed, sent, failed, deferred). Auto-pruned after 14 days. RLS: users can read own logs.
+- **`diagnose_push_notifications()` RPC**: Returns JSON report with token status, preferences, queue stats, recent queue items, and delivery logs. Powers the debug view.
+- **`prune_push_delivery_logs()` / `prune_push_notification_queue()`**: Daily cron at 3 AM UTC prunes delivery logs >14 days and queue entries >30 days.
+- **Edge function structured logging**: All `console.log` calls now emit JSON with consistent fields: `{event, notification_id, user_id, token_prefix, apns_host, duration_ms, error}`.
+
+**Migration**: `supabase/20260326_push_notification_reliability.sql`
+**Edge function**: `supabase/functions/send-push-notification/index.ts` (deploy required)
+
+### 2026-03-26: Bronze League Reshuffle
+
+**Problem**: Bronze members always saw the same people because `get_or_join_weekly_league` maximized friend-overlap when picking groups. Since Bronze is the largest tier (everyone starts here), this made leagues feel stale.
+
+**Solution**: Tier-specific placement strategy in `get_or_join_weekly_league`:
+
+- **Bronze (tier 1)**: Random group assignment. Actively avoids last week's group-mates by finding the user's previous-week `league_members.group_id`, then scoring candidate groups by how many members overlap with that old group. Picks the group with the fewest stale members; exits immediately on zero overlap. If no prior week data, pure `ORDER BY random()`.
+- **Silver+ (tier 2–7)**: Unchanged — friend-overlap maximization for social cohesion.
+
+**Key implementation detail**: The `v_prev_group_id` lookup uses `v_week_start - INTERVAL '7 days'` (always exactly 1 week back since `week_start` is always a Monday). The stale-overlap count joins `league_members` on both the candidate group and the previous group by `user_id`.
+
+**Migration**: `supabase/20260326_bronze_league_reshuffle.sql`

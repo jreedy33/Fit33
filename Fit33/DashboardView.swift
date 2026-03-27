@@ -190,26 +190,10 @@ struct DashboardView: View {
                     headerView
                         .padding(.bottom, 16)
                     
-                    // Friend Request Preview Widget (shows pending friend requests)
-                    FriendRequestPreviewContainer()
-                        .padding(.bottom, 16)
-                    
-                    // Received Workout Preview Widget (shows pending shared workouts)
-                    ReceivedWorkoutPreviewContainer()
+                    // Unified notification carousel (friend requests, received workouts, challenge invites)
+                    DashboardNotificationCarousel()
                         .environmentObject(workoutManager)
                         .environmentObject(userManager)
-                        .padding(.bottom, 16)
-                    
-                    // Challenge Preview Widget (shows pending challenge invites)
-                    ChallengePreviewContainer()
-                        .padding(.bottom, 16)
-                    
-                    // Group Challenge Invite Widgets (isolated to limit challengeService re-renders)
-                    GroupChallengeInvitesSection()
-                        .environmentObject(userManager)
-                    
-                    // Private Challenge Invite Widgets (pending invites to private communities)
-                    PrivateChallengeInviteContainer()
                         .padding(.bottom, 16)
                     
                     // Daily Quests widget (isolated view to prevent quest updates from recomputing parent)
@@ -232,7 +216,8 @@ struct DashboardView: View {
                         .padding(.bottom, 12)
                     
                     // Challenge Cards (1v1 active, group active, pending sent, get started)
-                    challengeCardsSection
+                    DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation)
+                        .environmentObject(userManager)
                         .padding(.bottom, 16)
                     
                     // Swipeable Workout Carousel: [Custom+Auto Buttons] <-> [Active Program]

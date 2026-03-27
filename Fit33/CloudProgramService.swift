@@ -259,7 +259,8 @@ class CloudProgramService: ObservableObject {
     private var generatedExercisesCache: [Int: [ExerciseData]] = [:]
     
     private init() {
-        Task { @MainActor [self] in
+        Task { [self] in
+            AppLogger.debug("[CloudProgramService] Cache load started (off-main: \(!Thread.isMainThread))", category: .performance)
             loadCachedProgram()
         }
     }

@@ -240,6 +240,9 @@ struct ReceivedWorkoutCard: View {
                             Text("From \(workout.senderName)")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
+                            if workout.senderIsVerified == true || workout.senderIsGoldVerified == true {
+                                VerifiedBadge(size: 13, isGold: workout.senderIsGoldVerified == true)
+                            }
                             Text("·")
                                 .foregroundColor(.secondary)
                             Text(formatSmartDate(workout.createdAt))
@@ -511,22 +514,27 @@ struct ReceivedWorkoutDetailView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: {
-                    GoButtonState.shared.hide(reason: "ReceivedWorkout_back")
-                    dismiss()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.ds_labelLarge)
-                        .foregroundColor(.primary)
+                Button(action: saveWorkout) {
+                    Image(systemName: workout.status == "saved" ? "star.fill" : "star")
+                        .font(.ds_bodyRegular).fontWeight(.medium)
+                        .foregroundColor(workout.status == "saved" ? .yellow : .gray)
                 }
+                .accessibilityLabel(workout.status == "saved" ? "Saved to favorites" : "Save to favorites")
+                .accessibilityHint("Double tap to save this workout")
             }
             
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: saveWorkout) {
-                    Image(systemName: workout.status == "saved" ? "bookmark.fill" : "bookmark")
-                        .font(.ds_bodyRegular).fontWeight(.medium)
-                        .foregroundColor(workout.status == "saved" ? .green : themeColor)
+                Button(action: {
+                    GoButtonState.shared.hide(reason: "ReceivedWorkout_close")
+                    workoutManager.shouldPopToRootHome = true
+                    workoutManager.shouldNavigateToHomeTab = true
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.ds_labelLarge)
+                        .foregroundColor(.primary)
                 }
+                .accessibilityLabel("Close")
+                .accessibilityHint("Returns to home screen")
             }
         }
         .onAppear {
@@ -644,9 +652,14 @@ struct ReceivedWorkoutDetailView: View {
                 )
                         
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Sent by \(workout.senderName)")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                    HStack(spacing: 4) {
+                        Text("Sent by \(workout.senderName)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        if workout.senderIsVerified == true || workout.senderIsGoldVerified == true {
+                            VerifiedBadge(size: 13, isGold: workout.senderIsGoldVerified == true)
+                        }
+                    }
                             
                     Text(formatSmartDate(workout.createdAt))
                         .font(.caption)
@@ -705,6 +718,9 @@ struct ReceivedWorkoutDetailView: View {
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
+                if workout.senderIsVerified == true || workout.senderIsGoldVerified == true {
+                    VerifiedBadge(size: 10, isGold: workout.senderIsGoldVerified == true)
+                }
             }
             
             Text("\"\(message)\"")

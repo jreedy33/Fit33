@@ -166,7 +166,8 @@ class ChallengeService: ObservableObject {
     #endif
     
     private init() {
-        Task { @MainActor [self] in
+        Task { [self] in
+            AppLogger.debug("[ChallengeService] Cache load started (off-main: \(!Thread.isMainThread))", category: .performance)
             loadCachedChallenges()
         }
     }
@@ -2512,11 +2513,19 @@ class ChallengeProgressResolver: ObservableObject {
     
     static func resolveProgress(challengeType: ChallengeType, targetUnit: String, serverValue: Int) -> Int {
         let localValue: Int
+        var localHasData = false
         
         switch challengeType {
         case .steps:
-            let steps = HealthKitManager.shared.todaySteps > 0 ? HealthKitManager.shared.todaySteps : HealthKitService.shared.todaySteps
-            localValue = steps
+            let managerSteps = HealthKitManager.shared.todaySteps
+            if managerSteps > 0 {
+                localValue = managerSteps
+                localHasData = true
+            } else {
+                let serviceSyncedToday = HealthKitService.shared.lastSyncDate.map { Calendar.current.isDateInToday($0) } ?? false
+                localValue = serviceSyncedToday ? HealthKitService.shared.todaySteps : 0
+                localHasData = serviceSyncedToday
+            }
             
         case .hydrate:
             let totalMl = HydrationService.shared.todayTotal
@@ -2525,15 +2534,19 @@ class ChallengeProgressResolver: ObservableObject {
             } else {
                 localValue = totalMl
             }
+            localHasData = true
             
         case .protein:
             localValue = MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
+            localHasData = true
             
         case .calories:
             localValue = HealthKitService.shared.todayCalories
+            localHasData = HealthKitService.shared.lastSyncDate.map { Calendar.current.isDateInToday($0) } ?? false
             
         case .activeMinutes:
             localValue = HealthKitService.shared.todayActiveMinutes
+            localHasData = HealthKitService.shared.lastSyncDate.map { Calendar.current.isDateInToday($0) } ?? false
             
         case .walk, .run:
             if targetUnit.lowercased().contains("min") {
@@ -2542,11 +2555,15 @@ class ChallengeProgressResolver: ObservableObject {
                 let km = HealthKitService.shared.todayDistance / 1000.0
                 localValue = Int(km.rounded())
             }
+            localHasData = HealthKitService.shared.lastSyncDate.map { Calendar.current.isDateInToday($0) } ?? false
             
         case .lift, .workoutStreak:
             localValue = 0
         }
         
+        if localHasData {
+            return localValue
+        }
         return max(localValue, serverValue)
     }
     
@@ -2946,7 +2963,9 @@ struct PendingSentChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     let opponentUsername: String?
     let opponentPhotoUrl: String?
     let sentAt: Date
-    
+    let opponentIsVerified: Bool?
+    let opponentIsGoldVerified: Bool?
+
     var id: UUID { challengeId }
     
     var startDate: Date { parseFlexibleDate(startDateString) }
@@ -2991,6 +3010,8 @@ struct PendingSentChallenge: Codable, Identifiable, ChallengeTypeResolvable {
         case opponentUsername = "opponent_username"
         case opponentPhotoUrl = "opponent_photo_url"
         case sentAt = "sent_at"
+        case opponentIsVerified = "opponent_is_verified"
+        case opponentIsGoldVerified = "opponent_is_gold_verified"
     }
 }
 
@@ -3023,10 +3044,12 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
     let opponentDaysCompleted: Int
     let opponentTodayProgress: Int?   // NEW: Opponent's today progress
     let amWinning: Bool
-    let amWinningToday: Bool?         // NEW: Am I winning today specifically
-    
+    let amWinningToday: Bool?
+    let opponentIsVerified: Bool?
+    let opponentIsGoldVerified: Bool?
+
     var id: UUID { challengeId }
-    
+
     /// Safe display name for opponent (falls back to "Unknown User" when nil)
     var opponentDisplayName: String { opponentName ?? "Unknown User" }
     
@@ -3066,7 +3089,9 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
         opponentTodayProgress: Int? = nil,
         opponentDaysCompleted: Int,
         amWinning: Bool,
-        amWinningToday: Bool? = nil
+        amWinningToday: Bool? = nil,
+        opponentIsVerified: Bool? = nil,
+        opponentIsGoldVerified: Bool? = nil
     ) {
         self.challengeId = challengeId
         self.challengeType = challengeType
@@ -3096,6 +3121,8 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
         self.opponentDaysCompleted = opponentDaysCompleted
         self.amWinning = amWinning
         self.amWinningToday = amWinningToday
+        self.opponentIsVerified = opponentIsVerified
+        self.opponentIsGoldVerified = opponentIsGoldVerified
     }
     
     var type: ChallengeType? {
@@ -3177,6 +3204,8 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
         case opponentDaysCompleted = "opponent_days_completed"
         case amWinning = "am_winning"
         case amWinningToday = "am_winning_today"
+        case opponentIsVerified = "opponent_is_verified"
+        case opponentIsGoldVerified = "opponent_is_gold_verified"
     }
 }
 
@@ -3224,6 +3253,8 @@ struct GroupChallengeMember: Codable, Identifiable {
     let name: String?
     let username: String?
     let profilePhotoUrl: String?
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
 
     var id: UUID { userId }
 
@@ -3243,7 +3274,8 @@ struct GroupChallengeMember: Codable, Identifiable {
         GroupChallengeMember(
             userId: userId, status: status, totalProgress: totalProgress,
             todayProgress: 0, daysCompleted: daysCompleted, currentStreak: currentStreak,
-            name: name, username: username, profilePhotoUrl: profilePhotoUrl
+            name: name, username: username, profilePhotoUrl: profilePhotoUrl,
+            isVerified: isVerified, isGoldVerified: isGoldVerified
         )
     }
 
@@ -3257,6 +3289,8 @@ struct GroupChallengeMember: Codable, Identifiable {
         case name
         case username
         case profilePhotoUrl = "profile_photo_url"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 

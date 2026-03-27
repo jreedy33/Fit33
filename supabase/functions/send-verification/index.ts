@@ -24,7 +24,7 @@ const corsHeaders = {
 }
 
 const sendRateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const SEND_RATE_LIMIT_MAX = 3
+const SEND_RATE_LIMIT_MAX = 10
 const SEND_RATE_LIMIT_WINDOW_MS = 3600_000 // 1 hour
 
 function checkSendRateLimit(phone: string): boolean {

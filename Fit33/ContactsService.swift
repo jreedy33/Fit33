@@ -23,8 +23,59 @@ class ContactsService: ObservableObject {
     private var lastRefreshDate: Date?
     private static let refreshThrottleInterval: TimeInterval = 300
     
+    private static let suggestedFriendsCacheKey = "cached_suggested_friends_v1"
+    private static let pymkCacheKey = "cached_pymk_v1"
+    
+    /// Prevents redundant network fetches within a single app session.
+    /// Reset only by pull-to-refresh (force).
+    private(set) var hasRefreshedSuggestionsThisSession = false
+    
     private init() {
         checkAuthorizationStatus()
+        loadCachedSuggestions()
+    }
+    
+    // MARK: - Persistent Cache
+    
+    private func loadCachedSuggestions() {
+        if let data = UserDefaults.standard.data(forKey: Self.suggestedFriendsCacheKey),
+           let cached = try? JSONDecoder().decode([SuggestedFriend].self, from: data) {
+            suggestedFriends = cached
+            if !cached.isEmpty { hasCheckedContacts = true }
+        }
+        if let data = UserDefaults.standard.data(forKey: Self.pymkCacheKey),
+           let cached = try? JSONDecoder().decode([SuggestedFriend].self, from: data) {
+            peopleYouMayKnow = cached
+        }
+        AppLogger.debug("Loaded cached suggestions: \(suggestedFriends.count) contacts, \(peopleYouMayKnow.count) PYMK", category: .social)
+    }
+    
+    private func saveSuggestedFriendsToCache() {
+        if let data = try? JSONEncoder().encode(suggestedFriends) {
+            UserDefaults.standard.set(data, forKey: Self.suggestedFriendsCacheKey)
+        }
+    }
+    
+    private func savePYMKToCache() {
+        if let data = try? JSONEncoder().encode(peopleYouMayKnow) {
+            UserDefaults.standard.set(data, forKey: Self.pymkCacheKey)
+        }
+    }
+    
+    /// One-shot per app session: refresh contacts + PYMK in the background.
+    /// Ensures suggestions are fresh without re-running on every tab switch.
+    func refreshSuggestionsIfNeeded() async {
+        guard !hasRefreshedSuggestionsThisSession else { return }
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        hasRefreshedSuggestionsThisSession = true
+        
+        async let pymk: () = fetchPeopleYouMayKnow()
+        if canAccessContacts {
+            async let contacts: () = fetchContactsAndFindFriends()
+            _ = await (pymk, contacts)
+        } else {
+            _ = await pymk
+        }
     }
     
     // MARK: - Authorization
@@ -315,6 +366,7 @@ class ContactsService: ObservableObject {
             }
             
             suggestedFriends = matchedUsers
+            saveSuggestedFriendsToCache()
             AppLogger.info("Total unique matches: \(matchedUsers.count)", category: .social)
             
             for friend in matchedUsers {
@@ -322,7 +374,6 @@ class ContactsService: ObservableObject {
             }
         } catch {
             AppLogger.error("Query failed: \(error.localizedDescription)", category: .social)
-            suggestedFriends = []
         }
     }
     
@@ -381,6 +432,7 @@ class ContactsService: ObservableObject {
                 )
             }
             
+            savePYMKToCache()
             AppLogger.info("Found \(peopleYouMayKnow.count) people you may know", category: .social)
             
             // Preload photos
@@ -595,9 +647,11 @@ struct SuggestedFriend: Codable, Identifiable {
     let isFriend: Bool
     let hasOutgoingRequest: Bool
     let hasIncomingRequest: Bool
-    let mutualFriendCount: Int? // Number of mutual friends (friends-of-friends)
-    var isMutual: Bool  // Whether this suggestion came from friends-of-friends
-    
+    let mutualFriendCount: Int?
+    var isMutual: Bool
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
+
     var id: UUID { userId }
     
     var hasPhoto: Bool {
@@ -638,8 +692,10 @@ struct SuggestedFriend: Codable, Identifiable {
         case hasIncomingRequest = "has_incoming_request"
         case mutualFriendCount = "mutual_friend_count"
         case isMutual = "is_mutual"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
-    
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         userId = try container.decode(UUID.self, forKey: .userId)
@@ -654,9 +710,11 @@ struct SuggestedFriend: Codable, Identifiable {
         hasIncomingRequest = try container.decodeIfPresent(Bool.self, forKey: .hasIncomingRequest) ?? false
         mutualFriendCount = try container.decodeIfPresent(Int.self, forKey: .mutualFriendCount)
         isMutual = try container.decodeIfPresent(Bool.self, forKey: .isMutual) ?? false
+        isVerified = try container.decodeIfPresent(Bool.self, forKey: .isVerified)
+        isGoldVerified = try container.decodeIfPresent(Bool.self, forKey: .isGoldVerified)
     }
     
-    init(userId: UUID, name: String?, email: String?, username: String?, profilePhotoUrl: String?, phoneNumber: String?, fitnessGoal: String?, isFriend: Bool, hasOutgoingRequest: Bool, hasIncomingRequest: Bool, mutualFriendCount: Int? = nil, isMutual: Bool = false) {
+    init(userId: UUID, name: String?, email: String?, username: String?, profilePhotoUrl: String?, phoneNumber: String?, fitnessGoal: String?, isFriend: Bool, hasOutgoingRequest: Bool, hasIncomingRequest: Bool, mutualFriendCount: Int? = nil, isMutual: Bool = false, isVerified: Bool? = nil, isGoldVerified: Bool? = nil) {
         self.userId = userId
         self.name = name
         self.email = email
@@ -669,6 +727,8 @@ struct SuggestedFriend: Codable, Identifiable {
         self.hasIncomingRequest = hasIncomingRequest
         self.mutualFriendCount = mutualFriendCount
         self.isMutual = isMutual
+        self.isVerified = isVerified
+        self.isGoldVerified = isGoldVerified
     }
 }
 

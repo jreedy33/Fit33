@@ -71,6 +71,33 @@ function isInQuietHours(prefs: { quiet_hours_enabled: boolean; quiet_hours_start
   return nowMinutes >= startMinutes || nowMinutes < endMinutes
 }
 
+function computeQuietHoursEndUTC(prefs: { quiet_hours_end: string | null; timezone: string | null }): Date {
+  if (!prefs.quiet_hours_end) return new Date(Date.now() + 60 * 60 * 1000)
+
+  const tz = prefs.timezone || 'America/New_York'
+  const [endH, endM] = prefs.quiet_hours_end.split(':').map(Number)
+
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: 'numeric', minute: 'numeric', hour12: false })
+  const parts = formatter.formatToParts(now)
+  const nowHour = parseInt(parts.find(p => p.type === 'hour')?.value || '0')
+
+  // If quiet hours end is later today in user's tz, use today; otherwise tomorrow
+  const addDay = (nowHour >= endH) ? 1 : 0
+  const target = new Date(now.getTime() + addDay * 24 * 60 * 60 * 1000)
+  const targetDate = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(target)
+
+  // Build a date string in the user's timezone, then convert to UTC
+  // Use a simple offset approach: create the date, measure the offset
+  const endStr = `${targetDate}T${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}:00`
+  const utcGuess = new Date(endStr + 'Z')
+  const localFormatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: 'numeric', hour12: false })
+  const localParts = localFormatter.formatToParts(utcGuess)
+  const localH = parseInt(localParts.find(p => p.type === 'hour')?.value || '0')
+  const offsetHours = localH - endH
+  return new Date(utcGuess.getTime() - offsetHours * 60 * 60 * 1000)
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-key',
@@ -119,6 +146,29 @@ serve(async (req) => {
           })
         }
       }
+    }
+
+    // Recover rows stuck in 'processing' for over 5 minutes (edge fn crash/timeout)
+    const { data: unstuck } = await supabase
+      .from('push_notification_queue')
+      .update({ status: 'pending', error_message: 'Recovered from stuck processing state' })
+      .eq('status', 'processing')
+      .lt('last_attempt_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+      .select('id')
+    if (unstuck && unstuck.length > 0) {
+      console.log(JSON.stringify({ event: 'stuck_processing_recovered', count: unstuck.length, ids: unstuck.map((r: { id: string }) => r.id) }))
+    }
+
+    // Also recover rows where last_attempt_at is null but created_at is old
+    const { data: unstuckNoAttempt } = await supabase
+      .from('push_notification_queue')
+      .update({ status: 'pending', error_message: 'Recovered from stuck processing state (no attempt timestamp)' })
+      .eq('status', 'processing')
+      .is('last_attempt_at', null)
+      .lt('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+      .select('id')
+    if (unstuckNoAttempt && unstuckNoAttempt.length > 0) {
+      console.log(JSON.stringify({ event: 'stuck_processing_recovered_no_attempt', count: unstuckNoAttempt.length }))
     }
 
     // Parse request body for optional specific queue_id
@@ -175,7 +225,7 @@ serve(async (req) => {
       })
     }
 
-    console.log(`Processing ${pendingNotifications.length} notifications`)
+    console.log(JSON.stringify({ event: 'batch_start', pending_count: pendingNotifications.length }))
 
     // Atomic claim: mark as 'processing' to prevent duplicate sends from concurrent invocations
     const claimedIds = pendingNotifications.map((n: { id: string }) => n.id)
@@ -201,7 +251,7 @@ serve(async (req) => {
       })
     }
     
-    console.log(`Claimed ${actualNotifications.length} of ${pendingNotifications.length} notifications`)
+    console.log(JSON.stringify({ event: 'batch_claimed', claimed: actualNotifications.length, total: pendingNotifications.length }))
 
     // Generate APNs JWT token
     const apnsToken = await generateAPNsToken()
@@ -216,86 +266,93 @@ serve(async (req) => {
         const prefs = await getUserPreferences(supabase, notification.recipient_user_id)
         if (prefs) {
           if (!prefs.master_enabled) {
-            console.log(`⏭️ Skipping notification for user ${notification.recipient_user_id} — master toggle disabled`)
+            console.log(JSON.stringify({ event: 'skipped_master_disabled', notification_id: notification.id, user_id: notification.recipient_user_id }))
             await markNotificationFailed(supabase, notification.id, 'User disabled all notifications')
             failCount++
             continue
           }
           const notifType = notification.data?.type || notification.notification_type || ''
           if (prefs.disabled_types?.includes(notifType)) {
-            console.log(`⏭️ Skipping ${notifType} for user ${notification.recipient_user_id} — type disabled`)
+            console.log(JSON.stringify({ event: 'skipped_type_disabled', notification_id: notification.id, user_id: notification.recipient_user_id, type: notifType }))
             await markNotificationFailed(supabase, notification.id, `User disabled ${notifType} notifications`)
             failCount++
             continue
           }
           if (isInQuietHours(prefs)) {
-            console.log(`🌙 Skipping notification for user ${notification.recipient_user_id} — quiet hours active`)
-            await markNotificationFailed(supabase, notification.id, 'Quiet hours active')
-            failCount++
+            const retryAt = computeQuietHoursEndUTC(prefs)
+            console.log(JSON.stringify({ event: 'quiet_hours_deferred', notification_id: notification.id, user_id: notification.recipient_user_id, retry_at: retryAt.toISOString() }))
+            await supabase
+              .from('push_notification_queue')
+              .update({ status: 'pending', next_retry_at: retryAt.toISOString(), error_message: 'Deferred: quiet hours active' })
+              .eq('id', notification.id)
             continue
           }
         }
 
-        // Get device token and APNs environment for this user
-        const { data: tokenData, error: tokenError } = await supabase
+        // Get ALL device tokens for this user (supports multiple devices)
+        const { data: allTokens, error: tokenError } = await supabase
           .from('user_push_tokens')
           .select('device_token, apns_environment, is_valid, updated_at')
           .eq('user_id', notification.recipient_user_id)
-          .single()
 
-        if (tokenError || !tokenData?.device_token) {
-          console.log(`No device token for user ${notification.recipient_user_id}`)
-          await markNotificationFailed(supabase, notification.id, 'No device token registered')
+        const validTokens = (allTokens || []).filter((t: { device_token: string; is_valid: boolean; updated_at: string }) => {
+          if (t.is_valid !== false) return true
+          const tokenAge = Date.now() - new Date(t.updated_at).getTime()
+          if (tokenAge <= 5 * 60 * 1000) {
+            console.log(JSON.stringify({ event: 'token_grace_period', notification_id: notification.id, user_id: notification.recipient_user_id, token_prefix: t.device_token.substring(0, 12), age_sec: Math.round(tokenAge / 1000) }))
+            return true
+          }
+          return false
+        })
+
+        if (tokenError || validTokens.length === 0) {
+          console.log(JSON.stringify({ event: 'no_valid_token', notification_id: notification.id, user_id: notification.recipient_user_id, token_error: tokenError?.message || null, total_tokens: allTokens?.length || 0 }))
+          await markNotificationFailed(supabase, notification.id, 'No valid device token registered')
           failCount++
           continue
         }
 
-        // Only skip invalid tokens if they haven't been refreshed recently
-        // When a user opens the app, is_valid is reset to true and updated_at is refreshed
-        // Give a 5-minute grace period after invalidation before skipping
-        if (tokenData.is_valid === false) {
-          const tokenAge = Date.now() - new Date(tokenData.updated_at).getTime()
-          const fiveMinutes = 5 * 60 * 1000
-          if (tokenAge > fiveMinutes) {
-            console.log(`Token invalid for user ${notification.recipient_user_id} (stale ${Math.round(tokenAge/60000)}min) - skipping`)
-            await markNotificationFailed(supabase, notification.id, 'Device token invalid - user needs to re-open app')
-            failCount++
-            continue
-          }
-          // Token was recently updated — user may have just reopened the app
-          // Try sending anyway and let APNs decide
-          console.log(`Token was invalid but recently refreshed (${Math.round(tokenAge/1000)}s ago) - attempting delivery`)
-        }
-
-        // Determine which APNs host to use based on token's environment
-        const apnsHost = getAPNsHost(tokenData.apns_environment)
-        console.log(`Using APNs host: ${apnsHost} for user ${notification.recipient_user_id}`)
-
-        // Compute dynamic badge count for this user (pending actionable items)
         const badgeCount = await computeBadgeCount(supabase, notification.recipient_user_id)
 
-        // Send to APNs
-        const apnsResponse = await sendToAPNs(
-          tokenData.device_token,
-          {
-            title: notification.title,
-            body: notification.body,
-            data: notification.data || {}
-          },
-          apnsToken,
-          apnsHost,
-          badgeCount
-        )
+        let anySent = false
+        for (const tokenData of validTokens) {
+          const apnsHost = getAPNsHost(tokenData.apns_environment)
+          const sendStart = Date.now()
 
-        if (apnsResponse.success) {
+          const apnsResponse = await sendToAPNs(
+            tokenData.device_token,
+            {
+              title: notification.title,
+              body: notification.body,
+              data: notification.data || {}
+            },
+            apnsToken,
+            apnsHost,
+            badgeCount
+          )
+
+          const durationMs = Date.now() - sendStart
+          console.log(JSON.stringify({ event: apnsResponse.success ? 'apns_success' : 'apns_failed', notification_id: notification.id, user_id: notification.recipient_user_id, token_prefix: tokenData.device_token.substring(0, 12), apns_host: apnsHost, duration_ms: durationMs, error: apnsResponse.error || null }))
+
+          if (apnsResponse.success) {
+            anySent = true
+          } else if (apnsResponse.error?.includes('BadDeviceToken') || apnsResponse.error?.includes('Unregistered')) {
+            await supabase
+              .from('user_push_tokens')
+              .update({ is_valid: false })
+              .eq('user_id', notification.recipient_user_id)
+              .eq('device_token', tokenData.device_token)
+            console.log(JSON.stringify({ event: 'token_invalidated', user_id: notification.recipient_user_id, token_prefix: tokenData.device_token.substring(0, 12) }))
+          }
+        }
+
+        if (anySent) {
           await markNotificationSent(supabase, notification.id)
           successCount++
-          console.log(`✅ Notification sent to user ${notification.recipient_user_id}`)
         } else {
           const retryCount = notification.retry_count || 0
-          await markNotificationFailed(supabase, notification.id, apnsResponse.error || 'APNs error', retryCount)
+          await markNotificationFailed(supabase, notification.id, 'All device tokens failed', retryCount)
           failCount++
-          console.log(`❌ Failed for user ${notification.recipient_user_id}: ${apnsResponse.error}`)
         }
 
       } catch (error) {
@@ -379,7 +436,7 @@ async function sendToAPNs(
           'apns-topic': APNS_BUNDLE_ID,
           'apns-push-type': 'alert',
           'apns-priority': '10',
-          'apns-expiration': '0',
+          'apns-expiration': String(Math.floor(Date.now() / 1000) + 86400),
         },
         body: JSON.stringify(apnsPayload),
         signal: controller.signal,
@@ -430,18 +487,12 @@ async function markNotificationFailed(
     errorMessage.includes('DeviceTokenNotForTopic') ||
     errorMessage.includes('ExpiredProviderToken') ||
     errorMessage.includes('InvalidProviderToken') ||
-    errorMessage.includes('No device token') ||
+    errorMessage.includes('No valid device token') ||
     errorMessage.includes('User disabled') ||
     errorMessage.includes('type disabled') ||
-    errorMessage.includes('Quiet hours')
-  
-  // Don't invalidate tokens for transient/network errors
-  const shouldInvalidateToken = 
-    errorMessage.includes('BadDeviceToken') ||
-    errorMessage.includes('Unregistered')
+    errorMessage.includes('All device tokens failed')
 
   if (isPermanentFailure || retryCount >= MAX_RETRIES) {
-    // Permanent failure - mark as failed
     await supabase
       .from('push_notification_queue')
       .update({ 
@@ -451,23 +502,7 @@ async function markNotificationFailed(
       })
       .eq('id', id)
     
-    // Only invalidate token for confirmed bad/unregistered tokens (not network errors)
-    if (shouldInvalidateToken) {
-      const { data: notification } = await supabase
-        .from('push_notification_queue')
-        .select('recipient_user_id')
-        .eq('id', id)
-        .single()
-      
-      if (notification?.recipient_user_id) {
-        await supabase
-          .from('user_push_tokens')
-          .update({ is_valid: false })
-          .eq('user_id', notification.recipient_user_id)
-        
-        console.log(`Marked device token as invalid for user ${notification.recipient_user_id}`)
-      }
-    }
+    console.log(JSON.stringify({ event: 'notification_failed_permanent', notification_id: id, error: errorMessage, retry_count: retryCount }))
   } else {
     // Transient failure - schedule retry with exponential backoff
     const nextRetryAt = new Date(Date.now() + Math.pow(2, retryCount + 1) * 60 * 1000)
@@ -483,7 +518,7 @@ async function markNotificationFailed(
       })
       .eq('id', id)
     
-    console.log(`Scheduled retry ${retryCount + 1} for notification ${id} at ${nextRetryAt.toISOString()}`)
+    console.log(JSON.stringify({ event: 'notification_retry_scheduled', notification_id: id, retry_count: retryCount + 1, next_retry_at: nextRetryAt.toISOString(), error: errorMessage }))
   }
 }
 
@@ -527,8 +562,15 @@ async function computeBadgeCount(
       .is('viewed_at', null)
       .eq('status', 'pending')
 
-    const total = (friendRequests || 0) + (challengeInvites || 0) + (unreadWorkouts || 0)
-    console.log(`📛 Badge count for user ${userId}: ${total} (friends=${friendRequests || 0}, challenges=${challengeInvites || 0}, workouts=${unreadWorkouts || 0})`)
+    // 4. Pending private challenge invites
+    const { count: privateChallengeInvites } = await supabase
+      .from('private_challenge_invites')
+      .select('*', { count: 'exact', head: true })
+      .eq('invited_user_id', userId)
+      .eq('status', 'pending')
+
+    const total = (friendRequests || 0) + (challengeInvites || 0) + (unreadWorkouts || 0) + (privateChallengeInvites || 0)
+    console.log(JSON.stringify({ event: 'badge_count', user_id: userId, total, friends: friendRequests || 0, challenges: challengeInvites || 0, workouts: unreadWorkouts || 0, private_invites: privateChallengeInvites || 0 }))
     return total
   } catch (error) {
     console.error(`Error computing badge count for user ${userId}:`, error)

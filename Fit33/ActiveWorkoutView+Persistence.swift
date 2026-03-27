@@ -139,12 +139,15 @@ extension ActiveWorkoutView {
                 }
             }
             
-            // Also update cloud record with calories
-            if SupabaseManager.shared.isAuthenticated {
+            // Update cloud record with calculated calories (targeted update, not a full re-save)
+            if SupabaseManager.shared.isAuthenticated, let workoutId = workout.id?.uuidString {
                 do {
-                    try await SupabaseManager.shared.saveWorkoutToCloud(workout: workout)
+                    try await SupabaseManager.shared.updateWorkoutCalories(
+                        workoutId: workoutId,
+                        calories: calorieResult.totalCalories
+                    )
                 } catch {
-                    AppLogger.error("Failed to update cloud workout with calories: \(error)", category: .network)
+                    AppLogger.error("Failed to update cloud workout calories: \(error)", category: .network)
                 }
             }
             

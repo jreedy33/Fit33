@@ -16,7 +16,7 @@ const corsHeaders = {
 }
 
 const verifyRateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const VERIFY_RATE_LIMIT_MAX = 5
+const VERIFY_RATE_LIMIT_MAX = 15
 const VERIFY_RATE_LIMIT_WINDOW_MS = 900_000 // 15 minutes
 
 function checkVerifyRateLimit(phone: string): boolean {

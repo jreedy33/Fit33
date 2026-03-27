@@ -1,9 +1,18 @@
 import SwiftUI
 
-extension DashboardView {
-    // MARK: - Challenge Cards Section (kept together)
+struct DashboardChallengesWrapper: View {
+    @StateObject private var challengeService = ChallengeService.shared
+    @EnvironmentObject var userManager: UserManager
+    @Environment(\.colorScheme) var colorScheme
+    @State private var selectedWidgetPage: Int = 0
+    @State private var challengeGlowPhase: CGFloat = 0
+    @State private var challengeToCancel: UUID?
+    @AppStorage("showChallengeWidget") private var showChallengeWidget = true
+    @Binding var showingChallengeCreation: Bool
     
-    var challengeCardsSection: some View {
+    // MARK: - Body
+    
+    var body: some View {
         // PRIORITY ORDER:
         // 1. Active challenges ALWAYS show first (up to 3)
         // 2. Pending sent challenges fill remaining slots (up to 3 total cards max)
@@ -36,9 +45,10 @@ extension DashboardView {
         let pendingArray = Array(pendingSent)
         let pendingCount = pendingArray.count
         
-        // If we only have pending (no active), add the default widget as an option
-        let showDefaultInCarousel = activeCount == 0 && pendingCount > 0 && pendingCount < 3
-        let totalWidgetCount = activeCount + pendingCount + (showDefaultInCarousel ? 1 : 0)
+        // Show "Challenge a Friend" as a swipeable card whenever total cards < 3
+        let challengeCardCount = activeCount + pendingCount
+        let showDefaultInCarousel = challengeCardCount < 3
+        let totalWidgetCount = challengeCardCount + (showDefaultInCarousel ? 1 : 0)
         
         // Clamp the page to valid range - this ensures we always show SOMETHING
         let safePageIndex = totalWidgetCount > 0 ? min(max(0, selectedWidgetPage), totalWidgetCount - 1) : 0
@@ -83,7 +93,7 @@ extension DashboardView {
                         }
                         .frame(height: 156)
                         .animation(.easeOut(duration: 0.2), value: safePageIndex)
-                        .simultaneousGesture(
+                        .highPriorityGesture(
                             DragGesture(minimumDistance: 25)
                                 .onEnded { value in
                                     let horizontalAmount = value.translation.width
@@ -102,8 +112,9 @@ extension DashboardView {
                                         }
                                         .prefix(max(0, 3 - currentActiveCount))
                                         .count
-                                    let hasDefaultWidget = currentActiveCount == 0 && currentPendingCount > 0 && currentPendingCount < 3
-                                    let currentTotal = currentActiveCount + currentPendingCount + (hasDefaultWidget ? 1 : 0)
+                                    let currentCardCount = currentActiveCount + currentPendingCount
+                                    let hasDefaultWidget = currentCardCount < 3
+                                    let currentTotal = currentCardCount + (hasDefaultWidget ? 1 : 0)
                                     
                                     if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 && currentTotal > 0 {
                                         HapticManager.impact(.medium)
@@ -159,7 +170,7 @@ extension DashboardView {
                         }
                         .frame(height: 156)
                         .animation(.easeOut(duration: 0.2), value: selectedWidgetPage)
-                        .simultaneousGesture(
+                        .highPriorityGesture(
                             DragGesture(minimumDistance: 25)
                                 .onEnded { value in
                                     let horizontalAmount = value.translation.width
@@ -206,10 +217,8 @@ extension DashboardView {
                     selectedWidgetPage = 0
                 }
             } else {
-                // NO active challenges AND NO pending sent → show default widget only
-                if !PremiumManager.shared.isPremiumUser || showChallengeWidget {
-                    getStartedChallengeWidget
-                }
+                // Fallback: no cards at all (shouldn't happen since showDefaultInCarousel covers < 3)
+                getStartedChallengeWidget
             }
         }
     }
@@ -414,111 +423,6 @@ extension DashboardView {
             }
         } message: {
             Text("This will cancel the challenge request. \(challenge.opponentName?.components(separatedBy: " ").first ?? "Your friend") will be notified.")
-        }
-    }
-    
-    // Legacy - kept for compatibility
-    var widgetsToDisplay: [AnyView] {
-        var widgets: [AnyView] = []
-        
-        // Add challenge widgets (up to 3)
-        for challenge in challengeService.activeChallenges.prefix(3) {
-            widgets.append(AnyView(activeChallengeDetailWidget(challenge: challenge)))
-        }
-        
-        // Add program widget if available
-        if activeSmartProgramForWidget != nil || topRecommendedSmartProgram != nil || isFirstTimeUser {
-            widgets.append(AnyView(unifiedProgramWidget))
-        }
-        
-        return widgets
-    }
-    
-    var swipeableProgramChallengeWidget: some View {
-        let widgets = widgetsToDisplay
-        let widgetCount = widgets.count
-        
-        // If multiple widgets exist, show swipeable container
-        if widgetCount > 1 {
-            return AnyView(
-                VStack(spacing: 4) {
-                    GeometryReader { geometry in
-                        let cardWidth = geometry.size.width
-                        let spacing: CGFloat = 16 // Space between cards
-                        
-                        HStack(spacing: spacing) {
-                            ForEach(0..<widgetCount, id: \.self) { index in
-                                widgets[index]
-                                    .frame(width: cardWidth)
-                                    .opacity(selectedWidgetPage == index ? 1 : 0)
-                            }
-                        }
-                        .offset(x: -CGFloat(selectedWidgetPage) * (cardWidth + spacing))
-                    }
-                    .frame(height: 156)
-                    // No .clipped() - allows glow to render naturally
-                    .animation(.easeOut(duration: 0.2), value: selectedWidgetPage) // Snappy animation
-                    .simultaneousGesture(
-                        DragGesture(minimumDistance: 25)
-                            .onEnded { value in
-                                let horizontalAmount = value.translation.width
-                                let verticalAmount = abs(value.translation.height)
-                                
-                                // Only trigger if movement is primarily horizontal
-                                if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
-                                    HapticManager.impact(.medium)
-                                    if horizontalAmount < 0 && selectedWidgetPage < widgetCount - 1 {
-                                        // Swipe left - go to next
-                                        selectedWidgetPage += 1
-                                    } else if horizontalAmount > 0 && selectedWidgetPage > 0 {
-                                        // Swipe right - go to previous
-                                        selectedWidgetPage -= 1
-                                    }
-                                }
-                            }
-                    )
-                    
-                    // Custom page indicators (tappable to switch)
-                    HStack(spacing: 6) {
-                        ForEach(0..<widgetCount, id: \.self) { index in
-                            Circle()
-                                .fill(selectedWidgetPage == index ? Color.primary : Color.gray.opacity(0.3))
-                                .frame(width: 6, height: 6)
-                                .scaleEffect(selectedWidgetPage == index ? 1.0 : 0.8)
-                                .animation(.easeOut(duration: 0.2), value: selectedWidgetPage)
-                                .onTapGesture {
-                                    HapticManager.impact(.light)
-                                    selectedWidgetPage = index
-                                }
-                        }
-                    }
-                    .padding(.vertical, Spacing.xxs)
-                }
-                .onChange(of: widgetCount) { oldCount, newCount in
-                    // Reset to valid page if widgets were removed
-                    if selectedWidgetPage >= newCount {
-                        selectedWidgetPage = max(0, newCount - 1)
-                    }
-                }
-            )
-        } else if widgetCount == 1 {
-            // Single widget - no pagination needed
-            return AnyView(widgets[0])
-        } else {
-            // No widgets - show program recommendation
-            return AnyView(unifiedProgramWidget)
-        }
-    }
-    
-    // MARK: - Active Challenge Widget (Legacy - kept for single challenge scenarios)
-    
-    var activeChallengeWidget: some View {
-        Group {
-            if let challenge = challengeService.activeChallenges.first {
-                activeChallengeDetailWidget(challenge: challenge)
-            } else {
-                EmptyView()
-            }
         }
     }
     
@@ -785,26 +689,27 @@ extension DashboardView {
         return HStack(spacing: 8) {
             // Your side
             HStack(spacing: 8) {
-                challengeAvatar(
-                    isUser: true,
-                    photoUrl: nil,
-                    name: userManager.currentUser?.name,
-                    done: amWinningNow,
-                    gradientColors: typeGradient
-                )
+                ZStack(alignment: .top) {
+                    challengeAvatar(
+                        isUser: true,
+                        photoUrl: nil,
+                        name: userManager.currentUser?.name,
+                        done: amWinningNow,
+                        gradientColors: typeGradient
+                    )
+                    if amWinningNow {
+                        Image(systemName: "crown.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.yellow)
+                            .offset(y: -8)
+                    }
+                }
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 3) {
-                        Text("You")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                        if amWinningNow {
-                            Image(systemName: "crown.fill")
-                                .font(.system(size: 8))
-                                .foregroundColor(.yellow)
-                        }
-                    }
+                    Text("You")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
                     
                     Text(resolver.formatValue(myLiveToday, unit: challenge.targetUnit, type: resolvedType))
                         .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
@@ -839,17 +744,15 @@ extension DashboardView {
             // Opponent side
             HStack(spacing: 8) {
                 VStack(alignment: .trailing, spacing: 2) {
-                    HStack(spacing: 3) {
-                        if !amWinningNow && oppToday > 0 {
-                            Image(systemName: "crown.fill")
-                                .font(.system(size: 8))
-                                .foregroundColor(.yellow)
-                        }
+                    HStack(spacing: 4) {
                         Text(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")
                             .font(.caption)
                             .fontWeight(.semibold)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
+                        if challenge.opponentIsVerified == true || challenge.opponentIsGoldVerified == true {
+                            VerifiedBadge(size: 10, isGold: challenge.opponentIsGoldVerified == true)
+                        }
                     }
                     
                     Text(resolver.formatValue(oppToday, unit: challenge.targetUnit, type: resolvedType))
@@ -860,14 +763,22 @@ extension DashboardView {
                 }
                 .frame(maxWidth: 85, alignment: .trailing)
                 
-                challengeAvatar(
-                    isUser: false,
-                    userId: challenge.opponentId.uuidString,
-                    photoUrl: challenge.opponentPhotoUrl,
-                    name: challenge.opponentName,
-                    done: !amWinningNow && oppToday > 0,
-                    gradientColors: [.orange, .red]
-                )
+                ZStack(alignment: .top) {
+                    challengeAvatar(
+                        isUser: false,
+                        userId: challenge.opponentId.uuidString,
+                        photoUrl: challenge.opponentPhotoUrl,
+                        name: challenge.opponentName,
+                        done: !amWinningNow && oppToday > 0,
+                        gradientColors: [.orange, .red]
+                    )
+                    if !amWinningNow && oppToday > 0 {
+                        Image(systemName: "crown.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.yellow)
+                            .offset(y: -8)
+                    }
+                }
             }
         }
         .padding(.leading, 12)
@@ -946,26 +857,28 @@ extension DashboardView {
         let isPending = challenge.isPending
         let challengeColor = resolvedType.color
         
+        let cardHeight: CGFloat = 156
+        
         return VStack(spacing: 0) {
             // Header
             NavigationLink(value: challenge) {
-                HStack(alignment: .center, spacing: 10) {
+                HStack(alignment: .center, spacing: 12) {
                     ZStack {
                         Circle()
                             .stroke(LinearGradient(colors: resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5)
-                            .frame(width: 36, height: 36)
+                            .frame(width: 48, height: 48)
                         Text(resolvedType.emoji)
-                            .font(.ds_heading3)
+                            .font(.ds_heading2)
                     }
                     
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(challenge.displayTitle)
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
                         HStack(spacing: 6) {
-                            Text(challenge.displayTitle)
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                            
                             if isPending {
                                 Text("PENDING")
                                     .font(.system(size: 9, weight: .bold))
@@ -973,21 +886,17 @@ extension DashboardView {
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(Capsule().fill(Color.teal.opacity(0.7)))
-                            }
-                        }
-                        
-                        HStack(spacing: 6) {
-                            Text("\(allMembers.count) buddies")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            
-                            if isPending {
+                                
                                 let pendingNames = pendingMembers.map { $0.firstName }.prefix(2)
                                 Text("• Waiting for \(pendingNames.joined(separator: " & "))")
                                     .font(.caption2)
                                     .foregroundColor(.orange)
                                     .lineLimit(1)
                             } else {
+                                Text("\(acceptedMembers.count) friends")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                
                                 if pendingMembers.count > 0 {
                                     Text("• \(pendingMembers.count) pending")
                                         .font(.caption2)
@@ -1011,8 +920,9 @@ extension DashboardView {
                         .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, Spacing.sm)
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
             }
             .buttonStyle(PlainButtonStyle())
             
@@ -1025,7 +935,6 @@ extension DashboardView {
                     .padding(.vertical, Spacing.xxs)
                 
                 if isPending {
-                    // PENDING: Show acceptance status + nudge buttons with "vs" between
                     HStack(spacing: 0) {
                         let currentUserId = SupabaseManager.shared.currentUser?.id
                         let membersArray = Array(allMembers.prefix(4))
@@ -1037,40 +946,56 @@ extension DashboardView {
                                     .frame(minWidth: 20)
                             }
                             VStack(spacing: 4) {
-                                groupMemberAvatar(member: member, currentUserId: currentUserId, size: 28, accentGradient: [challengeColor, .teal])
-                                    .opacity(member.isPending ? 0.5 : 1)
-                                
-                                if member.isAccepted {
-                                    Text("✅")
-                                        .font(.ds_bodySmall)
-                                } else if member.isPending && member.userId != currentUserId {
-                                    // Nudge button for pending members (not yourself)
-                                    let nudgeKey = "nudge_\(challenge.challengeId.uuidString)_\(member.userId.uuidString)"
-                                    if UserDefaults.standard.bool(forKey: nudgeKey) {
-                                        Text("⏳")
-                                            .font(.ds_bodySmall)
-                                    } else {
-                                        Button {
-                                            nudgePendingMember(challengeId: challenge.challengeId, memberId: member.userId)
-                                        } label: {
-                                            Text("Nudge")
-                                                .font(.system(size: 9, weight: .semibold))
+                                ZStack(alignment: .topTrailing) {
+                                    groupMemberAvatar(member: member, currentUserId: currentUserId, size: 28, accentGradient: [challengeColor, .teal])
+                                        .opacity(member.isPending ? 0.5 : 1)
+
+                                    if member.isPending && member.userId != currentUserId {
+                                        let nudgeKey = "nudge_\(challenge.challengeId.uuidString)_\(member.userId.uuidString)"
+                                        if UserDefaults.standard.bool(forKey: nudgeKey) {
+                                            Text("Sent")
+                                                .font(.system(size: 9, weight: .bold))
                                                 .foregroundColor(.white)
-                                                .padding(.horizontal, Spacing.xs)
-                                                .padding(.vertical, Spacing.xxs)
-                                                .background(Capsule().fill(Color.teal.opacity(0.7)))
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Capsule().fill(Color.orange))
+                                                .offset(x: 28, y: -4)
+                                        } else {
+                                            Button {
+                                                nudgePendingMember(challengeId: challenge.challengeId, memberId: member.userId)
+                                            } label: {
+                                                Text("Nudge")
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Capsule().fill(Color.orange))
+                                                    .offset(x: 28, y: -4)
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
                                         }
-                                        .buttonStyle(PlainButtonStyle())
                                     }
-                                } else {
-                                    Text("⏳")
-                                        .font(.ds_bodySmall)
+                                }
+
+                                HStack(spacing: 3) {
+                                    Text(member.userId == currentUserId ? "You" : String(member.firstName.prefix(8)))
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                    if member.isVerified == true || member.isGoldVerified == true {
+                                        VerifiedBadge(size: 10, isGold: member.isGoldVerified == true)
+                                    }
+                                    if member.isAccepted {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.green)
+                                    } else if member.isPending && member.userId == currentUserId {
+                                        Image(systemName: "clock.fill")
+                                            .font(.system(size: 9))
+                                            .foregroundColor(.orange)
+                                    }
                                 }
                                 
-                                Text(member.userId == currentUserId ? "You" : String(member.firstName.prefix(6)))
-                                    .font(.system(size: 8))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -1092,9 +1017,9 @@ extension DashboardView {
                     HStack(spacing: 0) {
                         ForEach(Array(sorted.prefix(4).enumerated()), id: \.element.id) { index, member in
                             if index > 0 {
-                                // VS divider
-                                Text("⚔️")
-                                    .font(.ds_labelSmall)
+                                Text("vs")
+                                    .font(.ds_caption).fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
                                     .frame(minWidth: 20)
                             }
                             
@@ -1104,23 +1029,29 @@ extension DashboardView {
                             let done = challenge.dailyTarget.map { displayProgress >= $0 } ?? false
                             
                             HStack(spacing: 6) {
-                                groupMemberAvatar(member: member, currentUserId: currentUserId, size: 32, accentGradient: accentGradient)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(done ? Color.green : (isLeader ? Color.yellow.opacity(0.6) : Color.gray.opacity(0.3)), lineWidth: 2)
-                                    )
+                                ZStack(alignment: .top) {
+                                    groupMemberAvatar(member: member, currentUserId: currentUserId, size: 32, accentGradient: accentGradient)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(done ? Color.green : (isLeader ? Color.yellow.opacity(0.6) : Color.gray.opacity(0.3)), lineWidth: 2)
+                                        )
+                                    if isLeader {
+                                        Image(systemName: "crown.fill")
+                                            .font(.system(size: 9))
+                                            .foregroundColor(.yellow)
+                                            .offset(y: -13)
+                                    }
+                                }
                                 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 3) {
+                                    HStack(spacing: 4) {
                                         Text(isMe ? "You" : String(member.firstName.prefix(6)))
                                             .font(.caption)
                                             .fontWeight(.semibold)
                                             .foregroundColor(.secondary)
                                             .lineLimit(1)
-                                        if isLeader {
-                                            Image(systemName: "crown.fill")
-                                                .font(.system(size: 7))
-                                                .foregroundColor(.yellow)
+                                        if member.isVerified == true || member.isGoldVerified == true {
+                                            VerifiedBadge(size: 10, isGold: member.isGoldVerified == true)
                                         }
                                     }
                                     
@@ -1137,36 +1068,29 @@ extension DashboardView {
                     .padding(.horizontal, 10)
                 }
             }
-            .padding(.vertical, 10)
+            .padding(Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md)
-                    .fill(colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.03))
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(colorScheme == .dark ? Color(white: 0.10) : Color(white: 0.94))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 1)
+                    )
             )
-            .padding(.horizontal, Spacing.sm)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
         }
+        .frame(height: cardHeight)
         .background(
             ZStack {
-                // Animated glowing border (always on — teal glow for consistency)
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
-                    .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [
-                                challengeColor.opacity(0.7),
-                                Color.teal.opacity(0.5),
-                                challengeColor.opacity(0.3),
-                                Color.clear,
-                                Color.clear,
-                                challengeColor.opacity(0.2),
-                                Color.mint.opacity(0.4),
-                                challengeColor.opacity(0.6)
-                            ]),
-                            center: .center,
-                            angle: .degrees(challengeGlowPhase)
-                        ),
-                        lineWidth: 2
-                    )
-                    .blur(radius: 2)
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 4)
+                    .fill(challengeColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                    .offset(y: 6)
+                    .blur(radius: 3)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 2)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
                 
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
@@ -1182,7 +1106,19 @@ extension DashboardView {
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
-                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .stroke(
+                        LinearGradient(
+                            colors: [challengeColor.opacity(colorScheme == .dark ? 0.35 : 0.25), Color.teal.opacity(colorScheme == .dark ? 0.25 : 0.15)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -1192,6 +1128,7 @@ extension DashboardView {
         )
         .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
         .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
+        .frame(height: 156)
     }
     
     func nudgePendingMember(challengeId: UUID, memberId: UUID) {
@@ -1206,7 +1143,7 @@ extension DashboardView {
             if sent {
                 UserDefaults.standard.set(true, forKey: nudgeKey)
                 HapticManager.notification(.success)
-                // Force UI refresh
+                PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "challenge_nudge")
                 await ChallengeService.shared.fetchActiveGroupChallenges()
             }
         }
@@ -1341,8 +1278,18 @@ extension DashboardView {
             }
         }
         .buttonStyle(.plain)
+        .frame(height: 156)
         .background(
             ZStack {
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 4)
+                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                    .offset(y: 6)
+                    .blur(radius: 3)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 2)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
+                
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .fill(
                         LinearGradient(
@@ -1356,28 +1303,20 @@ extension DashboardView {
                 
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [
-                                Color.orange.opacity(0.7),
-                                Color.orange.opacity(0.5),
-                                Color.orange.opacity(0.3),
-                                Color.clear,
-                                Color.clear,
-                                Color.orange.opacity(0.2),
-                                Color.yellow.opacity(0.4),
-                                Color.orange.opacity(0.6)
-                            ]),
-                            center: .center,
-                            angle: .degrees(challengeGlowPhase)
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
                         ),
-                        lineWidth: 2
+                        lineWidth: 1.5
                     )
-                    .blur(radius: 2)
                 
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
-                            colors: [Color.orange.opacity(0.5), Color.orange.opacity(0.3), Color.orange.opacity(0.2)],
+                            colors: [Color.orange.opacity(colorScheme == .dark ? 0.35 : 0.25), Color.yellow.opacity(colorScheme == .dark ? 0.25 : 0.15)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -1385,14 +1324,7 @@ extension DashboardView {
                     )
             }
         )
-        .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
-        .drawingGroup()
-        .onAppear {
-            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
-                challengeGlowPhase = 360
-            }
-        }
+        .shadow(color: Color.orange.opacity(colorScheme == .dark ? 0.1 : 0.06), radius: 12, x: 0, y: 3)
     }
     
     // MARK: - Challenge Type Button Helper

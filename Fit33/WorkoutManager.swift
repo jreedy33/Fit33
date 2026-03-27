@@ -1023,8 +1023,10 @@ class WorkoutManager: ObservableObject {
         // This records the workout for global pattern analysis - learning what
         // exercises/combinations work well across similar users
         // ═══════════════════════════════════════════════════════════════════════
-        if let workout = currentWorkout, let user = UserManager.shared.currentUser {
+        if let workout = currentWorkout, let user = UserManager.shared.currentUser, let userId = user.id {
             Task { @MainActor in
+                let userIdString = userId.uuidString
+                
                 // Build user profile snapshot
                 let userProfile = UserProfileSnapshot(from: user)
                 
@@ -1062,7 +1064,7 @@ class WorkoutManager: ObservableObject {
                 
                 // Record to collaborative engine
                 await CollaborativeLearningEngine.shared.recordWorkoutCompletion(
-                    userId: user.id?.uuidString ?? "",
+                    userId: userIdString,
                     userProfile: userProfile,
                     exercises: completedExercises,
                     workoutType: workoutType,
@@ -1385,6 +1387,10 @@ class WorkoutManager: ObservableObject {
     
     /// Record exercise performance history for progressive overload
     private func recordExercisePerformance() async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[PERF HISTORY] Skipping — not authenticated", category: .auth)
+            return
+        }
         guard let workout = currentWorkout,
               let userId = UserManager.shared.currentUser?.id,
               let exercises = workout.exercises as? Set<WorkoutExercise> else {

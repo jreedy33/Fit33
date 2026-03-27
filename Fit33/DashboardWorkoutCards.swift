@@ -238,6 +238,22 @@ struct RecentWorkoutCard: View {
                         Text(formatSmartDate(workout.date ?? Date()))
                             .font(.ds_bodySmall)
                             .foregroundColor(.secondary)
+                        
+                        if !topMuscles.isEmpty {
+                            HStack(spacing: Spacing.xxs) {
+                                ForEach(topMuscles, id: \.self) { muscle in
+                                    Text(muscle)
+                                        .font(.ds_caption)
+                                        .foregroundColor(workoutGradient[0])
+                                        .padding(.horizontal, Spacing.xs)
+                                        .padding(.vertical, 3)
+                                        .background(
+                                            Capsule()
+                                                .fill(workoutGradient[0].opacity(0.12))
+                                        )
+                                }
+                            }
+                        }
                     }
                     
                     Spacer()
@@ -268,29 +284,9 @@ struct RecentWorkoutCard: View {
                     Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
                     strengthStatColumn(icon: "flame.fill", iconColor: .orange, value: formattedCalories, label: "Calories")
                 }
-                
-                if !topMuscles.isEmpty {
-                    HStack {
-                        HStack(spacing: Spacing.xxs) {
-                            ForEach(topMuscles, id: \.self) { muscle in
-                                Text(muscle)
-                                    .font(.ds_caption)
-                                    .foregroundColor(workoutGradient[0])
-                                    .padding(.horizontal, Spacing.xs)
-                                    .padding(.vertical, 3)
-                                    .background(
-                                        Capsule()
-                                            .fill(workoutGradient[0].opacity(0.12))
-                                    )
-                            }
-                        }
-                        Spacer()
-                    }
-                    .padding(.top, Spacing.xs)
-                }
             }
             .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
+            .padding(.vertical, Spacing.md)
             .sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
         }
         .buttonStyle(PlainButtonStyle())
@@ -785,7 +781,8 @@ struct RecentCardioWorkoutCard: View {
                         .padding(.top, 12)
                     }
                 }
-                .padding(Spacing.md)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, 18)
                 .background(
                     // Premium layered background for cardio workout cards
                     ZStack {

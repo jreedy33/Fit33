@@ -42,6 +42,7 @@ struct DashboardHydrationWidget: View {
         .frame(maxWidth: isCompact ? nil : .infinity)
         .padding(.horizontal, isCompact ? 0 : 20)
         .background(widgetBackground)
+        .drawingGroup()
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
         .shadow(color: gradientColors[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
     }

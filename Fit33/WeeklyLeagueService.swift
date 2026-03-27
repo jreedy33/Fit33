@@ -63,6 +63,7 @@ struct LeagueStanding: Codable {
         case 4: return Color(red: 0.66, green: 0.66, blue: 0.78) // Platinum
         case 5: return .cyan             // Diamond
         case 6: return Color(red: 1.0, green: 0.42, blue: 0.21)  // Elite
+        case 7: return Color(red: 0.11, green: 0.63, blue: 0.95) // Verified (Twitter blue)
         default: return .blue
         }
     }
@@ -76,6 +77,7 @@ struct LeagueStanding: Codable {
         case 4: return [Color(red: 0.66, green: 0.66, blue: 0.78), .purple]   // Platinum
         case 5: return [.cyan, .blue]                                           // Diamond
         case 6: return [Color(red: 1.0, green: 0.42, blue: 0.21), .red]       // Elite
+        case 7: return [Color(red: 0.11, green: 0.63, blue: 0.95), Color(red: 0.0, green: 0.45, blue: 0.85)] // Verified
         default: return [.blue, .cyan]
         }
     }
@@ -98,6 +100,7 @@ struct LeagueStanding: Codable {
         case 3: return "Platinum"
         case 4: return "Diamond"
         case 5: return "Elite"
+        case 6: return "Verified"
         default: return nil
         }
     }
@@ -110,6 +113,7 @@ struct LeagueStanding: Codable {
         case 4: return "Gold"
         case 5: return "Platinum"
         case 6: return "Diamond"
+        case 7: return "Elite"
         default: return nil
         }
     }
@@ -126,7 +130,9 @@ struct LeagueEntry: Codable, Identifiable {
     let isCurrentUser: Bool
     let isFriend: Bool?
     let mutualFriendCount: Int?
-    
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
+
     var id: UUID { userId }
     
     var displayName: String {
@@ -163,6 +169,8 @@ struct LeagueEntry: Codable, Identifiable {
         case isCurrentUser = "is_current_user"
         case isFriend = "is_friend"
         case mutualFriendCount = "mutual_friend_count"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 
@@ -331,7 +339,9 @@ class WeeklyLeagueService: ObservableObject {
                             rank: old.rank,
                             isCurrentUser: true,
                             isFriend: old.isFriend,
-                            mutualFriendCount: old.mutualFriendCount
+                            mutualFriendCount: old.mutualFriendCount,
+                            isVerified: old.isVerified,
+                            isGoldVerified: old.isGoldVerified
                         )
                     }
                     // Note: rank may change — do a full refresh next time

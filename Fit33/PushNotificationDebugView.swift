@@ -16,10 +16,13 @@ struct PushNotificationDebugView: View {
     @State private var isLoadingToken = false
     @State private var lastTestResult: String?
     @State private var deliveryLogs: [DeliveryLogEntry] = []
+    @State private var diagnosticReport: DiagnosticReportUI?
+    @State private var isRunningDiagnostics = false
     
     var body: some View {
         ScrollView {
             VStack(spacing: Spacing.lg) {
+                diagnosticsSection
                 tokenStatusSection
                 sendTestSection
                 queueStatusSection
@@ -220,6 +223,134 @@ struct PushNotificationDebugView: View {
                 }
             }
         }
+    }
+    
+    // MARK: - Server Diagnostics
+    
+    private var diagnosticsSection: some View {
+        debugSection(title: "Server Diagnostics", icon: "stethoscope", color: .red) {
+            VStack(spacing: Spacing.sm) {
+                Button {
+                    Task { await runServerDiagnostics() }
+                } label: {
+                    HStack {
+                        if isRunningDiagnostics {
+                            ProgressView().scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "play.circle.fill")
+                        }
+                        Text("Run Full Diagnostics")
+                            .font(.ds_labelSmall)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.red))
+                }
+                .buttonStyle(.plain)
+                .disabled(isRunningDiagnostics)
+                
+                if let report = diagnosticReport {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text("Queue Stats")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                        
+                        statusRow(label: "Total", value: "\(report.totalQueue)", color: .primary)
+                        statusRow(label: "Pending", value: "\(report.pendingCount)", color: report.pendingCount > 0 ? .orange : .green)
+                        statusRow(label: "Processing", value: "\(report.processingCount)", color: report.processingCount > 0 ? .blue : .secondary)
+                        statusRow(label: "Sent (24h)", value: "\(report.sentLast24h)", color: .green)
+                        statusRow(label: "Failed (24h)", value: "\(report.failedLast24h)", color: report.failedLast24h > 0 ? .red : .green)
+                        statusRow(label: "Tokens", value: "\(report.tokenCount) (\(report.validTokenCount) valid)", color: report.validTokenCount > 0 ? .green : .red)
+                        
+                        if !report.issues.isEmpty {
+                            Text("Issues Found")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.red)
+                                .padding(.top, Spacing.xxs)
+                            
+                            ForEach(report.issues, id: \.self) { issue in
+                                HStack(alignment: .top, spacing: Spacing.xxs) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.red)
+                                    Text(issue)
+                                        .font(.caption2)
+                                        .foregroundColor(.red)
+                                }
+                            }
+                        } else {
+                            HStack(spacing: Spacing.xxs) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.green)
+                                Text("No issues detected")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.top, Spacing.xxs)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func runServerDiagnostics() async {
+        isRunningDiagnostics = true
+        defer { isRunningDiagnostics = false }
+        
+        guard let report = await PushNotificationService.shared.runDiagnostics() else {
+            diagnosticReport = DiagnosticReportUI(
+                totalQueue: 0, pendingCount: 0, processingCount: 0,
+                sentLast24h: 0, failedLast24h: 0,
+                tokenCount: 0, validTokenCount: 0,
+                issues: ["Failed to fetch diagnostics from server"]
+            )
+            return
+        }
+        
+        var issues: [String] = []
+        
+        let tokenCount = (report.tokens?.count) ?? 0
+        let validTokenCount = report.tokens?.filter { ($0["is_valid"]?.value as? Bool) == true }.count ?? 0
+        
+        if tokenCount == 0 {
+            issues.append("No device tokens registered on server")
+        } else if validTokenCount == 0 {
+            issues.append("All \(tokenCount) tokens are marked invalid")
+        }
+        
+        let masterEnabled = report.preferences?["master_enabled"]?.value as? Bool ?? true
+        if !masterEnabled {
+            issues.append("Master notifications toggle is OFF on server")
+        }
+        
+        let stats = report.queue_stats ?? [:]
+        let processing = (stats["processing"]?.value as? Int) ?? 0
+        if processing > 0 {
+            issues.append("\(processing) notifications stuck in 'processing' state")
+        }
+        
+        let failed24h = (stats["failed_last_24h"]?.value as? Int) ?? 0
+        let sent24h = (stats["sent_last_24h"]?.value as? Int) ?? 0
+        if failed24h > 0 && sent24h == 0 {
+            issues.append("All \(failed24h) notifications in last 24h failed (0 sent)")
+        }
+        
+        diagnosticReport = DiagnosticReportUI(
+            totalQueue: (stats["total"]?.value as? Int) ?? 0,
+            pendingCount: (stats["pending"]?.value as? Int) ?? 0,
+            processingCount: processing,
+            sentLast24h: sent24h,
+            failedLast24h: failed24h,
+            tokenCount: tokenCount,
+            validTokenCount: validTokenCount,
+            issues: issues
+        )
     }
     
     // MARK: - Helpers
@@ -645,6 +776,17 @@ private struct DeliveryLogEntry: Identifiable {
     let timestamp: Date
     let level: LogLevel
     let message: String
+}
+
+private struct DiagnosticReportUI {
+    let totalQueue: Int
+    let pendingCount: Int
+    let processingCount: Int
+    let sentLast24h: Int
+    let failedLast24h: Int
+    let tokenCount: Int
+    let validTokenCount: Int
+    let issues: [String]
 }
 
 #endif

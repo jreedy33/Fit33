@@ -600,27 +600,57 @@ extension NewOnboardingView {
     }
     
     func createMinimalAccountForEmailPasswordSignup() async {
-        AppLogger.debug("Creating minimal account for email/password signup...", category: .auth)
+        AppLogger.debug("Creating minimal account for email/password signup... email=\(email.prefix(5))*** password.count=\(password.count)", category: .auth)
         
-        do {
-            try await signUpOrRecoverExistingAccount()
-            AppLogger.info("Minimal account created! User ID: \(supabaseManager.currentUser?.id.uuidString ?? "nil")", category: .auth)
-            
-            await updatePhoneAndUsername()
-            
-            AppLogger.info("Minimal account ready - user can continue onboarding", category: .auth)
-            
-        } catch {
-            AppLogger.error("Failed to create account: \(error)", category: .auth)
+        guard !password.isEmpty, password.count >= 6 else {
+            AppLogger.error("Password is empty or too short (\(password.count) chars) at account creation — @State likely lost", category: .auth)
             await MainActor.run {
+                verificationError = "Session expired. Please go back to the password step and re-enter your password."
+                isPhoneVerified = false
+            }
+            return
+        }
+        
+        // Retry account creation up to 3 times for transient rate-limit errors
+        var lastError: Error?
+        for attempt in 1...3 {
+            do {
+                try await signUpOrRecoverExistingAccount()
+                AppLogger.info("Minimal account created! User ID: \(supabaseManager.currentUser?.id.uuidString ?? "nil") (attempt \(attempt))", category: .auth)
+                
+                await updatePhoneAndUsername()
+                
+                AppLogger.info("Minimal account ready - user can continue onboarding", category: .auth)
+                return
+                
+            } catch {
+                lastError = error
                 let desc = error.localizedDescription.lowercased()
-                if desc.contains("password") && (desc.contains("weak") || desc.contains("strength") || desc.contains("short")) {
-                    verificationError = "Password is too weak. Please go back and choose a stronger password."
-                } else if desc.contains("rate") || desc.contains("limit") || desc.contains("too many") {
-                    verificationError = "Too many attempts. Please wait a minute and try again."
-                } else {
-                    verificationError = "Account creation failed: \(error.localizedDescription)"
+                let isRateLimit = desc.contains("rate") || desc.contains("limit") || desc.contains("too many")
+                
+                if isRateLimit && attempt < 3 {
+                    let delaySeconds = attempt * 2
+                    AppLogger.info("Account creation rate-limited (attempt \(attempt)/3), retrying in \(delaySeconds)s...", category: .auth)
+                    try? await Task.sleep(for: .seconds(delaySeconds))
+                    continue
                 }
+                break
+            }
+        }
+        
+        guard let error = lastError else { return }
+        AppLogger.error("Failed to create account after retries: \(error)", category: .auth)
+        await MainActor.run {
+            let desc = error.localizedDescription.lowercased()
+            if desc.contains("password") && (desc.contains("weak") || desc.contains("strength") || desc.contains("short")) {
+                verificationError = "Password is too weak. Please go back and choose a stronger password."
+                isPhoneVerified = false
+            } else if desc.contains("rate") || desc.contains("limit") || desc.contains("too many") {
+                // Phone IS verified — don't reset that. Show account-specific error.
+                verificationError = "Account setup is temporarily busy. Tap Continue to retry."
+                AppLogger.info("Phone verified but account creation rate-limited — keeping isPhoneVerified=true", category: .auth)
+            } else {
+                verificationError = "Account creation failed: \(error.localizedDescription)"
                 isPhoneVerified = false
             }
         }

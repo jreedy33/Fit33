@@ -13,6 +13,7 @@
 5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
 6. **Auth guards on all social fetches**: Every async fetch method in social/challenge/friend services MUST start with `guard SupabaseManager.shared.isAuthenticated else { return }`. MainTabView appears based on `hasCompletedOnboarding`, NOT `isAuthenticated` -- `.task` modifiers fire before auth completes, causing "Not authenticated" crashes if unguarded.
 7. **Performance tracking on scrollable views**: Apply `.trackScrollJank(screen: "ScreenName")` to all new scrollable content. Heavy computation MUST run off the main thread (use background Core Data context or `Task.detached`). Never iterate `@FetchRequest` results in nested loops on the main thread.
+7b. **Widget isolation in ScrollViews**: Any widget in a ScrollView with 5+ siblings MUST be its own View struct that owns its service subscriptions (`@StateObject`/`@ObservedObject`). Parent views must NEVER read `@EnvironmentObject`/`@ObservedObject` properties inline in body for widget rendering — pass only stable values (bindings, constants, cached `@State`) to isolated wrappers. Pattern: `DashboardQuestsWrapper`, `DashboardHeaderWrapper`, etc. in `DashboardView+Helpers.swift`.
 8. **Network calls MUST be parallel**: All independent network calls in `.task` or `.onAppear` MUST use `async let` groups, NEVER sequential `await`. Dashboard network calls went from 20 sequential to 3 parallel batches.
 9. **FetchRequests MUST have limits**: All `@FetchRequest` displaying limited items MUST include `fetchLimit`. Never load entire history when only showing 10 items.
 10. **Cloud sync MUST be paginated**: `fetchWorkoutHistory()` and `fetchMealLogs()` use `.limit()` -- never fetch unbounded history.
@@ -42,7 +43,7 @@ Fit33/
 ├── DashboardView+Macros.swift           — Macros/nutrition dashboard widget
 ├── DashboardView+Activity.swift         — Recent workouts section, stats overview
 ├── DashboardView+Helpers.swift          — Data loading, motivational messages, utilities
-├── DashboardModels.swift                — DashboardRoute, enums, scroll key, small types
+├── DashboardModels.swift                — DashboardRoute, enums, DashboardNotificationCarousel (unified swipeable notification cards)
 ├── DashboardNavigationDestinations.swift — Navigation destination ViewModifier
 ├── DashboardWorkoutCards.swift          — RecentWorkoutCard, RecentCardioWorkoutCard, StatCard
 ├── DashboardWorkoutHistory.swift        — WorkoutHistoryFullView, day section views
@@ -885,6 +886,19 @@ SQL RPC (e.g. accept_friend_request)
 
 **Test RPC**: `insert_test_push_notification(p_notification_type, p_title, p_body)` — inserts into queue targeting `auth.uid()` for self-testing
 
+### 2026-03-26: Verification Flow — "Too many attempts" on Correct Code (CRITICAL)
+
+**Problem**: Users entering a correct OTP code during onboarding saw "Too many attempts. Please wait a minute and try again." — the code was verified by Twilio, but the error came from the **account creation** step that runs immediately after.
+
+**Root cause**: `createMinimalAccountForEmailPasswordSignup()` called `signUp()` which hit Supabase auth rate limits. The catch block matched "rate"/"limit"/"too many" in the error and showed a misleading message on the verification screen. Worse, it reset `isPhoneVerified = false`, making users re-enter a code that was already consumed by Twilio — a dead end.
+
+**Fix**:
+1. **Retry with backoff**: Account creation now retries up to 3 times (2s, 4s delays) for rate-limit errors before giving up.
+2. **Don't reset phone verification on rate limit**: `isPhoneVerified` stays `true` because the phone IS verified. User proceeds through onboarding normally. Account creation is retried at the confirmation step (`createAccountAndComplete()` fallback).
+3. **Clearer error message**: Changed from "Too many attempts" to "Account setup is temporarily busy" — though in practice the user sees STATE 3 (success) since `isPhoneVerified` remains true.
+
+**Key insight**: The phone verification and account creation are separate concerns. A Supabase auth rate limit should never invalidate a successful Twilio phone verification.
+
 ### 2026-03-25: Onboarding Signup Flow — Dead-End Recovery Fix (CRITICAL)
 
 **Problem**: Two beta testers hit a permanent dead-end during email/password signup. After OTP phone verification, `createMinimalAccountForEmailPasswordSignup()` would:
@@ -956,3 +970,76 @@ OTP verified → createMinimalAccountForEmailPasswordSignup()
 - Prev/next navigation between exercises.
 
 **Key files changed**: `DashboardView.swift`, `DashboardView+Helpers.swift`, `DashboardView+Challenges.swift`, `DailyQuestService.swift`, `NotificationManager.swift`
+
+### 2026-03-25: v1.35 — Dashboard Widget Isolation + Bug Fixes
+
+**Full widget isolation (Phase 3 performance)**:
+- ALL dashboard widget sections now wrapped in isolated View structs: `DashboardCustomHeaderWrapper`, `DashboardHeaderWrapper`, `DashboardChallengesWrapper`, `DashboardWorkoutCarouselWrapper`, `DashboardRecentWorkoutsWrapper`, `DashboardStatsWrapper`. Each owns its own service subscriptions. Parent body only instantiates lightweight structs.
+- `DashboardView+Challenges.swift` is now a standalone `struct DashboardChallengesWrapper` (not `extension DashboardView`).
+- `DashboardView+Programs.swift` split: `extension DashboardView` keeps `programConflictAlert`/`colorFromProgramType`; everything else is `extension DashboardWorkoutCarouselWrapper`.
+- `startWorkoutButton` and `handleWorkoutSelection` moved from `DashboardView+Header.swift` to `extension DashboardWorkoutCarouselWrapper`.
+- `AnimatedOrbBackground` orb animations changed from `repeatForever` to single-fire (drift to end position over 3-5s then stop). Eliminates continuous GPU rendering on all tabs.
+
+**Duplicate workout save fix**:
+- `saveWorkoutToAppleHealth()` was calling `saveWorkoutToCloud(workout:)` to update calories, which re-saved the entire workout creating a duplicate row. Replaced with targeted `updateWorkoutCalories(workoutId:calories:)` that only patches the `calories_burned` field.
+- New method `SupabaseManager.updateWorkoutCalories()` does `.update(["calories_burned": calories])` on the existing `workout_history` row.
+
+**League widget UI**: Subheader text ("You know X people here" + promotion status) and tier badge moved inside the card box.
+
+**Startup performance fixes**:
+- `DeferredInit` block in `Fit33App.swift` split: singleton inits (`MemoryPressureHandler`, `TaskThrottler`, `CPUProtection`, `HeavyWorkSentinel`) moved to `Task.detached`; only UIKit work (watchdog, FPS monitor, haptics) stays on main. DeferredInit dropped from 2800ms to 3ms.
+- `ExerciseLibraryService.preWarmCache()`: removed `getAllExercises()` + `precomputeRecommendedList()` from inside `MainActor.run` block. Exercise fetch now happens on background context; filter cache kickoff deferred to after waterfall mark ends. FilterCache.precompute dropped from 6000ms to 139ms.
+
+**Carousel swipe fix**: Workout carousel uses `.highPriorityGesture(DragGesture(minimumDistance: 25))` instead of `.simultaneousGesture` to prevent inner Button taps from firing during swipes. Custom/Auto buttons changed to `.frame(maxHeight: .infinity)` to match program widget height.
+
+**Key files changed**: `DashboardView.swift`, `DashboardView+Helpers.swift`, `DashboardView+Challenges.swift`, `DashboardView+Programs.swift`, `DashboardView+Header.swift`, `DashboardView+Activity.swift`, `AdaptiveColors.swift`, `ActiveWorkoutView+Persistence.swift`, `SupabaseManager.swift`, `WeeklyLeagueViews.swift`, `Fit33App.swift`, `ExerciseLibraryService.swift`
+
+### 2026-03-26: Crash Regression Fix — v1.34/v1.35 Stability Pass
+
+**Challenge progress timeout handling**:
+- `PrivateChallengeService.logProgress()` and `CommunityChallengeService.logProgress()` now check `SupabaseManager.shared.isAuthenticated` before the retry loop. Retries reduced from 5 to 3. Timeout detection expanded to catch both `NSURLErrorTimedOut` and `NSURLErrorCancelled`.
+
+**Workout save auth safety**:
+- `ActiveWorkoutView+Actions`: Changed `userId: user.id ?? UUID()` to `guard let userId = user.id` — prevents writing analytics data under a synthetic UUID when user.id is nil.
+- `WorkoutManager`: Changed `userId: user.id?.uuidString ?? ""` to proper `guard let userId = user.id` pattern for the CollaborativeLearningEngine call.
+
+**SQL migrations required (deploy before v1.36)**:
+- `20260326_fix_user_programs_program_id.sql` — makes `program_id` nullable
+- `20260326_fix_nudge_table.sql` — creates `group_challenge_nudges` table/columns
+- `20260326_fix_friend_workout_uuid_cast.sql` — fixes UUID=text type mismatch in RPC
+
+**Friend suggestions instant-load fix**:
+- `ContactsService`: `suggestedFriends` and `peopleYouMayKnow` now persist to UserDefaults (`cached_suggested_friends_v1`, `cached_pymk_v1`). Loaded in `init()` so suggestions are always available instantly on app launch — blue "add friend" rings never show empty.
+- Error in `findMatchingUsersDirect` no longer clears `suggestedFriends` — keeps cached data on network failure.
+- New `refreshSuggestionsIfNeeded()` runs contacts + PYMK once per app session, independently from the Batch 1+2 pipeline. This prevents suggestions from being blocked behind slow challenge/league fetches.
+- `FriendsTabView.task` calls `refreshSuggestionsIfNeeded()` directly (not gated behind `refreshAllFriendsData` Batch 3). Batch 3 now only runs on explicit pull-to-refresh (`force == true`).
+- Net effect: suggestions always present on tab tap (from UserDefaults cache), refresh once per app open in background.
+
+### 2026-03-26: Push Notification Reliability Overhaul
+
+**Root causes fixed** (7 bugs causing intermittent delivery):
+
+1. APNs `expiration: 0` discarded notifications for offline devices → changed to 24h TTL
+2. `.single()` token query failed for multi-device users → now sends to all valid tokens
+3. Quiet hours permanently killed notifications → now defers to after quiet hours end
+4. Edge function crashes left rows stuck in `processing` → auto-recovery after 5 min
+5. `BadDeviceToken` invalidated ALL user tokens → now scoped to specific bad token
+6. Local notification daily cap of 4 silently dropped social notifications → raised to 15, social types bypass cap
+7. No structured logging → JSON logs in edge function, elapsed-time tracking in Swift
+
+**New diagnostics**:
+- `diagnose_push_notifications()` RPC returns full health report (tokens, prefs, queue stats, delivery logs)
+- `PushNotificationDebugView` now has "Run Full Diagnostics" button that calls this RPC
+- `PushNotificationService.performTokenHealthCheck()` logs a warning if no device token exists 10s after app foreground
+- `PushNotificationService._flushQueue()` now logs elapsed milliseconds and full error chain on failure
+
+**New table**: `push_notification_delivery_log` — tracks each step of the pipeline (14-day retention, auto-pruned)
+
+**Key files**: `PushNotificationService.swift`, `NotificationManager.swift`, `PushNotificationDebugView.swift`, `supabase/functions/send-push-notification/index.ts`
+**Migration**: `supabase/20260326_push_notification_reliability.sql`
+
+**Onboarding PYMK fallback**:
+- When contacts sync finds no matches during onboarding, `fetchPeopleYouMayKnow()` now fires as a fallback (from the contacts grant handler + `.onAppear` of the addFriends step).
+- New `filteredPYMK` computed property in `NewOnboardingView+Social.swift` filters friends-of-friends by friend/request status and search text.
+- The addFriends step now has 4 branches: loading → contact matches → PYMK fallback ("Already part of the club!") → truly empty state. PYMK section uses the same `onboardingFriendRow` component.
+- Previously, PYMK was only fetched from `FriendsTabView` after onboarding. Now it's also available during onboarding when contacts yield nothing.

@@ -283,12 +283,23 @@ final class HealthDataService: ObservableObject {
         await persistHealthKitDataToSupabase()
     }
     
+    private var lastPersistDate: Date?
+    private static let persistThrottleInterval: TimeInterval = 30
+    
     /// Persist current in-memory HealthKit data to Supabase.
     /// Call this after HealthKitService has synced from the HK API.
     /// Safe to call from anywhere – does NOT re-fetch from HealthKit.
+    /// Throttled to once per 30s to prevent redundant writes during startup.
     func persistHealthKitDataToSupabase() async {
         let healthKit = HealthKitService.shared
         guard healthKit.isAuthorized else { return }
+        
+        if let last = lastPersistDate,
+           Date().timeIntervalSince(last) < Self.persistThrottleInterval {
+            AppLogger.debug("Skipping HealthKit persistence — persisted \(Int(Date().timeIntervalSince(last)))s ago", category: .health)
+            return
+        }
+        lastPersistDate = Date()
         
         let calendar = Calendar.current
         let today = Date()

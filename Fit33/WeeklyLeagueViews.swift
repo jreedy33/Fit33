@@ -8,6 +8,43 @@
 
 import SwiftUI
 
+// MARK: - Verified Badge
+
+/// Checkmark badge — blue for verified users, gold for top 5 in the Verified league
+struct VerifiedBadge: View {
+    var size: CGFloat = 14
+    var isGold: Bool = false
+    
+    var body: some View {
+        ZStack {
+            if isGold {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: size))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.6, green: 0.42, blue: 0.0),
+                                Color(red: 0.75, green: 0.55, blue: 0.05),
+                                Color(red: 1.0, green: 0.88, blue: 0.3),
+                                Color(red: 1.0, green: 0.95, blue: 0.6),
+                                Color(red: 0.85, green: 0.68, blue: 0.1)
+                            ],
+                            startPoint: .bottomTrailing,
+                            endPoint: .topLeading
+                        )
+                    )
+                    .shadow(color: Color(red: 1.0, green: 0.78, blue: 0.0).opacity(0.6), radius: 4, x: 0, y: 0)
+            } else {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: size))
+                    .foregroundColor(Color(red: 0.11, green: 0.63, blue: 0.95))
+            }
+        }
+        .accessibilityLabel(isGold ? "Gold Verified" : "Verified")
+        .accessibilityHidden(false)
+    }
+}
+
 // MARK: - League Widget (for FriendsTabView)
 
 /// Compact league card shown on the Friends tab.
@@ -22,52 +59,26 @@ struct WeeklyLeagueWidget: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Section header (outside card)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Image(systemName: "trophy.circle.fill")
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: standing?.tierGradient ?? [.yellow, .orange],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+            HStack(spacing: 6) {
+                Image(systemName: "trophy.circle.fill")
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: standing?.tierGradient ?? [.yellow, .orange],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
-                        .font(.title3)
-                    Text("Weekly League")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                    
-                    Button {
-                        showingLeagueInfo = true
-                    } label: {
-                        Image(systemName: "info.circle")
-                            .font(.ds_bodyRegular).fontWeight(.medium)
-                            .foregroundColor(.secondary)
-                    }
-                }
+                    )
+                    .font(.title3)
+                Text("Weekly League")
+                    .font(.title3)
+                    .fontWeight(.bold)
                 
-                HStack(alignment: .top) {
-                    let lines = leagueSubtitleLines
-                    VStack(alignment: .leading, spacing: 1) {
-                        ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                            Text(line)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    if let standing = standing {
-                        HStack(spacing: 4) {
-                            Text(standing.tierEmoji)
-                                .font(.ds_bodySmall)
-                            Text(standing.tierName)
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(standing.tierSwiftUIColor)
-                        }
-                    }
+                Button {
+                    showingLeagueInfo = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.ds_bodyRegular).fontWeight(.medium)
+                        .foregroundColor(.secondary)
                 }
             }
             
@@ -139,6 +150,29 @@ struct WeeklyLeagueWidget: View {
     
     private func leagueContent(standing: LeagueStanding) -> some View {
         VStack(spacing: 10) {
+            // Subheader with tier badge (inside card)
+            HStack(alignment: .top) {
+                let lines = leagueSubtitleLines
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 4) {
+                    Text(standing.tierEmoji)
+                        .font(.ds_bodySmall)
+                    Text(standing.tierName)
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(standing.tierSwiftUIColor)
+                }
+            }
+            
             // Compact stats row
             HStack(spacing: 0) {
                 // Rank
@@ -299,10 +333,16 @@ struct WeeklyLeagueWidget: View {
             )
             
             VStack(alignment: .leading, spacing: 1) {
-                Text(entry.isCurrentUser ? "You" : entry.firstName)
-                    .font(.system(size: 13, weight: entry.isCurrentUser ? .bold : .medium))
-                    .foregroundColor(entry.isCurrentUser ? .primary : .secondary)
-                    .lineLimit(1)
+                HStack(spacing: 3) {
+                    Text(entry.isCurrentUser ? "You" : entry.firstName)
+                        .font(.system(size: 13, weight: entry.isCurrentUser ? .bold : .medium))
+                        .foregroundColor(entry.isCurrentUser ? .primary : .secondary)
+                        .lineLimit(1)
+                    
+                    if entry.isVerified == true || entry.isGoldVerified == true {
+                        VerifiedBadge(size: 11, isGold: entry.isGoldVerified == true || (standing.tierRank == 7 && entry.rank <= 5))
+                    }
+                }
                 
                 if !entry.isCurrentUser, entry.isFriend == true {
                     Text("Friend")
@@ -670,6 +710,15 @@ struct WeeklyLeagueDetailView: View {
             )
             
             VStack(alignment: .leading, spacing: 2) {
+                if !entry.isCurrentUser, entry.isFriend == true {
+                    Text("Friend")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.green.opacity(0.15)))
+                }
+                
                 HStack(spacing: 6) {
                     Text(entry.isCurrentUser ? "You" : entry.displayName)
                         .font(.subheadline)
@@ -677,13 +726,8 @@ struct WeeklyLeagueDetailView: View {
                         .foregroundColor(.primary)
                         .lineLimit(1)
                     
-                    if !entry.isCurrentUser, entry.isFriend == true {
-                        Text("Friend")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.green.opacity(0.15)))
+                    if entry.isVerified == true || entry.isGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: entry.isGoldVerified == true || (standing.tierRank == 7 && entry.rank <= 5))
                     }
                 }
                 
@@ -832,6 +876,7 @@ struct WeeklyLeagueDetailView: View {
             case 4: return "💎"
             case 5: return "💠"
             case 6: return "👑"
+            case 7: return "✅"
             default: return "🏆"
             }
         }()
@@ -911,7 +956,8 @@ struct WeeklyLeagueInfoSheet: View {
         ("🥇", "Gold", 3),
         ("💎", "Platinum", 4),
         ("🔷", "Diamond", 5),
-        ("🔥", "Elite", 6)
+        ("🔥", "Elite", 6),
+        ("✅", "Verified", 7)
     ]
     
     private var exampleCompetitor: LeagueEntry? {
@@ -1019,13 +1065,26 @@ struct WeeklyLeagueInfoSheet: View {
             VStack(spacing: 8) {
                 ForEach(tiers, id: \.rank) { tier in
                     HStack(spacing: 12) {
-                        Text(tier.emoji)
-                            .font(.title3)
-                            .frame(width: 32)
+                        if tier.rank == 7 {
+                            VerifiedBadge(size: 22)
+                                .frame(width: 32)
+                        } else {
+                            Text(tier.emoji)
+                                .font(.title3)
+                                .frame(width: 32)
+                        }
                         
-                        Text(tier.name)
-                            .font(.subheadline)
-                            .fontWeight(standing?.tierName == tier.name ? .bold : .regular)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(tier.name)
+                                .font(.subheadline)
+                                .fontWeight(standing?.tierName == tier.name ? .bold : .regular)
+                            
+                            if tier.rank == 7 {
+                                Text("Earn a blue badge next to your name")
+                                    .font(.caption2)
+                                    .foregroundColor(Color(red: 0.11, green: 0.63, blue: 0.95))
+                            }
+                        }
                         
                         Spacer()
                         

@@ -663,6 +663,7 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 
 **New performance rules established:**
 - Isolate ObservableObject subscriptions in wrapper views to prevent cascade recomputation
+- **Widget isolation rule (MANDATORY for all new features)**: Any widget in a ScrollView with 5+ siblings MUST be its own View struct that owns its service subscriptions (`@StateObject`/`@ObservedObject`). Parent views must NEVER read `@EnvironmentObject`/`@ObservedObject` properties inline in body for widget rendering. Pass only stable values (bindings, constants, cached `@State`) to isolated wrappers. This prevents a single `@Published` change from recomputing all sibling widgets with expensive blur/shadow/gradient modifiers. Proven wrappers: `DashboardQuestsWrapper`, `DashboardNotificationBannerWrapper`, `DashboardHeaderWrapper`, `DashboardStatsWrapper`, `DashboardChallengesWrapper`, `DashboardWorkoutCarouselWrapper`, `DashboardRecentWorkoutsWrapper`, `DashboardCustomHeaderWrapper` — all in `DashboardView+Helpers.swift`.
 - Horizontal DragGesture in vertical ScrollView: `.simultaneousGesture(minimumDistance: 25)`, never `.highPriorityGesture(minimumDistance: 8)`
 - `SmartExercisePairingEngine` and `WorkoutSuggestionEngine` are both NOT `@MainActor` — use background Core Data contexts
 - Singleton `init()` must return instantly — defer all cache loading to `Task {}`
@@ -775,3 +776,57 @@ The video playback pipeline uses a multi-tier cache (hot=2, warm=3, max 5 total 
 - Horizontal drag in vertical scroll: always `.simultaneousGesture(minimumDistance: 25)`
 - `@StateObject` on parent views: only for services read extensively in body. Services used in one conditional → extract to wrapper view
 - Expensive computed checks in body (e.g. muscle recovery loops) → cache as `@State`, update in `.onAppear`/`.onChange`
+
+### 2026-03-25: Full Dashboard Widget Isolation (Phase 3)
+
+**Problem**: Despite Phase 2 fixes, DashboardView body still recomputed 20+ widgets on every `@EnvironmentObject` change (userManager cloud sync, workoutManager timer). The blur/shadow/gradient modifiers on each widget made this extremely expensive (28-41fps).
+
+**Solution**: Extended the proven `DashboardQuestsWrapper` pattern to ALL remaining widget sections. Each widget is now its own View struct that owns its service subscriptions. The parent body only instantiates lightweight wrapper structs — SwiftUI diffs them structurally and only re-renders wrappers whose OWN subscriptions changed.
+
+| Wrapper | File | Owns | Isolates |
+|---------|------|------|----------|
+| `DashboardCustomHeaderWrapper` | `DashboardView+Helpers.swift` | `@EnvironmentObject workoutManager` | Workout timer (ticks every second) no longer recomputes 20+ widgets |
+| `DashboardHeaderWrapper` | `DashboardView+Helpers.swift` | `@EnvironmentObject userManager` | Cloud sync userManager publishes no longer recompute challenge/program/stats widgets |
+| `DashboardChallengesWrapper` | `DashboardView+Challenges.swift` | `@StateObject challengeService` | Challenge data changes isolated to challenge cards only |
+| `DashboardWorkoutCarouselWrapper` | `DashboardView+Helpers.swift` + `DashboardView+Programs.swift` + `DashboardView+Header.swift` | `@EnvironmentObject userManager, workoutManager` | Program/carousel updates isolated from other widgets |
+| `DashboardRecentWorkoutsWrapper` | `DashboardView+Helpers.swift` | No service sub (receives cached data) | Rendering isolated from parent body recomputation |
+| `DashboardStatsWrapper` | `DashboardView+Helpers.swift` | `@EnvironmentObject userManager` | Stats widget rendering isolated |
+
+**@State cleanup**: `selectedWidgetPage`, `widgetSwipeInProgress`, `challengeGlowPhase`, `challengeToCancel`, `selectedWorkoutPage`, `isNavigating`, `showStartProgramConfirm`, `programToStart`, `programGlowRotation`, `programWidgetRotation`, `activeWidgetGlowRotation`, `navigateToProgramDay` all moved from DashboardView into their respective wrappers — reduces parent invalidation surface.
+
+**File refactors**:
+- `DashboardView+Challenges.swift`: Changed from `extension DashboardView` to standalone `struct DashboardChallengesWrapper` with extension methods. Legacy unused methods (`widgetsToDisplay`, `swipeableProgramChallengeWidget`, `activeChallengeWidget`) removed.
+- `DashboardView+Programs.swift`: Split into `extension DashboardView` (only `programConflictAlert` + `colorFromProgramType`) and `extension DashboardWorkoutCarouselWrapper` (all program widgets).
+- `DashboardView+Header.swift`: `startWorkoutButton` and `handleWorkoutSelection` moved to `extension DashboardWorkoutCarouselWrapper`.
+
+**Projected impact**: During cloud sync or active workout, only the 1-2 affected wrapper bodies recompute (small views), not all 20+ widgets with their expensive blur/shadow modifiers.
+
+### 2026-03-26: Crash Regression Fix — v1.34/v1.35 (52 crashes across 7+ users)
+
+**Cross-version crash analysis**: 52 crashes analyzed (32 from v1.34, 20 from v1.35). 73% (38/52) were main thread freezes affecting 7 real users across all device types (iPhone 12 Pro Max through iPhone 18). Remaining: RLS permission errors (4 crashes + 9 in unified logs), DB schema mismatches (7), network timeouts (4).
+
+**Fix A — Singleton init `@MainActor` removal**:
+- `ChallengeService.swift`, `CloudProgramService.swift`, `SmartProgramEngine.swift`: Changed `Task { @MainActor [self] in }` to `Task { [self] in }` in all three singleton inits. The `@MainActor` annotation forced cache loading Tasks to compete with UI rendering on the main thread during startup.
+- `SmartProgramEngine.loadUserPrograms()` converted to `async`, `@Published` mutation (`userPrograms = programs`) wrapped in `MainActor.run` since the class is not `@MainActor`.
+- Dead `runIntelligenceInit()` instance method removed from `Fit33App.swift` (~90 lines). It duplicated the free function `performIntelligenceInit()` but would inherit `@MainActor` from the `App` protocol, defeating the purpose.
+- Added `off-main` confirmation logs in each singleton init Task.
+
+**Fix B — Auth guards on all Supabase write methods**:
+- `WorkoutManager.recordExercisePerformance()`: Added `SupabaseManager.shared.isAuthenticated` guard. Previously only checked `UserManager.shared.currentUser?.id` which can exist with an expired session token.
+- `CollaborativeLearningEngine.recordWorkoutCompletion()`: Added auth guard + empty userId guard. Fixed caller in WorkoutManager that passed `user.id?.uuidString ?? ""` (empty string → UUID type error).
+- `AdvancedIntelligenceService`: Added auth guards to all 6 write methods (`trackPerformanceTrend`, `trackTimePerformance`, `trackSetCompletion`, `trackWeeklyVolume`, `updateStrengthRatios`, `updateExerciseEffectiveness`).
+- `ActiveWorkoutView+Actions.swift`: Fixed `userId: user.id ?? UUID()` to `guard let userId = user.id` — a synthetic UUID writes analytics data under the wrong user.
+
+**New rule — Auth guard on ALL Supabase writes (mandatory)**:
+Every Supabase INSERT/UPDATE/DELETE/RPC call MUST check `SupabaseManager.shared.isAuthenticated` before executing. The `UserManager.currentUser?.id` check alone is insufficient — a user object can exist in Core Data with an expired Supabase session token. When `auth.uid()` returns NULL on the server, RLS policies reject with error code 42501. All guarded skips log at `.warning` level with category `.auth` for monitoring.
+
+**Fix D — Challenge progress timeout handling**:
+- `PrivateChallengeService.logProgress()` and `CommunityChallengeService.logProgress()`: Added auth guards, reduced retries from 5 to 3, expanded timeout detection to include `NSURLErrorTimedOut` (previously only caught `NSURLErrorCancelled`).
+
+### 2026-03-26: Exercise Library "Exercise" Placeholder Bug — Core Data Threading Violation
+
+**Root cause**: `ExerciseLibraryService.preWarmCache()` fetched `Exercise` managed objects on a **background context** (`newBackgroundContext()`) but passed them to `ExerciseLibraryFilterCache.preFilteredRecommended`, which is consumed on the **main thread** by the view. Accessing `exercise.name` on a bg-context object from the main thread returns `nil` → `ExerciseNicknameService.displayName(for:)` falls back to the literal `"Exercise"` placeholder.
+
+**Fix**: Changed the bg context fetch to return `[NSManagedObjectID]` instead of `[Exercise]`, then resolved them on the main view context via `viewContext.object(with:)`. The view now holds view-context Exercise objects whose properties are safely accessible on the main thread.
+
+**Rule**: Never store Core Data managed objects fetched from a background context in caches/published properties consumed by the main thread. Pass `NSManagedObjectID` across context boundaries and resolve on the target context.

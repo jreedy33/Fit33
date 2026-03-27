@@ -108,7 +108,7 @@ final class ExerciseMappingService {
             // ⚡️ PERFORMANCE: Build maps incrementally on background queue
             // This prevents blocking the main thread for 19+ seconds
             
-            mapBuildTask = Task(priority: .utility) { [weak self] in
+            mapBuildTask = Task(priority: .background) { [weak self] in
                 guard let self = self else { return }
                 
                 // Build pattern map first (fast, essential)

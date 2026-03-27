@@ -265,7 +265,7 @@ struct PersonalizedProgramsView: View {
         let progressiveSeries = Dictionary(grouping: programs.filter { $0.template.isProgressive }) { $0.template.seriesId ?? "" }
         
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Progressive Series")
+            Text("Strength Series")
                 .font(.headline)
                 .fontWeight(.bold)
             
@@ -417,20 +417,10 @@ struct TopMatchCard: View {
             }
         }
         .padding(14)
-        .background(
-            colorScheme == .dark 
-                ? Color(white: 0.15)
-                : Color.white
+        .sleekCard(
+            cornerRadius: CornerRadius.lg,
+            accentColor: program.template.category.color
         )
-        .cornerRadius(CornerRadius.lg)
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                .stroke(program.template.category.color.opacity(0.3), lineWidth: 1.5)
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 8, x: 0, y: 4)
-        // Subtle category-colored glow
-        .shadow(color: program.template.category.color.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 12, x: 0, y: 0)
-        .shadow(color: program.template.category.color.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 20, x: 0, y: 0)
     }
     
     private func difficultyColor(_ difficulty: ProgramDifficultyLevel) -> Color {
@@ -476,9 +466,9 @@ struct ProgressiveSeriesRow: View {
                 }
             }
             
-            // Horizontal scroll of program cards
+            // Horizontal scroll of floating program cards
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     ForEach(programs) { program in
                         Button(action: { onSelect(program) }) {
                             SeriesLevelCard(program: program)
@@ -487,64 +477,9 @@ struct ProgressiveSeriesRow: View {
                         .disabled(!program.isUnlocked)
                     }
                 }
+                .padding(.vertical, 4)
             }
         }
-        .padding(14)
-        .background(
-            ZStack {
-                // Bottom shadow layer (deepest) - colored based on series
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(seriesColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 8)
-                    .blur(radius: 4)
-                
-                // Middle shadow layer
-                RoundedRectangle(cornerRadius: CornerRadius.lg)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
-                
-                // Main card background with gradient
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color(white: 0.18), Color(white: 0.14)]
-                                : [Color.white, Color.white.opacity(0.95)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
-                    )
-                
-                // Colored accent border
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                seriesColor.opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                seriesColor.opacity(colorScheme == .dark ? 0.3 : 0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: seriesColor.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 16, x: 0, y: 8)
     }
 }
 
@@ -624,20 +559,10 @@ struct SeriesLevelCard: View {
         }
         .padding(Spacing.sm)
         .frame(width: 140)
-        .background(
-            colorScheme == .dark 
-                ? Color.cardBackground
-                : Color.white
+        .sleekCard(
+            cornerRadius: 16,
+            accentColor: program.isUnlocked ? program.template.category.color : .gray
         )
-        .cornerRadius(14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(
-                    program.isUnlocked ? program.template.category.color.opacity(0.2) : Color.gray.opacity(0.15),
-                    lineWidth: 1
-                )
-        )
-        // Border only, no glow on individual level cards
         .opacity(program.isUnlocked ? 1 : 0.6)
     }
 }
@@ -721,20 +646,10 @@ struct ProgramCard: View {
         }
         .padding(Spacing.sm)
         .frame(height: 180)
-        .background(
-            colorScheme == .dark 
-                ? Color(white: 0.15)
-                : Color.white
+        .sleekCard(
+            cornerRadius: 16,
+            accentColor: program.template.category.color
         )
-        .cornerRadius(14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(program.template.category.color.opacity(0.25), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 6, x: 0, y: 3)
-        // Subtle category-colored glow
-        .shadow(color: program.template.category.color.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 10, x: 0, y: 0)
-        .shadow(color: program.template.category.color.opacity(colorScheme == .dark ? 0.12 : 0.08), radius: 16, x: 0, y: 0)
     }
     
     private func difficultyColor(_ difficulty: ProgramDifficultyLevel) -> Color {

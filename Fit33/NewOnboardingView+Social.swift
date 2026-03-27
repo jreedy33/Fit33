@@ -266,7 +266,8 @@ extension NewOnboardingView {
                                         AppLogger.debug("... and \(contactsService.suggestedFriends.count - 5) more", category: .social)
                                     }
                                 } else {
-                                    AppLogger.debug("No contacts found on Fit33 yet", category: .social)
+                                    AppLogger.debug("No contacts found on Fit33 — fetching PYMK as fallback", category: .social)
+                                    Task { await contactsService.fetchPeopleYouMayKnow() }
                                 }
                             }
                             
@@ -399,14 +400,57 @@ extension NewOnboardingView {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.top, 60)
-            } else if filteredSuggestedFriends.isEmpty {
-                // Empty state
+            } else if !filteredSuggestedFriends.isEmpty {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(filteredSuggestedFriends) { friend in
+                            onboardingFriendRow(friend: friend)
+                        }
+                    }
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.bottom, 100)
+                }
+            } else if !filteredPYMK.isEmpty && contactsPermissionGranted {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        VStack(spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 38))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.blue, .cyan, .purple.opacity(0.8)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                            
+                            Text("Already part of the club!")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            Text("People you might know on Fit33")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
+                        
+                        LazyVStack(spacing: 12) {
+                            ForEach(filteredPYMK) { friend in
+                                onboardingFriendRow(friend: friend)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.bottom, 100)
+                }
+            } else {
                 VStack(spacing: 20) {
                     Image(systemName: contactsPermissionGranted ? "person.2.slash" : "person.crop.circle.badge.questionmark")
                         .font(.system(size: 50))
                         .foregroundColor(.secondary.opacity(0.5))
                     
-                    Text(contactsPermissionGranted 
+                    Text(contactsPermissionGranted
                         ? (friendSearchText.isEmpty ? "No contacts on Fit33 yet" : "No results for \"\(friendSearchText)\"")
                         : "Enable contacts to find friends")
                         .font(.headline)
@@ -422,33 +466,24 @@ extension NewOnboardingView {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 60)
                 .padding(.horizontal, Spacing.xl)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(filteredSuggestedFriends) { friend in
-                            onboardingFriendRow(friend: friend)
-                        }
-                    }
-                    .padding(.horizontal, Spacing.lg)
-                    .padding(.bottom, 100) // Space for continue button
-                }
             }
             
             Spacer()
         }
         .onAppear {
-            AppLogger.debug("Add Friends step appeared - granted: \(contactsPermissionGranted), canAccess: \(contactsService.canAccessContacts), loading: \(contactsService.isLoading), checked: \(contactsService.hasCheckedContacts), friends: \(contactsService.suggestedFriends.count), emails: \(contactsService.contactEmails.count), phones: \(contactsService.contactPhoneNumbers.count)", category: .social)
+            AppLogger.debug("Add Friends step appeared - granted: \(contactsPermissionGranted), canAccess: \(contactsService.canAccessContacts), loading: \(contactsService.isLoading), checked: \(contactsService.hasCheckedContacts), friends: \(contactsService.suggestedFriends.count), pymk: \(contactsService.peopleYouMayKnow.count), emails: \(contactsService.contactEmails.count), phones: \(contactsService.contactPhoneNumbers.count)", category: .social)
             
-            // Refresh contacts and find friends if we have permission but haven't checked yet
-            // or if the suggested friends list is empty (might need refresh)
             if contactsService.canAccessContacts {
                 if !contactsService.hasCheckedContacts || contactsService.suggestedFriends.isEmpty {
                     AppLogger.debug("Fetching/refreshing contacts and friends...", category: .social)
                     Task {
                         isLoadingFriends = true
                         await contactsService.fetchContactsAndFindFriends()
+                        if contactsService.suggestedFriends.isEmpty && contactsService.peopleYouMayKnow.isEmpty {
+                            await contactsService.fetchPeopleYouMayKnow()
+                        }
                         isLoadingFriends = false
-                        AppLogger.info("Add Friends fetch complete - found \(contactsService.suggestedFriends.count) friends", category: .social)
+                        AppLogger.info("Add Friends fetch complete - contacts: \(contactsService.suggestedFriends.count), pymk: \(contactsService.peopleYouMayKnow.count)", category: .social)
                     }
                 } else {
                     AppLogger.debug("Already have \(contactsService.suggestedFriends.count) suggested friends - no refresh needed", category: .social)
@@ -473,6 +508,27 @@ extension NewOnboardingView {
             if let username = friend.username, username.lowercased().contains(searchLower) {
                 return true
             }
+            return false
+        }
+    }
+    
+    /// Friends-of-friends fallback when no contact matches exist
+    var filteredPYMK: [SuggestedFriend] {
+        let pymk = contactsService.peopleYouMayKnow.filter { suggestion in
+            !suggestion.isFriend
+            && !suggestion.hasOutgoingRequest
+            && !suggestion.hasIncomingRequest
+            && !sentFriendRequests.contains(suggestion.userId)
+        }
+        
+        if friendSearchText.isEmpty {
+            return pymk
+        }
+        
+        let searchLower = friendSearchText.lowercased()
+        return pymk.filter { friend in
+            if let name = friend.name, name.lowercased().contains(searchLower) { return true }
+            if let username = friend.username, username.lowercased().contains(searchLower) { return true }
             return false
         }
     }

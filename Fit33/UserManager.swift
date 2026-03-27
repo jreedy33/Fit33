@@ -7,6 +7,8 @@ class UserManager: ObservableObject {
     @Published var hasCompletedOnboarding: Bool = false
     @Published var showLevelUpCelebration: Bool = false
     @Published var newLevelReached: Int = 0
+    @Published var isVerified: Bool = false
+    @Published var isGoldVerified: Bool = false
     
     private let viewContext = PersistenceController.shared.container.viewContext
     private let supabaseManager = SupabaseManager.shared

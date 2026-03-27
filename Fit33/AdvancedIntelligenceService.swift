@@ -61,6 +61,10 @@ class AdvancedIntelligenceService: ObservableObject {
         reps: Int,
         sets: Int
     ) async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[INTELLIGENCE] Skipping performance trend — not authenticated", category: .auth)
+            return
+        }
         let weekStart = getWeekStart(from: Date())
         let volume = weight * Double(reps) * Double(sets)
         
@@ -152,6 +156,10 @@ class AdvancedIntelligenceService: ObservableObject {
         volume: Double,
         hadPR: Bool
     ) async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[INTELLIGENCE] Skipping time performance — not authenticated", category: .auth)
+            return
+        }
         let hour = Calendar.current.component(.hour, from: workoutDate)
         let timeSlot = getTimeSlot(hour: hour)
         
@@ -249,6 +257,10 @@ class AdvancedIntelligenceService: ObservableObject {
         setsAttempted: Int,
         setsCompleted: [Bool]  // Array of completion status per set
     ) async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[INTELLIGENCE] Skipping set completion — not authenticated", category: .auth)
+            return
+        }
         guard !setsCompleted.isEmpty else { return }
         
         do {
@@ -583,6 +595,10 @@ class AdvancedIntelligenceService: ObservableObject {
         volume: Double,
         exerciseCount: Int
     ) async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[INTELLIGENCE] Skipping weekly volume — not authenticated", category: .auth)
+            return
+        }
         let weekStart = getWeekStart(from: Date())
         
         do {
@@ -681,7 +697,10 @@ class AdvancedIntelligenceService: ObservableObject {
         weight: Double,
         reps: Int
     ) async {
-        // Calculate estimated 1RM using Epley formula
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[INTELLIGENCE] Skipping strength ratios — not authenticated", category: .auth)
+            return
+        }
         let oneRM = weight * (1 + Double(min(reps, 12)) / 30.0)
         let ratio = oneRM / (bodyWeightKg * 2.205)  // Convert to lbs for ratio
         
@@ -822,6 +841,10 @@ class AdvancedIntelligenceService: ObservableObject {
         completionRate: Double,
         wasReturned: Bool
     ) async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[INTELLIGENCE] Skipping exercise effectiveness — not authenticated", category: .auth)
+            return
+        }
         do {
             struct ExistingData: Decodable {
                 let times_performed: Int

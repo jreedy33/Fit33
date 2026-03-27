@@ -27,7 +27,6 @@ struct ChallengePreviewWidget: View {
         invite.resolvedType
     }
     
-    // Theme colors based on challenge type
     private var themeColor: Color {
         challengeType.color
     }
@@ -36,36 +35,27 @@ struct ChallengePreviewWidget: View {
         challengeType.gradientColors
     }
     
-    
     var body: some View {
         VStack(spacing: 0) {
-            // Main card content
-            VStack(spacing: 0) {
-                // Header - Challenge info
-                headerSection
-                
-                Divider()
-                    .padding(.horizontal, Spacing.md)
-                
-                // Challenge details
-                challengeDetailsSection
-                
-                Divider()
-                    .padding(.horizontal, Spacing.md)
-                
-                // Action buttons
-                actionButtonsSection
-            }
-            .onboardingCardStyle(accentColor: themeColor, secondaryColor: gradientColors.last ?? themeColor, isSelected: true, cornerRadius: 24)
+            headerSection
+            
+            Divider().padding(.horizontal, Spacing.md)
+            
+            challengeDetailsSection
+            
+            Divider().padding(.horizontal, Spacing.md)
+            
+            actionButtonsSection
         }
+        .background(staticCardBackground(accentColor: themeColor, secondaryColor: gradientColors.last ?? themeColor))
+        .shadow(color: themeColor.opacity(0.15), radius: 15, x: 0, y: 0)
+        .shadow(color: themeColor.opacity(0.08), radius: 25, x: 0, y: 4)
         .confirmationDialog(
             "Decline this challenge?",
             isPresented: $showingDeclineConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Decline", role: .destructive) {
-                declineChallenge()
-            }
+            Button("Decline", role: .destructive) { declineChallenge() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("You'll miss out on competing with \(invite.creatorName ?? "your friend")!")
@@ -76,8 +66,14 @@ struct ChallengePreviewWidget: View {
     
     private var headerSection: some View {
         HStack(spacing: 12) {
-            // Challenger avatar with gradient ring
-            challengerAvatarView
+            CachedFriendPhoto(
+                friendId: invite.creatorId.uuidString,
+                photoUrl: invite.creatorPhotoUrl,
+                name: invite.creatorName ?? "Challenger",
+                size: 48,
+                showGradientRing: true,
+                gradientColors: gradientColors
+            )
             
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
@@ -86,7 +82,6 @@ struct ChallengePreviewWidget: View {
                         .fontWeight(.medium)
                         .foregroundColor(themeColor)
                     
-                    // NEW badge
                     Text("NEW")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundColor(.white)
@@ -95,128 +90,66 @@ struct ChallengePreviewWidget: View {
                         .background(Capsule().fill(themeColor))
                 }
                 
-                Text("\(invite.creatorName ?? "Someone") wants to challenge...")
-                    .font(.caption)
+                Text("\(invite.creatorName ?? "Someone") challenged you!")
+                    .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                // Username if available
-                if let username = invite.creatorUsername, !username.isEmpty {
-                    Text("@\(username)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                    .lineLimit(1)
             }
             
             Spacer()
             
-            // Time ago
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(formatSmartDate(invite.invitedAt))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
+            Text(challengeType.emoji)
+                .font(.ds_heading1)
         }
         .padding(Spacing.md)
-    }
-    
-    // MARK: - Challenger Avatar View
-    
-    private var challengerAvatarView: some View {
-        ZStack(alignment: .topTrailing) {
-            CachedFriendPhoto(
-                friendId: invite.creatorId.uuidString,
-                photoUrl: invite.creatorPhotoUrl,
-                name: invite.creatorName ?? "Challenger",
-                size: 52,
-                showGradientRing: true,
-                gradientColors: gradientColors
-            )
-            
-            // Pulsing dot for new challenge
-            PulsingRedDot()
-                .offset(x: 2, y: -2)
-        }
     }
     
     // MARK: - Challenge Details Section
     
     private var challengeDetailsSection: some View {
         HStack(spacing: 16) {
-            // Trophy icon
-            Image(systemName: "trophy.fill")
-                .font(.ds_heading1)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: gradientColors,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            
-            VStack(alignment: .leading, spacing: 4) {
-                // Challenge title — just the mode emoji + clean title
+            VStack(alignment: .leading, spacing: 2) {
                 Text(invite.displayTitle)
                     .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .fontWeight(.bold)
                     .foregroundColor(.primary)
-                    .lineLimit(2)
+                    .lineLimit(1)
                 
-                // Challenge details
-                HStack(spacing: 12) {
-                    // Duration
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar")
-                            .font(.caption2)
-                        Text("\(invite.durationDays) days")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.secondary)
-                    
-                    // Target
-                    if let target = invite.dailyTarget {
-                        HStack(spacing: 4) {
-                            Image(systemName: "target")
-                                .font(.caption2)
-                            Text("\(target.formatted()) \(invite.targetUnit)/day")
-                                .font(.caption)
-                        }
-                        .foregroundColor(.secondary)
-                    }
-                }
-                
-                // Start date
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(.caption2)
-                    Text("Starts \(invite.startDate.formatted(date: .abbreviated, time: .omitted))")
+                if let target = invite.dailyTarget {
+                    Text("\(target.formatted()) \(invite.targetUnit)/day • \(invite.durationDays) days")
                         .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                .foregroundColor(.secondary)
             }
             
             Spacer()
+            
+            VStack(alignment: .trailing, spacing: 2) {
+                let isAccountability = invite.title.hasPrefix("🤝")
+                Text(isAccountability ? "🤝" : "⚔️")
+                    .font(.ds_heading3)
+                
+                Text(isAccountability ? "Buddy" : "Battle")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
         }
-        .padding(Spacing.md)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Action Buttons Section
     
     private var actionButtonsSection: some View {
         HStack(spacing: 12) {
-            // Decline button
             Button(action: {
-                AppLogger.error("❌ [CHALLENGE ACCEPT] Decline button tapped", category: .social)
                 HapticManager.impact(.light)
                 showingDeclineConfirmation = true
             }) {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     if isDeclining {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                            .tint(.primary)
+                        ProgressView().scaleEffect(0.7).tint(.secondary)
                     } else {
                         Image(systemName: "xmark")
                             .font(.ds_labelMedium)
@@ -225,53 +158,39 @@ struct ChallengePreviewWidget: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(.primary)
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .padding(.vertical, Spacing.xs)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                        .fill(Color.secondary.opacity(0.15))
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.gray.opacity(0.12))
                 )
-                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(isAccepting || isDeclining)
             
-            // Accept button
             Button(action: acceptChallenge) {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     if isAccepting {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                            .tint(.white)
+                        ProgressView().scaleEffect(0.7).tint(.white)
                     } else {
                         Image(systemName: "checkmark")
-                            .font(.ds_bodySmall)
+                            .font(.ds_labelMedium)
                     }
                     Text("Accept")
                         .font(.subheadline)
-                        .fontWeight(.bold)
+                        .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .padding(.vertical, Spacing.xs)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                        .fill(
-                            LinearGradient(
-                                colors: gradientColors,
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing))
                 )
-                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(isAccepting || isDeclining)
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
+        .padding(Spacing.md)
     }
     
     // MARK: - Actions
@@ -647,11 +566,10 @@ struct GroupChallengeInviteWidget: View {
     @State private var isAccepting = false
     @State private var isDeclining = false
     @State private var showingDeclineConfirmation = false
-    @State private var glowRotation: Double = 0
     @State private var nudgedUserIds: Set<UUID> = []
     @State private var isNudging: UUID? = nil
     
-    private let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7) // Green teal
+    private let challengeColor = Color(red: 0.0, green: 0.9, blue: 0.7)
     
     private var challengeType: ChallengeType {
         challenge.resolvedType
@@ -821,51 +739,10 @@ struct GroupChallengeInviteWidget: View {
             }
             .padding(Spacing.md)
         }
-        .background(
-            ZStack {
-                // Animated glowing border
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [
-                                challengeColor.opacity(0.7),
-                                Color.teal.opacity(0.5),
-                                challengeColor.opacity(0.3),
-                                Color.clear,
-                                Color.clear,
-                                challengeColor.opacity(0.2),
-                                Color.mint.opacity(0.4),
-                                challengeColor.opacity(0.6)
-                            ]),
-                            center: .center,
-                            angle: .degrees(glowRotation)
-                        ),
-                        lineWidth: 2
-                    )
-                    .blur(radius: 2)
-                
-                // Main card background
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.cardBackground)
-                
-                // Inner border for definition
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [challengeColor.opacity(0.5), Color.teal.opacity(0.3), challengeColor.opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
+        .background(staticCardBackground(accentColor: challengeColor, secondaryColor: .teal))
         .shadow(color: challengeColor.opacity(0.15), radius: 15, x: 0, y: 0)
         .shadow(color: challengeColor.opacity(0.08), radius: 25, x: 0, y: 4)
         .onAppear {
-            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
-                glowRotation = 360
-            }
             loadNudgedUsers()
         }
         .confirmationDialog(
@@ -938,11 +815,10 @@ struct PrivateChallengeInviteWidget: View {
     @State private var isAccepting = false
     @State private var isDeclining = false
     @State private var showingDeclineConfirmation = false
-    @State private var glowRotation: Double = 0
     @State private var showingDetail = false
     
     private let themeColor = Color.purple
-    private var gradientColors: [Color] { [.purple, .blue] }
+    private var gradientColors: [Color] { [.purple, .pink] }
     
     
     private var challengeType: ChallengeType {
@@ -965,7 +841,7 @@ struct PrivateChallengeInviteWidget: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
-                        Text("Private Challenge")
+                        Text("Private Community")
                             .font(.caption)
                             .fontWeight(.medium)
                             .foregroundColor(themeColor)
@@ -978,11 +854,12 @@ struct PrivateChallengeInviteWidget: View {
                             .background(Capsule().fill(themeColor))
                     }
                     
-                    Text("\(invite.inviterName ?? "Someone") invited you!")
+                    Text("\(invite.inviterFirstName) invited you to \(invite.challengeTitle)")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
                 }
                 
                 Spacer()
@@ -1080,52 +957,9 @@ struct PrivateChallengeInviteWidget: View {
             }
             .padding(Spacing.md)
         }
-        .background(
-            ZStack {
-                // Animated glowing border
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [
-                                themeColor.opacity(0.7),
-                                Color.blue.opacity(0.5),
-                                themeColor.opacity(0.3),
-                                Color.clear,
-                                Color.clear,
-                                themeColor.opacity(0.2),
-                                Color.indigo.opacity(0.4),
-                                themeColor.opacity(0.6)
-                            ]),
-                            center: .center,
-                            angle: .degrees(glowRotation)
-                        ),
-                        lineWidth: 2
-                    )
-                    .blur(radius: 2)
-                
-                // Main card background
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.cardBackground)
-                
-                // Inner border for definition
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [themeColor.opacity(0.5), Color.blue.opacity(0.3), themeColor.opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: themeColor.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: themeColor.opacity(0.08), radius: 25, x: 0, y: 4)
-        .onAppear {
-            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
-                glowRotation = 360
-            }
-        }
+        .background(staticCardBackground(accentColor: themeColor, secondaryColor: .pink))
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+        .shadow(color: .purple.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
         .confirmationDialog(
             "Decline this private challenge?",
             isPresented: $showingDeclineConfirmation,
@@ -1204,6 +1038,31 @@ struct PrivateChallengeInviteContainer: View {
                     .padding(.top, 4)
                 }
             }
+        }
+    }
+}
+
+// MARK: - Group Challenge Invites Section (Dashboard Container)
+
+/// Isolated container that shows group challenge invites where the current user
+/// hasn't accepted yet. Owns its own @ObservedObject to prevent parent re-renders.
+struct GroupChallengeInvitesSection: View {
+    @ObservedObject private var challengeService = ChallengeService.shared
+    @EnvironmentObject var userManager: UserManager
+    
+    private var pendingGroupInvites: [ActiveGroupChallenge] {
+        challengeService.activeGroupChallenges.filter { !$0.iHaveAccepted }
+    }
+    
+    var body: some View {
+        if !pendingGroupInvites.isEmpty {
+            VStack(spacing: 12) {
+                ForEach(pendingGroupInvites) { challenge in
+                    GroupChallengeInviteWidget(challenge: challenge)
+                        .environmentObject(userManager)
+                }
+            }
+            .padding(.bottom, 16)
         }
     }
 }

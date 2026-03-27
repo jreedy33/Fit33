@@ -604,8 +604,9 @@ class SmartProgramEngine: ObservableObject {
     ]
     
     private init() {
-        Task { @MainActor [self] in
-            loadUserPrograms()
+        Task { [self] in
+            AppLogger.debug("[SmartProgramEngine] Cache load started (off-main: \(!Thread.isMainThread))", category: .performance)
+            await loadUserPrograms()
         }
     }
     
@@ -1890,18 +1891,16 @@ class SmartProgramEngine: ObservableObject {
     
     // MARK: - Persistence (Local + Cloud)
     
-    private func loadUserPrograms() {
-        // Load from local cache first (fast)
+    private func loadUserPrograms() async {
         if let data = defaults.data(forKey: programsKey),
            let programs = try? JSONDecoder().decode([SmartActiveProgram].self, from: data) {
-            userPrograms = programs
+            await MainActor.run {
+                userPrograms = programs
+            }
             AppLogger.debug("📦 [PROGRAMS] Loaded \(programs.count) programs from local cache", category: .workout)
         }
         
-        // Then sync from cloud (async)
-        Task {
-            await loadProgramsFromCloud()
-        }
+        await loadProgramsFromCloud()
     }
     
     private func saveUserPrograms() {

@@ -17,6 +17,8 @@ struct ProfileUser: Identifiable {
     let friendshipId: UUID?
     let friendsSince: Date?
     let totalWorkoutsShared: Int
+    let isVerified: Bool
+    let isGoldVerified: Bool
 
     var id: UUID { userId }
 
@@ -55,6 +57,8 @@ struct ProfileUser: Identifiable {
         self.friendshipId = friend.friendshipId
         self.friendsSince = friend.friendsSince
         self.totalWorkoutsShared = friend.totalWorkoutsShared
+        self.isVerified = friend.isVerified ?? false
+        self.isGoldVerified = friend.isGoldVerified ?? false
     }
 
     init(searchResult: UserSearchResult) {
@@ -71,6 +75,8 @@ struct ProfileUser: Identifiable {
         self.friendshipId = nil
         self.friendsSince = nil
         self.totalWorkoutsShared = 0
+        self.isVerified = searchResult.isVerified ?? false
+        self.isGoldVerified = searchResult.isGoldVerified ?? false
     }
 
     init(suggested: SuggestedFriend) {
@@ -87,6 +93,8 @@ struct ProfileUser: Identifiable {
         self.friendshipId = nil
         self.friendsSince = nil
         self.totalWorkoutsShared = 0
+        self.isVerified = suggested.isVerified ?? false
+        self.isGoldVerified = suggested.isGoldVerified ?? false
     }
 
     init(leagueEntry: LeagueEntry) {
@@ -103,6 +111,8 @@ struct ProfileUser: Identifiable {
         self.friendshipId = nil
         self.friendsSince = nil
         self.totalWorkoutsShared = 0
+        self.isVerified = leagueEntry.isVerified ?? false
+        self.isGoldVerified = leagueEntry.isGoldVerified ?? false
     }
 
     init(communityEntry: CommunityLeaderboardEntry) {
@@ -119,6 +129,8 @@ struct ProfileUser: Identifiable {
         self.friendshipId = nil
         self.friendsSince = nil
         self.totalWorkoutsShared = 0
+        self.isVerified = communityEntry.isVerified ?? false
+        self.isGoldVerified = communityEntry.isGoldVerified ?? false
     }
 
     @MainActor
@@ -137,6 +149,8 @@ struct ProfileUser: Identifiable {
         self.friendshipId = matchedFriend?.friendshipId
         self.friendsSince = matchedFriend?.friendsSince
         self.totalWorkoutsShared = matchedFriend?.totalWorkoutsShared ?? 0
+        self.isVerified = false
+        self.isGoldVerified = false
     }
 
     /// Look up the full Friend model from FriendService (needed for actions like create workout/challenge)
@@ -346,10 +360,16 @@ struct FriendProfileView: View {
                 gradientColors: [.blue, .purple.opacity(0.8)]
             )
             
-            Text(user.displayName)
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.primary)
+            HStack(spacing: 4) {
+                Text(user.displayName)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                if user.isVerified || user.isGoldVerified {
+                    VerifiedBadge(size: 18, isGold: user.isGoldVerified)
+                }
+            }
             
             if user.isFriend, let since = user.friendsSince {
                 HStack(spacing: 6) {

@@ -38,6 +38,7 @@ struct FriendsTabView: View {
     @State private var hasAppearedBefore = false
     @State private var challengeGlowPhase: Double = 0
     @State private var challengeToCancel: UUID?
+    @State private var showingPrivateChallengeCreation = false
     
     // MARK: - Live Refresh State
     @State private var lastRefreshedAt: Date?
@@ -75,8 +76,23 @@ struct FriendsTabView: View {
                         // Weekly League widget
                         weeklyLeagueSection
                         
-                        // Active Challenges carousel
-                        activeChallengesCarousel
+                        // Active Challenges carousel (shared with Home tab)
+                        if !challengeService.activeChallenges.isEmpty || !challengeService.activeGroupChallenges.isEmpty || !challengeService.pendingSentChallenges.isEmpty {
+                            HStack(spacing: 6) {
+                                Image(systemName: "flame.fill")
+                                    .foregroundStyle(
+                                        LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    )
+                                    .font(.title3)
+                                Text("Active Challenges")
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                Spacer()
+                            }
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.top, Spacing.sm)
+                        }
+                        DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation)
                         
                         // Private Challenges (invite-only communities)
                         if !privateChallengeService.myChallenges.isEmpty {
@@ -158,22 +174,21 @@ struct FriendsTabView: View {
             }
         }
         .task {
-            // Small debounce to avoid competing with Dashboard's initial load
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s
-            guard !Task.isCancelled else { return }
             guard SupabaseManager.shared.isAuthenticated else { return }
             
-            activeRefreshTask?.cancel()
-            activeRefreshTask = Task {
-                await refreshAllFriendsData(force: false)
-                lastRefreshedAt = Date()
-            }
-            _ = await activeRefreshTask?.value
+            // Only do the full data refresh when the Friends tab is actually visible.
+            // SwiftUI's .task fires for ALL tabs on launch — the Dashboard already fetches
+            // friends/challenges/invites, so duplicating here wastes network + CPU.
+            // Batch 1+2 data is already cached from Dashboard's initial load.
             hasAppearedBefore = true
             updateCachedSuggestions()
-            
-            // Start auto-refresh polling for live opponent data
             startAutoRefreshTimer()
+            
+            // Fire suggestion refresh independently (once per app session).
+            // This runs PYMK + contacts in parallel, not gated behind Batch 1+2,
+            // so suggestions load fast even when challenge/league data is slow.
+            await contactsService.refreshSuggestionsIfNeeded()
+            updateCachedSuggestions()
         }
         .onAppear {
             // Mark community widgets as visible so rank arrows stay and update live
@@ -247,6 +262,10 @@ struct FriendsTabView: View {
         }
         .sheet(isPresented: $showingAllCommunities) {
             AllCommunityChallengesView()
+        }
+        .sheet(isPresented: $showingPrivateChallengeCreation) {
+            PrivateChallengeCreationFlow()
+                .environmentObject(userManager)
         }
         .fullScreenCover(isPresented: $showingChallengeCreation) {
             NavigationStack {
@@ -338,9 +357,11 @@ struct FriendsTabView: View {
         async let league: () = leagueService.fetchOrJoinLeague(force: force)
         _ = await (active, groups, community, privateChallenges, league)
         
-        // Batch 3: Contacts + PYMK — HEAVY operations, only run when forced (pull-to-refresh)
-        // or every 5 minutes. Tab switches should NOT re-scan contacts from the device.
-        if force || (lastContactsRefreshAt.map { Date().timeIntervalSince($0) > 300 } ?? true) {
+        // Batch 3: Contacts + PYMK — HEAVY operations (hashes 2000+ phone numbers).
+        // Only on explicit pull-to-refresh. Normal per-session refresh runs independently
+        // via contactsService.refreshSuggestionsIfNeeded() in .task, so suggestions
+        // aren't blocked behind Batch 1+2.
+        if force {
             lastContactsRefreshAt = Date()
             async let pymk: () = contactsService.fetchPeopleYouMayKnow()
             if contactsService.canAccessContacts {
@@ -412,6 +433,12 @@ struct FriendsTabView: View {
                     Text("Requests")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
+                    
+                    if requestCount > 0 {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                    }
                 }
             }
             .buttonStyle(.plain)
@@ -729,11 +756,17 @@ struct FriendsTabView: View {
                         .offset(x: 4, y: 4)
                 }
                 
-                Text(rankedFriend.displayName.components(separatedBy: " ").first ?? "Friend")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 2) {
+                    Text(rankedFriend.displayName.components(separatedBy: " ").first ?? "Friend")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    if friend.isVerified == true || friend.isGoldVerified == true {
+                        VerifiedBadge(size: 10, isGold: friend.isGoldVerified == true)
+                    }
+                }
                 
                 Text("\(rankedFriend.challengesTogether) challenges")
                     .font(.caption2)
@@ -942,8 +975,8 @@ struct FriendsTabView: View {
                         }
                         .frame(height: 156)
                         .animation(.easeOut(duration: 0.2), value: safePageIndex)
-                        .highPriorityGesture(
-                            DragGesture(minimumDistance: 8)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 25)
                                 .onEnded { value in
                                     let horizontalAmount = value.translation.width
                                     let verticalAmount = abs(value.translation.height)
@@ -1126,7 +1159,16 @@ struct FriendsTabView: View {
         }
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 4, style: .continuous)
+                    .fill(typeColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                    .offset(y: 6)
+                    .blur(radius: 3)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 2, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: colorScheme == .dark
@@ -1137,30 +1179,22 @@ struct FriendsTabView: View {
                         )
                     )
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
-                    .stroke(
-                        AngularGradient(
-                            gradient: Gradient(colors: [
-                                Color.orange.opacity(0.7),
-                                Color.orange.opacity(0.5),
-                                Color.orange.opacity(0.3),
-                                Color.clear,
-                                Color.clear,
-                                Color.orange.opacity(0.2),
-                                Color.yellow.opacity(0.4),
-                                Color.orange.opacity(0.6)
-                            ]),
-                            center: .center,
-                            angle: .degrees(challengeGlowPhase)
-                        ),
-                        lineWidth: 2
-                    )
-                    .blur(radius: 2)
-                
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
                         LinearGradient(
-                            colors: [Color.orange.opacity(0.5), Color.orange.opacity(0.3), Color.orange.opacity(0.2)],
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [typeColor.opacity(colorScheme == .dark ? 0.35 : 0.25), typeColor.opacity(colorScheme == .dark ? 0.25 : 0.15)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -1168,8 +1202,7 @@ struct FriendsTabView: View {
                     )
             }
         )
-        .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
-        .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
+        .shadow(color: typeColor.opacity(colorScheme == .dark ? 0.1 : 0.06), radius: 12, x: 0, y: 3)
         .padding(.horizontal, Spacing.xxs)
     }
     
@@ -1690,7 +1723,52 @@ struct FriendsTabView: View {
             .padding(.horizontal, Spacing.md)
             .padding(.bottom, 14)
         }
-        .sleekCard(cornerRadius: 20, accentColor: resolvedType.color)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 4, style: .continuous)
+                    .fill(resolvedType.color.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                    .offset(y: 6)
+                    .blur(radius: 3)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 2, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [resolvedType.color.opacity(colorScheme == .dark ? 0.35 : 0.25), resolvedType.color.opacity(colorScheme == .dark ? 0.25 : 0.15)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: resolvedType.color.opacity(colorScheme == .dark ? 0.1 : 0.06), radius: 12, x: 0, y: 3)
         .padding(.horizontal, Spacing.xxs)
     }
     
@@ -2058,12 +2136,20 @@ struct FriendsTabView: View {
                 
                 Spacer()
                 
-                if challenges.count > 3 {
-                    Text("\(challenges.count) total")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.purple)
+                Button {
+                    HapticManager.impact(.light)
+                    showingPrivateChallengeCreation = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Create New >")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundColor(.purple)
                 }
+                .buttonStyle(.plain)
             }
             
             // Active private challenge cards (max 3)

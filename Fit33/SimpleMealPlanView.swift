@@ -106,11 +106,7 @@ struct SimpleMealPlanView: View {
                     .padding(.bottom, 20)
                 }
                 .background {
-                    if showSecondaryWidgets {
-                        AnimatedOrbBackground.home(colorScheme: colorScheme)
-                    } else {
-                        Color.clear
-                    }
+                    AnimatedOrbBackground.home(colorScheme: colorScheme)
                 }
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)

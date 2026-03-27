@@ -1978,22 +1978,29 @@ class SupabaseManager: ObservableObject {
         // ═══════════════════════════════════════════════════════════════════
         let lastPushTime = UserDefaults.standard.object(forKey: SupabaseManager.lastProfilePushKey) as? Date ?? Date.distantPast
         
-        if let cloudProfile = try? await fetchUserProfile(),
-           let cloudUpdatedStr = cloudProfile.updatedAt {
-            // Parse the cloud updated_at timestamp
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let fallbackFormatter = ISO8601DateFormatter()
-            fallbackFormatter.formatOptions = [.withInternetDateTime]
-            
-            if let cloudUpdated = formatter.date(from: cloudUpdatedStr) ?? fallbackFormatter.date(from: cloudUpdatedStr) {
-                if cloudUpdated > lastPushTime {
-                    AppLogger.debug("[SYNC] Cloud profile is newer than last push (\(cloudUpdatedStr) > \(lastPushTime))", category: .network)
-                    AppLogger.debug("[SYNC] Likely updated by admin CMS — pulling from cloud instead of pushing", category: .network)
-                    await syncUserProfileToCoreData(profile: cloudProfile)
-                    // Update last push time so we don't keep pulling every sync cycle
-                    UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
-                    return
+        if let cloudProfile = try? await fetchUserProfile() {
+            AppLogger.debug("[SYNC] Cloud profile verified=\(cloudProfile.isVerified ?? false), goldVerified=\(cloudProfile.isGoldVerified ?? false)", category: .network)
+            await MainActor.run {
+                UserManager.shared.isVerified = cloudProfile.isVerified ?? false
+                UserManager.shared.isGoldVerified = cloudProfile.isGoldVerified ?? false
+            }
+
+            if let cloudUpdatedStr = cloudProfile.updatedAt {
+                // Parse the cloud updated_at timestamp
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let fallbackFormatter = ISO8601DateFormatter()
+                fallbackFormatter.formatOptions = [.withInternetDateTime]
+
+                if let cloudUpdated = formatter.date(from: cloudUpdatedStr) ?? fallbackFormatter.date(from: cloudUpdatedStr) {
+                    if cloudUpdated > lastPushTime {
+                        AppLogger.debug("[SYNC] Cloud profile is newer than last push (\(cloudUpdatedStr) > \(lastPushTime))", category: .network)
+                        AppLogger.debug("[SYNC] Likely updated by admin CMS — pulling from cloud instead of pushing", category: .network)
+                        await syncUserProfileToCoreData(profile: cloudProfile)
+                        // Update last push time so we don't keep pulling every sync cycle
+                        UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
+                        return
+                    }
                 }
             }
         }
@@ -3837,6 +3844,10 @@ class SupabaseManager: ObservableObject {
         do {
             await wf.measure("CloudSync: profile") {
                 if let cloudProfile = try? await fetchUserProfile() {
+                    await MainActor.run {
+                        UserManager.shared.isVerified = cloudProfile.isVerified ?? false
+                        UserManager.shared.isGoldVerified = cloudProfile.isGoldVerified ?? false
+                    }
                     await syncUserProfileToCoreData(profile: cloudProfile)
                 }
             }
@@ -3908,7 +3919,9 @@ class SupabaseManager: ObservableObject {
                 // Use the cloud's onboarding status - new social users will have this as false
                 // Only set to true if the cloud says so (meaning they completed onboarding before)
                 user.hasCompletedOnboarding = profile.hasCompletedOnboarding ?? false
-                
+                UserManager.shared.isVerified = profile.isVerified ?? false
+                UserManager.shared.isGoldVerified = profile.isGoldVerified ?? false
+
                 // Sync all profile data
                 if let birthday = profile.birthday {
                     user.birthday = birthday
@@ -4073,6 +4086,20 @@ class SupabaseManager: ObservableObject {
             .execute()
         
         AppLogger.debug("Workout saved to cloud: \(workout.name ?? "Workout")", category: .network)
+    }
+    
+    /// Updates only the calories_burned field on an existing workout_history row.
+    /// Used after HealthKit calorie calculation completes (avoids re-saving the entire workout).
+    func updateWorkoutCalories(workoutId: String, calories: Double) async throws {
+        guard currentUser != nil else { return }
+        
+        try await client
+            .from("workout_history")
+            .update(["calories_burned": calories])
+            .eq("id", value: workoutId)
+            .execute()
+        
+        AppLogger.debug("[WORKOUT] Updated calories to \(Int(calories)) for workout \(workoutId.prefix(8))", category: .network)
     }
     
     /// Fetches workout history from cloud

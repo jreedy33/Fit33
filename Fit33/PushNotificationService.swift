@@ -33,6 +33,7 @@ class PushNotificationService: ObservableObject {
     }
     
     func _flushQueue(source: String) async {
+        let startTime = CFAbsoluteTimeGetCurrent()
         logger.log(.info, category: .pushNotification, message: "Flushing push queue", metadata: [
             "trigger": source
         ])
@@ -48,37 +49,52 @@ class PushNotificationService: ObservableObject {
                     )
                 )
             
-            logFlushSuccess(response, source: source)
+            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
+            logFlushSuccess(response, source: source, elapsedMs: elapsedMs)
         } catch {
-            let is401 = error.localizedDescription.contains("401")
-                || error.localizedDescription.contains("non-2xx")
+            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
+            let errorString = String(describing: error)
+            let is401 = errorString.contains("401")
+                || errorString.contains("non-2xx")
+                || error.localizedDescription.contains("401")
             
             if is401 {
-                AppLogger.warning("[PUSH] Auth expired, refreshing session and retrying (trigger: \(source))", category: .network)
+                AppLogger.warning("[PUSH] Auth expired after \(elapsedMs)ms, refreshing session and retrying (trigger: \(source))", category: .network)
                 do {
                     try await SupabaseManager.shared.supabaseClient.auth.refreshSession()
+                    let retryStart = CFAbsoluteTimeGetCurrent()
                     let retryResponse: FlushResponse = try await SupabaseManager.shared.supabaseClient
                         .functions
                         .invoke(
                             "send-push-notification",
                             options: FunctionInvokeOptions(body: ["batch": true])
                         )
-                    logFlushSuccess(retryResponse, source: "\(source)_retry")
+                    let retryMs = Int((CFAbsoluteTimeGetCurrent() - retryStart) * 1000)
+                    logFlushSuccess(retryResponse, source: "\(source)_retry", elapsedMs: retryMs)
                     return
-                } catch {
-                    AppLogger.error("[PUSH] Retry after session refresh also failed (trigger: \(source)): \(error.localizedDescription)", category: .network)
+                } catch let retryError {
+                    let retryErrorFull = String(describing: retryError)
+                    logger.log(.error, category: .pushNotification, message: "Push queue flush RETRY FAILED", metadata: [
+                        "trigger": source,
+                        "error": retryError.localizedDescription,
+                        "error_full": String(retryErrorFull.prefix(500))
+                    ])
+                    AppLogger.error("[PUSH] Retry failed (trigger: \(source)): \(retryError.localizedDescription)", category: .network)
                 }
             }
             
             logger.log(.error, category: .pushNotification, message: "Push queue flush FAILED", metadata: [
                 "trigger": source,
-                "error": error.localizedDescription
+                "elapsed_ms": "\(elapsedMs)",
+                "error": error.localizedDescription,
+                "error_type": String(describing: type(of: error)),
+                "error_full": String(errorString.prefix(500))
             ])
-            AppLogger.error("[PUSH] Queue flush failed (trigger: \(source)): \(error.localizedDescription)", category: .network)
+            AppLogger.error("[PUSH] Queue flush failed after \(elapsedMs)ms (trigger: \(source)): \(error.localizedDescription)", category: .network)
         }
     }
     
-    private func logFlushSuccess(_ response: FlushResponse, source: String) {
+    private func logFlushSuccess(_ response: FlushResponse, source: String, elapsedMs: Int = 0) {
         let processed = response.processed ?? 0
         let succeeded = response.success ?? 0
         let failed = response.failed ?? 0
@@ -87,9 +103,10 @@ class PushNotificationService: ObservableObject {
             "trigger": source,
             "processed": "\(processed)",
             "succeeded": "\(succeeded)",
-            "failed": "\(failed)"
+            "failed": "\(failed)",
+            "elapsed_ms": "\(elapsedMs)"
         ])
-        AppLogger.info("[PUSH] Queue flushed: \(processed) processed, \(succeeded) sent, \(failed) failed (trigger: \(source))", category: .network)
+        AppLogger.info("[PUSH] Queue flushed in \(elapsedMs)ms: \(processed) processed, \(succeeded) sent, \(failed) failed (trigger: \(source))", category: .network)
     }
     
     // MARK: - Register for Push Notifications
@@ -249,6 +266,68 @@ class PushNotificationService: ObservableObject {
         // Fallback to production for release builds
         return "production"
         #endif
+    }
+    
+    // MARK: - Foreground Health Check
+    
+    /// Call on app foreground after a delay. Logs a warning if we still have no device token.
+    func performTokenHealthCheck() {
+        Task {
+            try? await Task.sleep(for: .seconds(10))
+            guard deviceToken == nil else { return }
+            
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            let authStatus: String
+            switch settings.authorizationStatus {
+            case .authorized: authStatus = "authorized"
+            case .denied: authStatus = "denied"
+            case .notDetermined: authStatus = "not_determined"
+            case .provisional: authStatus = "provisional"
+            case .ephemeral: authStatus = "ephemeral"
+            @unknown default: authStatus = "unknown(\(settings.authorizationStatus.rawValue))"
+            }
+            
+            logger.log(.warning, category: .pushNotification, message: "No device token 10s after foreground", metadata: [
+                "auth_status": authStatus,
+                "is_registered": "\(isRegistered)",
+                "has_saved_token": "\(UserDefaults.standard.string(forKey: "apns_device_token") != nil)"
+            ])
+            AppLogger.warning("[PUSH] Health check: no device token after 10s (auth=\(authStatus), registered=\(isRegistered))", category: .network)
+        }
+    }
+    
+    // MARK: - Diagnostics RPC
+    
+    struct DiagnosticReport: Decodable {
+        let user_id: String?
+        let diagnosed_at: String?
+        let tokens: [[String: AnyCodable]]?
+        let preferences: [String: AnyCodable]?
+        let queue_stats: [String: AnyCodable]?
+        let recent_queue: [[String: AnyCodable]]?
+        let recent_delivery_logs: [[String: AnyCodable]]?
+        let error: String?
+    }
+    
+    /// Calls the server-side diagnose_push_notifications() RPC for a full health report.
+    func runDiagnostics() async -> DiagnosticReport? {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.warning("[PUSH] Cannot run diagnostics - not authenticated", category: .network)
+            return nil
+        }
+        
+        do {
+            let report: DiagnosticReport = try await SupabaseManager.shared.supabaseClient
+                .rpc("diagnose_push_notifications")
+                .execute()
+                .value
+            
+            AppLogger.info("[PUSH] Diagnostics report received", category: .network)
+            return report
+        } catch {
+            AppLogger.error("[PUSH] Diagnostics RPC failed: \(error.localizedDescription)", category: .network)
+            return nil
+        }
     }
     
     /// Remove device token from Supabase (call on logout)

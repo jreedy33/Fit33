@@ -325,7 +325,7 @@ class UserBehaviorLearningEngine: ObservableObject {
             }
             
             // Use Task.detached to truly run off @MainActor
-            Task.detached(priority: .utility) { [weak self] in
+            Task.detached(priority: .background) { [weak self] in
                 guard let self = self else { return }
                 self.buildExerciseSimilarityMapBackground(exerciseData)
             }

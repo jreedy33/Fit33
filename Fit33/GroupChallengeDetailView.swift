@@ -282,6 +282,10 @@ struct GroupChallengeDetailView: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                     
+                    if member.isVerified == true || member.isGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: member.isGoldVerified == true)
+                    }
+                    
                     if isMe {
                         Text("(me)")
                             .font(.caption2)

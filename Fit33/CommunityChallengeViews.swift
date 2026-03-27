@@ -1072,6 +1072,10 @@ struct CommunityLeaderboardWidget: View {
                         .foregroundColor(isMe ? resolvedType.color : .primary)
                         .lineLimit(1)
                     
+                    if entry.isVerified == true || entry.isGoldVerified == true {
+                        VerifiedBadge(size: 10, isGold: entry.isGoldVerified == true)
+                    }
+                    
                     if isMe {
                         Text("you")
                             .font(.system(size: 8, weight: .semibold))
@@ -1801,6 +1805,10 @@ struct CommunityLeaderboardView: View {
                         .font(.subheadline)
                         .fontWeight(isCurrentUser ? .bold : .medium)
                         .foregroundColor(isCurrentUser ? .blue : .primary)
+                    
+                    if entry.isVerified == true || entry.isGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: entry.isGoldVerified == true)
+                    }
                     
                     if isCurrentUser {
                         Text("(You)")

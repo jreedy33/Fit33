@@ -958,10 +958,16 @@ struct ProfileView: View {
             
             // Name and Email
             VStack(spacing: 6) {
-                Text(name.isEmpty ? "Your Name" : name)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
+                HStack(spacing: 4) {
+                    Text(name.isEmpty ? "Your Name" : name)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    
+                    if userManager.isVerified || userManager.isGoldVerified {
+                        VerifiedBadge(size: 16, isGold: userManager.isGoldVerified)
+                    }
+                }
                 
                 Text(email.isEmpty ? "your.email@example.com" : email)
                     .font(.subheadline)

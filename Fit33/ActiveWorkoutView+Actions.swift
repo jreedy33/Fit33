@@ -219,7 +219,7 @@ extension ActiveWorkoutView {
             AppLogger.debug("🧠 [LEARNING] User preferences updated from completed workout", category: .workout)
             
             // 📊 Track progressions for community learning
-            if let user = userManager.currentUser {
+            if let user = userManager.currentUser, let userId = user.id {
                 await trackProgressions(
                     exercises: capturedExercises,
                     setsData: capturedSetsData,
@@ -227,10 +227,8 @@ extension ActiveWorkoutView {
                     context: viewContext
                 )
                 
-                // 🧠 ADVANCED INTELLIGENCE: Comprehensive workout analysis
-                // Tracks: progression velocity, time patterns, set drop-offs, volume trends, strength ratios
                 await analyzeWorkoutWithAdvancedIntelligence(
-                    userId: user.id ?? UUID(),
+                    userId: userId,
                     exercises: capturedExercises,
                     setsData: capturedSetsData,
                     workoutDate: capturedWorkout.date ?? Date(),

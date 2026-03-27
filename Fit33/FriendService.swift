@@ -47,6 +47,13 @@ class FriendService: ObservableObject {
     private init() {
         // Load cached friends immediately so Friends tab never shows empty state
         loadCachedFriends()
+        
+        // Pre-warm friend photo memory cache from disk on a background thread
+        // so photos are instant when Friends tab opens (no disk I/O on main)
+        let ids = friends.map { $0.friendId.uuidString }
+        if !ids.isEmpty {
+            FriendPhotoCache.shared.warmMemoryCacheFromDisk(for: ids)
+        }
     }
     
     // MARK: - Local Friend Caching (instant display on cold start)
@@ -918,7 +925,9 @@ struct Friend: Codable, Identifiable {
     let profilePhotoUrl: String?
     let friendsSince: Date
     let totalWorkoutsShared: Int
-    
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
+
     var id: UUID { friendId }
     
     var displayName: String {
@@ -956,6 +965,8 @@ struct Friend: Codable, Identifiable {
         case profilePhotoUrl = "profile_photo_url"
         case friendsSince = "friends_since"
         case totalWorkoutsShared = "total_workouts_shared"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 
@@ -968,6 +979,8 @@ struct FriendRequest: Codable, Identifiable {
     let profilePhotoUrl: String?
     let message: String?
     let createdAt: Date
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
     
     var id: UUID { requestId }
     
@@ -984,6 +997,8 @@ struct FriendRequest: Codable, Identifiable {
         case profilePhotoUrl = "from_user_profile_photo_url"
         case message
         case createdAt = "created_at"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 
@@ -997,6 +1012,8 @@ struct SentFriendRequest: Codable, Identifiable {
     let profilePhotoUrl: String?
     let message: String?
     let createdAt: Date
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
     
     var id: UUID { requestId }
     
@@ -1030,9 +1047,11 @@ struct SentFriendRequest: Codable, Identifiable {
         case toUserName = "to_user_name"
         case toUserEmail = "to_user_email"
         case toUserUsername = "to_user_username"
-        case profilePhotoUrl = "to_user_profile_photo_url"  // Fix: match SQL column name
+        case profilePhotoUrl = "to_user_profile_photo_url"
         case message
         case createdAt = "created_at"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 
@@ -1046,9 +1065,11 @@ struct UserSearchResult: Codable, Identifiable {
     let profilePhotoUrl: String?
     let isFriend: Bool
     let hasPendingRequest: Bool        // Either direction (for backwards compatibility)
-    let hasOutgoingRequest: Bool?      // I sent THEM a request (show "Pending")
-    let hasIncomingRequest: Bool?      // THEY sent ME a request (show "Respond")
-    
+    let hasOutgoingRequest: Bool?
+    let hasIncomingRequest: Bool?
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
+
     var id: UUID { userId }
     
     var displayName: String {
@@ -1085,6 +1106,8 @@ struct UserSearchResult: Codable, Identifiable {
         case hasPendingRequest = "has_pending_request"
         case hasOutgoingRequest = "has_outgoing_request"
         case hasIncomingRequest = "has_incoming_request"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
     }
 }
 
@@ -1388,7 +1411,9 @@ struct ReceivedWorkoutDTO: Codable, Identifiable {
     let createdAt: Date
     let viewedAt: Date?
     let savedToFavorites: Bool?
-    
+    let senderIsVerified: Bool?
+    let senderIsGoldVerified: Bool?
+
     // Identifiable conformance
     var id: UUID { workoutId }
     
@@ -1446,6 +1471,8 @@ struct ReceivedWorkoutDTO: Codable, Identifiable {
         case createdAt = "created_at"
         case viewedAt = "viewed_at"
         case savedToFavorites = "saved_to_favorites"
+        case senderIsVerified = "sender_is_verified"
+        case senderIsGoldVerified = "sender_is_gold_verified"
     }
 }
 

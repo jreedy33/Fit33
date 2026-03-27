@@ -72,25 +72,40 @@ class ExerciseLibraryService: ObservableObject {
             
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
             
-            // Now do the lightweight main-thread work: build cache using viewContext
+            // Lightweight main-thread work: mark ready + end waterfall (no heavy fetches)
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
                 AppLogger.debug("🔥 [ExerciseLibrary] Cache pre-warmed: \(elapsed)ms", category: .data)
                 StartupWaterfall.shared.end("ExerciseLibrary.preWarmCache")
                 self.isPreWarming = false
-                
+
                 if nameList.count > 100 {
                     self.isExercisesReady = true
                     AppLogger.debug("✅ [ExerciseLibrary] Exercises ready: \(nameList.count) valid exercises", category: .data)
-                    
-                    // Trigger filter cache precomputation (also runs mostly in background)
-                    let allExercises = self.getAllExercises()
-                    let filterCache = ExerciseLibraryFilterCache.shared
-                    if !filterCache.isReady {
-                        filterCache.precomputeRecommendedList(allExercises: allExercises)
-                    }
                 } else {
                     AppLogger.warning("⚠️ [ExerciseLibrary] Only \(nameList.count) valid exercises - waiting for sync", category: .network)
+                }
+            }
+            
+            // Build filter cache: fetch objectIDs on background context, resolve on view context
+            // (Exercise managed objects must be accessed on their owning context's queue)
+            if nameList.count > 100 {
+                let bgCtx = PersistenceController.shared.container.newBackgroundContext()
+                bgCtx.automaticallyMergesChangesFromParent = true
+                let objectIDs: [NSManagedObjectID] = await bgCtx.perform {
+                    let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+                    request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
+                    let exercises = (try? bgCtx.fetch(request)) ?? []
+                    return exercises.map { $0.objectID }
+                }
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    let filterCache = ExerciseLibraryFilterCache.shared
+                    if !filterCache.isReady {
+                        let viewCtx = self.viewContext
+                        let exercises = objectIDs.compactMap { viewCtx.object(with: $0) as? Exercise }
+                        filterCache.precomputeRecommendedList(allExercises: exercises)
+                    }
                 }
             }
         }

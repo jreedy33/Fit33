@@ -370,7 +370,7 @@ struct FavoriteWorkoutCard: View {
                                 )
                         }
                         
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
                             Text(smartWorkoutName)
                                 .font(.headline)
                                 .fontWeight(.bold)
@@ -378,13 +378,28 @@ struct FavoriteWorkoutCard: View {
                                 .lineLimit(1)
                             
                             Text(formatSmartDate(workout.date ?? Date()))
-                                .font(.subheadline)
+                                .font(.ds_bodySmall)
                                 .foregroundColor(.secondary)
+                            
+                            if !topMuscles.isEmpty {
+                                HStack(spacing: Spacing.xxs) {
+                                    ForEach(topMuscles, id: \.self) { muscle in
+                                        Text(muscle)
+                                            .font(.ds_caption)
+                                            .foregroundColor(workoutGradient[0])
+                                            .padding(.horizontal, Spacing.xs)
+                                            .padding(.vertical, 3)
+                                            .background(
+                                                Capsule()
+                                                    .fill(workoutGradient[0].opacity(0.12))
+                                            )
+                                    }
+                                }
+                            }
                         }
                         
                         Spacer()
                         
-                        // Favorite star button - always yellow (these are favorites)
                         Button(action: { toggleFavorite() }) {
                             Image(systemName: "star.fill")
                                 .font(.ds_heading3)
@@ -392,11 +407,9 @@ struct FavoriteWorkoutCard: View {
                         }
                         .buttonStyle(PlainButtonStyle())
                         .disabled(isProcessing)
-                        .padding(.trailing, 8)
                         
-                        // Expand/collapse chevron
                         Image(systemName: "chevron.down")
-                            .font(.ds_labelMedium)
+                            .font(.ds_bodySmall).fontWeight(.medium)
                             .foregroundColor(.secondary.opacity(0.5))
                             .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     }
@@ -404,106 +417,18 @@ struct FavoriteWorkoutCard: View {
                     Divider()
                         .padding(.vertical, Spacing.sm)
                     
-                    // Bottom section - Stats
                     HStack(spacing: 0) {
-                        // Duration
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock.fill")
-                                    .font(.ds_bodySmall)
-                                    .foregroundColor(workoutGradient[0])
-                                Text(formatDuration(Int(workout.duration)))
-                                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
-                                    .foregroundColor(.primary)
-                            }
-                            Text("Duration")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 1, height: 35)
-                        
-                        // Exercises
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "figure.strengthtraining.traditional")
-                                    .font(.ds_bodySmall)
-                                    .foregroundColor(workoutGradient[0])
-                                Text("\(exerciseCount)")
-                                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
-                                    .foregroundColor(.primary)
-                            }
-                            Text("Exercises")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 1, height: 35)
-                        
-                        // Sets
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "repeat")
-                                    .font(.ds_bodySmall)
-                                    .foregroundColor(workoutGradient[0])
-                                Text("\(totalSets)")
-                                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
-                                    .foregroundColor(.primary)
-                            }
-                            Text("Sets")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.2))
-                            .frame(width: 1, height: 35)
-                        
-                        // XP
-                        VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "star.fill")
-                                    .font(.ds_bodySmall)
-                                    .foregroundColor(.orange)
-                                Text("+\(Int(workout.xpEarned))")
-                                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
-                                    .foregroundColor(.primary)
-                            }
-                            Text("XP")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    
-                    // Muscle tags (if available)
-                    if !topMuscles.isEmpty {
-                        HStack(spacing: 6) {
-                            ForEach(topMuscles, id: \.self) { muscle in
-                                Text(muscle)
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(workoutGradient[0])
-                                    .padding(.horizontal, Spacing.xs)
-                                    .padding(.vertical, Spacing.xxs)
-                                    .background(
-                                        Capsule()
-                                            .fill(workoutGradient[0].opacity(0.12))
-                                    )
-                            }
-                            Spacer()
-                        }
-                        .padding(.top, 12)
+                        favoriteStatColumn(icon: "clock.fill", iconColor: workoutGradient[0], value: formatDuration(Int(workout.duration)), label: "Duration")
+                        Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
+                        favoriteStatColumn(icon: "figure.strengthtraining.traditional", iconColor: workoutGradient[0], value: "\(exerciseCount)", label: "Exercises")
+                        Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
+                        favoriteStatColumn(icon: "repeat", iconColor: workoutGradient[0], value: "\(totalSets)", label: "Sets")
+                        Rectangle().fill(Color.gray.opacity(0.2)).frame(width: 1, height: 35)
+                        favoriteStatColumn(icon: "flame.fill", iconColor: .orange, value: formattedCalories, label: "Calories")
                     }
                 }
-                .padding(Spacing.md)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.md)
             }
             .buttonStyle(PlainButtonStyle())
             
@@ -575,58 +500,7 @@ struct FavoriteWorkoutCard: View {
                 }
             }
         }
-        .background(
-            ZStack {
-                // Bottom shadow layer (deepest) - color glow
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(workoutGradient[0].opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 6)
-                    .blur(radius: 4)
-                
-                // Middle shadow layer
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 3)
-                
-                // Main card background with gradient
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.18), Color.cardBackground]
-                                : [Color.white, Color.white.opacity(0.95)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
-                    )
-                
-                // Colored accent border
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [workoutGradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3), workoutGradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: workoutGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
         .confirmationDialog(
             "Remove from Favorites?",
             isPresented: $showingDeleteConfirmation,
@@ -639,6 +513,29 @@ struct FavoriteWorkoutCard: View {
         } message: {
             Text("This routine will be removed from your favorites, but the workout history will be preserved.")
         }
+    }
+    
+    private var formattedCalories: String {
+        let cal = Int(workout.caloriesBurned)
+        return cal > 0 ? "\(cal)" : "--"
+    }
+    
+    private func favoriteStatColumn(icon: String, iconColor: Color, value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.ds_caption)
+                    .foregroundColor(iconColor)
+                Text(value)
+                    .font(.subheadline).fontWeight(.bold).fontDesign(.rounded)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
     
     private func formatSmartDate(_ date: Date) -> String {

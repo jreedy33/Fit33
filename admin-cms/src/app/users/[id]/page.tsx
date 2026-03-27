@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import AdminShell from '@/components/AdminShell'
 import { adminApi } from '@/lib/api'
 
-type Tab = 'profile' | 'friends' | 'challenges' | 'workouts' | 'health' | 'notifications'
+type Tab = 'profile' | 'friends' | 'challenges' | 'workouts' | 'health' | 'notifications' | 'engagement' | 'moderation'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRecord = Record<string, any>
@@ -31,6 +31,9 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
   const [cardio, setCardio] = useState<AnyRecord[]>([])
   const [notifications, setNotifications] = useState<AnyRecord[]>([])
   const [bugReports, setBugReports] = useState<AnyRecord[]>([])
+  const [engagement, setEngagement] = useState<AnyRecord | null>(null)
+  const [userReports, setUserReports] = useState<AnyRecord[]>([])
+  const [userSuspensions, setUserSuspensions] = useState<AnyRecord[]>([])
   const [tabLoading, setTabLoading] = useState(false)
 
   // Editable profile fields
@@ -100,6 +103,20 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
           ])
           setNotifications(n.notifications)
           setBugReports(b.bug_reports)
+          break
+        }
+        case 'engagement': {
+          const d = await adminApi('engagement_user_detail', { user_id: userId })
+          setEngagement(d.engagement)
+          break
+        }
+        case 'moderation': {
+          const [r, s] = await Promise.all([
+            adminApi('get_user_reports', { user_id: userId }),
+            adminApi('get_user_suspensions', { user_id: userId }),
+          ])
+          setUserReports(r.reports || [])
+          setUserSuspensions(s.suspensions || [])
           break
         }
       }
@@ -176,6 +193,8 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
     { key: 'workouts', label: 'Workouts', icon: '💪' },
     { key: 'health', label: 'Health & Streaks', icon: '❤️' },
     { key: 'notifications', label: 'Notifications & Bugs', icon: '🔔' },
+    { key: 'engagement', label: 'Engagement', icon: '🎯' },
+    { key: 'moderation', label: 'Moderation', icon: '🛡️' },
   ]
 
   return (
@@ -770,6 +789,120 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                             <td className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(n.created_at)}</td>
                           </tr>
                         ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ═══════ ENGAGEMENT TAB ═══════ */}
+            {tab === 'engagement' && (
+              <div className="space-y-4">
+                {!engagement ? (
+                  <div className="card text-center py-8" style={{ color: 'var(--text-muted)' }}>
+                    {tabLoading ? 'Loading engagement data...' : 'No engagement data available. The materialized view may not be populated yet.'}
+                  </div>
+                ) : (
+                  <>
+                    <div className="card">
+                      <div className="flex items-center gap-4 mb-4">
+                        <div className="text-center">
+                          <div className="text-4xl font-bold" style={{
+                            color: engagement.engagement_bucket === 'power_user' ? '#22c55e'
+                              : engagement.engagement_bucket === 'engaged' ? '#3b82f6'
+                              : engagement.engagement_bucket === 'casual' ? '#f59e0b'
+                              : engagement.engagement_bucket === 'at_risk' ? '#f97316' : '#ef4444'
+                          }}>
+                            {engagement.engagement_score}
+                          </div>
+                          <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Score</div>
+                        </div>
+                        <div>
+                          <span className="badge text-sm px-3 py-1" style={{
+                            background: engagement.engagement_bucket === 'power_user' ? 'rgba(34,197,94,0.15)'
+                              : engagement.engagement_bucket === 'engaged' ? 'rgba(59,130,246,0.15)'
+                              : engagement.engagement_bucket === 'casual' ? 'rgba(245,158,11,0.15)'
+                              : engagement.engagement_bucket === 'at_risk' ? 'rgba(249,115,22,0.15)' : 'rgba(239,68,68,0.15)',
+                            color: engagement.engagement_bucket === 'power_user' ? '#22c55e'
+                              : engagement.engagement_bucket === 'engaged' ? '#3b82f6'
+                              : engagement.engagement_bucket === 'casual' ? '#f59e0b'
+                              : engagement.engagement_bucket === 'at_risk' ? '#f97316' : '#ef4444',
+                          }}>
+                            {engagement.engagement_bucket?.replace('_', ' ').toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <MiniStat label="Workouts (7d)" value={engagement.workouts_7d || 0} />
+                        <MiniStat label="Workouts (30d)" value={engagement.workouts_30d || 0} />
+                        <MiniStat label="Current Streak" value={engagement.current_streak || 0} />
+                        <MiniStat label="Friends" value={engagement.friend_count || 0} />
+                        <MiniStat label="Challenges Joined" value={engagement.challenges_joined || 0} />
+                        <MiniStat label="Total Workouts" value={engagement.total_workouts || 0} />
+                        <MiniStat label="Last Workout" value={engagement.last_workout_date ? new Date(engagement.last_workout_date).toLocaleDateString() : 'Never'} />
+                        <MiniStat label="Joined" value={engagement.created_at ? new Date(engagement.created_at).toLocaleDateString() : '—'} />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ═══════ MODERATION TAB ═══════ */}
+            {tab === 'moderation' && (
+              <div className="space-y-4">
+                {/* Reports */}
+                <div className="card">
+                  <h2 className="text-lg font-semibold mb-4">Reports ({userReports.length})</h2>
+                  {userReports.length === 0 ? (
+                    <div className="text-center py-4" style={{ color: 'var(--text-muted)' }}>No reports involving this user</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {userReports.map((r: AnyRecord) => (
+                        <div key={r.id} className="p-3 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`badge ${r.status === 'pending' ? 'badge-warning' : r.status === 'resolved' ? 'badge-success' : 'badge-neutral'}`}>
+                              {r.status}
+                            </span>
+                            <span className="badge badge-info">{r.reason}</span>
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                              {r.reporter_id === userId ? 'Filed by this user' : 'Against this user'}
+                            </span>
+                          </div>
+                          {r.description && <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>{r.description}</p>}
+                          <div className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>{formatDate(r.created_at)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Suspensions */}
+                <div className="card">
+                  <h2 className="text-lg font-semibold mb-4">Suspensions ({userSuspensions.length})</h2>
+                  {userSuspensions.length === 0 ? (
+                    <div className="text-center py-4" style={{ color: 'var(--text-muted)' }}>No suspension history</div>
+                  ) : (
+                    <table>
+                      <thead><tr><th>Reason</th><th>Suspended By</th><th>Date</th><th>Expires</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {userSuspensions.map((s: AnyRecord) => {
+                          const isActive = !s.lifted_at && (!s.expires_at || new Date(s.expires_at) > new Date())
+                          return (
+                            <tr key={s.id}>
+                              <td className="text-sm">{s.reason}</td>
+                              <td className="text-xs" style={{ color: 'var(--text-muted)' }}>{s.suspended_by}</td>
+                              <td className="text-xs" style={{ color: 'var(--text-muted)' }}>{formatDate(s.suspended_at)}</td>
+                              <td className="text-xs" style={{ color: 'var(--text-muted)' }}>{s.expires_at ? formatDate(s.expires_at) : 'Permanent'}</td>
+                              <td>
+                                <span className={`badge ${isActive ? 'badge-danger' : s.lifted_at ? 'badge-success' : 'badge-neutral'}`}>
+                                  {isActive ? 'Active' : s.lifted_at ? 'Lifted' : 'Expired'}
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   )}

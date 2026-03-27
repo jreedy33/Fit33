@@ -384,3 +384,22 @@ user_notification_preferences (server-side push preference enforcement)
 - Root cause: Multiple overloads existed in the live DB — `(TEXT, TEXT)` and `(UUID, UUID)`. PostgREST could not resolve which to call.
 - Fix: Drop ALL overloads (`TEXT,TEXT` and `UUID,UUID`), then recreate canonical `(TEXT, TEXT)` version with GRANT.
 - **RULE**: When deploying RPC functions, always `DROP FUNCTION IF EXISTS` for ALL possible parameter type combinations before `CREATE OR REPLACE`. Postgres treats different parameter types as different overloads.
+
+### 2026-03-27: CMS Advanced Tools — New Tables & Materialized Views
+
+**New tables (6 migrations)**:
+- `feature_flags` — feature toggle system with rollout %, platform targeting, metadata. RPC: `get_active_feature_flags()`.
+- `user_reports` — user-to-user reports (harassment/spam/etc). RLS: users INSERT own + SELECT own. Admin reads all via service role.
+- `user_suspensions` — admin-managed suspensions (timed/permanent). RPC: `is_user_suspended()`.
+- `push_campaigns` — campaign management for bulk push notifications. RPC: `execute_push_campaign()`, `estimate_campaign_reach()`.
+- `admin_audit_log` enhanced with `details JSONB` and `admin_email TEXT`.
+
+**New materialized views** (daily refresh at 4 AM via `refresh_engagement_data()` pg_cron):
+- `mv_user_engagement_scores` — unique index on `user_id`, index on `engagement_bucket` and `engagement_score DESC`.
+- `mv_retention_cohorts` — unique index on `cohort_week`.
+- `mv_onboarding_funnel` — single-row aggregate.
+
+**New system RPCs** (admin-only):
+- `admin_get_table_sizes()`, `admin_get_connection_stats()`, `admin_get_index_health()`, `admin_get_rpc_stats()`, `admin_get_push_pipeline_stats()`.
+
+**Critical**: Materialized views use `REFRESH MATERIALIZED VIEW CONCURRENTLY` which requires a UNIQUE index. Both `mv_user_engagement_scores` and `mv_retention_cohorts` have these.

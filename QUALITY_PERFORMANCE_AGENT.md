@@ -830,3 +830,53 @@ Every Supabase INSERT/UPDATE/DELETE/RPC call MUST check `SupabaseManager.shared.
 **Fix**: Changed the bg context fetch to return `[NSManagedObjectID]` instead of `[Exercise]`, then resolved them on the main view context via `viewContext.object(with:)`. The view now holds view-context Exercise objects whose properties are safely accessible on the main thread.
 
 **Rule**: Never store Core Data managed objects fetched from a background context in caches/published properties consumed by the main thread. Pass `NSManagedObjectID` across context boundaries and resolve on the target context.
+
+### 2026-03-27: Main Thread Freeze Fix — v1.35.0 (26 of 42 crashes)
+
+**Root cause analysis**: 26 watchdog-detected main thread freezes (8–26s) during tab switches. Five compounding causes:
+
+**Fix 1 (CRITICAL) — WorkoutSuggestionEngine `performAndWait` blocking main thread**:
+- `contextualMotivationalMessage()` → `suggestForToday()` → `recoveryBasedSuggestion()` called `bgContext.performAndWait` from `@MainActor` methods, blocking the main thread for Core Data fetches.
+- Converted to async `bgContext.perform` (non-blocking). Added `Async` variants: `suggestForTodayAsync()`, `contextualMotivationalMessageAsync()`, `getMuscleRecoveryStatesAsync()`, `recoveredMusclesAsync()`, `getRecentMusclesWithDatesAsync()`, `getRecentSplitFamiliesAsync()`.
+- Sync versions now read from a cached `[MuscleRecoveryState]` (30s TTL) populated by async callers — never block the main thread.
+- Dashboard `generateMotivationalMessage()` is now `async`, uses the async engine path.
+- **Rule**: NEVER use `performAndWait` from `@MainActor` code. Use `await context.perform { }` instead.
+
+**Fix 2 (HIGH) — WorkoutHomeView unbounded `@FetchRequest`**:
+- `WorkoutHomeView` fetched ALL workouts (no predicate, no fetchLimit). Every Core Data change triggered a full re-fetch.
+- Added `isCompleted == YES` predicate. Changed count display and `generateNextGoals()` to use `userManager.currentUser?.totalWorkouts` instead of `workouts.count`.
+
+**Fix 3 (HIGH) — FriendsTabView cascade recomputes from 7 `@StateObject` services**:
+- Root view subscribed to 7 `@StateObject` services. Any `@Published` change on any service recomputed the entire 2800-line body.
+- Converted to non-subscribing `let` references. Created isolated wrapper views: `FriendsHeaderWrapper`, `FriendsStoriesWrapper`, `FriendsSpotlightWrapper`, `FriendsLeagueWrapper`, `FriendsChallengeHeaderWrapper`, `FriendsPrivateChallengeWrapper`, `FriendsCommunityWrapper`. Each owns its own `@StateObject`.
+
+**Fix 4 (MEDIUM) — StartupCache synchronous Core Data on `@MainActor`**:
+- `StartupCache.warmUp()` ran 4 synchronous `context.fetch()` calls on the `viewContext` (main thread).
+- Now creates `newBackgroundContext()` and uses `await context.perform { }` for all fetches, publishing results back on MainActor.
+
+**Fix 5 (MEDIUM) — DailyQuestService synchronous `init()`**:
+- `loadCachedQuests()` + `restoreLastReportedSteps()` ran synchronously in `init()`, blocking whatever thread first accessed the singleton.
+- Wrapped in `Task { }` to match `ChallengeService`/`CloudProgramService` pattern.
+
+**Fix 6 — Missing `isCompleted` predicates on secondary `@FetchRequest` sites**:
+- `TrainingHubView` and `WorkoutProgressView` had no predicate — in-progress workout mutations triggered re-fetches. Added `isCompleted == YES`.
+
+### 2026-03-27: CMS System Health Dashboard
+
+**New CMS page**: `/health` (`admin-cms/src/app/health/page.tsx`) — primary owner: Quality & Performance.
+
+Provides real-time visibility into backend health:
+- **Table sizes**: All Supabase public tables with row estimates, data/index/TOAST sizes. Sortable.
+- **Connection pool**: Active/idle/waiting connections vs max, with gauge bar.
+- **Push pipeline**: Queue depth, sent/failed 24h, delivery event breakdown, hourly volume chart.
+- **RPC performance**: Function call counts, avg/total/self time. Highlights slow RPCs (>100ms red, >20ms amber).
+- **Index health**: Unused indexes (0 scans) flagged for removal. Full index scan counts.
+- **Error rates**: Crash + bug report daily trend over 30 days.
+- **Auto-refresh**: 30s toggle.
+
+**SQL RPCs** (`supabase/20260327_system_health_rpcs.sql`):
+- `admin_get_table_sizes()` — `pg_total_relation_size`, `pg_indexes_size` per table
+- `admin_get_connection_stats()` — `pg_stat_activity` summary
+- `admin_get_index_health()` — `pg_stat_user_indexes` ordered by scan count
+- `admin_get_rpc_stats()` — `pg_stat_user_functions` top 50 by total time
+- `admin_get_push_pipeline_stats()` — aggregates from `push_notification_queue` + `push_notification_delivery_log`

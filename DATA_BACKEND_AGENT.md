@@ -461,3 +461,27 @@ Never use `user.id?.uuidString ?? ""` or `user.id ?? UUID()` as fallbacks for us
 **Key implementation detail**: The `v_prev_group_id` lookup uses `v_week_start - INTERVAL '7 days'` (always exactly 1 week back since `week_start` is always a Monday). The stale-overlap count joins `league_members` on both the candidate group and the previous group by `user_id`.
 
 **Migration**: `supabase/20260326_bronze_league_reshuffle.sql`
+
+### 2026-03-27: CMS Advanced Tools — New Tables & RPCs
+
+**New tables** (all have RLS enabled):
+- `feature_flags` — key/enabled/rollout_percentage/platform/min_app_version/metadata. App-facing RPC: `get_active_feature_flags(p_platform, p_app_version)` uses `hashtext(user_id)` for deterministic rollout bucketing.
+- `user_reports` — reporter_id/reported_user_id/reason/status/resolution_notes. Users can INSERT and SELECT own. FK cascade on user_profiles.
+- `user_suspensions` — user_id/reason/suspended_by/expires_at/lifted_at. Admin-only. App checks via `is_user_suspended()` RPC.
+- `push_campaigns` — title/body/segment/status/sent_count. `execute_push_campaign()` resolves segments to user list and inserts into `push_notification_queue`. `estimate_campaign_reach()` counts reachable users for a segment.
+
+**New materialized views** (refreshed daily at 4 AM via `refresh_engagement_data()` pg_cron job):
+- `mv_user_engagement_scores` — per-user score 0-100 based on recency, frequency, streak, social, and feature adoption. Buckets: power_user/engaged/casual/at_risk/churned.
+- `mv_retention_cohorts` — weekly cohort retention at W1/W2/W4/W8/W12 based on workout activity.
+- `mv_onboarding_funnel` — signup → onboarding → first workout → 3rd → 5th → active W1 → active M1.
+
+**New system health RPCs** (admin-only, used by System Health page):
+- `admin_get_table_sizes()` — pg_total_relation_size for all public tables
+- `admin_get_connection_stats()` — pg_stat_activity summary
+- `admin_get_index_health()` — pg_stat_user_indexes (unused index detection)
+- `admin_get_rpc_stats()` — pg_stat_user_functions call counts/timing
+- `admin_get_push_pipeline_stats()` — push queue + delivery log aggregates
+
+**Enhanced**: `admin_audit_log` gained `details JSONB` and `admin_email TEXT` columns. `logAdminAction()` in route.ts now captures both.
+
+**Migrations**: `supabase/20260327_enhance_audit_log.sql`, `20260327_feature_flags.sql`, `20260327_system_health_rpcs.sql`, `20260327_moderation_system.sql`, `20260327_push_campaigns.sql`, `20260327_engagement_scoring.sql`.

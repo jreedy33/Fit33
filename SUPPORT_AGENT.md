@@ -318,3 +318,15 @@ The Support Agent owns and maintains the FAQ page. See `FAQ_PLAN.md` for the com
 ---
 
 *The Support Agent ensures no user question goes unanswered. Every feature has documentation. Every pain point has a ticket. Every FAQ is accurate. The goal: users never need to contact support because the answers are already there.*
+
+---
+
+### 2026-03-27: CMS Moderation & User Safety Tools
+
+**New moderation system** — users can now report other users (harassment, spam, inappropriate, cheating). Reports flow into the CMS Moderation queue at `/moderation` where admins can review, resolve, dismiss, or suspend reported users.
+
+- **`user_reports` table**: Reporter, reported user, reason, description, status (pending → reviewing → resolved/dismissed). RLS allows users to insert and read own reports.
+- **`user_suspensions` table**: Admin-managed. Timed or permanent. Users check via `is_user_suspended()` RPC.
+- **CMS Moderation page tabs**: Queue, Overview (stats/repeat offenders), Suspensions (active/history/lift), Blocks (from existing `user_blocks` table).
+- **User detail integration**: `/users/[id]` now has Moderation tab showing reports against user + suspension history.
+- **FAQ impact**: May need new FAQ entries for "How do I report someone?", "Why was my account suspended?", "How do I appeal a suspension?".

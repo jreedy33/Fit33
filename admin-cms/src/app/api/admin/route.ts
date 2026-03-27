@@ -20,10 +20,14 @@ const WRITE_ACTIONS = new Set([
   'create_faq_entry', 'update_faq_entry', 'delete_faq_entry', 'publish_faq_entry',
   'create_faq_category', 'update_faq_category', 'delete_faq_category',
   'update_exercise', 'delete_exercise',
+  'create_feature_flag', 'update_feature_flag', 'delete_feature_flag',
+  'update_report_status', 'suspend_user', 'lift_suspension',
+  'create_push_campaign', 'update_push_campaign',
 ])
 const BULK_ACTIONS = new Set([
   'bulk_update_bug_reports', 'bulk_update_crash_reports',
   'bulk_publish_faq_entries',
+  'send_push_campaign',
 ])
 
 function getActionTier(action: string): 'read' | 'write' | 'bulk' {
@@ -70,6 +74,8 @@ async function logAdminAction(
   action: string,
   target: string | null,
   ip: string,
+  adminEmail?: string,
+  details?: Record<string, unknown>,
 ) {
   try {
     const admin = createAdminClient()
@@ -78,6 +84,8 @@ async function logAdminAction(
       action,
       target_id: target,
       ip_address: ip,
+      admin_email: adminEmail || null,
+      details: details || {},
       created_at: new Date().toISOString(),
     })
   } catch {
@@ -147,8 +155,8 @@ export async function POST(req: NextRequest) {
     // Audit write/bulk actions
     const tier = getActionTier(action)
     if (tier !== 'read') {
-      const targetId = params.userId || params.id || params.reportId || null
-      await logAdminAction(adminAuth.userId!, action, targetId, ip)
+      const targetId = params.userId || params.id || params.reportId || params.campaign_id || params.flag_id || null
+      await logAdminAction(adminAuth.userId!, action, targetId, ip, adminAuth.email, params.details)
     }
 
     const admin = createAdminClient()
@@ -1751,6 +1759,698 @@ export async function POST(req: NextRequest) {
         if (clError) throw clError
 
         return NextResponse.json({ changelogs: data || [] })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // AUDIT LOG VIEWER
+      // ═══════════════════════════════════════════════════
+
+      case 'get_audit_logs': {
+        const { admin_email: filterEmail, action: filterAction, target_id: filterTarget, date_from, date_to, page = 0 } = params
+        const lim = safeLimit(params.limit, 200)
+        const pg = Math.max(0, Number(page) || 0)
+
+        let query = admin.from('admin_audit_log')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+          .range(pg * lim, (pg + 1) * lim - 1)
+
+        if (filterEmail) query = query.ilike('admin_email', `%${sanitizeSearch(filterEmail)}%`)
+        if (filterAction) query = query.eq('action', filterAction)
+        if (filterTarget) query = query.ilike('target_id', `%${sanitizeSearch(filterTarget)}%`)
+        if (date_from) query = query.gte('created_at', date_from)
+        if (date_to) query = query.lte('created_at', date_to)
+
+        const { data, error, count } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ logs: data || [], total: count || 0 })
+      }
+
+      case 'get_audit_stats': {
+        const { data: allLogs, error } = await admin.from('admin_audit_log')
+          .select('action, admin_email, created_at')
+          .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
+          .order('created_at', { ascending: false })
+          .limit(5000)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        const actionCounts: Record<string, number> = {}
+        const adminCounts: Record<string, number> = {}
+        const dailyCounts: Record<string, number> = {}
+
+        for (const log of allLogs || []) {
+          actionCounts[log.action] = (actionCounts[log.action] || 0) + 1
+          if (log.admin_email) adminCounts[log.admin_email] = (adminCounts[log.admin_email] || 0) + 1
+          const day = log.created_at?.substring(0, 10)
+          if (day) dailyCounts[day] = (dailyCounts[day] || 0) + 1
+        }
+
+        return NextResponse.json({
+          total_actions_30d: (allLogs || []).length,
+          action_counts: actionCounts,
+          admin_counts: adminCounts,
+          daily_counts: dailyCounts,
+        })
+      }
+
+      case 'export_audit_logs': {
+        const { date_from, date_to } = params
+        let query = admin.from('admin_audit_log')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(5000)
+
+        if (date_from) query = query.gte('created_at', date_from)
+        if (date_to) query = query.lte('created_at', date_to)
+
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        const rows = (data || []).map(r => ({
+          timestamp: r.created_at,
+          admin_email: r.admin_email || 'unknown',
+          action: r.action,
+          target_id: r.target_id || '',
+          ip_address: r.ip_address || '',
+          details: JSON.stringify(r.details || {}),
+        }))
+
+        return NextResponse.json({ rows })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // FEATURE FLAGS
+      // ═══════════════════════════════════════════════════
+
+      case 'get_feature_flags': {
+        const { data, error } = await admin.from('feature_flags')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ flags: data || [] })
+      }
+
+      case 'create_feature_flag': {
+        const { key, description: flagDesc, enabled, rollout_percentage, platform: flagPlatform, min_app_version, metadata: flagMeta } = params
+        if (!key) return NextResponse.json({ error: 'Missing key' }, { status: 400 })
+
+        const { data, error } = await admin.from('feature_flags').insert({
+          key: key.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+          description: flagDesc || '',
+          enabled: enabled || false,
+          rollout_percentage: rollout_percentage ?? 100,
+          platform: flagPlatform || 'all',
+          min_app_version: min_app_version || null,
+          metadata: flagMeta || {},
+          created_by: adminAuth.email,
+          updated_by: adminAuth.email,
+        }).select().single()
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ flag: data })
+      }
+
+      case 'update_feature_flag': {
+        const { flag_id, ...flagUpdates } = params
+        if (!flag_id) return NextResponse.json({ error: 'Missing flag_id' }, { status: 400 })
+
+        const allowed = ['enabled', 'description', 'rollout_percentage', 'platform', 'min_app_version', 'metadata']
+        const sanitized: Record<string, unknown> = { updated_by: adminAuth.email, updated_at: new Date().toISOString() }
+        for (const [k, v] of Object.entries(flagUpdates)) {
+          if (allowed.includes(k)) sanitized[k] = v
+        }
+
+        const { data, error } = await admin.from('feature_flags')
+          .update(sanitized)
+          .eq('id', flag_id)
+          .select()
+          .single()
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ flag: data })
+      }
+
+      case 'delete_feature_flag': {
+        const { flag_id } = params
+        if (!flag_id) return NextResponse.json({ error: 'Missing flag_id' }, { status: 400 })
+
+        const { error } = await admin.from('feature_flags').delete().eq('id', flag_id)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'get_feature_flag_history': {
+        const { flag_id } = params
+        let query = admin.from('admin_audit_log')
+          .select('*')
+          .in('action', ['create_feature_flag', 'update_feature_flag', 'delete_feature_flag'])
+          .order('created_at', { ascending: false })
+          .limit(50)
+
+        if (flag_id) query = query.eq('target_id', flag_id)
+
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ history: data || [] })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // SYSTEM HEALTH
+      // ═══════════════════════════════════════════════════
+
+      case 'health_table_sizes': {
+        const { data, error } = await admin.rpc('admin_get_table_sizes')
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ tables: data || [] })
+      }
+
+      case 'health_connections': {
+        const { data, error } = await admin.rpc('admin_get_connection_stats')
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json(data || {})
+      }
+
+      case 'health_index_usage': {
+        const { data, error } = await admin.rpc('admin_get_index_health')
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ indexes: data || [] })
+      }
+
+      case 'health_rpc_stats': {
+        const { data, error } = await admin.rpc('admin_get_rpc_stats')
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ functions: data || [] })
+      }
+
+      case 'health_push_pipeline': {
+        const { data, error } = await admin.rpc('admin_get_push_pipeline_stats')
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json(data || {})
+      }
+
+      case 'health_error_rates': {
+        const d30 = new Date(Date.now() - 30 * 86400000).toISOString()
+
+        const [crashRes, bugRes] = await Promise.all([
+          admin.from('crash_reports').select('created_at, severity').gte('created_at', d30),
+          admin.from('bug_reports').select('created_at').gte('created_at', d30),
+        ])
+
+        const dailyCrashes: Record<string, number> = {}
+        const dailyBugs: Record<string, number> = {}
+
+        for (const r of crashRes.data || []) {
+          const day = r.created_at?.substring(0, 10)
+          if (day) dailyCrashes[day] = (dailyCrashes[day] || 0) + 1
+        }
+        for (const r of bugRes.data || []) {
+          const day = r.created_at?.substring(0, 10)
+          if (day) dailyBugs[day] = (dailyBugs[day] || 0) + 1
+        }
+
+        return NextResponse.json({
+          crashes_30d: (crashRes.data || []).length,
+          bugs_30d: (bugRes.data || []).length,
+          daily_crashes: dailyCrashes,
+          daily_bugs: dailyBugs,
+        })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // MODERATION
+      // ═══════════════════════════════════════════════════
+
+      case 'get_moderation_queue': {
+        const { status: modStatus, page = 0 } = params
+        const lim = safeLimit(params.limit, 100)
+        const pg = Math.max(0, Number(page) || 0)
+
+        let query = admin.from('user_reports')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(pg * lim, (pg + 1) * lim - 1)
+
+        if (modStatus) query = query.eq('status', modStatus)
+
+        const { data: reports, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        const userIds = new Set<string>()
+        for (const r of reports || []) {
+          userIds.add(r.reporter_id)
+          userIds.add(r.reported_user_id)
+        }
+
+        let profiles: Record<string, unknown>[] = []
+        if (userIds.size > 0) {
+          const { data: p } = await admin.from('user_profiles')
+            .select('id, name, username, email, profile_photo_url')
+            .in('id', Array.from(userIds))
+          profiles = p || []
+        }
+
+        const profileMap = new Map(profiles.map(p => [(p as { id: string }).id, p]))
+        const enriched = (reports || []).map(r => ({
+          ...r,
+          reporter_profile: profileMap.get(r.reporter_id) || null,
+          reported_profile: profileMap.get(r.reported_user_id) || null,
+        }))
+
+        return NextResponse.json({ reports: enriched })
+      }
+
+      case 'get_moderation_stats': {
+        const [reportsRes, blocksRes] = await Promise.all([
+          admin.from('user_reports').select('reason, status, created_at, resolved_at, reported_user_id'),
+          admin.from('user_blocks').select('blocker_id, blocked_id, created_at'),
+        ])
+
+        const reports = reportsRes.data || []
+        const reasonCounts: Record<string, number> = {}
+        const statusCounts: Record<string, number> = {}
+        let totalResolutionMs = 0
+        let resolvedCount = 0
+        const repeatOffenders: Record<string, number> = {}
+
+        for (const r of reports) {
+          reasonCounts[r.reason] = (reasonCounts[r.reason] || 0) + 1
+          statusCounts[r.status] = (statusCounts[r.status] || 0) + 1
+          repeatOffenders[r.reported_user_id] = (repeatOffenders[r.reported_user_id] || 0) + 1
+          if (r.resolved_at && r.created_at) {
+            totalResolutionMs += new Date(r.resolved_at).getTime() - new Date(r.created_at).getTime()
+            resolvedCount++
+          }
+        }
+
+        const topOffenders = Object.entries(repeatOffenders)
+          .filter(([, c]) => c >= 2)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 20)
+          .map(([id, count]) => ({ user_id: id, report_count: count }))
+
+        return NextResponse.json({
+          total_reports: reports.length,
+          reason_counts: reasonCounts,
+          status_counts: statusCounts,
+          avg_resolution_hours: resolvedCount > 0 ? Math.round(totalResolutionMs / resolvedCount / 3600000 * 10) / 10 : null,
+          total_blocks: (blocksRes.data || []).length,
+          repeat_offenders: topOffenders,
+        })
+      }
+
+      case 'update_report_status': {
+        const { report_id, status: newReportStatus, resolution_notes } = params
+        if (!report_id) return NextResponse.json({ error: 'Missing report_id' }, { status: 400 })
+
+        const updates: Record<string, unknown> = { status: newReportStatus }
+        if (resolution_notes !== undefined) updates.resolution_notes = resolution_notes
+        if (newReportStatus === 'resolved' || newReportStatus === 'dismissed') {
+          updates.resolved_at = new Date().toISOString()
+          updates.resolved_by = adminAuth.email
+        }
+
+        const { error } = await admin.from('user_reports').update(updates).eq('id', report_id)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'get_user_reports': {
+        const { user_id } = params
+        if (!user_id) return NextResponse.json({ error: 'Missing user_id' }, { status: 400 })
+
+        const { data, error } = await admin.from('user_reports')
+          .select('*')
+          .or(`reporter_id.eq.${user_id},reported_user_id.eq.${user_id}`)
+          .order('created_at', { ascending: false })
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ reports: data || [] })
+      }
+
+      case 'suspend_user': {
+        const { user_id, reason: suspendReason, expires_at } = params
+        if (!user_id || !suspendReason) return NextResponse.json({ error: 'Missing user_id or reason' }, { status: 400 })
+
+        const { data, error } = await admin.from('user_suspensions').insert({
+          user_id,
+          reason: suspendReason,
+          suspended_by: adminAuth.email || 'admin',
+          expires_at: expires_at || null,
+        }).select().single()
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ suspension: data })
+      }
+
+      case 'lift_suspension': {
+        const { suspension_id } = params
+        if (!suspension_id) return NextResponse.json({ error: 'Missing suspension_id' }, { status: 400 })
+
+        const { error } = await admin.from('user_suspensions')
+          .update({ lifted_at: new Date().toISOString(), lifted_by: adminAuth.email })
+          .eq('id', suspension_id)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'get_user_suspensions': {
+        const { user_id } = params
+        let query = admin.from('user_suspensions')
+          .select('*')
+          .order('suspended_at', { ascending: false })
+
+        if (user_id) query = query.eq('user_id', user_id)
+
+        const { data, error } = await query.limit(100)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ suspensions: data || [] })
+      }
+
+      case 'get_block_relationships': {
+        const { data: blocks, error } = await admin.from('user_blocks')
+          .select('blocker_id, blocked_id, created_at')
+          .order('created_at', { ascending: false })
+          .limit(1000)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        const blockedCounts: Record<string, number> = {}
+        for (const b of blocks || []) {
+          blockedCounts[b.blocked_id] = (blockedCounts[b.blocked_id] || 0) + 1
+        }
+
+        const mostBlocked = Object.entries(blockedCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 20)
+          .map(([id, count]) => ({ user_id: id, block_count: count }))
+
+        let mostBlockedProfiles: Record<string, unknown>[] = []
+        if (mostBlocked.length > 0) {
+          const { data: p } = await admin.from('user_profiles')
+            .select('id, name, username, email')
+            .in('id', mostBlocked.map(m => m.user_id))
+          mostBlockedProfiles = p || []
+        }
+
+        const profileMap = new Map(mostBlockedProfiles.map(p => [(p as { id: string }).id, p]))
+        const enrichedBlocked = mostBlocked.map(m => ({
+          ...m,
+          profile: profileMap.get(m.user_id) || null,
+        }))
+
+        return NextResponse.json({
+          total_blocks: (blocks || []).length,
+          most_blocked_users: enrichedBlocked,
+          blocks: blocks || [],
+        })
+      }
+
+      case 'get_moderation_overview': {
+        const { data: pendingRes } = await admin.from('user_reports')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending')
+
+        const { data: activeSuspensions } = await admin.from('user_suspensions')
+          .select('id', { count: 'exact', head: true })
+          .is('lifted_at', null)
+
+        return NextResponse.json({
+          pending_reports: pendingRes,
+          active_suspensions: activeSuspensions,
+        })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // PUSH NOTIFICATION MANAGER
+      // ═══════════════════════════════════════════════════
+
+      case 'get_push_overview': {
+        const { data: pipeline, error: pipeErr } = await admin.rpc('admin_get_push_pipeline_stats')
+
+        const { data: campaigns } = await admin.from('push_campaigns')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(10)
+
+        if (pipeErr) return NextResponse.json({ error: pipeErr.message }, { status: 500 })
+        return NextResponse.json({ pipeline: pipeline || {}, recent_campaigns: campaigns || [] })
+      }
+
+      case 'get_push_campaigns': {
+        const { status: campStatus } = params
+        let query = admin.from('push_campaigns')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (campStatus) query = query.eq('status', campStatus)
+
+        const { data, error } = await query.limit(100)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ campaigns: data || [] })
+      }
+
+      case 'create_push_campaign': {
+        const { title: campTitle, body: campBody, segment, notification_type, custom_filter, scheduled_at: campSchedule, data: campData } = params
+        if (!campTitle || !campBody || !segment) {
+          return NextResponse.json({ error: 'Missing title, body, or segment' }, { status: 400 })
+        }
+
+        const { data, error } = await admin.from('push_campaigns').insert({
+          title: campTitle,
+          body: campBody,
+          segment,
+          notification_type: notification_type || 'campaign',
+          custom_filter: custom_filter || null,
+          scheduled_at: campSchedule || null,
+          data: campData || {},
+          status: campSchedule ? 'scheduled' : 'draft',
+          created_by: adminAuth.email || 'admin',
+        }).select().single()
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ campaign: data })
+      }
+
+      case 'update_push_campaign': {
+        const { campaign_id, ...campUpdates } = params
+        if (!campaign_id) return NextResponse.json({ error: 'Missing campaign_id' }, { status: 400 })
+
+        const allowed = ['title', 'body', 'segment', 'notification_type', 'custom_filter', 'scheduled_at', 'status', 'data']
+        const sanitized: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(campUpdates)) {
+          if (allowed.includes(k)) sanitized[k] = v
+        }
+
+        const { data, error } = await admin.from('push_campaigns')
+          .update(sanitized)
+          .eq('id', campaign_id)
+          .select()
+          .single()
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ campaign: data })
+      }
+
+      case 'send_push_campaign': {
+        const { campaign_id } = params
+        if (!campaign_id) return NextResponse.json({ error: 'Missing campaign_id' }, { status: 400 })
+
+        const { data, error } = await admin.rpc('execute_push_campaign', { p_campaign_id: campaign_id })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json(data || { success: true })
+      }
+
+      case 'get_push_delivery_stats': {
+        const { data, error } = await admin.from('push_notification_delivery_log')
+          .select('event, created_at')
+          .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
+          .order('created_at', { ascending: false })
+          .limit(10000)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        const eventCounts: Record<string, number> = {}
+        const dailyEvents: Record<string, Record<string, number>> = {}
+
+        for (const r of data || []) {
+          eventCounts[r.event] = (eventCounts[r.event] || 0) + 1
+          const day = r.created_at?.substring(0, 10)
+          if (day) {
+            if (!dailyEvents[day]) dailyEvents[day] = {}
+            dailyEvents[day][r.event] = (dailyEvents[day][r.event] || 0) + 1
+          }
+        }
+
+        return NextResponse.json({ event_counts: eventCounts, daily_events: dailyEvents })
+      }
+
+      case 'get_push_queue_status': {
+        const { data, error } = await admin.from('push_notification_queue')
+          .select('status, created_at')
+          .in('status', ['pending', 'processing', 'failed'])
+          .order('created_at', { ascending: true })
+          .limit(500)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        const statusCounts: Record<string, number> = {}
+        for (const r of data || []) {
+          statusCounts[r.status] = (statusCounts[r.status] || 0) + 1
+        }
+
+        return NextResponse.json({ status_counts: statusCounts, items: data || [] })
+      }
+
+      case 'get_push_user_debug': {
+        const { user_id } = params
+        if (!user_id) return NextResponse.json({ error: 'Missing user_id' }, { status: 400 })
+
+        const [tokensRes, prefsRes, queueRes, logsRes] = await Promise.all([
+          admin.from('user_push_tokens').select('*').eq('user_id', user_id),
+          admin.from('user_notification_preferences').select('*').eq('user_id', user_id).maybeSingle(),
+          admin.from('push_notification_queue')
+            .select('id, notification_type, title, status, error_message, retry_count, created_at, sent_at')
+            .eq('recipient_user_id', user_id)
+            .order('created_at', { ascending: false })
+            .limit(25),
+          admin.from('push_notification_delivery_log')
+            .select('event, detail, notification_id, created_at')
+            .eq('user_id', user_id)
+            .order('created_at', { ascending: false })
+            .limit(50),
+        ])
+
+        return NextResponse.json({
+          tokens: tokensRes.data || [],
+          preferences: prefsRes.data || null,
+          recent_queue: queueRes.data || [],
+          delivery_logs: logsRes.data || [],
+        })
+      }
+
+      case 'estimate_campaign_reach': {
+        const { segment } = params
+        if (!segment) return NextResponse.json({ error: 'Missing segment' }, { status: 400 })
+
+        const { data, error } = await admin.rpc('estimate_campaign_reach', { p_segment: segment })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ reach: data || 0 })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // ENGAGEMENT / CHURN RISK
+      // ═══════════════════════════════════════════════════
+
+      case 'engagement_overview': {
+        const { data: scores, error } = await admin.from('mv_user_engagement_scores')
+          .select('engagement_score, engagement_bucket')
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        const bucketCounts: Record<string, number> = {}
+        let totalScore = 0
+
+        for (const s of scores || []) {
+          bucketCounts[s.engagement_bucket] = (bucketCounts[s.engagement_bucket] || 0) + 1
+          totalScore += s.engagement_score
+        }
+
+        return NextResponse.json({
+          total_users: (scores || []).length,
+          avg_score: (scores || []).length > 0 ? Math.round(totalScore / (scores || []).length * 10) / 10 : 0,
+          bucket_counts: bucketCounts,
+        })
+      }
+
+      case 'engagement_at_risk_users': {
+        const lim = safeLimit(params.limit, 100)
+        const { data, error } = await admin.from('mv_user_engagement_scores')
+          .select('*')
+          .in('engagement_bucket', ['at_risk', 'churned'])
+          .order('engagement_score', { ascending: true })
+          .limit(lim)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ users: data || [] })
+      }
+
+      case 'engagement_power_users': {
+        const lim = safeLimit(params.limit, 50)
+        const { data, error } = await admin.from('mv_user_engagement_scores')
+          .select('*')
+          .eq('engagement_bucket', 'power_user')
+          .order('engagement_score', { ascending: false })
+          .limit(lim)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ users: data || [] })
+      }
+
+      case 'engagement_cohort_matrix': {
+        const { data, error } = await admin.from('mv_retention_cohorts')
+          .select('*')
+          .order('cohort_week', { ascending: false })
+          .limit(24)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ cohorts: data || [] })
+      }
+
+      case 'engagement_onboarding_funnel': {
+        const { data, error } = await admin.from('mv_onboarding_funnel')
+          .select('*')
+          .limit(1)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json(data?.[0] || {})
+      }
+
+      case 'engagement_user_detail': {
+        const { user_id } = params
+        if (!user_id) return NextResponse.json({ error: 'Missing user_id' }, { status: 400 })
+
+        const { data, error } = await admin.from('mv_user_engagement_scores')
+          .select('*')
+          .eq('user_id', user_id)
+          .maybeSingle()
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ engagement: data })
+      }
+
+      case 'engagement_geo_heatmap': {
+        const { data: prefs, error: prefsErr } = await admin.from('user_notification_preferences')
+          .select('timezone')
+          .not('timezone', 'is', null)
+
+        if (prefsErr) return NextResponse.json({ error: prefsErr.message }, { status: 500 })
+
+        const tzCounts: Record<string, number> = {}
+        for (const p of prefs || []) {
+          if (p.timezone) tzCounts[p.timezone] = (tzCounts[p.timezone] || 0) + 1
+        }
+
+        const regionCounts: Record<string, number> = {}
+        const cityData: { timezone: string; count: number; region: string }[] = []
+
+        for (const [tz, count] of Object.entries(tzCounts)) {
+          const parts = tz.split('/')
+          const region = parts[0] || 'Unknown'
+          regionCounts[region] = (regionCounts[region] || 0) + count
+          cityData.push({ timezone: tz, count, region })
+        }
+
+        cityData.sort((a, b) => b.count - a.count)
+
+        return NextResponse.json({
+          total_with_tz: (prefs || []).length,
+          region_counts: regionCounts,
+          timezone_counts: tzCounts,
+          top_timezones: cityData.slice(0, 30),
+        })
       }
 
       default:

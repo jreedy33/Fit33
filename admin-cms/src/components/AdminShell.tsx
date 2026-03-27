@@ -9,9 +9,15 @@ const navItems = [
   { href: '/users', label: 'Users', icon: '👥' },
   { href: '/exercises', label: 'Exercises', icon: '💪' },
   { href: '/metrics', label: 'Metrics', icon: '📈' },
+  { href: '/engagement', label: 'Engagement', icon: '🎯' },
+  { href: '/health', label: 'System Health', icon: '🔧' },
+  { href: '/notifications', label: 'Push Manager', icon: '🔔' },
+  { href: '/flags', label: 'Feature Flags', icon: '🚩' },
+  { href: '/moderation', label: 'Moderation', icon: '🛡️' },
+  { href: '/audit', label: 'Audit Log', icon: '📋' },
   { href: '/insights', label: 'AI Insights', icon: '🧠' },
   { href: '/dev-logs', label: 'Dev Logs', icon: '🔬' },
-  { href: '/crashes', label: 'Crashes & Bugs', icon: '🛡️' },
+  { href: '/crashes', label: 'Crashes & Bugs', icon: '🐛' },
   { href: '/faq', label: 'FAQ Manager', icon: '❓' },
 ]
 

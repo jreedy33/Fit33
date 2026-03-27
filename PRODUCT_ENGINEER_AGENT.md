@@ -749,6 +749,10 @@ User Types → onChange(of: searchText)
 - Chat UI: message bubbles with `pre-wrap`, auto-scroll via `messagesEndRef`, Shift+Enter for newlines
 - Quick-ask buttons: array of pre-built prompts that call `sendMessage(text)` directly
 
+### 2026-03-27: Audit Log Viewer — CMS
+
+**Page**: `admin-cms/src/app/audit/page.tsx` — Timeline (filters, paginated table, row expand for JSON `details`, CSV export using `export_audit_logs` + client filter to match applied filters) and Stats (`get_audit_stats`: totals, actions-by-type bars, admins, daily bars). **API**: `get_audit_logs`, `get_audit_stats`, `export_audit_logs` in `admin-cms/src/app/api/admin/route.ts`. **Nav**: `AdminShell` sidebar "Audit Log" (📋).
+
 ### 2026-03-20: Performance Audit — Code Fixes
 
 **PR Detection** (`ActiveWorkoutView.swift`):
@@ -1043,3 +1047,23 @@ OTP verified → createMinimalAccountForEmailPasswordSignup()
 - New `filteredPYMK` computed property in `NewOnboardingView+Social.swift` filters friends-of-friends by friend/request status and search text.
 - The addFriends step now has 4 branches: loading → contact matches → PYMK fallback ("Already part of the club!") → truly empty state. PYMK section uses the same `onboardingFriendRow` component.
 - Previously, PYMK was only fetched from `FriendsTabView` after onboarding. Now it's also available during onboarding when contacts yield nothing.
+
+### 2026-03-27: CMS Advanced Tools Suite — 6 New Pages
+
+**New CMS pages** (all at `admin-cms/src/app/[feature]/page.tsx`, API actions in `route.ts`):
+
+1. **Audit Log** (`/audit`) — Timeline + stats of all admin actions. Filters: date range, action type, admin email, target ID. CSV export. Uses `admin_audit_log` table (now enhanced with `details` JSONB and `admin_email`).
+
+2. **Feature Flags** (`/flags`) — CRUD for `feature_flags` table. Inline toggle switches, rollout % slider, platform/version targeting, metadata JSON editor. Change history from audit log. App-facing RPC: `get_active_feature_flags()`.
+
+3. **System Health** (`/health`) — DB table sizes, connection pool, push pipeline stats, RPC performance, index health, error rates. Auto-refresh toggle. Uses pg_stat RPCs.
+
+4. **Moderation** (`/moderation`) — Report queue (pending/reviewing/resolved), stats by reason, suspension management, block relationship analysis. User detail page has new Moderation tab.
+
+5. **Push Manager** (`/notifications`) — Campaign CRUD with segment targeting (all/at_risk/inactive_7d/inactive_30d/new_users/power_users), queue monitoring, per-user debug, delivery stats. `execute_push_campaign()` RPC resolves segments.
+
+6. **Engagement** (`/engagement`) — Score distribution (power_user/engaged/casual/at_risk/churned), at-risk user list, power user leaderboard, weekly retention cohort heatmap, onboarding funnel, **geo heatmap** from timezone data. User detail page has new Engagement tab.
+
+**AdminShell nav** now has 14 items (was 9). New: Engagement, System Health, Push Manager, Feature Flags, Moderation, Audit Log.
+
+**User detail page** (`/users/[id]`) gained two new tabs: Engagement (score + breakdown) and Moderation (reports + suspensions).

@@ -328,3 +328,27 @@ App-critical views: `weight_statistics`, `body_composition_statistics` — confi
 **R2 video URLs**:
 - Exercise videos hosted on Cloudflare R2 at `https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev/{video_filename}`
 - Do NOT use `encodeURIComponent` on filenames — they contain parentheses like `(male)` and `(Dumbbell)` that break when encoded.
+
+### 2026-03-27: CMS Advanced Tools Suite
+
+**6 new CMS pages added** (all follow `POST /api/admin` pattern with service-role Supabase):
+
+| Page | Route | Key Tables | Ownership |
+|------|-------|------------|-----------|
+| Audit Log Viewer | `/audit` | `admin_audit_log` (enhanced: `details JSONB`, `admin_email TEXT`) | Infra (primary) |
+| Feature Flags | `/flags` | `feature_flags` (new table) + `get_active_feature_flags()` RPC for app | Infra (primary) |
+| System Health | `/health` | pg_stat RPCs: `admin_get_table_sizes`, `admin_get_connection_stats`, `admin_get_index_health`, `admin_get_rpc_stats`, `admin_get_push_pipeline_stats` | Quality (primary) |
+| Moderation | `/moderation` | `user_reports` + `user_suspensions` (new tables), `user_blocks` (existing) | Infra (primary) |
+| Push Manager | `/notifications` | `push_campaigns` (new table), `push_notification_queue`, `push_notification_delivery_log` | Product (primary) |
+| Engagement | `/engagement` | `mv_user_engagement_scores`, `mv_retention_cohorts`, `mv_onboarding_funnel` (materialized views, daily refresh via pg_cron at 4 AM) | Product (primary) |
+
+**Security notes**:
+- All new tables have RLS enabled. No user-facing SELECT policies on admin-only tables (accessed via service role).
+- `feature_flags` has an app-facing RPC `get_active_feature_flags()` that uses `hashtext(user_id)` for consistent rollout bucketing.
+- `user_reports` allows authenticated INSERT (users report others) and SELECT own reports.
+- `user_suspensions` is admin-only; app checks via `is_user_suspended()` RPC.
+- `logAdminAction()` now captures `admin_email` and `details` JSONB on all write/bulk actions.
+- New WRITE_ACTIONS: `create_feature_flag`, `update_feature_flag`, `delete_feature_flag`, `update_report_status`, `suspend_user`, `lift_suspension`, `create_push_campaign`, `update_push_campaign`.
+- New BULK_ACTIONS: `send_push_campaign`.
+
+**SQL migrations**: `supabase/20260327_enhance_audit_log.sql`, `20260327_feature_flags.sql`, `20260327_system_health_rpcs.sql`, `20260327_moderation_system.sql`, `20260327_push_campaigns.sql`, `20260327_engagement_scoring.sql`.

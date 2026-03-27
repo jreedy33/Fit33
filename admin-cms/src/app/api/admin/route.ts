@@ -2289,9 +2289,9 @@ export async function POST(req: NextRequest) {
 
       case 'get_push_queue_status': {
         const { data, error } = await admin.from('push_notification_queue')
-          .select('status, created_at')
+          .select('id, recipient_user_id, notification_type, title, body, status, error_message, retry_count, created_at, sent_at')
           .in('status', ['pending', 'processing', 'failed'])
-          .order('created_at', { ascending: true })
+          .order('created_at', { ascending: false })
           .limit(500)
 
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -2301,7 +2301,26 @@ export async function POST(req: NextRequest) {
           statusCounts[r.status] = (statusCounts[r.status] || 0) + 1
         }
 
-        return NextResponse.json({ status_counts: statusCounts, items: data || [] })
+        const userIds = [...new Set((data || []).map((r: { recipient_user_id: string }) => r.recipient_user_id).filter(Boolean))]
+        let profiles: Record<string, unknown>[] = []
+        if (userIds.length > 0) {
+          const { data: p } = await admin.from('user_profiles')
+            .select('id, name, username, email, profile_photo_url')
+            .in('id', userIds.slice(0, 200))
+          profiles = p || []
+        }
+
+        const profileMap: Record<string, unknown> = {}
+        for (const p of profiles) {
+          profileMap[(p as { id: string }).id] = p
+        }
+
+        const enriched = (data || []).map((r: Record<string, unknown>) => ({
+          ...r,
+          recipient_profile: profileMap[r.recipient_user_id as string] || null,
+        }))
+
+        return NextResponse.json({ status_counts: statusCounts, items: enriched })
       }
 
       case 'get_push_user_debug': {

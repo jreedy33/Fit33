@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import AdminShell from '@/components/AdminShell'
 import { adminApi } from '@/lib/api'
 
@@ -65,8 +66,23 @@ interface PushCampaign {
 }
 
 interface QueueRow {
+  id: string
+  recipient_user_id: string
+  notification_type: string
+  title: string | null
+  body: string | null
   status: string
+  error_message: string | null
+  retry_count: number
   created_at: string
+  sent_at: string | null
+  recipient_profile: {
+    id: string
+    name: string | null
+    username: string | null
+    email: string | null
+    profile_photo_url: string | null
+  } | null
 }
 
 interface UserDebugPayload {
@@ -99,6 +115,7 @@ function maskToken(raw: string | undefined): string {
 }
 
 export default function PushNotificationsPage() {
+  const router = useRouter()
   const [tab, setTab] = useState<TabId>('dashboard')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -727,6 +744,9 @@ export default function PushNotificationsPage() {
                           <thead>
                             <tr>
                               <th>Status</th>
+                              <th>Recipient</th>
+                              <th>Notification</th>
+                              <th>Type</th>
                               <th>Created</th>
                               <th>Age</th>
                             </tr>
@@ -736,8 +756,9 @@ export default function PushNotificationsPage() {
                               const ageMs = Date.now() - new Date(row.created_at).getTime()
                               const ageMin = Math.floor(ageMs / 60000)
                               const stuck = row.status === 'pending' && ageMin > 30
+                              const rp = row.recipient_profile
                               return (
-                                <tr key={`${row.status}-${row.created_at}-${idx}`}>
+                                <tr key={row.id || `${row.status}-${row.created_at}-${idx}`}>
                                   <td>
                                     <span
                                       className={`badge ${
@@ -752,11 +773,67 @@ export default function PushNotificationsPage() {
                                     >
                                       {row.status}
                                     </span>
+                                    {row.error_message && (
+                                      <div className="text-xs mt-1 max-w-[160px] truncate" style={{ color: 'var(--danger)' }} title={row.error_message}>
+                                        {row.error_message}
+                                      </div>
+                                    )}
                                   </td>
-                                  <td className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                                  <td>
+                                    {rp ? (
+                                      <button
+                                        onClick={() => router.push(`/users/${rp.id}`)}
+                                        className="flex items-center gap-2 hover:opacity-80"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                      >
+                                        <div
+                                          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                                          style={{
+                                            background: rp.profile_photo_url ? 'transparent' : 'var(--bg-tertiary)',
+                                            color: 'var(--text-secondary)',
+                                            backgroundImage: rp.profile_photo_url ? `url(${rp.profile_photo_url})` : undefined,
+                                            backgroundSize: 'cover',
+                                          }}
+                                        >
+                                          {!rp.profile_photo_url && (rp.name?.[0] || rp.username?.[0] || '?')}
+                                        </div>
+                                        <div className="text-left">
+                                          <div className="text-sm font-medium" style={{ color: 'var(--accent)' }}>
+                                            {rp.name || rp.username || 'Unknown'}
+                                          </div>
+                                          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                            {rp.email || `@${rp.username || '—'}`}
+                                          </div>
+                                        </div>
+                                      </button>
+                                    ) : (
+                                      <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                                        {row.recipient_user_id?.substring(0, 8)}...
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={{ maxWidth: 280 }}>
+                                    {row.title && (
+                                      <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                                        {row.title}
+                                      </div>
+                                    )}
+                                    {row.body && (
+                                      <div className="text-xs truncate" style={{ color: 'var(--text-muted)', maxWidth: 280 }}>
+                                        {row.body}
+                                      </div>
+                                    )}
+                                    {!row.title && !row.body && (
+                                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <span className="badge badge-info">{row.notification_type || '—'}</span>
+                                  </td>
+                                  <td className="text-sm whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
                                     {new Date(row.created_at).toLocaleString()}
                                   </td>
-                                  <td className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                  <td className="text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
                                     {ageMin < 60 ? `${ageMin}m` : `${Math.floor(ageMin / 60)}h ${ageMin % 60}m`}
                                     {stuck && ' · possibly stuck'}
                                   </td>

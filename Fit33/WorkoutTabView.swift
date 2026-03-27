@@ -304,6 +304,9 @@ struct WorkoutHomeView: View {
     @ObservedObject private var cloudProgramService = CloudProgramService.shared
     @ObservedObject private var generatedProgramService = GeneratedProgramService.shared
     
+    private let smartProgramEngine = SmartProgramEngine.shared
+    @AppStorage("showRecommendedWidget") private var showRecommendedWidget = true
+    
     // Cardio workouts for combined goal tracking (includes Strava activities)
     @State private var cardioWorkoutsThisWeek: [CardioWorkoutDTO] = []
     
@@ -346,25 +349,8 @@ struct WorkoutHomeView: View {
                     quickActionsSection
                         .id(forceRenderID)
                     
-                    // Cardio Section - Outdoor Run
-                    cardioSection
-                    
-                    // Smart Active Program Widget (when user has an active generated program)
-                    if let activeProgram = generatedProgramService.activeProgram {
-                        smartGeneratedProgramWidget(program: activeProgram)
-                    }
-                    // Show program recommendations if no active program but programs exist
-                    else if !generatedProgramService.generatedPrograms.isEmpty {
-                        programRecommendationsWidget
-                    }
-                    // Legacy fallback
-                    else {
-                        recommendedWorkoutSection
-                    }
-                    
-                    // Your Stats (embedded from Stats tab)
-                    WorkoutStatsEmbeddedView()
-                        .environmentObject(userManager)
+                    // Program Widget (matches Dashboard active program widget exactly)
+                    workoutTabProgramWidget
                 }
             }
             .padding(.horizontal, Spacing.md)
@@ -428,135 +414,7 @@ struct WorkoutHomeView: View {
         .padding(.leading, 4)
     }
     
-    // MARK: - Cardio Section
     @State private var showingCardioLanding = false
-    
-    private var cardioSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Cardio & Stretch Row - Two compact buttons side by side
-            HStack(spacing: 12) {
-                // Cardio Button
-                Button(action: {
-                    guard !isNavigating else { return }
-                    isNavigating = true
-                    Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
-
-                    HapticManager.impact(.medium)
-                    showingCardioLanding = true
-                }) {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(colors: [Color.green.opacity(0.3), Color.mint.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                                .frame(width: 44, height: 44)
-                            
-                            Image(systemName: "figure.run")
-                                .font(.ds_heading3)
-                                .foregroundStyle(
-                                    LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Cardio")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
-                            
-                            Text("Run • Cycle • Row")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                        
-                        Spacer(minLength: 0)
-                        
-                        Image(systemName: "chevron.right")
-                            .font(.ds_labelMedium)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(
-                                LinearGradient(colors: [Color.green.opacity(0.3), Color.mint.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                lineWidth: 1
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
-                
-                // Stretch Button
-                Button(action: {
-                    guard !isNavigating else { return }
-                    isNavigating = true
-                    Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
-
-                    HapticManager.impact(.medium)
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showingStretchModeOverlay = true
-                    }
-                }) {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(colors: [Color.purple.opacity(0.3), Color.pink.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                                .frame(width: 44, height: 44)
-                            
-                            Image(systemName: "figure.flexibility")
-                                .font(.ds_heading3)
-                                .foregroundStyle(
-                                    LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Stretch")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
-                            
-                            Text("Recovery • Mobility")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                        
-                        Spacer(minLength: 0)
-                        
-                        Image(systemName: "chevron.right")
-                            .font(.ds_labelMedium)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(
-                                LinearGradient(colors: [Color.purple.opacity(0.3), Color.pink.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                lineWidth: 1
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .sheet(isPresented: $showingCardioLanding) {
-            CardioLandingView()
-                .environmentObject(userManager)
-        }
-    }
     
     // MARK: - Quick Actions
     private var quickActionsSection: some View {
@@ -635,72 +493,94 @@ struct WorkoutHomeView: View {
                         navigationPath.append("FavoriteRoutines")
                     }
                 )
+                
+                // Cardio
+                DepthQuickActionCard(
+                    title: "Cardio",
+                    subtitle: "Run • Cycle • Row",
+                    icon: "figure.run",
+                    gradient: [Color.green, Color.mint],
+                    action: {
+                        guard !isNavigating else { return }
+                        isNavigating = true
+                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+                        
+                        showingCardioLanding = true
+                    }
+                )
+                
+                // Stretch
+                DepthQuickActionCard(
+                    title: "Stretch",
+                    subtitle: "Recovery • Mobility",
+                    icon: "figure.flexibility",
+                    gradient: [Color.purple, Color.pink],
+                    action: {
+                        guard !isNavigating else { return }
+                        isNavigating = true
+                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+                        
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            showingStretchModeOverlay = true
+                        }
+                    }
+                )
             }
+        }
+        .sheet(isPresented: $showingCardioLanding) {
+            CardioLandingView()
+                .environmentObject(userManager)
         }
     }
     
-    // MARK: - Smart Generated Program Widget
-    private func smartGeneratedProgramWidget(program: DynamicProgramGenerator.GeneratedProgram) -> some View {
-        let displayInfo = generatedProgramService.getDisplayInfo(for: program)
-        let programColor = colorForProgramType(program.programType)
+    // MARK: - Active Program Widget (exact copy from Dashboard)
+    
+    private var personalizedPrograms: [PersonalizedProgram] {
+        smartProgramEngine.getPersonalizedPrograms(for: userManager.currentUser)
+    }
+    
+    private var activeSmartProgramForWidget: SmartActiveProgram? {
+        smartProgramEngine.userPrograms
+            .filter { !$0.isCompleted }
+            .sorted { $0.startDate > $1.startDate }
+            .first
+    }
+    
+    @ViewBuilder
+    private var workoutTabProgramWidget: some View {
+        if let activeProgram = activeSmartProgramForWidget {
+            activeSmartProgramDetailWidget(program: activeProgram)
+        }
+    }
+    
+    private func activeSmartProgramDetailWidget(program: SmartActiveProgram) -> some View {
+        let programColor = Color.green
+        let template = personalizedPrograms.first { $0.template.id == program.templateId }?.template
+        let completedDays = program.completedDays.count
+        let totalDays = template?.totalDays ?? program.generatedDays.count
+        let totalWeeks = (totalDays + 6) / 7
+        let currentWeek = (program.currentDay - 1) / max(1, template?.daysPerWeek ?? 4) + 1
+        let progress = totalDays > 0 ? Double(completedDays) / Double(totalDays) * 100 : 0
         
-        return VStack(alignment: .leading, spacing: 14) {
-            // Header
-            HStack {
-                Text("Active Program")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Spacer()
-                Image(systemName: program.icon)
-                    .foregroundStyle(
-                        LinearGradient(colors: [programColor, programColor.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .font(.title3)
-            }
-            .padding(.horizontal, Spacing.xxs)
-            
-            // Program card
-            VStack(spacing: 0) {
-                // Program info
-                HStack(alignment: .center, spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [programColor, programColor.opacity(0.7)]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 50, height: 50)
-                        
-                        Image(systemName: program.icon)
-                            .font(.ds_heading2)
-                            .foregroundColor(.white)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(program.name)
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                        
-                        Text("Week \(displayInfo.currentWeek) • \(displayInfo.progressText)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    // Progress ring
+        let currentDay = program.generatedDays.first { $0.dayNumber == program.currentDay }
+        let isTodayCompleted = currentDay?.isCompleted ?? false
+        let nextDay = program.generatedDays.first { !$0.isCompleted && $0.dayNumber > program.currentDay }
+        let dayToShow = isTodayCompleted ? nextDay : currentDay
+        
+        return VStack(spacing: 0) {
+            Button {
+                WorkoutManager.shared.navigateProgramData = program
+                WorkoutManager.shared.navigateProgramTemplate = template
+                WorkoutManager.shared.shouldNavigateToProgramOverview = true
+            } label: {
+                HStack(alignment: .center, spacing: 10) {
                     ZStack {
                         Circle()
                             .stroke(Color.gray.opacity(0.2), lineWidth: 4)
                             .frame(width: 44, height: 44)
                         
                         Circle()
-                            .trim(from: 0, to: displayInfo.progressPercentage / 100)
+                            .trim(from: 0, to: progress / 100)
                             .stroke(
                                 LinearGradient(
                                     colors: [programColor, programColor.opacity(0.7)],
@@ -712,252 +592,268 @@ struct WorkoutHomeView: View {
                             .frame(width: 44, height: 44)
                             .rotationEffect(.degrees(-90))
                         
-                        Text("\(Int(displayInfo.progressPercentage))%")
+                        Text("\(Int(progress))%")
                             .font(.ds_caption)
                             .foregroundColor(programColor)
                     }
-                }
-                .padding(Spacing.md)
-                
-                Divider()
-                    .padding(.horizontal, Spacing.md)
-                
-                // Today's workout with rounded inner card
-                if let currentDay = generatedProgramService.currentDay {
-                    NavigationLink(value: "SmartWorkoutPreview") {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Today's Workout")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                Text(currentDay.name)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
-                                
-                                HStack(spacing: 12) {
-                                    Label("\(currentDay.exercises.count) exercises", systemImage: "dumbbell.fill")
-                                    Label("~\(currentDay.estimatedDuration) min", systemImage: "clock.fill")
-                                }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(template?.baseName ?? "Training Program")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        HStack(spacing: 6) {
+                            Text("Week \(currentWeek)/\(totalWeeks)")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
+                            
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            Text("\(completedDays)/\(totalDays) days")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(programColor)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, Spacing.sm)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if isTodayCompleted {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.ds_heading1)
+                        .foregroundColor(.green)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Great work!")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        
+                        if let next = nextDay {
+                            Text("Next up: \(next.name)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("You're all caught up!")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    if let next = nextDay {
+                        Button {
+                            WorkoutManager.shared.navigateProgramData = program
+                            WorkoutManager.shared.navigateProgramDay = next
+                            WorkoutManager.shared.shouldNavigateToProgramDay = true
+                        } label: {
+                            Text("Preview")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(programColor)
+                                .padding(.horizontal, Spacing.sm)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .stroke(programColor.opacity(0.5), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
+                        .fill(Color.green.opacity(colorScheme == .dark ? 0.08 : 0.06))
+                )
+                .padding(.horizontal, Spacing.sm)
+                .padding(.bottom, 12)
+            } else if let day = dayToShow {
+                Button {
+                    WorkoutManager.shared.navigateProgramData = program
+                    WorkoutManager.shared.navigateProgramDay = day
+                    WorkoutManager.shared.shouldNavigateToProgramDay = true
+                } label: {
+                    HStack(spacing: 0) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(programColor)
+                            .frame(width: 4)
+                            .padding(.vertical, Spacing.xxs)
+                        
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(day.name)
+                                        .font(.subheadline)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("Day \(day.dayNumber)")
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(programColor)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(
+                                            Capsule()
+                                                .fill(programColor.opacity(0.15))
+                                        )
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(day.exercises.count) exercises")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    let muscleTargets = getMuscleTargets(for: day.exercises)
+                                    if !muscleTargets.isEmpty {
+                                        Text(muscleTargets)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary.opacity(0.8))
+                                            .lineLimit(2)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
                             }
                             
                             Spacer()
                             
-                            Text("GO!")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, Spacing.md)
-                                .padding(.vertical, Spacing.xs)
-                                .background(
-                                    LinearGradient(
-                                        colors: [programColor, programColor.opacity(0.8)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
+                            HStack(spacing: 4) {
+                                Image(systemName: "play.fill")
+                                    .font(.ds_caption)
+                                Text("Start")
+                                    .font(.subheadline)
+                                    .fontWeight(.bold)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [programColor.opacity(0.9), programColor.opacity(0.7)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
                                     )
-                                )
-                                .clipShape(Capsule())
+                            )
                         }
-                        .padding(14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.black.opacity(0.03))
-                        )
-                        .padding(.horizontal, Spacing.xs)
-                        .padding(.bottom, 8)
+                        .padding(.leading, 12)
+                        .padding(.trailing, 14)
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .padding(.vertical, Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
+                            .fill(colorScheme == .dark
+                                ? Color.white.opacity(0.04)
+                                : Color.black.opacity(0.03))
+                    )
                 }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.horizontal, Spacing.sm)
+                .padding(.bottom, 12)
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "trophy.fill")
+                        .font(.ds_heading1)
+                        .foregroundColor(.yellow)
+                    
+                    Text("Program Complete! 🎉")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text("Congratulations on finishing your program!")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(20)
             }
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.lg)
-                    .fill(Color.cardBackground)
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.lg)
+        }
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 26)
+                    .stroke(programColor.opacity(isTodayCompleted ? 0 : 0.3), lineWidth: 2)
+                    .blur(radius: 6)
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.16), Color(white: 0.10)]
+                                : [Color.white, Color(white: 0.98)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
                     .stroke(
                         LinearGradient(
-                            colors: [programColor.opacity(0.5), programColor.opacity(0.2)],
+                            colors: isTodayCompleted
+                                ? [Color.gray.opacity(0.15), Color.gray.opacity(0.05), Color.clear]
+                                : [programColor.opacity(0.35), programColor.opacity(0.15), Color.clear],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 2
+                        lineWidth: 1.5
                     )
-            )
-        }
-    }
-    
-    // MARK: - Program Recommendations Widget
-    private var programRecommendationsWidget: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Header
-            HStack {
-                Text("Your Programs")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Spacer()
-                NavigationLink(value: "GeneratedPrograms") {
-                    Text("View All")
-                        .font(.subheadline)
-                        .foregroundStyle(.blue)
-                }
             }
-            .padding(.horizontal, Spacing.xxs)
-            
-            // Program cards
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(generatedProgramService.generatedPrograms.prefix(3)) { program in
-                        WorkoutTabProgramCard(
-                            program: program,
-                            onStart: {
-                                generatedProgramService.startProgram(program)
-                            }
-                        )
-                        .frame(width: 260)
-                    }
-                }
-                .padding(.horizontal, Spacing.xxs)
-            }
-        }
+        )
+        .shadow(color: programColor.opacity(colorScheme == .dark ? 0.25 : 0.18), radius: 16, x: 0, y: 4)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 3)
     }
     
-    // Helper function for program type color
-    private func colorForProgramType(_ type: DynamicProgramGenerator.GeneratedProgram.ProgramType) -> Color {
-        switch type {
-        case .hypertrophy: return .blue
-        case .strength: return .red
-        case .fatLoss: return .orange
-        case .toning: return .purple
-        case .generalFitness: return .green
-        case .powerbuilding: return .yellow
-        }
-    }
-    
-    // MARK: - Smart Workout Insights Widget (Legacy)
-    private var smartWorkoutInsightsWidget: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Floating header outside the card
-            HStack {
-                Text("Training Insights")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Spacer()
-                Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
-                    .foregroundStyle(
-                        LinearGradient(colors: [.green, .teal], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .font(.title3)
-            }
-            .padding(.horizontal, Spacing.xxs)
-            
-            // The card itself
-            SmartInsightsCard(
-                workouts: Array(workouts),
-                todayExercises: getTodaysProgramExercises(),
-                onViewProgram: {
-                    navigationPath.append("CloudProgramSchedule")
-                }
-            )
-        }
-    }
-    
-    // Helper to get today's program exercises
-    private func getTodaysProgramExercises() -> [String] {
-        guard let progress = cloudProgramService.activeProgram,
-              let dayDetails = cloudProgramService.getDayDetails(for: progress.currentDay) else {
-            return []
-        }
-        return dayDetails.exercises.map { $0.exercise.exerciseName }
-    }
-    
-    // MARK: - Compact Program Recommendation
-    private var recommendedWorkoutSection: some View {
-        let programs = SmartProgramEngine.shared
-            .getPersonalizedPrograms(for: userManager.currentUser)
-            .filter { !$0.isCompleted && $0.isUnlocked }
+    private func getMuscleTargets(for exercises: [SmartProgramExercise]) -> String {
+        let exerciseLibrary = ExerciseLibraryService.shared
+        var muscleGroups: [String: Int] = [:]
         
-        return Group {
-            if let top = programs.first {
-                let template = top.template
-                let totalWeeks = (template.totalDays + 6) / 7
-                
-                Button {
-                    HapticManager.impact(.light)
-                    navigationPath.append("ProgramDetail:\(template.id)")
-                } label: {
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [.green, .mint],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 50, height: 50)
-                            
-                            Image(systemName: "figure.strengthtraining.traditional")
-                                .font(.ds_heading2)
-                                .foregroundColor(.white)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(top.personalizedName)
-                                .font(.ds_labelLarge)
-                                .foregroundColor(.primary)
-                                .lineLimit(2)
-                            
-                            HStack(spacing: 8) {
-                                Text("\(totalWeeks)wk • \(template.daysPerWeek)x/wk")
-                                Text("•")
-                                Text("\(top.matchPercentage)% match")
-                                    .foregroundColor(.green)
-                            }
-                            .font(.ds_labelSmall)
-                            .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        Image(systemName: "chevron.right")
-                            .font(.ds_labelMedium)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(Spacing.md)
-                    .sleekCard(cornerRadius: 20, accentColor: .green)
+        for exercise in exercises {
+            if let libraryExercise = exerciseLibrary.getExercise(byName: exercise.exerciseName) {
+                if let muscles = libraryExercise.muscleGroups as? [String], let primary = muscles.first {
+                    muscleGroups[primary, default: 0] += 1
                 }
-                .buttonStyle(PlainButtonStyle())
             } else {
-                Button {
-                    HapticManager.impact(.light)
-                    navigationPath.append("ProgramLibrary")
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Explore Programs")
-                                .font(.ds_labelLarge)
-                                .foregroundColor(.primary)
-                            Text("Find the perfect program for your goals")
-                                .font(.ds_labelSmall)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.blue)
-                    }
-                    .padding(Spacing.md)
-                    .sleekCard(cornerRadius: 20, accentColor: .blue)
+                let nameLower = exercise.exerciseName.lowercased()
+                if nameLower.contains("chest") || nameLower.contains("bench") || nameLower.contains("fly") {
+                    muscleGroups["Chest", default: 0] += 1
+                } else if nameLower.contains("back") || nameLower.contains("row") || nameLower.contains("lat") || nameLower.contains("pull") {
+                    muscleGroups["Back", default: 0] += 1
+                } else if nameLower.contains("shoulder") || nameLower.contains("delt") || nameLower.contains("press") {
+                    muscleGroups["Shoulders", default: 0] += 1
+                } else if nameLower.contains("bicep") || nameLower.contains("curl") || nameLower.contains("tricep") {
+                    muscleGroups["Arms", default: 0] += 1
+                } else if nameLower.contains("leg") || nameLower.contains("squat") || nameLower.contains("quad") || nameLower.contains("hamstring") || nameLower.contains("glute") {
+                    muscleGroups["Legs", default: 0] += 1
+                } else if nameLower.contains("core") || nameLower.contains("ab") || nameLower.contains("plank") {
+                    muscleGroups["Core", default: 0] += 1
                 }
-                .buttonStyle(PlainButtonStyle())
             }
         }
+        
+        let sorted = muscleGroups.sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            return $0.key < $1.key
+        }
+        let topMuscles = sorted.prefix(3).map { $0.key }
+        
+        return topMuscles.joined(separator: ", ")
     }
     
     // MARK: - Next Goals Section (Revamped "Almost There!")

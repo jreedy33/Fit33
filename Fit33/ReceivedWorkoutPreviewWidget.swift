@@ -41,12 +41,10 @@ struct ReceivedWorkoutPreviewWidget: View {
             
             detailsSection
             
-            VStack(spacing: 0) {
-                if isExpanded {
-                    exerciseListSection
-                }
+            if isExpanded {
+                exerciseListSection
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .clipped()
             
             Divider().padding(.horizontal, Spacing.md)
             

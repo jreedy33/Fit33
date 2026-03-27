@@ -12,294 +12,286 @@ struct StepTrackerCard: View {
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
-        Button(action: {
-            showingDetailView = true
-        }) {
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Image(systemName: "figure.walk")
-                        .font(.ds_heading2)
-                        .foregroundStyle(
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            // Section header (matches Recent Activity / Your Progress style)
+            HStack {
+                Image(systemName: "figure.walk")
+                    .foregroundStyle(
+                        LinearGradient(colors: [.green, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .font(.title3)
+                Text("Daily Steps")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                if healthKitManager.isGoalAchieved() {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.green)
+                        .scaleEffect(isAnimating ? 1.15 : 1.0)
+                }
+            }
+            
+            // Card body
+            Button(action: {
+                showingDetailView = true
+            }) {
+                VStack(spacing: 0) {
+                    // Main content
+                    VStack(spacing: 12) {
+                        if !healthKitManager.isAuthorized {
+                            VStack(spacing: 12) {
+                                Image(systemName: "heart.text.square.fill")
+                                    .font(.system(size: 50))
+                                    .foregroundColor(.red)
+                                
+                                Text("Enable HealthKit")
+                                    .font(.headline)
+                                    .fontWeight(.bold)
+                                
+                                Text("Allow access to your step data to start tracking your daily activity")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                                
+                                Button {
+                                    Task {
+                                        try? await healthKitManager.requestAuthorization()
+                                    }
+                                } label: {
+                                    Text("Enable HealthKit Access")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, Spacing.sm)
+                                        .background(
+                                            LinearGradient(
+                                                colors: [.green, .cyan],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .cornerRadius(10)
+                                }
+                            }
+                            .padding(.vertical, 20)
+                        } else {
+                            ZStack(alignment: .topTrailing) {
+                                // Step count with circular progress
+                                ZStack {
+                                    Circle()
+                                        .stroke(Color.gray.opacity(0.15), lineWidth: 12)
+                                        .frame(width: 140, height: 140)
+                                    
+                                    Circle()
+                                        .trim(from: 0, to: healthKitManager.progressPercentage())
+                                        .stroke(
+                                            LinearGradient(
+                                                colors: [.green, .cyan, .blue],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            ),
+                                            style: StrokeStyle(lineWidth: 12, lineCap: .round)
+                                        )
+                                        .frame(width: 140, height: 140)
+                                        .rotationEffect(.degrees(-90))
+                                        .animation(.spring(response: 0.6, dampingFraction: 0.7), value: healthKitManager.todaySteps)
+                                    
+                                    VStack(spacing: 4) {
+                                        Text(healthKitManager.formattedSteps(healthKitManager.todaySteps))
+                                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                                            .foregroundColor(.primary)
+                                            .contentTransition(.numericText())
+                                        
+                                        Text("steps")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, Spacing.xs)
+                                
+                                // Refresh button inside the card
+                                Button(action: {
+                                    Task {
+                                        await refreshSteps()
+                                    }
+                                }) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color(.systemGray6))
+                                            .frame(width: 36, height: 36)
+                                        
+                                        if isRefreshing {
+                                            ProgressView()
+                                                .scaleEffect(0.7)
+                                        } else {
+                                            Image(systemName: "arrow.clockwise")
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                }
+                                .accessibilityLabel("Refresh steps")
+                                .accessibilityHint("Fetches the latest step count from HealthKit")
+                                .padding(.trailing, 4)
+                                .padding(.top, 4)
+                            }
+                            
+                            // Goal info - floating stats
+                            HStack(spacing: 16) {
+                                VStack(spacing: 4) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "target")
+                                            .font(.caption)
+                                            .foregroundColor(.blue)
+                                        
+                                        Text("\(max(0, healthKitManager.stepGoal - healthKitManager.todaySteps))")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.primary)
+                                    }
+                                    
+                                    Text("to goal")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                
+                                VStack(spacing: 4) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "chart.line.uptrend.xyaxis")
+                                            .font(.caption)
+                                            .foregroundColor(.green)
+                                        
+                                        Text("\(Int(healthKitManager.progressPercentage() * 100))%")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.primary)
+                                    }
+                                    
+                                    Text("complete")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .padding(.horizontal, Spacing.md)
+                        }
+                    }
+                    .padding(.vertical, Spacing.sm)
+                    .padding(.horizontal, Spacing.xs)
+                    
+                    // Quick stats footer
+                    if healthKitManager.isAuthorized {
+                        HStack(spacing: 16) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "calendar")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                                
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("\(healthKitManager.formattedSteps(healthKitManager.monthlyAverage))")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("monthly avg")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            Spacer()
+                            
+                            HStack(spacing: 4) {
+                                Text("View Details")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                            }
+                            .foregroundColor(.blue)
+                        }
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.sm)
+                        .background(Color(.systemGray6))
+                    }
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 8)
+                        .blur(radius: 4)
+                    
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 4)
+                    
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(
                             LinearGradient(
-                                colors: [.green, .cyan],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                                colors: colorScheme == .dark
+                                    ? [Color(white: 0.15), Color(white: 0.10)]
+                                    : [Color.white, Color.white.opacity(0.95)],
+                                startPoint: .top,
+                                endPoint: .bottom
                             )
                         )
                     
-                    Text("Daily Steps")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
-                    if isRefreshing {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else if healthKitManager.isGoalAchieved() {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.green)
-                            .scaleEffect(isAnimating ? 1.2 : 1.0)
-                    } else {
-                        Button(action: {
-                            Task {
-                                await refreshSteps()
-                            }
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.title3)
-                                .foregroundColor(.blue)
-                        }
-                    }
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.top, 16)
-                .padding(.bottom, 12)
-                
-                Divider()
-                    .padding(.horizontal, Spacing.md)
-                
-                // Main content
-                VStack(spacing: 12) {
-                    // Permission prompt if not authorized
-                    if !healthKitManager.isAuthorized {
-                        VStack(spacing: 12) {
-                            Image(systemName: "heart.text.square.fill")
-                                .font(.system(size: 50))
-                                .foregroundColor(.red)
-                            
-                            Text("Enable HealthKit")
-                                .font(.headline)
-                                .fontWeight(.bold)
-                            
-                            Text("Allow access to your step data to start tracking your daily activity")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                            
-                            Button {
-                                Task {
-                                    try? await healthKitManager.requestAuthorization()
-                                }
-                            } label: {
-                                Text("Enable HealthKit Access")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, Spacing.sm)
-                                    .background(
-                                        LinearGradient(
-                                            colors: [.green, .cyan],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .cornerRadius(10)
-                            }
-                        }
-                        .padding(.vertical, 20)
-                    } else {
-                        // Step count with circular progress
-                        ZStack {
-                            // Background circle
-                            Circle()
-                                .stroke(Color.gray.opacity(0.15), lineWidth: 12)
-                                .frame(width: 140, height: 140)
-                            
-                            // Progress circle
-                            Circle()
-                                .trim(from: 0, to: healthKitManager.progressPercentage())
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [.green, .cyan, .blue],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    style: StrokeStyle(lineWidth: 12, lineCap: .round)
-                                )
-                                .frame(width: 140, height: 140)
-                                .rotationEffect(.degrees(-90))
-                                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: healthKitManager.todaySteps)
-                            
-                            // Step count in center
-                            VStack(spacing: 4) {
-                                Text(healthKitManager.formattedSteps(healthKitManager.todaySteps))
-                                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
-                                    .contentTransition(.numericText())
-                                
-                                Text("steps")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .padding(.vertical, Spacing.xs)
-                        
-                        // Goal info - floating stats
-                        HStack(spacing: 16) {
-                            // Remaining steps
-                            VStack(spacing: 4) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "target")
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
-                                    
-                                    Text("\(max(0, healthKitManager.stepGoal - healthKitManager.todaySteps))")
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.primary)
-                                }
-                                
-                                Text("to goal")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            
-                            // Progress percentage
-                            VStack(spacing: 4) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "chart.line.uptrend.xyaxis")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                    
-                                    Text("\(Int(healthKitManager.progressPercentage() * 100))%")
-                                        .font(.subheadline)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.primary)
-                                }
-                                
-                                Text("complete")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .padding(.horizontal, Spacing.md)
-                    }
-                }
-                .padding(.vertical, Spacing.sm)
-                
-                // Quick stats footer (only show if authorized)
-                if healthKitManager.isAuthorized {
-                    HStack(spacing: 16) {
-                        // Monthly average
-                        HStack(spacing: 6) {
-                            Image(systemName: "calendar")
-                                .font(.caption2)
-                                .foregroundColor(.orange)
-                            
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("\(healthKitManager.formattedSteps(healthKitManager.monthlyAverage))")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.primary)
-                                
-                                Text("monthly avg")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        // View details arrow
-                        HStack(spacing: 4) {
-                            Text("View Details")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                            
-                            Image(systemName: "chevron.right")
-                                .font(.caption2)
-                        }
-                        .foregroundColor(.blue)
-                    }
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, Spacing.sm)
-                    .background(Color(.systemGray6))
-                }
-            }
-        }
-        .buttonStyle(PlainButtonStyle())
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .background(
-            ZStack {
-                // Bottom shadow layer (deepest) - teal colored
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color.teal.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 8)
-                    .blur(radius: 4)
-                
-                // Middle shadow layer
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
-                
-                // Main card background with gradient
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
-                            startPoint: .top,
-                            endPoint: .bottom
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
                         )
-                    )
-                
-                // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
-                    )
-                
-                // Colored accent border - teal/cyan gradient
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                Color.cyan.opacity(colorScheme == .dark ? 0.3 : 0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-        .shadow(color: Color.teal.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+                    
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.teal.opacity(colorScheme == .dark ? 0.4 : 0.3),
+                                    Color.cyan.opacity(colorScheme == .dark ? 0.3 : 0.2)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: Color.teal.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        }
         .sheet(isPresented: $showingDetailView) {
             StepTrackerDetailView()
         }
         .onAppear {
-            // Animate checkmark if goal achieved
             if healthKitManager.isGoalAchieved() {
                 withAnimation(Animation.spring(response: 0.3, dampingFraction: 0.5).repeatForever(autoreverses: true)) {
                     isAnimating = true
                 }
             }
             
-            // Refresh steps every time view appears (tab navigation)
             Task {
                 await refreshSteps()
             }
         }
         .task {
-            // Request authorization and load data (first time only)
             if !healthKitManager.isAuthorized {
                 try? await healthKitManager.requestAuthorization()
             }
@@ -307,7 +299,6 @@ struct StepTrackerCard: View {
             await refreshSteps()
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
-            // Refresh when app comes to foreground
             if newPhase == .active {
                 Task {
                     await refreshSteps()
@@ -316,14 +307,14 @@ struct StepTrackerCard: View {
         }
     }
     
-    // Manual refresh function
     private func refreshSteps() async {
-        isRefreshing = true
+        guard !isRefreshing else { return }
+        withAnimation { isRefreshing = true }
         await healthKitManager.fetchTodaySteps()
         await healthKitManager.fetchWeeklySteps()
         await healthKitManager.fetchMonthlyAverage()
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        isRefreshing = false
+        try? await Task.sleep(for: .milliseconds(300))
+        withAnimation { isRefreshing = false }
     }
 }
 

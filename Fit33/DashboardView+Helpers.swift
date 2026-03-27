@@ -463,13 +463,13 @@ extension DashboardView {
             }
             .frame(height: 160)
             .animation(.easeOut(duration: 0.25), value: selectedWorkoutPage)
-            .simultaneousGesture(
+            .highPriorityGesture(
                 DragGesture(minimumDistance: 25)
                     .onEnded { value in
                         let horizontalAmount = value.translation.width
                         let verticalAmount = abs(value.translation.height)
                         
-                        if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 30 {
+                        if abs(horizontalAmount) > verticalAmount * 1.5 && abs(horizontalAmount) > 20 {
                             HapticManager.impact(.medium)
                             if horizontalAmount < 0 && selectedWorkoutPage < pageCount - 1 {
                                 selectedWorkoutPage += 1

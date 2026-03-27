@@ -2315,9 +2315,24 @@ export async function POST(req: NextRequest) {
           profileMap[(p as { id: string }).id] = p
         }
 
+        const notifIds = (data || []).map((r: { id: string }) => r.id).filter(Boolean)
+        const logsMap: Record<string, { event: string; detail: unknown; created_at: string }[]> = {}
+        if (notifIds.length > 0) {
+          const { data: logs } = await admin.from('push_notification_delivery_log')
+            .select('notification_id, event, detail, created_at')
+            .in('notification_id', notifIds.slice(0, 200))
+            .order('created_at', { ascending: true })
+          for (const l of logs || []) {
+            const nid = (l as { notification_id: string }).notification_id
+            if (!logsMap[nid]) logsMap[nid] = []
+            logsMap[nid].push({ event: l.event, detail: l.detail, created_at: l.created_at })
+          }
+        }
+
         const enriched = (data || []).map((r: Record<string, unknown>) => ({
           ...r,
           recipient_profile: profileMap[r.recipient_user_id as string] || null,
+          delivery_logs: logsMap[r.id as string] || [],
         }))
 
         return NextResponse.json({ status_counts: statusCounts, items: enriched })

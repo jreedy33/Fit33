@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AdminShell from '@/components/AdminShell'
 import { adminApi } from '@/lib/api'
@@ -65,6 +65,12 @@ interface PushCampaign {
   data?: Record<string, unknown>
 }
 
+interface DeliveryLog {
+  event: string
+  detail: Record<string, unknown> | null
+  created_at: string
+}
+
 interface QueueRow {
   id: string
   recipient_user_id: string
@@ -83,6 +89,7 @@ interface QueueRow {
     email: string | null
     profile_photo_url: string | null
   } | null
+  delivery_logs: DeliveryLog[]
 }
 
 interface UserDebugPayload {
@@ -125,6 +132,7 @@ export default function PushNotificationsPage() {
   const [campaigns, setCampaigns] = useState<PushCampaign[]>([])
   const [queueItems, setQueueItems] = useState<QueueRow[]>([])
   const [queueStatusCounts, setQueueStatusCounts] = useState<Record<string, number>>({})
+  const [expandedQueueRow, setExpandedQueueRow] = useState<string | null>(null)
 
   const [campaignsLoading, setCampaignsLoading] = useState(false)
   const [queueLoading, setQueueLoading] = useState(false)
@@ -749,6 +757,7 @@ export default function PushNotificationsPage() {
                               <th>Type</th>
                               <th>Created</th>
                               <th>Age</th>
+                              <th>Logs</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -757,8 +766,10 @@ export default function PushNotificationsPage() {
                               const ageMin = Math.floor(ageMs / 60000)
                               const stuck = row.status === 'pending' && ageMin > 30
                               const rp = row.recipient_profile
+                              const rowKey = row.id || `${row.status}-${row.created_at}-${idx}`
                               return (
-                                <tr key={row.id || `${row.status}-${row.created_at}-${idx}`}>
+                                <Fragment key={rowKey}>
+                                <tr>
                                   <td>
                                     <span
                                       className={`badge ${
@@ -837,7 +848,66 @@ export default function PushNotificationsPage() {
                                     {ageMin < 60 ? `${ageMin}m` : `${Math.floor(ageMin / 60)}h ${ageMin % 60}m`}
                                     {stuck && ' · possibly stuck'}
                                   </td>
+                                  <td>
+                                    <button
+                                      onClick={() => setExpandedQueueRow(expandedQueueRow === row.id ? null : row.id)}
+                                      className="text-xs px-2 py-1 rounded"
+                                      style={{
+                                        background: expandedQueueRow === row.id ? 'var(--accent)' : 'var(--bg-tertiary)',
+                                        color: expandedQueueRow === row.id ? 'white' : 'var(--text-muted)',
+                                        border: 'none', cursor: 'pointer',
+                                      }}
+                                    >
+                                      {row.delivery_logs?.length || 0} logs {expandedQueueRow === row.id ? '▲' : '▼'}
+                                    </button>
+                                  </td>
                                 </tr>
+                                {expandedQueueRow === row.id && (
+                                  <tr>
+                                    <td colSpan={7} style={{ padding: 0, border: 'none' }}>
+                                      <div className="px-4 py-3 mb-1 rounded-b-lg" style={{ background: 'var(--bg-tertiary)' }}>
+                                        <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
+                                          Delivery Pipeline Logs
+                                        </div>
+                                        {(!row.delivery_logs || row.delivery_logs.length === 0) ? (
+                                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No delivery logs recorded for this notification.</p>
+                                        ) : (
+                                          <div className="space-y-1.5">
+                                            {row.delivery_logs.map((log, li) => {
+                                              const isSuccess = log.event.includes('success')
+                                              const isFail = log.event.includes('failed') || log.event.includes('blocked')
+                                              return (
+                                                <div key={li} className="flex items-start gap-2">
+                                                  <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{
+                                                    background: isSuccess ? 'var(--success)' : isFail ? 'var(--danger)' : 'var(--text-muted)',
+                                                  }} />
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="text-xs font-mono font-medium" style={{
+                                                        color: isSuccess ? 'var(--success)' : isFail ? 'var(--danger)' : 'var(--text-primary)',
+                                                      }}>
+                                                        {log.event}
+                                                      </span>
+                                                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                        {new Date(log.created_at).toLocaleTimeString()}
+                                                      </span>
+                                                    </div>
+                                                    {log.detail && Object.keys(log.detail).length > 0 && (
+                                                      <pre className="text-xs mt-0.5 overflow-x-auto" style={{ color: 'var(--text-muted)', margin: 0 }}>
+                                                        {JSON.stringify(log.detail, null, 2)}
+                                                      </pre>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              )
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
                               )
                             })}
                           </tbody>

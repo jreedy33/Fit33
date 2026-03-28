@@ -64,7 +64,23 @@ interface MostBlockedUser {
   profile: ProfileSnippet | null
 }
 
-type TabId = 'queue' | 'overview' | 'suspensions' | 'blocks'
+interface FlaggedContent {
+  id: string
+  user_id: string | null
+  table_name: string
+  record_id: string | null
+  content_snippet: string
+  flagged_categories: string[]
+  category_scores: Record<string, number>
+  action_taken: string
+  admin_reviewed: boolean
+  admin_notes: string | null
+  reviewed_at: string | null
+  created_at: string
+  user: ProfileSnippet | null
+}
+
+type TabId = 'queue' | 'overview' | 'suspensions' | 'blocks' | 'flagged'
 type QueueStatusFilter = '' | 'pending' | 'reviewing' | 'resolved' | 'dismissed'
 
 const QUEUE_STATUSES: { value: QueueStatusFilter; label: string }[] = [
@@ -230,6 +246,13 @@ export default function ModerationPage() {
   const [blocksLoading, setBlocksLoading] = useState(false)
   const [blocksError, setBlocksError] = useState<string | null>(null)
 
+  // Flagged content state
+  const [flaggedContent, setFlaggedContent] = useState<FlaggedContent[]>([])
+  const [flaggedLoading, setFlaggedLoading] = useState(false)
+  const [flaggedError, setFlaggedError] = useState<string | null>(null)
+  const [flaggedCount, setFlaggedCount] = useState(0)
+  const [reviewBusy, setReviewBusy] = useState<string | null>(null)
+
   const [suspendOpen, setSuspendOpen] = useState(false)
   const [suspendUserId, setSuspendUserId] = useState('')
   const [suspendLabel, setSuspendLabel] = useState('')
@@ -318,6 +341,38 @@ export default function ModerationPage() {
     if (tab !== 'blocks') return
     loadBlocks()
   }, [tab, loadBlocks])
+
+  const loadFlagged = useCallback(async () => {
+    setFlaggedLoading(true)
+    setFlaggedError(null)
+    try {
+      const data = await adminApi('get_flagged_content', { status: 'unreviewed' })
+      setFlaggedContent(data.flagged_content || [])
+      setFlaggedCount(data.total_unreviewed || 0)
+    } catch (e) {
+      setFlaggedError(e instanceof Error ? e.message : 'Failed to load flagged content')
+    } finally {
+      setFlaggedLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tab !== 'flagged') return
+    loadFlagged()
+  }, [tab, loadFlagged])
+
+  const handleReview = useCallback(async (logId: string, action: 'approved' | 'confirmed') => {
+    setReviewBusy(logId)
+    try {
+      await adminApi('review_flagged_content', { log_id: logId, review_action: action })
+      setFlaggedContent(prev => prev.filter(f => f.id !== logId))
+      setFlaggedCount(prev => Math.max(0, prev - 1))
+    } catch (e) {
+      console.error('Review failed:', e)
+    } finally {
+      setReviewBusy(null)
+    }
+  }, [])
 
   const reasonBreakdown = useMemo(() => {
     if (!stats?.reason_counts) return []
@@ -411,11 +466,19 @@ export default function ModerationPage() {
   }
 
   function refreshAll() {
-    if (tab === 'queue') loadQueue()
+    if (tab === 'flagged') loadFlagged()
+    else if (tab === 'queue') loadQueue()
     else if (tab === 'overview') loadStats()
     else if (tab === 'suspensions') loadSuspensions()
     else loadBlocks()
   }
+
+  // Load flagged count on mount so tab badge is always visible
+  useEffect(() => {
+    adminApi('get_flagged_content', { status: 'unreviewed', limit: 1 })
+      .then(data => setFlaggedCount(data.total_unreviewed || 0))
+      .catch(() => {})
+  }, [])
 
   return (
     <AdminShell>
@@ -445,11 +508,85 @@ export default function ModerationPage() {
           style={{ borderColor: 'var(--border)' }}
           role="tablist"
         >
+          <TabButton id="flagged" label={`Flagged${flaggedCount > 0 ? ` (${flaggedCount})` : ''}`} active={tab === 'flagged'} onClick={setTab} />
           <TabButton id="queue" label="Queue" active={tab === 'queue'} onClick={setTab} />
           <TabButton id="overview" label="Overview" active={tab === 'overview'} onClick={setTab} />
           <TabButton id="suspensions" label="Suspensions" active={tab === 'suspensions'} onClick={setTab} />
           <TabButton id="blocks" label="Blocks" active={tab === 'blocks'} onClick={setTab} />
         </div>
+
+        {/* ─── Flagged Content ─── */}
+        {tab === 'flagged' && (
+          <div id="panel-flagged" role="tabpanel" className="space-y-4">
+            {flaggedError && (
+              <div className="card" style={{ color: 'var(--danger)' }}>{flaggedError}</div>
+            )}
+
+            {flaggedLoading ? (
+              <div className="card text-center py-12" style={{ color: 'var(--text-muted)' }}>Loading flagged content...</div>
+            ) : flaggedContent.length === 0 ? (
+              <div className="card text-center py-12">
+                <p className="text-lg font-semibold" style={{ color: 'var(--success)' }}>All clear</p>
+                <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>No unreviewed flagged content</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {flaggedContent.map((item) => (
+                  <div key={item.id} className="card" style={{ borderLeft: '3px solid var(--danger)' }}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-xs font-mono px-2 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
+                            {item.table_name}
+                          </span>
+                          {item.flagged_categories.map((cat: string) => (
+                            <span key={cat} className="text-xs font-semibold px-2 py-0.5 rounded" style={{ background: 'rgba(239,68,68,0.15)', color: 'var(--danger)' }}>
+                              {cat}
+                            </span>
+                          ))}
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            {new Date(item.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        {item.user && (
+                          <div className="flex items-center gap-2 mb-2">
+                            <Link href={`/users/${item.user.id}`} className="text-sm font-medium hover:underline" style={{ color: 'var(--primary)' }}>
+                              {item.user.name || item.user.username || 'Unknown user'}
+                            </Link>
+                            {item.user.username && (
+                              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>@{item.user.username}</span>
+                            )}
+                          </div>
+                        )}
+                        <div className="p-3 rounded text-sm" style={{ background: 'var(--bg-tertiary)', wordBreak: 'break-word' }}>
+                          {item.content_snippet}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 flex-shrink-0">
+                        <button
+                          className="btn btn-ghost text-xs"
+                          disabled={reviewBusy === item.id}
+                          onClick={() => handleReview(item.id, 'approved')}
+                          title="False positive — unhide this content"
+                        >
+                          {reviewBusy === item.id ? '...' : 'Approve'}
+                        </button>
+                        <button
+                          className="btn btn-danger text-xs"
+                          disabled={reviewBusy === item.id}
+                          onClick={() => handleReview(item.id, 'confirmed')}
+                          title="Confirm flag — content stays hidden"
+                        >
+                          {reviewBusy === item.id ? '...' : 'Confirm'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ─── Queue ─── */}
         {tab === 'queue' && (

@@ -22,6 +22,7 @@ const WRITE_ACTIONS = new Set([
   'update_exercise', 'delete_exercise',
   'create_feature_flag', 'update_feature_flag', 'delete_feature_flag',
   'update_report_status', 'suspend_user', 'lift_suspension',
+  'review_flagged_content',
   'create_push_campaign', 'update_push_campaign',
 ])
 const BULK_ACTIONS = new Set([
@@ -2181,6 +2182,114 @@ export async function POST(req: NextRequest) {
           pending_reports: pendingRes,
           active_suspensions: activeSuspensions,
         })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // CONTENT MODERATION (Flagged Content)
+      // ═══════════════════════════════════════════════════
+
+      case 'get_flagged_content': {
+        const { status: flagStatus = 'unreviewed', page: flagPage = 0 } = params
+        const flagLimit = safeLimit(params.limit, 50)
+        const flagOffset = Math.max(0, Number(flagPage) || 0) * flagLimit
+
+        let query = admin.from('content_moderation_log')
+          .select('*, user:user_profiles!content_moderation_log_user_id_fkey(id, name, username, email, profile_photo_url)')
+          .order('created_at', { ascending: false })
+          .range(flagOffset, flagOffset + flagLimit - 1)
+
+        if (flagStatus === 'unreviewed') {
+          query = query.eq('admin_reviewed', false)
+        }
+
+        const { data: flagged, error: flagErr } = await query
+        if (flagErr) return NextResponse.json({ error: flagErr.message }, { status: 500 })
+
+        const { count: totalUnreviewed } = await admin.from('content_moderation_log')
+          .select('id', { count: 'exact', head: true })
+          .eq('admin_reviewed', false)
+
+        return NextResponse.json({
+          flagged_content: flagged || [],
+          total_unreviewed: totalUnreviewed || 0,
+        })
+      }
+
+      case 'get_content_moderation_stats': {
+        const [totalRes, unreviewedRes, todayRes] = await Promise.all([
+          admin.from('content_moderation_log').select('id', { count: 'exact', head: true }),
+          admin.from('content_moderation_log').select('id', { count: 'exact', head: true }).eq('admin_reviewed', false),
+          admin.from('content_moderation_log').select('id', { count: 'exact', head: true }).gte('created_at', new Date().toISOString().split('T')[0]),
+        ])
+
+        const { data: topOffenders } = await admin.from('content_moderation_log')
+          .select('user_id')
+          .not('user_id', 'is', null)
+
+        const offenderCounts: Record<string, number> = {}
+        for (const row of topOffenders || []) {
+          if (row.user_id) {
+            offenderCounts[row.user_id] = (offenderCounts[row.user_id] || 0) + 1
+          }
+        }
+
+        const topOffenderIds = Object.entries(offenderCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+
+        let offenderProfiles: { id: string; name: string; username: string }[] = []
+        if (topOffenderIds.length > 0) {
+          const { data: profiles } = await admin.from('user_profiles')
+            .select('id, name, username')
+            .in('id', topOffenderIds.map(([id]) => id))
+          offenderProfiles = (profiles || []) as { id: string; name: string; username: string }[]
+        }
+
+        const profileMap = new Map(offenderProfiles.map(p => [p.id, p]))
+
+        return NextResponse.json({
+          total_flagged: totalRes.count || 0,
+          unreviewed: unreviewedRes.count || 0,
+          flagged_today: todayRes.count || 0,
+          top_offenders: topOffenderIds.map(([id, count]) => ({
+            user_id: id,
+            flag_count: count,
+            profile: profileMap.get(id) || null,
+          })),
+        })
+      }
+
+      case 'review_flagged_content': {
+        const { log_id, review_action, notes: reviewNotes } = params
+        if (!log_id || !review_action) {
+          return NextResponse.json({ error: 'Missing log_id or review_action' }, { status: 400 })
+        }
+
+        const { data: logEntry, error: logErr } = await admin.from('content_moderation_log')
+          .select('*')
+          .eq('id', log_id)
+          .single()
+
+        if (logErr || !logEntry) {
+          return NextResponse.json({ error: 'Log entry not found' }, { status: 404 })
+        }
+
+        await admin.from('content_moderation_log')
+          .update({
+            admin_reviewed: true,
+            action_taken: review_action,
+            admin_notes: reviewNotes || null,
+            reviewed_at: new Date().toISOString(),
+          })
+          .eq('id', log_id)
+
+        if (review_action === 'approved' && logEntry.record_id && logEntry.table_name) {
+          await admin.from(logEntry.table_name)
+            .update({ is_hidden: false })
+            .eq('id', logEntry.record_id)
+        }
+
+        return NextResponse.json({ success: true })
       }
 
       // ═══════════════════════════════════════════════════

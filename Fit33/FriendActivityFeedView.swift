@@ -124,6 +124,11 @@ class ActivityFeedService: ObservableObject {
     
     private init() {}
     
+    @MainActor
+    func removeBlockedUser(_ userId: UUID) {
+        activities.removeAll { $0.userId == userId }
+    }
+    
     func fetchFeed() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
         await MainActor.run { isLoading = true }

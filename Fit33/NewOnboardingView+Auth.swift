@@ -859,36 +859,50 @@ extension NewOnboardingView {
         showAuthProviderHint = false
         
         if isSignUp {
-            // For sign up: Just validate and proceed to username step
-            // Account will be created on the confirmation screen
-            AppLogger.debug("Sign up mode - navigating to username step", category: .auth)
+            // Create account NOW while password @State is still available.
+            // Previously, account creation was deferred until after phone verification
+            // (~10 steps later), but @State password was often lost by then — causing
+            // "Session expired" errors for email/password signups.
+            AppLogger.debug("Sign up mode - creating account before navigating", category: .auth)
             isOnConfirmPasswordStep = false
-            // NOTE: Do NOT set hasStartedAuth = false here. The auth and username views
-            // coexist in the same ZStack so @FocusState can transfer keyboard seamlessly.
-            // hasStartedAuth is managed by onChange(of: currentStep) when navigating back.
             
-            // Determine which field should be focused based on name state
-            let targetField: FocusedField = name.isEmpty ? .name : .username
-            AppLogger.debug("Auth target field will be: \(targetField)", category: .auth)
-            
-            // Set focus synchronously BEFORE navigating so all state changes are batched
-            focusedField = targetField
-            navigateTo(.username)
-            
-            // Reinforcements as safety net
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(0.05))
-                guard !Task.isCancelled else { return }
-                focusedField = targetField
-                AppLogger.verbose("Auth focus reinforced at 50ms: \(targetField)", category: .ui)
+            Task {
+                do {
+                    try await signUpOrRecoverExistingAccount()
+                    
+                    await MainActor.run {
+                        AppLogger.info("Account created, navigating to username step", category: .auth)
+                        
+                        let targetField: FocusedField = name.isEmpty ? .name : .username
+                        focusedField = targetField
+                        navigateTo(.username)
+                        
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(0.05))
+                            guard !Task.isCancelled else { return }
+                            focusedField = targetField
+                        }
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(0.15))
+                            guard !Task.isCancelled else { return }
+                            focusedField = targetField
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        let desc = error.localizedDescription.lowercased()
+                        if desc.contains("rate") || desc.contains("limit") || desc.contains("too many") {
+                            errorMessage = "Too many attempts. Please wait a moment and try again."
+                        } else if desc.contains("password") && (desc.contains("weak") || desc.contains("strength")) {
+                            errorMessage = "Password is too weak. Please choose a stronger password."
+                        } else {
+                            errorMessage = error.localizedDescription
+                        }
+                        showError = true
+                        AppLogger.error("Account creation failed in handleAuth: \(error.localizedDescription)", category: .auth)
+                    }
+                }
             }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(0.15))
-                guard !Task.isCancelled else { return }
-                focusedField = targetField
-                AppLogger.verbose("Auth focus reinforced at 150ms: \(targetField)", category: .ui)
-            }
-            AppLogger.debug("Auth navigation initiated with focus on \(targetField)", category: .auth)
         } else {
             // For sign in: First check if email is linked to Apple/Google
             Task {

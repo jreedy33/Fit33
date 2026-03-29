@@ -360,18 +360,6 @@ struct LargeCachedFriendPhoto: View {
     
     var body: some View {
         ZStack {
-            // Outer glow
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: gradientColors.map { $0.opacity(0.3) },
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: size + 10, height: size + 10)
-                .blur(radius: 20)
-            
             // Photo or gradient with initials
             if let image = image {
                 Image(uiImage: image)
@@ -390,6 +378,7 @@ struct LargeCachedFriendPhoto: View {
                                 lineWidth: 3
                             )
                     )
+                    .shadow(color: gradientColors.first?.opacity(0.4) ?? .blue.opacity(0.4), radius: 16, x: 0, y: 4)
             } else {
                 ZStack {
                     Circle()
@@ -406,6 +395,7 @@ struct LargeCachedFriendPhoto: View {
                         .font(.system(size: size * 0.36, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                 }
+                .shadow(color: gradientColors.first?.opacity(0.4) ?? .blue.opacity(0.4), radius: 16, x: 0, y: 4)
             }
         }
         .onAppear {

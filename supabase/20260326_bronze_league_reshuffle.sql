@@ -60,9 +60,9 @@ BEGIN
         IF v_user_tier = 1 THEN
             -- ============================================================
             -- BRONZE RESHUFFLE: random placement, avoid last week's mates
+            -- and never place with blocked users
             -- ============================================================
 
-            -- Find the user's group from last week (if any)
             SELECT lm.group_id INTO v_prev_group_id
             FROM league_members lm
             JOIN league_groups lg ON lg.id = lm.group_id
@@ -71,8 +71,6 @@ BEGIN
             LIMIT 1;
 
             IF v_prev_group_id IS NOT NULL THEN
-                -- Pick the candidate group with the FEWEST members from last week's group.
-                -- Among ties, pick randomly for variety.
                 FOR v_candidate IN
                     SELECT lg.id, lg.member_count
                     FROM league_groups lg
@@ -80,6 +78,14 @@ BEGIN
                       AND lg.week_start = v_week_start
                       AND lg.member_count < (SELECT max_group_size FROM league_tiers WHERE tier_rank = 1)
                       AND NOT lg.is_processed
+                      AND NOT EXISTS (
+                          SELECT 1 FROM league_members lm_blk
+                          JOIN user_blocks ub ON (
+                              (ub.blocker_id = p_user_id AND ub.blocked_id = lm_blk.user_id)
+                              OR (ub.blocker_id = lm_blk.user_id AND ub.blocked_id = p_user_id)
+                          )
+                          WHERE lm_blk.group_id = lg.id
+                      )
                     ORDER BY random()
                 LOOP
                     SELECT COUNT(*)::INT INTO v_stale_count
@@ -93,26 +99,32 @@ BEGIN
                         v_best_group_id := v_candidate.id;
                     END IF;
 
-                    -- Perfect: zero overlap with last week → take it immediately
                     IF v_stale_count = 0 THEN EXIT; END IF;
                 END LOOP;
 
                 v_group_id := v_best_group_id;
             ELSE
-                -- No prior week data — just pick a random group
                 SELECT lg.id INTO v_group_id
                 FROM league_groups lg
                 WHERE lg.tier_rank = 1
                   AND lg.week_start = v_week_start
                   AND lg.member_count < (SELECT max_group_size FROM league_tiers WHERE tier_rank = 1)
                   AND NOT lg.is_processed
+                  AND NOT EXISTS (
+                      SELECT 1 FROM league_members lm_blk
+                      JOIN user_blocks ub ON (
+                          (ub.blocker_id = p_user_id AND ub.blocked_id = lm_blk.user_id)
+                          OR (ub.blocker_id = lm_blk.user_id AND ub.blocked_id = p_user_id)
+                      )
+                      WHERE lm_blk.group_id = lg.id
+                  )
                 ORDER BY random()
                 LIMIT 1;
             END IF;
 
         ELSE
             -- ============================================================
-            -- SILVER+ : friend-overlap placement (existing behavior)
+            -- SILVER+ : friend-overlap placement, never place with blocked
             -- ============================================================
             FOR v_candidate IN
                 SELECT lg.id, lg.member_count
@@ -121,6 +133,14 @@ BEGIN
                   AND lg.week_start = v_week_start
                   AND lg.member_count < (SELECT max_group_size FROM league_tiers WHERE tier_rank = v_user_tier)
                   AND NOT lg.is_processed
+                  AND NOT EXISTS (
+                      SELECT 1 FROM league_members lm_blk
+                      JOIN user_blocks ub ON (
+                          (ub.blocker_id = p_user_id AND ub.blocked_id = lm_blk.user_id)
+                          OR (ub.blocker_id = lm_blk.user_id AND ub.blocked_id = p_user_id)
+                      )
+                      WHERE lm_blk.group_id = lg.id
+                  )
                 ORDER BY lg.member_count DESC
             LOOP
                 SELECT COUNT(*)::INT INTO v_overlap

@@ -39,7 +39,6 @@ struct FriendsTabView: View {
     @State private var showingAllCommunities = false
     @State private var cachedSuggestions: [SuggestedFriend] = []
     @State private var hasAppearedBefore = false
-    @State private var showOrbBackground = false
     @State private var challengeGlowPhase: Double = 0
     @State private var challengeToCancel: UUID?
     @State private var showingPrivateChallengeCreation = false
@@ -61,12 +60,8 @@ struct FriendsTabView: View {
             ZStack {
             ScrollView(.vertical) {
                 VStack(spacing: 0) {
-                    // Header + stories bar always rendered (not lazy) so they never disappear
-                    FriendsHeaderWrapper(navigationPath: $navigationPath)
-                        .padding(.top, 4)
-                        .padding(.bottom, 16)
-                    
                     FriendsStoriesWrapper(
+                        navigationPath: $navigationPath,
                         sentRequestIds: $sentRequestIds,
                         requestSentAnimationIds: $requestSentAnimationIds,
                         cachedSuggestions: $cachedSuggestions,
@@ -77,18 +72,15 @@ struct FriendsTabView: View {
                     // Remaining sections deferred via LazyVStack
                     LazyVStack(spacing: 24) {
                         // Top 3 Best Friends spotlight
-                        FriendsSpotlightWrapper(showingFriendProfile: $showingFriendProfile)
-                        
-                        // Quick action tiles: Add Friend, New Challenge, Join Community
-                        friendsQuickActionTiles
+                        FriendsSpotlightWrapper(navigationPath: $navigationPath, showingFriendProfile: $showingFriendProfile)
                         
                         // Weekly League widget
                         FriendsLeagueWrapper(navigationPath: $navigationPath)
                         
-                        // Active Challenges carousel (matching Private Challenges layout)
+                        // Active Challenges — 2 stacked per page, grouped by type
                         VStack(alignment: .leading, spacing: 12) {
-                            FriendsChallengeHeaderWrapper()
-                            DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation, reducedGlow: true)
+                            FriendsChallengeHeaderWrapper(showingChallengeCreation: $showingChallengeCreation)
+                            DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation, reducedGlow: true, stackedMode: true)
                         }
                         
                         // Private Challenges (invite-only communities)
@@ -111,7 +103,7 @@ struct FriendsTabView: View {
                     }
                 }
                 .padding(.horizontal, Spacing.md)
-                .padding(.top, 8)
+                .padding(.top, 12)
                 .padding(.bottom, 20)
             }
             .refreshable {
@@ -123,16 +115,19 @@ struct FriendsTabView: View {
                 lastRefreshedAt = Date()
                 updateCachedSuggestions()
             }
-            .background {
-                if showOrbBackground {
-                    AnimatedOrbBackground.friends(colorScheme: colorScheme)
-                        .transition(.opacity)
-                }
-            }
+            .background(
+                AnimatedOrbBackground.friends(colorScheme: colorScheme)
+            )
                 
             }
-            .navigationBarHidden(true)
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
+            .floatingTopBarLeading {
+                FriendsHeaderTitleView()
+            }
+            .floatingTopBarTrailing {
+                FriendsHeaderActionsView(navigationPath: $navigationPath)
+            }
+            .adaptiveToolbarBackground()
             .navigationDestination(for: String.self) { destination in
                 if destination == "FriendsList" {
                     FriendsListView()
@@ -150,6 +145,12 @@ struct FriendsTabView: View {
                         PrivateChallengeDetailView(challenge: challenge)
                     }
                 }
+            }
+            .navigationDestination(for: ActiveChallenge.self) { challenge in
+                ChallengeDetailView(challenge: challenge)
+            }
+            .navigationDestination(for: ActiveGroupChallenge.self) { challenge in
+                GroupChallengeDetailView(challenge: challenge)
             }
             .navigationDestination(item: $selectedCommunityChallenge) { challenge in
                 CommunityDetailView(challengeId: challenge.challengeId, challengeTitle: challenge.title)
@@ -178,13 +179,6 @@ struct FriendsTabView: View {
             }
         }
         .task {
-            if !showOrbBackground {
-                try? await Task.sleep(for: .milliseconds(150))
-                withAnimation(.easeIn(duration: 0.3)) {
-                    showOrbBackground = true
-                }
-            }
-            
             guard SupabaseManager.shared.isAuthenticated else { return }
 
             hasAppearedBefore = true
@@ -252,16 +246,6 @@ struct FriendsTabView: View {
         .sheet(item: $showingFriendProfile) { profileUser in
             NavigationStack {
                 FriendProfileView(user: profileUser)
-            }
-        }
-        .sheet(isPresented: $showingFriendsList) {
-            NavigationStack {
-                FriendsListView()
-            }
-        }
-        .sheet(isPresented: $showingFriendSearch) {
-            NavigationStack {
-                FriendsListView(initialTab: 2)
             }
         }
         .sheet(isPresented: $showingCommunityHub) {
@@ -388,20 +372,27 @@ struct FriendsTabView: View {
         HStack(alignment: .center) {
             Text("Friends")
                 .font(.ds_displayLarge)
+                .italic()
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [.cyan, .blue, Color(red: 0.5, green: 0.3, blue: 0.95).opacity(0.9)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        stops: [
+                            .init(color: .white, location: 0.0),
+                            .init(color: .white, location: 0.68),
+                            .init(color: Color.cyan, location: 0.82),
+                            .init(color: Color.blue, location: 1.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
                 )
-                .shadow(color: Color.cyan.opacity(0.4), radius: 6, x: 0, y: 2)
+                .shadow(color: Color.cyan.opacity(0.2), radius: 4, x: 0, y: 1)
+                .frame(height: 55)
             
             Spacer()
             
             friendsRequestsBadge
         }
-        .padding(.leading, 4)
+        .padding(.horizontal, Spacing.xxs)
     }
     
     private var friendsRequestsBadge: some View {
@@ -413,12 +404,12 @@ struct FriendsTabView: View {
                 HapticManager.selectionChanged()
                 navigationPath.append("FriendsList")
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Text("\(friendCount)")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                     Text("Friends")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
                 }
             }
@@ -428,25 +419,24 @@ struct FriendsTabView: View {
             
             Rectangle()
                 .fill(Color.gray.opacity(0.3))
-                .frame(width: 1, height: 16)
-                .padding(.horizontal, 8)
+                .frame(width: 1, height: 14)
+                .padding(.horizontal, 6)
             
             Button {
                 HapticManager.selectionChanged()
                 navigationPath.append("FriendRequests")
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Text("\(requestCount)")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
                         .foregroundColor(requestCount > 0 ? .blue : .primary)
-                    Text("Requests")
-                        .font(.system(size: 11, weight: .medium))
+                    Text(requestCount == 1 ? "Request" : "Requests")
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
-                    
                     if requestCount > 0 {
                         Circle()
                             .fill(Color.red)
-                            .frame(width: 8, height: 8)
+                            .frame(width: 7, height: 7)
                     }
                 }
             }
@@ -454,8 +444,9 @@ struct FriendsTabView: View {
             .accessibilityLabel("\(requestCount) friend requests")
             .accessibilityHint("Opens your friend requests")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .fixedSize()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
@@ -702,7 +693,7 @@ struct FriendsTabView: View {
                     HStack {
                         Image(systemName: "star.circle.fill")
                             .foregroundStyle(
-                                LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .font(.title3)
                         Text("Your Inner Circle")
@@ -726,7 +717,7 @@ struct FriendsTabView: View {
                         }
                     }
                     .padding(Spacing.md)
-                    .sleekCard(cornerRadius: 24, accentColor: .yellow)
+                    .sleekCard(cornerRadius: 24, accentColor: .blue)
                 }
             } else {
                 noFriendsYetCard
@@ -2149,16 +2140,18 @@ struct FriendsTabView: View {
                     HapticManager.impact(.light)
                     showingPrivateChallengeCreation = true
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 2) {
                         Text("Create New")
-                            .font(.caption)
-                            .fontWeight(.semibold)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.caption2)
+                            .fontWeight(.semibold)
                     }
-                    .foregroundColor(.purple)
+                    .foregroundStyle(
+                        LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
+                    )
                 }
-                .buttonStyle(.plain)
             }
             
             // Active private challenge cards (max 3)
@@ -2179,7 +2172,6 @@ struct FriendsTabView: View {
         let liveTargetHit = liveValue >= challenge.dailyTarget
         
         return HStack(spacing: 12) {
-            // Emoji + progress ring
             ZStack {
                 Circle()
                     .stroke(Color.purple.opacity(0.15), lineWidth: 4)
@@ -2194,8 +2186,22 @@ struct FriendsTabView: View {
                     .frame(width: 48, height: 48)
                     .rotationEffect(.degrees(-90))
                 
-                Text(challenge.displayEmoji)
-                    .font(.ds_heading3)
+                if let coverUrl = challenge.coverImageUrl, let url = URL(string: coverUrl) {
+                    AsyncImage(url: url) { phase in
+                        if case .success(let img) = phase {
+                            img.resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 40, height: 40)
+                                .clipShape(Circle())
+                        } else {
+                            Text(challenge.displayEmoji)
+                                .font(.ds_heading3)
+                        }
+                    }
+                } else {
+                    Text(challenge.displayEmoji)
+                        .font(.ds_heading3)
+                }
             }
             
             VStack(alignment: .leading, spacing: 3) {
@@ -2346,14 +2352,17 @@ struct FriendsTabView: View {
                     HapticManager.selectionChanged()
                     showingCommunityHub = true
                 }) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 2) {
                         Text("Browse")
-                            .font(.caption)
-                            .fontWeight(.semibold)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.caption2)
+                            .fontWeight(.semibold)
                     }
-                    .foregroundColor(.green)
+                    .foregroundStyle(
+                        LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
+                    )
                 }
             }
             
@@ -2817,94 +2826,115 @@ struct FriendsQuickTile: View {
 // Each wrapper owns its own @StateObject so a @Published change only recomputes
 // the wrapper's subtree, not the entire FriendsTabView body.
 
-struct FriendsHeaderWrapper: View {
+/// Friends tab title for inline nav / floating top bar (reusable with `FriendsHeaderActionsView`).
+struct FriendsHeaderTitleView: View {
+    var body: some View {
+        Text("Friends")
+            .font(.ds_displayLarge)
+            .italic()
+            .foregroundStyle(
+                LinearGradient(
+                    stops: [
+                        .init(color: .white, location: 0.0),
+                        .init(color: .white, location: 0.68),
+                        .init(color: Color.cyan, location: 0.82),
+                        .init(color: Color.blue, location: 1.0)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .shadow(color: Color.cyan.opacity(0.2), radius: 4, x: 0, y: 1)
+            .frame(height: 55)
+            .fixedSize()
+    }
+}
+
+/// Friends count + requests capsule (pairs with `FriendsHeaderTitleView` in toolbars or legacy header).
+struct FriendsHeaderActionsView: View {
     @StateObject private var friendService = FriendService.shared
     @Binding var navigationPath: NavigationPath
     
     var body: some View {
-        HStack(alignment: .center) {
-            Text("Friends")
-                .font(.ds_displayLarge)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.cyan, .blue, Color(red: 0.5, green: 0.3, blue: 0.95).opacity(0.9)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: Color.cyan.opacity(0.4), radius: 6, x: 0, y: 2)
-            
-            Spacer()
-            
-            let friendCount = friendService.friends.count
-            let requestCount = friendService.pendingRequests.count
-            
-            HStack(spacing: 0) {
-                Button {
-                    HapticManager.selectionChanged()
-                    navigationPath.append("FriendsList")
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("\(friendCount)")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                        Text("Friends")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
+        let friendCount = friendService.friends.count
+        let requestCount = friendService.pendingRequests.count
+        
+        HStack(spacing: 0) {
+            Button {
+                HapticManager.selectionChanged()
+                navigationPath.append("FriendsList")
+            } label: {
+                HStack(spacing: 3) {
+                    Text("\(friendCount)")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.primary)
+                    Text("Friends")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(friendCount) friends")
-                .accessibilityHint("Opens your friends list")
-                
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 1, height: 16)
-                    .padding(.horizontal, 8)
-                
-                Button {
-                    HapticManager.selectionChanged()
-                    navigationPath.append("FriendRequests")
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("\(requestCount)")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundColor(requestCount > 0 ? .blue : .primary)
-                        Text("Requests")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
-                        
-                        if requestCount > 0 {
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 8, height: 8)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(requestCount) friend requests")
-                .accessibilityHint("Opens your friend requests")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                Capsule()
-                    .fill(.ultraThinMaterial)
-            )
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(friendCount) friends")
+            .accessibilityHint("Opens your friends list")
+            
+            Rectangle()
+                .fill(Color.gray.opacity(0.3))
+                .frame(width: 1, height: 14)
+                .padding(.horizontal, 6)
+            
+            Button {
+                HapticManager.selectionChanged()
+                navigationPath.append("FriendRequests")
+            } label: {
+                HStack(spacing: 3) {
+                    Text("\(requestCount)")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(requestCount > 0 ? .blue : .primary)
+                    Text(requestCount == 1 ? "Request" : "Requests")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    if requestCount > 0 {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 7, height: 7)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(requestCount) friend requests")
+            .accessibilityHint("Opens your friend requests")
         }
-        .padding(.leading, 4)
+        .fixedSize()
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(.ultraThinMaterial)
+        )
+    }
+}
+
+struct FriendsHeaderWrapper: View {
+    @Binding var navigationPath: NavigationPath
+    
+    var body: some View {
+        HStack(alignment: .center) {
+            FriendsHeaderTitleView()
+            Spacer()
+            FriendsHeaderActionsView(navigationPath: $navigationPath)
+        }
+        .padding(.horizontal, Spacing.xxs)
     }
 }
 
 struct FriendsStoriesWrapper: View {
     @StateObject private var friendService = FriendService.shared
     @StateObject private var contactsService = ContactsService.shared
+    @Binding var navigationPath: NavigationPath
     @Binding var sentRequestIds: Set<UUID>
     @Binding var requestSentAnimationIds: Set<UUID>
     @Binding var cachedSuggestions: [SuggestedFriend]
     @Binding var showingFriendProfile: ProfileUser?
-    @State private var showingFriendSearch = false
-    @State private var showingFriendsList = false
     
     var body: some View {
         let existingFriendIds = Set(friendService.friends.map { $0.friendId })
@@ -2922,7 +2952,7 @@ struct FriendsStoriesWrapper: View {
                     HStack(spacing: 14) {
                         Button(action: {
                             HapticManager.selectionChanged()
-                            showingFriendSearch = true
+                            navigationPath.append("FriendSearch")
                         }) {
                             VStack(spacing: 5) {
                                 ZStack {
@@ -2967,7 +2997,8 @@ struct FriendsStoriesWrapper: View {
                                 suggestion: suggestion,
                                 isSent: requestSentAnimationIds.contains(suggestion.userId),
                                 onTap: {
-                                    showingFriendProfile = ProfileUser(suggested: suggestion)
+                                    let sent = FriendService.shared.sentRequests.contains { $0.toUserId == suggestion.userId }
+                                    showingFriendProfile = ProfileUser(suggested: suggestion, hasSentRequest: sent)
                                 }
                             )
                             .transition(.asymmetric(
@@ -2982,7 +3013,7 @@ struct FriendsStoriesWrapper: View {
             } else if !contactsService.canAccessContacts {
                 Button(action: {
                     HapticManager.selectionChanged()
-                    showingFriendsList = true
+                    navigationPath.append("FriendSearch")
                 }) {
                     HStack(spacing: 12) {
                         ZStack {
@@ -3017,12 +3048,6 @@ struct FriendsStoriesWrapper: View {
                 }
                 .buttonStyle(.plain)
             }
-        }
-        .sheet(isPresented: $showingFriendSearch) {
-            NavigationStack { FriendsListView(initialTab: 2) }
-        }
-        .sheet(isPresented: $showingFriendsList) {
-            NavigationStack { FriendsListView() }
         }
     }
 }
@@ -3109,8 +3134,8 @@ struct FriendsSuggestionCircle: View {
 
 struct FriendsSpotlightWrapper: View {
     @StateObject private var rankingService = FriendRankingService.shared
+    @Binding var navigationPath: NavigationPath
     @Binding var showingFriendProfile: ProfileUser?
-    @State private var showingFriendsList = false
     
     var body: some View {
         let topThree = Array(rankingService.rankedFriends.prefix(3))
@@ -3122,7 +3147,7 @@ struct FriendsSpotlightWrapper: View {
                     HStack {
                         Image(systemName: "star.circle.fill")
                             .foregroundStyle(
-                                LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .font(.title3)
                         Text("Your Inner Circle")
@@ -3147,7 +3172,7 @@ struct FriendsSpotlightWrapper: View {
                             ForEach(topThree.count..<3, id: \.self) { _ in
                                 Button(action: {
                                     HapticManager.selectionChanged()
-                                    showingFriendsList = true
+                                    navigationPath.append("FriendSearch")
                                 }) {
                                     VStack(spacing: 8) {
                                         ZStack {
@@ -3169,7 +3194,7 @@ struct FriendsSpotlightWrapper: View {
                         }
                     }
                     .padding(Spacing.md)
-                    .sleekCard(cornerRadius: 24, accentColor: .yellow)
+                    .sleekCard(cornerRadius: 24, accentColor: .blue)
                 }
             } else {
                 VStack(spacing: 16) {
@@ -3186,7 +3211,7 @@ struct FriendsSpotlightWrapper: View {
                         Text("Add friends to challenge, compete, and motivate each other!")
                             .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
                     }
-                    Button(action: { HapticManager.impact(.medium); showingFriendsList = true }) {
+                    Button(action: { HapticManager.impact(.medium); navigationPath.append("FriendSearch") }) {
                         HStack(spacing: 8) {
                             Image(systemName: "person.badge.plus")
                             Text("Find Friends").fontWeight(.semibold)
@@ -3202,9 +3227,6 @@ struct FriendsSpotlightWrapper: View {
                 .frame(maxWidth: .infinity)
                 .sleekCard(cornerRadius: 24, accentColor: .cyan)
             }
-        }
-        .sheet(isPresented: $showingFriendsList) {
-            NavigationStack { FriendsListView() }
         }
     }
 }
@@ -3280,6 +3302,7 @@ struct FriendsLeagueWrapper: View {
 
 struct FriendsChallengeHeaderWrapper: View {
     @StateObject private var challengeService = ChallengeService.shared
+    @Binding var showingChallengeCreation: Bool
     
     var body: some View {
         if !challengeService.activeChallenges.isEmpty || !challengeService.activeGroupChallenges.isEmpty || !challengeService.pendingSentChallenges.isEmpty {
@@ -3293,6 +3316,24 @@ struct FriendsChallengeHeaderWrapper: View {
                     .font(.title3)
                     .fontWeight(.bold)
                 Spacer()
+                Button {
+                    HapticManager.impact(.light)
+                    showingChallengeCreation = true
+                } label: {
+                    HStack(spacing: 2) {
+                        Text("Start a Challenge")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(
+                        LinearGradient(colors: [.orange, Color(red: 1.0, green: 0.4, blue: 0.1)], startPoint: .leading, endPoint: .trailing)
+                    )
+                }
+                .accessibilityLabel("Start a Challenge")
+                .accessibilityHint("Opens the challenge creation flow")
             }
         }
     }
@@ -3307,53 +3348,60 @@ struct FriendsPrivateChallengeWrapper: View {
     
     var body: some View {
         let challenges = privateChallengeService.myChallenges
-        if !challenges.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Image(systemName: "lock.shield.fill")
+        
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundStyle(
+                        LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .font(.title3)
+                Text("Private Challenges")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                if challenges.count > 3 {
+                    Button {
+                        HapticManager.impact(.light)
+                        showingAllPrivateChallenges = true
+                    } label: {
+                        HStack(spacing: 2) {
+                            Text("See All")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                        }
                         .foregroundStyle(
-                            LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
+                            LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
                         )
-                        .font(.title3)
-                    Text("Private Challenges")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                    
-                    Spacer()
-                    
-                    if challenges.count > 3 {
-                        Button {
-                            HapticManager.impact(.light)
-                            showingAllPrivateChallenges = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text("See All")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .semibold))
-                            }
-                            .foregroundColor(.purple)
+                    }
+                } else {
+                    Button {
+                        HapticManager.impact(.light)
+                        showingPrivateChallengeCreation = true
+                    } label: {
+                        HStack(spacing: 2) {
+                            Text("Create New")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
                         }
-                        .buttonStyle(.plain)
-                    } else {
-                        Button {
-                            HapticManager.impact(.light)
-                            showingPrivateChallengeCreation = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text("Create New")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .semibold))
-                            }
-                            .foregroundColor(.purple)
-                        }
-                        .buttonStyle(.plain)
+                        .foregroundStyle(
+                            LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
+                        )
                     }
                 }
-                
+            }
+            
+            if challenges.isEmpty {
+                privateChallengeEmptyCard
+            } else {
                 ForEach(challenges.prefix(3)) { challenge in
                     NavigationLink(value: "PrivateChallenge_\(challenge.challengeId.uuidString)") {
                         FriendsPrivateChallengeRow(challenge: challenge)
@@ -3361,10 +3409,99 @@ struct FriendsPrivateChallengeWrapper: View {
                     .buttonStyle(.plain)
                 }
             }
-            .fullScreenCover(isPresented: $showingAllPrivateChallenges) {
-                AllPrivateChallengesView(showingCreation: $showingPrivateChallengeCreation)
-            }
         }
+        .fullScreenCover(isPresented: $showingAllPrivateChallenges) {
+            AllPrivateChallengesView(showingCreation: $showingPrivateChallengeCreation)
+        }
+    }
+    
+    private var privateChallengeEmptyCard: some View {
+        Button {
+            HapticManager.impact(.light)
+            showingPrivateChallengeCreation = true
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .stroke(
+                            LinearGradient(colors: [.purple.opacity(0.3), .pink.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            style: StrokeStyle(lineWidth: 4, dash: [6, 4])
+                        )
+                        .frame(width: 48, height: 48)
+                    
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Invite 3+ Friends to a Private Challenge")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                    
+                    Text("Create an invite-only group with custom goals & leaderboards")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                
+                Spacer(minLength: 0)
+                
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.caption.weight(.bold))
+                    Text("Create")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(
+                            LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
+                        )
+                )
+            }
+            .padding(14)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.purple.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 6).blur(radius: 4)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 3)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: colorScheme == .dark ? [Color(white: 0.14), Color(white: 0.09)] : [Color.white, Color.white.opacity(0.95)],
+                            startPoint: .top, endPoint: .bottom
+                        ))
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(LinearGradient(
+                            colors: colorScheme == .dark ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear] : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top, endPoint: .bottom
+                        ), lineWidth: 1.5)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.purple.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.pink.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: Color.purple.opacity(colorScheme == .dark ? 0.15 : 0.08), radius: 12, x: 0, y: 6)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Create a Private Challenge")
+        .accessibilityHint("Opens the private challenge creation flow")
     }
 }
 
@@ -3391,6 +3528,7 @@ struct FriendsPrivateChallengeRow: View {
                     )
                     .frame(width: 48, height: 48)
                     .rotationEffect(.degrees(-90))
+                
                 Text(challenge.displayEmoji)
                     .font(.ds_heading3)
             }
@@ -3589,14 +3727,17 @@ struct FriendsCommunityWrapper: View {
                     HapticManager.selectionChanged()
                     showingCommunityHub = true
                 }) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 2) {
                         Text("Browse")
-                            .font(.caption)
-                            .fontWeight(.semibold)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.caption2)
+                            .fontWeight(.semibold)
                     }
-                    .foregroundColor(.green)
+                    .foregroundStyle(
+                        LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
+                    )
                 }
             }
             

@@ -72,6 +72,7 @@ struct PrivateChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     let title: String
     let description: String?
     let emoji: String?
+    let coverImageUrl: String?
     let challengeType: String
     let dailyTarget: Int
     let targetUnit: String
@@ -127,6 +128,7 @@ struct PrivateChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
         case title, description, emoji
+        case coverImageUrl = "cover_image_url"
         case challengeType = "challenge_type"
         case dailyTarget = "daily_target"
         case targetUnit = "target_unit"
@@ -160,6 +162,7 @@ struct PrivateChallengePreview: Codable, Identifiable, ChallengeTypeResolvable {
     let title: String
     let description: String?
     let emoji: String?
+    let coverImageUrl: String?
     let challengeType: String
     let dailyTarget: Int
     let targetUnit: String
@@ -179,6 +182,7 @@ struct PrivateChallengePreview: Codable, Identifiable, ChallengeTypeResolvable {
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
         case title, description, emoji
+        case coverImageUrl = "cover_image_url"
         case challengeType = "challenge_type"
         case dailyTarget = "daily_target"
         case targetUnit = "target_unit"
@@ -200,6 +204,7 @@ struct PrivateChallengeDetail: Codable, ChallengeTypeResolvable {
     let title: String
     let description: String?
     let emoji: String?
+    let coverImageUrl: String?
     let challengeType: String
     let dailyTarget: Int
     let targetUnit: String
@@ -254,6 +259,7 @@ struct PrivateChallengeDetail: Codable, ChallengeTypeResolvable {
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
         case title, description, emoji
+        case coverImageUrl = "cover_image_url"
         case challengeType = "challenge_type"
         case dailyTarget = "daily_target"
         case targetUnit = "target_unit"
@@ -428,6 +434,7 @@ class PrivateChallengeService: ObservableObject {
     /// Incremented when a member join/leave realtime event is detected.
     /// Detail views observe this to auto-refresh their member list.
     @Published var memberChangeToken = UUID()
+    @Published var chatMessageToken = UUID()
     
     /// Realtime channel for live updates
     private var realtimeChannel: RealtimeChannelV2?
@@ -526,39 +533,54 @@ class PrivateChallengeService: ObservableObject {
     
     func fetchMyChallenges() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
-        do {
-            struct Params: Encodable {
-                let p_timezone: String
-            }
-            
-            let result: [PrivateChallenge] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_my_private_challenges", params: Params(
-                    p_timezone: TimeZone.current.identifier
-                ))
-                .execute()
-                .value
-            
-            myChallenges = result
-            
-            // Preload profile photos for all visible members
-            var photoData: [(id: String, url: String?)] = []
-            for challenge in result {
-                if let members = challenge.topMembers {
-                    for m in members {
-                        photoData.append((id: m.userId.uuidString, url: m.profilePhotoUrl))
+        
+        struct Params: Encodable {
+            let p_timezone: String
+        }
+        
+        let maxRetries = 3
+        for attempt in 1...maxRetries {
+            do {
+                let result: [PrivateChallenge] = try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_my_private_challenges", params: Params(
+                        p_timezone: TimeZone.current.identifier
+                    ))
+                    .execute()
+                    .value
+                
+                myChallenges = result
+                
+                var photoData: [(id: String, url: String?)] = []
+                for challenge in result {
+                    if let members = challenge.topMembers {
+                        for m in members {
+                            photoData.append((id: m.userId.uuidString, url: m.profilePhotoUrl))
+                        }
                     }
                 }
+                if !photoData.isEmpty {
+                    FriendPhotoCache.shared.preloadPhotos(for: photoData)
+                }
+                
+                #if DEBUG
+                AppLogger.info("Successfully fetched \(result.count) private challenges", category: .social)
+                #endif
+                return
+            } catch {
+                if error is CancellationError { return }
+                guard !Task.isCancelled else { return }
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && (nsError.code == NSURLErrorTimedOut || nsError.code == NSURLErrorCancelled)
+                if isTimeout && attempt < maxRetries {
+                    let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
+                    AppLogger.warning("fetchMyChallenges timeout (attempt \(attempt)/\(maxRetries)), retrying...", category: .social)
+                    try? await Task.sleep(nanoseconds: delay)
+                } else if isTimeout {
+                    AppLogger.warning("Error fetching my private challenges: \(error.localizedDescription)", category: .social)
+                } else {
+                    AppLogger.error("Error fetching my private challenges: \(error.localizedDescription)", category: .social)
+                }
             }
-            if !photoData.isEmpty {
-                FriendPhotoCache.shared.preloadPhotos(for: photoData)
-            }
-            
-            #if DEBUG
-            AppLogger.info("Successfully fetched \(result.count) private challenges", category: .social)
-            #endif
-        } catch {
-            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
-            AppLogger.error("Error fetching my private challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -1064,7 +1086,18 @@ class PrivateChallengeService: ObservableObject {
     
     // MARK: - Chat: Send Message
     
-    func sendMessage(challengeId: UUID, content: String) async -> UUID? {
+    func sendMessage(challengeId: UUID, content: String) async -> SendMessageResult {
+        // Layer 1: Pre-check content via moderation Edge Function
+        let moderationResult = await ContentModerationService.shared.checkContent(
+            content: content,
+            source: "private_challenge_chat"
+        )
+        
+        if moderationResult.flagged {
+            AppLogger.info("Message blocked by content moderation: \(moderationResult.categories.joined(separator: ", "))", category: .social)
+            return .blocked(categories: moderationResult.categories)
+        }
+        
         do {
             struct MessageParams: Encodable {
                 let p_challenge_id: String
@@ -1081,10 +1114,26 @@ class PrivateChallengeService: ObservableObject {
                 .execute()
                 .value
             
-            return messageId
+            return .sent(messageId: messageId)
         } catch {
             AppLogger.error("Error sending private challenge message: \(error.localizedDescription)", category: .social)
+            return .error(error.localizedDescription)
+        }
+    }
+    
+    enum SendMessageResult {
+        case sent(messageId: UUID)
+        case blocked(categories: [String])
+        case error(String)
+        
+        var messageId: UUID? {
+            if case .sent(let id) = self { return id }
             return nil
+        }
+        
+        var isBlocked: Bool {
+            if case .blocked = self { return true }
+            return false
         }
     }
     
@@ -1210,7 +1259,8 @@ class PrivateChallengeService: ObservableObject {
         Task {
             for await _ in chatInserts {
                 AppLogger.debug("Realtime: new private chat message", category: .social)
-                await fetchMyChallenges() // Update last_chat_message preview
+                await fetchMyChallenges()
+                chatMessageToken = UUID()
             }
         }
         

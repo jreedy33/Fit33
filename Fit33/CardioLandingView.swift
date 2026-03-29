@@ -180,7 +180,7 @@ struct CardioLandingView: View {
                     }
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .adaptiveToolbarBackground()
             .sheet(isPresented: $showingGoalSetup) {
                 if let activity = selectedActivity {
                     CardioGoalSetupView(activityType: activity)

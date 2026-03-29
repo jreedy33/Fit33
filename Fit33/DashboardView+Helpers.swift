@@ -445,7 +445,7 @@ extension DashboardView {
         let showSecondPage = hasActiveProgram || hasRecommendedProgram
         let pageCount = showSecondPage ? 2 : 1
         
-        return VStack(spacing: 4) {
+        return VStack(spacing: 0) {
             GeometryReader { geometry in
                 let cardWidth = geometry.size.width
                 let spacing: CGFloat = 16
@@ -482,7 +482,6 @@ extension DashboardView {
                     }
             )
             
-            // Page indicators (only if multiple pages)
             if pageCount > 1 {
                 HStack(spacing: 8) {
                     ForEach(0..<pageCount, id: \.self) { index in
@@ -496,15 +495,19 @@ extension DashboardView {
                             }
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
             }
         }
         .onAppear {
-            // Default to Active Program page if user has one, otherwise Custom/Auto
-            if activeSmartProgramForWidget != nil {
-                selectedWorkoutPage = 1
-            } else {
-                selectedWorkoutPage = 0
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                if activeSmartProgramForWidget != nil {
+                    selectedWorkoutPage = 1
+                } else {
+                    selectedWorkoutPage = 0
+                }
             }
         }
     }

@@ -2529,21 +2529,35 @@ class ChallengeService: ObservableObject {
     // MARK: - Get Challenges With Friend
     
     func getChallengesWithFriend(friendId: UUID) async -> [FriendChallenge] {
-        do {
-            struct FriendParams: Encodable {
-                let p_friend_id: String
-            }
-            
-            let result: [FriendChallenge] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_challenges_with_friend", params: FriendParams(p_friend_id: friendId.uuidString))
-                .execute()
-                .value
-            
-            return result
-        } catch {
-            AppLogger.error("Error fetching challenges with friend: \(error.localizedDescription)", category: .social)
-            return []
+        struct FriendParams: Encodable {
+            let p_friend_id: String
         }
+        
+        let maxRetries = 3
+        for attempt in 1...maxRetries {
+            do {
+                let result: [FriendChallenge] = try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_challenges_with_friend", params: FriendParams(p_friend_id: friendId.uuidString))
+                    .execute()
+                    .value
+                
+                return result
+            } catch {
+                guard !Task.isCancelled else { return [] }
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && (nsError.code == NSURLErrorTimedOut || nsError.code == NSURLErrorCancelled)
+                if isTimeout && attempt < maxRetries {
+                    let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
+                    AppLogger.warning("getChallengesWithFriend timeout (attempt \(attempt)/\(maxRetries)), retrying...", category: .social)
+                    try? await Task.sleep(nanoseconds: delay)
+                } else if isTimeout {
+                    AppLogger.warning("Error fetching challenges with friend: \(error.localizedDescription)", category: .social)
+                } else {
+                    AppLogger.error("Error fetching challenges with friend: \(error.localizedDescription)", category: .social)
+                }
+            }
+        }
+        return []
     }
 }
 

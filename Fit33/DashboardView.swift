@@ -125,6 +125,7 @@ struct DashboardView: View {
     @AppStorage("showChallengeWidget") var showChallengeWidget = true  // Challenge a Friend widget (premium can hide)
     @AppStorage("showRecommendedWidget") var showRecommendedWidget = true  // Recommended For You widget (premium can hide)
     @AppStorage("showWhoopWidget") var showWhoopWidget = true  // WHOOP Recovery widget (only renders when connected)
+    @AppStorage("showOuraWidget") var showOuraWidget = true  // Oura Readiness widget (only renders when connected)
     
     // Nutrition data for macros widget (plain let — macros widget wraps its own @ObservedObject)
     let mealService = MealService.shared
@@ -181,15 +182,12 @@ struct DashboardView: View {
                     .id("top")
                     
                     LazyVStack(spacing: 0) {
-                    // Custom header with title and profile icon
-                    customHeaderView
-                        .padding(.top, 0)
-                        .padding(.bottom, 16)
                     
                     DashboardNotificationBannerWrapper()
                     
                     // Header with user info
                     headerView
+                        .padding(.top, 12)
                         .padding(.bottom, 16)
                     
                     // Unified notification carousel (friend requests, received workouts, challenge invites)
@@ -250,6 +248,12 @@ struct DashboardView: View {
                             .padding(.bottom, 16)
                     }
 
+                    // Oura Readiness Widget (isolated — only renders when Oura connected + widget enabled)
+                    if showOuraWidget {
+                        DashboardOuraWrapper()
+                            .padding(.bottom, 16)
+                    }
+
                     // Step Tracker Card
                     StepTrackerCard()
                         .id("stepTracker")
@@ -262,16 +266,11 @@ struct DashboardView: View {
                             .padding(.bottom, 20)
                     }
                     
-                    // Stats overview
-                    statsOverview
-                        .id("statsOverview")
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.bottom, 20)
                 }
                 .scrollContentBackground(.hidden)
-                .toolbarBackground(.hidden, for: .navigationBar)
-                .toolbarColorScheme(.dark, for: .navigationBar)
                 .contentMargins(.top, 0, for: .scrollContent)
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
@@ -324,7 +323,11 @@ struct DashboardView: View {
                     await loadPersonalizedRecommendation()
                 }
             }
-            .navigationBarHidden(true)
+            .navigationBarTitleDisplayMode(.inline)
+            .modifier(DashboardNavToolbar(
+                showingWidgetSettings: $showingWidgetSettings,
+                profilePhotoURL: profilePhotoURL
+            ))
             .sheet(isPresented: $showingWorkoutCreation) {
                 WorkoutCreationView(workoutType: workoutCreationType)
             }
@@ -345,7 +348,8 @@ struct DashboardView: View {
                     showMacros: $showMacrosWidget,
                     showChallenge: $showChallengeWidget,
                     showRecommended: $showRecommendedWidget,
-                    showWhoop: $showWhoopWidget
+                    showWhoop: $showWhoopWidget,
+                    showOura: $showOuraWidget
                 )
                 .presentationDragIndicator(.visible)
             }
@@ -467,11 +471,18 @@ struct DashboardView: View {
             ])
             
             // 🎯 SMART CAROUSEL DEFAULT: Active Program (page 1) if user has one, otherwise Custom/Auto (page 0)
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                if activeSmartProgramForWidget != nil {
+                    selectedWorkoutPage = 1
+                } else {
+                    selectedWorkoutPage = 0
+                }
+            }
             if activeSmartProgramForWidget != nil {
-                selectedWorkoutPage = 1 // Show active program
                 AppLogger.debug("[CAROUSEL] Defaulting to Active Program (page 1)", category: .ui)
             } else {
-                selectedWorkoutPage = 0 // Show Custom/Auto buttons
                 AppLogger.debug("[CAROUSEL] Defaulting to Custom/Auto (page 0)", category: .ui)
             }
             
@@ -543,7 +554,8 @@ struct DashboardView: View {
                         var hasResumed = false
                         var cancellable: AnyCancellable?
                         
-                        let timeout = DispatchWorkItem {
+                        let sleepTask = Task {
+                            try? await Task.sleep(for: .seconds(10))
                             resumed.lock()
                             guard !hasResumed else { resumed.unlock(); return }
                             hasResumed = true
@@ -551,7 +563,6 @@ struct DashboardView: View {
                             cancellable?.cancel()
                             continuation.resume(returning: false)
                         }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: timeout)
                         
                         cancellable = SupabaseManager.shared.$isAuthenticated
                             .first(where: { $0 })
@@ -560,7 +571,7 @@ struct DashboardView: View {
                                 guard !hasResumed else { resumed.unlock(); return }
                                 hasResumed = true
                                 resumed.unlock()
-                                timeout.cancel()
+                                sleepTask.cancel()
                                 continuation.resume(returning: true)
                             }
                     }

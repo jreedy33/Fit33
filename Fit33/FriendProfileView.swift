@@ -63,7 +63,7 @@ struct ProfileUser: Identifiable {
         self.mutualFriendCount = nil
     }
 
-    init(searchResult: UserSearchResult) {
+    init(searchResult: UserSearchResult, hasSentRequest: Bool = false) {
         self.userId = searchResult.userId
         self.name = searchResult.name
         self.username = searchResult.username
@@ -72,7 +72,7 @@ struct ProfileUser: Identifiable {
         self.experienceLevel = searchResult.experienceLevel
         self.profilePhotoUrl = searchResult.profilePhotoUrl
         self.isFriend = searchResult.isFriend
-        self.hasOutgoingRequest = searchResult.hasOutgoingRequest ?? searchResult.hasPendingRequest
+        self.hasOutgoingRequest = (searchResult.hasOutgoingRequest ?? searchResult.hasPendingRequest) || hasSentRequest
         self.hasIncomingRequest = searchResult.hasIncomingRequest ?? false
         self.friendshipId = nil
         self.friendsSince = nil
@@ -82,7 +82,7 @@ struct ProfileUser: Identifiable {
         self.mutualFriendCount = nil
     }
 
-    init(suggested: SuggestedFriend) {
+    init(suggested: SuggestedFriend, hasSentRequest: Bool = false) {
         self.userId = suggested.userId
         self.name = suggested.name
         self.username = suggested.username
@@ -91,7 +91,7 @@ struct ProfileUser: Identifiable {
         self.experienceLevel = nil
         self.profilePhotoUrl = suggested.profilePhotoUrl
         self.isFriend = suggested.isFriend
-        self.hasOutgoingRequest = suggested.hasOutgoingRequest
+        self.hasOutgoingRequest = suggested.hasOutgoingRequest || hasSentRequest
         self.hasIncomingRequest = suggested.hasIncomingRequest
         self.friendshipId = nil
         self.friendsSince = nil

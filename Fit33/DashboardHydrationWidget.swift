@@ -129,8 +129,8 @@ struct DashboardHydrationWidget: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 Text("Hydration")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                    .font(.title3)
+                    .fontWeight(.bold)
                     .foregroundColor(.primary)
                 
                 if usesOz {

@@ -90,6 +90,7 @@ final class HealthDataService: ObservableObject {
         let fitbitConnected = FitbitService.shared.isConnected
         let stravaConnected = StravaService.shared.isConnected
         let whoopConnected = WhoopService.shared.isConnected
+        let ouraConnected = OuraService.shared.isConnected
         
         // Run health source syncs off main thread to avoid blocking UI
         await Task.detached(priority: .userInitiated) { [self] in
@@ -105,6 +106,9 @@ final class HealthDataService: ObservableObject {
                 }
                 if whoopConnected {
                     group.addTask { await self.syncWhoopData() }
+                }
+                if ouraConnected {
+                    group.addTask { await self.syncOuraData() }
                 }
                 group.addTask { await self.fetchWeeklyData() }
             }
@@ -500,6 +504,222 @@ final class HealthDataService: ObservableObject {
         return "other"
     }
     
+    // MARK: - Oura Data Sync
+
+    private func syncOuraData() async {
+        guard OuraService.shared.isConnected else { return }
+
+        await OuraService.shared.syncAllData()
+
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id else { return }
+
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "yyyy-MM-dd"
+
+        // Save readiness + activity data to oura_readiness_data
+        for readiness in OuraService.shared.recentReadiness {
+            let matchingActivity = OuraService.shared.recentActivity.first { $0.day == readiness.day }
+            let matchingSpo2 = OuraService.shared.recentSleeps.last(where: { $0.day == readiness.day })
+
+            let insert = OuraReadinessInsert(
+                userId: userId.uuidString,
+                date: readiness.day,
+                readinessScore: readiness.score,
+                temperatureDeviation: readiness.temperatureDeviation,
+                temperatureTrendDeviation: readiness.temperatureTrendDeviation,
+                hrvBalance: readiness.contributors?.hrvBalance,
+                restingHeartRate: readiness.contributors?.restingHeartRate,
+                activityScore: matchingActivity?.score,
+                steps: matchingActivity?.steps,
+                activeCalories: matchingActivity?.activeCalories,
+                totalCalories: matchingActivity?.totalCalories,
+                equivalentWalkingDistance: matchingActivity?.equivalentWalkingDistance,
+                spo2Percentage: nil,
+                breathingDisturbanceIndex: nil
+            )
+
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("oura_readiness_data")
+                    .upsert(insert, onConflict: "user_id,date")
+                    .execute()
+            } catch {
+                AppLogger.warning("[OURA] Failed to save readiness for \(readiness.day): \(error)", category: .health)
+            }
+        }
+
+        // Backfill SpO2 into oura_readiness_data where available
+        if let spo2 = OuraService.shared.todaySpo2,
+           let avg = spo2.spo2Percentage?.average {
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("oura_readiness_data")
+                    .update(["spo2_percentage": avg, "breathing_disturbance_index": spo2.breathingDisturbanceIndex ?? 0.0])
+                    .eq("user_id", value: userId.uuidString)
+                    .eq("date", value: spo2.day)
+                    .execute()
+            } catch {
+                AppLogger.debug("[OURA] SpO2 backfill skipped: \(error)", category: .health)
+            }
+        }
+
+        // Save Oura sleep data to sleep_logs (reuses WHOOP sleep insert shape)
+        for sleep in OuraService.shared.recentSleeps {
+            guard sleep.type == "long_sleep" else { continue }
+
+            let totalSleepSeconds = sleep.totalSleepDuration ?? 0
+            let totalSleepHours = Double(totalSleepSeconds) / 3600.0
+
+            let insert = WhoopSleepInsert(
+                userId: userId.uuidString,
+                date: sleep.day,
+                totalSleepHours: totalSleepHours,
+                source: "oura",
+                externalId: sleep.id ?? UUID().uuidString,
+                sleepPerformancePct: nil,
+                sleepConsistencyPct: nil,
+                sleepEfficiencyPct: sleep.efficiency.map { Double($0) },
+                respiratoryRate: sleep.averageBreath,
+                disturbanceCount: sleep.restlessPeriods,
+                sleepDebtMilli: 0,
+                lightSleepMilli: (sleep.lightSleepDuration ?? 0) * 1000,
+                deepSleepMilli: (sleep.deepSleepDuration ?? 0) * 1000,
+                remSleepMilli: (sleep.remSleepDuration ?? 0) * 1000,
+                awakeMilli: (sleep.awakeTime ?? 0) * 1000
+            )
+
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("sleep_logs")
+                    .upsert(insert, onConflict: "user_id,date,source")
+                    .execute()
+            } catch {
+                AppLogger.warning("[OURA] Failed to save sleep for \(sleep.day): \(error)", category: .health)
+            }
+        }
+
+        // Save Oura workouts to cardio_workouts
+        var savedWorkouts = 0
+        for workout in OuraService.shared.recentWorkouts {
+            guard let workoutId = workout.id else { continue }
+
+            let startDate: Date
+            if let startStr = workout.startDatetime {
+                startDate = ISO8601DateFormatter().date(from: startStr) ?? Date()
+            } else {
+                startDate = Date()
+            }
+            let endDate: Date
+            if let endStr = workout.endDatetime {
+                endDate = ISO8601DateFormatter().date(from: endStr) ?? startDate
+            } else {
+                endDate = startDate
+            }
+            let durationSeconds = Int(endDate.timeIntervalSince(startDate))
+
+            let insert = FitbitCardioWorkoutInsert(
+                userId: userId.uuidString,
+                activityType: mapOuraActivityToType(workout.activity),
+                workoutName: workout.label ?? workout.activity ?? "Oura Workout",
+                goalType: "open_goal",
+                goalAchieved: true,
+                durationSeconds: durationSeconds,
+                distanceMeters: workout.distance ?? 0,
+                caloriesBurned: workout.calories ?? 0,
+                averageSpeed: nil,
+                maxSpeed: nil,
+                averageHeartRate: nil,
+                maxHeartRate: nil,
+                totalElevationGain: nil,
+                startedAt: ISO8601DateFormatter().string(from: startDate),
+                completedAt: ISO8601DateFormatter().string(from: endDate),
+                source: "oura",
+                externalId: workoutId,
+                externalUrl: nil
+            )
+
+            do {
+                let existing: [CardioWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
+                    .from("cardio_workouts")
+                    .select()
+                    .eq("user_id", value: userId.uuidString)
+                    .eq("source", value: "oura")
+                    .eq("external_id", value: workoutId)
+                    .execute()
+                    .value
+
+                if existing.isEmpty {
+                    try await SupabaseManager.shared.supabaseClient
+                        .from("cardio_workouts")
+                        .insert(insert)
+                        .execute()
+                    savedWorkouts += 1
+                }
+            } catch {
+                AppLogger.warning("[OURA] Failed to save workout \(workoutId): \(error)", category: .health)
+            }
+        }
+
+        if savedWorkouts > 0 {
+            await MainActor.run {
+                NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
+            }
+        }
+
+        AppLogger.info("[OURA] HealthDataService sync complete", category: .health)
+    }
+
+    // MARK: - Oura Insert Models
+
+    private struct OuraReadinessInsert: Codable {
+        let userId: String
+        let date: String
+        let readinessScore: Int?
+        let temperatureDeviation: Double?
+        let temperatureTrendDeviation: Double?
+        let hrvBalance: Int?
+        let restingHeartRate: Int?
+        let activityScore: Int?
+        let steps: Int?
+        let activeCalories: Int?
+        let totalCalories: Int?
+        let equivalentWalkingDistance: Int?
+        let spo2Percentage: Double?
+        let breathingDisturbanceIndex: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case userId = "user_id"
+            case date
+            case readinessScore = "readiness_score"
+            case temperatureDeviation = "temperature_deviation"
+            case temperatureTrendDeviation = "temperature_trend_deviation"
+            case hrvBalance = "hrv_balance"
+            case restingHeartRate = "resting_heart_rate"
+            case activityScore = "activity_score"
+            case steps
+            case activeCalories = "active_calories"
+            case totalCalories = "total_calories"
+            case equivalentWalkingDistance = "equivalent_walking_distance"
+            case spo2Percentage = "spo2_percentage"
+            case breathingDisturbanceIndex = "breathing_disturbance_index"
+        }
+    }
+
+    private func mapOuraActivityToType(_ activity: String?) -> String {
+        guard let activity = activity?.lowercased() else { return "other" }
+        if activity.contains("run") { return activity.contains("treadmill") ? "treadmill" : "outdoor_run" }
+        if activity.contains("cycling") || activity.contains("bike") { return "outdoor_cycle" }
+        if activity.contains("swim") { return "swimming" }
+        if activity.contains("walk") || activity.contains("hike") { return "walk" }
+        if activity.contains("yoga") || activity.contains("pilates") { return "yoga" }
+        if activity.contains("rowing") { return "rowing" }
+        if activity.contains("strength") || activity.contains("weight") { return "strength_training" }
+        if activity.contains("hiit") || activity.contains("crossfit") { return "hiit" }
+        if activity.contains("elliptical") { return "elliptical" }
+        return "other"
+    }
+
     // MARK: - HealthKit Data Sync (Nike Run Club, Apple Watch, etc.)
     
     private func syncHealthKitData() async {
@@ -586,8 +806,9 @@ final class HealthDataService: ObservableObject {
     
     private func saveDailyActivityFromHealthKit(date: Date, steps: Int, calories: Int, distance: Double, restingHR: Int?) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
+        guard SupabaseManager.shared.isAuthenticated else { return }
         
-        var insert = DailyActivityInsert(
+        let insert = DailyActivityInsert(
             userId: userId.uuidString,
             date: Self.iso8601.string(from: date),
             steps: steps,
@@ -598,15 +819,30 @@ final class HealthDataService: ObservableObject {
             sources: ["healthkit"]
         )
         
-        do {
-            try await SupabaseManager.shared.supabaseClient
-                .from("daily_activity_summary")
-                .upsert(insert, onConflict: "user_id,date")
-                .execute()
-            
-            AppLogger.info("Saved daily activity from HealthKit", category: .health)
-        } catch {
-            AppLogger.error("Failed to save HealthKit activity: \(error.localizedDescription)", category: .health)
+        let maxRetries = 3
+        for attempt in 1...maxRetries {
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("daily_activity_summary")
+                    .upsert(insert, onConflict: "user_id,date")
+                    .execute()
+                
+                AppLogger.info("Saved daily activity from HealthKit", category: .health)
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && (nsError.code == NSURLErrorTimedOut || nsError.code == NSURLErrorCancelled)
+                if isTimeout && attempt < maxRetries {
+                    let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
+                    AppLogger.warning("saveDailyActivityFromHealthKit timeout (attempt \(attempt)/\(maxRetries)), retrying...", category: .health)
+                    try? await Task.sleep(nanoseconds: delay)
+                } else if isTimeout {
+                    AppLogger.warning("Failed to save HealthKit activity: \(error.localizedDescription)", category: .health)
+                } else {
+                    AppLogger.error("Failed to save HealthKit activity: \(error.localizedDescription)", category: .health)
+                }
+            }
         }
     }
     
@@ -1048,6 +1284,7 @@ final class HealthDataService: ObservableObject {
         if FitbitService.shared.isConnected { sources.append("fitbit") }
         if StravaService.shared.isConnected { sources.append("strava") }
         if WhoopService.shared.isConnected { sources.append("whoop") }
+        if OuraService.shared.isConnected { sources.append("oura") }
         connectedSources = sources
     }
     

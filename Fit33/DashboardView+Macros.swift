@@ -206,17 +206,17 @@ extension DashboardView {
         NavigationLink(value: DashboardRoute.mealPlan) {
             VStack(spacing: 12) {
                 // Header
-                HStack {
-                    Text("Weekly Progress")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
+                HStack(spacing: 10) {
                     Image(systemName: "chart.bar.fill")
-                        .font(.subheadline)
-                        .foregroundColor(.teal)
+                        .font(.title3)
+                        .foregroundStyle(
+                            LinearGradient(colors: [.teal, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                    Text("Weekly Progress")
+                        .font(.title3)
+                        .fontWeight(.bold)
+
+                    Spacer()
                 }
                 
                 // Simple weekly overview
@@ -428,10 +428,10 @@ struct DashboardMacrosWrapper: View {
     private var weeklyCard: some View {
         NavigationLink(value: DashboardRoute.mealPlan) {
             VStack(spacing: 12) {
-                HStack {
-                    Text("Weekly Progress").font(.headline).fontWeight(.bold).foregroundColor(.primary)
+                HStack(spacing: 10) {
+                    Image(systemName: "chart.bar.fill").font(.title3).foregroundStyle(LinearGradient(colors: [.teal, .mint], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    Text("Weekly Progress").font(.title3).fontWeight(.bold)
                     Spacer()
-                    Image(systemName: "chart.bar.fill").font(.subheadline).foregroundColor(.teal)
                 }
                 HStack(spacing: 6) {
                     ForEach(0..<7, id: \.self) { dayOffset in

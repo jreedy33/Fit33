@@ -380,7 +380,7 @@ class WeightTrackingService: ObservableObject {
             let logs: [WeightLog] = try await supabase.supabaseClient
                 .from("weight_logs")
                 .select()
-                .eq("user_id", value: userId.uuidString)
+                .eq("user_id", value: userId)
                 .order("logged_at", ascending: false)
                 .limit(90)  // Last 90 days of entries
                 .execute()
@@ -404,7 +404,7 @@ class WeightTrackingService: ObservableObject {
             let logs: [WeightLog] = try await supabase.supabaseClient
                 .from("weight_logs")
                 .select()
-                .eq("user_id", value: userId.uuidString)
+                .eq("user_id", value: userId)
                 .gte("logged_at", value: dateToISO(startOfDay))
                 .lt("logged_at", value: dateToISO(endOfDay))
                 .order("logged_at", ascending: false)
@@ -444,7 +444,7 @@ class WeightTrackingService: ObservableObject {
             let stats: [WeightStatistics] = try await supabase.supabaseClient
                 .from("weight_statistics")
                 .select()
-                .eq("user_id", value: userId.uuidString)
+                .eq("user_id", value: userId)
                 .limit(1)
                 .execute()
                 .value
@@ -464,7 +464,7 @@ class WeightTrackingService: ObservableObject {
             let goals: [WeightGoal] = try await supabase.supabaseClient
                 .from("weight_goals")
                 .select()
-                .eq("user_id", value: userId.uuidString)
+                .eq("user_id", value: userId)
                 .limit(1)
                 .execute()
                 .value
@@ -535,7 +535,7 @@ class WeightTrackingService: ObservableObject {
         
         // Save to cloud
         struct WeightLogInsert: Encodable {
-            let user_id: String
+            let user_id: UUID
             let weight_kg: Double
             let weight_lbs: Double
             let logged_at: String
@@ -544,7 +544,7 @@ class WeightTrackingService: ObservableObject {
         }
         
         let logInsert = WeightLogInsert(
-            user_id: userId.uuidString,
+            user_id: userId,
             weight_kg: weightKg,
             weight_lbs: weightLbs,
             logged_at: dateToISO(Date()),
@@ -580,13 +580,7 @@ class WeightTrackingService: ObservableObject {
             AppLogger.info("✅ [Weight] Save complete, todayLog retained", category: .health)
             return true
         } catch {
-            let errorString = String(describing: error)
-            let isTypeMismatch = errorString.contains("uuid = text") || errorString.contains("operator does not exist")
-            if isTypeMismatch {
-                AppLogger.error("[Weight] UUID type mismatch in weight_logs insert — user_id sent as text to uuid column. Error: \(error)", category: .health)
-            } else {
-                AppLogger.error("[Weight] Failed to log weight: \(error)", category: .health)
-            }
+            AppLogger.error("[Weight] Failed to log weight: \(error)", category: .health)
             return false
         }
     }
@@ -598,7 +592,7 @@ class WeightTrackingService: ObservableObject {
         guard let userId = supabase.currentUser?.id else { return false }
         
         struct WeightGoalUpsert: Encodable {
-            let user_id: String
+            let user_id: UUID
             let target_weight: Double
             let target_date: String?
             let goal_type: String
@@ -606,7 +600,7 @@ class WeightTrackingService: ObservableObject {
         }
         
         let goalData = WeightGoalUpsert(
-            user_id: userId.uuidString,
+            user_id: userId,
             target_weight: targetWeight,
             target_date: targetDate.map { Self.dateFormatter.string(from: $0) },
             goal_type: goalType.rawValue,
@@ -642,7 +636,7 @@ class WeightTrackingService: ObservableObject {
             try await supabase.supabaseClient
                 .from("weight_logs")
                 .delete()
-                .eq("id", value: log.id.uuidString)
+                .eq("id", value: log.id)
                 .execute()
             
             // Remove from local array

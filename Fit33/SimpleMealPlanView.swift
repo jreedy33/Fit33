@@ -27,6 +27,7 @@ struct SimpleMealPlanView: View {
     
     // Two-phase rendering: show core content first, heavy widgets after a beat
     @State private var showSecondaryWidgets = false
+    @State private var showingWhatToEat = false
     
     var body: some View {
         NavigationStack {
@@ -80,11 +81,6 @@ struct SimpleMealPlanView: View {
                     Color.clear.frame(height: 0).id("top")
                     
                     LazyVStack(spacing: 0) {
-                        // Custom header
-                        customNutritionHeaderView
-                            .padding(.top, 4)
-                            .padding(.bottom, 16)
-                        
                         VStack(spacing: 24) {
                             if needsProfileSetup {
                                 profileSetupCard
@@ -93,6 +89,7 @@ struct SimpleMealPlanView: View {
                                 comprehensiveNutritionView
                             }
                         }
+                        .padding(.top, 12)
                         .onAppear {
                             // 🧠 Fetch personalized insights for daily insights card
                             Task {
@@ -102,15 +99,12 @@ struct SimpleMealPlanView: View {
                         }
                     }
                     .padding(.horizontal, Spacing.md)
-                    .padding(.top, 8)
                     .padding(.bottom, 20)
                 }
-                .background {
-                    if showSecondaryWidgets {
-                        AnimatedOrbBackground.home(colorScheme: colorScheme)
-                            .transition(.opacity)
-                    }
-                }
+                .background(
+                    AnimatedOrbBackground.home(colorScheme: colorScheme)
+                )
+                .contentMargins(.top, 0, for: .scrollContent)
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
                 }
@@ -131,9 +125,12 @@ struct SimpleMealPlanView: View {
                     }
                 }
             }
-            .navigationBarHidden(true)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
+            .floatingTopBarLeading {
+                NutritionTabToolbarTitle()
+            }
+            .floatingTopBarActiveWorkoutTimer()
+            .adaptiveToolbarBackground()
             }
         }
         .onAppear {
@@ -163,6 +160,9 @@ struct SimpleMealPlanView: View {
         }
         .sheet(isPresented: $showShoppingList) {
             MyShoppingListView()
+        }
+        .sheet(isPresented: $showingWhatToEat) {
+            WhatToEatView()
         }
         .onReceive(deepLinkManager.$pendingMealType) { mealType in
             guard let mealType = mealType else { return }
@@ -231,36 +231,28 @@ struct SimpleMealPlanView: View {
         ]
     }
     
-    // MARK: - Custom Header View
-    private var customNutritionHeaderView: some View {
-        HStack {
+    // MARK: - Toolbar title (floating on system nav bar)
+    private struct NutritionTabToolbarTitle: View {
+        var body: some View {
             Text("Nutrition")
                 .font(.ds_displayLarge)
+                .italic()
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.teal, Color.teal, Color.mint.opacity(0.8)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        stops: [
+                            .init(color: .white, location: 0.0),
+                            .init(color: .white, location: 0.72),
+                            .init(color: Color.teal, location: 0.85),
+                            .init(color: Color.mint, location: 1.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
                 )
-                .shadow(color: Color.teal.opacity(0.4), radius: 6, x: 0, y: 2)
-            
-            Spacer()
-            
-            // Active workout timer (only shows when workout is active)
-            if WorkoutManager.shared.isWorkoutActive {
-                Text(WorkoutManager.shared.formattedDuration)
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.sm)
-                            .fill(.ultraThinMaterial)
-                    )
-            }
+                .shadow(color: Color.teal.opacity(0.2), radius: 4, x: 0, y: 1)
+                .frame(height: 55)
+                .fixedSize()
         }
-        .padding(.leading, 4)
     }
     
     private var needsProfileSetup: Bool {
@@ -453,7 +445,7 @@ struct SimpleMealPlanView: View {
     // MARK: - Swipeable Meal Carousel (like Challenge/Program widget)
     @State private var selectedMealPage: Int = -1 // -1 means not initialized
     @State private var selectedNutritionPage = 1 // Default to macros (center card)
-    @State private var insightsViewMode = 0 // 0 = icons/numbers, 1 = text insights
+    @State private var insightsViewMode = 1 // 0 = icons/numbers, 1 = text insights
     
     /// Get the current meal time index based on time of day
     private var currentMealTimeIndex: Int {
@@ -543,16 +535,15 @@ struct SimpleMealPlanView: View {
             )
             
             // Page indicators (tappable)
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 ForEach(0..<mealTypes.count, id: \.self) { index in
                     let pageIndex = selectedMealPage == -1 ? currentIndex : selectedMealPage
                     let isSelected = pageIndex == index
                     let mealColor = mealTypes[index].gradientColors.0
                     
-                    Circle()
+                    Capsule()
                         .fill(isSelected ? mealColor : Color.gray.opacity(0.3))
-                        .frame(width: 6, height: 6)
-                        .scaleEffect(isSelected ? 1.0 : 0.8)
+                        .frame(width: isSelected ? 20 : 8, height: 6)
                         .animation(.easeOut(duration: 0.2), value: pageIndex)
                         .onTapGesture {
                             HapticManager.impact(.light)
@@ -560,7 +551,7 @@ struct SimpleMealPlanView: View {
                         }
                 }
             }
-            .padding(.vertical, Spacing.xxs)
+            .padding(.top, 8)
         }
         .onAppear {
             // Initialize to current meal time on first appear
@@ -573,30 +564,26 @@ struct SimpleMealPlanView: View {
     // MARK: - Main Comprehensive Nutrition View
     private var comprehensiveNutritionView: some View {
         VStack(spacing: 16) {
-            // Phase 1: Core content (renders immediately)
-            WhatToEatDashboardCard()
-                .padding(.horizontal, Spacing.md)
-            
             nutritionSwipeableCards
             
             allMealSectionsView
             
-            MealsQuickActionsView(
-                showMealPlanGenerator: $showMealPlanGenerator,
-                showRecipeImport: $showRecipeImport,
-                showRestaurantSearch: $showRestaurantSearch,
-                showShoppingList: $showShoppingList
-            )
-            
             // Phase 2: Heavy widgets (deferred by one frame to unblock tab transition)
             if showSecondaryWidgets {
-                HealthyRecipesCarousel()
-                
                 WeightTrackerWidget()
                     .id("weightTracker")
                 
                 HydrationWidget()
                     .id("hydration")
+                
+                MealsQuickActionsView(
+                    showMealPlanGenerator: $showMealPlanGenerator,
+                    showRecipeImport: $showRecipeImport,
+                    showRestaurantSearch: $showRestaurantSearch,
+                    showShoppingList: $showShoppingList
+                )
+                
+                HealthyRecipesCarousel()
             }
         }
         .task {
@@ -613,9 +600,9 @@ struct SimpleMealPlanView: View {
     private var allMealSectionsView: some View {
         VStack(spacing: 12) {
             // Section header
-            HStack {
+            HStack(spacing: 10) {
                 Image(systemName: "fork.knife")
-                    .font(.ds_heading2)
+                    .font(.title3)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.green, .mint],
@@ -623,11 +610,10 @@ struct SimpleMealPlanView: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                
+
                 Text("Track Your Meals")
-                    .font(.headline)
+                    .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(.primary)
                 
                 Spacer()
             }
@@ -808,121 +794,7 @@ struct SimpleMealPlanView: View {
     
     // MARK: - Swipeable Nutrition Cards (Insights, Macros & Weekly Progress)
     private var nutritionSwipeableCards: some View {
-        VStack(spacing: 12) {
-            // Swipeable header (changes with cards)
-            GeometryReader { geometry in
-                let headerWidth = geometry.size.width
-                let spacing: CGFloat = 16
-                
-                HStack(spacing: spacing) {
-                    // Header 0: Daily Insights
-                    HStack {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.ds_heading2)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.teal, .mint],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        Text("Daily Insights")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        // Score summary
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text("\(insightsScore)")
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(insightsScoreColor)
-                            
-                            Text("score")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .frame(width: headerWidth)
-                    .opacity(selectedNutritionPage == 0 ? 1 : 0)
-                    
-                    // Header 1: Today's Macros (center/default)
-                    HStack {
-                        Image(systemName: "chart.pie.fill")
-                            .font(.ds_heading2)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.teal, .mint],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        Text("Today's Macros")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        // Calorie summary
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text("\(consumedCalories)")
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(caloriesExceeded ? .red : .primary)
-                            
-                            Text("of \(calorieGoal) cal")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .frame(width: headerWidth)
-                    .opacity(selectedNutritionPage == 1 ? 1 : 0)
-                    
-                    // Header 2: Weekly Progress
-                    HStack {
-                        Image(systemName: "chart.bar.fill")
-                            .font(.ds_heading2)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.teal, .mint],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                        
-                        Text("Weekly Progress")
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        // Weekly summary
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text("\(weeklyCalorieDaysMet)/7")
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.primary)
-                            
-                            Text("days on target")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .frame(width: headerWidth)
-                    .opacity(selectedNutritionPage == 2 ? 1 : 0)
-                }
-                .offset(x: -CGFloat(selectedNutritionPage) * (headerWidth + spacing))
-            }
-            .frame(height: 28)
-            .padding(.horizontal, Spacing.xxs)
-            .animation(.easeOut(duration: 0.25), value: selectedNutritionPage)
-            
+        VStack(spacing: 0) {
             // Swipeable cards
             GeometryReader { geometry in
                 let cardWidth = geometry.size.width
@@ -939,8 +811,8 @@ struct SimpleMealPlanView: View {
                         .frame(width: cardWidth)
                         .opacity(selectedNutritionPage == 1 ? 1 : 0)
                     
-                    // Card 2: Weekly Progress
-                    weeklyProgressCard
+                    // Card 2: What to Eat Now
+                    whatToEatCard
                         .frame(width: cardWidth)
                         .opacity(selectedNutritionPage == 2 ? 1 : 0)
                 }
@@ -968,13 +840,12 @@ struct SimpleMealPlanView: View {
                     }
             )
             
-            // Page indicators - right below the card
-            HStack(spacing: 6) {
+            // Page indicators
+            HStack(spacing: 8) {
                 ForEach(0..<3, id: \.self) { index in
-                    Circle()
+                    Capsule()
                         .fill(selectedNutritionPage == index ? Color.teal : Color.gray.opacity(0.3))
-                        .frame(width: 6, height: 6)
-                        .scaleEffect(selectedNutritionPage == index ? 1.0 : 0.8)
+                        .frame(width: selectedNutritionPage == index ? 20 : 8, height: 6)
                         .animation(.easeOut(duration: 0.2), value: selectedNutritionPage)
                         .onTapGesture {
                             HapticManager.impact(.light)
@@ -982,6 +853,7 @@ struct SimpleMealPlanView: View {
                         }
                 }
             }
+            .padding(.top, 8)
         }
     }
     
@@ -1453,6 +1325,170 @@ struct SimpleMealPlanView: View {
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.06), radius: 8, x: 0, y: 4)
         .shadow(color: .teal.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 12, x: 0, y: 6)
+    }
+    
+    // MARK: - What to Eat Now Card
+    private var whatToEatCard: some View {
+        let engine = ContextualMealEngine.shared
+        
+        return VStack(alignment: .leading, spacing: 8) {
+            // In-card header
+            HStack(alignment: .center) {
+                Text("What to Eat Now")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                HStack(spacing: 3) {
+                    Text("More")
+                        .font(.caption2)
+                        .foregroundColor(.secondary.opacity(0.7))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.5))
+                }
+            }
+            
+            if let suggestion = engine.suggestions.first {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.green.opacity(0.12))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "fork.knife")
+                            .font(.ds_labelMedium)
+                            .foregroundColor(.green)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(suggestion.name)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        Text(suggestion.reason)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("\(suggestion.calories) cal")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(.green)
+                }
+                
+                if engine.suggestions.count > 1, let second = engine.suggestions.dropFirst().first {
+                    Divider().opacity(0.3)
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.teal.opacity(0.12))
+                                .frame(width: 30, height: 30)
+                            Image(systemName: "leaf.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.teal)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(second.name)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.primary)
+                            Text(second.reason)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        
+                        Spacer()
+                        
+                        Text("\(second.calories) cal")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundColor(.teal)
+                    }
+                }
+            } else {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.green)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("You're On Track")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        
+                        if let ctx = engine.context {
+                            Text("\(ctx.caloriesRemaining) cal remaining today")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Spacer()
+                }
+            }
+            
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(Color.green.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                    .offset(y: 6)
+                    .blur(radius: 3)
+                
+                RoundedRectangle(cornerRadius: 25, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 3)
+                
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color(white: 0.14), Color(white: 0.09)]
+                                : [Color.white, Color.white.opacity(0.95)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+                
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.green.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.teal.opacity(colorScheme == .dark ? 0.3 : 0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.06), radius: 8, x: 0, y: 4)
+        .shadow(color: .green.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 12, x: 0, y: 6)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            HapticManager.impact(.light)
+            showingWhatToEat = true
+        }
     }
     
     // MARK: - Smart Daily Summary Widget

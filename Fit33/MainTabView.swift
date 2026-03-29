@@ -314,7 +314,7 @@ struct MainTabView: View {
         }
         // ✅ SwiftUI handles orientation changes naturally
         // ⚠️ DO NOT add .id() here - it destroys active workout state on rotation!
-        .preferredColorScheme(.light)
+        .preferredColorScheme(AppearanceManager.shared.colorScheme)
             
             // GO! Button overlay - isolated view that observes its own state
             GoButtonOverlay()

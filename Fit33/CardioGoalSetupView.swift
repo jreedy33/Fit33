@@ -129,7 +129,7 @@ struct CardioGoalSetupView: View {
                     }
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .adaptiveToolbarBackground()
             .sheet(isPresented: $showingBluetoothSheet) {
                 FitnessEquipmentView()
             }

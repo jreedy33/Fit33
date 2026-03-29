@@ -125,18 +125,26 @@ struct SectionHeader: View {
     let title: String
     var icon: String? = nil
     var iconColor: Color = .blue
+    var secondaryIconColor: Color? = nil
     var action: (() -> Void)? = nil
     var actionLabel: String = "See All"
     
     var body: some View {
-        HStack {
+        HStack(spacing: 10) {
             if let icon = icon {
                 Image(systemName: icon)
-                    .font(.ds_bodyMedium)
-                    .foregroundColor(iconColor)
+                    .font(.title3)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [iconColor, secondaryIconColor ?? iconColor.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
             }
             Text(title)
-                .font(.ds_heading3)
+                .font(.title3)
+                .fontWeight(.bold)
             
             Spacer()
             
@@ -286,3 +294,115 @@ struct DSEmptyState: View {
         .padding(Spacing.lg)
     }
 }
+
+// MARK: - Liquid Glass Helpers (iOS 26+)
+
+extension View {
+    /// On iOS 26+ lets the system Liquid Glass show through on toolbars.
+    /// On older versions falls back to the hidden/transparent toolbar style.
+    @ViewBuilder
+    func adaptiveToolbarBackground(for bars: ToolbarPlacement = .navigationBar) -> some View {
+        if #available(iOS 26, *) {
+            self
+        } else {
+            self
+                .toolbarBackground(.hidden, for: bars)
+                .toolbarColorScheme(.dark, for: bars)
+        }
+    }
+    
+    /// Applies a translucent glass background for pinned headers.
+    /// iOS 26+: Liquid Glass with lensing/refraction.
+    /// Pre-iOS 26: Ultra-thin material blur.
+    @ViewBuilder
+    func glassHeaderBackground() -> some View {
+        if #available(iOS 26, *) {
+            self
+                .glassEffect(.regular, in: .rect)
+        } else {
+            self
+                .background(.ultraThinMaterial)
+        }
+    }
+    
+    /// Tab title on the system top bar without its own Liquid Glass pill (iOS 26+).
+    func floatingTopBarLeading<L: View>(@ViewBuilder content: @escaping () -> L) -> some View {
+        modifier(FloatingTopBarLeadingToolbar(leading: content))
+    }
+    
+    /// Trailing control (e.g. workout timer) without a separate pill (iOS 26+).
+    func floatingTopBarTrailing<T: View>(@ViewBuilder content: @escaping () -> T) -> some View {
+        modifier(FloatingTopBarTrailingToolbar(trailing: content))
+    }
+    
+    /// Compact monospaced timer when a workout is active; no toolbar item when inactive.
+    func floatingTopBarActiveWorkoutTimer() -> some View {
+        modifier(ActiveWorkoutTimerFloatingToolbarModifier())
+    }
+}
+
+// MARK: - Floating top bar toolbars (Liquid Glass–friendly)
+
+private struct FloatingTopBarLeadingToolbar<L: View>: ViewModifier {
+    @ViewBuilder var leading: () -> L
+    
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        leading()
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                }
+        } else {
+            content
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        leading()
+                    }
+                }
+        }
+    }
+}
+
+private struct FloatingTopBarTrailingToolbar<T: View>: ViewModifier {
+    @ViewBuilder var trailing: () -> T
+    
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        trailing()
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                }
+        } else {
+            content
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        trailing()
+                    }
+                }
+        }
+    }
+}
+
+private struct ActiveWorkoutTimerFloatingToolbarModifier: ViewModifier {
+    @EnvironmentObject private var workoutManager: WorkoutManager
+    
+    func body(content: Content) -> some View {
+        if workoutManager.isWorkoutActive {
+            content
+                .floatingTopBarTrailing {
+                    Text(workoutManager.formattedDuration)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+        } else {
+            content
+        }
+    }
+}
+

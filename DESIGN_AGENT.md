@@ -470,3 +470,68 @@ Used in `ShareWorkoutSheet` below the "Send to Friend" section header:
 - First item: Search button — 56pt circle with `Color.cardBackground` fill, gray border, magnifyingglass icon
 - Friend items: Up to 5 friends, ordered by ranking (top friends first)
 - Tapping a friend transitions to compose message view
+
+---
+
+## 2026-03-28: Workout Tab — My Stats Dashboard
+
+### Layout Spec
+"My Stats" section appears below the active program widget on the Workout tab. Uses `LazyVStack(spacing: Spacing.lg)` inside the existing scroll content.
+
+### Section Header
+Uses `SectionHeader(title: "My Stats", icon: "chart.bar.xaxis.ascending", iconColor: .purple)`.
+
+### Chart Cards
+Every chart widget uses `.sleekCard(cornerRadius: CornerRadius.xl, accentColor:)` with accent colors:
+- Stats Grid: `.purple`
+- Volume: `.blue`
+- Frequency: `.cyan`
+- Strength: `.purple`
+- Personal Records: `.yellow`
+- Body Weight: `.green`
+- Calories: `.orange`
+- Duration: `.green`
+- Muscle Distribution: `.red`
+
+### Timeframe Picker
+`StatsTimeframePicker` — horizontal row of capsule buttons (Week/Month/3M/Year/All). Selected state: white text on blue capsule. Deselected: secondary text on `Color.cardBackground` capsule. Uses `.ds_labelMedium` font.
+
+### Chart Typography
+- Card titles: `.ds_heading3`
+- Axis labels: `.ds_caption`
+- Stat numbers: `.ds_stat` (large) or `.ds_statSmall` (in cards)
+- Labels: `.ds_labelSmall` or `.ds_labelMedium`
+- Subtitles: `.ds_bodySmall` with `.adaptiveSecondaryText`
+
+### Personal Records Cards
+- Horizontal `ScrollView` with 160pt-wide cards
+- Gold border (`LinearGradient` yellow-orange, lineWidth 1.5) on PRs from the last 7 days
+- Star icon (`.yellow`) on recent PRs
+- Exercise name, max weight, max reps, estimated 1RM layout
+
+### Muscle Group Donut
+- `SectorMark` with `innerRadius: .ratio(0.55)` and `angularInset: 1.5`
+- Category accent colors from the Color System section (Chest=Red, Back=Blue, Legs=Green, etc.)
+- Center overlay shows total count or selected category count
+- Legend to the right with tappable rows to highlight segments
+
+## iOS 26 Liquid Glass Readiness
+
+### What's Done
+- **Tab bar**: No custom `UITabBar.appearance()` — gets Liquid Glass automatically on iOS 26.
+- **Navigation bars**: `Fit33App.init()` wraps the old transparent-background `UINavigationBarAppearance` in `#unavailable(iOS 26)` so the system glass takes over.
+- **`adaptiveToolbarBackground()`**: Reusable modifier in `DesignSystem.swift`. On iOS 26+ it's a no-op (lets glass show). On older iOS it applies `.toolbarBackground(.hidden)` + `.toolbarColorScheme(.dark)`. All 5 tab root views + major pushed views already use it.
+- **No hairline overlay**: The old `Color.white.opacity(0.08)` overlay on the tab bar was removed.
+- **`preferredColorScheme`**: Uses `AppearanceManager.shared.colorScheme` instead of hardcoded `.light`.
+- **Dashboard nav (Home)**: `DashboardNavLeadingToolbar` + `DashboardNavTrailingToolbar` in `DashboardView+Header.swift`. On iOS 26+, logo and optional workout timer are separate `ToolbarItem`s; ellipsis + profile sit in one `ToolbarItem` as `HStack(spacing: 4)` with `.sharedBackgroundVisibility(.hidden)` so they float tight together without a pill; pre–iOS 26 uses `ToolbarItemGroup` with the same tight `HStack` for dots + profile.
+- **Other main tabs (Exercises, Workout, Nutrition, Friends)**: System nav bar visible with gradient tab titles via `floatingTopBarLeading` in `DesignSystem.swift` (`.sharedBackgroundVisibility(.hidden)` on iOS 26+). Active workout timer uses `floatingTopBarActiveWorkoutTimer()` (requires `WorkoutManager` in the environment). Friends uses `FriendsHeaderTitleView` + `FriendsHeaderActionsView` (split from `FriendsHeaderWrapper`); removed `safeAreaInset` glass header in favor of the same pattern as Home.
+
+### Legacy custom headers (full revert guide)
+
+Tab-by-tab instructions for restoring **hidden nav bar + in-layout headers** live in **`LEGACY_CUSTOM_HEADERS.md`** at the repo root (includes timer snippet and which modifiers to remove).
+
+### Rules for New Views
+- **Never** set opaque `backgroundColor` on `UITabBar` or `UINavigationBar` — blocks Liquid Glass.
+- For custom toolbar materials, use `.adaptiveToolbarBackground()` instead of `.toolbarBackground(.hidden)`.
+- `.glassEffect(.regular)` is for custom views only (floating buttons, custom bars). System bars get glass automatically.
+- Use `GlassEffectContainer` when grouping multiple glass elements that should morph together.

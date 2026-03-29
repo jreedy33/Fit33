@@ -192,6 +192,7 @@ The Support Agent maintains a living registry of user pain points:
 | PP-012 | Blank step/workout data with no guidance | High | HealthKit permission revoked shows empty data with no user guidance to re-enable. **FIXED March 2026** — `isAuthorized` checks added to all HealthKit fetches |
 | PP-013 | Exercise swap erases completed sets | High | `WorkoutManager.replaceExercise` discarded all set data. **FIXED March 2026** — completed sets now preserved during swap |
 | PP-014 | "Account creation failed" dead-end during signup | Critical | `signUp()` created auth user but profile creation failed. Retry fails with "already registered" — permanent dead end. **FIXED March 2026** — recovery logic signs in if user already exists, ensures profile, surfaces actual errors |
+| PP-015 | "Session expired" during phone verification on signup | Critical | Email/password signup deferred account creation to after phone verification (~10 steps later). `@State password` lost by then. Apple Sign-In with same email worked (authenticates immediately). **FIXED March 2026** — account now created immediately after password entry. |
 
 ---
 

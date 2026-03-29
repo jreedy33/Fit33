@@ -78,7 +78,7 @@ struct RecipeDetailView: View {
                 }
             }
         }
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .adaptiveToolbarBackground()
         .task {
             await loadRecipeDetail()
             loadFavoriteState()

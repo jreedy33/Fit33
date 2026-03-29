@@ -635,8 +635,7 @@ struct WorkoutProgressView: View {
                 }
             }
             .navigationBarHidden(true)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .adaptiveToolbarBackground()
             .navigationDestination(for: ProgressRoute.self) { route in
                 switch route {
                 case .healthInsights:

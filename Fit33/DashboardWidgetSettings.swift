@@ -8,6 +8,7 @@ struct WidgetSettingsSheet: View {
     @Binding var showChallenge: Bool
     @Binding var showRecommended: Bool
     @Binding var showWhoop: Bool
+    @Binding var showOura: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var premiumManager = PremiumManager.shared
@@ -82,6 +83,14 @@ struct WidgetSettingsSheet: View {
                             subtitle: "Recovery score, HRV & strain",
                             gradientColors: [Color.green, Color.cyan],
                             isSelected: $showWhoop
+                        )
+                        
+                        widgetOptionRow(
+                            icon: "circle.circle",
+                            title: "Oura Readiness",
+                            subtitle: "Readiness score, HRV & sleep",
+                            gradientColors: [Color.teal, Color.cyan],
+                            isSelected: $showOura
                         )
                         
                         // Challenge widget - show for all users, but locked for free users

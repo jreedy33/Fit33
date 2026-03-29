@@ -240,33 +240,7 @@ struct PrivateChallengeAdminSettingsView: View {
                             }
                         }
                         
-                        // Save Button
-                        Button(action: { saveSettings() }) {
-                            HStack(spacing: 8) {
-                                if isSaving {
-                                    ProgressView()
-                                        .tint(.white)
-                                        .scaleEffect(0.9)
-                                } else {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.ds_heading3)
-                                    Text("Save Changes")
-                                        .font(.headline)
-                                        .fontWeight(.semibold)
-                                }
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Spacing.md)
-                            .background(
-                                LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
-                            )
-                            .clipShape(Capsule())
-                            .shadow(color: .purple.opacity(0.4), radius: 12, x: 0, y: 6)
-                        }
-                        .disabled(isSaving)
-                        .padding(.top, 8)
-                        .padding(.bottom, 40)
+                        Spacer().frame(height: 40)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
@@ -277,11 +251,43 @@ struct PrivateChallengeAdminSettingsView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { saveSettings() }) {
+                        if isSaving {
+                            ProgressView()
+                                .tint(.purple)
+                        } else {
+                            Text("Save")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.purple)
+                        }
+                    }
+                    .disabled(isSaving)
+                }
             }
             .alert("Settings Saved! ✅", isPresented: $showSaveConfirmation) {
                 Button("Done") { dismiss() }
             }
         }
+    }
+    
+    // MARK: - Icon Helpers
+    
+    private var emojiIconFallback: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [.purple.opacity(0.25), .pink.opacity(0.15)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 72, height: 72)
+            Text(emoji)
+                .font(.system(size: 36))
+        }
+        .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1.5))
     }
     
     // MARK: - Helpers

@@ -6,6 +6,7 @@ struct SettingsView: View {
     @StateObject private var stravaService = StravaService.shared
     @StateObject private var fitbitService = FitbitService.shared
     @StateObject private var whoopService = WhoopService.shared
+    @StateObject private var ouraService = OuraService.shared
     @StateObject private var healthKitService = HealthKitService.shared
     
     #if DEBUG
@@ -537,6 +538,60 @@ struct SettingsView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("WHOOP")
                                 .accessibilityHint(whoopService.isConnected ? "Connected. Tap to manage WHOOP settings." : "Tap to connect your WHOOP band.")
+                                
+                                Divider().padding(.leading, 52)
+                                
+                                // Oura Ring Integration
+                                NavigationLink(destination: OuraSettingsView()) {
+                                    HStack(spacing: 16) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [Color.teal.opacity(0.15), Color.cyan.opacity(0.15)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 36, height: 36)
+                                            Image(systemName: "circle.circle")
+                                                .font(.ds_bodyRegular)
+                                                .foregroundStyle(
+                                                    LinearGradient(
+                                                        colors: [Color.teal, Color.cyan],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Oura Ring")
+                                                .font(.body)
+                                                .foregroundColor(.primary)
+                                            Text(ouraService.isConnected ? "Connected • Readiness & sleep synced" : "Sync readiness, sleep & activity")
+                                                .font(.caption)
+                                                .foregroundColor(ouraService.isConnected ? .green : .secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        if ouraService.isConnected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                                .font(.ds_heading3)
+                                        } else {
+                                            Image(systemName: "chevron.right")
+                                                .font(.ds_bodySmall).fontWeight(.medium)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .padding(.vertical, Spacing.sm)
+                                    .padding(.horizontal, Spacing.md)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Oura Ring")
+                                .accessibilityHint(ouraService.isConnected ? "Connected. Tap to manage Oura settings." : "Tap to connect your Oura Ring.")
                                 
                                 Divider().padding(.leading, 52)
                                 

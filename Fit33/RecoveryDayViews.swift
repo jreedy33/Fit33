@@ -380,12 +380,14 @@ struct RecoveryDayDashboardWidget: View {
             showingRecoveryDay = true
         }) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Image(systemName: "leaf.fill")
-                        .font(.ds_bodyRegular)
-                        .foregroundColor(.teal)
+                        .font(.title3)
+                        .foregroundStyle(
+                            LinearGradient(colors: [.teal, .green], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
                     Text("Recovery Day")
-                        .font(.subheadline)
+                        .font(.title3)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
                     Spacer()

@@ -5,7 +5,7 @@ extension DashboardView {
     var recentWorkoutsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+                HStack(spacing: 10) {
                     Image(systemName: "clock.fill")
                         .foregroundStyle(
                             LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)

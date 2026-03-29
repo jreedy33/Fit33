@@ -2,11 +2,13 @@
 //  PrivateChallengeDetailView.swift
 //  Fit33
 //
-//  Detail view for a Private Challenge — shows leaderboard, members, chat,
-//  admin settings, and invite management. The central hub for each private challenge.
+//  Redesigned detail view for a Private Challenge — single-scroll layout with
+//  compact header, league-style stat bar, always-visible leaderboard, chat preview,
+//  and members sheet. Matches the Friends tab aesthetic.
 //
 
 import SwiftUI
+import Realtime
 
 struct PrivateChallengeDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -19,51 +21,38 @@ struct PrivateChallengeDetailView: View {
     
     @State private var detail: PrivateChallengeDetail?
     @State private var isLoading = true
-    @State private var selectedTab: DetailTab = .leaderboard
     @State private var showAdminSettings = false
     @State private var showInviteSheet = false
     @State private var showShareSheet = false
+    @State private var showMembersSheet = false
+    @State private var showFullChat = false
     @State private var showLeaveConfirmation = false
     @State private var showEndConfirmation = false
+    @State private var chatMessages: [PrivateChallengeMessage] = []
+    @State private var chatText = ""
+    @State private var isSendingMessage = false
+    @State private var showModerationWarning = false
     
-    enum DetailTab: String, CaseIterable {
-        case leaderboard = "Leaderboard"
-        case members = "Members"
-        case chat = "Chat"
+    private var accentGradient: LinearGradient {
+        LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
     }
     
     var body: some View {
         ZStack {
-            AnimatedOrbBackground.home(colorScheme: colorScheme)
+            AnimatedOrbBackground.friends(colorScheme: colorScheme)
                 .ignoresSafeArea()
             
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 20) {
-                    // Header card
+                VStack(spacing: Spacing.md) {
                     headerCard
-                    
-                    // Progress ring
-                    progressSection
-                    
-                    // Tab selector
-                    tabSelector
-                    
-                    // Tab content
-                    switch selectedTab {
-                    case .leaderboard:
-                        leaderboardSection
-                    case .members:
-                        membersSection
-                    case .chat:
-                        chatSection
-                    }
-                    
-                    // Action buttons
+                    statBar
+                    chatPreviewSection
+                    leaderboardSection
                     actionButtons
-                        .padding(.bottom, 40)
+                        .padding(.bottom, 60)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.sm)
             }
         }
         .navigationTitle("")
@@ -71,6 +60,10 @@ struct PrivateChallengeDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
+                    Button(action: { showMembersSheet = true }) {
+                        Label("Members", systemImage: "person.2.fill")
+                    }
+                    
                     if challenge.isAdmin {
                         Button(action: { showAdminSettings = true }) {
                             Label("Admin Settings", systemImage: "gearshape.fill")
@@ -119,6 +112,12 @@ struct PrivateChallengeDetailView: View {
                 ])
             }
         }
+        .sheet(isPresented: $showMembersSheet) {
+            membersSheet
+        }
+        .sheet(isPresented: $showFullChat) {
+            fullChatSheet
+        }
         .confirmationDialog("Leave Challenge?", isPresented: $showLeaveConfirmation) {
             Button("Leave", role: .destructive) {
                 Task {
@@ -139,384 +138,510 @@ struct PrivateChallengeDetailView: View {
         } message: {
             Text("This will end the challenge for all members. This cannot be undone.")
         }
+        .alert("Message Not Sent", isPresented: $showModerationWarning) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Your message was not sent because it may violate our community guidelines. Please keep conversations respectful.")
+        }
         .task {
             await loadDetail()
+            chatMessages = await privateChallengeService.fetchMessages(challengeId: challenge.challengeId)
+        }
+        .task(id: "chat-realtime") {
+            // Direct realtime subscription for live chat updates while on this view
+            let client = SupabaseManager.shared.supabaseClient
+            let channel = client.realtimeV2.channel("private-chat-\(challenge.challengeId.uuidString)")
+            
+            let inserts = channel.postgresChange(
+                InsertAction.self,
+                schema: "public",
+                table: "private_challenge_chat",
+                filter: "challenge_id=eq.\(challenge.challengeId.uuidString)"
+            )
+            
+            Task {
+                for await _ in inserts {
+                    AppLogger.debug("Live chat: new message in challenge", category: .social)
+                    chatMessages = await privateChallengeService.fetchMessages(
+                        challengeId: challenge.challengeId
+                    )
+                }
+            }
+            
+            await channel.subscribe()
+            
+            // Keep alive until view disappears (task cancellation unsubscribes)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+            
+            await channel.unsubscribe()
         }
         .refreshable {
             await loadDetail()
+            chatMessages = await privateChallengeService.fetchMessages(challengeId: challenge.challengeId)
         }
         .onChange(of: privateChallengeService.memberChangeToken) { _, _ in
-            // A member joined or left — reload detail for live member list
             Task { await loadDetail() }
+        }
+        .onChange(of: showAdminSettings) { _, isShowing in
+            if !isShowing {
+                Task { await loadDetail() }
+            }
         }
     }
     
     private func loadDetail() async {
-        isLoading = true
-        detail = await privateChallengeService.getChallengeDetail(challengeId: challenge.challengeId)
+        isLoading = detail == nil
+        if let newDetail = await privateChallengeService.getChallengeDetail(challengeId: challenge.challengeId) {
+            detail = newDetail
+        }
         isLoading = false
     }
     
-    // MARK: - Header Card
+    // MARK: - Compact Header Card
     
     private var headerCard: some View {
-        VStack(spacing: 12) {
-            // Emoji + title
-            Text(challenge.displayEmoji)
-                .font(.system(size: 48))
-            
-            Text(challenge.title)
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .multilineTextAlignment(.center)
-            
-            if let desc = challenge.description, !desc.isEmpty {
-                Text(desc)
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.7))
-                    .multilineTextAlignment(.center)
-            }
-            
-            // Badges row
-            HStack(spacing: 10) {
-                // Private badge
-                HStack(spacing: 4) {
-                    Image(systemName: "lock.fill")
-                        .font(.ds_caption)
-                    Text("Private")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                }
-                .foregroundColor(.purple)
-                .padding(.horizontal, 10)
-                .padding(.vertical, Spacing.xxs)
-                .background(Capsule().fill(Color.purple.opacity(0.15)))
+        VStack(spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                challengeIconView(size: 48, emojiSize: 24)
                 
-                // Member count
-                HStack(spacing: 4) {
-                    Image(systemName: "person.2.fill")
-                        .font(.ds_caption)
-                    Text(challenge.formattedMemberCount)
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                }
-                .foregroundColor(.blue)
-                .padding(.horizontal, 10)
-                .padding(.vertical, Spacing.xxs)
-                .background(Capsule().fill(Color.blue.opacity(0.15)))
-                
-                // Admin badge
-                if challenge.isAdmin {
-                    HStack(spacing: 4) {
-                        Image(systemName: "crown.fill")
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(challenge.title)
+                        .font(.ds_heading3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                    
+                    HStack(spacing: Spacing.xxs) {
+                        Image(systemName: "target")
                             .font(.ds_caption)
-                        Text("Admin")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
+                            .foregroundColor(.purple)
+                        Text("\(challenge.dailyTarget) \(challenge.targetUnit)/day")
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.secondary)
                     }
-                    .foregroundColor(.yellow)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, Spacing.xxs)
-                    .background(Capsule().fill(Color.yellow.opacity(0.15)))
+                    
+                    if let desc = challenge.description, !desc.isEmpty {
+                        Text(desc)
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
                 }
+                
+                Spacer(minLength: 0)
+                
+                memberAvatarsColumn
             }
             
-            // Member avatars row
+            badgesRow
+        }
+        .padding(Spacing.md)
+        .sleekCard(cornerRadius: 20, accentColor: .purple)
+    }
+    
+    private func challengeIconView(size: CGFloat, emojiSize: CGFloat) -> some View {
+        emojiCircle(size: size, emojiSize: emojiSize)
+    }
+    
+    private func emojiCircle(size: CGFloat, emojiSize: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [.purple.opacity(0.3), .pink.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: size, height: size)
+            
+            Text(challenge.displayEmoji)
+                .font(.system(size: emojiSize))
+        }
+    }
+    
+    private var memberAvatarsColumn: some View {
+        VStack(alignment: .trailing, spacing: Spacing.xxs) {
             if let topMembers = challenge.topMembers, !topMembers.isEmpty {
-                HStack(spacing: -10) {
-                    ForEach(Array(topMembers.prefix(8))) { member in
+                HStack(spacing: -8) {
+                    ForEach(Array(topMembers.prefix(4))) { member in
                         CachedFriendPhoto(
                             friendId: member.userId.uuidString,
                             photoUrl: member.profilePhotoUrl,
                             name: member.displayName,
-                            size: 36,
+                            size: 28,
                             showGradientRing: member.isAdmin,
                             gradientColors: member.isAdmin ? [.yellow, .orange] : [.purple, .pink]
                         )
-                        .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 2))
-                    }
-                    if challenge.memberCount > 8 {
-                        Circle()
-                            .fill(Color.purple.opacity(0.3))
-                            .frame(width: 36, height: 36)
-                            .overlay(
-                                Text("+\(challenge.memberCount - 8)")
-                                    .font(.ds_caption)
-                                    .foregroundColor(.white)
-                            )
-                            .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 2))
+                        .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 1.5))
                     }
                 }
-                .padding(.top, 4)
             }
+            
+            HStack(spacing: Spacing.xxxs) {
+                Image(systemName: "person.2.fill")
+                    .font(.ds_caption)
+                Text(challenge.formattedMemberCount)
+                    .font(.ds_labelSmall)
+            }
+            .foregroundColor(.secondary)
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(white: 0.16), Color(white: 0.10)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                colors: [Color.purple.opacity(0.3), Color.pink.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-        )
     }
     
-    // MARK: - Progress Section
+    private var badgesRow: some View {
+        HStack(spacing: Spacing.xs) {
+            if challenge.isRecurring {
+                badgeCapsule(icon: "arrow.triangle.2.circlepath", text: "Recurring", color: .cyan)
+            }
+            
+            if let unread = challenge.unreadCount, unread > 0 {
+                HStack(spacing: Spacing.xxxs) {
+                    Image(systemName: "bubble.left.fill")
+                        .font(.ds_caption)
+                    Text("\(unread)")
+                        .font(.ds_labelSmall)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, Spacing.xxxs)
+                .background(Capsule().fill(Color.purple))
+            }
+            
+            Spacer()
+            
+            if challenge.isAdmin {
+                Text("Admin")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.yellow)
+            }
+        }
+    }
     
-    private var progressSection: some View {
+    private func badgeCapsule(icon: String, text: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 8, weight: .semibold))
+            Text(text)
+                .font(.system(size: 10, weight: .bold))
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, Spacing.xs)
+        .padding(.vertical, Spacing.xxxs)
+        .background(Capsule().fill(color.opacity(0.12)))
+    }
+    
+    // MARK: - League-Style Stat Bar
+    
+    private var statBar: some View {
         let resolver = ChallengeProgressResolver.shared
         let liveValue = resolver.liveProgress(for: challenge)
         let dailyTarget = detail?.dailyTarget ?? challenge.dailyTarget
         let progress = dailyTarget > 0 ? min(1.0, Double(liveValue) / Double(dailyTarget)) : 0
-        let todayProgress = liveValue
         let rank = detail?.myRank ?? challenge.myRank ?? 0
+        let memberCount = detail?.memberCount ?? challenge.memberCount
+        let streak = detail?.myCurrentStreak ?? challenge.myCurrentStreak ?? 0
         
-        return VStack(spacing: 16) {
-            // Circular progress
-            ZStack {
-                Circle()
-                    .stroke(Color.white.opacity(0.1), lineWidth: 10)
-                    .frame(width: 100, height: 100)
+        return VStack(spacing: Spacing.sm) {
+            // Progress context line
+            HStack(spacing: Spacing.xs) {
+                HStack(spacing: Spacing.xxs) {
+                    Text(challenge.displayEmoji)
+                        .font(.system(size: 14))
+                    Text("\(Int(progress * 100))% of daily goal")
+                        .font(.ds_labelSmall)
+                        .foregroundColor(.primary)
+                }
                 
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(
-                        LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                    )
-                    .frame(width: 100, height: 100)
-                    .rotationEffect(.degrees(-90))
-                    .animation(.spring(response: 0.5), value: progress)
+                Spacer()
                 
-                VStack(spacing: 2) {
-                    Text("\(Int(progress * 100))%")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                    Text("today")
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.6))
+                Text("\(liveValue)/\(dailyTarget) \(challenge.targetUnit)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.purple)
+            }
+            
+            VStack(spacing: Spacing.xxs) {
+                GeometryReader { geo in
+                    ZStack(alignment: .trailing) {
+                        Capsule()
+                            .fill(Color.purple.opacity(colorScheme == .dark ? 0.12 : 0.08))
+                            .frame(height: 6)
+                        
+                        Capsule()
+                            .fill(LinearGradient(colors: [.pink, .purple], startPoint: .trailing, endPoint: .leading))
+                            .frame(width: max(geo.size.width * progress, 6), height: 6)
+                    }
+                }
+                .frame(height: 6)
+                
+                HStack {
+                    Text("0")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.secondary.opacity(0.5))
+                    
+                    Spacer()
+                    
+                    if progress > 0 && progress < 1.0 {
+                        Text("\(liveValue)")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.purple)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("\(dailyTarget)")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(progress >= 1.0 ? .green : .secondary.opacity(0.5))
                 }
             }
             
-            // Stats row
-            HStack(spacing: 24) {
-                statItem(value: "\(todayProgress)", label: challenge.targetUnit, icon: "flame.fill", color: .orange)
-                statItem(value: "\(dailyTarget)", label: "goal", icon: "target", color: .purple)
-                statItem(value: "#\(rank)", label: "rank", icon: "trophy.fill", color: .yellow)
-                statItem(value: "\(detail?.myCurrentStreak ?? challenge.myCurrentStreak ?? 0)", label: "streak", icon: "bolt.fill", color: .cyan)
-            }
-        }
-        .padding(Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            // Stats row with dividers (league pattern)
+            HStack(spacing: 0) {
+                statCell(value: "#\(rank)", label: "of \(memberCount)", valueColor: .purple)
+                
+                thinDivider
+                
+                statCell(
+                    value: "\(liveValue)",
+                    label: challenge.targetUnit,
+                    valueColor: .primary
                 )
-        )
+                
+                thinDivider
+                
+                VStack(spacing: 2) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                        Text("\(streak)")
+                            .font(.ds_statSmall)
+                            .foregroundColor(.primary)
+                    }
+                    Text("streak")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                
+                thinDivider
+                
+                if let d = detail {
+                    statCell(
+                        value: "\(Int(d.completionRateToday * 100))%",
+                        label: "completed",
+                        valueColor: d.completionRateToday >= 0.5 ? .green : .primary
+                    )
+                } else {
+                    statCell(value: "—", label: "completed", valueColor: .secondary)
+                }
+            }
+            .padding(.vertical, Spacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .fill(Color.purple.opacity(colorScheme == .dark ? 0.06 : 0.04))
+            )
+        }
+        .padding(Spacing.sm)
+        .sleekCardSubtle(cornerRadius: 16)
     }
     
-    private func statItem(value: String, label: String, icon: String, color: Color) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.ds_bodySmall)
-                .foregroundColor(color)
+    private func statCell(value: String, label: String, valueColor: Color) -> some View {
+        VStack(spacing: 2) {
             Text(value)
-                .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
-                .foregroundColor(.white)
+                .font(.ds_statSmall)
+                .foregroundColor(valueColor)
             Text(label)
-                .font(.caption2)
-                .foregroundColor(.white.opacity(0.5))
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
     
-    // MARK: - Tab Selector
-    
-    private var tabSelector: some View {
-        HStack(spacing: 0) {
-            ForEach(DetailTab.allCases, id: \.self) { tab in
-                Button(action: {
-                    withAnimation(.spring(response: 0.3)) {
-                        selectedTab = tab
-                    }
-                    HapticManager.impact(.light)
-                }) {
-                    VStack(spacing: 6) {
-                        Text(tab.rawValue)
-                            .font(.subheadline)
-                            .fontWeight(selectedTab == tab ? .bold : .medium)
-                            .foregroundColor(selectedTab == tab ? .white : .white.opacity(0.5))
-                        
-                        Rectangle()
-                            .fill(selectedTab == tab
-                                ? AnyShapeStyle(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(Color.clear))
-                            .frame(height: 2)
-                            .cornerRadius(1)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding(.horizontal, Spacing.xxs)
+    private var thinDivider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 1, height: 28)
     }
     
     // MARK: - Leaderboard Section
     
     private var leaderboardSection: some View {
-        VStack(spacing: 12) {
-            if let leaderboard = detail?.leaderboard, !leaderboard.isEmpty {
-                // Community stats bar
+        VStack(spacing: Spacing.sm) {
+            // Section header
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "trophy.circle.fill")
+                    .foregroundStyle(accentGradient)
+                    .font(.title3)
+                Text("Leaderboard")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
                 if let d = detail {
-                    HStack(spacing: 16) {
-                        miniStat(value: "\(d.avgTodayProgress)", label: "avg")
-                        miniStat(value: "\(d.totalActiveToday)", label: "active")
-                        miniStat(value: "\(Int(d.completionRateToday * 100))%", label: "done")
+                    HStack(spacing: Spacing.xxs) {
+                        Circle()
+                            .fill(.green)
+                            .frame(width: 6, height: 6)
+                        Text("\(d.totalActiveToday) active")
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary)
                     }
-                    .padding(Spacing.sm)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
-                    )
+                }
+            }
+            
+            if let leaderboard = detail?.leaderboard, !leaderboard.isEmpty {
+                // Community stats mini bar
+                if let d = detail {
+                    communityStatsBar(detail: d)
                 }
                 
+                // Leaderboard rows
                 ForEach(leaderboard) { member in
                     leaderboardRow(member: member, dailyTarget: detail?.dailyTarget ?? challenge.dailyTarget)
                 }
             } else if isLoading {
                 ProgressView()
                     .tint(.purple)
-                    .padding(40)
+                    .padding(Spacing.xl)
             } else {
-                Text("No leaderboard data yet")
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.5))
-                    .padding(40)
+                VStack(spacing: Spacing.xs) {
+                    Image(systemName: "trophy")
+                        .font(.ds_heading1)
+                        .foregroundColor(.secondary.opacity(0.4))
+                    Text("No leaderboard data yet")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                }
+                .padding(Spacing.xl)
             }
         }
     }
     
-    private func miniStat(value: String, label: String) -> some View {
-        VStack(spacing: 2) {
+    private func communityStatsBar(detail d: PrivateChallengeDetail) -> some View {
+        HStack(spacing: 0) {
+            miniStatCell(value: "\(d.avgTodayProgress)", label: "avg \(challenge.targetUnit)")
+            
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .frame(width: 1, height: 20)
+            
+            miniStatCell(value: "\(d.totalActiveToday)", label: "active today")
+            
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .frame(width: 1, height: 20)
+            
+            miniStatCell(value: "\(Int(d.completionRateToday * 100))%", label: "hit goal")
+        }
+        .padding(.vertical, Spacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                .fill(Color.purple.opacity(colorScheme == .dark ? 0.06 : 0.04))
+        )
+    }
+    
+    private func miniStatCell(value: String, label: String) -> some View {
+        VStack(spacing: 1) {
             Text(value)
-                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                .foregroundColor(.white)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(.primary)
             Text(label)
-                .font(.caption2)
-                .foregroundColor(.white.opacity(0.5))
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
     
     private func leaderboardRow(member: PrivateChallengeMember, dailyTarget: Int) -> some View {
         let isMe = member.isCurrentUser ?? false
-        // Use live HealthKit/tracking data for current user, DB data for others
         let displayProgress = isMe
             ? ChallengeProgressResolver.shared.liveProgress(for: challenge)
             : (member.todayProgress ?? 0)
         let progress = dailyTarget > 0 ? min(1.0, Double(displayProgress) / Double(dailyTarget)) : 0
+        let rank = member.rank ?? 0
         
-        return HStack(spacing: 12) {
-            // Rank
-            Text("\(member.rank ?? 0)")
-                .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                .foregroundColor(rankColor(member.rank ?? 0))
-                .frame(width: 24)
+        return HStack(spacing: Spacing.sm) {
+            // Rank with medal
+            ZStack {
+                if rank <= 3 {
+                    Text(rank == 1 ? "🥇" : rank == 2 ? "🥈" : "🥉")
+                        .font(.system(size: 16))
+                } else {
+                    Text("#\(rank)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(isMe ? .purple : .secondary)
+                }
+            }
+            .frame(width: 26)
             
-            // Avatar
             CachedFriendPhoto(
                 friendId: member.userId.uuidString,
                 photoUrl: member.profilePhotoUrl,
                 name: member.displayName,
-                size: 36,
+                size: 32,
                 showGradientRing: member.isAdmin,
                 gradientColors: member.isAdmin ? [.yellow, .orange] : [.purple, .pink]
             )
             
-            // Name + role
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(member.firstName)
-                        .font(.subheadline)
-                        .fontWeight(isMe ? .bold : .semibold)
-                        .foregroundColor(isMe ? .purple : .white)
+                HStack(spacing: 3) {
+                    Text(isMe ? "You" : member.firstName)
+                        .font(.system(size: 13, weight: isMe ? .bold : .medium))
+                        .foregroundColor(isMe ? .primary : .secondary)
+                        .lineLimit(1)
                     
                     if member.isVerified == true || member.isGoldVerified == true {
-                        VerifiedBadge(size: 13, isGold: member.isGoldVerified == true)
+                        VerifiedBadge(size: 11, isGold: member.isGoldVerified == true)
                     }
                     
                     if member.isAdmin {
                         Image(systemName: "crown.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: 7))
                             .foregroundColor(.yellow)
-                    }
-                    
-                    if isMe {
-                        Text("YOU")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundColor(.purple)
-                            .padding(.horizontal, Spacing.xxs)
-                            .padding(.vertical, 1)
-                            .background(Capsule().fill(Color.purple.opacity(0.2)))
                     }
                 }
                 
-                // Progress bar
+                // Inline progress bar
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         Capsule()
-                            .fill(Color.white.opacity(0.1))
-                            .frame(height: 4)
+                            .fill(Color.primary.opacity(0.08))
+                            .frame(height: 3)
                         
                         Capsule()
-                            .fill(
-                                LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
-                            )
-                            .frame(width: geometry.size.width * progress, height: 4)
+                            .fill(accentGradient)
+                            .frame(width: geometry.size.width * progress, height: 3)
                     }
                 }
-                .frame(height: 4)
+                .frame(height: 3)
             }
             
             Spacer()
             
-            // Today's progress (live for current user, DB for others)
-            VStack(alignment: .trailing, spacing: 2) {
+            // Score
+            VStack(alignment: .trailing, spacing: 1) {
                 Text(!isMe && displayProgress == 0 ? "–" : "\(displayProgress)")
-                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                    .foregroundColor(!isMe && displayProgress == 0 ? .white.opacity(0.3) : .white)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(!isMe && displayProgress == 0 ? .secondary.opacity(0.5) : (isMe ? .purple : .primary))
                 
                 if (isMe ? (displayProgress >= dailyTarget && dailyTarget > 0) : (member.targetHitToday ?? false)) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.ds_bodySmall)
+                        .font(.system(size: 10))
                         .foregroundColor(.green)
                 }
             }
         }
-        .padding(Spacing.sm)
+        .padding(.vertical, 6)
+        .padding(.horizontal, Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isMe ? Color.purple.opacity(0.1) : Color.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(isMe ? Color.purple.opacity(0.3) : Color.clear, lineWidth: 1)
-                )
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isMe
+                    ? Color.purple.opacity(colorScheme == .dark ? 0.12 : 0.08)
+                    : Color.clear)
         )
     }
     
@@ -525,46 +650,353 @@ struct PrivateChallengeDetailView: View {
         case 1: return .yellow
         case 2: return Color(white: 0.75)
         case 3: return .orange
-        default: return .white.opacity(0.5)
+        default: return .secondary
         }
     }
     
-    // MARK: - Members Section
+    // MARK: - Chat Preview Section
     
-    private var membersSection: some View {
-        VStack(spacing: 12) {
-            if let leaderboard = detail?.leaderboard, !leaderboard.isEmpty {
-                ForEach(leaderboard) { member in
-                    memberRow(member: member)
+    private var chatPreviewSection: some View {
+        VStack(spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .foregroundStyle(accentGradient)
+                    .font(.title3)
+                Text("Chat")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                if let unread = challenge.unreadCount, unread > 0 {
+                    Text("\(unread) new")
+                        .font(.ds_caption)
+                        .foregroundColor(.purple)
+                }
+                
+                if chatMessages.count > 5 {
+                    Button {
+                        showFullChat = true
+                        HapticManager.selectionChanged()
+                    } label: {
+                        HStack(spacing: Spacing.xxxs) {
+                            Text("View All")
+                                .font(.ds_labelSmall)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .foregroundColor(.purple)
+                    }
+                }
+            }
+            
+            VStack(spacing: Spacing.sm) {
+                if chatMessages.isEmpty {
+                    VStack(spacing: Spacing.xs) {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .font(.ds_heading2)
+                            .foregroundColor(.secondary.opacity(0.3))
+                        Text("No messages yet")
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.secondary)
+                        Text("Start the conversation!")
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary.opacity(0.6))
+                    }
+                    .padding(.vertical, Spacing.lg)
+                } else {
+                    let previewMessages = Array(chatMessages.prefix(5).reversed())
+                    VStack(spacing: Spacing.xs) {
+                        ForEach(Array(previewMessages.enumerated()), id: \.element.id) { index, message in
+                            if shouldShowDateHeader(for: message, in: previewMessages, at: index) {
+                                chatDateHeader(for: message.createdAt ?? Date())
+                            }
+                            chatBubble(message: message)
+                        }
+                    }
+                }
+                
+                chatInputBar
+            }
+            .padding(Spacing.md)
+            .sleekCardSubtle(cornerRadius: 16)
+        }
+    }
+    
+    private var chatInputBar: some View {
+        HStack(spacing: Spacing.xs) {
+            TextField("Message...", text: $chatText)
+                .font(.ds_bodySmall)
+                .foregroundColor(.primary)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
+                .background(
+                    Capsule().fill(Color.primary.opacity(0.06))
+                )
+            
+            Button(action: sendMessage) {
+                if isSendingMessage {
+                    ProgressView()
+                        .tint(.purple)
+                        .frame(width: 32, height: 32)
+                } else {
+                    Image(systemName: "paperplane.fill")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(accentGradient)
+                        .clipShape(Circle())
+                }
+            }
+            .disabled(chatText.trimmingCharacters(in: .whitespaces).isEmpty || isSendingMessage)
+        }
+    }
+    
+    private func sendMessage() {
+        guard !chatText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        let text = chatText
+        chatText = ""
+        isSendingMessage = true
+        Task {
+            let result = await privateChallengeService.sendMessage(
+                challengeId: challenge.challengeId,
+                content: text
+            )
+            
+            if result.isBlocked {
+                showModerationWarning = true
+                HapticManager.notification(.error)
+            } else {
+                chatMessages = await privateChallengeService.fetchMessages(
+                    challengeId: challenge.challengeId
+                )
+            }
+            isSendingMessage = false
+        }
+    }
+    
+    private func chatBubble(message: PrivateChallengeMessage) -> some View {
+        Group {
+            if message.isSystemMessage || message.isMilestoneMessage {
+                HStack {
+                    Spacer()
+                    Text(message.content)
+                        .font(.ds_caption)
+                        .foregroundColor(message.isMilestoneMessage ? .yellow : .secondary)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xxs)
+                        .background(
+                            Capsule().fill(Color.primary.opacity(0.04))
+                        )
+                    Spacer()
+                }
+            } else if message.isCurrentUser {
+                // Current user: bubble on the right, photo on far right
+                HStack(alignment: .bottom, spacing: 6) {
+                    Spacer(minLength: 40)
+                    
+                    Text(message.content)
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(accentGradient)
+                        )
+                    
+                    currentUserPhoto(size: 26)
                 }
             } else {
-                Text("Loading members...")
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.5))
-                    .padding(40)
+                // Other user: photo on far left, bubble on the left
+                HStack(alignment: .bottom, spacing: 6) {
+                    CachedFriendPhoto(
+                        friendId: message.senderId.uuidString,
+                        photoUrl: message.senderPhotoUrl,
+                        name: message.senderDisplayName,
+                        size: 26,
+                        showGradientRing: false,
+                        gradientColors: [.purple, .pink]
+                    )
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(message.senderFirstName)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.purple)
+                        
+                        Text(message.content)
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.primary)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, Spacing.xs)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.primary.opacity(0.06))
+                            )
+                    }
+                    
+                    Spacer(minLength: 40)
+                }
             }
         }
+    }
+    
+    @ViewBuilder
+    private func currentUserPhoto(size: CGFloat) -> some View {
+        if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+            Image(uiImage: cachedImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else {
+            Circle()
+                .fill(accentGradient)
+                .frame(width: size, height: size)
+                .overlay(
+                    Image(systemName: "person.fill")
+                        .font(.system(size: size * 0.45))
+                        .foregroundColor(.white)
+                )
+        }
+    }
+    
+    // MARK: - Chat Date Helpers
+    
+    private func shouldShowDateHeader(for message: PrivateChallengeMessage, in messages: [PrivateChallengeMessage], at index: Int) -> Bool {
+        guard let messageDate = message.createdAt else { return false }
+        if index == 0 { return true }
+        guard let previousDate = messages[index - 1].createdAt else { return true }
+        return !Calendar.current.isDate(messageDate, inSameDayAs: previousDate)
+    }
+    
+    private func chatDateHeader(for date: Date) -> some View {
+        HStack {
+            Spacer()
+            Text(formatChatDate(date))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xxxs)
+                .background(
+                    Capsule().fill(Color.primary.opacity(0.04))
+                )
+            Spacer()
+        }
+        .padding(.vertical, Spacing.xxs)
+    }
+    
+    private func formatChatDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "Today"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE"
+            return formatter.string(from: date)
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d, yyyy"
+            return formatter.string(from: date)
+        }
+    }
+    
+    // MARK: - Action Buttons
+    
+    private var actionButtons: some View {
+        HStack(spacing: Spacing.sm) {
+            Button(action: { showInviteSheet = true }) {
+                HStack(spacing: Spacing.xxs) {
+                    Image(systemName: "person.badge.plus")
+                        .font(.ds_bodySmall)
+                    Text("Invite")
+                        .font(.ds_labelMedium)
+                }
+                .foregroundStyle(accentGradient)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    Capsule().fill(.ultraThinMaterial)
+                )
+                .overlay(
+                    Capsule().stroke(accentGradient, lineWidth: 1.5)
+                )
+            }
+            
+            Button(action: { showShareSheet = true }) {
+                HStack(spacing: Spacing.xxs) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.ds_bodySmall)
+                    Text(challenge.joinCode)
+                        .font(.ds_labelMedium)
+                }
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    Capsule().fill(Color.primary.opacity(0.06))
+                )
+            }
+        }
+    }
+    
+    // MARK: - Members Sheet
+    
+    private var membersSheet: some View {
+        NavigationStack {
+            ZStack {
+                AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                    .ignoresSafeArea()
+                
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: Spacing.sm) {
+                        if let leaderboard = detail?.leaderboard, !leaderboard.isEmpty {
+                            ForEach(leaderboard) { member in
+                                memberRow(member: member)
+                            }
+                        } else {
+                            ProgressView()
+                                .tint(.purple)
+                                .padding(Spacing.xl)
+                        }
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, Spacing.sm)
+                }
+            }
+            .navigationTitle("Members")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { showMembersSheet = false }
+                }
+            }
+        }
+        .presentationDragIndicator(.visible)
     }
     
     private func memberRow(member: PrivateChallengeMember) -> some View {
         let isMe = member.isCurrentUser ?? false
         
-        return HStack(spacing: 14) {
+        return HStack(spacing: Spacing.sm) {
             CachedFriendPhoto(
                 friendId: member.userId.uuidString,
                 photoUrl: member.profilePhotoUrl,
                 name: member.displayName,
-                size: 44,
+                size: 40,
                 showGradientRing: member.isAdmin,
                 gradientColors: member.isAdmin ? [.yellow, .orange] : [.purple, .pink]
             )
             
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Spacing.xxs) {
                     Text(member.displayName)
-                        .font(.subheadline)
+                        .font(.ds_bodyMedium)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     
                     if member.isVerified == true || member.isGoldVerified == true {
                         VerifiedBadge(size: 13, isGold: member.isGoldVerified == true)
@@ -572,25 +1004,24 @@ struct PrivateChallengeDetailView: View {
                     
                     if member.isAdmin {
                         Text("Admin")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                             .foregroundColor(.yellow)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, Spacing.xxs)
+                            .padding(.vertical, 1)
                             .background(Capsule().fill(Color.yellow.opacity(0.15)))
                     }
                 }
                 
-                HStack(spacing: 8) {
-                    Label("\(member.daysCompleted ?? 0)d", systemImage: "flame.fill")
-                    Label("\(member.currentStreak ?? 0)🔥", systemImage: "bolt.fill")
+                HStack(spacing: Spacing.xs) {
+                    Label("\(member.daysCompleted ?? 0) days", systemImage: "flame.fill")
+                    Label("\(member.currentStreak ?? 0) streak", systemImage: "bolt.fill")
                 }
-                .font(.caption2)
-                .foregroundColor(.white.opacity(0.5))
+                .font(.ds_caption)
+                .foregroundColor(.secondary)
             }
             
             Spacer()
             
-            // Admin actions
             if challenge.isAdmin && !isMe {
                 Menu {
                     if member.isAdmin {
@@ -632,202 +1063,55 @@ struct PrivateChallengeDetailView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.ds_labelLarge)
-                        .foregroundColor(.white.opacity(0.5))
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.secondary)
                         .frame(width: 32, height: 32)
                 }
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
+        .padding(Spacing.sm)
+        .sleekCardSubtle(cornerRadius: 14)
     }
     
-    // MARK: - Chat Section (Preview — full chat in future)
+    // MARK: - Full Chat Sheet
     
-    @State private var chatMessages: [PrivateChallengeMessage] = []
-    @State private var chatText = ""
-    @State private var isSendingMessage = false
-    
-    private var chatSection: some View {
-        VStack(spacing: 12) {
-            // Messages
-            if chatMessages.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.ds_heading1)
-                        .foregroundColor(.white.opacity(0.3))
-                    Text("No messages yet")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.5))
-                    Text("Be the first to say something!")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.3))
-                }
-                .padding(.vertical, 40)
-            } else {
-                // Show messages in reverse-chronological (newest at bottom)
-                ForEach(chatMessages.reversed()) { message in
-                    chatBubble(message: message)
-                }
-            }
-            
-            // Input bar
-            HStack(spacing: 10) {
-                TextField("Message...", text: $chatText)
-                    .font(.body)
-                    .foregroundColor(.white)
-                    .padding(Spacing.sm)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(20)
+    private var fullChatSheet: some View {
+        NavigationStack {
+            ZStack {
+                AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                    .ignoresSafeArea()
                 
-                Button(action: {
-                    guard !chatText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                    let text = chatText
-                    chatText = ""
-                    isSendingMessage = true
-                    Task {
-                        let _ = await privateChallengeService.sendMessage(
-                            challengeId: challenge.challengeId,
-                            content: text
-                        )
-                        chatMessages = await privateChallengeService.fetchMessages(
-                            challengeId: challenge.challengeId
-                        )
-                        isSendingMessage = false
-                    }
-                }) {
-                    if isSendingMessage {
-                        ProgressView()
-                            .tint(.purple)
-                            .frame(width: 36, height: 36)
-                    } else {
-                        Image(systemName: "paperplane.fill")
-                            .font(.ds_labelLarge)
-                            .foregroundColor(.white)
-                            .frame(width: 36, height: 36)
-                            .background(
-                                LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .clipShape(Circle())
-                    }
-                }
-                .disabled(chatText.trimmingCharacters(in: .whitespaces).isEmpty || isSendingMessage)
-            }
-        }
-        .task {
-            chatMessages = await privateChallengeService.fetchMessages(challengeId: challenge.challengeId)
-        }
-    }
-    
-    private func chatBubble(message: PrivateChallengeMessage) -> some View {
-        Group {
-            if message.isSystemMessage || message.isMilestoneMessage {
-                // System / milestone message (centered)
-                HStack {
-                    Spacer()
-                    Text(message.content)
-                        .font(.caption)
-                        .foregroundColor(message.isMilestoneMessage ? .yellow : .white.opacity(0.5))
-                        .padding(.horizontal, Spacing.sm)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule().fill(Color.white.opacity(0.06))
-                        )
-                    Spacer()
-                }
-            } else {
-                // User message
-                HStack(alignment: .top, spacing: 8) {
-                    if !message.isCurrentUser {
-                        CachedFriendPhoto(
-                            friendId: message.senderId.uuidString,
-                            photoUrl: message.senderPhotoUrl,
-                            name: message.senderDisplayName,
-                            size: 28,
-                            showGradientRing: false,
-                            gradientColors: [.purple, .pink]
-                        )
-                    }
-                    
-                    VStack(alignment: message.isCurrentUser ? .trailing : .leading, spacing: 2) {
-                        if !message.isCurrentUser {
-                            Text(message.senderFirstName)
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.purple)
+                VStack(spacing: 0) {
+                    ScrollView(showsIndicators: false) {
+                        let allMessages = chatMessages.reversed() as [PrivateChallengeMessage]
+                        LazyVStack(spacing: Spacing.xs) {
+                            ForEach(Array(allMessages.enumerated()), id: \.element.id) { index, message in
+                                if shouldShowDateHeader(for: message, in: Array(allMessages), at: index) {
+                                    chatDateHeader(for: message.createdAt ?? Date())
+                                }
+                                chatBubble(message: message)
+                            }
                         }
-                        
-                        Text(message.content)
-                            .font(.subheadline)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, Spacing.sm)
-                            .padding(.vertical, Spacing.xs)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(message.isCurrentUser
-                                        ? LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                        : LinearGradient(colors: [Color.white.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    )
-                            )
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.top, Spacing.sm)
+                        .padding(.bottom, Spacing.xs)
                     }
                     
-                    if message.isCurrentUser { Spacer() } else { Spacer() }
+                    // Sticky input bar
+                    chatInputBar
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.xs)
+                        .background(.ultraThinMaterial)
                 }
-                .frame(maxWidth: .infinity, alignment: message.isCurrentUser ? .trailing : .leading)
+            }
+            .navigationTitle("Chat")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { showFullChat = false }
+                }
             }
         }
-    }
-    
-    // MARK: - Action Buttons
-    
-    private var actionButtons: some View {
-        VStack(spacing: 12) {
-            // Invite friends button
-            Button(action: { showInviteSheet = true }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "person.badge.plus")
-                        .font(.ds_labelLarge)
-                    Text("Invite Friends")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                }
-                .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.md)
-                .background(
-                    Capsule().fill(.ultraThinMaterial)
-                )
-                .overlay(
-                    Capsule().stroke(
-                        LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing),
-                        lineWidth: 2
-                    )
-                )
-            }
-            
-            // Share join code
-            Button(action: { showShareSheet = true }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.ds_bodySmall)
-                    Text("Share Code: \(challenge.joinCode)")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                }
-                .foregroundColor(.white.opacity(0.7))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.sm)
-                .background(
-                    Capsule().fill(Color.white.opacity(0.08))
-                )
-            }
-        }
+        .presentationDragIndicator(.visible)
     }
 }

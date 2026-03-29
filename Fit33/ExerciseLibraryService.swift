@@ -118,6 +118,13 @@ class ExerciseLibraryService: ObservableObject {
     func getExercise(byName name: String) -> Exercise? {
         // Build cache if needed (with lowercase keys for case-insensitive matching)
         if cachedExercisesByName == nil || !isCacheValid {
+            if isPreWarming {
+                // preWarmCache() is building the cache on a background thread —
+                // return nil instead of blocking the main thread with a synchronous
+                // viewContext.fetch of 5500+ exercises. The view will re-render
+                // when isExercisesReady publishes after the cache is ready.
+                return nil
+            }
             #if DEBUG
             AppLogger.debug("📦 [ExerciseLibrary] Cache miss for '\(name)' - rebuilding...", category: .data)
             #endif
@@ -157,6 +164,9 @@ class ExerciseLibraryService: ObservableObject {
     /// Get exercise by its Supabase UUID — O(1) lookup using cached dictionary
     func getExercise(byId id: UUID) -> Exercise? {
         if cachedExercisesById == nil {
+            if isPreWarming {
+                return nil
+            }
             let allExercises = getAllExercises()
             cachedExercisesById = Dictionary(
                 allExercises.compactMap { exercise -> (UUID, Exercise)? in

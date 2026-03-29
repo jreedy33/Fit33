@@ -22,9 +22,9 @@ struct HealthyRecipesCarousel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Section Header (OUTSIDE the card - matches other sections)
-            HStack {
+            HStack(spacing: 10) {
                 Image(systemName: "fork.knife.circle.fill")
-                    .font(.ds_heading2)
+                    .font(.title3)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.orange, .red],
@@ -34,9 +34,8 @@ struct HealthyRecipesCarousel: View {
                     )
                 
                 Text(isPersonalized ? "Recommended for You" : "Healthy Recipes")
-                    .font(.headline)
+                    .font(.title3)
                     .fontWeight(.bold)
-                    .foregroundColor(.primary)
                 
                 Spacer()
                 

@@ -31,14 +31,7 @@ struct ExerciseReplacementView: View {
             }
             .navigationTitle("Replace Exercise")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(
-                LinearGradient(
-                    gradient: Gradient(colors: [Color.green.opacity(0.1), Color.blue.opacity(0.05)]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ), for: .navigationBar
-            )
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .adaptiveToolbarBackground()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {

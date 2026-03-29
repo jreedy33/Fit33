@@ -35,6 +35,10 @@ enum Secrets {
     static let whoopClientId = "<WHOOP_CLIENT_ID>"
     static let whoopClientSecret = "<WHOOP_CLIENT_SECRET>"
     
+    // MARK: - Oura OAuth
+    static let ouraClientId = "<OURA_CLIENT_ID>"
+    static let ouraClientSecret = "<OURA_CLIENT_SECRET>"
+    
     // MARK: - InBody OAuth
     static let inbodyClientId = "<INBODY_CLIENT_ID>"
     static let inbodyClientSecret = "<INBODY_CLIENT_SECRET>"

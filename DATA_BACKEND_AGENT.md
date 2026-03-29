@@ -317,6 +317,15 @@ USDA API → Edge Function extracts nutrientNumber → `food_items` flat columns
 
 **Key file**: `SupabaseManager.swift` (signUp method + new ensureProfileExists)
 
+### 2026-03-27: Email/Password Signup — Early Account Creation
+
+**Change**: `signUp()` is now called in `handleAuth()` immediately after password confirmation, before the user navigates through onboarding steps. Previously, it was called in `createMinimalAccountForEmailPasswordSignup()` after phone verification (~10 steps later). The `@State password` was being lost during the journey.
+
+**Impact on data layer**: 
+- `signUp()` creates auth user + profile row via `create_user_profile` RPC (same as before, just earlier)
+- Phone verification now calls `createMinimalProfileForContactMatching()` (upsert with phone_number) or short-circuits via the new auth guard in `createMinimalAccountForEmailPasswordSignup()`
+- No schema changes required
+
 ### 2026-03-24: Security Fix — RLS + SECURITY DEFINER Views
 
 **Migration**: `supabase/20260324_security_fixes.sql`
@@ -496,6 +505,64 @@ Never use `user.id?.uuidString ?? ""` or `user.id ?? UUID()` as fallbacks for us
 
 **Data flow**: `WhoopService.shared` → `HealthDataService.syncWhoopData()` → upserts to `whoop_recovery_data`, `sleep_logs` (source: "whoop"), `cardio_workouts` (source: "whoop"), `daily_activity_summary` (source merge). All writes are auth-guarded.
 
+**WHOOP API URL fix (March 27 2026)**: `AppConfig.Whoop.apiBaseUrl` was `https://api.prod.whoop.com/developer` — the `/developer` prefix is for documentation (OpenAPI spec), not API calls. Changed to `https://api.prod.whoop.com`. All v2 endpoint paths (`/v2/recovery`, `/v2/cycle`, `/v2/activity/sleep`, etc.) are correct per official WHOOP docs. `WhoopTokenResponse.expiresIn` changed from `Int` to `Int?` with 3600s default — the WHOOP token response sometimes omits this field.
+
 **Migration**: `supabase/20260327_whoop_integration.sql`
 
 **Key files**: `WhoopService.swift` (API client + DTOs), `HealthDataService.swift` (sync pipeline), `WhoopSettingsView.swift` (settings UI), `DashboardWhoopWidget.swift` (dashboard widget).
+
+### 2026-03-28: Oura Ring Integration
+
+**New table**: `oura_readiness_data` — daily readiness score, activity score, sleep score, HRV balance, RHR, temperature deviation, SpO2, steps, calories, stress/recovery minutes. Keyed by `(user_id, date)`. RLS enabled. FK to `user_profiles` with CASCADE delete.
+
+**Enhanced table**: `user_profiles` gained `is_oura_connected BOOLEAN DEFAULT false`.
+
+**Data flow**: `OuraService.shared` → `HealthDataService.syncOuraData()` → upserts to `oura_readiness_data`, `sleep_logs` (source: "oura"), `cardio_workouts` (source: "oura"). Sleep durations from Oura are in seconds (not milliseconds like WHOOP) — `syncOuraData()` multiplies by 1000 for `sleep_logs` milli columns.
+
+**Oura API V2**: Base URL `https://api.ouraring.com`. Auth URL `https://cloud.ouraring.com/oauth/authorize`. Token URL `https://api.ouraring.com/oauth/token`. Scopes: `email personal daily heartrate workout spo2`. Rate limit: 5000 req/5min. Paginated responses use `{"data": [...], "next_token": "..."}` (differs from WHOOP's `{"records": [...]}`). Date params use `start_date`/`end_date` (YYYY-MM-DD format), not ISO8601 `start` param.
+
+**Migration**: `supabase/20260328_oura_integration.sql`
+
+**Key files**: `OuraService.swift` (API client + DTOs), `HealthDataService.swift` (sync pipeline), `OuraSettingsView.swift` (settings UI), `DashboardOuraWidget.swift` (dashboard widget).
+
+### 2026-03-28: Weight UUID Type Fix
+
+**Bug**: `WeightTrackingService.logWeight()` used `WeightLogInsert` with `user_id: String` = `userId.uuidString`. The `weight_logs.user_id` column is `uuid` type. PostgreSQL rejected with `operator does not exist: uuid = text`. Fixed: `user_id` field changed to `UUID`, all `.eq()` calls pass `UUID` directly instead of `.uuidString`.
+
+**Rule — Supabase Swift client UUID handling**: When inserting or querying against PostgreSQL `uuid` columns, ALWAYS pass Swift `UUID` directly — never `uuidString`. The Supabase Swift client's `Encodable` conformance serializes `UUID` correctly. Passing a `String` to a `uuid` column causes a type mismatch. This applies to both `.insert()` struct fields and `.eq()` filter values.
+
+### 2026-03-28: Content Moderation System
+
+**New table**: `content_moderation_log` — stores all flagged content attempts (blocked + hidden). No user RLS — admin-only via service role.
+
+**Schema changes**: `is_hidden BOOLEAN DEFAULT FALSE` added to `private_challenge_chat`, `challenge_reactions`, `shared_workouts`, `group_challenges`, `private_challenges`, `community_challenges`, `friend_activity_feed`. Partial indexes on `is_hidden = TRUE`.
+
+**Updated RPCs**: `get_private_challenge_messages` now filters `AND NOT pcc.is_hidden`. `send_private_challenge_message` now has rate limiting (50/hour, 1/2sec burst) and suspension check.
+
+**Admin RPCs**: `get_flagged_content(status, limit, offset)`, `review_flagged_content(log_id, action, notes)`, `get_moderation_stats()` — all `service_role` only.
+
+**Edge Function**: `supabase/functions/moderate-content/index.ts` — two modes: `precheck` (returns flagged/categories) and webhook (updates `is_hidden`). Requires `OPENAI_API_KEY` secret.
+
+**iOS service**: `ContentModerationService.swift` — singleton, calls Edge Function for pre-check. `PrivateChallengeService.sendMessage` now returns `SendMessageResult` enum (`.sent`/`.blocked`/`.error`).
+
+### Private Challenge Cover Photos (2026-03-28)
+
+**Schema**: `cover_image_url TEXT` column added to `private_challenges`. Migration: `supabase/20260328_private_challenge_photos.sql`.
+
+**Storage bucket**: `private-challenge-photos` (public reads, write-RLS to challenge admin). Path: `{challenge_id}/cover.jpg`. Same URL-gated security model as `avatars` bucket — URL is only surfaced through membership-verified RPCs.
+
+**RPC**: `set_private_challenge_cover_image(p_challenge_id, p_cover_image_url)` — SECURITY DEFINER, verifies `created_by = auth.uid()`. Updated RPCs: `get_my_private_challenges`, `get_private_challenge_detail`, `lookup_private_challenge_by_code` now return `cover_image_url`.
+
+**REVERTED (2026-03-29)**: Cover photo feature removed entirely due to 15 RLS crashes in v1.37. The `coverImageUrl` field remains in Swift DTOs (nullable, server returns null). SQL migration `20260328_private_challenge_photos.sql` deleted. RPCs no longer return `cover_image_url`. `set_private_challenge_cover_image` RPC and `private-challenge-photos` storage bucket were never deployed.
+
+### 2026-03-29: SQL `#variable_conflict` Rule for RETURNS TABLE Functions
+
+**Rule**: Any PL/pgSQL function with `RETURNS TABLE (column_name TYPE, ...)` where output column names match table column names (e.g., `challenge_id`, `user_id`) MUST include `#variable_conflict use_column` after the `DECLARE` block. Without it, PostgreSQL raises error 42702 "column reference 'X' is ambiguous" because RETURNS TABLE output parameters are PL/pgSQL variables that shadow table columns. The directive tells Postgres to prefer column names over variables. Migration: `20260329_fix_challenge_id_ambiguity.sql`.
+
+### 2026-03-29: WeightGoalUpsert UUID Type Fix
+
+**Rule reinforced**: `WeightTrackingService.setWeightGoal()` had `WeightGoalUpsert.user_id: String` set to `userId.uuidString`. Same bug pattern as the `logWeight()` fix. Changed to `UUID` type. All Supabase insert/upsert structs for `uuid` columns MUST use Swift `UUID` type, never `String`.
+
+### Oura Integration Column — Migration Required (2026-03-28)
+
+**Migration**: `supabase/20260328_oura_integration.sql` adds `is_oura_connected BOOLEAN DEFAULT false` to `user_profiles` and creates `oura_readiness_data` table. Until applied, the `syncAllIntegrationStatuses()` Oura update silently fails (logged at `.debug`). Core integrations (strava/fitbit/apple_health/inbody/whoop) sync independently in a single batch — Oura is attempted separately so a missing column doesn't block the others.

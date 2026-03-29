@@ -106,6 +106,14 @@ class FriendRankingService: ObservableObject {
         isLoading = false
     }
     
+    // MARK: - Block Filtering
+    
+    func removeBlockedUser(_ userId: UUID) {
+        rankedFriends.removeAll { $0.friendId == userId }
+        topFriends.removeAll { $0.friendId == userId }
+        cacheRankedFriends()
+    }
+    
     // MARK: - Fetch Top Friends (Quick)
     
     /// Fetches just the top N friends for quick suggestions (sharing, challenges)

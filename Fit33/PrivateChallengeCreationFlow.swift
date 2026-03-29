@@ -177,7 +177,7 @@ struct PrivateChallengeCreationFlow: View {
             case .activityType: return selectedActivity != nil
             case .goalSetting: return selectedOption != nil
             case .settings: return true
-            case .inviteFriends: return true // Can skip inviting
+            case .inviteFriends: return true
             case .review: return true
             }
         }()
@@ -460,7 +460,8 @@ struct PrivateChallengeCreationFlow: View {
         }
     }
     
-    // MARK: - Step 4: Admin Settings
+    
+    // MARK: - Step 5: Admin Settings
     
     private var settingsCard: some View {
         VStack(spacing: 24) {
@@ -795,7 +796,7 @@ struct PrivateChallengeCreationFlow: View {
             
             // Challenge preview card
             VStack(spacing: 16) {
-                // Emoji + title
+                // Challenge icon + title
                 VStack(spacing: 8) {
                     Text(selectedEmoji)
                         .font(.system(size: 48))
@@ -1073,3 +1074,4 @@ struct PrivateChallengeCreationFlow: View {
         }
     }
 }
+

@@ -7,14 +7,13 @@ struct StepTrackerCard: View {
     @ObservedObject var healthKitManager = HealthKitManager.shared
     @State private var showingDetailView = false
     @State private var isAnimating = false
-    @State private var isRefreshing = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             // Section header (matches Recent Activity / Your Progress style)
-            HStack {
+            HStack(spacing: 10) {
                 Image(systemName: "figure.walk")
                     .foregroundStyle(
                         LinearGradient(colors: [.green, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -31,6 +30,17 @@ struct StepTrackerCard: View {
                         .font(.title3)
                         .foregroundColor(.green)
                         .scaleEffect(isAnimating ? 1.15 : 1.0)
+                }
+                
+                if healthKitManager.isAuthorized {
+                    HStack(spacing: 4) {
+                        Text("View Details")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.blue)
                 }
             }
             
@@ -80,70 +90,42 @@ struct StepTrackerCard: View {
                             }
                             .padding(.vertical, 20)
                         } else {
-                            ZStack(alignment: .topTrailing) {
-                                // Step count with circular progress
-                                ZStack {
-                                    Circle()
-                                        .stroke(Color.gray.opacity(0.15), lineWidth: 12)
-                                        .frame(width: 140, height: 140)
-                                    
-                                    Circle()
-                                        .trim(from: 0, to: healthKitManager.progressPercentage())
-                                        .stroke(
-                                            LinearGradient(
-                                                colors: [.green, .cyan, .blue],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            ),
-                                            style: StrokeStyle(lineWidth: 12, lineCap: .round)
-                                        )
-                                        .frame(width: 140, height: 140)
-                                        .rotationEffect(.degrees(-90))
-                                        .animation(.spring(response: 0.6, dampingFraction: 0.7), value: healthKitManager.todaySteps)
-                                    
-                                    VStack(spacing: 4) {
-                                        Text(healthKitManager.formattedSteps(healthKitManager.todaySteps))
-                                            .font(.system(size: 32, weight: .bold, design: .rounded))
-                                            .foregroundColor(.primary)
-                                            .contentTransition(.numericText())
-                                        
-                                        Text("steps")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, Spacing.xs)
+                            // Step count with circular progress
+                            ZStack {
+                                Circle()
+                                    .stroke(Color.gray.opacity(0.15), lineWidth: 12)
+                                    .frame(width: 140, height: 140)
                                 
-                                // Refresh button inside the card
-                                Button(action: {
-                                    Task {
-                                        await refreshSteps()
-                                    }
-                                }) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(Color(.systemGray6))
-                                            .frame(width: 36, height: 36)
-                                        
-                                        if isRefreshing {
-                                            ProgressView()
-                                                .scaleEffect(0.7)
-                                        } else {
-                                            Image(systemName: "arrow.clockwise")
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.blue)
-                                        }
-                                    }
+                                Circle()
+                                    .trim(from: 0, to: healthKitManager.progressPercentage())
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [.green, .cyan, .blue],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
+                                    )
+                                    .frame(width: 140, height: 140)
+                                    .rotationEffect(.degrees(-90))
+                                    .animation(.spring(response: 0.6, dampingFraction: 0.7), value: healthKitManager.todaySteps)
+                                
+                                VStack(spacing: 4) {
+                                    Text(healthKitManager.formattedSteps(healthKitManager.todaySteps))
+                                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                                        .foregroundColor(.primary)
+                                        .contentTransition(.numericText())
+                                    
+                                    Text("steps")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
-                                .accessibilityLabel("Refresh steps")
-                                .accessibilityHint("Fetches the latest step count from HealthKit")
-                                .padding(.trailing, 4)
-                                .padding(.top, 4)
                             }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.xs)
                             
                             // Goal info - floating stats
-                            HStack(spacing: 16) {
+                            HStack(spacing: 12) {
                                 VStack(spacing: 4) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "target")
@@ -157,6 +139,24 @@ struct StepTrackerCard: View {
                                     }
                                     
                                     Text("to goal")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                
+                                VStack(spacing: 4) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "calendar")
+                                            .font(.caption)
+                                            .foregroundColor(.orange)
+                                        
+                                        Text("\(healthKitManager.formattedSteps(healthKitManager.monthlyAverage))")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.primary)
+                                    }
+                                    
+                                    Text("month avg")
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
                                 }
@@ -186,42 +186,6 @@ struct StepTrackerCard: View {
                     .padding(.vertical, Spacing.sm)
                     .padding(.horizontal, Spacing.xs)
                     
-                    // Quick stats footer
-                    if healthKitManager.isAuthorized {
-                        HStack(spacing: 16) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "calendar")
-                                    .font(.caption2)
-                                    .foregroundColor(.orange)
-                                
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text("\(healthKitManager.formattedSteps(healthKitManager.monthlyAverage))")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.primary)
-                                    
-                                    Text("monthly avg")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            
-                            Spacer()
-                            
-                            HStack(spacing: 4) {
-                                Text("View Details")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                
-                                Image(systemName: "chevron.right")
-                                    .font(.caption2)
-                            }
-                            .foregroundColor(.blue)
-                        }
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, Spacing.sm)
-                        .background(Color(.systemGray6))
-                    }
                 }
             }
             .buttonStyle(PlainButtonStyle())
@@ -308,13 +272,9 @@ struct StepTrackerCard: View {
     }
     
     private func refreshSteps() async {
-        guard !isRefreshing else { return }
-        withAnimation { isRefreshing = true }
         await healthKitManager.fetchTodaySteps()
         await healthKitManager.fetchWeeklySteps()
         await healthKitManager.fetchMonthlyAverage()
-        try? await Task.sleep(for: .milliseconds(300))
-        withAnimation { isRefreshing = false }
     }
 }
 

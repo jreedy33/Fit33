@@ -5,15 +5,153 @@ struct DashboardChallengesWrapper: View {
     @EnvironmentObject var userManager: UserManager
     @Environment(\.colorScheme) var colorScheme
     @State private var selectedWidgetPage: Int = 0
+    @State private var bottomRowPage: Int = 0
     @State private var challengeGlowPhase: CGFloat = 0
     @State private var challengeToCancel: UUID?
     @AppStorage("showChallengeWidget") private var showChallengeWidget = true
     @Binding var showingChallengeCreation: Bool
     var reducedGlow: Bool = false
+    var stackedMode: Bool = false
     
     // MARK: - Body
     
     var body: some View {
+        if stackedMode {
+            stackedChallengesBody
+        } else {
+            singleCarouselBody
+        }
+    }
+    
+    // MARK: - Stacked Mode (two independent carousels, sorted by type)
+    
+    @ViewBuilder
+    private var stackedChallengesBody: some View {
+        let activeIds = Set(challengeService.activeChallenges.map { $0.id })
+        let activeChallenges = Array(challengeService.activeChallenges.prefix(8))
+        let groupChallenges = challengeService.activeGroupChallenges.filter { $0.iHaveAccepted }
+        let activeCount = activeChallenges.count + groupChallenges.count
+        
+        let remainingSlots = max(0, 8 - activeCount)
+        var seenPendingIds = Set<UUID>()
+        let pendingSent = challengeService.pendingSentChallenges
+            .filter { pending in
+                guard !pending.title.isEmpty && pending.durationDays > 0 else { return false }
+                guard !activeIds.contains(pending.challengeId) else { return false }
+                guard !seenPendingIds.contains(pending.challengeId) else { return false }
+                seenPendingIds.insert(pending.challengeId)
+                return true
+            }
+            .prefix(remainingSlots)
+        let pendingArray = Array(pendingSent)
+        
+        let allItems: [StackedChallengeItem] = (
+            activeChallenges.map { StackedChallengeItem.active($0) } +
+            groupChallenges.map { .group($0) } +
+            pendingArray.map { .pending($0) }
+        ).sorted { $0.typeKey < $1.typeKey }
+        
+        if allItems.isEmpty {
+            getStartedChallengeWidget
+        } else if allItems.count == 1 {
+            stackedRowCarousel(items: allItems, page: $selectedWidgetPage)
+        } else {
+            let midpoint = (allItems.count + 1) / 2
+            let topItems = Array(allItems.prefix(midpoint))
+            let bottomItems = Array(allItems.suffix(from: midpoint))
+            
+            VStack(spacing: 10) {
+                stackedRowCarousel(items: topItems, page: $selectedWidgetPage)
+                stackedRowCarousel(items: bottomItems, page: $bottomRowPage)
+            }
+            .onChange(of: challengeService.activeChallenges.count) { _, _ in
+                selectedWidgetPage = 0
+                bottomRowPage = 0
+            }
+            .onChange(of: challengeService.activeGroupChallenges.count) { _, _ in
+                selectedWidgetPage = 0
+                bottomRowPage = 0
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func stackedRowCarousel(items: [StackedChallengeItem], page: Binding<Int>) -> some View {
+        let count = items.count
+        let safePage = count > 0 ? min(max(0, page.wrappedValue), count - 1) : 0
+        
+        if count > 1 {
+            VStack(spacing: 4) {
+                GeometryReader { geometry in
+                    let cardWidth = geometry.size.width
+                    let spacing: CGFloat = 16
+                    
+                    HStack(spacing: spacing) {
+                        ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                            stackedItemView(item)
+                                .frame(width: cardWidth)
+                                .opacity(safePage == index ? 1 : 0)
+                        }
+                    }
+                    .offset(x: -CGFloat(safePage) * (cardWidth + spacing))
+                }
+                .frame(height: 156)
+                .animation(.easeOut(duration: 0.2), value: safePage)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 25)
+                        .onEnded { value in
+                            let h = value.translation.width
+                            let v = abs(value.translation.height)
+                            if abs(h) > v * 1.5 && abs(h) > 20 {
+                                HapticManager.impact(.medium)
+                                if h < 0 && page.wrappedValue < count - 1 {
+                                    page.wrappedValue += 1
+                                } else if h > 0 && page.wrappedValue > 0 {
+                                    page.wrappedValue -= 1
+                                }
+                            }
+                        }
+                )
+                
+                HStack(spacing: 6) {
+                    ForEach(0..<count, id: \.self) { index in
+                        Capsule()
+                            .fill(safePage == index ? Color.orange : Color.gray.opacity(0.3))
+                            .frame(width: safePage == index ? 20 : 8, height: 6)
+                            .animation(.easeOut(duration: 0.2), value: safePage)
+                            .onTapGesture {
+                                HapticManager.impact(.light)
+                                page.wrappedValue = index
+                            }
+                    }
+                }
+                .padding(.vertical, Spacing.xxs)
+            }
+        } else if let item = items.first {
+            stackedItemView(item)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 25)
+                        .onEnded { _ in }
+                )
+        }
+    }
+    
+    @ViewBuilder
+    private func stackedItemView(_ item: StackedChallengeItem) -> some View {
+        switch item {
+        case .active(let c):
+            activeChallengeDetailWidget(challenge: c)
+        case .group(let g):
+            groupChallengeWidget(challenge: g)
+        case .pending(let p):
+            pendingSentChallengeWidget(challenge: p)
+        }
+    }
+    
+    // MARK: - Single Carousel Mode (original)
+    
+    @ViewBuilder
+    private var singleCarouselBody: some View {
         // PRIORITY ORDER:
         // 1. Active challenges ALWAYS show first (up to 3)
         // 2. Pending sent challenges fill remaining slots (up to 3 total cards max)
@@ -54,7 +192,7 @@ struct DashboardChallengesWrapper: View {
         // Clamp the page to valid range - this ensures we always show SOMETHING
         let safePageIndex = totalWidgetCount > 0 ? min(max(0, selectedWidgetPage), totalWidgetCount - 1) : 0
         
-        return Group {
+        Group {
             if totalWidgetCount > 0 {
                 VStack(spacing: 4) {
                     if totalWidgetCount > 1 {
@@ -143,11 +281,17 @@ struct DashboardChallengesWrapper: View {
                         }
                         .padding(.vertical, Spacing.xxs)
                     } else if let activeChallenge = activeChallenges.first {
-                        // Single active 1v1 challenge (no swiping needed)
                         activeChallengeDetailWidget(challenge: activeChallenge)
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 25)
+                                    .onEnded { _ in }
+                            )
                     } else if let groupChallenge = groupChallenges.first {
-                        // Single group challenge (pending or active)
                         groupChallengeWidget(challenge: groupChallenge)
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 25)
+                                    .onEnded { _ in }
+                            )
                     } else if let firstPending = pendingArray.first {
                         // Single pending (show with default widget as carousel)
                         // When single pending exists, show it + default widget
@@ -1361,4 +1505,20 @@ struct DashboardChallengesWrapper: View {
         )
     }
     
+}
+
+// MARK: - Stacked Challenge Item
+
+private enum StackedChallengeItem {
+    case active(ActiveChallenge)
+    case group(ActiveGroupChallenge)
+    case pending(PendingSentChallenge)
+    
+    var typeKey: String {
+        switch self {
+        case .active(let c): return c.resolvedType.rawValue
+        case .group(let c): return c.resolvedType.rawValue
+        case .pending(let c): return c.resolvedType.rawValue
+        }
+    }
 }

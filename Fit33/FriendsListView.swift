@@ -28,6 +28,7 @@ struct FriendsListView: View {
     @State private var showingMyQRCode = false // My QR code sheet
     @State private var topFriendsPage = 0 // 0: Most engaged, 1: Newest added
     @State private var friendSwipeDragOffset: CGFloat = 0
+    @State private var friendFilterText = ""
     
     // Adaptive colors
     
@@ -40,9 +41,9 @@ struct FriendsListView: View {
             VStack(spacing: 0) {
                 // Tab Selector
                 tabSelector
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, Spacing.xs)
+                    .padding(.bottom, Spacing.sm)
                 
                 // Content based on selected tab
                 Group {
@@ -57,40 +58,14 @@ struct FriendsListView: View {
                         friendsListContent
                     }
                 }
-                .animation(.easeOut(duration: 0.2), value: selectedTab)
+                .transaction { $0.animation = nil }
             }
         }
         .navigationTitle("Friends")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                // Received Workouts Badge Button
-                Button(action: { showingReceivedWorkouts = true }) {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "tray.full.fill")
-                            .font(.ds_heading3)
-                            .foregroundColor(.blue)
-                        
-                        if friendService.unreadWorkoutCount > 0 {
-                            Text("\(friendService.unreadWorkoutCount)")
-                                .font(.ds_caption)
-                                .foregroundColor(.white)
-                                .padding(Spacing.xxs)
-                                .background(Circle().fill(Color.red))
-                                .offset(x: 8, y: -8)
-                        }
-                    }
-                }
-            }
-        }
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $showingFriendProfile) { profileUser in
             NavigationStack {
                 FriendProfileView(user: profileUser)
-            }
-        }
-        .sheet(isPresented: $showingReceivedWorkouts) {
-            NavigationStack {
-                ReceivedWorkoutsView()
             }
         }
         .sheet(isPresented: $showingMyQRCode) {
@@ -120,20 +95,20 @@ struct FriendsListView: View {
             guard !hasLoadedInitialData else { return }
             hasLoadedInitialData = true
             
-            // ⚡️ INSTANT LOAD: Use already-cached friends data (loaded at app startup)
-            // Only do background refresh if data is empty or stale
+            // Always fetch sent requests so Search tab shows correct pending state
+            Task {
+                await friendService.fetchSentRequests()
+            }
+            
             if !friendService.friends.isEmpty {
                 AppLogger.debug("👥 [FRIENDS] Using cached friends data (\(friendService.friends.count) friends) - instant display!", category: .social)
-                // Preload photos in background for fast display
                 preloadFriendPhotos()
                 
-                // Background refresh for freshness (non-blocking, low priority)
                 Task(priority: .low) {
                     await rankingService.fetchRankedFriends()
                     await rankingService.fetchFriendsFromContacts()
                 }
             } else {
-                // No cached data - need to fetch
                 AppLogger.debug("👥 [FRIENDS] No cached data, fetching from server...", category: .social)
                 Task {
                     await friendService.loadAllData()
@@ -155,10 +130,15 @@ struct FriendsListView: View {
                     await rankingService.fetchFriendsFromContacts()
                 }
             }
-            // Load contact suggestions when switching to Search tab (tab 2)
-            if newTab == 2 && contactsService.canAccessContacts && !contactsService.hasCheckedContacts {
+            // Load contact suggestions + refresh sent requests when switching to Search tab (tab 2)
+            if newTab == 2 {
                 Task {
-                    await contactsService.fetchContactsAndFindFriends()
+                    await friendService.fetchSentRequests()
+                }
+                if contactsService.canAccessContacts && !contactsService.hasCheckedContacts {
+                    Task {
+                        await contactsService.fetchContactsAndFindFriends()
+                    }
                 }
             }
         }
@@ -190,53 +170,46 @@ struct FriendsListView: View {
     // MARK: - Tab Selector
     
     private var tabSelector: some View {
-        HStack(spacing: 0) {
-            ForEach(["Friends", "Requests", "Search"], id: \.self) { tab in
-                let index = ["Friends", "Requests", "Search"].firstIndex(of: tab) ?? 0
+        HStack(spacing: Spacing.xxs) {
+            ForEach(Array(["Friends", "Requests", "Search"].enumerated()), id: \.offset) { index, tab in
                 let isSelected = selectedTab == index
                 let badgeCount = index == 1 ? friendService.pendingRequests.count : 0
                 
                 Button(action: {
                     AppLogger.debug("🔴 [TAB] Tapped \(tab) tab (index: \(index))", category: .social)
                     HapticManager.selectionChanged()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         selectedTab = index
                     }
                 }) {
-                    VStack(spacing: 6) {
-                        HStack(spacing: 4) {
-                            Text(tab)
-                                .font(.subheadline)
-                                .fontWeight(isSelected ? .bold : .medium)
-                            
-                            if badgeCount > 0 {
-                                Text("\(badgeCount)")
-                                    .font(.ds_caption)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Capsule().fill(Color.red))
-                            }
-                        }
-                        .foregroundColor(isSelected ? .primary : .secondary)
+                    HStack(spacing: Spacing.xxs) {
+                        Text(tab)
+                            .font(.ds_labelMedium)
                         
-                        // Underline indicator
-                        Rectangle()
-                            .fill(isSelected ? Color.blue : Color.clear)
-                            .frame(height: 3)
-                            .cornerRadius(1.5)
+                        if badgeCount > 0 {
+                            Text("\(badgeCount)")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .frame(minWidth: 16, minHeight: 16)
+                                .background(Circle().fill(Color.red))
+                        }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(Rectangle())
+                    .foregroundColor(isSelected ? .white : .secondary)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
+                    .background(
+                        Capsule()
+                            .fill(isSelected ? Color.blue : Color.clear)
+                    )
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
             }
         }
-        .padding(.vertical, Spacing.xs)
+        .padding(Spacing.xxxs)
         .background(
-            RoundedRectangle(cornerRadius: CornerRadius.md)
-                .fill(Color.cardBackground.opacity(0.5))
+            Capsule()
+                .fill(Color.cardBackground.opacity(0.6))
         )
     }
     
@@ -263,14 +236,28 @@ struct FriendsListView: View {
                     
                     // Main friends list
                     if showRankedView && !rankingService.rankedFriends.isEmpty {
-                        // Ranked friends view
                         rankedFriendsSection
                     } else {
-                        // Original alphabetical view
-                        ForEach(friendService.friends) { friend in
+                        friendSearchBar
+                            .padding(.bottom, Spacing.xs)
+                        
+                        ForEach(filteredFriends) { friend in
                             FriendCard(friend: friend) {
                                 showingFriendProfile = ProfileUser(friend: friend)
                             }
+                        }
+                        
+                        if filteredFriends.isEmpty && !friendFilterText.isEmpty {
+                            VStack(spacing: Spacing.sm) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.ds_heading2)
+                                    .foregroundColor(.secondary.opacity(0.5))
+                                Text("No friends matching \"\(friendFilterText)\"")
+                                    .font(.ds_bodyMedium)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.lg)
                         }
                     }
                 }
@@ -278,8 +265,8 @@ struct FriendsListView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 100)
         }
+        .scrollDismissesKeyboard(.immediately)
         .refreshable {
-            // Pull to refresh rankings
             await rankingService.fetchRankedFriends(forceRefresh: true)
             await rankingService.fetchFriendsFromContacts()
             await friendService.fetchFriends()
@@ -299,6 +286,50 @@ struct FriendsListView: View {
             Spacer()
         }
         .padding(.horizontal, Spacing.xxs)
+    }
+    
+    // MARK: - Smart Friend Search Bar
+    
+    private var friendSearchBar: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.ds_bodyMedium)
+                .foregroundColor(.secondary)
+            
+            TextField("Search by name or @username...", text: $friendFilterText)
+                .font(.ds_bodyMedium)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            
+            if !friendFilterText.isEmpty {
+                Button(action: {
+                    friendFilterText = ""
+                    HapticManager.impact(.light)
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.ds_bodyMedium)
+                        .foregroundColor(.secondary)
+                }
+                .accessibilityLabel("Clear search")
+                .accessibilityHint("Clears the friend search field")
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                .fill(Color.cardBackground)
+        )
+    }
+    
+    private var filteredFriends: [Friend] {
+        guard !friendFilterText.isEmpty else { return friendService.friends }
+        let query = friendFilterText.lowercased()
+        return friendService.friends.filter { friend in
+            let name = (friend.friendName ?? "").lowercased()
+            let username = (friend.friendUsername ?? "").lowercased()
+            return name.contains(query) || username.contains(query)
+        }
     }
     
     // MARK: - From Your Contacts Section
@@ -364,28 +395,35 @@ struct FriendsListView: View {
         let mostEngaged = Array(rankingService.rankedFriends.prefix(3))
         let mostEngagedIds = Set(mostEngaged.map(\.friendId))
         
-        // Newest added — skip anyone already on page 0, backfill from remaining
         let newestAdded: [Friend] = {
             let sorted = friendService.friends.sorted(by: { $0.friendsSince > $1.friendsSince })
             return Array(sorted.filter { !mostEngagedIds.contains($0.friendId) }.prefix(3))
         }()
         
-        // Collect all IDs shown in floating heads (both pages)
         let floatingHeadIds: Set<UUID> = showFloatingHeads
             ? Set(mostEngaged.map(\.friendId) + newestAdded.map(\.friendId))
             : []
         
-        // Filter out friends already shown in floating heads
-        let remainingFriends = rankingService.rankedFriends.filter { !floatingHeadIds.contains($0.friendId) }
+        let remainingFriends: [RankedFriend] = {
+            let base = rankingService.rankedFriends.filter { !floatingHeadIds.contains($0.friendId) }
+            guard !friendFilterText.isEmpty else { return base }
+            let query = friendFilterText.lowercased()
+            return base.filter { ranked in
+                let name = (ranked.friendName ?? "").lowercased()
+                let username = (ranked.friendUsername ?? "").lowercased()
+                return name.contains(query) || username.contains(query)
+            }
+        }()
         
         return VStack(alignment: .leading, spacing: 12) {
-            // Top Friends (ranked 1-3)
             if showFloatingHeads {
                 topFriendsHighlight
-                    .padding(.bottom, 8)
+                    .padding(.bottom, Spacing.xs)
             }
             
-            // Remaining friends (excluding floating heads)
+            friendSearchBar
+                .padding(.bottom, Spacing.xs)
+            
             ForEach(remainingFriends) { rankedFriend in
                 if let friend = friendService.friends.first(where: { $0.friendId == rankedFriend.friendId }) {
                     RankedFriendCard(
@@ -397,10 +435,23 @@ struct FriendsListView: View {
                     }
                 }
             }
+            
+            if remainingFriends.isEmpty && !friendFilterText.isEmpty {
+                VStack(spacing: Spacing.sm) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.ds_heading2)
+                        .foregroundColor(.secondary.opacity(0.5))
+                    Text("No friends matching \"\(friendFilterText)\"")
+                        .font(.ds_bodyMedium)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.lg)
+            }
         }
     }
     
-    // MARK: - Top Friends (Top 3)
+    // MARK: - Top Friends (3×2 Grid)
     
     private var topFriendsHighlight: some View {
         let mostEngaged = Array(rankingService.rankedFriends.prefix(3))
@@ -410,89 +461,58 @@ struct FriendsListView: View {
             return Array(sorted.filter { !mostEngagedIds.contains($0.friendId) }.prefix(3))
         }()
         
-        return VStack(alignment: .leading, spacing: 12) {
-            // Swipeable top 3 friends
-            GeometryReader { geometry in
-                let cardWidth = geometry.size.width
-                
-                HStack(spacing: 0) {
-                    // Page 0: Most Engaged
-                    HStack(spacing: 12) {
-                        ForEach(mostEngaged) { rankedFriend in
-                            if let friend = friendService.friends.first(where: { $0.friendId == rankedFriend.friendId }) {
-                                TopFriendCard(
-                                    friend: friend,
-                                    rankedFriend: rankedFriend
-                                ) {
-                                    showingFriendProfile = ProfileUser(friend: friend)
-                                }
-                            }
+        return VStack(spacing: Spacing.sm) {
+            // Row 1: Most Engaged
+            HStack(spacing: Spacing.sm) {
+                ForEach(mostEngaged) { rankedFriend in
+                    if let friend = friendService.friends.first(where: { $0.friendId == rankedFriend.friendId }) {
+                        TopFriendCard(
+                            friend: friend,
+                            rankedFriend: rankedFriend
+                        ) {
+                            showingFriendProfile = ProfileUser(friend: friend)
                         }
                     }
-                    .frame(width: cardWidth)
-                    
-                    // Page 1: Newest Added
-                    HStack(spacing: 12) {
-                        ForEach(Array(newestAdded.enumerated()), id: \.element.id) { index, friend in
-                            TopFriendCard(
-                                friend: friend,
-                                rankedFriend: RankedFriend(
-                                    friendId: friend.friendId,
-                                    friendName: friend.friendName,
-                                    friendUsername: friend.friendUsername,
-                                    profilePhotoUrl: friend.profilePhotoUrl,
-                                    fitnessGoal: friend.fitnessGoal,
-                                    relationshipScore: 0,
-                                    interactionCount: 0,
-                                    workoutsShared: 0,
-                                    workoutsCompleted: 0,
-                                    challengesTogether: 0,
-                                    lastInteraction: nil,
-                                    friendshipStarted: friend.friendsSince,
-                                    rank: index + 1
-                                )
-                            ) {
-                                showingFriendProfile = ProfileUser(friend: friend)
-                            }
-                        }
-                    }
-                    .frame(width: cardWidth)
                 }
-                .offset(x: -CGFloat(topFriendsPage) * cardWidth + friendSwipeDragOffset)
-                .animation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1), value: topFriendsPage)
+                if mostEngaged.count < 3 {
+                    ForEach(0..<(3 - mostEngaged.count), id: \.self) { _ in
+                        Color.clear.frame(maxWidth: .infinity)
+                    }
+                }
             }
-            .frame(height: 90)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 10)
-                    .onChanged { value in
-                        friendSwipeDragOffset = value.translation.width
-                    }
-                    .onEnded { value in
-                        let horizontalAmount = value.translation.width
-                        let velocity = value.predictedEndTranslation.width - value.translation.width
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1)) {
-                            friendSwipeDragOffset = 0
-                            if (horizontalAmount < -30 || velocity < -100) && topFriendsPage == 0 {
-                                topFriendsPage = 1
-                            } else if (horizontalAmount > 30 || velocity > 100) && topFriendsPage == 1 {
-                                topFriendsPage = 0
-                            }
-                        }
-                        HapticManager.impact(.light)
-                    }
-            )
             
-            // Page indicator
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(topFriendsPage == 0 ? Color.blue : Color.gray.opacity(0.3))
-                    .frame(width: 6, height: 6)
-                Circle()
-                    .fill(topFriendsPage == 1 ? Color.blue : Color.gray.opacity(0.3))
-                    .frame(width: 6, height: 6)
+            // Row 2: Newest Added
+            if !newestAdded.isEmpty {
+                HStack(spacing: Spacing.sm) {
+                    ForEach(Array(newestAdded.enumerated()), id: \.element.id) { index, friend in
+                        TopFriendCard(
+                            friend: friend,
+                            rankedFriend: RankedFriend(
+                                friendId: friend.friendId,
+                                friendName: friend.friendName,
+                                friendUsername: friend.friendUsername,
+                                profilePhotoUrl: friend.profilePhotoUrl,
+                                fitnessGoal: friend.fitnessGoal,
+                                relationshipScore: 0,
+                                interactionCount: 0,
+                                workoutsShared: 0,
+                                workoutsCompleted: 0,
+                                challengesTogether: 0,
+                                lastInteraction: nil,
+                                friendshipStarted: friend.friendsSince,
+                                rank: index + 1
+                            )
+                        ) {
+                            showingFriendProfile = ProfileUser(friend: friend)
+                        }
+                    }
+                    if newestAdded.count < 3 {
+                        ForEach(0..<(3 - newestAdded.count), id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
             }
-            .frame(maxWidth: .infinity)
         }
     }
     
@@ -707,7 +727,8 @@ struct FriendsListView: View {
                                 ForEach(filteredContacts) { contact in
                                     SuggestedFriendCard(friend: contact)
                                         .onTapGesture {
-                                            showingFriendProfile = ProfileUser(suggested: contact)
+                                            let sent = friendService.sentRequests.contains { $0.toUserId == contact.userId }
+                                            showingFriendProfile = ProfileUser(suggested: contact, hasSentRequest: sent)
                                         }
                                 }
                             } header: {
@@ -735,7 +756,8 @@ struct FriendsListView: View {
                                         }
                                     })
                                     .onTapGesture {
-                                        showingFriendProfile = ProfileUser(searchResult: user)
+                                        let sent = friendService.sentRequests.contains { $0.toUserId == user.userId }
+                                        showingFriendProfile = ProfileUser(searchResult: user, hasSentRequest: sent)
                                     }
                                 }
                             } header: {
@@ -975,7 +997,8 @@ struct FriendsListView: View {
                         }
                     )
                     .onTapGesture {
-                        showingFriendProfile = ProfileUser(suggested: friend)
+                        let sent = friendService.sentRequests.contains { $0.toUserId == friend.userId }
+                        showingFriendProfile = ProfileUser(suggested: friend, hasSentRequest: sent)
                     }
                 }
             }
@@ -1095,47 +1118,48 @@ struct SuggestedFriendCard: View {
     
     @State private var isProcessing = false
     @State private var requestSent = false
+    @State private var showCancelConfirmation = false
+    
+    private var hasSentRequest: Bool {
+        friend.hasOutgoingRequest || friendService.sentRequests.contains { $0.toUserId == friend.userId }
+    }
     
     var body: some View {
         HStack(spacing: 14) {
-            // Avatar
             avatarView
             
-            VStack(alignment: .leading, spacing: 4) {
-                // Name — bold white, primary
-                if let name = friend.name, !name.isEmpty {
-                    Text(name)
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(friend.name ?? friend.username ?? "User")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    if friend.isVerified == true || friend.isGoldVerified == true {
+                        VerifiedBadge(size: 13, isGold: friend.isGoldVerified == true)
+                    }
                 }
                 
-                // Username — small grey
                 if let username = friend.username, !username.isEmpty {
                     Text("@\(username)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
-                // "In your contacts" label — blue
                 HStack(spacing: 4) {
                     Image(systemName: "person.crop.rectangle.stack")
-                        .font(.ds_caption)
+                        .font(.caption2)
                     Text("In your contacts")
                         .font(.caption2)
                 }
-                .foregroundColor(.blue)
+                .foregroundColor(.secondary)
             }
             
             Spacer()
             
-            // Action button
             actionButton
         }
         .padding(Spacing.md)
-        .background(PremiumCardBackground(accentColor: .blue))
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
-        .shadow(color: .blue.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
+        .background(PremiumCardBackground(accentColor: .cyan))
     }
     
     private var avatarView: some View {
@@ -1144,7 +1168,7 @@ struct SuggestedFriendCard: View {
             photoUrl: friend.profilePhotoUrl,
             name: friend.name ?? friend.username ?? "?",
             size: 50,
-            showGradientRing: true,
+            showGradientRing: false,
             gradientColors: [.blue, .cyan]
         )
     }
@@ -1178,17 +1202,31 @@ struct SuggestedFriendCard: View {
                     .fontWeight(.semibold)
             }
             .foregroundColor(.green)
-        } else if friend.hasOutgoingRequest || requestSent {
-            Text("Pending")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.orange)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .background(
-                    Capsule()
-                        .stroke(Color.orange, lineWidth: 1)
-                )
+        } else if hasSentRequest || requestSent {
+            Button(action: { showCancelConfirmation = true }) {
+                Text("Pending")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xs)
+                    .background(
+                        Capsule()
+                            .stroke(Color.orange, lineWidth: 1)
+                    )
+            }
+            .confirmationDialog(
+                "Cancel Friend Request?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Unsend Request", role: .destructive) {
+                    cancelSentRequest()
+                }
+                Button("Keep Request", role: .cancel) {}
+            } message: {
+                Text("This will unsend your friend request to \(friend.name ?? friend.username ?? "this user").")
+            }
         } else if friend.hasIncomingRequest {
             Button(action: { onRespondToRequest?() }) {
                 HStack(spacing: 4) {
@@ -1256,6 +1294,23 @@ struct SuggestedFriendCard: View {
             }
         }
     }
+    
+    private func cancelSentRequest() {
+        guard let sentRequest = friendService.sentRequests.first(where: { $0.toUserId == friend.userId }) else { return }
+        isProcessing = true
+        HapticManager.impact(.medium)
+        Task {
+            let success = await friendService.cancelSentRequest(requestId: sentRequest.requestId)
+            await MainActor.run {
+                if success {
+                    requestSent = false
+                    HapticManager.notification(.success)
+                    onActionCompleted?()
+                }
+                isProcessing = false
+            }
+        }
+    }
 }
 
 // MARK: - Premium Card Background (matches exercise cards)
@@ -1302,11 +1357,11 @@ struct PremiumCardBackground: View {
                     lineWidth: 1.5
                 )
             
-            // Colored accent border
+            // Subtle accent border
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
                     LinearGradient(
-                        colors: [accentColor.opacity(colorScheme == .dark ? 0.35 : 0.25), accentColor.opacity(colorScheme == .dark ? 0.2 : 0.1)],
+                        colors: [accentColor.opacity(colorScheme == .dark ? 0.15 : 0.1), accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -1550,21 +1605,17 @@ struct SentFriendRequestCard: View {
             
             Spacer()
             
-            // Cancel/Unsend button
             Button(action: { showCancelConfirmation = true }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "xmark.circle")
-                        .font(.ds_bodySmall).fontWeight(.medium)
-                    Text("Unsend")
-                        .font(.ds_bodySmall)
-                }
-                .foregroundColor(.red)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .background(
-                    Capsule()
-                        .fill(Color.red.opacity(0.12))
-                )
+                Text("Pending")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xs)
+                    .background(
+                        Capsule()
+                            .stroke(Color.orange, lineWidth: 1)
+                    )
             }
             .disabled(isProcessing)
             .opacity(isProcessing ? 0.5 : 1)
@@ -1612,10 +1663,15 @@ struct UserSearchResultCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var friendService = FriendService.shared
     let user: UserSearchResult
-    var onRespondToRequest: (() -> Void)?  // Called when they sent us a request and we tap "Respond"
+    var onRespondToRequest: (() -> Void)?
     
     @State private var isProcessing = false
     @State private var requestSent = false
+    @State private var showCancelConfirmation = false
+    
+    private var hasSentRequest: Bool {
+        user.hasOutgoingRequest == true || friendService.sentRequests.contains { $0.toUserId == user.userId }
+    }
     
     var body: some View {
         HStack(spacing: 14) {
@@ -1652,9 +1708,7 @@ struct UserSearchResultCard: View {
             actionButton
         }
         .padding(Spacing.md)
-        .background(PremiumCardBackground(accentColor: .purple))
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 5)
-        .shadow(color: .purple.opacity(colorScheme == .dark ? 0.12 : 0.06), radius: 16, x: 0, y: 8)
+        .background(PremiumCardBackground(accentColor: .cyan))
     }
     
     private var defaultAvatar: some View {
@@ -1687,18 +1741,31 @@ struct UserSearchResultCard: View {
                     .fontWeight(.semibold)
             }
             .foregroundColor(.green)
-        } else if user.hasOutgoingRequest == true || requestSent {
-            // I sent THEM a request - waiting for their response
-            Text("Pending")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.orange)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.vertical, Spacing.xs)
-                .background(
-                    Capsule()
-                        .stroke(Color.orange, lineWidth: 1)
-                )
+        } else if hasSentRequest || requestSent {
+            Button(action: { showCancelConfirmation = true }) {
+                Text("Pending")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xs)
+                    .background(
+                        Capsule()
+                            .stroke(Color.orange, lineWidth: 1)
+                    )
+            }
+            .confirmationDialog(
+                "Cancel Friend Request?",
+                isPresented: $showCancelConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Unsend Request", role: .destructive) {
+                    cancelSentRequest()
+                }
+                Button("Keep Request", role: .cancel) {}
+            } message: {
+                Text("This will unsend your friend request to \(user.name ?? user.username ?? "this user").")
+            }
         } else if user.hasIncomingRequest == true {
             // THEY sent ME a request - I need to respond
             Button(action: { onRespondToRequest?() }) {
@@ -1773,6 +1840,22 @@ struct UserSearchResultCard: View {
                 } else {
                     HapticManager.notification(.error)
                     AppLogger.error("❌ Failed to send friend request", category: .social)
+                }
+                isProcessing = false
+            }
+        }
+    }
+    
+    private func cancelSentRequest() {
+        guard let sentRequest = friendService.sentRequests.first(where: { $0.toUserId == user.userId }) else { return }
+        isProcessing = true
+        HapticManager.impact(.medium)
+        Task {
+            let success = await friendService.cancelSentRequest(requestId: sentRequest.requestId)
+            await MainActor.run {
+                if success {
+                    requestSent = false
+                    HapticManager.notification(.success)
                 }
                 isProcessing = false
             }
@@ -1925,15 +2008,27 @@ struct TopFriendCard: View {
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 10) {
-                // Avatar
-                CachedFriendPhoto(
-                    friendId: friend.friendId.uuidString,
-                    photoUrl: friend.profilePhotoUrl,
-                    name: friend.friendName ?? friend.friendUsername ?? "Friend",
-                    size: 60,
-                    showGradientRing: true,
-                    gradientColors: [.blue, .cyan]
-                )
+                // Avatar with verified badge overlay
+                ZStack(alignment: .bottomTrailing) {
+                    CachedFriendPhoto(
+                        friendId: friend.friendId.uuidString,
+                        photoUrl: friend.profilePhotoUrl,
+                        name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                        size: 60,
+                        showGradientRing: true,
+                        gradientColors: [.blue, .cyan]
+                    )
+                    
+                    if friend.isVerified == true || friend.isGoldVerified == true {
+                        VerifiedBadge(size: 15, isGold: friend.isGoldVerified == true)
+                            .background(
+                                Circle()
+                                    .fill(Color(.systemBackground))
+                                    .frame(width: 18, height: 18)
+                            )
+                            .offset(x: 2, y: -2)
+                    }
+                }
                 
                 // Name
                 Text(firstName)

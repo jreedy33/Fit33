@@ -127,6 +127,38 @@ class VideoStreamingService: ObservableObject {
             .appendingPathComponent(Self.diskCacheFile)
     }
     
+    /// Loads disk snapshot into memory when `init`'s detached load has not finished yet.
+    private func hydrateGenderVideoCacheFromDiskIfMemoryEmpty() async {
+        let isEmpty = await MainActor.run { genderVideoCache.isEmpty }
+        guard isEmpty else { return }
+        guard let url = genderCacheDiskURL(),
+              FileManager.default.fileExists(atPath: url.path) else { return }
+        
+        let preferred = await MainActor.run { preferredVideoGender }
+        
+        let decoded: [String: GenderVideoInfo]? = await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? JSONDecoder().decode([String: GenderVideoInfo].self, from: data)
+        }.value
+        
+        guard let decoded, !decoded.isEmpty else { return }
+        
+        var filenames: [String: String] = [:]
+        for (key, info) in decoded {
+            if let fn = info.filenameWithFallback(preferred: preferred) {
+                filenames[key] = fn
+            }
+        }
+        
+        await MainActor.run {
+            guard genderVideoCache.isEmpty else { return }
+            genderVideoCache = decoded
+            videoFilenameCache = filenames
+            videosLoaded = true
+            AppLogger.debug("⚡️ [VIDEO] Hydrated \(decoded.count) mappings from disk before network decision", category: .general)
+        }
+    }
+    
     private func loadGenderCacheFromDisk() {
         guard let url = genderCacheDiskURL(),
               FileManager.default.fileExists(atPath: url.path) else { return }
@@ -232,6 +264,11 @@ class VideoStreamingService: ObservableObject {
     private static let videoMappingSyncInterval: TimeInterval = 12 * 60 * 60 // 12 hours
     
     private func fetchVideoFilenamesFromServer() async {
+        // Race fix: disk hydration runs in a detached task from init; memory can still be empty
+        // when this Task starts, which incorrectly skipped the freshness check and triggered
+        // 6000+ row paginated fetches on every cold start.
+        await hydrateGenderVideoCacheFromDiskIfMemoryEmpty()
+        
         // ⚡️ PERFORMANCE: Skip if we recently fetched video mappings.
         // Video mappings are static data (exercise name → video file) that rarely changes.
         // Fetching 6500+ mappings in 6 paginated calls is expensive on startup.

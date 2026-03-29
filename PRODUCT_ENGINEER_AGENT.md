@@ -1117,3 +1117,82 @@ OTP verified → createMinimalAccountForEmailPasswordSignup()
 **Bug 3 — RPC parameter compatibility**: `GetDailyQuestsParams` always sent `p_active_step_challenge_target` even when 0. If the deployed SQL had only the 15-param version (before the challenge sync migration), PostgREST would fail to match the function signature. Fixed: custom `encode(to:)` omits the parameter when the value is 0, so the call works with both 15-param and 16-param SQL versions.
 
 **Rule — Celebration overlays with isolated services**: Any overlay that reads from a service singleton (celebrations, toasts, banners) MUST be wrapped in its own View struct with `@StateObject` — never read from a plain `let` reference in the parent. Pattern: `DashboardQuestCelebrationWrapper`.
+
+### 2026-03-27: Email/Password Signup — Account Creation Timing Fix (CRITICAL)
+
+**Problem**: Email/password signups failed at phone verification with "Session expired. Please go back to the password step and re-enter your password." The `@State var password` was being lost across the ~10 navigation steps between entering the password and the phone verification step where the account was actually created. Two separate users hit this exact bug.
+
+**Root cause**: Account creation was deferred until after phone verification (`createMinimalAccountForEmailPasswordSignup()`), which checked `password.isEmpty`. But `@State password` was cleared/lost during the multi-step onboarding journey (SwiftUI view recreation or state reconciliation failure). The `restoreFromCheckpoint()` function deliberately does NOT restore passwords for security, so any view recreation left `password` empty.
+
+**Fix**: Account creation now happens EARLY in `handleAuth()` — immediately after the user confirms their password and accepts terms. `signUpOrRecoverExistingAccount()` is called while `@State password` is still fresh. By the time the user reaches phone verification, `supabaseManager.isAuthenticated` is already true (matching OAuth flow behavior), so `createMinimalAccountForEmailPasswordSignup()` short-circuits to just updating the phone number.
+
+**Files changed**: `NewOnboardingView+Auth.swift` (handleAuth creates account early), `NewOnboardingView+Verification.swift` (signUpOrRecoverExistingAccount + updatePhoneAndUsername made internal, createMinimalAccountForEmailPasswordSignup has auth guard).
+
+**Rule — Never defer account creation past navigation**: For email/password signup, the Supabase auth user MUST be created in the same step where the password is entered. `@State` properties cannot be relied upon to survive 5+ onboarding step transitions. OAuth flows don't have this problem because they authenticate immediately via token.
+
+### 2026-03-28: Oura Ring Integration
+
+**New files created**:
+- `OuraService.swift` — `@MainActor final class OuraService: ObservableObject` singleton. OAuth 2.0 flow (same pattern as WHOOP), Keychain token storage, API client for readiness/activity/sleep/SpO2/workouts/personal info, sync with 300s throttle. All Oura API V2 DTOs defined in same file.
+- `OuraSettingsView.swift` — Connect/disconnect/sync UI with readiness preview card. Uses `ASWebAuthenticationSession` with `callbackURLScheme: "fit33"`. Teal accent color. Auto-starts auth onAppear when not connected.
+- `DashboardOuraWidget.swift` — Isolated `DashboardOuraWrapper` (widget isolation pattern). Shows readiness score, HRV, activity score, RHR, and sleep efficiency. Only renders when Oura is connected.
+
+**Modified files**:
+- `AppConfig.swift` — `enum Oura` with clientId, clientSecret, redirectUri, URLs, scopes.
+- `Secrets.template.swift` / `Secrets.swift` — `ouraClientId` and `ouraClientSecret` placeholders.
+- `DeepLinkManager.swift` — `case "oura"` handles `fit33://oura?code=...` callback.
+- `HealthDataService.swift` — `syncOuraData()` added to parallel `withTaskGroup`. Saves readiness/activity to `oura_readiness_data`, sleep to `sleep_logs` (source: "oura"), workouts to `cardio_workouts` (source: "oura"). `updateConnectedSources()` includes "oura".
+- `SupabaseManager.swift` — `updateIntegrationStatus` handles "oura" case. `syncAllIntegrationStatuses` includes `OuraService.shared.isConnected`.
+- `SettingsView.swift` — `@StateObject ouraService` + NavigationLink to `OuraSettingsView` after WHOOP row.
+- `DashboardView.swift` — `DashboardOuraWrapper()` added after WHOOP widget. `@AppStorage("showOuraWidget")` toggle.
+- `DashboardWidgetSettings.swift` — Added `showOura` binding + Oura widget option row.
+
+**Navigation**: Settings > Oura Ring (connect/disconnect/sync/preview) and Dashboard (readiness widget).
+
+**Oura readiness levels**: Optimal (85-100, green), Good (70-84, yellow), Pay Attention (0-69, red). Different thresholds than WHOOP recovery (67/34 split).
+
+### 2026-03-28: WHOOP Error Handling Pattern
+
+**Rule**: WHOOP fetch methods (`fetchRecovery`, `fetchSleep`, `fetchCycles`, `fetchWorkouts`) catch `WhoopError.isConnectionError` (`.notConnected`, `.tokenRefreshFailed`) at `.debug` level. Only actual API failures use `.error`. The `fetchBodyMeasurements` method was already correct. All consumers (Dashboard widget, Health Insights) already guard on `whoopService.isConnected` before rendering — so `notConnected` errors only occur via race conditions or stale state, not user-facing failures. Pattern established: `} catch let error as WhoopError where error.isConnectionError { AppLogger.debug(...) }`.
+
+### 2026-03-28: Workout Tab — My Stats Dashboard
+
+**New file**: `WorkoutStatsView.swift` — personal fitness metrics dashboard below the active program widget on the Workout tab.
+
+**Architecture**: `WorkoutStatsSection` container with 9 isolated widget structs, all following the mandatory widget isolation rule (each owns its own data subscriptions):
+
+| Widget | Chart Type | Data Source |
+|--------|-----------|-------------|
+| `ComprehensiveStatsGridWidget` | 2-column grid | Core Data Workout + UserManager |
+| `WorkoutVolumeChartWidget` | LineMark + AreaMark | Core Data Workout.totalVolume |
+| `WorkoutFrequencyChartWidget` | Stacked BarMark | Core Data Workout.date by type |
+| `StrengthProgressChartWidget` | Multi-line LineMark | Core Data WorkoutExercise/WorkoutSet |
+| `PersonalRecordsWidget` | Horizontal scroll cards | Core Data exercise max weights |
+| `BodyWeightTrendWidget` | LineMark + RuleMark | WeightTrackingService trends |
+| `CaloriesBurnedChartWidget` | BarMark + RuleMark avg | Core Data Workout.caloriesBurned |
+| `WorkoutDurationChartWidget` | BarMark + RuleMark avg | Core Data Workout.duration |
+| `MuscleGroupDistributionWidget` | SectorMark donut | Core Data WorkoutExercise categories |
+
+**Shared `StatsTimeframe` enum**: Week/Month/3M/Year/All with `StatsTimeframePicker` segmented control. Charts reload via `.task(id: timeframe)`.
+
+**Performance**: All Core Data aggregations run on `newBackgroundContext()` via `context.perform {}`. Results published to `@MainActor` via `Task { @MainActor in }`. Charts use `LazyVStack` for deferred rendering. No `@FetchRequest` without purpose-bounded predicates.
+
+**Design compliance**: `.sleekCard()` on every widget, `.ds_*` typography tokens, `Spacing.*` tokens, `CornerRadius.*` tokens, `SectionHeader` component. All personal data only — no social metrics.
+
+**Integration point**: `WorkoutTabView.swift` `WorkoutHomeView.body` — `WorkoutStatsSection()` added after `workoutTabProgramWidget` in the content VStack.
+
+**Key files**: `WorkoutStatsView.swift` (all 9 widgets + container + helpers), `WorkoutTabView.swift` (integration).
+
+### 2026-03-28: FriendsListView — Top Friends Grid + Smart Search
+
+**Top Friends layout change**: The `topFriendsHighlight` in `FriendsListView` was a swipeable 2-page carousel (3 most engaged + 3 newest added, with GeometryReader + DragGesture). Replaced with a static 3×2 grid — two `HStack(spacing: Spacing.sm)` rows stacked vertically in a `VStack(spacing: Spacing.sm)`. All 6 friends are now visible at once without scrolling or swiping.
+
+**Smart friend search bar**: Added `friendSearchBar` below the top friends grid in both ranked and alphabetical views. Filters the full friends list by name or username in real-time (`friendFilterText` @State). Uses `Color.cardBackground` with `CornerRadius.md` styling, `ds_bodyMedium` font. Includes clear button with haptic feedback. Empty-state message shows when filter matches nothing.
+
+**State removed**: `topFriendsPage` and `friendSwipeDragOffset` are no longer used for the top friends section (kept as @State but the swipe gesture and page indicator are removed).
+
+**Key file**: `FriendsListView.swift` — `topFriendsHighlight`, `rankedFriendsSection`, `friendsListContent`, `friendSearchBar`, `filteredFriends`.
+
+### 2026-03-28: Private Challenge Cover Photos — REMOVED (2026-03-29)
+
+**Feature removed** due to 15 RLS crashes in v1.37 (bucket misconfiguration). Private challenges use emoji icons only. Removed: `.coverPhoto` creation step, `ChallengePhotoPicker`/`ChallengePhotoCameraPicker`, cover photo UI in detail/widget/join views, `uploadCoverPhoto`/`removeCoverPhoto` methods, challenge icon admin settings section. The `coverImageUrl` field in DTOs is nullable and will always be nil. Creation flow is back to 6 steps (naming, activityType, goalSetting, settings, inviteFriends, review).

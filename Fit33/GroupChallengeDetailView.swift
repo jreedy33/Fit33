@@ -43,38 +43,35 @@ struct GroupChallengeDetailView: View {
         challenge.challengeMode == .accountability
     }
     
-    private var accentGradient: [Color] {
-        isAccountability ? [.blue, .cyan] : [.orange, .red]
+    private var resolvedType: ChallengeType { challenge.resolvedType }
+    private var typeColor: Color { resolvedType.color }
+    private var typeGradient: LinearGradient {
+        LinearGradient(colors: resolvedType.gradientColors, startPoint: .leading, endPoint: .trailing)
     }
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Header card
-                headerCard
-                
-                // Members leaderboard / check-in
-                membersSection
-                
-                // Stats overview
-                statsSection
-                
-                // Pending members
-                if !pendingMembers.isEmpty {
-                    pendingSection
-                }
-                
-                // Actions section (Leave / Cancel)
-                actionsSection
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 40)
-        }
-        .background(
-            AnimatedOrbBackground.home(colorScheme: colorScheme)
+        ZStack {
+            AnimatedOrbBackground.friends(colorScheme: colorScheme)
                 .ignoresSafeArea()
-        )
-        .navigationTitle(liveChallenge.displayTitle)
+            
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: Spacing.md) {
+                    headerCard
+                    membersSection
+                    statsSection
+                    
+                    if !pendingMembers.isEmpty {
+                        pendingSection
+                    }
+                    
+                    actionsSection
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, 60)
+            }
+        }
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: challenge.challengeId) {
             // Subscribe to real-time opponent progress updates for this group challenge
@@ -123,40 +120,52 @@ struct GroupChallengeDetailView: View {
     // MARK: - Header Card
     
     private var headerCard: some View {
-        VStack(spacing: 16) {
-            // Challenge type + mode
-            HStack(spacing: 8) {
-                Text(challenge.type?.emoji ?? "🏆")
-                    .font(.system(size: 36))
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(challenge.displayTitle)
-                        .font(.title3)
+        VStack(spacing: Spacing.md) {
+            HStack(spacing: Spacing.xs) {
+                HStack(spacing: Spacing.xxs) {
+                    Text(resolvedType.emoji)
+                        .font(.system(size: 14))
+                    Text(resolvedType.displayName)
+                        .font(.ds_labelSmall)
                         .fontWeight(.bold)
-                    
-                    HStack(spacing: 6) {
-                        Text(isAccountability ? "🤝 Accountability" : "⚔️ Competition")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(LinearGradient(colors: accentGradient, startPoint: .leading, endPoint: .trailing))
-                        
-                        Text("•")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text("\(challenge.daysRemaining) days left")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
                 }
+                .foregroundColor(typeColor)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, Spacing.xxxs)
+                .background(Capsule().fill(typeColor.opacity(0.12)))
+                
+                HStack(spacing: Spacing.xxs) {
+                    Text(isAccountability ? "🤝" : "⚔️")
+                        .font(.system(size: 11))
+                    Text(isAccountability ? "Accountability" : "Competition")
+                        .font(.ds_labelSmall)
+                        .fontWeight(.semibold)
+                }
+                .foregroundStyle(typeGradient)
                 
                 Spacer()
+                
+                HStack(spacing: Spacing.xxs) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 9))
+                    if challenge.daysRemaining > 0 {
+                        Text("\(challenge.daysRemaining)d left")
+                    } else {
+                        Text("Complete")
+                    }
+                }
+                .font(.ds_labelSmall)
+                .foregroundColor(.secondary)
             }
             
-            // Member avatars overlapping
-            HStack(spacing: -12) {
+            Text(liveChallenge.displayTitle)
+                .font(.ds_heading2)
+                .foregroundColor(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            
+            HStack(spacing: -10) {
                 ForEach(Array(acceptedMembers.enumerated()), id: \.element.id) { index, member in
-                    memberAvatar(member: member, size: 46)
+                    memberAvatar(member: member, size: 44)
                         .zIndex(Double(acceptedMembers.count - index))
                 }
                 
@@ -164,101 +173,110 @@ struct GroupChallengeDetailView: View {
                     ZStack {
                         Circle()
                             .fill(Color.gray.opacity(0.3))
-                            .frame(width: 46, height: 46)
+                            .frame(width: 44, height: 44)
                         Text("+\(pendingMembers.count)")
-                            .font(.caption)
+                            .font(.ds_labelSmall)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                     }
                 }
                 
                 Spacer()
+                
+                Text("\(acceptedMembers.count) members")
+                    .font(.ds_caption)
+                    .foregroundColor(.secondary)
             }
             
-            // Daily target
             if let target = challenge.dailyTarget {
                 HStack {
                     Text("Daily Goal")
-                        .font(.caption)
+                        .font(.ds_labelSmall)
                         .foregroundColor(.secondary)
                     Spacer()
                     Text("\(target) \(challenge.targetUnit)")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundStyle(LinearGradient(colors: accentGradient, startPoint: .leading, endPoint: .trailing))
+                        .font(.ds_statSmall)
+                        .foregroundStyle(typeGradient)
                 }
             }
             
-            // Progress bar (days elapsed)
-            GeometryReader { geometry in
+            GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.gray.opacity(0.15))
+                    Capsule()
+                        .fill(typeColor.opacity(colorScheme == .dark ? 0.12 : 0.08))
                         .frame(height: 6)
                     
                     let progress = challenge.durationDays > 0
                         ? CGFloat(challenge.daysElapsed) / CGFloat(challenge.durationDays)
                         : 0
                     
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(LinearGradient(colors: accentGradient, startPoint: .leading, endPoint: .trailing))
-                        .frame(width: geometry.size.width * min(1, progress), height: 6)
+                    Capsule()
+                        .fill(typeGradient)
+                        .frame(width: max(geo.size.width * min(1, progress), 6), height: 6)
+                        .animation(.spring(response: 0.5), value: progress)
                 }
             }
             .frame(height: 6)
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.xl)
-                .fill(colorScheme == .dark ? Color(white: 0.14) : Color.white)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl)
-                .stroke(
-                    LinearGradient(colors: accentGradient.map { $0.opacity(0.3) }, startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 1
-                )
-        )
+        .padding(Spacing.md)
+        .sleekCard(cornerRadius: 20, accentColor: typeColor)
     }
     
     // MARK: - Members Section
     
     private var membersSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(isAccountability ? "Team Check-In" : "Leaderboard")
-                .font(.headline)
-                .fontWeight(.bold)
-            
-            ForEach(Array(acceptedMembers.enumerated()), id: \.element.id) { rank, member in
-                memberRow(member: member, rank: rank + 1)
+        VStack(spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: isAccountability ? "person.3.fill" : "trophy.fill")
+                    .foregroundStyle(typeGradient)
+                    .font(.title3)
+                Text(isAccountability ? "Team Check-In" : "Leaderboard")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Text("Day \(challenge.daysElapsed) of \(challenge.durationDays)")
+                    .font(.ds_caption)
+                    .foregroundColor(.secondary)
             }
+            
+            VStack(spacing: 0) {
+                ForEach(Array(acceptedMembers.enumerated()), id: \.element.id) { rank, member in
+                    memberRow(member: member, rank: rank + 1)
+                    
+                    if rank < acceptedMembers.count - 1 {
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.04))
+                            .frame(height: 1)
+                            .padding(.horizontal, Spacing.sm)
+                    }
+                }
+            }
+            .sleekCardSubtle(cornerRadius: 16)
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.97))
-        )
     }
     
     private func memberRow(member: GroupChallengeMember, rank: Int) -> some View {
         let currentUserId = userManager.currentUser?.id
         let isMe = currentUserId != nil && member.userId == currentUserId
         let target = challenge.dailyTarget ?? 0
-        // Use live HealthKit data for current user, DB data for others
         let displayProgress = isMe
             ? ChallengeProgressResolver.shared.liveProgress(for: challenge, serverValue: member.todayProgress)
             : member.todayProgress
         let completedToday = target > 0 && displayProgress >= target
         
-        return HStack(spacing: 12) {
-            // Rank or check
+        return HStack(spacing: Spacing.sm) {
             if isAccountability {
                 Text(completedToday ? "✅" : "⬜")
                     .font(.ds_heading3)
             } else {
                 ZStack {
                     Circle()
-                        .fill(rank == 1 ? LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom) : LinearGradient(colors: [.gray.opacity(0.3), .gray.opacity(0.2)], startPoint: .top, endPoint: .bottom))
+                        .fill(rank == 1
+                            ? LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
+                            : LinearGradient(colors: [.gray.opacity(0.3), .gray.opacity(0.2)], startPoint: .top, endPoint: .bottom))
                         .frame(width: 28, height: 28)
                     
                     if rank == 1 {
@@ -267,7 +285,7 @@ struct GroupChallengeDetailView: View {
                             .foregroundColor(.white)
                     } else {
                         Text("\(rank)")
-                            .font(.caption)
+                            .font(.ds_labelSmall)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                     }
@@ -279,17 +297,11 @@ struct GroupChallengeDetailView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(isMe ? "You" : member.firstName)
-                        .font(.subheadline)
+                        .font(.ds_bodySmall)
                         .fontWeight(.semibold)
                     
                     if member.isVerified == true || member.isGoldVerified == true {
-                        VerifiedBadge(size: 13, isGold: member.isGoldVerified == true)
-                    }
-                    
-                    if isMe {
-                        Text("(me)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        VerifiedBadge(size: 12, isGold: member.isGoldVerified == true)
                     }
                 }
                 
@@ -299,7 +311,7 @@ struct GroupChallengeDetailView: View {
                             .font(.system(size: 9))
                             .foregroundColor(.orange)
                         Text("\(member.currentStreak)-day streak")
-                            .font(.caption2)
+                            .font(.ds_caption)
                             .foregroundColor(.orange)
                     }
                 }
@@ -307,124 +319,171 @@ struct GroupChallengeDetailView: View {
             
             Spacer()
             
-            // Progress
             VStack(alignment: .trailing, spacing: 2) {
-                Text(!isMe && displayProgress == 0 ? "–" : "\(displayProgress)")
-                    .font(.ds_statSmall)
-                    .foregroundColor(!isMe && displayProgress == 0 ? .secondary.opacity(0.5) : (completedToday ? .green : .primary))
+                HStack(spacing: Spacing.xxxs) {
+                    Text(!isMe && displayProgress == 0 ? "–" : "\(displayProgress)")
+                        .font(.ds_statSmall)
+                        .foregroundColor(!isMe && displayProgress == 0 ? .secondary.opacity(0.5) : (completedToday ? .green : .primary))
+                    
+                    if completedToday {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.green)
+                    }
+                }
                 
                 Text("today")
-                    .font(.caption2)
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
     }
     
     // MARK: - Stats Section
     
     private var statsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Group Stats")
-                .font(.headline)
-                .fontWeight(.bold)
+        VStack(spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "chart.bar.fill")
+                    .foregroundStyle(typeGradient)
+                    .font(.title3)
+                Text("Group Stats")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+            }
             
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                statCard(
-                    title: "Total Combined",
-                    value: "\(acceptedMembers.reduce(0) { $0 + $1.totalProgress })",
-                    icon: "chart.bar.fill",
-                    color: accentGradient[0]
+            HStack(spacing: 0) {
+                groupStatCell(
+                    value: formatGroupTotal(acceptedMembers.reduce(0) { $0 + $1.totalProgress }),
+                    label: "combined",
+                    valueColor: typeColor
                 )
                 
-                statCard(
-                    title: "Days Left",
+                groupThinDivider
+                
+                VStack(spacing: 2) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                        Text("\(acceptedMembers.map(\.currentStreak).max() ?? 0)")
+                            .font(.ds_statSmall)
+                            .foregroundColor(.primary)
+                    }
+                    Text("best streak")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                
+                groupThinDivider
+                
+                groupStatCell(
                     value: "\(challenge.daysRemaining)",
-                    icon: "calendar",
-                    color: .purple
+                    label: challenge.daysRemaining == 1 ? "day left" : "days left",
+                    valueColor: challenge.daysRemaining <= 1 ? .red : .primary
                 )
                 
-                statCard(
-                    title: "Best Streak",
-                    value: "\(acceptedMembers.map(\.currentStreak).max() ?? 0)",
-                    icon: "flame.fill",
-                    color: .orange
-                )
+                groupThinDivider
                 
-                statCard(
-                    title: "Completed Today",
+                groupStatCell(
                     value: {
                         let target = challenge.dailyTarget ?? 0
                         let done = target > 0 ? acceptedMembers.filter { $0.todayProgress >= target }.count : 0
                         return "\(done)/\(acceptedMembers.count)"
                     }(),
-                    icon: "checkmark.circle.fill",
-                    color: .green
+                    label: "done today",
+                    valueColor: .green
                 )
             }
+            .padding(.vertical, Spacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .fill(typeColor.opacity(colorScheme == .dark ? 0.06 : 0.04))
+            )
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.97))
-        )
+        .padding(Spacing.sm)
+        .sleekCardSubtle(cornerRadius: 16)
     }
     
-    private func statCard(title: String, value: String, icon: String, color: Color) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.ds_heading3)
-                .foregroundColor(color)
-            
+    private func groupStatCell(value: String, label: String, valueColor: Color) -> some View {
+        VStack(spacing: 2) {
             Text(value)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-            
-            Text(title)
-                .font(.caption2)
+                .font(.ds_statSmall)
+                .foregroundColor(valueColor)
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(colorScheme == .dark ? Color(white: 0.16) : Color.white)
-        )
+    }
+    
+    private var groupThinDivider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 1, height: 28)
+    }
+    
+    private func formatGroupTotal(_ value: Int) -> String {
+        if value >= 10000 {
+            return String(format: "%.1fk", Double(value) / 1000)
+        }
+        return value.formatted()
     }
     
     // MARK: - Pending Section
     
     private var pendingSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Waiting to Join")
-                .font(.headline)
-                .fontWeight(.bold)
-            
-            ForEach(pendingMembers) { member in
-                HStack(spacing: 12) {
-                    memberAvatar(member: member, size: 36)
-                    
-                    Text(member.firstName)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
-                    Spacer()
-                    
-                    Text("Pending")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.orange)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, Spacing.xxs)
-                        .background(Capsule().fill(Color.orange.opacity(0.15)))
-                }
-                .padding(.vertical, Spacing.xxs)
+        VStack(spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "hourglass.circle.fill")
+                    .foregroundStyle(LinearGradient(colors: [.orange, .yellow], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .font(.title3)
+                Text("Waiting to Join")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
             }
+            
+            VStack(spacing: 0) {
+                ForEach(Array(pendingMembers.enumerated()), id: \.element.id) { index, member in
+                    HStack(spacing: Spacing.sm) {
+                        memberAvatar(member: member, size: 36)
+                        
+                        Text(member.firstName)
+                            .font(.ds_bodySmall)
+                            .fontWeight(.medium)
+                        
+                        Spacer()
+                        
+                        Text("Pending")
+                            .font(.ds_labelSmall)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.orange)
+                            .padding(.horizontal, Spacing.xs)
+                            .padding(.vertical, Spacing.xxxs)
+                            .background(Capsule().fill(Color.orange.opacity(0.15)))
+                    }
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xs)
+                    
+                    if index < pendingMembers.count - 1 {
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.04))
+                            .frame(height: 1)
+                            .padding(.horizontal, Spacing.sm)
+                    }
+                }
+            }
+            .sleekCardSubtle(cornerRadius: 16)
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.97))
-        )
     }
     
     // MARK: - Actions Section
@@ -434,57 +493,62 @@ struct GroupChallengeDetailView: View {
     }
     
     private var actionsSection: some View {
-        VStack(spacing: 12) {
-            // Leave Challenge button (any member)
-            Button {
-                showingLeaveConfirm = true
-            } label: {
-                HStack(spacing: 8) {
+        VStack(spacing: Spacing.sm) {
+            Button(action: { showingLeaveConfirm = true }) {
+                HStack(spacing: Spacing.xs) {
                     if isProcessing {
                         ProgressView()
-                            .tint(.white)
+                            .progressViewStyle(CircularProgressViewStyle(tint: .orange))
                     } else {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
-                            .font(.ds_labelMedium)
+                            .font(.ds_bodyMedium)
                     }
-                    Text("Leave Challenge")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                    
+                    Text(isProcessing ? "Leaving..." : "Leave Challenge")
+                        .font(.ds_bodySmall)
+                        .fontWeight(.medium)
                 }
-                .foregroundColor(.white)
+                .foregroundColor(.orange)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, Spacing.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.orange)
+                    RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                                .fill(Color.orange.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                        )
                 )
             }
+            .buttonStyle(PlainButtonStyle())
             .disabled(isProcessing)
             
-            // Cancel Challenge button — only the creator can cancel for everyone
             if isCreator {
-                Button {
-                    showingCancelConfirm = true
-                } label: {
-                    HStack(spacing: 8) {
+                Button(action: { showingCancelConfirm = true }) {
+                    HStack(spacing: Spacing.xs) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.ds_labelMedium)
+                            .font(.ds_bodyMedium)
+                        
                         Text("Cancel Challenge for Everyone")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
+                            .font(.ds_bodySmall)
+                            .fontWeight(.medium)
                     }
                     .foregroundColor(.red)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .padding(.vertical, Spacing.sm)
                     .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color.red.opacity(0.12))
+                        RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                                    .fill(Color.red.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                            )
                     )
                 }
+                .buttonStyle(PlainButtonStyle())
                 .disabled(isProcessing)
             }
         }
-        .padding(.top, 8)
     }
     
     // MARK: - Actions
@@ -534,7 +598,7 @@ struct GroupChallengeDetailView: View {
                     name: member.name ?? member.username ?? "?",
                     size: size,
                     showGradientRing: false,
-                    gradientColors: accentGradient
+                    gradientColors: resolvedType.gradientColors
                 )
                 .overlay(Circle().stroke(Color.darkBackground, lineWidth: 2))
             }

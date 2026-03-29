@@ -44,16 +44,29 @@ class FriendService: ObservableObject {
     private let friendsCacheKey = "fit33_cached_friends"
     private let friendsCacheDateKey = "fit33_friends_cache_date"
     
+    private static let blockedUserIdsCacheKey = "fit33_blocked_user_ids"
+    
     private init() {
-        // Load cached friends immediately so Friends tab never shows empty state
         loadCachedFriends()
-        
-        // Pre-warm friend photo memory cache from disk on a background thread
-        // so photos are instant when Friends tab opens (no disk I/O on main)
+        loadCachedBlockedUserIds()
+
         let ids = friends.map { $0.friendId.uuidString }
         if !ids.isEmpty {
             FriendPhotoCache.shared.warmMemoryCacheFromDisk(for: ids)
         }
+    }
+    
+    private func loadCachedBlockedUserIds() {
+        let strings = UserDefaults.standard.stringArray(forKey: Self.blockedUserIdsCacheKey) ?? []
+        blockedUserIds = Set(strings.compactMap { UUID(uuidString: $0) })
+        if !blockedUserIds.isEmpty {
+            AppLogger.debug("Loaded \(blockedUserIds.count) cached blocked user IDs", category: .social)
+        }
+    }
+    
+    func persistBlockedUserIds() {
+        let strings = blockedUserIds.map { $0.uuidString }
+        UserDefaults.standard.set(Array(strings), forKey: Self.blockedUserIdsCacheKey)
     }
     
     // MARK: - Local Friend Caching (instant display on cold start)
@@ -281,8 +294,14 @@ class FriendService: ObservableObject {
             friends.removeAll { $0.friendId == userId }
             sentRequests.removeAll { $0.toUserId == userId }
             pendingRequests.removeAll { $0.fromUserId == userId }
+            receivedWorkouts.removeAll { $0.senderId == userId }
             blockedUserIds.insert(userId)
-            AppLogger.info("User blocked", category: .social)
+            persistBlockedUserIds()
+            
+            FriendRankingService.shared.removeBlockedUser(userId)
+            ActivityFeedService.shared.removeBlockedUser(userId)
+            
+            AppLogger.info("User blocked — purged from all social surfaces", category: .social)
             return true
         } catch {
             AppLogger.error("Error blocking user: \(error.localizedDescription)", category: .social)
@@ -300,6 +319,7 @@ class FriendService: ObservableObject {
                 .execute()
             
             blockedUserIds.remove(userId)
+            persistBlockedUserIds()
             AppLogger.info("User unblocked", category: .social)
             return true
         } catch {
@@ -541,21 +561,40 @@ class FriendService: ObservableObject {
     
     func fetchReceivedWorkouts() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
-        do {
-            let result: [ReceivedWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_received_workouts")
-                .execute()
-                .value
-            
-            // Filter out any workouts that were addressed (started, saved, or deleted)
-            // This prevents zombie workouts from reappearing
-            let filteredResult = result.filter { !addressedWorkoutIds.contains($0.id) }
-            
-            self.receivedWorkouts = filteredResult
-            AppLogger.info("Fetched \(result.count) received workouts (\(result.count - filteredResult.count) filtered as addressed)", category: .social)
-        } catch {
-            if !Task.isCancelled {
-                AppLogger.error("Error fetching received workouts: \(error.localizedDescription)", category: .social)
+        
+        let maxRetries = 3
+        for attempt in 1...maxRetries {
+            do {
+                let result: [ReceivedWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_received_workouts")
+                    .execute()
+                    .value
+                
+                let filteredResult = result.filter { !addressedWorkoutIds.contains($0.id) }
+                
+                self.receivedWorkouts = filteredResult
+                AppLogger.info("Fetched \(result.count) received workouts (\(result.count - filteredResult.count) filtered as addressed)", category: .social)
+                return
+            } catch {
+                if Task.isCancelled { return }
+                
+                let nsError = error as NSError
+                let isRetryable = nsError.domain == NSURLErrorDomain && (
+                    nsError.code == NSURLErrorTimedOut ||
+                    nsError.code == NSURLErrorCancelled
+                ) || error.localizedDescription.contains("502")
+                
+                if isRetryable && attempt < maxRetries {
+                    let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
+                    try? await Task.sleep(nanoseconds: delay)
+                    continue
+                }
+                
+                if isRetryable {
+                    AppLogger.warning("Received workouts fetch timed out after \(maxRetries) attempts", category: .social)
+                } else {
+                    AppLogger.error("Error fetching received workouts: \(error.localizedDescription)", category: .social)
+                }
             }
         }
     }

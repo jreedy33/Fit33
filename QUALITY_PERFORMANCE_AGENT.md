@@ -79,6 +79,8 @@ checkAuthOnly() [<200ms]  ──→  UI renders from Core Data cache (instant)
         └─ [parallel] realtimeService.connect(), updateLastLogin(), etc.
 ```
 
+**v1.37+ startup (March 2026):** (1) `checkAuthOnly()` must not await `user_profiles` before setting `isAuthenticated` — use optimistic session + `reconcileProfileAfterSessionRestore` / `verifyUserProfile` tri-state. (2) **Video mappings:** `hydrateGenderVideoCacheFromDiskIfMemoryEmpty()` before network skip decision. (3) **`fetchUserLimitations()`** runs in a `Task` right after `markPhaseComplete(.critical)` so the RPC does not extend critical path; generator picks up `@Published` when fetch finishes (tiny race if user starts a workout in the first second with active limitations).
+
 Key changes in v1.30:
 - `SupabaseManager.checkAuthOnly()` — session verification without cloud sync (<200ms vs 6s+)
 - `StartupCoordinator` — event-driven phases replace hardcoded `Task.sleep` timers
@@ -1016,9 +1018,17 @@ await bgContext.perform {
 - Add `scripts/perf_lint.sh` as an Xcode build phase to catch these patterns automatically.
 
 **Remaining known warnings (pre-existing, tracked)**:
-- `SmartExercisePairingEngine:718` — uses `ExerciseLibraryService.shared.getAllExercises()` outside bgContext.perform but on a non-MainActor class (threading review needed)
+- ~~`SmartExercisePairingEngine:718`~~ — **FIXED March 2026**. `findSubstitutes()` now iterates `exerciseAnalysisCache` (thread-safe structs) instead of `getAllExercises()` (viewContext objects). Only resolves the top ~30 candidate names to `Exercise` objects at the end via `getExercise(byName:)`.
 - `HydrationService:205` — `calculateSmartGoal()` does viewContext.fetch in a deferred Task near init (low risk, runs after init)
 - `UserManager.loadCurrentUser()` — sync viewContext.fetch in init (needed for onboarding gate, requires UserDefaults cache approach to fix safely)
+
+### 2026-03-27: Core Data bgContext mergePolicy Rule
+
+**Problem**: `syncWorkoutHistoryToCoreData` in `SupabaseManager.swift` created a bgContext with `automaticallyMergesChangesFromParent = true` but no `mergePolicy`. When concurrent viewContext saves (e.g., `ExerciseLibraryService.preWarmCache()`) merged exercise objects into the bgContext, the merge could produce objects that transiently referenced the parent context — causing "Illegal attempt to establish a relationship 'exercise' between objects in different contexts" (4 fatal crashes in v1.36).
+
+**Fix**: Added `bgContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy` (matching the viewContext pattern in `PersistenceController.swift`). Added `#if DEBUG exercise?.assertContext(bgContext) #endif` guards before both `workoutExercise.exercise = exercise` assignments. Added missing `fetchLimit = 1` on the second exercise fetch path.
+
+**New rule — bgContext mergePolicy**: Every `newBackgroundContext()` that sets `automaticallyMergesChangesFromParent = true` MUST also set `mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy`. Without a merge policy, concurrent parent context saves can produce cross-context object references that crash on relationship assignment.
 
 ### 2026-03-27: Dashboard Instant Data Population Fix
 
@@ -1067,3 +1077,55 @@ await bgContext.perform {
 **Fix**: Extracted celebration overlay to `DashboardQuestCelebrationWrapper` (own `@StateObject`), consistent with all other dashboard wrappers. This struct independently observes the quest service and re-renders when celebrations fire.
 
 **Rule — Overlay + isolated service = own wrapper**: Any `.overlay` that reads `@Published` properties from a service must be its own View struct with `@StateObject`. The widget isolation pattern (converting services to `let` in parent) means ALL live-updating UI — including overlays, not just inline content — must be wrapped.
+
+### 2026-03-28: v1.37 Crash Fixes (42 crashes analyzed)
+
+**P0 FIXED: Weight UUID type mismatch (3 crashes, NEW in v1.37)** — `WeightTrackingService.logWeight()` declared `WeightLogInsert.user_id` as `String` and set it to `userId.uuidString`. PostgreSQL `weight_logs.user_id` is `uuid` type, rejecting with `operator does not exist: uuid = text`. Changed `user_id` field to `UUID` type and pass the `UUID` directly. Also changed all `.eq("user_id", value: userId.uuidString)` calls in the file to pass `UUID` directly. Same fix for `.eq("id", value: log.id.uuidString)` in `deleteLog()`.
+
+**Rule — Supabase insert/query UUID fields**: When inserting or querying against a PostgreSQL `uuid` column via the Supabase Swift client, pass `UUID` directly — never `uuidString`. The Swift client's `Encodable` serialization handles UUID-to-string conversion correctly. Passing `.uuidString` (a `String`) causes a `uuid = text` type mismatch on the Postgres side.
+
+**P1 FIXED: WHOOP notConnected log noise (12 false crashes, NEW in v1.37)** — All 4 WHOOP fetch methods (`fetchRecovery`, `fetchSleep`, `fetchCycles`, `fetchWorkouts`) caught all errors at `AppLogger.error` level. Since `.error` auto-forwards to `CrashReportingService.reportError()`, expected "not connected" states polluted crash reports. Added `WhoopError.isConnectionError` computed property. Catch blocks now detect `.notConnected` and `.tokenRefreshFailed` and log at `.debug` level. Only actual API failures log at `.error`.
+
+**Rule — Expected service disconnection is not an error**: When a third-party service (WHOOP, Fitbit, Strava) is not connected, any resulting errors MUST log at `.debug` or `.info` level, never `.error`. Only unexpected API failures (auth succeeded but request failed) should use `.error`. Pattern: `WhoopError.isConnectionError` guard in catch blocks.
+
+**P1 FIXED: TabPreloader.preloadAll() main thread blocking (contributing to 15 freeze crashes)** — `ExerciseLibraryService.preloadAll()` called `self.getAllExercises()` which does a synchronous `viewContext.fetch` of 5500+ exercises. Since `TabPreloader` is `@MainActor`, this ran on the main thread. Changed `preloadAll()` to just ensure `preWarmCache()` is running (which already fetches on a background context). Never call `getAllExercises()` from `preloadAll()`.
+
+**Rule — `preloadAll()` must never call `getAllExercises()`**: The `getAllExercises()` method does a synchronous `viewContext.fetch` which blocks the main thread. `preloadAll()` should only trigger `preWarmCache()` if it hasn't started yet. The `preWarmCache()` path uses `Task.detached` + `bgContext.perform` which is safe.
+
+**P2 FIXED: Network timeout crash noise (12 crashes, persistent)** — `PrivateChallengeService.fetchMyChallenges()`, `ChallengeService.getChallengesWithFriend()`, and `HealthDataService.saveDailyActivityFromHealthKit()` had no retry logic. All timeout errors logged at `.error` level, polluting crash reports. Added 3-attempt retry with exponential backoff (2s, 4s delays) for timeout errors. Timeouts that exhaust retries now log at `.warning` instead of `.error`. Added auth guard to `saveDailyActivityFromHealthKit()`.
+
+**Rule — Network fetch timeout handling**: All Supabase RPC/query methods that fetch data for display SHOULD have retry logic (3 attempts, exponential backoff) for `NSURLErrorTimedOut`. Timeouts that exhaust retries MUST log at `.warning`, not `.error`, since they are transient network conditions — not application bugs. Only non-timeout errors should use `.error`.
+
+### 2026-03-28: Startup Freeze Fix — `getExercise(byName:)` Synchronous Fallback
+
+**Root cause**: `getExercise(byName:)` and `getExercise(byId:)` both fall back to `getAllExercises()` (synchronous `viewContext.fetch` of 5500+ exercises) when `cachedExercisesByName` is nil. During startup, `preWarmCache()` runs on a background thread but hasn't finished yet. Any code that calls `getExercise(byName:)` before the cache is populated triggers the synchronous fallback, blocking the main thread for 1.7s+. In the observed crash, a program widget looked up "Hack Squat (Barbell)" during Dashboard rendering.
+
+**Fix**: Both `getExercise(byName:)` and `getExercise(byId:)` now check `isPreWarming` before falling back to `getAllExercises()`. If a background cache build is in progress, they return `nil` instead of blocking the main thread. Callers already handle `nil` (show placeholder or skip). The view re-renders when `isExercisesReady` publishes after `preWarmCache()` completes.
+
+**Rule — Never synchronously fetch during background cache warm-up**: `getExercise(byName:)` and `getExercise(byId:)` must return `nil` when `isPreWarming == true` and the cache is empty. The synchronous `getAllExercises()` fallback is only for the rare case where the cache was invalidated AFTER startup (e.g., exercise sync). During startup, `preWarmCache()` handles population on a background thread.
+
+### 2026-03-28: FriendProfileView FPS Fix — `.blur()` Removal
+
+**Root cause**: `LargeCachedFriendPhoto` used `.blur(radius: 20)` on a decorative glow circle behind the profile photo. `.blur()` is the most expensive single-frame modifier in SwiftUI — it renders the element offscreen then applies a Gaussian blur kernel, which is CPU-bound on simulator and still GPU-heavy on device. Combined with sheet presentation animation + `AnimatedOrbBackground` starting, this caused 8-10fps for ~1s.
+
+**Fix**: Replaced the blurred glow circle with `.shadow(color:radius:x:y:)` applied directly to the photo/initials content. Shadow uses the compositor's built-in pipeline (no offscreen pass), which is dramatically cheaper.
+
+**Rule — Never use `.blur()` on decorative elements in sheets or transitions**: Use `.shadow()` or pre-rendered gradient images instead. `.blur()` is only acceptable on static, non-animated content that doesn't coincide with navigation animations.
+
+### 2026-03-29: v1.37 Crash Fixes (53 crashes analyzed)
+
+**P0 FIXED: Cover photo feature removed (15 crashes)** — `uploadCoverPhoto` in `PrivateChallengeService.swift` used the `avatars` storage bucket instead of `private-challenge-photos`, causing RLS rejection on every upload attempt. Rather than fix the bucket, the entire cover photo feature was removed (not needed — challenges use emoji icons). Removed: `.coverPhoto` creation step, `ChallengePhotoPicker`/`ChallengePhotoCameraPicker` structs, cover photo UI from detail/widget/join views, `uploadCoverPhoto`/`removeCoverPhoto`/`resizeImageForCover` methods. SQL migration `20260328_private_challenge_photos.sql` deleted.
+
+**P0 FIXED: SQL ambiguous challenge_id (8 crashes)** — `get_private_challenge_detail` and `get_my_private_challenges` have `RETURNS TABLE (challenge_id UUID, ...)` which creates a PL/pgSQL variable conflicting with `challenge_id` columns on joined tables. Migration `20260329_fix_challenge_id_ambiguity.sql` adds `#variable_conflict use_column` to both functions.
+
+**Rule — `#variable_conflict use_column` on RETURNS TABLE functions**: Any PL/pgSQL function with `RETURNS TABLE` that has output column names matching table column names (e.g., `challenge_id`, `user_id`) MUST include `#variable_conflict use_column` after the `DECLARE` block. Without it, PostgreSQL raises error 42702 "column reference is ambiguous".
+
+**P0 FIXED: WeightGoalUpsert UUID type (latent)** — `WeightTrackingService.setWeightGoal()` had `WeightGoalUpsert.user_id` as `String` (same bug pattern as `logWeight()` which was already fixed). Changed to `UUID` type.
+
+**P1 FIXED: performIntelligenceInit viewContext off main thread** — `UserBehaviorLearningEngine.analyzeUserBehavior` received `viewContext` (main-queue context) inside `Task.detached`. Replaced with `newBackgroundContext()`.
+
+**P1 FIXED: Startup audit log level** — `[STARTUP AUDIT] FAIL` logged at `.error` which auto-forwards to `CrashReportingService`, inflating crash counts (3 of 53 crashes were just audit logs). Changed to `.warning`.
+
+**P1 FIXED: Reaction fetch cancellation noise** — `ChallengeReactionsView.fetchReactions` logged `NSURLErrorCancelled` (-999) at `.error` level. Added cancellation check — cancelled requests now log at `.debug`.
+
+**P1 FIXED: fetchReceivedWorkouts 502 handling** — `FriendService.fetchReceivedWorkouts` had no retry logic. Added 3-attempt retry with exponential backoff for timeout/502 errors. Exhausted retries log at `.warning` instead of `.error`.

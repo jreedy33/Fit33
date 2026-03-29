@@ -392,7 +392,7 @@ struct WorkoutCompletionView: View {
                     }
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .adaptiveToolbarBackground()
         }
         .sheet(isPresented: $showingShareOptions) {
             ShareWorkoutSheet(workout: workout, accentColor: workoutGradient[0])

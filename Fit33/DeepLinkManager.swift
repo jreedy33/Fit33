@@ -167,6 +167,13 @@ class DeepLinkManager: ObservableObject {
             NotificationCenter.default.post(name: Notification.Name("WhoopCallback"), object: url)
             return true
             
+        case "oura":
+            // Handle Oura Ring OAuth callback
+            // Format: fit33://oura?code=xxx
+            AppLogger.debug("[DEEPLINK] Oura OAuth callback received - forwarding to OuraService", category: .network)
+            NotificationCenter.default.post(name: Notification.Name("OuraCallback"), object: url)
+            return true
+            
         case "login-callback":
             // Handle OAuth callback (Google, Facebook, etc.)
             // Format: fit33://login-callback#access_token=xxx&...

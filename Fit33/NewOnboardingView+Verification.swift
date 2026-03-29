@@ -600,6 +600,14 @@ extension NewOnboardingView {
     }
     
     func createMinimalAccountForEmailPasswordSignup() async {
+        // Account is now created early in handleAuth(). If user is already authenticated,
+        // just update the profile with phone number and skip account creation entirely.
+        if supabaseManager.isAuthenticated {
+            AppLogger.info("User already authenticated (account created in handleAuth) — updating phone/username only", category: .auth)
+            await updatePhoneAndUsername()
+            return
+        }
+        
         AppLogger.debug("Creating minimal account for email/password signup... email=\(email.prefix(5))*** password.count=\(password.count)", category: .auth)
         
         guard !password.isEmpty, password.count >= 6 else {
@@ -657,7 +665,7 @@ extension NewOnboardingView {
     }
     
     /// Attempt signUp; if the auth user already exists (from a prior partial failure), sign in instead.
-    private func signUpOrRecoverExistingAccount() async throws {
+    func signUpOrRecoverExistingAccount() async throws {
         do {
             try await supabaseManager.signUp(
                 email: email,
@@ -693,7 +701,7 @@ extension NewOnboardingView {
     }
     
     /// Update the profile with phone number and username (best-effort, non-fatal).
-    private func updatePhoneAndUsername() async {
+    func updatePhoneAndUsername() async {
         guard let userId = supabaseManager.currentUser?.id else { return }
         
         do {

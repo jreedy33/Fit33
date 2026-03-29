@@ -113,7 +113,7 @@ struct ShareWorkoutSheet: View {
                     .fontWeight(.semibold)
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .adaptiveToolbarBackground()
             .alert("Error", isPresented: .init(
                 get: { sendError != nil },
                 set: { if !$0 { sendError = nil } }

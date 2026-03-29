@@ -2,8 +2,8 @@
 //  ChallengeDetailView.swift
 //  Fit33
 //
-//  Detailed view of an active challenge with progress visualization
-//  Shows head-to-head comparison, daily breakdown, and streak info
+//  Redesigned detail view for active 1v1 challenges — compact head-to-head display,
+//  league-style stat bar, day-by-day battle log with actual values, and real-time updates.
 //
 
 import SwiftUI
@@ -28,132 +28,102 @@ struct ChallengeDetailView: View {
     @State private var lastSyncedSteps = 0
     @State private var showingReactionPicker = false
     
-    
-    private var challengeType: ChallengeType {
-        challenge.resolvedType
+    private var challengeType: ChallengeType { challenge.resolvedType }
+    private var typeColor: Color { challengeType.color }
+    private var typeGradient: LinearGradient {
+        LinearGradient(colors: challengeType.gradientColors, startPoint: .leading, endPoint: .trailing)
+    }
+    private var opponentFirst: String {
+        challenge.opponentName?.components(separatedBy: " ").first ?? "Opponent"
     }
     
     var body: some View {
         ZStack {
-            // Animated orb background (consistent with challenge flow)
-            AnimatedOrbBackground.home(colorScheme: colorScheme)
+            AnimatedOrbBackground.friends(colorScheme: colorScheme)
                 .ignoresSafeArea()
             
             if isLoading {
                 ProgressView()
                     .scaleEffect(1.2)
             } else {
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(spacing: 24) {
-                        // Epic head-to-head display
-                        headToHeadSection
-                            .fixedSize(horizontal: false, vertical: true)
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: Spacing.md) {
+                        headToHeadCard
+                        statBar
                         
-                        // 🗣️ Battle Cry / 💪 Power Up send button
                         if challenge.status == "active" {
                             reactionSendSection
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                         
-                        // Progress bars comparison
-                        progressComparisonSection
-                            .fixedSize(horizontal: false, vertical: true)
+                        todayProgressCard
                         
-                        // 🗣️ Reaction Feed (Battle Log / Hype Feed)
                         if challenge.status == "active" {
                             ReactionFeedView(challenge: challenge)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                         
-                        // Stats grid
-                        statsGridSection
-                            .fixedSize(horizontal: false, vertical: true)
+                        battleLogSection
                         
-                        // Daily breakdown calendar
-                        dailyBreakdownSection
-                            .fixedSize(horizontal: false, vertical: true)
+                        notificationToggleCard
                         
-                        // Cancel challenge button
                         if challenge.status == "active" || challenge.status == "pending" {
                             cancelChallengeButton
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .top)
                     .padding(.horizontal, Spacing.md)
-                    .padding(.top, 16)
-                    .padding(.bottom, 40)
+                    .padding(.top, Spacing.sm)
+                    .padding(.bottom, 60)
                 }
-                .scrollDisabled(false)
             }
         }
-        .navigationTitle(challenge.title)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             loadDetails()
             lastSyncedSteps = healthKitService.todaySteps
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
-            // Refresh when app returns from background
             if oldPhase == .background && newPhase == .active {
-                Task {
-                    await refreshProgressIfNeeded()
-                }
+                Task { await refreshProgressIfNeeded() }
             }
         }
         .onChange(of: healthKitService.todaySteps) { oldValue, newValue in
-            // Auto-refresh when steps update and crosses the daily target
             if challenge.challengeType == "steps" && newValue != lastSyncedSteps {
                 let dailyTarget = challenge.dailyTarget ?? 1000
-                
-                // If we just crossed the threshold, refresh immediately
                 if (lastSyncedSteps < dailyTarget && newValue >= dailyTarget) ||
-                   (newValue > lastSyncedSteps + 100) { // Or significant change
+                   (newValue > lastSyncedSteps + 100) {
                     lastSyncedSteps = newValue
-                    Task {
-                        await syncMyProgressInBackground()
-                    }
+                    Task { await syncMyProgressInBackground() }
                 }
             }
         }
         .task(id: challenge.challengeId) {
-            // Subscribe to real-time opponent progress updates (battery-efficient WebSocket)
-            // This replaces the old 30-second polling
             RealtimeService.shared.onOpponentDailyProgressUpdated = { payload in
-                // Only refresh if it's for THIS challenge
                 if payload.challengeId == challenge.challengeId {
                     AppLogger.debug("⚡️ [CHALLENGE] Real-time opponent update received!", category: .social)
                     Task {
                         details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
-                        
-                        // Haptic feedback when opponent hits their target
                         if payload.targetHit {
-                            HapticManager.notification(.warning) // Alert them!
+                            HapticManager.notification(.warning)
                         }
                     }
                 }
             }
             
-            // Fallback: Still refresh every 2 minutes as a safety net
-            // (in case WebSocket disconnects temporarily)
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 120_000_000_000) // 2 minutes (was 30 seconds)
+                try? await Task.sleep(nanoseconds: 120_000_000_000)
                 if !isLoading {
                     details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
                 }
             }
         }
         .onDisappear {
-            // Clean up callback when leaving view
             RealtimeService.shared.onOpponentDailyProgressUpdated = nil
         }
         .alert("Cancel Challenge?", isPresented: $showingCancelConfirmation) {
             Button("Keep Challenge", role: .cancel) { }
-            Button("Cancel Challenge", role: .destructive) {
-                cancelChallenge()
-            }
+            Button("Cancel Challenge", role: .destructive) { cancelChallenge() }
         } message: {
-            Text("This will end the challenge for both you and \(challenge.opponentName?.components(separatedBy: " ").first ?? "your friend"). They will be notified that you cancelled.")
+            Text("This will end the challenge for both you and \(opponentFirst). They will be notified that you cancelled.")
         }
         .sheet(isPresented: $showingReactionPicker) {
             ReactionPickerSheet(challenge: challenge, onSend: { _ in })
@@ -162,38 +132,625 @@ struct ChallengeDetailView: View {
         }
     }
     
-    // MARK: - Cancel Challenge Button
+    // MARK: - Head-to-Head Card
+    
+    private var headToHeadCard: some View {
+        VStack(spacing: Spacing.md) {
+            // Challenge type + time badge
+            HStack(spacing: Spacing.xs) {
+                HStack(spacing: Spacing.xxs) {
+                    Text(challengeType.emoji)
+                        .font(.system(size: 14))
+                    Text(challengeType.displayName)
+                        .font(.ds_labelSmall)
+                        .fontWeight(.bold)
+                }
+                .foregroundColor(typeColor)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, Spacing.xxxs)
+                .background(Capsule().fill(typeColor.opacity(0.12)))
+                
+                Spacer()
+                
+                HStack(spacing: Spacing.xxs) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 9))
+                    if challenge.daysRemaining > 0 {
+                        Text("\(challenge.daysRemaining)d left")
+                    } else {
+                        Text("Complete")
+                    }
+                }
+                .font(.ds_labelSmall)
+                .foregroundColor(.secondary)
+            }
+            
+            // VS Battle
+            HStack(spacing: 0) {
+                // Me
+                VStack(spacing: Spacing.xs) {
+                    ZStack {
+                        if let cachedImage = ProfilePhotoCache.shared.cachedImage {
+                            Image(uiImage: cachedImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 56, height: 56)
+                                .clipShape(Circle())
+                                .overlay(
+                                    Circle().stroke(
+                                        challenge.amWinning
+                                            ? LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                            : typeGradient,
+                                        lineWidth: 2.5
+                                    )
+                                )
+                        } else {
+                            Circle()
+                                .fill(typeGradient)
+                                .frame(width: 56, height: 56)
+                                .overlay(
+                                    Image(systemName: "person.fill")
+                                        .font(.ds_heading2)
+                                        .foregroundColor(.white)
+                                )
+                        }
+                        
+                        if challenge.amWinning && challenge.myTotalProgress > 0 {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.yellow)
+                                .offset(y: -32)
+                        }
+                    }
+                    
+                    Text("You")
+                        .font(.ds_labelSmall)
+                        .foregroundColor(.primary)
+                    
+                    Text(formatProgress(challenge.myTotalProgress))
+                        .font(.ds_stat)
+                        .foregroundStyle(
+                            challenge.amWinning
+                                ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+                                : AnyShapeStyle(Color.primary)
+                        )
+                }
+                .frame(maxWidth: .infinity)
+                
+                // VS Column
+                VStack(spacing: Spacing.xxs) {
+                    Text("VS")
+                        .font(.system(size: 20, weight: .black, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(colors: [.orange, .red], startPoint: .top, endPoint: .bottom)
+                        )
+                    
+                    if challenge.myTotalProgress != challenge.opponentTotalProgress {
+                        let diff = abs(challenge.myTotalProgress - challenge.opponentTotalProgress)
+                        Text(challenge.amWinning ? "+\(formatProgress(diff))" : "-\(formatProgress(diff))")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(challenge.amWinning ? .green : .red)
+                    }
+                }
+                .frame(width: 56)
+                
+                // Opponent
+                VStack(spacing: Spacing.xs) {
+                    ZStack {
+                        CachedFriendPhoto(
+                            friendId: challenge.opponentId.uuidString,
+                            photoUrl: challenge.opponentPhotoUrl,
+                            name: challenge.opponentName ?? "Opponent",
+                            size: 56,
+                            showGradientRing: true,
+                            gradientColors: !challenge.amWinning && challenge.opponentTotalProgress > 0
+                                ? [.green, .mint] : [.orange, .red]
+                        )
+                        
+                        if !challenge.amWinning && challenge.opponentTotalProgress > 0 {
+                            Image(systemName: "crown.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.yellow)
+                                .offset(y: -32)
+                        }
+                    }
+                    
+                    HStack(spacing: 2) {
+                        Text(opponentFirst)
+                            .font(.ds_labelSmall)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        if challenge.opponentIsVerified == true || challenge.opponentIsGoldVerified == true {
+                            VerifiedBadge(size: 10, isGold: challenge.opponentIsGoldVerified == true)
+                        }
+                    }
+                    
+                    Text(formatProgress(challenge.opponentTotalProgress))
+                        .font(.ds_stat)
+                        .foregroundStyle(
+                            !challenge.amWinning
+                                ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+                                : AnyShapeStyle(Color.primary)
+                        )
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(Spacing.md)
+        .sleekCard(cornerRadius: 20, accentColor: typeColor)
+    }
+    
+    // MARK: - Stat Bar
+    
+    private var statBar: some View {
+        let livePercent = ChallengeProgressResolver.shared.progressPercentage(for: challenge)
+        let streak = challenge.myCurrentStreak
+        
+        return VStack(spacing: Spacing.sm) {
+            // Today's progress context
+            HStack(spacing: Spacing.xs) {
+                HStack(spacing: Spacing.xxs) {
+                    Text(challengeType.emoji)
+                        .font(.system(size: 14))
+                    Text("\(Int(livePercent * 100))% of today's goal")
+                        .font(.ds_labelSmall)
+                        .foregroundColor(.primary)
+                }
+                
+                Spacer()
+                
+                let liveValue = ChallengeProgressResolver.shared.liveProgress(for: challenge)
+                Text("\(liveValue)/\(challenge.dailyTarget ?? 0) \(challenge.targetUnit)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(typeColor)
+            }
+            
+            // Progress bar
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(typeColor.opacity(colorScheme == .dark ? 0.12 : 0.08))
+                        .frame(height: 6)
+                    
+                    Capsule()
+                        .fill(typeGradient)
+                        .frame(width: max(geo.size.width * livePercent, 6), height: 6)
+                        .animation(.spring(response: 0.5), value: livePercent)
+                }
+            }
+            .frame(height: 6)
+            
+            // Stats row with dividers
+            HStack(spacing: 0) {
+                statCell(
+                    value: formatProgress(challenge.dailyTarget ?? 0),
+                    label: "daily \(challenge.targetUnit)",
+                    valueColor: typeColor
+                )
+                
+                thinDivider
+                
+                VStack(spacing: 2) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                        Text("\(streak)")
+                            .font(.ds_statSmall)
+                            .foregroundColor(.primary)
+                    }
+                    Text("streak")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                
+                thinDivider
+                
+                statCell(
+                    value: "\(challenge.daysRemaining)",
+                    label: challenge.daysRemaining == 1 ? "day left" : "days left",
+                    valueColor: challenge.daysRemaining <= 1 ? .red : .primary
+                )
+                
+                thinDivider
+                
+                statCell(
+                    value: "\(challenge.myDaysCompleted)/\(max(challenge.daysElapsed, 1))",
+                    label: "days hit",
+                    valueColor: .green
+                )
+            }
+            .padding(.vertical, Spacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .fill(typeColor.opacity(colorScheme == .dark ? 0.06 : 0.04))
+            )
+        }
+        .padding(Spacing.sm)
+        .sleekCardSubtle(cornerRadius: 16)
+    }
+    
+    private func statCell(value: String, label: String, valueColor: Color) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.ds_statSmall)
+                .foregroundColor(valueColor)
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    private var thinDivider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 1, height: 28)
+    }
+    
+    // MARK: - Reaction Send
+    
+    private var reactionSendSection: some View {
+        let isCompetition = challenge.mode == .competition
+        let themeGradient: [Color] = isCompetition ? [.orange, .red] : [.blue, .cyan]
+        
+        return Button {
+            HapticManager.impact(.medium)
+            showingReactionPicker = true
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: themeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 38, height: 38)
+                    
+                    Text(isCompetition ? "🗣️" : "⚡")
+                        .font(.ds_bodyMedium)
+                }
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(isCompetition ? "Send a Battle Cry" : "Send a Power Up")
+                        .font(.ds_bodySmall)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    
+                    Text(isCompetition ? "Talk smack to \(opponentFirst)" : "Hype up \(opponentFirst)")
+                        .font(.ds_caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.ds_labelSmall)
+                    .foregroundStyle(LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing))
+            }
+            .padding(Spacing.sm)
+            .sleekCardSubtle(cornerRadius: 14)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Today's Progress Card
+    
+    private var todayProgressCard: some View {
+        let myLive = ChallengeProgressResolver.shared.liveProgress(for: challenge)
+        let oppToday = challenge.opponentTodayProgress ?? 0
+        let target = challenge.dailyTarget ?? 1
+        let myPercent = min(1.0, Double(myLive) / Double(target))
+        let oppPercent = min(1.0, Double(oppToday) / Double(target))
+        
+        return VStack(spacing: Spacing.sm) {
+            // Section header
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "bolt.circle.fill")
+                    .foregroundStyle(typeGradient)
+                    .font(.title3)
+                Text("Today")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                if challenge.amWinningToday == true {
+                    Text("You're ahead!")
+                        .font(.ds_caption)
+                        .foregroundColor(.green)
+                } else if challenge.amWinningToday == false {
+                    Text("\(opponentFirst) leads")
+                        .font(.ds_caption)
+                        .foregroundColor(.orange)
+                }
+            }
+            
+            // My progress bar
+            VStack(spacing: Spacing.xxs) {
+                HStack {
+                    Text("You")
+                        .font(.ds_labelSmall)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text("\(myLive) / \(target)")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(myPercent >= 1.0 ? .green : typeColor)
+                    if myPercent >= 1.0 {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.green)
+                    }
+                }
+                
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.primary.opacity(0.08))
+                            .frame(height: 8)
+                        Capsule()
+                            .fill(typeGradient)
+                            .frame(width: geo.size.width * myPercent, height: 8)
+                            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: myPercent)
+                    }
+                }
+                .frame(height: 8)
+            }
+            
+            // Opponent progress bar
+            VStack(spacing: Spacing.xxs) {
+                HStack {
+                    HStack(spacing: 2) {
+                        Text(opponentFirst)
+                            .font(.ds_labelSmall)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        if challenge.opponentIsVerified == true || challenge.opponentIsGoldVerified == true {
+                            VerifiedBadge(size: 9, isGold: challenge.opponentIsGoldVerified == true)
+                        }
+                    }
+                    Spacer()
+                    Text(oppToday > 0 ? "\(oppToday) / \(target)" : "–")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(oppPercent >= 1.0 ? .green : (oppToday > 0 ? .primary : .secondary))
+                    if oppPercent >= 1.0 {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.green)
+                    }
+                }
+                
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.primary.opacity(0.08))
+                            .frame(height: 8)
+                        Capsule()
+                            .fill(LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geo.size.width * oppPercent, height: 8)
+                            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: oppPercent)
+                    }
+                }
+                .frame(height: 8)
+            }
+        }
+        .padding(Spacing.md)
+        .sleekCardSubtle(cornerRadius: 16)
+    }
+    
+    // MARK: - Battle Log (Day-by-Day Timeline)
+    
+    private var battleLogSection: some View {
+        VStack(spacing: Spacing.sm) {
+            // Section header
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "calendar.circle.fill")
+                    .foregroundStyle(typeGradient)
+                    .font(.title3)
+                Text("Battle Log")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Text("Day \(challenge.daysElapsed) of \(challenge.durationDays)")
+                    .font(.ds_caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            if let details = details, let participants = details.participants {
+                let myProgress = participants.first { $0.userId.uuidString == SupabaseManager.shared.currentUser?.id.uuidString }
+                let opponentProgress = participants.first { $0.userId.uuidString != SupabaseManager.shared.currentUser?.id.uuidString }
+                let calendar = createUTCCalendar()
+                let allDays = generateDays(from: challenge.startDate, to: challenge.endDate)
+                
+                VStack(spacing: 0) {
+                    ForEach(Array(allDays.enumerated()), id: \.offset) { index, date in
+                        let myEntry = myProgress?.dailyProgress?.first { entry in
+                            calendar.startOfDay(for: entry.date) == date
+                        }
+                        let oppEntry = opponentProgress?.dailyProgress?.first { entry in
+                            calendar.startOfDay(for: entry.date) == date
+                        }
+                        
+                        BattleLogRow(
+                            dayNumber: index + 1,
+                            date: date,
+                            myValue: myEntry?.value ?? 0,
+                            opponentValue: oppEntry?.value ?? 0,
+                            target: challenge.dailyTarget ?? 1,
+                            targetUnit: challenge.targetUnit,
+                            opponentName: opponentFirst,
+                            typeColor: typeColor,
+                            typeGradientColors: challengeType.gradientColors,
+                            colorScheme: colorScheme
+                        )
+                        
+                        if index < allDays.count - 1 {
+                            Rectangle()
+                                .fill(Color.primary.opacity(0.04))
+                                .frame(height: 1)
+                                .padding(.horizontal, Spacing.sm)
+                        }
+                    }
+                }
+                .sleekCardSubtle(cornerRadius: 16)
+            } else {
+                VStack(spacing: Spacing.sm) {
+                    ForEach(0..<min(challenge.durationDays, 7), id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
+                            .fill(Color.primary.opacity(0.04))
+                            .frame(height: 56)
+                    }
+                }
+                .padding(Spacing.sm)
+                .sleekCardSubtle(cornerRadius: 16)
+            }
+        }
+    }
+    
+    // MARK: - Notification Toggle
+    
+    private var notificationToggleCard: some View {
+        Group {
+            if challenge.status == "active" || challenge.status == "pending" {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: notifyOnOpponentComplete ? "bell.fill" : "bell.slash")
+                        .font(.ds_bodyMedium)
+                        .foregroundColor(notifyOnOpponentComplete ? typeColor : .secondary)
+                    
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Opponent alerts")
+                            .font(.ds_bodySmall)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        
+                        Text("Notified when \(opponentFirst) hits their goal")
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    if isTogglingNotification {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Toggle("", isOn: $notifyOnOpponentComplete)
+                            .labelsHidden()
+                            .tint(typeColor)
+                            .onChange(of: notifyOnOpponentComplete) { _, newValue in
+                                toggleNotificationPreference(newValue)
+                            }
+                    }
+                }
+                .padding(Spacing.sm)
+                .sleekCardSubtle(cornerRadius: 14)
+            }
+        }
+    }
+    
+    // MARK: - Cancel Button
     
     private var cancelChallengeButton: some View {
         Button(action: { showingCancelConfirmation = true }) {
-            HStack(spacing: 10) {
+            HStack(spacing: Spacing.xs) {
                 if isCancelling {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .red))
                 } else {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.ds_heading3)
+                        .font(.ds_bodyMedium)
                 }
                 
                 Text(isCancelling ? "Cancelling..." : "Cancel Challenge")
-                    .font(.subheadline)
+                    .font(.ds_bodySmall)
                     .fontWeight(.medium)
             }
             .foregroundColor(.red)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md)
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
                     .stroke(Color.red.opacity(0.3), lineWidth: 1)
                     .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.md)
-                            .fill(Color.red.opacity(colorScheme == .dark ? 0.1 : 0.05))
+                        RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                            .fill(Color.red.opacity(colorScheme == .dark ? 0.08 : 0.04))
                     )
             )
         }
         .buttonStyle(PlainButtonStyle())
         .disabled(isCancelling)
-        .padding(.top, 8)
+    }
+    
+    // MARK: - Helpers
+    
+    private func loadDetails() {
+        Task {
+            AppLogger.debug("🔄 [CHALLENGE DETAIL] Fetching details for challenge: \(challenge.challengeId)", category: .social)
+            details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
+            
+            if let fetchedDetails = details {
+                AppLogger.info("✅ [CHALLENGE DETAIL] Details loaded - \(fetchedDetails.participants?.count ?? 0) participants", category: .social)
+                await MainActor.run {
+                    notifyOnOpponentComplete = fetchedDetails.shouldNotifyOnOpponentComplete
+                }
+            } else {
+                AppLogger.error("❌ [CHALLENGE DETAIL] Failed to load details", category: .social)
+            }
+            
+            isLoading = false
+            await syncMyProgressInBackground()
+        }
+    }
+    
+    private func syncMyProgressInBackground() async {
+        guard challenge.status == "active" || challenge.status == "pending" else { return }
+        let challengeType = challenge.challengeType
+        guard challengeType == "steps" || challengeType == "active_minutes" else { return }
+        
+        let progressValue: Int
+        if challengeType == "steps" {
+            progressValue = HealthKitService.shared.todaySteps
+        } else {
+            progressValue = HealthKitService.shared.todayActiveMinutes
+        }
+        
+        if progressValue > 0 {
+            await challengeService.logProgress(
+                challengeId: challenge.challengeId,
+                progressValue: progressValue,
+                source: "healthkit"
+            )
+            details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
+        }
+    }
+    
+    private func refreshProgressIfNeeded() async {
+        await syncMyProgressInBackground()
+    }
+    
+    private func toggleNotificationPreference(_ notify: Bool) {
+        isTogglingNotification = true
+        HapticManager.impact(.light)
+        
+        Task {
+            let success = await challengeService.toggleChallengeNotificationPreference(
+                challengeId: challenge.challengeId,
+                notify: notify
+            )
+            
+            await MainActor.run {
+                isTogglingNotification = false
+                if success {
+                    HapticManager.notification(.success)
+                } else {
+                    notifyOnOpponentComplete = !notify
+                    HapticManager.notification(.error)
+                }
+            }
+        }
     }
     
     private func cancelChallenge() {
@@ -217,638 +774,6 @@ struct ChallengeDetailView: View {
         }
     }
     
-    // MARK: - Head to Head Section
-    
-    private var headToHeadSection: some View {
-        VStack(spacing: 20) {
-            // Challenge type badge with emoji
-            HStack(spacing: 6) {
-                Text(challengeType.emoji)
-                    .font(.ds_bodyRegular)
-                Text(challengeType.displayName)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-            }
-            
-            // VS Battle Display
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                
-                // Me
-                VStack(spacing: 12) {
-                    // Avatar with actual profile photo
-                    ZStack {
-                        if let cachedImage = ProfilePhotoCache.shared.cachedImage {
-                            // Use actual profile photo
-                            Image(uiImage: cachedImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 70, height: 70)
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle()
-                                        .stroke(
-                                            LinearGradient(
-                                                colors: challenge.amWinning ? [.green, .mint] : [.blue, .purple],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            ),
-                                            lineWidth: 3
-                                        )
-                                )
-                        } else {
-                            // Fallback gradient circle
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [.blue, .purple],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 70, height: 70)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .font(.ds_heading1)
-                                        .foregroundColor(.white)
-                                )
-                        }
-                        
-                        // Winning crown
-                        if challenge.amWinning && challenge.myTotalProgress > 0 {
-                            Image(systemName: "crown.fill")
-                                .font(.ds_heading3)
-                                .foregroundColor(.yellow)
-                                .offset(y: -40)
-                        }
-                    }
-                    
-                    Text("You")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    
-                    // Score
-                    Text(formatProgress(challenge.myTotalProgress))
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: challenge.amWinning ? [.green, .mint] : [.primary.opacity(0.8), .primary],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                }
-                .frame(maxWidth: .infinity)
-                
-                // VS
-                VStack(spacing: 4) {
-                    Text("VS")
-                        .font(.system(size: 24, weight: .black, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.orange, .red],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                    
-                    // Lead indicator
-                    if challenge.myTotalProgress != challenge.opponentTotalProgress {
-                        let diff = abs(challenge.myTotalProgress - challenge.opponentTotalProgress)
-                        Text(challenge.amWinning ? "+\(formatProgress(diff))" : "-\(formatProgress(diff))")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundColor(challenge.amWinning ? .green : .red)
-                    }
-                }
-                .frame(width: 60)
-                
-                // Opponent
-                VStack(spacing: 12) {
-                    // Avatar
-                    ZStack {
-                        CachedFriendPhoto(
-                            friendId: challenge.opponentId.uuidString,
-                            photoUrl: challenge.opponentPhotoUrl,
-                            name: challenge.opponentName ?? "Opponent",
-                            size: 70,
-                            showGradientRing: true,
-                            gradientColors: !challenge.amWinning && challenge.opponentTotalProgress > 0 ? [.green, .mint] : [.orange, .red]
-                        )
-                        
-                        // Winning crown
-                        if !challenge.amWinning && challenge.opponentTotalProgress > 0 {
-                            Image(systemName: "crown.fill")
-                                .font(.ds_heading3)
-                                .foregroundColor(.yellow)
-                                .offset(y: -40)
-                        }
-                    }
-                    
-                    Text(challenge.opponentName?.components(separatedBy: " ").first ?? "Opponent")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    
-                    // Score
-                    Text(formatProgress(challenge.opponentTotalProgress))
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: !challenge.amWinning ? [.green, .mint] : [.primary.opacity(0.8), .primary],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                }
-                .frame(maxWidth: .infinity)
-                
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity)
-            
-            // Time remaining
-            HStack(spacing: 8) {
-                Image(systemName: "clock")
-                    .font(.caption)
-                
-                if challenge.daysRemaining > 0 {
-                    Text("\(challenge.daysRemaining) day\(challenge.daysRemaining == 1 ? "" : "s") remaining")
-                } else {
-                    Text("Challenge Complete!")
-                }
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
-            
-            // Notification toggle (show for both active and pending challenges)
-            if challenge.status == "active" || challenge.status == "pending" {
-                Divider()
-                    .padding(.vertical, Spacing.xs)
-                
-                HStack(spacing: 12) {
-                    Image(systemName: notifyOnOpponentComplete ? "bell.fill" : "bell.slash")
-                        .font(.ds_bodyRegular)
-                        .foregroundColor(notifyOnOpponentComplete ? challengeType.color : .secondary)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Opponent completion alerts")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        
-                        Text("Get notified when \(challenge.opponentName?.components(separatedBy: " ").first ?? "opponent") hits their daily goal")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                    
-                    Spacer()
-                    
-                    if isTogglingNotification {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
-                        Toggle("", isOn: $notifyOnOpponentComplete)
-                            .labelsHidden()
-                            .tint(challengeType.color)
-                            .onChange(of: notifyOnOpponentComplete) { _, newValue in
-                                toggleNotificationPreference(newValue)
-                            }
-                    }
-                }
-            }
-        }
-        .padding(Spacing.lg)
-        .sleekCard(cornerRadius: 24, accentColor: challengeType.color)
-    }
-    
-    // MARK: - Reaction Send Section
-    
-    private var reactionSendSection: some View {
-        let isCompetition = challenge.mode == .competition
-        let themeGradient: [Color] = isCompetition ? [.orange, .red] : [.blue, .cyan]
-        let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "them"
-        
-        return Button {
-            HapticManager.impact(.medium)
-            showingReactionPicker = true
-        } label: {
-            HStack(spacing: 12) {
-                // Animated icon
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(colors: themeGradient, startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
-                        .frame(width: 42, height: 42)
-                    
-                    Text(isCompetition ? "🗣️" : "⚡")
-                        .font(.ds_heading3)
-                }
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(isCompetition ? "Send a Battle Cry" : "Send a Power Up")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    
-                    Text(isCompetition
-                         ? "Talk smack to \(opponentFirst) 😈"
-                         : "Hype up \(opponentFirst) 💪")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.ds_labelMedium)
-                    .foregroundStyle(
-                        LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing)
-                    )
-            }
-            .padding(Spacing.md)
-            .sleekCard(cornerRadius: 16, accentColor: themeGradient[0])
-        }
-        .buttonStyle(.plain)
-    }
-    
-    // MARK: - Progress Comparison Section
-    
-    private var progressComparisonSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Progress")
-                .font(.headline)
-                .foregroundColor(.primary)
-                .padding(.horizontal, Spacing.xxs)
-            
-            VStack(spacing: 16) {
-                // My progress bar — type-colored with live data
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("You")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        Text("\(challenge.myDaysCompleted)/\(challenge.daysElapsed > 0 ? challenge.daysElapsed : 1) days")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    GeometryReader { geometry in
-                        let livePercent = ChallengeProgressResolver.shared.progressPercentage(for: challenge)
-                        ZStack(alignment: .leading) {
-                            // Background
-                            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                .fill(Color.gray.opacity(0.2))
-                                .frame(height: 12)
-                            
-                            // Progress — type-colored
-                            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                .fill(
-                                    LinearGradient(
-                                        colors: challengeType.gradientColors,
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: geometry.size.width * livePercent, height: 12)
-                                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: livePercent)
-                        }
-                    }
-                    .frame(height: 12)
-                }
-                
-                // Opponent progress bar
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(challenge.opponentName?.components(separatedBy: " ").first ?? "Opponent")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        
-                        Spacer()
-                        
-                        Text("\(challenge.opponentDaysCompleted)/\(challenge.daysElapsed > 0 ? challenge.daysElapsed : 1) days")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            // Background
-                            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                .fill(Color.gray.opacity(0.2))
-                                .frame(height: 12)
-                            
-                            // Progress
-                            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [.orange, .red],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: geometry.size.width * challenge.opponentProgressPercentage, height: 12)
-                                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: challenge.opponentProgressPercentage)
-                        }
-                    }
-                    .frame(height: 12)
-                }
-            }
-            .padding(Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.lg)
-                    .fill(Color.cardBackground)
-            )
-        }
-    }
-    
-    // MARK: - Stats Grid Section
-    
-    private var statsGridSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Stats")
-                .font(.headline)
-                .foregroundColor(.primary)
-                .padding(.horizontal, Spacing.xxs)
-            
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                ChallengeStatCard(
-                    title: "Daily Target",
-                    value: formatProgress(challenge.dailyTarget ?? 0),
-                    unit: challenge.targetUnit,
-                    icon: "target",
-                    color: .blue
-                )
-                
-                ChallengeStatCard(
-                    title: "Your Streak",
-                    value: "\(challenge.myCurrentStreak)",
-                    unit: "days",
-                    icon: "flame.fill",
-                    color: .orange
-                )
-                
-                ChallengeStatCard(
-                    title: "Days Left",
-                    value: "\(challenge.daysRemaining)",
-                    unit: "days",
-                    icon: "calendar",
-                    color: .purple
-                )
-                
-                ChallengeStatCard(
-                    title: "Completion",
-                    value: "\(Int(challenge.progressPercentage * 100))",
-                    unit: "%",
-                    icon: "chart.pie.fill",
-                    color: .green
-                )
-            }
-        }
-    }
-    
-    // MARK: - Daily Breakdown Section
-    
-    private var dailyBreakdownSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Daily Progress")
-                .font(.headline)
-                .foregroundColor(.primary)
-                .padding(.horizontal, Spacing.xxs)
-            
-            if let details = details, let participants = details.participants {
-                let myProgress = participants.first { $0.userId.uuidString == SupabaseManager.shared.currentUser?.id.uuidString }
-                let opponentProgress = participants.first { $0.userId.uuidString != SupabaseManager.shared.currentUser?.id.uuidString }
-                
-                // Generate all 7 days of the challenge using UTC calendar
-                let calendar = createUTCCalendar()
-                let allDays = generateDays(from: challenge.startDate, to: challenge.endDate)
-                
-                // Debug: Show what days we're generating
-                let _ = {
-                    AppLogger.debug("📅 [DAILY PROGRESS] Generating days from \(challenge.startDate) to \(challenge.endDate)", category: .social)
-                    AppLogger.debug("📅 [DAILY PROGRESS] Generated \(allDays.count) days", category: .social)
-                    if !allDays.isEmpty {
-                        AppLogger.debug("📅 [DAILY PROGRESS] First day: \(allDays[0])", category: .social)
-                    }
-                }()
-                
-                VStack(spacing: 6) {
-                    // Header
-                    HStack(spacing: 0) {
-                        Text("Day")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                            .frame(width: 50, alignment: .leading)
-                        
-                        Spacer()
-                        
-                        Text("You")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                            .frame(width: 50)
-                        
-                        Text(challenge.opponentName?.components(separatedBy: " ").first ?? "Opponent")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                            .frame(width: 70, alignment: .trailing)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 8)
-                    
-                    Divider()
-                    
-                    // Daily rows - show all 7 days (using UTC calendar)
-                    ForEach(Array(allDays.enumerated()), id: \.offset) { index, date in
-                        // date is already start of day in UTC from generateDays()
-                        
-                        let myProgressEntry = myProgress?.dailyProgress?.first { entry in
-                            let entryStartOfDay = calendar.startOfDay(for: entry.date)
-                            return entryStartOfDay == date
-                        }
-                        let oppProgressEntry = opponentProgress?.dailyProgress?.first { entry in
-                            let entryStartOfDay = calendar.startOfDay(for: entry.date)
-                            return entryStartOfDay == date
-                        }
-                        
-                        let myValue = myProgressEntry?.value ?? 0
-                        let oppValue = oppProgressEntry?.value ?? 0
-                        let target = challenge.dailyTarget ?? 1
-                        
-                        // Debug: Show date matching
-                        let _ = {
-                            if index == 0 {
-                                AppLogger.debug("🔍 [DATE MATCH] Day \(index + 1) (UTC calendar)", category: .social)
-                                AppLogger.debug("  Challenge day (UTC): \(date)", category: .social)
-                                if let myDailyProgress = myProgress?.dailyProgress {
-                                    AppLogger.debug("  Available MY dates (UTC): \(myDailyProgress.map { calendar.startOfDay(for: $0.date) })", category: .social)
-                                }
-                                if let myEntry = myProgressEntry {
-                                    AppLogger.info("  ✅ Found MY progress: \(calendar.startOfDay(for: myEntry.date)) = \(myEntry.value)", category: .social)
-                                } else {
-                                    AppLogger.error("  ❌ No MY progress for this date", category: .social)
-                                }
-                                if let oppEntry = oppProgressEntry {
-                                    AppLogger.info("  ✅ Found OPP progress: \(calendar.startOfDay(for: oppEntry.date)) = \(oppEntry.value)", category: .social)
-                                } else {
-                                    AppLogger.error("  ❌ No OPP progress for this date", category: .social)
-                                }
-                                AppLogger.debug("  Target: \(target), MY: \(myValue), OPP: \(oppValue)", category: .social)
-                                AppLogger.info("  Should show ✅ for MY: \(myValue >= target), OPP: \(oppValue >= target)", category: .social)
-                            }
-                        }()
-                        
-                        DailyProgressRow(
-                            dayNumber: index + 1,
-                            date: date,
-                            myValue: myValue,
-                            opponentValue: oppValue,
-                            target: target,
-                            targetUnit: challenge.targetUnit
-                        )
-                        
-                        if index < allDays.count - 1 {
-                            Divider()
-                                .padding(.horizontal, 14)
-                        }
-                    }
-                }
-                .padding(.vertical, Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .fill(Color.cardBackground)
-                )
-            } else {
-                // Loading state
-                VStack(spacing: 12) {
-                    ForEach(0..<7, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: CornerRadius.sm)
-                            .fill(Color.gray.opacity(0.1))
-                            .frame(height: 44)
-                    }
-                }
-                .padding(Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .fill(Color.cardBackground)
-                )
-            }
-        }
-    }
-    
-    // MARK: - Helpers
-    
-    private func loadDetails() {
-        Task {
-            // Fetch challenge details immediately for fast display
-            AppLogger.debug("🔄 [CHALLENGE DETAIL] Fetching details for challenge: \(challenge.challengeId)", category: .social)
-            details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
-            
-            if let fetchedDetails = details {
-                AppLogger.info("✅ [CHALLENGE DETAIL] Details loaded - \(fetchedDetails.participants?.count ?? 0) participants", category: .social)
-                
-                // Debug: Print daily progress data
-                if let participants = fetchedDetails.participants {
-                    for participant in participants {
-                        AppLogger.debug("👤 [CHALLENGE DETAIL] \(participant.displayName): \(participant.totalProgress), days completed: \(participant.daysCompleted)", category: .social)
-                        if let dailyProgress = participant.dailyProgress {
-                            AppLogger.debug("📊 [CHALLENGE DETAIL] Daily progress entries: \(dailyProgress.count)", category: .social)
-                            for entry in dailyProgress {
-                                AppLogger.debug("  📅 \(entry.date): \(entry.value) \(challenge.targetUnit)", category: .social)
-                            }
-                        } else {
-                            AppLogger.warning("⚠️ [CHALLENGE DETAIL] No daily progress data for \(participant.displayName)", category: .social)
-                        }
-                    }
-                }
-                
-                await MainActor.run {
-                    notifyOnOpponentComplete = fetchedDetails.shouldNotifyOnOpponentComplete
-                }
-            } else {
-                AppLogger.error("❌ [CHALLENGE DETAIL] Failed to load details", category: .social)
-            }
-            
-            isLoading = false
-            
-            // After displaying, sync latest progress in background (non-blocking)
-            // This ensures the data is fresh but doesn't block the initial view
-            await syncMyProgressInBackground()
-        }
-    }
-    
-    /// Sync progress in background after view loads (non-blocking)
-    private func syncMyProgressInBackground() async {
-        guard challenge.status == "active" || challenge.status == "pending" else { return }
-        
-        // Only sync for step/active minute challenges
-        let challengeType = challenge.challengeType
-        guard challengeType == "steps" || challengeType == "active_minutes" else { return }
-        
-        // Get current HealthKit value (no force refresh - use cached)
-        let progressValue: Int
-        if challengeType == "steps" {
-            progressValue = HealthKitService.shared.todaySteps
-        } else {
-            progressValue = HealthKitService.shared.todayActiveMinutes
-        }
-        
-        if progressValue > 0 {
-            await challengeService.logProgress(
-                challengeId: challenge.challengeId,
-                progressValue: progressValue,
-                source: "healthkit"
-            )
-            
-            // Immediately refresh details to show updated progress (including checkmarks)
-            details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
-        }
-    }
-    
-    /// Called when app returns from background to refresh progress
-    private func refreshProgressIfNeeded() async {
-        // Quick sync using cached HealthKit data
-        await syncMyProgressInBackground()
-    }
-    
-    /// Toggle notification preference for opponent completing daily challenge
-    private func toggleNotificationPreference(_ notify: Bool) {
-        isTogglingNotification = true
-        HapticManager.impact(.light)
-        
-        Task {
-            let success = await challengeService.toggleChallengeNotificationPreference(
-                challengeId: challenge.challengeId,
-                notify: notify
-            )
-            
-            await MainActor.run {
-                isTogglingNotification = false
-                
-                if success {
-                    HapticManager.notification(.success)
-                    AppLogger.info("✅ [CHALLENGES] Notification preference set to: \(notify ? "ON" : "OFF")", category: .social)
-                } else {
-                    // Revert toggle on failure
-                    notifyOnOpponentComplete = !notify
-                    HapticManager.notification(.error)
-                }
-            }
-        }
-    }
-    
     private func formatProgress(_ value: Int) -> String {
         if value >= 10000 {
             return String(format: "%.1fk", Double(value) / 1000)
@@ -865,7 +790,6 @@ struct ChallengeDetailView: View {
     private func generateDays(from start: Date, to end: Date) -> [Date] {
         var dates: [Date] = []
         let calendar = createUTCCalendar()
-        
         var current = calendar.startOfDay(for: start)
         let endDay = calendar.startOfDay(for: end)
         
@@ -873,66 +797,23 @@ struct ChallengeDetailView: View {
             dates.append(current)
             current = calendar.date(byAdding: .day, value: 1, to: current) ?? current
         }
-        
         return dates
     }
 }
 
-// MARK: - Challenge Stat Card
+// MARK: - Battle Log Row
 
-private struct ChallengeStatCard: View {
-    @Environment(\.colorScheme) private var colorScheme
-    
-    let title: String
-    let value: String
-    let unit: String
-    let icon: String
-    let color: Color
-    
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.ds_bodySmall)
-                    .foregroundColor(color)
-                
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                Text(unit)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.md)
-                .fill(Color.cardBackground)
-        )
-    }
-}
-
-// MARK: - Daily Progress Row
-
-struct DailyProgressRow: View {
-    @Environment(\.colorScheme) private var colorScheme
-    
+private struct BattleLogRow: View {
     let dayNumber: Int
     let date: Date
     let myValue: Int
     let opponentValue: Int
     let target: Int
     let targetUnit: String
+    let opponentName: String
+    let typeColor: Color
+    let typeGradientColors: [Color]
+    let colorScheme: ColorScheme
     
     private var isToday: Bool {
         var calendar = Calendar.current
@@ -943,8 +824,7 @@ struct DailyProgressRow: View {
     private var isFuture: Bool {
         var calendar = Calendar.current
         calendar.timeZone = TimeZone(identifier: "UTC")!
-        let today = calendar.startOfDay(for: Date())
-        return date > today
+        return date > calendar.startOfDay(for: Date())
     }
     
     private var dayLabel: String {
@@ -953,136 +833,168 @@ struct DailyProgressRow: View {
         return formatter.string(from: date)
     }
     
-    private var myCompleted: Bool {
-        let completed = myValue >= target
-        if !isFuture && myValue > 0 {
-            AppLogger.debug("🔍 [DAILY ROW] Day \(dayNumber): myValue=\(myValue), target=\(target), completed=\(completed)", category: .social)
-        }
-        return completed
-    }
-    
-    private var opponentCompleted: Bool {
-        let completed = opponentValue >= target
-        if !isFuture && opponentValue > 0 {
-            AppLogger.debug("🔍 [DAILY ROW] Day \(dayNumber): oppValue=\(opponentValue), target=\(target), completed=\(completed)", category: .social)
-        }
-        return completed
-    }
+    private var myWon: Bool { myValue >= target && !isFuture }
+    private var oppWon: Bool { opponentValue >= target && !isFuture }
+    private var iAmAhead: Bool { myValue > opponentValue && !isFuture }
     
     var body: some View {
-        HStack(spacing: 12) {
-            // Day number and label
-            VStack(spacing: 2) {
-                Text("Day \(dayNumber)")
-                    .font(.caption2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(isToday ? .blue : .secondary)
+        HStack(spacing: Spacing.sm) {
+            // Day column
+            VStack(spacing: 1) {
+                if isToday {
+                    Text("TODAY")
+                        .font(.system(size: 9, weight: .black))
+                        .foregroundColor(typeColor)
+                } else {
+                    Text("Day \(dayNumber)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(isFuture ? .secondary.opacity(0.4) : .secondary)
+                }
                 
                 Text(dayLabel)
                     .font(.ds_caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.secondary.opacity(isFuture ? 0.3 : 0.6))
             }
-            .frame(width: 50, alignment: .leading)
+            .frame(width: 44)
             
-            Spacer()
-            
-            // My completion status
-            HStack(spacing: 6) {
-                if isFuture {
-                    Image(systemName: "circle")
-                        .font(.ds_heading3)
-                        .foregroundColor(.gray.opacity(0.3))
-                } else if myCompleted {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.ds_heading2)
-                        .foregroundColor(.green)
-                } else if myValue > 0 {
-                    // Partial progress
-                    ZStack {
-                        Circle()
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 2)
-                            .frame(width: 22, height: 22)
-                        
-                        Circle()
-                            .trim(from: 0, to: min(1.0, Double(myValue) / Double(target)))
-                            .stroke(Color.orange, lineWidth: 2)
-                            .frame(width: 22, height: 22)
-                            .rotationEffect(.degrees(-90))
-                    }
-                } else {
-                    Image(systemName: "xmark.circle")
-                        .font(.ds_heading2)
-                        .foregroundColor(.red.opacity(0.6))
+            if isFuture {
+                // Future day — locked
+                HStack {
+                    Spacer()
+                    Image(systemName: "lock.fill")
+                        .font(.ds_caption)
+                        .foregroundColor(.secondary.opacity(0.2))
+                    Spacer()
                 }
-            }
-            .frame(width: 50)
-            
-            // Opponent completion status
-            HStack(spacing: 6) {
-                if isFuture {
-                    Image(systemName: "circle")
-                        .font(.ds_heading3)
-                        .foregroundColor(.gray.opacity(0.3))
-                } else if opponentCompleted {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.ds_heading2)
-                        .foregroundColor(.green)
-                } else if opponentValue > 0 {
-                    // Partial progress
-                    ZStack {
-                        Circle()
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 2)
-                            .frame(width: 22, height: 22)
+            } else {
+                // My result
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("You")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.secondary)
+                    
+                    HStack(spacing: Spacing.xxxs) {
+                        Text(myValue > 0 ? formatValue(myValue) : "–")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(myWon ? .green : (myValue > 0 ? .primary : .secondary.opacity(0.4)))
                         
-                        Circle()
-                            .trim(from: 0, to: min(1.0, Double(opponentValue) / Double(target)))
-                            .stroke(Color.orange, lineWidth: 2)
-                            .frame(width: 22, height: 22)
-                            .rotationEffect(.degrees(-90))
+                        if myWon {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.green)
+                        } else if myValue > 0 {
+                            miniRing(progress: min(1.0, Double(myValue) / Double(target)))
+                        }
                     }
-                } else {
-                    Image(systemName: "xmark.circle")
-                        .font(.ds_heading2)
-                        .foregroundColor(.red.opacity(0.6))
                 }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                
+                // Winner indicator
+                if myValue > 0 || opponentValue > 0 {
+                    ZStack {
+                        if iAmAhead {
+                            Image(systemName: "arrowtriangle.left.fill")
+                                .font(.system(size: 7))
+                                .foregroundColor(.green.opacity(0.6))
+                        } else if opponentValue > myValue {
+                            Image(systemName: "arrowtriangle.right.fill")
+                                .font(.system(size: 7))
+                                .foregroundColor(.orange.opacity(0.6))
+                        } else {
+                            Circle()
+                                .fill(Color.secondary.opacity(0.2))
+                                .frame(width: 4, height: 4)
+                        }
+                    }
+                    .frame(width: 12)
+                } else {
+                    Spacer()
+                        .frame(width: 12)
+                }
+                
+                // Opponent result
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(opponentName)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    
+                    HStack(spacing: Spacing.xxxs) {
+                        if oppWon {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.green)
+                        } else if opponentValue > 0 {
+                            miniRing(progress: min(1.0, Double(opponentValue) / Double(target)))
+                        }
+                        
+                        Text(opponentValue > 0 ? formatValue(opponentValue) : "–")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(oppWon ? .green : (opponentValue > 0 ? .primary : .secondary.opacity(0.4)))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(width: 70, alignment: .trailing)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isToday ? (colorScheme == .dark ? Color.blue.opacity(0.15) : Color.blue.opacity(0.08)) : Color.clear)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isToday
+                    ? typeColor.opacity(colorScheme == .dark ? 0.1 : 0.06)
+                    : Color.clear)
         )
+    }
+    
+    private func miniRing(progress: Double) -> some View {
+        ZStack {
+            Circle()
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1.5)
+                .frame(width: 12, height: 12)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(Color.orange, lineWidth: 1.5)
+                .frame(width: 12, height: 12)
+                .rotationEffect(.degrees(-90))
+        }
+    }
+    
+    private func formatValue(_ value: Int) -> String {
+        if value >= 10000 {
+            return String(format: "%.1fk", Double(value) / 1000)
+        }
+        return value.formatted()
     }
 }
 
 // MARK: - Preview
 
 #Preview {
-    ChallengeDetailView(challenge: ActiveChallenge(
-        challengeId: UUID(),
-        challengeType: "steps",
-        title: "10K Steps Daily",
-        description: "Hit 10,000 steps every day",
-        dailyTarget: 10000,
-        totalTarget: nil,
-        targetUnit: "steps",
-        startDate: Date().addingTimeInterval(-86400 * 3),
-        endDate: Date().addingTimeInterval(86400 * 4),
-        durationDays: 7,
-        daysElapsed: 3,
-        daysRemaining: 4,
-        status: "active",
-        myTotalProgress: 28500,
-        myDaysCompleted: 2,
-        myCurrentStreak: 2,
-        opponentId: UUID(),
-        opponentName: "Leo Smith",
-        opponentUsername: "leosmith",
-        opponentPhotoUrl: nil,
-        opponentTotalProgress: 25000,
-        opponentDaysCompleted: 2,
-        amWinning: true
-    ))
+    NavigationStack {
+        ChallengeDetailView(challenge: ActiveChallenge(
+            challengeId: UUID(),
+            challengeType: "steps",
+            title: "10K Steps Daily",
+            description: "Hit 10,000 steps every day",
+            dailyTarget: 10000,
+            totalTarget: nil,
+            targetUnit: "steps",
+            startDate: Date().addingTimeInterval(-86400 * 3),
+            endDate: Date().addingTimeInterval(86400 * 4),
+            durationDays: 7,
+            daysElapsed: 3,
+            daysRemaining: 4,
+            status: "active",
+            myTotalProgress: 28500,
+            myDaysCompleted: 2,
+            myCurrentStreak: 2,
+            opponentId: UUID(),
+            opponentName: "Leo Smith",
+            opponentUsername: "leosmith",
+            opponentPhotoUrl: nil,
+            opponentTotalProgress: 25000,
+            opponentDaysCompleted: 2,
+            amWinning: true
+        ))
+    }
 }

@@ -341,11 +341,6 @@ struct ExerciseLibraryView: View {
             VStack(spacing: 0) {
                 // Fixed header section (doesn't scroll)
                 VStack(spacing: 0) {
-                    // Custom header
-                    customHeaderView
-                        .padding(.top, 10)
-                        .padding(.bottom, 16)
-                    
                     // Compact search and filters
                     compactFiltersView
                     
@@ -356,7 +351,7 @@ struct ExerciseLibraryView: View {
                     }
                 }
                 .padding(.horizontal, Spacing.md)
-                .padding(.top, 8)
+                .padding(.top, 12)
                 .padding(.bottom, 12)
                 
                 // Scrollable exercise list only
@@ -418,10 +413,12 @@ struct ExerciseLibraryView: View {
             .background(
                 AnimatedOrbBackground.exercises(colorScheme: colorScheme)
             )
-            // Banner ad is now integrated into the fixed header section above
-            .navigationBarHidden(true)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
+            .floatingTopBarLeading {
+                ExerciseLibraryToolbarTitle()
+            }
+            .floatingTopBarActiveWorkoutTimer()
+            .adaptiveToolbarBackground()
             .navigationDestination(for: Exercise.self) { exercise in
                 ExerciseDetailView(exercise: exercise)
             }
@@ -574,36 +571,28 @@ struct ExerciseLibraryView: View {
         }
     }
     
-    // MARK: - Custom Header View
-    private var customHeaderView: some View {
-        HStack {
+    // MARK: - Toolbar title (floating on system nav bar)
+    private struct ExerciseLibraryToolbarTitle: View {
+        var body: some View {
             Text("Exercises")
                 .font(.ds_displayLarge)
+                .italic()
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.blue, Color.blue, Color.cyan.opacity(0.8)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        stops: [
+                            .init(color: .white, location: 0.0),
+                            .init(color: .white, location: 0.72),
+                            .init(color: Color.blue, location: 0.85),
+                            .init(color: Color.cyan, location: 1.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
                 )
-                .shadow(color: Color.blue.opacity(0.4), radius: 6, x: 0, y: 2)
-            
-            Spacer()
-            
-            // Active workout timer (only shows when workout is active)
-            if WorkoutManager.shared.isWorkoutActive {
-                Text(WorkoutManager.shared.formattedDuration)
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.sm)
-                            .fill(.ultraThinMaterial)
-                    )
-            }
+                .shadow(color: Color.blue.opacity(0.2), radius: 4, x: 0, y: 1)
+                .frame(height: 55)
+                .fixedSize()
         }
-        .padding(.leading, 4)
     }
     
     private var compactFiltersView: some View {
@@ -1127,4 +1116,5 @@ struct MultiSelectDropdownContent: View {
 #Preview {
     ExerciseLibraryView()
         .environment(\.managedObjectContext, PersistenceController.shared.container.viewContext)
+        .environmentObject(WorkoutManager.shared)
 }

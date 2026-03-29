@@ -314,7 +314,7 @@ struct CommunityChallengesHubView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var service = CommunityChallengeService.shared
-    @State private var selectedTab = 0  // 0 = My Challenges, 1 = Discover
+    @State private var selectedTab = 1  // 0 = My Challenges, 1 = Discover
     @State private var showingCreate = false
     @State private var showingJoinByCode = false
     @State private var joinCode = ""
@@ -2373,17 +2373,7 @@ struct PrivateChallengeJoinSheet: View {
                         
                         // Challenge preview card
                         VStack(spacing: 16) {
-                            // Emoji with gradient ring
-                            ZStack {
-                                Circle()
-                                    .stroke(
-                                        LinearGradient(colors: preview.resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing),
-                                        lineWidth: 3
-                                    )
-                                    .frame(width: 80, height: 80)
-                                Text(preview.displayEmoji)
-                                    .font(.system(size: 40))
-                            }
+                            emojiRing(for: preview)
                             
                             // Private badge
                             HStack(spacing: 4) {
@@ -2527,6 +2517,19 @@ struct PrivateChallengeJoinSheet: View {
                 preview = await PrivateChallengeService.shared.lookupByCode(code: code)
                 isLoading = false
             }
+        }
+    }
+    
+    private func emojiRing(for preview: PrivateChallengePreview) -> some View {
+        ZStack {
+            Circle()
+                .stroke(
+                    LinearGradient(colors: preview.resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 3
+                )
+                .frame(width: 80, height: 80)
+            Text(preview.displayEmoji)
+                .font(.system(size: 40))
         }
     }
     

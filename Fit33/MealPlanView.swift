@@ -35,14 +35,7 @@ struct MealPlanView: View {
                     .accessibilityHint("Remove all food entries for today")
                 }
             }
-            .toolbarBackground(
-                LinearGradient(
-                    gradient: Gradient(colors: [Color.green.opacity(0.1), Color.mint.opacity(0.05)]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ), for: .navigationBar
-            )
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .adaptiveToolbarBackground()
         }
         .onAppear {
             SessionLogManager.shared.logScreen(.mealsTab, metadata: [

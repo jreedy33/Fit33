@@ -274,8 +274,7 @@ struct RestTimerView: View {
             }
                 .navigationTitle("Rest Timer")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarColorScheme(.dark, for: .navigationBar)
+                .adaptiveToolbarBackground()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
@@ -355,8 +354,7 @@ struct RestTimerSetupView: View {
             .padding()
                 .navigationTitle("Rest Timer")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarColorScheme(.dark, for: .navigationBar)
+                .adaptiveToolbarBackground()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {

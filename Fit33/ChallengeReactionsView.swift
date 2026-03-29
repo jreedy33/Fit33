@@ -214,7 +214,12 @@ extension ChallengeService {
             AppLogger.info("✅ [REACTIONS] Fetched \(reactions.count) reactions", category: .social)
             return reactions
         } catch {
-            AppLogger.error("❌ [REACTIONS] Error fetching reactions: \(error)", category: .social)
+            let nsError = error as NSError
+            if Task.isCancelled || nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+                AppLogger.debug("[REACTIONS] Fetch cancelled", category: .social)
+            } else {
+                AppLogger.error("❌ [REACTIONS] Error fetching reactions: \(error)", category: .social)
+            }
             return []
         }
     }
@@ -524,22 +529,24 @@ struct ReactionFeedView: View {
     
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Section header
-            HStack {
-                Text(isCompetition ? "🗣️ Battle Log" : "✨ Hype Feed")
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: isCompetition ? "flame.circle.fill" : "sparkles")
+                    .foregroundStyle(LinearGradient(colors: themeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .font(.title3)
+                Text(isCompetition ? "Battle Cries" : "Hype Feed")
+                    .font(.title3)
+                    .fontWeight(.bold)
                     .foregroundColor(.primary)
                 
                 Spacer()
                 
                 if !reactions.isEmpty {
                     Text("\(reactions.count) messages")
-                        .font(.caption)
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
                 }
             }
-            .padding(.horizontal, Spacing.xxs)
             
             if isLoading {
                 HStack {
@@ -548,22 +555,17 @@ struct ReactionFeedView: View {
                         .scaleEffect(0.8)
                     Spacer()
                 }
-                .padding(.vertical, 20)
+                .padding(.vertical, Spacing.lg)
             } else if reactions.isEmpty {
-                // Empty state
                 emptyState
             } else {
-                // Reaction bubbles
-                VStack(spacing: 8) {
+                VStack(spacing: Spacing.xs) {
                     ForEach(reactions.prefix(10)) { reaction in
                         reactionBubble(reaction)
                     }
                 }
                 .padding(Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .fill(Color.cardBackground)
-                )
+                .sleekCardSubtle(cornerRadius: 16)
             }
         }
         .task {
@@ -575,27 +577,24 @@ struct ReactionFeedView: View {
     // MARK: - Empty State
     
     private var emptyState: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Spacing.xs) {
             Text(isCompetition ? "🤐" : "💬")
                 .font(.ds_heading1)
             
             Text(isCompetition ? "No smack talk yet..." : "No messages yet...")
-                .font(.subheadline)
+                .font(.ds_bodySmall)
                 .fontWeight(.medium)
                 .foregroundColor(.secondary)
             
             Text(isCompetition
                  ? "Be the first to fire a shot!"
                  : "Send some motivation!")
-                .font(.caption)
+                .font(.ds_caption)
                 .foregroundColor(.secondary.opacity(0.7))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.lg)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                .fill(Color.cardBackground)
-        )
+        .sleekCardSubtle(cornerRadius: 16)
     }
     
     // MARK: - Reaction Bubble

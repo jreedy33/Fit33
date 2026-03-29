@@ -88,8 +88,20 @@ enum AppConfig {
         static let redirectUri = "fit33://whoop"
         static let authorizationUrl = "https://api.prod.whoop.com/oauth/oauth2/auth"
         static let tokenUrl = "https://api.prod.whoop.com/oauth/oauth2/token"
-        static let apiBaseUrl = "https://api.prod.whoop.com/developer"
+        static let apiBaseUrl = "https://api.prod.whoop.com"
         static let scopes = "read:recovery read:cycles read:workout read:sleep read:profile read:body_measurement"
+    }
+    
+    // MARK: - Oura Ring Configuration
+    
+    enum Oura {
+        static let clientId = Secrets.ouraClientId
+        static let clientSecret = Secrets.ouraClientSecret
+        static let redirectUri = "fit33://oura"
+        static let authorizationUrl = "https://cloud.ouraring.com/oauth/authorize"
+        static let tokenUrl = "https://api.ouraring.com/oauth/token"
+        static let apiBaseUrl = "https://api.ouraring.com"
+        static let scopes = "email personal daily heartrate workout spo2"
     }
     
     // MARK: - InBody Configuration

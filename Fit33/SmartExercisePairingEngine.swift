@@ -714,55 +714,57 @@ final class SmartExercisePairingEngine {
             exerciseAnalysisCache[exerciseName] = sourceAnalysis
         }
         
-        // Find all matching exercises
-        let allExercises = ExerciseLibraryService.shared.getAllExercises()
-        var pairings: [ExercisePairing] = []
+        // Score candidates using exerciseAnalysisCache (thread-safe structs, no Core Data access).
+        // Previously this iterated ExerciseLibraryService.shared.getAllExercises() which returned
+        // viewContext objects — accessing their properties from a non-main thread caused crashes.
+        var scoredCandidates: [(name: String, score: Int, reasons: [ExercisePairing.MatchReason], equipmentSwap: Bool, difficultyDelta: Int)] = []
         
-        for candidate in allExercises {
-            guard candidate.id != exercise.id else { continue }
+        for (candidateName, candidateAnalysis) in exerciseAnalysisCache {
+            guard candidateName != exerciseName else { continue }
             
-            let candidateName = (candidate.name ?? "").lowercased()
-            
-            // Get or create analysis for candidate
-            let candidateAnalysis: ExerciseAnalysis
-            if let cached = exerciseAnalysisCache[candidateName] {
-                candidateAnalysis = cached
-            } else {
-                candidateAnalysis = analyzeExercise(candidate)
-                exerciseAnalysisCache[candidateName] = candidateAnalysis
-            }
-            
-            // Calculate match score and reasons
             let (score, reasons) = calculateMatchScore(source: sourceAnalysis, candidate: candidateAnalysis)
             
-            // Only include if there's meaningful match
             if score >= 30 {
-                let pairing = ExercisePairing(
-                    exercise: candidate,
-                    matchScore: score,
-                    matchReasons: reasons,
+                scoredCandidates.append((
+                    name: candidateName,
+                    score: score,
+                    reasons: reasons,
                     equipmentSwap: sourceAnalysis.equipment != candidateAnalysis.equipment,
                     difficultyDelta: candidateAnalysis.difficulty - sourceAnalysis.difficulty
-                )
-                pairings.append(pairing)
+                ))
             }
         }
         
-        // Sort by match score
-        pairings.sort { $0.matchScore > $1.matchScore }
+        scoredCandidates.sort { $0.score > $1.score }
         
-        // Cache results
+        // Pre-filter by equipment using cached analysis data (before resolving Core Data objects)
+        let equipmentLower = userEquipment?.map { $0.lowercased() }
+        if let equipmentLower = equipmentLower {
+            scoredCandidates = scoredCandidates.filter { candidate in
+                guard let analysis = exerciseAnalysisCache[candidate.name] else { return false }
+                let equip = analysis.equipment.lowercased()
+                return equipmentLower.contains(equip) || equip == "bodyweight"
+            }
+        }
+        
+        // Resolve only the top candidates to Exercise Core Data objects (small batch)
+        let resolveCount = min(scoredCandidates.count, limit * 2)
+        let topCandidates = scoredCandidates.prefix(resolveCount)
+        
+        var pairings: [ExercisePairing] = []
+        for candidate in topCandidates {
+            guard let resolved = ExerciseLibraryService.shared.getExercise(byName: candidate.name) else { continue }
+            pairings.append(ExercisePairing(
+                exercise: resolved,
+                matchScore: candidate.score,
+                matchReasons: candidate.reasons,
+                equipmentSwap: candidate.equipmentSwap,
+                difficultyDelta: candidate.difficultyDelta
+            ))
+        }
+        
+        // Cache the full unfiltered results for subsequent lookups
         pairingCache[exerciseName] = pairings
-        
-        // Filter by user equipment if provided
-        if let equipment = userEquipment {
-            let filtered = pairings.filter { pairing in
-                let pairingEquip = (pairing.exercise.equipment ?? "Bodyweight").lowercased()
-                return equipment.map { $0.lowercased() }.contains(pairingEquip) ||
-                       pairingEquip == "bodyweight"
-            }
-            return Array(filtered.prefix(limit))
-        }
         
         return Array(pairings.prefix(limit))
     }

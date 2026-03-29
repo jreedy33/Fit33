@@ -12,11 +12,16 @@ struct MealsQuickActionsView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Actions")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(.primary)
-                .padding(.leading, 4)
+            HStack(spacing: 10) {
+                Image(systemName: "bolt.fill")
+                    .font(.title3)
+                    .foregroundStyle(
+                        LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                Text("Quick Actions")
+                    .font(.title3)
+                    .fontWeight(.bold)
+            }
             
             // 3 tall/skinny tiles in a row
             HStack(spacing: 12) {

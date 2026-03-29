@@ -967,10 +967,13 @@ final class InstantTabSwitchCoordinator: ObservableObject {
 // MARK: - 6. EXERCISE LIBRARY SERVICE EXTENSION
 
 extension ExerciseLibraryService {
-    /// Preload all exercises into memory for instant access
+    /// Ensure exercise cache is warming — preWarmCache() already fetches on a background context,
+    /// so this just triggers it if not already started. Never call getAllExercises() here
+    /// since it does a synchronous viewContext.fetch that blocks the main thread for 5500+ exercises.
     func preloadAll() async {
-        // Fetch all exercises and cache them
-        let _ = self.getAllExercises()
+        if !isExercisesReady {
+            preWarmCache()
+        }
     }
 }
 

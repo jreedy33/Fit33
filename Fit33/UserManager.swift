@@ -40,7 +40,8 @@ class UserManager: ObservableObject {
             createDebugUserIfNeeded()
             return
         }
-        AppLogger.debug("[DEBUG] Showing full auth + onboarding flow", category: .auth)
+        // Not misleading: this runs on every launch in DEBUG when SKIP_ONBOARDING is unset — actual UI is ContentView + cached user state.
+        AppLogger.debug("[DEBUG] UserManager: loading user from Core Data (SKIP_ONBOARDING not set)", category: .auth)
         #endif
         
         let request: NSFetchRequest<User> = User.fetchRequest()

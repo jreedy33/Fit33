@@ -246,8 +246,8 @@ struct DashboardWeightWidget: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 Text("Weight")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                    .font(.title3)
+                    .fontWeight(.bold)
                     .foregroundColor(.primary)
                 
                 // 7-day trend for expanded view

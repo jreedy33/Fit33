@@ -248,19 +248,23 @@ struct Fit33App: App {
         }
         #endif
         
-        // Make navigation bars completely transparent
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithTransparentBackground()
-        appearance.backgroundColor = UIColor.clear
-        appearance.shadowColor = UIColor.clear
-        UINavigationBar.appearance().standardAppearance = appearance
-        UINavigationBar.appearance().compactAppearance = appearance
-        UINavigationBar.appearance().scrollEdgeAppearance = appearance
-        UINavigationBar.appearance().backgroundColor = UIColor.clear
-        UINavigationBar.appearance().isTranslucent = true
-        
-        // Remove any system backgrounds and make status bar transparent
-        UIView.appearance(whenContainedInInstancesOf: [UIWindow.self]).backgroundColor = UIColor.clear
+        // iOS 26+: Let Liquid Glass handle bar styling automatically.
+        // Pre-iOS 26: Force transparent nav bars for our custom dark theme.
+        if #available(iOS 26, *) {
+            UINavigationBar.appearance().isTranslucent = true
+        } else {
+            let appearance = UINavigationBarAppearance()
+            appearance.configureWithTransparentBackground()
+            appearance.backgroundColor = UIColor.clear
+            appearance.shadowColor = UIColor.clear
+            UINavigationBar.appearance().standardAppearance = appearance
+            UINavigationBar.appearance().compactAppearance = appearance
+            UINavigationBar.appearance().scrollEdgeAppearance = appearance
+            UINavigationBar.appearance().backgroundColor = UIColor.clear
+            UINavigationBar.appearance().isTranslucent = true
+            
+            UIView.appearance(whenContainedInInstancesOf: [UIWindow.self]).backgroundColor = UIColor.clear
+        }
         
         // Apply saved appearance setting on launch
         AppearanceManager.shared.applyAppearance()
@@ -389,13 +393,8 @@ struct Fit33App: App {
                     let authMs = Int((CFAbsoluteTimeGetCurrent() - authStart) * 1000)
                     AppLogger.info("[STARTUP] checkAuthOnly completed in \(authMs)ms", category: .performance)
                     
-                    // UI-critical post-auth work (fast, needs auth state)
+                    // UI-critical post-auth work (keep minimal — limitations RPC was ~1s+ and blocked first-frame interactivity)
                     if supabaseManager.isAuthenticated {
-                        let limStart = CFAbsoluteTimeGetCurrent()
-                        await LimitationsService.shared.fetchUserLimitations()
-                        let limMs = Int((CFAbsoluteTimeGetCurrent() - limStart) * 1000)
-                        AppLogger.info("[STARTUP] fetchUserLimitations completed in \(limMs)ms", category: .performance)
-                        
                         SessionLogManager.shared.log(.info, category: .profile, message: "User authenticated", metadata: [
                             "user_id": supabaseManager.currentUser?.id ?? "unknown"
                         ])
@@ -412,6 +411,16 @@ struct Fit33App: App {
                     let criticalMs = Int((CFAbsoluteTimeGetCurrent() - startupStart) * 1000)
                     AppLogger.info("[STARTUP] Critical path complete in \(criticalMs)ms (auth: \(authMs)ms)", category: .performance)
                     StartupCoordinator.shared.markPhaseComplete(.critical)
+                    
+                    // Deferred: injury/limitation rows from Supabase — safe after critical; generator uses empty list until loaded
+                    if supabaseManager.isAuthenticated {
+                        Task {
+                            let limStart = CFAbsoluteTimeGetCurrent()
+                            await LimitationsService.shared.fetchUserLimitations()
+                            let limMs = Int((CFAbsoluteTimeGetCurrent() - limStart) * 1000)
+                            AppLogger.info("[STARTUP] fetchUserLimitations completed in \(limMs)ms (deferred)", category: .performance)
+                        }
+                    }
                     
                     // DEFERRED CLOUD SYNC: Runs after UI is interactive.
                     // Core Data already has cached data from previous sessions.
@@ -837,7 +846,7 @@ private func performIntelligenceInit() async {
     #if DEBUG
     let budget = wf.mainThreadBudgetMs()
     if budget > 5000 {
-        AppLogger.error("[STARTUP AUDIT] FAIL: Main thread budget \(budget)ms exceeds 5000ms target", category: .performance)
+        AppLogger.warning("[STARTUP AUDIT] FAIL: Main thread budget \(budget)ms exceeds 5000ms target", category: .performance)
     } else {
         AppLogger.info("[STARTUP AUDIT] PASS: Main thread budget \(budget)ms", category: .performance)
     }

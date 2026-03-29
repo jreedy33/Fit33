@@ -15,9 +15,7 @@ struct WorkoutTabView: View {
             // Layer 1: Navigation Stack (always present)
             NavigationStack(path: $navigationPath) {
                 WorkoutHomeView(navigationPath: $navigationPath, showingStretchModeOverlay: $showingStretchModeOverlay)
-                    .navigationBarHidden(true)
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                    .toolbarColorScheme(.dark, for: .navigationBar)
+                    .adaptiveToolbarBackground()
                     .navigationDestination(for: String.self) { destination in
                         navigationDestinationView(for: destination)
                     }
@@ -339,11 +337,6 @@ struct WorkoutHomeView: View {
                 Color.clear.frame(height: 0).id("top")
                 
                 VStack(spacing: 0) {
-                // Custom header
-                customWorkoutHeaderView
-                    .padding(.top, 4)
-                    .padding(.bottom, 16)
-                
                 // Content with spacing
                 VStack(spacing: 20) {
                     // Quick Actions
@@ -352,10 +345,13 @@ struct WorkoutHomeView: View {
                     
                     // Program Widget (matches Dashboard active program widget exactly)
                     workoutTabProgramWidget
+                    
+                    // My Stats Dashboard
+                    WorkoutStatsSection()
                 }
+                .padding(.top, 12)
             }
             .padding(.horizontal, Spacing.md)
-            .padding(.top, 8)
             .padding(.bottom, 20)
             }
             .onAppear {
@@ -369,6 +365,7 @@ struct WorkoutHomeView: View {
             .background(
                 AnimatedOrbBackground.workout(colorScheme: colorScheme)
             )
+            .contentMargins(.top, 0, for: .scrollContent)
             .onChange(of: scrollToTopTrigger) { _, _ in
                 scrollProxy.scrollTo("top", anchor: .top)
             }
@@ -381,38 +378,35 @@ struct WorkoutHomeView: View {
         .sheet(isPresented: $showingEquipmentConnection) {
             FitnessEquipmentView()
         }
+        .navigationBarTitleDisplayMode(.inline)
+        .floatingTopBarLeading {
+            WorkoutTabToolbarTitle()
+        }
+        .floatingTopBarActiveWorkoutTimer()
     }
     
-    // MARK: - Custom Header View
-    private var customWorkoutHeaderView: some View {
-        HStack {
+    // MARK: - Toolbar title (floating on system nav bar)
+    private struct WorkoutTabToolbarTitle: View {
+        var body: some View {
             Text("Workout")
                 .font(.ds_displayLarge)
+                .italic()
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color.green, Color.green, Color(red: 0.4, green: 0.95, blue: 0.5).opacity(0.8)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        stops: [
+                            .init(color: .white, location: 0.0),
+                            .init(color: .white, location: 0.68),
+                            .init(color: Color.green, location: 0.82),
+                            .init(color: Color(red: 0.4, green: 0.95, blue: 0.5), location: 1.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
                 )
-                .shadow(color: Color.green.opacity(0.4), radius: 6, x: 0, y: 2)
-            
-            Spacer()
-            
-            // Active workout timer (only shows when workout is active)
-            if WorkoutManager.shared.isWorkoutActive {
-                Text(WorkoutManager.shared.formattedDuration)
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.sm)
-                            .fill(.ultraThinMaterial)
-                    )
-            }
+                .shadow(color: Color.green.opacity(0.2), radius: 4, x: 0, y: 1)
+                .frame(height: 55)
+                .fixedSize()
         }
-        .padding(.leading, 4)
     }
     
     @State private var showingCardioLanding = false
@@ -1463,7 +1457,7 @@ struct QuickActionCard: View {
                         .multilineTextAlignment(.center)
                 }
             }
-            .frame(width: 160, height: 140)
+            .frame(maxWidth: .infinity, minHeight: 140)
             .background(Color.cardBackground)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.lg)
@@ -1530,7 +1524,7 @@ struct DepthQuickActionCard: View {
                         .multilineTextAlignment(.center)
                 }
             }
-            .frame(width: 160, height: 140)
+            .frame(maxWidth: .infinity, minHeight: 140)
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - colored based on gradient

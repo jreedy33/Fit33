@@ -246,6 +246,12 @@ This enables aggressive browser/CDN caching and eliminates conditional request o
 
 **Error surfacing**: Generic "Account creation failed" error replaced with actual error descriptions. Rate limit, password strength, and network errors now shown distinctly.
 
+### 2026-03-27: Email/Password Signup — Early Account Creation
+
+**Change**: `handleAuth()` for email/password signup now calls `signUpOrRecoverExistingAccount()` IMMEDIATELY after the user confirms their password (before navigating through onboarding steps). Previously, account creation was deferred until after phone verification (~10 steps later), but `@State password` was frequently lost during the multi-step journey, causing "Session expired" errors.
+
+**Security impact**: No change to auth boundaries. The Supabase `signUp()` call happens with the same email/password the user just entered. The auth user is created ~10 steps earlier than before, but the session is identical. Phone verification now updates the profile (phone_number + phone_verified) rather than creating the account — matching the OAuth flow behavior where users are authenticated from step 1.
+
 ### 2026-03-20: Performance Audit — RLS Policy Remediation
 
 **7 analytics tables now have RLS enabled** with standard user_id-scoped policies:
@@ -364,3 +370,25 @@ App-critical views: `weight_statistics`, `body_composition_statistics` — confi
 **Secrets required**: Register at https://developer.whoop.com, add client_id and client_secret to `Secrets.swift`. Template entries added to `Secrets.template.swift`.
 
 **RLS**: `whoop_recovery_data` table has full user-scoped RLS. All Supabase writes are auth-guarded via `SupabaseManager.shared.isAuthenticated`.
+
+**API URL fix (March 27 2026)**: `AppConfig.Whoop.apiBaseUrl` was incorrectly set to `https://api.prod.whoop.com/developer`. The `/developer` prefix is for the WHOOP documentation portal (OpenAPI spec at `/developer/doc/openapi.json`), not for API calls. Corrected to `https://api.prod.whoop.com`. Auth URLs (`/oauth/oauth2/auth`, `/oauth/oauth2/token`) were already correct. Token response `expires_in` field made optional to handle WHOOP responses that omit it.
+
+### 2026-03-28: Content Moderation System
+
+**Two-layer moderation** using OpenAI Moderation API (free) via Edge Function `supabase/functions/moderate-content/index.ts`:
+- **Layer 1 (blocking)**: iOS pre-checks chat messages via Edge Function BEFORE sending. Flagged content never stored. `ContentModerationService.swift` calls `moderate-content` with `mode=precheck`. `PrivateChallengeService.sendMessage` returns `SendMessageResult` (`.sent`/`.blocked`/`.error`).
+- **Layer 2 (async)**: DB webhook on INSERT fires Edge Function for lower-risk tables. Flags rows with `is_hidden = true`.
+
+**Tables modified**: `private_challenge_chat`, `challenge_reactions`, `shared_workouts`, `group_challenges`, `private_challenges`, `community_challenges`, `friend_activity_feed` all have `is_hidden BOOLEAN DEFAULT FALSE`. `content_moderation_log` stores all flagged content for admin review.
+
+**Rate limiting**: `send_private_challenge_message` enforces max 50 msgs/hour/challenge and 1 msg per 2 seconds (anti-spam burst). Suspension check via `user_suspensions` table added to send RPC.
+
+**Edge Function secret required**: `OPENAI_API_KEY` — set via `supabase secrets set OPENAI_API_KEY=sk-...`
+
+**CMS**: `/moderation` page has new "Flagged" tab showing `content_moderation_log` entries. Admin can Approve (unhide) or Confirm (keep hidden). API actions: `get_flagged_content`, `get_content_moderation_stats`, `review_flagged_content`.
+
+**SQL migration**: `supabase/20260328_content_moderation.sql`.
+
+### 2026-03-28: Supabase Auth — emitLocalSessionAsInitialSession
+
+The supabase-swift SDK prints a deprecation warning twice per launch about `emitLocalSessionAsInitialSession`. Fixed by passing `emitLocalSessionAsInitialSession: true` in `SupabaseClientOptions.AuthOptions` when creating the `SupabaseClient` in `SupabaseManager.init()`. Also added `redirectToURL: URL(string: "fit33://")` for completeness. The new behavior emits the locally stored session immediately (may be expired) instead of waiting for a refresh attempt. Code that listens to `authStateChanges` should check `session.isExpired` if it relies on session validity.

@@ -113,7 +113,16 @@ class SupabaseManager: ObservableObject {
             return
         }
         
-        client = SupabaseClient(supabaseURL: url, supabaseKey: supabaseKey)
+        client = SupabaseClient(
+            supabaseURL: url,
+            supabaseKey: supabaseKey,
+            options: .init(
+                auth: .init(
+                    redirectToURL: URL(string: "fit33://"),
+                    emitLocalSessionAsInitialSession: true
+                )
+            )
+        )
         
         // NOTE: Auth check is performed by Fit33App.swift's .task modifier
         // to avoid duplicate/racing auth+sync calls during startup.
@@ -172,43 +181,34 @@ class SupabaseManager: ObservableObject {
     /// Verify session and set isAuthenticated WITHOUT triggering cloud sync.
     /// Returns quickly (<200ms) so the UI can render from cached Core Data.
     /// Cloud sync should be scheduled separately after the UI is interactive.
+    ///
+    /// **Performance:** Sets `isAuthenticated` immediately after a local session is read.
+    /// Profile verification runs in a background task so slow `user_profiles` queries
+    /// (poor network) do not block the main thread or dashboard for 10–20s.
     func checkAuthOnly() async {
         do {
             let session = try await client.auth.session
-            
-            let userExists = await verifyUserExists(userId: session.user.id)
-            
-            if !userExists {
-                AppLogger.warning("Session exists but user was deleted from database - forcing sign out", category: .auth)
-                try? await client.auth.signOut()
-                await MainActor.run {
-                    currentUser = nil
-                    isAuthenticated = false
-                    PersistenceController.shared.clearAllUserData()
-                }
-                return
-            }
             
             await MainActor.run {
                 currentUser = session.user
                 isAuthenticated = true
             }
-            AppLogger.info("User already signed in: \(session.user.email ?? "unknown")", category: .auth)
+            AppLogger.info("Session restored (UI unblocked): \(session.user.email ?? "unknown")", category: .auth)
+            
+            Task { await self.reconcileProfileAfterSessionRestore(userId: session.user.id) }
         } catch {
             // Session getter failed — try explicit refresh before giving up.
             // The access token may have expired while the refresh token is still valid.
             AppLogger.warning("Session check failed, attempting explicit refresh...", category: .auth)
             do {
                 let refreshed = try await client.auth.refreshSession()
-                let userExists = await verifyUserExists(userId: refreshed.user.id)
-                if userExists {
-                    await MainActor.run {
-                        currentUser = refreshed.user
-                        isAuthenticated = true
-                    }
-                    AppLogger.info("Session recovered via refresh: \(refreshed.user.email ?? "unknown")", category: .auth)
-                    return
+                await MainActor.run {
+                    currentUser = refreshed.user
+                    isAuthenticated = true
                 }
+                AppLogger.info("Session recovered via refresh (UI unblocked): \(refreshed.user.email ?? "unknown")", category: .auth)
+                Task { await self.reconcileProfileAfterSessionRestore(userId: refreshed.user.id) }
+                return
             } catch {
                 AppLogger.debug("Session refresh also failed: \(error.localizedDescription)", category: .auth)
             }
@@ -218,6 +218,36 @@ class SupabaseManager: ObservableObject {
                 currentUser = nil
             }
             AppLogger.info("No active session", category: .auth)
+        }
+    }
+    
+    /// Confirms the row in `user_profiles` still exists after restore. Runs off the hot path.
+    private func reconcileProfileAfterSessionRestore(userId: UUID) async {
+        let result = await verifyUserProfile(userId: userId)
+        switch result {
+        case .valid:
+            AppLogger.debug("[VERIFY] Profile OK after restore (\(userId.uuidString.prefix(8))…)", category: .auth)
+        case .missingOrIncomplete:
+            AppLogger.warning("Session exists but user was deleted or profile empty — forcing sign out", category: .auth)
+            try? await client.auth.signOut()
+            await MainActor.run {
+                currentUser = nil
+                isAuthenticated = false
+                PersistenceController.shared.clearAllUserData()
+            }
+        case .transientFailure:
+            AppLogger.warning("[VERIFY] Transient failure after restore — keeping session; retrying shortly", category: .network)
+            try? await Task.sleep(for: .seconds(4))
+            let retry = await verifyUserProfile(userId: userId)
+            if case .missingOrIncomplete = retry {
+                AppLogger.warning("Profile still invalid after retry — forcing sign out", category: .auth)
+                try? await client.auth.signOut()
+                await MainActor.run {
+                    currentUser = nil
+                    isAuthenticated = false
+                    PersistenceController.shared.clearAllUserData()
+                }
+            }
         }
     }
     
@@ -239,10 +269,18 @@ class SupabaseManager: ObservableObject {
         #endif
     }
     
+    private enum UserProfileVerificationResult: Sendable {
+        /// Row exists with at least name or email
+        case valid
+        /// No row or both name and email empty (new / deleted account)
+        case missingOrIncomplete
+        /// Network or server error — do not treat as "no profile"
+        case transientFailure
+    }
+    
     /// Verifies that a user actually exists in the database (not just has a session)
     /// Check if a user profile exists AND has meaningful data (not just an empty row)
-    /// Returns false if profile is missing OR if critical fields are null
-    private func verifyUserExists(userId: UUID) async -> Bool {
+    private func verifyUserProfile(userId: UUID) async -> UserProfileVerificationResult {
         do {
             // Select critical fields to verify the profile has actual data
             let response: [UserProfileDTO] = try await client
@@ -255,7 +293,7 @@ class SupabaseManager: ObservableObject {
             // Check if profile exists AND has meaningful data
             guard let profile = response.first else {
                 AppLogger.debug("[VERIFY] No profile found for user \(userId.uuidString)", category: .network)
-                return false
+                return .missingOrIncomplete
             }
             
             // If name and email are both null/empty, treat as incomplete profile
@@ -264,16 +302,23 @@ class SupabaseManager: ObservableObject {
             
             if !hasName && !hasEmail {
                 AppLogger.warning("[VERIFY] Profile exists but has no name or email - treating as new user", category: .network)
-                return false
+                return .missingOrIncomplete
             }
             
             AppLogger.info("[VERIFY] Valid profile found - Name: \(profile.name ?? "nil"), Email: \(profile.email ?? "nil")", category: .network)
-            return true
+            return .valid
         } catch {
             AppLogger.warning("[VERIFY] Error checking user profile: \(error)", category: .network)
-            // IMPORTANT: If we can't verify, assume user is NEW so profile gets created
-            // This is safer than assuming they exist and leaving them with null data
-            return false
+            return .transientFailure
+        }
+    }
+    
+    /// OAuth "returning user?" check — **transient failures return false** (legacy behavior:
+    /// may re-enter onboarding on flaky network rather than skip account setup).
+    private func verifyUserProfileExistsForOAuth(userId: UUID) async -> Bool {
+        switch await verifyUserProfile(userId: userId) {
+        case .valid: return true
+        case .missingOrIncomplete, .transientFailure: return false
         }
     }
     
@@ -421,7 +466,7 @@ class SupabaseManager: ObservableObject {
             )
             
             // Check if this is a new user (no profile exists yet)
-            let profileExists = await verifyUserExists(userId: session.user.id)
+            let profileExists = await verifyUserProfileExistsForOAuth(userId: session.user.id)
             var isNewUser = false
             
             if !profileExists {
@@ -586,7 +631,7 @@ class SupabaseManager: ObservableObject {
             }
             
             // Check if this is a new user (no profile exists yet)
-            let profileExists = await verifyUserExists(userId: session.user.id)
+            let profileExists = await verifyUserProfileExistsForOAuth(userId: session.user.id)
             var isNewUser = false
             var socialUsername: String? = nil
             
@@ -1306,6 +1351,7 @@ class SupabaseManager: ObservableObject {
             case "apple_health": columnName = "is_apple_health_connected"
             case "inbody": columnName = "is_inbody_connected"
             case "whoop": columnName = "is_whoop_connected"
+            case "oura": columnName = "is_oura_connected"
             default:
                 AppLogger.warning("[INTEGRATIONS] Unknown integration: \(integration)", category: .network)
                 return
@@ -1317,6 +1363,7 @@ class SupabaseManager: ObservableObject {
                 let is_apple_health_connected: Bool?
                 let is_inbody_connected: Bool?
                 let is_whoop_connected: Bool?
+                let is_oura_connected: Bool?
             }
 
             let update = IntegrationUpdate(
@@ -1324,7 +1371,8 @@ class SupabaseManager: ObservableObject {
                 is_fitbit_connected: integration == "fitbit" ? isConnected : nil,
                 is_apple_health_connected: integration == "apple_health" ? isConnected : nil,
                 is_inbody_connected: integration == "inbody" ? isConnected : nil,
-                is_whoop_connected: integration == "whoop" ? isConnected : nil
+                is_whoop_connected: integration == "whoop" ? isConnected : nil,
+                is_oura_connected: integration == "oura" ? isConnected : nil
             )
             
             try await client
@@ -1340,25 +1388,57 @@ class SupabaseManager: ObservableObject {
     
     /// Update all integration statuses at once (called on app launch)
     func syncAllIntegrationStatuses() async {
-        guard currentUser != nil else { return }
+        guard let userId = currentUser?.id else { return }
         
-        let (stravaConnected, fitbitConnected, appleHealthConnected, inbodyConnected, whoopConnected) = await MainActor.run {
+        let (stravaConnected, fitbitConnected, appleHealthConnected, inbodyConnected, whoopConnected, ouraConnected) = await MainActor.run {
             (
                 StravaService.shared.isConnected,
                 FitbitService.shared.isConnected,
                 HealthKitManager.shared.isAuthorized,
                 InBodyService.shared.isConnected,
-                WhoopService.shared.isConnected
+                WhoopService.shared.isConnected,
+                OuraService.shared.isConnected
             )
         }
 
-        await updateIntegrationStatus(integration: "strava", isConnected: stravaConnected)
-        await updateIntegrationStatus(integration: "fitbit", isConnected: fitbitConnected)
-        await updateIntegrationStatus(integration: "apple_health", isConnected: appleHealthConnected)
-        await updateIntegrationStatus(integration: "inbody", isConnected: inbodyConnected)
-        await updateIntegrationStatus(integration: "whoop", isConnected: whoopConnected)
+        struct CoreIntegrationUpdate: Encodable {
+            let is_strava_connected: Bool
+            let is_fitbit_connected: Bool
+            let is_apple_health_connected: Bool
+            let is_inbody_connected: Bool
+            let is_whoop_connected: Bool
+        }
 
-        AppLogger.info("[INTEGRATIONS] Synced all integration statuses - Strava: \(stravaConnected), Fitbit: \(fitbitConnected), Apple Health: \(appleHealthConnected), InBody: \(inbodyConnected), WHOOP: \(whoopConnected)", category: .network)
+        do {
+            try await client
+                .from("user_profiles")
+                .update(CoreIntegrationUpdate(
+                    is_strava_connected: stravaConnected,
+                    is_fitbit_connected: fitbitConnected,
+                    is_apple_health_connected: appleHealthConnected,
+                    is_inbody_connected: inbodyConnected,
+                    is_whoop_connected: whoopConnected
+                ))
+                .eq("id", value: userId.uuidString)
+                .execute()
+        } catch {
+            AppLogger.warning("[INTEGRATIONS] Failed to sync core statuses: \(error.localizedDescription)", category: .network)
+        }
+
+        // Oura column requires migration 20260328_oura_integration.sql — sync separately
+        do {
+            struct OuraUpdate: Encodable { let is_oura_connected: Bool }
+            try await client
+                .from("user_profiles")
+                .update(OuraUpdate(is_oura_connected: ouraConnected))
+                .eq("id", value: userId.uuidString)
+                .execute()
+            AppLogger.info("[INTEGRATIONS] Updated oura status to \(ouraConnected)", category: .network)
+        } catch {
+            AppLogger.debug("[INTEGRATIONS] Oura column not available yet (run 20260328_oura_integration.sql): \(error.localizedDescription)", category: .network)
+        }
+
+        AppLogger.info("[INTEGRATIONS] Synced all integration statuses - Strava: \(stravaConnected), Fitbit: \(fitbitConnected), Apple Health: \(appleHealthConnected), InBody: \(inbodyConnected), WHOOP: \(whoopConnected), Oura: \(ouraConnected)", category: .network)
     }
     
     /// Public function to create user profile for OAuth users when they complete onboarding
@@ -1386,8 +1466,12 @@ class SupabaseManager: ObservableObject {
         }
         
         // Check if profile already exists (safety check)
-        let profileExists = await verifyUserExists(userId: userId)
-        if profileExists {
+        var profileCheck = await verifyUserProfile(userId: userId)
+        if case .transientFailure = profileCheck {
+            try? await Task.sleep(for: .milliseconds(800))
+            profileCheck = await verifyUserProfile(userId: userId)
+        }
+        if case .valid = profileCheck {
             AppLogger.warning("[PROFILE] Profile already exists for user \(userId), updating instead", category: .network)
             try await updateUserProfile(
                 name: name,
@@ -4122,6 +4206,7 @@ class SupabaseManager: ObservableObject {
     private func syncWorkoutHistoryToCoreData(workouts: [WorkoutHistoryDTO]) async {
         let bgContext = PersistenceController.shared.container.newBackgroundContext()
         bgContext.automaticallyMergesChangesFromParent = true
+        bgContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
         
         await bgContext.perform {
             let userRequest: NSFetchRequest<User> = User.fetchRequest()
@@ -4164,6 +4249,9 @@ class SupabaseManager: ObservableObject {
                                 workoutExercise.id = workoutExerciseId
                                 workoutExercise.order = Int16(exerciseDTO.order)
                                 workoutExercise.workout = workout
+                                #if DEBUG
+                                exercise?.assertContext(bgContext)
+                                #endif
                                 workoutExercise.exercise = exercise
                                 
                                 ExerciseNameCache.shared.cacheName(
@@ -4197,6 +4285,7 @@ class SupabaseManager: ObservableObject {
                         for exerciseDTO in workoutDTO.exercises {
                             let exerciseRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                             exerciseRequest.predicate = NSPredicate(format: "name == %@", exerciseDTO.exerciseName)
+                            exerciseRequest.fetchLimit = 1
                             let exercise = try? bgContext.fetch(exerciseRequest).first
                             
                             let workoutExercise = WorkoutExercise(context: bgContext)
@@ -4204,6 +4293,9 @@ class SupabaseManager: ObservableObject {
                             workoutExercise.id = workoutExerciseId
                             workoutExercise.order = Int16(exerciseDTO.order)
                             workoutExercise.workout = workout
+                            #if DEBUG
+                            exercise?.assertContext(bgContext)
+                            #endif
                             workoutExercise.exercise = exercise
                             
                             ExerciseNameCache.shared.cacheName(

@@ -192,10 +192,10 @@ final class WhoopService: ObservableObject {
         if let rt = tokenResponse.refreshToken {
             refreshToken = rt
         }
-        tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn))
+        tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 3600))
         isConnected = true
 
-        AppLogger.info("[WHOOP] Connected successfully (token expires in \(tokenResponse.expiresIn)s)", category: .health)
+        AppLogger.info("[WHOOP] Connected successfully (token expires in \(tokenResponse.expiresIn ?? 3600)s)", category: .health)
 
         Task {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "whoop", isConnected: true)
@@ -237,7 +237,7 @@ final class WhoopService: ObservableObject {
 
         accessToken = tokenResponse.accessToken
         refreshToken = tokenResponse.refreshToken
-        tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn))
+        tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 3600))
 
         AppLogger.debug("[WHOOP] Token refreshed", category: .health)
     }
@@ -344,6 +344,8 @@ final class WhoopService: ObservableObject {
                 }
             }
             AppLogger.info("[WHOOP] Synced \(result.records.count) recovery records", category: .health)
+        } catch let error as WhoopError where error.isConnectionError {
+            AppLogger.debug("[WHOOP] Recovery skipped: \(error.localizedDescription ?? "not connected")", category: .health)
         } catch {
             AppLogger.error("[WHOOP] Recovery error: \(error)", category: .health)
             errorMessage = error.localizedDescription
@@ -369,6 +371,8 @@ final class WhoopService: ObservableObject {
                 }
             }
             AppLogger.info("[WHOOP] Synced \(result.records.count) cycle records", category: .health)
+        } catch let error as WhoopError where error.isConnectionError {
+            AppLogger.debug("[WHOOP] Cycles skipped: \(error.localizedDescription ?? "not connected")", category: .health)
         } catch {
             AppLogger.error("[WHOOP] Cycles error: \(error)", category: .health)
             errorMessage = error.localizedDescription
@@ -391,6 +395,8 @@ final class WhoopService: ObservableObject {
                 lastSleep = score
             }
             AppLogger.info("[WHOOP] Synced \(result.records.count) sleep records", category: .health)
+        } catch let error as WhoopError where error.isConnectionError {
+            AppLogger.debug("[WHOOP] Sleep skipped: \(error.localizedDescription ?? "not connected")", category: .health)
         } catch {
             AppLogger.error("[WHOOP] Sleep error: \(error)", category: .health)
             errorMessage = error.localizedDescription
@@ -408,6 +414,8 @@ final class WhoopService: ObservableObject {
             ])
             recentWorkouts = result.records
             AppLogger.info("[WHOOP] Synced \(result.records.count) workout records", category: .health)
+        } catch let error as WhoopError where error.isConnectionError {
+            AppLogger.debug("[WHOOP] Workouts skipped: \(error.localizedDescription ?? "not connected")", category: .health)
         } catch {
             AppLogger.error("[WHOOP] Workouts error: \(error)", category: .health)
             errorMessage = error.localizedDescription
@@ -539,13 +547,20 @@ enum WhoopError: LocalizedError {
         case .apiError(let message): return message
         }
     }
+
+    var isConnectionError: Bool {
+        switch self {
+        case .notConnected, .tokenRefreshFailed: return true
+        default: return false
+        }
+    }
 }
 
 // MARK: - Token Response
 
 struct WhoopTokenResponse: Codable {
     let accessToken: String
-    let expiresIn: Int
+    let expiresIn: Int?
     let refreshToken: String?
     let scope: String?
     let tokenType: String?

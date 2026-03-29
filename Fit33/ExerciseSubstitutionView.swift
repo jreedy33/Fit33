@@ -144,7 +144,7 @@ struct ExerciseSubstitutionView: View {
                     }
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .adaptiveToolbarBackground()
         }
         .onAppear {
             loadSubstitutes()

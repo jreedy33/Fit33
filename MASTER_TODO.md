@@ -54,7 +54,7 @@ These were flagged by the April 17 audit. Sprint 1 (2026-04-17) closed Q2-8 thro
 | Q2-10 | [x] `generate-ai-insights` — now requires service-role OR admin email in `ai_insights_admin_emails` allowlist (migration `supabase/20260417_ai_insights_admin_emails.sql`). Any-user-JWT fallback removed. (Sprint 1, 2026-04-17) | `supabase/functions/generate-ai-insights/index.ts`, `supabase/20260417_ai_insights_admin_emails.sql` | Mass PII read + cost |
 | Q2-11 | [x] `usda-food-search` — ALL actions (`search`/`details`/`cache_food`) now require valid user JWT or service-role key. (Sprint 1, 2026-04-17) | `supabase/functions/usda-food-search/index.ts` | Cost + elevated DB access |
 | Q2-12 | [x] `notify-contacts-user-joined` — now enforces `auth.uid() === new_user_id` (service role still bypasses for admin tooling). (Sprint 1, 2026-04-17) | `supabase/functions/notify-contacts-user-joined/index.ts` | IDOR |
-| Q2-13 | [x] `send-push-notification` — project ref now read from `Deno.env.get('SUPABASE_PROJECT_REF')`; function fails closed if env var is unset. (Sprint 1, 2026-04-17) | `supabase/functions/send-push-notification/index.ts` | Brittle auth gate |
+| Q2-13 | [x] `send-push-notification` — project ref is now derived from the auto-provisioned `SUPABASE_URL` (parsed with regex at startup) because Supabase reserves the `SUPABASE_*` env prefix and won't accept a dedicated `SUPABASE_PROJECT_REF` secret. Function fails closed if parsing yields empty string. `isServiceRoleJWT()` uses the derived ref. (Sprint 1, 2026-04-17) | `supabase/functions/send-push-notification/index.ts` | Brittle auth gate |
 
 ### SQL / RLS
 

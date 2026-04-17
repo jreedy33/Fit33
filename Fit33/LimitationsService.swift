@@ -361,20 +361,33 @@ class LimitationsService: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        do {
-            let response: [UserLimitation] = try await SupabaseManager.shared.supabaseClient
-                .from("user_limitations")
-                .select()
-                .eq("user_id", value: userId.uuidString)
-                .eq("is_active", value: true)
-                .execute()
-                .value
-            
-            self.userLimitations = response
-            updateCachedExercises()
-            AppLogger.info("✅ [LIMITATIONS] Loaded \(response.count) active limitations", category: .workout)
-        } catch {
-            AppLogger.error("❌ [LIMITATIONS] Failed to fetch: \(error)", category: .workout)
+        let maxAttempts = 2
+        for attempt in 1...maxAttempts {
+            do {
+                let response: [UserLimitation] = try await SupabaseManager.shared.supabaseClient
+                    .from("user_limitations")
+                    .select()
+                    .eq("user_id", value: userId)
+                    .eq("is_active", value: true)
+                    .execute()
+                    .value
+                
+                self.userLimitations = response
+                updateCachedExercises()
+                AppLogger.info("✅ [LIMITATIONS] Loaded \(response.count) active limitations", category: .workout)
+                return
+            } catch {
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+                if isTimeout && attempt < maxAttempts {
+                    AppLogger.warning("❌ [LIMITATIONS] Fetch timeout (attempt \(attempt)/\(maxAttempts)), retrying...", category: .workout)
+                    try? await Task.sleep(for: .seconds(pow(2.0, Double(attempt))))
+                } else if isTimeout {
+                    AppLogger.warning("❌ [LIMITATIONS] Failed to fetch: \(error)", category: .workout)
+                } else {
+                    AppLogger.error("❌ [LIMITATIONS] Failed to fetch: \(error)", category: .workout)
+                }
+            }
         }
     }
     

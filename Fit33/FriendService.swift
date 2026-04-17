@@ -332,17 +332,30 @@ class FriendService: ObservableObject {
     
     func fetchPendingRequests() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
-        do {
-            let result: [FriendRequest] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_pending_friend_requests")
-                .execute()
-                .value
-            
-            self.pendingRequests = result
-            AppLogger.info("Fetched \(result.count) pending friend requests", category: .social)
-        } catch {
-            if !Task.isCancelled {
-                AppLogger.error("Error fetching friend requests: \(error.localizedDescription)", category: .social)
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
+            do {
+                let result: [FriendRequest] = try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_pending_friend_requests")
+                    .execute()
+                    .value
+                
+                self.pendingRequests = result
+                AppLogger.info("Fetched \(result.count) pending friend requests", category: .social)
+                return
+            } catch {
+                if error is CancellationError || Task.isCancelled { return }
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain &&
+                    (nsError.code == NSURLErrorTimedOut || nsError.code == NSURLErrorCancelled)
+                if isTimeout && attempt < maxAttempts {
+                    AppLogger.warning("fetchPendingRequests timeout (attempt \(attempt)/\(maxAttempts)), retrying...", category: .social)
+                    try? await Task.sleep(for: .seconds(pow(2.0, Double(attempt))))
+                } else if isTimeout {
+                    AppLogger.warning("Error fetching friend requests: \(error.localizedDescription)", category: .social)
+                } else {
+                    AppLogger.error("Error fetching friend requests: \(error.localizedDescription)", category: .social)
+                }
             }
         }
     }

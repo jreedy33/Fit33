@@ -118,7 +118,7 @@ struct FriendWorkoutPreviewView: View {
     // MARK: - Header
     
     private var workoutHeader: some View {
-        VStack(spacing: Spacing.sm) {
+        VStack(spacing: Spacing.xs) {
             Text(friendName + "'s Workout")
                 .font(.ds_heading2)
                 .foregroundColor(.primary)
@@ -128,30 +128,8 @@ struct FriendWorkoutPreviewView: View {
                     .font(.ds_heading3)
                     .foregroundColor(.secondary)
             }
-            
-            HStack(spacing: Spacing.lg) {
-                statBubble(icon: "clock.fill", value: formatDuration(metadata.durationSeconds ?? 0), color: .blue)
-                statBubble(icon: "figure.strengthtraining.traditional", value: "\(exercises.count) exercises", color: .green)
-                statBubble(icon: "repeat", value: "\(totalSets) sets", color: .purple)
-            }
-            .padding(.top, Spacing.xs)
         }
-        .padding(.vertical, Spacing.md)
-    }
-    
-    private func statBubble(icon: String, value: String, color: Color) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.ds_heading3)
-                .foregroundColor(color)
-            Text(value)
-                .font(.ds_labelMedium)
-                .foregroundColor(.primary)
-        }
-    }
-    
-    private var totalSets: Int {
-        exercises.reduce(0) { $0 + $1.setsCompleted }
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Exercise List
@@ -253,6 +231,29 @@ struct FriendWorkoutPreviewView: View {
     // MARK: - Data Loading
     
     private func loadExercises() async {
+        // Primary source: exercises embedded in the activity metadata
+        if let metadataExercises = metadata.exercises, !metadataExercises.isEmpty {
+            let dtos = metadataExercises.enumerated().map { index, info in
+                FriendExerciseDTO(
+                    id: UUID().uuidString,
+                    exerciseName: info.name,
+                    order: index,
+                    setsCompleted: info.sets,
+                    maxWeight: info.maxWeight,
+                    maxReps: info.maxReps,
+                    totalVolume: nil
+                )
+            }
+            await MainActor.run {
+                self.exercises = dtos
+                self.isLoading = false
+                showGoButton()
+                prefetchHistory()
+            }
+            return
+        }
+        
+        // Fallback: try RPC for older posts that have a real workout_id
         do {
             struct Params: Encodable {
                 let p_workout_id: String

@@ -77,7 +77,7 @@ The Support Agent must maintain expert-level understanding of:
 | Feature | How It Works | User Question Pattern |
 |---------|-------------|----------------------|
 | **Food Search** | USDA FoodData Central via Supabase Edge Function (`usda-food-search`) | "How do I log food?" / "Why can't I find [food]?" |
-| **Barcode Scanner** | Scans product barcodes for nutrition data | "How do I scan food?" |
+| **Barcode Scanner** | ⚠️ Label OCR only — reads nutrition-fact tables and ingredient lists from the camera. No UPC/EAN/GTIN barcode lookup ships yet. Do NOT tell users we scan barcodes. Tracked as `Q2-6` in MASTER_TODO. | "How do I scan food?" → Respond: "Point the camera at the **nutrition facts panel** — we read the text directly. True barcode lookup is coming; for now search the product name in USDA." |
 | **Macro Tracking** | Daily calorie/protein/carb/fat tracking via `MealService` | "How do I set my calorie goal?" / "Where do I see my macros?" |
 | **Recipe Browser** | Spoonacular API recipes with filtering via `RecipeBrowserView` | "How do I find recipes?" |
 | **Recipe Import** | Import recipes from URL via `RecipeImportView` | "Can I add my own recipes?" |
@@ -204,7 +204,7 @@ When users report "bugs" that are actually missing features or misunderstood beh
 |-------------|-----------------|-------------------|
 | "The app gave me the wrong workout" | Auto-gen selected exercises user doesn't prefer | Explain how auto-gen works; suggest using custom builder or exercise swap |
 | "My streak disappeared" | Timezone issue or missed recovery day | Explain streak rules; mention streak shields; file bug if timezone-related |
-| "I can't find my food" | USDA doesn't have every branded product | Suggest generic alternatives; explain barcode scanner option |
+| "I can't find my food" | USDA doesn't have every branded product | Suggest generic alternatives. **Do NOT mention barcode scanning** — our "scanner" is label-OCR only, not UPC lookup (Q2-6). Tell users to point the camera at the nutrition-facts panel if they want OCR capture. |
 | "The app crashed during my workout" | Memory leak or force unwrap | Collect crash context; route to Quality & Performance Agent |
 | "My challenge progress is wrong" | Timezone mismatch between client/server | Acknowledge known issue; route to Data & Backend Agent |
 | "The app doesn't work offline" | No offline queue implemented | Acknowledge limitation; explain cloud-dependent features |

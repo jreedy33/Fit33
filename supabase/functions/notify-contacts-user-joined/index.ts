@@ -7,13 +7,11 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { buildCorsHeaders, requireUserAuth } from "../_shared/cors.ts"
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req)
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -21,29 +19,26 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Missing authorization' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-    const token = authHeader.replace('Bearer ', '')
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    if (token !== supabaseServiceKey) {
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-      if (authError || !user) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      }
-    }
+
+    const authResult = await requireUserAuth(req, supabase, corsHeaders)
+    if (!authResult.ok) return authResult.response
 
     const { new_user_id } = await req.json()
 
     if (!new_user_id) {
       return new Response(JSON.stringify({ error: 'new_user_id is required' }), {
         status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // IDOR guard: a non-service-role caller can only trigger join-notifications
+    // for THEMSELVES. Previously any signed-in user could POST any user's ID
+    // and spam push notifications to that user's contact list.
+    if (!authResult.auth.isServiceRole && authResult.auth.userId !== new_user_id) {
+      return new Response(JSON.stringify({ error: 'Forbidden: new_user_id must match caller' }), {
+        status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }

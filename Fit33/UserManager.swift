@@ -642,9 +642,29 @@ class UserManager: ObservableObject {
                 let durationSeconds = Int(workout.duration)
                 await DailyQuestService.shared.onWorkoutCompleted(durationSeconds: durationSeconds, totalSets: totalSets)
                 
-                // Post to friend activity feed
+                // Post to friend activity feed (skip if user opted out)
                 let muscleGroups = exercises.compactMap { $0.safeMuscleGroups.first?.lowercased() }
                 let uniqueMuscles = Array(Set(muscleGroups))
+                guard !PrivacySettingsManager.shared.hideFriendActivity else {
+                    AppLogger.debug("[PRIVACY] Skipping activity feed post — user has friend activity hidden", category: .social)
+                    // Still check achievements below
+                    await BadgeService.shared.onWorkoutCompleted(totalWorkouts: Int(user.totalWorkouts))
+                    await BadgeService.shared.onStreakUpdated(streak: Int(user.currentStreak))
+                    StreakShieldService.shared.checkAndAwardShield(totalWorkouts: Int(user.totalWorkouts))
+                    return
+                }
+                let exerciseDetails: [[String: Any]] = exercises.enumerated().map { index, ex in
+                    let completedSets = (ex.sets?.allObjects as? [WorkoutSet])?.filter(\.isCompleted) ?? []
+                    let maxWeight = completedSets.map(\.weight).max() ?? 0
+                    let maxReps = completedSets.map { Int($0.reps) }.max() ?? 0
+                    return [
+                        "name": ex.safeDisplayName,
+                        "sets": completedSets.count,
+                        "max_weight": maxWeight,
+                        "max_reps": maxReps
+                    ] as [String: Any]
+                }
+                
                 await ActivityFeedService.shared.postWorkoutActivity(
                     workoutId: workout.objectID.uriRepresentation().lastPathComponent,
                     name: workout.name ?? "Workout",
@@ -652,7 +672,8 @@ class UserManager: ObservableObject {
                     exercises: exercises.count,
                     sets: totalSets,
                     xp: Int(workout.xpEarned),
-                    muscles: uniqueMuscles
+                    muscles: uniqueMuscles,
+                    exerciseDetails: exerciseDetails
                 )
                 
                 // Check workout achievements

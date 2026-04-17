@@ -241,8 +241,23 @@ struct PrivateChallengeDetailView: View {
         .sleekCard(cornerRadius: 20, accentColor: .purple)
     }
     
+    @ViewBuilder
     private func challengeIconView(size: CGFloat, emojiSize: CGFloat) -> some View {
-        emojiCircle(size: size, emojiSize: emojiSize)
+        if let coverUrl = challenge.coverImageUrl, let url = URL(string: coverUrl) {
+            AsyncImage(url: url) { phase in
+                if case .success(let img) = phase {
+                    img.resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: size, height: size)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1.5))
+                } else {
+                    emojiCircle(size: size, emojiSize: emojiSize)
+                }
+            }
+        } else {
+            emojiCircle(size: size, emojiSize: emojiSize)
+        }
     }
     
     private func emojiCircle(size: CGFloat, emojiSize: CGFloat) -> some View {
@@ -363,37 +378,41 @@ struct PrivateChallengeDetailView: View {
             
             VStack(spacing: Spacing.xxs) {
                 GeometryReader { geo in
-                    ZStack(alignment: .trailing) {
+                    ZStack(alignment: .leading) {
                         Capsule()
                             .fill(Color.purple.opacity(colorScheme == .dark ? 0.12 : 0.08))
                             .frame(height: 6)
                         
                         Capsule()
-                            .fill(LinearGradient(colors: [.pink, .purple], startPoint: .trailing, endPoint: .leading))
+                            .fill(LinearGradient(colors: [.pink, .purple], startPoint: .leading, endPoint: .trailing))
                             .frame(width: max(geo.size.width * progress, 6), height: 6)
                     }
                 }
                 .frame(height: 6)
                 
-                HStack {
-                    Text("0")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundColor(.secondary.opacity(0.5))
-                    
-                    Spacer()
-                    
-                    if progress > 0 && progress < 1.0 {
-                        Text("\(liveValue)")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundColor(.purple)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        HStack {
+                            Text("0")
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(.secondary.opacity(0.5))
+                            
+                            Spacer()
+                            
+                            Text("\(dailyTarget)")
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(progress >= 1.0 ? .green : .secondary.opacity(0.5))
+                        }
+                        
+                        if progress > 0 && progress < 1.0 {
+                            Text("\(liveValue)")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.purple)
+                                .position(x: geo.size.width * progress, y: 6)
+                        }
                     }
-                    
-                    Spacer()
-                    
-                    Text("\(dailyTarget)")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundColor(progress >= 1.0 ? .green : .secondary.opacity(0.5))
                 }
+                .frame(height: 12)
             }
             
             // Stats row with dividers (league pattern)

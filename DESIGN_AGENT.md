@@ -523,15 +523,27 @@ Every chart widget uses `.sleekCard(cornerRadius: CornerRadius.xl, accentColor:)
 - **`adaptiveToolbarBackground()`**: Reusable modifier in `DesignSystem.swift`. On iOS 26+ it's a no-op (lets glass show). On older iOS it applies `.toolbarBackground(.hidden)` + `.toolbarColorScheme(.dark)`. All 5 tab root views + major pushed views already use it.
 - **No hairline overlay**: The old `Color.white.opacity(0.08)` overlay on the tab bar was removed.
 - **`preferredColorScheme`**: Uses `AppearanceManager.shared.colorScheme` instead of hardcoded `.light`.
-- **Dashboard nav (Home)**: `DashboardNavLeadingToolbar` + `DashboardNavTrailingToolbar` in `DashboardView+Header.swift`. On iOS 26+, logo and optional workout timer are separate `ToolbarItem`s; ellipsis + profile sit in one `ToolbarItem` as `HStack(spacing: 4)` with `.sharedBackgroundVisibility(.hidden)` so they float tight together without a pill; pre–iOS 26 uses `ToolbarItemGroup` with the same tight `HStack` for dots + profile.
-- **Other main tabs (Exercises, Workout, Nutrition, Friends)**: System nav bar visible with gradient tab titles via `floatingTopBarLeading` in `DesignSystem.swift` (`.sharedBackgroundVisibility(.hidden)` on iOS 26+). Active workout timer uses `floatingTopBarActiveWorkoutTimer()` (requires `WorkoutManager` in the environment). Friends uses `FriendsHeaderTitleView` + `FriendsHeaderActionsView` (split from `FriendsHeaderWrapper`); removed `safeAreaInset` glass header in favor of the same pattern as Home.
-
-### Legacy custom headers (full revert guide)
-
-Tab-by-tab instructions for restoring **hidden nav bar + in-layout headers** live in **`LEGACY_CUSTOM_HEADERS.md`** at the repo root (includes timer snippet and which modifiers to remove).
+- **Main tab headers (current)**: All five tabs use **`.navigationBarHidden(true)`** and **custom headers inside the scroll (or fixed stack for Exercises)** — same as pre–Liquid Glass toolbar experiment. Home: `customHeaderView` in `DashboardView+Header.swift` (logo, timer, `…`, profile). Exercises / Workout / Nutrition: gradient title + optional timer pill. Friends: `FriendsHeaderWrapper` as first row above stories. See **`LEGACY_CUSTOM_HEADERS.md`** for layout map and optional **system toolbar** migration notes.
+- **Optional helpers (unused on main tabs)**: `floatingTopBarLeading`, `floatingTopBarTrailing`, `floatingTopBarActiveWorkoutTimer()` remain in `DesignSystem.swift` if you re-enable system nav + floating titles later.
 
 ### Rules for New Views
 - **Never** set opaque `backgroundColor` on `UITabBar` or `UINavigationBar` — blocks Liquid Glass.
 - For custom toolbar materials, use `.adaptiveToolbarBackground()` instead of `.toolbarBackground(.hidden)`.
 - `.glassEffect(.regular)` is for custom views only (floating buttons, custom bars). System bars get glass automatically.
 - Use `GlassEffectContainer` when grouping multiple glass elements that should morph together.
+
+## Privacy Settings Screen (2026-03-30)
+
+**File**: `PrivacySettingsView.swift` — Settings > Privacy & Security > Privacy Settings.
+
+**Layout**: `AnimatedOrbBackground.stats` + `ScrollView` > `VStack(spacing: 20)`. Matches `NotificationSettingsView` pattern.
+
+**Sections** (each uses `settingsSection(title:)` with `Color.cardBackground` + shadow):
+1. **Header card** — lock.shield.fill icon (blue-indigo gradient circle), title "Privacy Controls", descriptive subtitle
+2. **Profile Photo** — single toggle: "Hide Profile Photo" (purple, `person.crop.circle.fill`)
+3. **Social Features** — two toggles: "Hide Friend Activity" (orange, `figure.run`), "Hide from Weekly League" (yellow, `trophy.fill`)
+4. **Discoverability** — two toggles: "Hide from Contact Sync" (red, `person.2.slash.fill`), "Hide from Search" (teal, `magnifyingglass`)
+5. **Activity Status** — single toggle: "Hide Active Status" (mint, `clock.fill`)
+6. **Info footer** — `info.circle.fill` + caption text explaining server-side enforcement
+
+**Toggle row pattern**: 40pt circle with color fill at 15% opacity, icon in accent color, title (`.subheadline.semibold`), subtitle (`.caption.secondary`), `Toggle` with `.tint(color)`. All rows have `.accessibilityLabel` and `.accessibilityHint`.

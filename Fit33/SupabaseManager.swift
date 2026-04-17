@@ -16,7 +16,10 @@ class SupabaseManager: ObservableObject {
     private let supabaseURL = AppConfig.Supabase.url
     private let supabaseKey = AppConfig.Supabase.anonKey
     
-    internal private(set) var client: SupabaseClient!
+    // Non-optional to avoid implicit-unwrap crashes. A bad AppConfig.Supabase.url
+    // is a fatal misconfiguration, not a recoverable runtime path, so we
+    // preconditionFailure in init rather than let every call site crash later.
+    internal let client: SupabaseClient
     
     // MARK: - Cached Date Formatter (Performance Optimization)
     /// ISO8601DateFormatter is expensive to create - reuse this instance
@@ -107,13 +110,12 @@ class SupabaseManager: ObservableObject {
     private var authListenerTask: Task<Void, Never>?
     
     private init() {
-        // Initialize Supabase client
         guard let url = URL(string: supabaseURL) else {
-            AppLogger.error("Invalid Supabase URL", category: .network)
-            return
+            preconditionFailure("Invalid Supabase URL in AppConfig — check Secrets.swift configuration")
         }
-        
-        client = SupabaseClient(
+        precondition(!supabaseKey.isEmpty, "Missing Supabase anon key in AppConfig — check Secrets.swift")
+
+        self.client = SupabaseClient(
             supabaseURL: url,
             supabaseKey: supabaseKey,
             options: .init(
@@ -123,10 +125,10 @@ class SupabaseManager: ObservableObject {
                 )
             )
         )
-        
+
         // NOTE: Auth check is performed by Fit33App.swift's .task modifier
         // to avoid duplicate/racing auth+sync calls during startup.
-        
+
         startAuthStateListener()
     }
     
@@ -769,7 +771,12 @@ class SupabaseManager: ObservableObject {
 
         do {
             await PushNotificationService.shared.removeDeviceToken()
-            
+
+            // Tear down Realtime channels BEFORE revoking the JWT, otherwise
+            // the socket stays open with stale credentials and leaks onto
+            // the next signed-in user (and burns battery until iOS reaps it).
+            await RealtimeService.shared.disconnect()
+
             try await client.auth.signOut()
 
             await MainActor.run {
@@ -819,29 +826,34 @@ class SupabaseManager: ObservableObject {
         AppLogger.debug("Step 2: Deleting profile photo...", category: .network)
         await deleteProfilePhotoFromStorage(userId: userId)
         
-        // STEP 3: Try to delete from auth.users via RPC (requires DELETE_USER_ACCOUNT.sql)
+        // STEP 3: Try to delete from auth.users via RPC (requires complete_account_deletion.sql)
+        // The RPC returns JSONB: { "success": true, "user_id": "...", "deleted": {...} }
         AppLogger.debug("Step 3: Attempting to delete from auth.users via RPC...", category: .network)
         var authUserDeleted = false
+        struct DeleteAccountRPCResponse: Decodable {
+            let success: Bool?
+        }
         do {
-            let result: Bool = try await client
+            let result: DeleteAccountRPCResponse = try await client
                 .rpc("delete_user_account", params: ["user_id_to_delete": userId.uuidString])
                 .execute()
                 .value
-            
-            authUserDeleted = result
-            if result {
+
+            authUserDeleted = result.success ?? false
+            if authUserDeleted {
                 AppLogger.info("User deleted from auth.users via RPC", category: .auth)
             } else {
-                AppLogger.warning("RPC returned false - auth.users entry may still exist", category: .auth)
+                AppLogger.warning("RPC returned success=false - auth.users entry may still exist", category: .auth)
             }
         } catch {
             AppLogger.warning("RPC delete_user_account failed: \(error.localizedDescription)", category: .network)
-            AppLogger.warning("Run DELETE_USER_ACCOUNT.sql in Supabase to enable full deletion", category: .network)
+            AppLogger.warning("Run complete_account_deletion.sql in Supabase to enable full deletion", category: .network)
             // Continue anyway - profile data is already deleted
         }
         
         // STEP 4: Sign out and clear local data
         AppLogger.debug("Step 4: Signing out and clearing local data...", category: .auth)
+        await RealtimeService.shared.disconnect()
         try? await client.auth.signOut()
         
         await MainActor.run {

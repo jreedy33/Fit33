@@ -244,8 +244,8 @@ struct WorkoutCompletionView: View {
     @State private var showTitle = false
     @State private var showStats = false
     @State private var showTags = false
-    @State private var showActionBar = false
     @State private var showPhotoPrompt = false
+    @State private var shouldFinishAfterShare = false
     @State private var estimatedCalories: Int = 0
     
     var totalSets: Int {
@@ -350,15 +350,9 @@ struct WorkoutCompletionView: View {
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                     
-                    Spacer(minLength: 120)
+                    Spacer(minLength: 40)
                 }
                 .padding(.horizontal, Spacing.md)
-            }
-            .overlay(alignment: .bottom) {
-                if showActionBar {
-                    floatingDoneBar
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
             }
             .background(
                 AnimatedOrbBackground.workout(colorScheme: colorScheme)
@@ -386,16 +380,28 @@ struct WorkoutCompletionView: View {
                         HapticManager.selectionChanged()
                         showingShareOptions = true
                     }) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.ds_labelLarge)
-                            .foregroundColor(.primary)
+                        HStack(spacing: 4) {
+                            Text("Next")
+                                .font(.ds_labelMedium)
+                            Image(systemName: "chevron.right")
+                                .font(.ds_bodySmall)
+                        }
+                        .foregroundColor(.primary)
                     }
                 }
             }
             .adaptiveToolbarBackground()
         }
-        .sheet(isPresented: $showingShareOptions) {
-            ShareWorkoutSheet(workout: workout, accentColor: workoutGradient[0])
+        .sheet(isPresented: $showingShareOptions, onDismiss: {
+            if shouldFinishAfterShare {
+                finishAndDismiss()
+            }
+        }) {
+            ShareWorkoutSheet(
+                workout: workout,
+                accentColor: workoutGradient[0],
+                onFinish: { shouldFinishAfterShare = true }
+            )
         }
         .overlay(
             ConfettiView(isActive: showingCelebration)
@@ -444,10 +450,6 @@ struct WorkoutCompletionView: View {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(0.6))
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { showTags = true }
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.0))
-            withAnimation(.easeOut(duration: 0.3)) { showActionBar = true }
         }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.2))
@@ -692,37 +694,6 @@ struct WorkoutCompletionView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-    
-    // MARK: - Floating Done Bar (matches tab bar size/shape)
-
-    private var floatingDoneBar: some View {
-        Button(action: finishAndDismiss) {
-            Text("Done")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-        }
-        .padding(.horizontal, Spacing.md)
-        .padding(.top, Spacing.sm)
-        .padding(.bottom, Spacing.xl)
-        .background(
-            .ultraThinMaterial,
-            in: UnevenRoundedRectangle(
-                topLeadingRadius: CornerRadius.xl,
-                topTrailingRadius: CornerRadius.xl
-            )
-        )
-        .background(
-            LinearGradient(colors: workoutGradient, startPoint: .leading, endPoint: .trailing)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-                .padding(.horizontal, Spacing.md)
-                .padding(.top, Spacing.sm)
-                .padding(.bottom, Spacing.xl)
-                .shadow(color: workoutGradient[0].opacity(0.3), radius: 12, x: 0, y: -4)
-        )
     }
     
     private func finishAndDismiss() {

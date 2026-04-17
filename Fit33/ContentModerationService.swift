@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import Auth
 
 @MainActor
 class ContentModerationService {
@@ -40,11 +41,26 @@ class ContentModerationService {
             return ModerationResult(flagged: false, categories: [])
         }
         
+        // The edge function's `requireUserAuth` helper calls
+        // `supabase.auth.getUser(token)` which requires a real user session JWT.
+        // Sending the anon key here would succeed past Supabase's edge gate but
+        // fail our function's own auth check — causing the precheck to silently
+        // fail-open and let flagged content through.
+        let session: Session
+        do {
+            session = try await SupabaseManager.shared.client.auth.session
+        } catch {
+            AppLogger.warning("Moderation pre-check skipped — no user session: \(error.localizedDescription)", category: .network)
+            return ModerationResult(flagged: false, categories: [])
+        }
+        let accessToken = session.accessToken
+
         do {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer \(AppConfig.Supabase.anonKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue(AppConfig.Supabase.anonKey, forHTTPHeaderField: "apikey")
             request.timeoutInterval = 5
             
             let userId = SupabaseManager.shared.currentUser?.id.uuidString
@@ -59,7 +75,9 @@ class ContentModerationService {
             let (data, response) = try await URLSession.shared.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                AppLogger.warning("Moderation API returned non-200, allowing content through", category: .network)
+                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                let bodyPreview = String(data: data.prefix(200), encoding: .utf8) ?? "<non-utf8>"
+                AppLogger.warning("Moderation API returned HTTP \(code), allowing content through. Body: \(bodyPreview)", category: .network)
                 return ModerationResult(flagged: false, categories: [])
             }
             

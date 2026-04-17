@@ -189,47 +189,55 @@ class PushNotificationService: ObservableObject {
             return
         }
         
-        do {
-            // Upsert the device token (insert or update if exists)
-            struct DeviceTokenRecord: Encodable {
-                let user_id: String
-                let device_token: String
-                let platform: String
-                let app_version: String
-                let is_valid: Bool
-                let apns_environment: String
-                let updated_at: String
+        struct DeviceTokenRecord: Encodable {
+            let user_id: UUID
+            let device_token: String
+            let platform: String
+            let app_version: String
+            let is_valid: Bool
+            let apns_environment: String
+            let updated_at: String
+        }
+        
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        let apnsEnvironment = Self.detectAPNsEnvironment()
+        AppLogger.debug("📱 [PUSH] Detected APNs environment: \(apnsEnvironment)", category: .network)
+        
+        let record = DeviceTokenRecord(
+            user_id: userId,
+            device_token: token,
+            platform: "ios",
+            app_version: appVersion,
+            is_valid: true,
+            apns_environment: apnsEnvironment,
+            updated_at: ISO8601DateFormatter().string(from: Date())
+        )
+        
+        let maxAttempts = 2
+        for attempt in 1...maxAttempts {
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("user_push_tokens")
+                    .upsert(record, onConflict: "user_id, device_token")
+                    .execute()
+                
+                AppLogger.info("✅ [PUSH] Device token saved to Supabase (env: \(apnsEnvironment))", category: .network)
+                
+                UserDefaults.standard.set(token, forKey: "apns_device_token")
+                UserDefaults.standard.set(apnsEnvironment, forKey: "apns_environment")
+                return
+            } catch {
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+                if isTimeout && attempt < maxAttempts {
+                    AppLogger.warning("❌ [PUSH] Token save timeout (attempt \(attempt)/\(maxAttempts)), retrying...", category: .network)
+                    try? await Task.sleep(for: .seconds(pow(2.0, Double(attempt))))
+                } else if isTimeout {
+                    AppLogger.warning("❌ [PUSH] Failed to save token: \(error)", category: .network)
+                } else {
+                    AppLogger.error("❌ [PUSH] Failed to save token: \(error)", category: .network)
+                }
             }
-            
-            let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
-            
-            // Detect APNs environment: TestFlight/App Store = production, Xcode = development
-            let apnsEnvironment = Self.detectAPNsEnvironment()
-            AppLogger.debug("📱 [PUSH] Detected APNs environment: \(apnsEnvironment)", category: .network)
-            
-            let record = DeviceTokenRecord(
-                user_id: userId.uuidString,
-                device_token: token,
-                platform: "ios",
-                app_version: appVersion,
-                is_valid: true,  // Reset to valid when user opens app with fresh token
-                apns_environment: apnsEnvironment,
-                updated_at: ISO8601DateFormatter().string(from: Date())
-            )
-            
-            try await SupabaseManager.shared.supabaseClient
-                .from("user_push_tokens")
-                .upsert(record, onConflict: "user_id, device_token")
-                .execute()
-            
-            AppLogger.info("✅ [PUSH] Device token saved to Supabase (env: \(apnsEnvironment))", category: .network)
-            
-            // Store locally for reference
-            UserDefaults.standard.set(token, forKey: "apns_device_token")
-            UserDefaults.standard.set(apnsEnvironment, forKey: "apns_environment")
-            
-        } catch {
-            AppLogger.error("❌ [PUSH] Failed to save token: \(error)", category: .network)
         }
     }
     

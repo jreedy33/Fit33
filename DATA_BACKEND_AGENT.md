@@ -59,6 +59,27 @@
 - Every function MUST validate input at entry point (Zod or manual)
 - Standard error response: `{ error: string, code: string }`
 - NEVER log full phone numbers, auth tokens, or PII
+- Import `buildCorsHeaders(req)` from `supabase/functions/_shared/cors.ts`; never ship `Access-Control-Allow-Origin: *` in a new function.
+- Every new function gets a row in the **Edge Function Auth Registry** in `INFRA_SECURITY_AGENT.md` in the SAME PR.
+
+### RPC IDOR Prevention (MANDATORY)
+Every `SECURITY DEFINER` RPC taking a user-id-like parameter (`p_user_id`, `user_id_to_delete`, `new_user_id`, etc.) MUST do ONE of:
+
+1. **Drop the parameter entirely** and use `auth.uid()` internally (preferred), OR
+2. **Guard it** at the top of the function body:
+   ```sql
+   IF auth.uid() IS NOT NULL AND p_user_id <> auth.uid() THEN
+       RAISE EXCEPTION 'Forbidden' USING ERRCODE = '42501';
+   END IF;
+   ```
+   The `auth.uid() IS NOT NULL` check allows service-role / pg_cron callers through.
+
+Canonical example: `supabase/20260417_secure_get_friend_ids.sql`. Any RPC that fails this audit is a P0 security bug.
+
+### Return-type contract with Swift
+- SQL function `RETURNS jsonb` → Swift client must decode into a `Decodable struct`, NOT a `Bool`.
+- SQL function `RETURNS boolean` → Swift can decode as `Bool`.
+- If you change a RETURNS clause, grep for the RPC name in `Fit33/SupabaseManager.swift` and all `*Service.swift` files and update decoders in the same commit.
 
 ### Migration Rules
 - Naming: `YYYYMMDD_HH_description.sql`
@@ -377,7 +398,7 @@ When creating views, NEVER use `SECURITY DEFINER`. All views in the `public` sch
 
 **`get_friend_workout_exercises` RPC**:
 - Migration `20260325_friend_workout_exercises_rpc.sql` was missing `GRANT EXECUTE ... TO authenticated` — added.
-- The function must be deployed to the live database before the social friend workout preview works.
+- **KNOWN ISSUE (fixed 2026-03-30)**: This RPC always returned empty because `workout_id` in `friend_activity_feed` is a Core Data object ID (e.g. `p12345`), not a UUID. The RPC tries `p_workout_id::uuid` which always fails. Fix: exercise details are now embedded in the activity metadata JSONB via `post_workout_activity` (`p_exercises_json` param). `FriendWorkoutPreviewView.loadExercises()` reads from `metadata.exercises` first, falls back to the RPC for older posts. Migration: `20260330_activity_feed_exercises.sql`.
 
 ### 2026-03-25: Exercise Name Fuzzy Matching (Workout History Fix)
 
@@ -505,7 +526,7 @@ Never use `user.id?.uuidString ?? ""` or `user.id ?? UUID()` as fallbacks for us
 
 **Data flow**: `WhoopService.shared` → `HealthDataService.syncWhoopData()` → upserts to `whoop_recovery_data`, `sleep_logs` (source: "whoop"), `cardio_workouts` (source: "whoop"), `daily_activity_summary` (source merge). All writes are auth-guarded.
 
-**WHOOP API URL fix (March 27 2026)**: `AppConfig.Whoop.apiBaseUrl` was `https://api.prod.whoop.com/developer` — the `/developer` prefix is for documentation (OpenAPI spec), not API calls. Changed to `https://api.prod.whoop.com`. All v2 endpoint paths (`/v2/recovery`, `/v2/cycle`, `/v2/activity/sleep`, etc.) are correct per official WHOOP docs. `WhoopTokenResponse.expiresIn` changed from `Int` to `Int?` with 3600s default — the WHOOP token response sometimes omits this field.
+**WHOOP API base URL (corrected 2026-03-30)**: Data calls use `AppConfig.Whoop.apiBaseUrl` = `https://api.prod.whoop.com/developer` (matches OpenAPI `servers[0].url`). Paths remain `/v2/recovery`, `/v2/cycle`, `/v2/activity/sleep`, `/v2/activity/workout`, `/v2/user/...`. The bare host + `/v2/...` caused **404 `default backend - 404`** for real users (v1.37). `WhoopTokenResponse.expiresIn` is `Int?` with 3600s default when omitted.
 
 **Migration**: `supabase/20260327_whoop_integration.sql`
 
@@ -553,7 +574,17 @@ Never use `user.id?.uuidString ?? ""` or `user.id ?? UUID()` as fallbacks for us
 
 **RPC**: `set_private_challenge_cover_image(p_challenge_id, p_cover_image_url)` — SECURITY DEFINER, verifies `created_by = auth.uid()`. Updated RPCs: `get_my_private_challenges`, `get_private_challenge_detail`, `lookup_private_challenge_by_code` now return `cover_image_url`.
 
-**REVERTED (2026-03-29)**: Cover photo feature removed entirely due to 15 RLS crashes in v1.37. The `coverImageUrl` field remains in Swift DTOs (nullable, server returns null). SQL migration `20260328_private_challenge_photos.sql` deleted. RPCs no longer return `cover_image_url`. `set_private_challenge_cover_image` RPC and `private-challenge-photos` storage bucket were never deployed.
+**REVERTED (2026-03-29)**: Cover photo feature removed entirely due to 15 RLS crashes in v1.37. The dedicated `private-challenge-photos` bucket and `set_private_challenge_cover_image` RPC were never deployed.
+
+**RE-IMPLEMENTED (2026-03-30) as Challenge Icon Upload**: Uses the existing `avatars` storage bucket at path `challenge_icons/{challengeId}.jpg` instead of a separate bucket. The app does a direct table UPDATE on `private_challenges.cover_image_url` (not via RPC).
+
+**RPC updates (2026-03-30)**: Migration `20260330_add_cover_image_to_rpcs.sql` — both `get_my_private_challenges` and `get_private_challenge_detail` were DROP + RECREATED to add `cover_image_url TEXT` to RETURNS TABLE (positioned after `emoji`) and `pc.cover_image_url` to SELECT (after `pc.emoji`). Function bodies unchanged otherwise. **CRITICAL**: Do NOT drop `cover_image_url` from these RPCs — the Swift models decode it and all challenge icon displays depend on it.
+
+**RLS**: Existing policy "Admin can update their challenges" on `private_challenges` allows `created_by = auth.uid()` UPDATE — used by the direct table write for icon URL. No new policy was needed.
+
+**Storage**: `avatars` bucket, path `challenge_icons/{challengeId}.jpg`, JPEG, upsert:true. Public URL stored in `cover_image_url` column. Security note: storage-level access is any authenticated user (not scoped to challenge admin), but the table UPDATE is RLS-protected to admin only.
+
+**TODO**: `lookup_private_challenge_by_code` RPC also has `PrivateChallengePreview.coverImageUrl` on the Swift model but may not return `cover_image_url` yet. Lower priority — only affects the join-by-code preview screen. Same fix: add `cover_image_url TEXT` to RETURNS TABLE and `pc.cover_image_url` to SELECT after `pc.emoji`.
 
 ### 2026-03-29: SQL `#variable_conflict` Rule for RETURNS TABLE Functions
 
@@ -566,3 +597,39 @@ Never use `user.id?.uuidString ?? ""` or `user.id ?? UUID()` as fallbacks for us
 ### Oura Integration Column — Migration Required (2026-03-28)
 
 **Migration**: `supabase/20260328_oura_integration.sql` adds `is_oura_connected BOOLEAN DEFAULT false` to `user_profiles` and creates `oura_readiness_data` table. Until applied, the `syncAllIntegrationStatuses()` Oura update silently fails (logged at `.debug`). Core integrations (strava/fitbit/apple_health/inbody/whoop) sync independently in a single batch — Oura is attempted separately so a missing column doesn't block the others.
+
+### 2026-03-30: Privacy Settings — Schema & RPC Enforcement
+
+**Migration**: `supabase/20260330_privacy_settings.sql` — adds 6 `BOOLEAN DEFAULT FALSE` columns to `user_profiles`: `privacy_hide_photo`, `privacy_hide_activity`, `privacy_hide_league`, `privacy_hide_contact_sync`, `privacy_hide_search`, `privacy_hide_active_status`.
+
+**Client-side enforcement** (immediate): `PrivacySettingsManager.swift` guards `postWorkoutActivity`, `fetchOrJoinLeague`, `syncContactsToDatabase`. Photo views in `FriendPhotoCache.swift` force initials fallback when `hideProfilePhoto` is on for the current user. **CRITICAL**: `CachedFriendPhoto` uses `@ObservedObject privacyManager` for reactive local check AND `isPhotoUrlEmpty` to respect server-returned null URLs. Both checks must remain — removing the URL check lets stale cached images bypass privacy.
+
+**Server-side enforcement** (defense-in-depth):
+- `20260330_privacy_rpc_enforcement.sql`: `search_users`, `get_friend_activity_feed`, `match_contacts_by_phone`, `get_people_you_may_know`, `get_league_leaderboard`, `get_or_join_weekly_league`
+- `20260330_privacy_photo_all_rpcs.sql`: `get_active_challenges`, `get_pending_sent_challenges`, `get_active_group_challenges`, `get_received_workouts`, `get_pending_friend_requests`, `get_sent_friend_requests`, `get_community_challenge_leaderboard`, `get_my_community_challenges`, `get_community_challenge_detail`, `get_private_challenge_detail`, `get_my_private_challenges`, `get_friends`, `get_friends_in_community_challenge`
+- Pattern in all RPCs: `CASE WHEN COALESCE(up.privacy_hide_photo, FALSE) THEN NULL ELSE up.profile_photo_url END`
+- `20260330_add_cover_image_to_rpcs.sql`: also patched for privacy (private challenge RPCs with `cover_image_url`)
+
+**League privacy enforcement** (`privacy_hide_league`): Both `get_league_leaderboard` and `get_or_join_weekly_league` filter users with `privacy_hide_league = TRUE` out of leaderboard results AND rank calculations using `AND NOT COALESCE(up.privacy_hide_league, FALSE)`. `get_or_join_weekly_league` returns `{"hidden": true}` early if the calling user has this flag set — prevents new league placement. Client-side: `WeeklyLeagueService` observes `PrivacySettingsManager.$hideFromWeeklyLeague` and clears cached standing/hasJoined immediately on toggle. `fetchOrJoinLeague()` handles the `{"hidden": true}` server response gracefully without decode errors.
+
+**Privacy realtime propagation** (unified): `20260330_league_privacy_realtime.sql` creates `privacy_change_events` signal table (columns: `user_id`, `change_type` TEXT, `is_hidden` BOOL, `group_id` UUID nullable) + single Postgres trigger on `user_profiles` for BOTH `privacy_hide_league` and `privacy_hide_activity`. When `privacy_hide_league` changes → one row per active league membership (change_type='league', group_id set). When `privacy_hide_activity` changes → one row (change_type='activity', group_id NULL). `RealtimeService.subscribePrivacyChanges()` listens for INSERT events and routes: 'league' → checks group_id match → `WeeklyLeagueService.fetchFullLeaderboard()`; 'activity' → checks friend list membership → `ActivityFeedService.fetchFeed()`. RLS: all authenticated users can read (broad read needed since activity events have no group scope). Old `league_privacy_events` table dropped by this migration.
+
+**DTO**: `UserProfileDTO` includes all 6 privacy columns with `CodingKeys` mapping.
+
+### 2026-03-31: League Roster Lock (Auto-Placement)
+
+**Problem**: League members trickled in throughout the week whenever they first opened the app. Users saw 3 people on Monday, 5 by Wednesday, etc. — confusing because they expected a fixed roster.
+
+**Solution**: `20260331_league_auto_placement.sql` introduces:
+
+1. **`auto_place_all_league_members()`** — batch function that: (a) calls `process_past_league_weeks()` for promotions/relegations, (b) iterates ALL users with `user_league_tier` rows not yet placed this week, (c) applies same Bronze (random + stale avoidance) and Silver+ (friend overlap) algorithms. Uses `RETURNING id INTO v_new_member_id` to safely handle concurrent insert races with the lazy RPC path.
+
+2. **`pg_cron` job** — `league-weekly-auto-place` runs at `00:15 UTC every Monday` (`15 0 * * 1`). Places everyone at once so rosters are complete by Monday morning.
+
+3. **`get_or_join_weekly_league` — roster lock**: If a user has no membership this week AND `EXTRACT(ISODOW FROM CURRENT_DATE) != 1` (not Monday), returns `{"not_placed": true, "tier_rank": ..., "tier_name": ..., "next_week_start": ...}` instead of creating a membership. On Monday, lazy placement still works as a safety net if cron hasn't run yet.
+
+4. **Penalty for inactivity**: Users who don't open the app are still auto-placed by the cron with 0 points. At week's end they rank at the bottom → likely relegated. This is intentional.
+
+**Swift changes**: `WeeklyLeagueService` has new `@Published var notPlaced: Bool`, `notPlacedTierName: String?`, `notPlacedNextWeek: String?`. `fetchOrJoinLeague()` parses `not_placed` JSON response and sets these. `WeeklyLeagueViews.swift` adds `notPlacedContent` widget showing "League Starts Monday" with tier info.
+
+**Key invariant**: After Monday UTC, the roster for each league group is frozen. No new members can join existing groups until the next week's cron run.

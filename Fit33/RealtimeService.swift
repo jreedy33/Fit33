@@ -48,6 +48,7 @@ class RealtimeService: ObservableObject {
     private var communityParticipantsChannel: RealtimeChannelV2?
     private var privateMembersChannel: RealtimeChannelV2?
     private var friendActivityFeedChannel: RealtimeChannelV2?
+    private var privacyChangeChannel: RealtimeChannelV2?
     
     // MARK: - Debounce State
     
@@ -289,6 +290,7 @@ class RealtimeService: ObservableObject {
         await subscribeCommunityParticipants(userId: userId)
         await subscribePrivateMembers(userId: userId)
         await subscribeFriendActivityFeed(userId: userId)
+        await subscribePrivacyChanges(userId: userId)
         
         // Start periodic cadence refresh for auto-tracked challenges (steps, active_minutes, etc.)
         startAutoTrackedRefreshTimer()
@@ -298,7 +300,7 @@ class RealtimeService: ObservableObject {
         lastConnectTime = Date()
         AppLogger.info("Connected to all channels", category: .network)
         logRealtimeEvent(type: "CONNECTED", source: "RealtimeService",
-                        details: "✅ All 9 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed + auto-tracked refresh timer")
+                        details: "✅ All 10 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed, privacy_changes + auto-tracked refresh timer")
     }
     
     /// Disconnect from all realtime channels
@@ -332,6 +334,9 @@ class RealtimeService: ObservableObject {
         if let channel = friendActivityFeedChannel {
             await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
         }
+        if let channel = privacyChangeChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
         
         // Also tear down service-level realtime channels so they can re-subscribe on reconnect.
         // Without this, the services hold a stale channel reference and the guard in
@@ -355,9 +360,69 @@ class RealtimeService: ObservableObject {
         communityParticipantsChannel = nil
         privateMembersChannel = nil
         friendActivityFeedChannel = nil
+        privacyChangeChannel = nil
         
         isConnected = false
         AppLogger.info("Disconnected from all channels", category: .network)
+    }
+    
+    // MARK: - Privacy Changes Subscription (League + Activity Feed)
+    
+    /// Subscribe to privacy_change_events — unified signal table for all privacy toggles.
+    /// When any user toggles privacy_hide_league or privacy_hide_activity, a Postgres trigger
+    /// inserts a row → this subscription fires → relevant data refreshes instantly.
+    private func subscribePrivacyChanges(userId: UUID) async {
+        let client = SupabaseManager.shared.supabaseClient
+        
+        let channel = client.realtimeV2.channel("privacy_changes-\(userId.uuidString)")
+        
+        let insertions = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "privacy_change_events"
+        )
+        
+        Task { [weak self] in
+            for await action in insertions {
+                guard let self else { break }
+                let record = action.record
+                let eventUserId = self.jsonString(record["user_id"]) ?? ""
+                let changeType = self.jsonString(record["change_type"]) ?? ""
+                let isHidden = self.jsonBool(record["is_hidden"]) ?? false
+                
+                guard eventUserId != userId.uuidString else { continue }
+                
+                switch changeType {
+                case "league":
+                    let eventGroupId = self.jsonString(record["group_id"]) ?? ""
+                    let myGroupId = await WeeklyLeagueService.shared.standing?.groupId.uuidString
+                    guard eventGroupId == myGroupId else { continue }
+                    
+                    AppLogger.debug("🏆 [LEAGUE] Privacy change: user \(eventUserId.prefix(8)) is now \(isHidden ? "hidden" : "visible") — refreshing leaderboard", category: .social)
+                    self.logRealtimeEvent(type: "LEAGUE_PRIVACY", source: "privacy_change_events",
+                                         details: "⚡️ User \(eventUserId.prefix(8)) → \(isHidden ? "hidden" : "visible") in group \(eventGroupId.prefix(8))")
+                    await WeeklyLeagueService.shared.fetchFullLeaderboard()
+                    
+                case "activity":
+                    let friendIds = await FriendService.shared.friends.map { $0.friendId }
+                    guard let eventUUID = UUID(uuidString: eventUserId),
+                          friendIds.contains(eventUUID) else { continue }
+                    
+                    AppLogger.debug("📰 [FEED] Privacy change: friend \(eventUserId.prefix(8)) is now \(isHidden ? "hidden" : "visible") — refreshing feed", category: .social)
+                    self.logRealtimeEvent(type: "FEED_PRIVACY", source: "privacy_change_events",
+                                         details: "⚡️ Friend \(eventUserId.prefix(8)) → \(isHidden ? "hidden" : "visible") in activity feed")
+                    await ActivityFeedService.shared.fetchFeed()
+                    
+                default:
+                    AppLogger.warning("Unknown privacy change_type: \(changeType)", category: .social)
+                }
+            }
+        }
+        
+        await channel.subscribe()
+        privacyChangeChannel = channel
+        
+        AppLogger.debug("Subscribed to privacy_change_events (league + activity) for user \(userId)", category: .network)
     }
     
     // MARK: - Friend Activity Feed Subscription

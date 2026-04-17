@@ -81,6 +81,10 @@ struct SimpleMealPlanView: View {
                     Color.clear.frame(height: 0).id("top")
                     
                     LazyVStack(spacing: 0) {
+                        customNutritionHeaderView
+                            .padding(.top, 0)
+                            .padding(.bottom, 16)
+                        
                         VStack(spacing: 24) {
                             if needsProfileSetup {
                                 profileSetupCard
@@ -89,7 +93,6 @@ struct SimpleMealPlanView: View {
                                 comprehensiveNutritionView
                             }
                         }
-                        .padding(.top, 12)
                         .onAppear {
                             // 🧠 Fetch personalized insights for daily insights card
                             Task {
@@ -125,11 +128,7 @@ struct SimpleMealPlanView: View {
                     }
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .floatingTopBarLeading {
-                NutritionTabToolbarTitle()
-            }
-            .floatingTopBarActiveWorkoutTimer()
+            .navigationBarHidden(true)
             .adaptiveToolbarBackground()
             }
         }
@@ -231,9 +230,9 @@ struct SimpleMealPlanView: View {
         ]
     }
     
-    // MARK: - Toolbar title (floating on system nav bar)
-    private struct NutritionTabToolbarTitle: View {
-        var body: some View {
+    // MARK: - Custom Header View
+    private var customNutritionHeaderView: some View {
+        HStack(alignment: .center) {
             Text("Nutrition")
                 .font(.ds_displayLarge)
                 .italic()
@@ -251,8 +250,22 @@ struct SimpleMealPlanView: View {
                 )
                 .shadow(color: Color.teal.opacity(0.2), radius: 4, x: 0, y: 1)
                 .frame(height: 55)
-                .fixedSize()
+            
+            Spacer()
+            
+            if WorkoutManager.shared.isWorkoutActive {
+                Text(WorkoutManager.shared.formattedDuration)
+                    .font(.system(size: 14, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
+                            .fill(.ultraThinMaterial)
+                    )
+            }
         }
+        .padding(.horizontal, Spacing.xxs)
     }
     
     private var needsProfileSetup: Bool {

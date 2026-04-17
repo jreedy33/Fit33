@@ -266,6 +266,23 @@ final class WhoopService: ObservableObject {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    /// User-visible copy for WHOOP settings / Sync card (avoids raw ingress messages like "default backend - 404").
+    private static func userFacingSyncErrorMessage(for error: Error) -> String {
+        let raw = error.localizedDescription
+        let lower = raw.lowercased()
+        if lower.contains("default backend") {
+            return "We couldn’t load your WHOOP data. Update Fit33 to the latest version, then tap Sync again."
+        }
+        if lower.contains("http 404") {
+            return "WHOOP’s service didn’t respond. Check for an app update, then try Sync again."
+        }
+        return raw
+    }
+
+    private func setSyncError(_ error: Error) {
+        errorMessage = Self.userFacingSyncErrorMessage(for: error)
+    }
+
     // MARK: - Generic API Request
 
     private func apiRequest<T: Decodable>(_ path: String, queryItems: [URLQueryItem]? = nil) async throws -> T {
@@ -348,7 +365,7 @@ final class WhoopService: ObservableObject {
             AppLogger.debug("[WHOOP] Recovery skipped: \(error.localizedDescription ?? "not connected")", category: .health)
         } catch {
             AppLogger.error("[WHOOP] Recovery error: \(error)", category: .health)
-            errorMessage = error.localizedDescription
+            setSyncError(error)
         }
     }
 
@@ -375,7 +392,7 @@ final class WhoopService: ObservableObject {
             AppLogger.debug("[WHOOP] Cycles skipped: \(error.localizedDescription ?? "not connected")", category: .health)
         } catch {
             AppLogger.error("[WHOOP] Cycles error: \(error)", category: .health)
-            errorMessage = error.localizedDescription
+            setSyncError(error)
         }
     }
 
@@ -399,7 +416,7 @@ final class WhoopService: ObservableObject {
             AppLogger.debug("[WHOOP] Sleep skipped: \(error.localizedDescription ?? "not connected")", category: .health)
         } catch {
             AppLogger.error("[WHOOP] Sleep error: \(error)", category: .health)
-            errorMessage = error.localizedDescription
+            setSyncError(error)
         }
     }
 
@@ -418,7 +435,7 @@ final class WhoopService: ObservableObject {
             AppLogger.debug("[WHOOP] Workouts skipped: \(error.localizedDescription ?? "not connected")", category: .health)
         } catch {
             AppLogger.error("[WHOOP] Workouts error: \(error)", category: .health)
-            errorMessage = error.localizedDescription
+            setSyncError(error)
         }
     }
 

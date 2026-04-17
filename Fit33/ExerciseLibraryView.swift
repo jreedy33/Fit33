@@ -341,6 +341,11 @@ struct ExerciseLibraryView: View {
             VStack(spacing: 0) {
                 // Fixed header section (doesn't scroll)
                 VStack(spacing: 0) {
+                    // Custom header
+                    customHeaderView
+                        .padding(.top, 0)
+                        .padding(.bottom, 16)
+                    
                     // Compact search and filters
                     compactFiltersView
                     
@@ -351,7 +356,7 @@ struct ExerciseLibraryView: View {
                     }
                 }
                 .padding(.horizontal, Spacing.md)
-                .padding(.top, 12)
+                .padding(.top, 8)
                 .padding(.bottom, 12)
                 
                 // Scrollable exercise list only
@@ -413,11 +418,7 @@ struct ExerciseLibraryView: View {
             .background(
                 AnimatedOrbBackground.exercises(colorScheme: colorScheme)
             )
-            .navigationBarTitleDisplayMode(.inline)
-            .floatingTopBarLeading {
-                ExerciseLibraryToolbarTitle()
-            }
-            .floatingTopBarActiveWorkoutTimer()
+            .navigationBarHidden(true)
             .adaptiveToolbarBackground()
             .navigationDestination(for: Exercise.self) { exercise in
                 ExerciseDetailView(exercise: exercise)
@@ -571,9 +572,9 @@ struct ExerciseLibraryView: View {
         }
     }
     
-    // MARK: - Toolbar title (floating on system nav bar)
-    private struct ExerciseLibraryToolbarTitle: View {
-        var body: some View {
+    // MARK: - Custom Header View
+    private var customHeaderView: some View {
+        HStack(alignment: .center) {
             Text("Exercises")
                 .font(.ds_displayLarge)
                 .italic()
@@ -591,8 +592,22 @@ struct ExerciseLibraryView: View {
                 )
                 .shadow(color: Color.blue.opacity(0.2), radius: 4, x: 0, y: 1)
                 .frame(height: 55)
-                .fixedSize()
+            
+            Spacer()
+            
+            if WorkoutManager.shared.isWorkoutActive {
+                Text(WorkoutManager.shared.formattedDuration)
+                    .font(.system(size: 14, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.sm)
+                            .fill(.ultraThinMaterial)
+                    )
+            }
         }
+        .padding(.horizontal, Spacing.xxs)
     }
     
     private var compactFiltersView: some View {
@@ -1116,5 +1131,4 @@ struct MultiSelectDropdownContent: View {
 #Preview {
     ExerciseLibraryView()
         .environment(\.managedObjectContext, PersistenceController.shared.container.viewContext)
-        .environmentObject(WorkoutManager.shared)
 }

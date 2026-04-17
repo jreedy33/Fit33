@@ -12,18 +12,12 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildCorsHeaders, requireUserAuth } from "../_shared/cors.ts";
 
 const USDA_API_KEY = Deno.env.get("USDA_API_KEY")!;
 const USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
 
 const CACHE_TTL_DAYS = 30;
-
-// CORS headers
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
 
 // Best-effort per-IP rate limiter (resets per edge function cold start)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
@@ -53,6 +47,8 @@ interface FoodDetailsRequest {
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -70,40 +66,26 @@ serve(async (req) => {
   }
 
   try {
-    const { action, ...params } = await req.json();
-
-    // Initialize Supabase client
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
+    // ALL actions now require a valid user JWT (or service-role).
+    // Previously search/details accepted anonymous callers and ran as
+    // service-role, granting elevated DB access to the entire internet.
+    const authResult = await requireUserAuth(req, supabaseClient, corsHeaders);
+    if (!authResult.ok) return authResult.response;
+
+    const { action, ...params } = await req.json();
+
     switch (action) {
       case "search":
-        return await handleSearch(supabaseClient, params as SearchRequest);
+        return await handleSearch(supabaseClient, params as SearchRequest, corsHeaders);
       case "details":
-        return await handleDetails(supabaseClient, params as FoodDetailsRequest);
-      case "cache_food": {
-        const authHeader = req.headers.get("Authorization");
-        if (!authHeader) {
-          return new Response(
-            JSON.stringify({ error: "Authorization required for cache_food" }),
-            { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-        const token = authHeader.replace("Bearer ", "");
-        const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-        if (token !== serviceKey) {
-          const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
-          if (authError || !user) {
-            return new Response(
-              JSON.stringify({ error: "Unauthorized" }),
-              { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-          }
-        }
-        return await handleCacheFood(supabaseClient, params);
-      }
+        return await handleDetails(supabaseClient, params as FoodDetailsRequest, corsHeaders);
+      case "cache_food":
+        return await handleCacheFood(supabaseClient, params, corsHeaders);
       default:
         return new Response(
           JSON.stringify({ error: "Invalid action" }),
@@ -131,7 +113,7 @@ serve(async (req) => {
 // ============================================================================
 // SEARCH HANDLER
 // ============================================================================
-async function handleSearch(supabase: any, params: SearchRequest) {
+async function handleSearch(supabase: any, params: SearchRequest, corsHeaders: Record<string, string>) {
   const { query, pageSize = 100, pageNumber = 1, dataTypes } = params;
 
   if (!query || query.trim().length === 0) {
@@ -380,7 +362,7 @@ async function handleSearch(supabase: any, params: SearchRequest) {
 // ============================================================================
 // DETAILS HANDLER
 // ============================================================================
-async function handleDetails(supabase: any, params: FoodDetailsRequest) {
+async function handleDetails(supabase: any, params: FoodDetailsRequest, corsHeaders: Record<string, string>) {
   const { fdcId } = params;
 
   if (!fdcId) {
@@ -449,7 +431,7 @@ async function handleDetails(supabase: any, params: FoodDetailsRequest) {
 // ============================================================================
 // CACHE FOOD HANDLER
 // ============================================================================
-async function handleCacheFood(supabase: any, params: any) {
+async function handleCacheFood(supabase: any, params: any, corsHeaders: Record<string, string>) {
   const { foods } = params;
 
   if (!foods || !Array.isArray(foods)) {

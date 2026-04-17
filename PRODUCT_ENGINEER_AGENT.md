@@ -19,6 +19,8 @@
 10. **Cloud sync MUST be paginated**: `fetchWorkoutHistory()` and `fetchMealLogs()` use `.limit()` -- never fetch unbounded history.
 11. **Database security — tables**: Every new table MUST have `ENABLE ROW LEVEL SECURITY` + CRUD policies scoped to `user_id = auth.uid()`. Tables without RLS are publicly accessible via the anon key — a critical vulnerability.
 12. **Database security — views**: NEVER create views with `SECURITY DEFINER`. All public views MUST use `security_invoker = on`. SECURITY DEFINER views bypass RLS for all users. See `SUPABASE_AGENT.md` "When Creating a View".
+13. **No placeholder navigation destinations in shipped `Destination` enums**. If the real view is not ready, HIDE the entry point (e.g. remove the chevron / card) rather than ship a `Text("Coming Soon")` destination. App Review flags "Coming Soon" screens as broken flows. Canonical example: `DashboardRoute.programDetailsPlaceholder` — the chevron was removed in `DashboardView+Programs.swift` on 2026-04-17 and the real `ProgramDetailsView` will re-enable the entry point when it lands.
+14. **Every Settings / in-app control must do something.** Before merging any new row/button, verify the action closure is non-empty AND reaches a visible destination. `// Navigate to X` placeholder closures are a ship blocker. For "Help / Rate / Support" style controls, wire to `SFSafariViewController` against `AppConfig.Support.helpCenterURL` or `SKStoreReviewController` rather than leaving the closure blank.
 
 ---
 
@@ -1095,7 +1097,7 @@ OTP verified → createMinimalAccountForEmailPasswordSignup()
 - `DashboardWhoopWidget.swift` — Isolated `DashboardWhoopWrapper` (widget isolation pattern). Shows recovery score, HRV, strain, RHR, and sleep performance. Only renders when WHOOP is connected.
 
 **Modified files**:
-- `AppConfig.swift` — `enum Whoop` with clientId, clientSecret, redirectUri, URLs, scopes.
+- `AppConfig.swift` — `enum Whoop` with clientId, clientSecret, redirectUri, URLs, scopes. **Data** `apiBaseUrl` is `https://api.prod.whoop.com/developer` (OpenAPI `servers`); OAuth URLs use root `api.prod.whoop.com/oauth/...`. Bare host + `/v2/...` returns 404 `default backend - 404`.
 - `DeepLinkManager.swift` — `case "whoop"` handles `fit33://whoop?code=...` callback.
 - `HealthDataService.swift` — `syncWhoopData()` added to parallel `withTaskGroup`. Saves recovery to `whoop_recovery_data`, sleep to `sleep_logs` (enhanced), workouts to `cardio_workouts`. `updateConnectedSources()` includes "whoop".
 - `SettingsView.swift` — `@StateObject whoopService` + NavigationLink to `WhoopSettingsView`.
@@ -1155,6 +1157,8 @@ OTP verified → createMinimalAccountForEmailPasswordSignup()
 
 **Rule**: WHOOP fetch methods (`fetchRecovery`, `fetchSleep`, `fetchCycles`, `fetchWorkouts`) catch `WhoopError.isConnectionError` (`.notConnected`, `.tokenRefreshFailed`) at `.debug` level. Only actual API failures use `.error`. The `fetchBodyMeasurements` method was already correct. All consumers (Dashboard widget, Health Insights) already guard on `whoopService.isConnected` before rendering — so `notConnected` errors only occur via race conditions or stale state, not user-facing failures. Pattern established: `} catch let error as WhoopError where error.isConnectionError { AppLogger.debug(...) }`.
 
+**User-facing sync errors (2026-03-30)**: `WhoopService.setSyncError` maps raw API text through `userFacingSyncErrorMessage` — ingress `default backend - 404` and generic `HTTP 404` show short “update app / try Sync again” copy in `WhoopSettingsView` instead of the raw server body. Logs still use the full error.
+
 ### 2026-03-28: Workout Tab — My Stats Dashboard
 
 **New file**: `WorkoutStatsView.swift` — personal fitness metrics dashboard below the active program widget on the Workout tab.
@@ -1193,6 +1197,52 @@ OTP verified → createMinimalAccountForEmailPasswordSignup()
 
 **Key file**: `FriendsListView.swift` — `topFriendsHighlight`, `rankedFriendsSection`, `friendsListContent`, `friendSearchBar`, `filteredFriends`.
 
-### 2026-03-28: Private Challenge Cover Photos — REMOVED (2026-03-29)
+### 2026-03-28: Private Challenge Cover Photos — REMOVED (2026-03-29), Replaced with Icon Upload (2026-03-30)
 
-**Feature removed** due to 15 RLS crashes in v1.37 (bucket misconfiguration). Private challenges use emoji icons only. Removed: `.coverPhoto` creation step, `ChallengePhotoPicker`/`ChallengePhotoCameraPicker`, cover photo UI in detail/widget/join views, `uploadCoverPhoto`/`removeCoverPhoto` methods, challenge icon admin settings section. The `coverImageUrl` field in DTOs is nullable and will always be nil. Creation flow is back to 6 steps (naming, activityType, goalSetting, settings, inviteFriends, review).
+**Original cover photo feature removed** due to 15 RLS crashes in v1.37 (bucket misconfiguration).
+
+**Replaced (2026-03-30)**: Challenge icon upload feature. Users can upload a photo as the challenge icon (circular, replaces emoji). NOT a cover photo — this is the small circular icon shown in list rows and detail headers.
+
+**Storage**: Uses `avatars` bucket at path `challenge_icons/{challengeId}.jpg` (upsert). Public URL stored in `cover_image_url` column on `private_challenges` table. Direct table update (not RPC) to set/clear the URL.
+
+**Service methods**: `PrivateChallengeService.uploadChallengeIcon(challengeId:imageData:)` and `removeChallengeIcon(challengeId:)`.
+
+**UI locations**:
+- **Creation flow** (`PrivateChallengeCreationFlow`): `PhotosPicker` on the naming step alongside emoji options. Photo takes priority over emoji. After challenge creation, icon is uploaded with the new challenge ID. Flow remains 6 steps.
+- **Admin settings** (`PrivateChallengeAdminSettingsView`): "Challenge Icon" section with upload/change/remove. Shows current icon (AsyncImage) or emoji fallback.
+- **Display**: `PrivateChallengeDetailView.challengeIconView` shows `AsyncImage` when `coverImageUrl` is set. `FriendsTabView.privateChallengeRow` and `FriendsPrivateChallengeRow` already had conditional `AsyncImage` for `coverImageUrl`.
+
+**Backend requirements (all deployed 2026-03-30)**:
+- `private_challenges` table has `cover_image_url TEXT` column.
+- RLS policy "Admin can update their challenges" allows `created_by = auth.uid()` to UPDATE directly.
+- RPCs `get_my_private_challenges` and `get_private_challenge_detail` both return `cover_image_url` (added via `20260330_add_cover_image_to_rpcs.sql`). The field is positioned after `emoji` in both RETURNS TABLE definitions and SELECT lists. **Do NOT remove this column from these RPCs** — it powers the challenge icon display everywhere.
+- `avatars` storage bucket allows authenticated uploads to `challenge_icons/{challengeId}.jpg`.
+- The `coverImageUrl` field on `PrivateChallenge`, `PrivateChallengePreview`, and `PrivateChallengeDetail` Swift models maps to `cover_image_url`. It is nullable — nil means emoji-only display.
+
+### 2026-03-30: v1.37 Crash Fixes (172 crashes)
+
+**Social fetch retry** — `FriendService.fetchPendingRequests()`, `PrivateChallengeService.fetchPendingInvites()`, `FriendRankingService.fetchRankedFriends()`, `ActivityFeedService.fetchFeed()` now have 3-attempt retry with exponential backoff for `NSURLErrorTimedOut`. Exhausted retries log `.warning` (not `.error`). Non-timeout errors remain `.error`. Pattern matches existing `fetchMyChallenges()` / `fetchReceivedWorkouts()`.
+
+**PushNotificationService UUID fix** — `DeviceTokenRecord.user_id` changed from `String` to `UUID`. Added 2-attempt retry for timeout.
+
+**LimitationsService UUID fix** — `fetchUserLimitations()` filter `.eq("user_id", value: userId.uuidString)` changed to pass `userId` (UUID) directly. Added 2-attempt retry for timeout.
+
+### 2026-03-30: Privacy Settings Feature
+
+**Service**: `PrivacySettingsManager.swift` — singleton `ObservableObject` with 6 `@Published` Bool toggles: `hideProfilePhoto`, `hideFriendActivity`, `hideFromWeeklyLeague`, `hideFromContactSync`, `hideFromSearch`, `hideActiveStatus`. UserDefaults-first with debounced Supabase cloud sync (mirrors `UnitSettingsManager` pattern). `loadFromCloud()` accepts optionals for login sync.
+
+**UI**: `PrivacySettingsView.swift` — full settings screen with `AnimatedOrbBackground`, card sections (Profile Photo, Social Features, Discoverability, Activity Status), per-toggle descriptions. Navigated from Settings > Privacy & Security > Privacy Settings.
+
+**Client guards**:
+- `UserManager.swift`: `postWorkoutActivity` skipped when `hideFriendActivity` is on (badges/streaks still awarded)
+- `WeeklyLeagueService.swift`: `fetchOrJoinLeague` skipped when `hideFromWeeklyLeague` is on
+- `ContactsService.swift`: `syncContactsToDatabase` skipped when `hideFromContactSync` is on
+- `FriendPhotoCache.swift`: `CachedFriendPhoto`/`LargeCachedFriendPhoto` enforce photo privacy with TWO checks:
+  1. **Local (current user)**: `@ObservedObject privacyManager` makes `isPhotoHiddenByPrivacy` reactive — toggling `hideProfilePhoto` immediately hides the current user's photo across all views without re-fetch.
+  2. **Server-driven (all users)**: `isPhotoUrlEmpty` check prevents showing a cached image when `photoUrl` is nil/empty. When a user hides their photo, the server RPCs return `NULL` for `profile_photo_url`, and the client respects this by showing initials even if `FriendPhotoCache` has a stale cached image. This means friends/other clients see the change on their next data fetch (tab switch, pull-to-refresh, app foreground).
+
+**Backend**: 6 new columns on `user_profiles` (see `DATA_BACKEND_AGENT.md`). Server-side RPC filtering in:
+- `20260330_privacy_rpc_enforcement.sql`: search, friend activity feed, contact matching, people you may know, league leaderboard, league join
+- `20260330_privacy_photo_all_rpcs.sql`: 1v1 challenges, group challenges, community challenges (leaderboard, detail, my challenges, friends-in), private challenges (detail, my challenges), received workouts, friend requests (pending + sent), get_friends (inner circle)
+
+**Realtime privacy propagation**: When User A toggles `hideFromWeeklyLeague` or `hideFriendActivity`, other users see the change **instantly** (no tab switch needed). Architecture: Postgres trigger on `user_profiles` inserts signal rows into `privacy_change_events` table (change_type: 'league' or 'activity'). `RealtimeService.subscribePrivacyChanges()` listens via WebSocket and routes events — league changes refresh `WeeklyLeagueService.fetchFullLeaderboard()`, activity changes refresh `ActivityFeedService.fetchFeed()`. Client-side: `WeeklyLeagueService` also observes `PrivacySettingsManager.$hideFromWeeklyLeague` directly via Combine to clear the current user's own cached league standing immediately on toggle.

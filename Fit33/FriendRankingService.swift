@@ -80,27 +80,45 @@ class FriendRankingService: ObservableObject {
         
         isLoading = true
         
-        do {
-            let result: [RankedFriend] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_ranked_friends")
-                .execute()
-                .value
-            
-            rankedFriends = result
-            lastRefreshed = Date()
-            cacheRankedFriends() // Persist for instant display on next launch
-            AppLogger.info("✅ [RANKING] Fetched \(result.count) ranked friends", category: .social)
-            
-            // Log top 3 for debugging
-            for (index, friend) in result.prefix(3).enumerated() {
-                AppLogger.debug("   #\(index + 1): \(friend.friendName ?? friend.friendUsername ?? "Unknown") - Score: \(friend.relationshipScore)", category: .social)
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
+            do {
+                let result: [RankedFriend] = try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_ranked_friends")
+                    .execute()
+                    .value
+                
+                rankedFriends = result
+                lastRefreshed = Date()
+                cacheRankedFriends()
+                AppLogger.info("✅ [RANKING] Fetched \(result.count) ranked friends", category: .social)
+                
+                for (index, friend) in result.prefix(3).enumerated() {
+                    AppLogger.debug("   #\(index + 1): \(friend.friendName ?? friend.friendUsername ?? "Unknown") - Score: \(friend.relationshipScore)", category: .social)
+                }
+                isLoading = false
+                return
+            } catch is CancellationError {
+                AppLogger.debug("🔕 [RANKING] Ranked friends fetch cancelled (tab switch)", category: .social)
+                isLoading = false
+                return
+            } catch let error as URLError where error.code == .cancelled {
+                AppLogger.debug("🔕 [RANKING] Ranked friends fetch cancelled (tab switch)", category: .social)
+                isLoading = false
+                return
+            } catch {
+                if Task.isCancelled { isLoading = false; return }
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+                if isTimeout && attempt < maxAttempts {
+                    AppLogger.warning("fetchRankedFriends timeout (attempt \(attempt)/\(maxAttempts)), retrying...", category: .social)
+                    try? await Task.sleep(for: .seconds(pow(2.0, Double(attempt))))
+                } else if isTimeout {
+                    AppLogger.warning("❌ [RANKING] Error fetching ranked friends: \(error)", category: .social)
+                } else {
+                    AppLogger.error("❌ [RANKING] Error fetching ranked friends: \(error)", category: .social)
+                }
             }
-        } catch is CancellationError {
-            AppLogger.debug("🔕 [RANKING] Ranked friends fetch cancelled (tab switch)", category: .social)
-        } catch let error as URLError where error.code == .cancelled {
-            AppLogger.debug("🔕 [RANKING] Ranked friends fetch cancelled (tab switch)", category: .social)
-        } catch {
-            AppLogger.error("❌ [RANKING] Error fetching ranked friends: \(error)", category: .social)
         }
         
         isLoading = false

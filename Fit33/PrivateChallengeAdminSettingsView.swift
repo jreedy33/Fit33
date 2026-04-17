@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 struct PrivateChallengeAdminSettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -24,6 +25,13 @@ struct PrivateChallengeAdminSettingsView: View {
     @State private var allowMemberInvites: Bool
     @State private var notificationsEnabled: Bool
     @State private var maxMembers: Int
+    
+    // Icon photo
+    @State private var iconPhotoItem: PhotosPickerItem?
+    @State private var iconImageData: Data?
+    @State private var iconImage: Image?
+    @State private var removeIcon = false
+    @State private var isUploadingIcon = false
     
     @State private var isSaving = false
     @State private var showSaveConfirmation = false
@@ -62,6 +70,86 @@ struct PrivateChallengeAdminSettingsView: View {
                             Text("Configure your private challenge")
                                 .font(.subheadline)
                                 .foregroundColor(.white.opacity(0.6))
+                        }
+                        
+                        // Challenge Icon Section
+                        sectionCard(title: "Challenge Icon") {
+                            VStack(spacing: 14) {
+                                // Current icon preview
+                                HStack {
+                                    Spacer()
+                                    if let iconImage {
+                                        iconImage
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fill)
+                                            .frame(width: 72, height: 72)
+                                            .clipShape(Circle())
+                                            .overlay(Circle().stroke(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5))
+                                    } else if !removeIcon, let coverUrl = detail.coverImageUrl, let url = URL(string: coverUrl) {
+                                        AsyncImage(url: url) { phase in
+                                            if case .success(let img) = phase {
+                                                img.resizable()
+                                                    .aspectRatio(contentMode: .fill)
+                                                    .frame(width: 72, height: 72)
+                                                    .clipShape(Circle())
+                                                    .overlay(Circle().stroke(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5))
+                                            } else {
+                                                emojiIconFallback
+                                            }
+                                        }
+                                    } else {
+                                        emojiIconFallback
+                                    }
+                                    Spacer()
+                                }
+                                
+                                HStack(spacing: 12) {
+                                    PhotosPicker(selection: $iconPhotoItem, matching: .images) {
+                                        Label(detail.coverImageUrl != nil && !removeIcon ? "Change Icon" : "Upload Icon", systemImage: "photo.fill")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 8)
+                                            .background(Capsule().fill(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)))
+                                    }
+                                    .onChange(of: iconPhotoItem) { _, newItem in
+                                        Task {
+                                            if let newItem,
+                                               let data = try? await newItem.loadTransferable(type: Data.self) {
+                                                iconImageData = data
+                                                removeIcon = false
+                                                if let uiImage = UIImage(data: data) {
+                                                    iconImage = Image(uiImage: uiImage)
+                                                }
+                                                HapticManager.impact(.medium)
+                                            }
+                                        }
+                                    }
+                                    
+                                    if iconImage != nil || (detail.coverImageUrl != nil && !removeIcon) {
+                                        Button(action: {
+                                            iconPhotoItem = nil
+                                            iconImageData = nil
+                                            iconImage = nil
+                                            removeIcon = true
+                                            HapticManager.impact(.light)
+                                        }) {
+                                            Label("Remove", systemImage: "xmark.circle.fill")
+                                                .font(.caption)
+                                                .fontWeight(.semibold)
+                                                .foregroundColor(.white.opacity(0.7))
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 8)
+                                                .background(Capsule().fill(Color.white.opacity(0.12)))
+                                        }
+                                    }
+                                }
+                                
+                                Text("Upload a logo or image to replace the emoji icon")
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(0.4))
+                            }
                         }
                         
                         // Challenge Info Section
@@ -368,6 +456,22 @@ struct PrivateChallengeAdminSettingsView: View {
     private func saveSettings() {
         isSaving = true
         Task {
+            // Handle icon upload/removal
+            if let imageData = iconImageData {
+                if let compressed = UIImage(data: imageData)?.jpegData(compressionQuality: 0.8) {
+                    do {
+                        let _ = try await service.uploadChallengeIcon(
+                            challengeId: detail.challengeId,
+                            imageData: compressed
+                        )
+                    } catch {
+                        AppLogger.warning("Failed to upload challenge icon: \(error.localizedDescription)", category: .social)
+                    }
+                }
+            } else if removeIcon {
+                let _ = await service.removeChallengeIcon(challengeId: detail.challengeId)
+            }
+            
             let success = await service.updateChallenge(
                 challengeId: detail.challengeId,
                 title: title != detail.title ? title : nil,

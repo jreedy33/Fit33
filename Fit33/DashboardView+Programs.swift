@@ -300,13 +300,11 @@ extension DashboardView {
                     }
                     
                     Spacer()
-                    
-                    // View all button - placeholder for GeneratedProgram (would need adapter)
-                    NavigationLink(value: DashboardRoute.programDetailsPlaceholder) {
-                        Image(systemName: "chevron.right")
-                            .font(.ds_labelMedium)
-                            .foregroundColor(.secondary)
-                    }
+
+                    // Hidden until the real `ProgramDetailsView` ships — avoid
+                    // shipping a chevron that opens a "Coming Soon" placeholder
+                    // (App Review flags these as broken flows).
+                    // TODO: Re-enable when ProgramDetailsView destination is implemented.
                 }
                 
                 // Compact progress bar

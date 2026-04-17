@@ -3,7 +3,12 @@
 // Supabase Edge Function + Twilio Verify
 // =====================================================
 // This edge function sends a verification code via Twilio Verify
-// 
+//
+// SECURITY:
+//   - Requires a valid Supabase user JWT (signed-in user).
+//   - Rate limit is enforced via a DB-backed UPSERT so it survives
+//     Edge Function cold starts. Falls back to in-memory if the RPC fails.
+//
 // SETUP REQUIRED:
 // 1. Create Twilio account at https://twilio.com
 // 2. Create a Verify Service in Twilio Console
@@ -11,23 +16,21 @@
 //    - TWILIO_ACCOUNT_SID
 //    - TWILIO_AUTH_TOKEN
 //    - TWILIO_VERIFY_SERVICE_SID
+// 4. Run migration 20260417_phone_verification_rate_limit.sql
 //
 // Deploy with: supabase functions deploy send-verification
 // =====================================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { buildCorsHeaders, requireUserAuth } from "../_shared/cors.ts"
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
+// Fallback in-memory limiter — only used if the DB RPC is unavailable.
 const sendRateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const SEND_RATE_LIMIT_MAX = 10
 const SEND_RATE_LIMIT_WINDOW_MS = 3600_000 // 1 hour
 
-function checkSendRateLimit(phone: string): boolean {
+function checkInMemoryRateLimit(phone: string): boolean {
   const now = Date.now()
   const entry = sendRateLimitMap.get(phone)
   if (!entry || now >= entry.resetAt) {
@@ -38,7 +41,29 @@ function checkSendRateLimit(phone: string): boolean {
   return entry.count <= SEND_RATE_LIMIT_MAX
 }
 
+// deno-lint-ignore no-explicit-any
+async function checkDbRateLimit(supabase: any, phone: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('check_phone_verification_rate_limit', {
+      p_phone_number: phone,
+      p_max_attempts: SEND_RATE_LIMIT_MAX,
+      p_window_seconds: Math.floor(SEND_RATE_LIMIT_WINDOW_MS / 1000),
+    })
+    if (error) {
+      console.warn('DB rate limit RPC failed, falling back to in-memory:', error.message)
+      return checkInMemoryRateLimit(phone)
+    }
+    // RPC returns true if allowed, false if over the limit.
+    return data === true
+  } catch (e) {
+    console.warn('DB rate limit RPC threw, falling back to in-memory:', e)
+    return checkInMemoryRateLimit(phone)
+  }
+}
+
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req)
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -55,19 +80,21 @@ serve(async (req) => {
       )
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    // Require a valid user JWT (or service-role). Anonymous callers were
+    // previously able to burn Twilio credit via this endpoint.
+    const authResult = await requireUserAuth(req, supabase, corsHeaders)
+    if (!authResult.ok) return authResult.response
+
     const { phone_number } = await req.json()
 
     if (!phone_number) {
       return new Response(
         JSON.stringify({ success: false, error: 'Phone number is required' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-      )
-    }
-
-    if (!checkSendRateLimit(phone_number)) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Too many verification attempts. Please try again later.' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 429 }
       )
     }
 
@@ -79,12 +106,21 @@ serve(async (req) => {
       formattedPhone = '+' + formattedPhone
     }
 
+    // DB-backed rate limit keyed on normalized phone number.
+    const allowed = await checkDbRateLimit(supabase, formattedPhone)
+    if (!allowed) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Too many verification attempts. Please try again later.' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 429 }
+      )
+    }
+
     const redacted = formattedPhone.slice(0, -4).replace(/\d/g, '*') + formattedPhone.slice(-4)
     console.log(`Sending verification to: ${redacted}`)
 
     // Send verification via Twilio Verify API
     const twilioUrl = `https://verify.twilio.com/v2/Services/${twilioVerifyServiceSid}/Verifications`
-    
+
     const twilioResponse = await fetch(twilioUrl, {
       method: 'POST',
       headers: {
@@ -106,24 +142,13 @@ serve(async (req) => {
 
     console.log(`Verification sent successfully. Status: ${twilioData.status}`)
 
-    // Log verification attempt in database
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
-
-    // Get user from auth header
-    const authHeader = req.headers.get('Authorization')
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '')
-      const { data: { user } } = await supabase.auth.getUser(token)
-      
-      if (user) {
-        const { error: rpcError } = await supabase.rpc('start_phone_verification', {
-          p_phone_number: formattedPhone
-        })
-        if (rpcError) {
-          console.error('RPC start_phone_verification failed:', rpcError.message)
-        }
+    // Record the RPC-side bookkeeping for the verified user (if we have one).
+    if (authResult.auth.userId) {
+      const { error: rpcError } = await supabase.rpc('start_phone_verification', {
+        p_phone_number: formattedPhone
+      })
+      if (rpcError) {
+        console.error('RPC start_phone_verification failed:', rpcError.message)
       }
     }
 

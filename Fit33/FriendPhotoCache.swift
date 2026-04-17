@@ -206,6 +206,22 @@ struct CachedFriendPhoto: View {
     
     @State private var image: UIImage?
     @State private var isLoading = false
+    @ObservedObject private var privacyManager = PrivacySettingsManager.shared
+    
+    /// True when this photo belongs to the current user AND they've hidden their profile photo.
+    /// Reactive via @ObservedObject so toggling the setting re-renders immediately.
+    private var isPhotoHiddenByPrivacy: Bool {
+        guard privacyManager.hideProfilePhoto else { return false }
+        guard let currentUserId = SupabaseManager.shared.currentUser?.id else { return false }
+        return friendId == currentUserId.uuidString
+    }
+    
+    /// True when the server returned a nil/empty photo URL (privacy or no photo uploaded).
+    /// Prevents showing a stale cached image when the server deliberately hid the URL.
+    private var isPhotoUrlEmpty: Bool {
+        guard let url = photoUrl, !url.isEmpty else { return true }
+        return false
+    }
     
     init(
         friendId: String,
@@ -252,15 +268,15 @@ struct CachedFriendPhoto: View {
                     .frame(width: size + 8, height: size + 8)
             }
             
-            // Photo or initials
-            if let image = image {
+            // Show photo only when: we have an image, privacy allows it, AND server provided a URL.
+            // When server returns nil (privacy_hide_photo=TRUE), show initials even if cache has an old image.
+            if let image = image, !isPhotoHiddenByPrivacy, !isPhotoUrlEmpty {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
                     .frame(width: size, height: size)
                     .clipShape(Circle())
             } else {
-                // Initials fallback with gradient background
                 ZStack {
                     Circle()
                         .fill(
@@ -285,7 +301,10 @@ struct CachedFriendPhoto: View {
             image = FriendPhotoCache.shared.getImage(for: newId)
             loadImage()
         }
-        .onChange(of: photoUrl) { _, _ in
+        .onChange(of: photoUrl) { _, newUrl in
+            if newUrl == nil || (newUrl?.isEmpty ?? true) {
+                image = nil
+            }
             loadImage()
         }
     }
@@ -330,6 +349,18 @@ struct LargeCachedFriendPhoto: View {
     let gradientColors: [Color]
     
     @State private var image: UIImage?
+    @ObservedObject private var privacyManager = PrivacySettingsManager.shared
+    
+    private var isPhotoHiddenByPrivacy: Bool {
+        guard privacyManager.hideProfilePhoto else { return false }
+        guard let currentUserId = SupabaseManager.shared.currentUser?.id else { return false }
+        return friendId == currentUserId.uuidString
+    }
+    
+    private var isPhotoUrlEmpty: Bool {
+        guard let url = photoUrl, !url.isEmpty else { return true }
+        return false
+    }
     
     init(
         friendId: String,
@@ -360,8 +391,7 @@ struct LargeCachedFriendPhoto: View {
     
     var body: some View {
         ZStack {
-            // Photo or gradient with initials
-            if let image = image {
+            if let image = image, !isPhotoHiddenByPrivacy, !isPhotoUrlEmpty {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()

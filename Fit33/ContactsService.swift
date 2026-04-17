@@ -510,6 +510,10 @@ class ContactsService: ObservableObject {
     
     /// Sync contact emails to database for "contact joined" notifications
     func syncContactsToDatabase() async {
+        guard !PrivacySettingsManager.shared.hideFromContactSync else {
+            AppLogger.debug("[PRIVACY] Skipping contact sync — user has contact discoverability hidden", category: .social)
+            return
+        }
         guard SupabaseManager.shared.isAuthenticated else {
             AppLogger.warning("Cannot sync contacts - not authenticated", category: .social)
             return

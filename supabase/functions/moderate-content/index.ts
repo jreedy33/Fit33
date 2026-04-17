@@ -9,13 +9,9 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { buildCorsHeaders, requireUserAuth, verifyWebhookSecret } from "../_shared/cors.ts"
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || ''
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
 
 interface ModerationResult {
   flagged: boolean
@@ -79,6 +75,8 @@ const TABLE_CONFIG: Record<string, { contentColumn: string; idColumn: string }> 
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req)
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -93,6 +91,11 @@ serve(async (req) => {
     // MODE 1: Pre-check (called from iOS before sending)
     // Expects: { mode: "precheck", content: "message text", user_id: "uuid" }
     if (body.mode === 'precheck') {
+      // Require a valid user JWT (or service role) for precheck.
+      // This stops anonymous callers from draining our OpenAI quota.
+      const authResult = await requireUserAuth(req, supabase, corsHeaders)
+      if (!authResult.ok) return authResult.response
+
       if (!body.content || typeof body.content !== 'string') {
         return new Response(JSON.stringify({ error: 'Missing content' }), {
           status: 400,
@@ -135,6 +138,14 @@ serve(async (req) => {
     // MODE 2: Webhook (called by DB webhook after INSERT)
     // Expects: { type: "INSERT", table: "private_challenge_chat", record: { ... } }
     if (body.type === 'INSERT' && body.table && body.record) {
+      // Require a shared secret from the DB webhook. Configure in Supabase UI:
+      // Database > Webhooks > Edit > HTTP Headers > x-moderation-secret: <MODERATION_WEBHOOK_SECRET>
+      if (!verifyWebhookSecret(req, 'MODERATION_WEBHOOK_SECRET')) {
+        return new Response(JSON.stringify({ error: 'Invalid or missing webhook secret' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
       const tableName = body.table as string
       const record = body.record as Record<string, unknown>
       const config = TABLE_CONFIG[tableName]

@@ -12,12 +12,33 @@
 4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
 5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
 
-### Security Status (March 2026 — All Fixed)
-- All 6 edge functions now have JWT/service-key authentication
-- SMS verification rate limited (3/phone/hr send, 5/phone/15min verify)
-- Push notification claim is atomic (no duplicate sends)
-- PII anonymized before sending to Anthropic API
-- Admin CMS has MFA (TOTP), httpOnly cookies, rate limiting, audit logging
+### Edge Function Auth Registry (canonical — April 2026)
+
+| Function | Auth method | Rate limit | Secrets | Notes |
+|----------|-------------|-----------|---------|-------|
+| `moderate-content` (precheck) | User JWT OR service role | OpenAI billing | `OPENAI_API_KEY` | Fit33/PII: never logs raw content >500 chars |
+| `moderate-content` (webhook) | **BOTH**: platform `Authorization: Bearer <service_role_key>` (because `verify_jwt: true` is the Supabase default) **AND** `x-moderation-secret` shared secret (constant-time compare, checked in function body) | n/a | `MODERATION_WEBHOOK_SECRET`, `OPENAI_API_KEY`, service_role key on the DB webhook | Configured in DB Webhook HTTP headers. Do **not** delete the Authorization header or platform rejects the request before our code runs. Both secrets must be present. |
+| `send-verification` | User JWT OR service role | DB-backed via `check_phone_verification_rate_limit` RPC (10/hr/phone), falls back to in-memory | `TWILIO_*`, `SUPABASE_SERVICE_ROLE_KEY` | Burnable on previous build — fixed 2026-04-17 |
+| `verify-code` | None required (OTP flow) | In-memory (15/15min/phone) | `TWILIO_*` | OTP provides its own rate limit via Twilio; TODO: add JWT once post-OTP session exists |
+| `generate-ai-insights` | Service role OR admin email in `ai_insights_admin_emails` table | n/a | `ANTHROPIC_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Must NEVER accept a plain user JWT; anyone signed in could dump platform-wide data |
+| `usda-food-search` | User JWT OR service role (ALL actions) | Per-IP (30/min) | `USDA_API_KEY` | `search`/`details` were anonymous pre-2026-04-17 |
+| `notify-contacts-user-joined` | User JWT with `auth.uid() === body.new_user_id` (IDOR guard) OR service role | n/a | `SUPABASE_SERVICE_ROLE_KEY` | Attacker could spam push to contacts of any user pre-2026-04-17 |
+| `send-push-notification` | Service role via `Authorization` header OR `x-cron-key` header, both verified against `SUPABASE_PROJECT_REF` env var | n/a | `APNS_*`, `SUPABASE_PROJECT_REF` | Hardcoded project ref removed 2026-04-17 |
+
+**Rule**: every new edge function MUST be added to this table in the same PR.
+**Rule**: CORS allow-origin is now centralized in `supabase/functions/_shared/cors.ts`. Never write `Access-Control-Allow-Origin: *` in a new function — import `buildCorsHeaders(req)`.
+
+### Lessons Learned (April 2026 Security Audit)
+
+1. "Auth-present" is not the same as "auth-correct". Several functions required an Authorization header but then accepted ANY user JWT. Always ask: what bound identity does this handler enforce?
+2. SECURITY DEFINER RPCs that take a user-id-like parameter are IDOR hazards. Either drop the parameter and use `auth.uid()`, or compare them (`IF p_user_id <> auth.uid() THEN RAISE EXCEPTION ...`).
+3. In-memory rate limits reset on every Edge Function cold start (every few minutes). For any cost-sensitive endpoint (Twilio / OpenAI / Anthropic), move the limiter to a DB table via an UPSERT RPC.
+4. Hardcoded project refs become a ticking bomb at project migration. Always `Deno.env.get('SUPABASE_PROJECT_REF')`.
+5. `try?` around `JSONSerialization.data(withJSONObject:)` does NOT catch the underlying `NSInvalidArgumentException`. Always guard with `JSONSerialization.isValidJSONObject(obj)` first.
+6. **Edge Functions have `verify_jwt: true` by default.** The Supabase platform rejects requests without a valid `Authorization: Bearer <JWT>` header BEFORE the function code runs — body is `{"code":"UNAUTHORIZED_NO_AUTH_HEADER"}`. This is a PLATFORM-level 401, NOT our function's 401. Consequences:
+   - A custom `x-moderation-secret` / `x-cron-key` header alone is not sufficient — the caller must ALSO send a valid `Authorization` header (service_role JWT for server-to-server, user JWT for iOS clients).
+   - When curl-probing a function to "verify unauth is rejected", a 401 without an Authorization header tells you NOTHING about your custom auth logic — you're only exercising the platform gate. Always probe with `Authorization: Bearer <anon_key>` AND with an intentionally-broken custom secret to verify your code path actually runs and returns its own 401.
+   - If you want to move auth fully into function code, deploy with `--no-verify-jwt` AND audit every handler path to make sure requireUserAuth / verifyWebhookSecret runs before any side effect. Defaulting to `verify_jwt: true` + service_role in the DB webhook is the safer pattern.
 
 ---
 
@@ -371,7 +392,7 @@ App-critical views: `weight_statistics`, `body_composition_statistics` — confi
 
 **RLS**: `whoop_recovery_data` table has full user-scoped RLS. All Supabase writes are auth-guarded via `SupabaseManager.shared.isAuthenticated`.
 
-**API URL fix (March 27 2026)**: `AppConfig.Whoop.apiBaseUrl` was incorrectly set to `https://api.prod.whoop.com/developer`. The `/developer` prefix is for the WHOOP documentation portal (OpenAPI spec at `/developer/doc/openapi.json`), not for API calls. Corrected to `https://api.prod.whoop.com`. Auth URLs (`/oauth/oauth2/auth`, `/oauth/oauth2/token`) were already correct. Token response `expires_in` field made optional to handle WHOOP responses that omit it.
+**WHOOP data API base (corrected 2026-03-30)**: `AppConfig.Whoop.apiBaseUrl` must be `https://api.prod.whoop.com/developer`. WHOOP OpenAPI (`/developer/doc/openapi.json`) declares `servers[0].url` as that origin. Using `https://api.prod.whoop.com` + `/v2/...` returns ingress **HTTP 404** with body **`default backend - 404`** (no routed backend). OAuth stays on `https://api.prod.whoop.com/oauth/oauth2/auth` and `.../token` (no `/developer`). Removing `/developer` on 2026-03-27 broke production WHOOP sync; restoring `/developer` fixes it.
 
 ### 2026-03-28: Content Moderation System
 
@@ -392,3 +413,13 @@ App-critical views: `weight_statistics`, `body_composition_statistics` — confi
 ### 2026-03-28: Supabase Auth — emitLocalSessionAsInitialSession
 
 The supabase-swift SDK prints a deprecation warning twice per launch about `emitLocalSessionAsInitialSession`. Fixed by passing `emitLocalSessionAsInitialSession: true` in `SupabaseClientOptions.AuthOptions` when creating the `SupabaseClient` in `SupabaseManager.init()`. Also added `redirectToURL: URL(string: "fit33://")` for completeness. The new behavior emits the locally stored session immediately (may be expired) instead of waiting for a refresh attempt. Code that listens to `authStateChanges` should check `session.isExpired` if it relies on session validity.
+
+### 2026-03-30: Supabase Storage — `avatars` Bucket Usage Map
+
+The `avatars` bucket serves two purposes:
+| Path prefix | Purpose | Uploaded by | DB column |
+|-------------|---------|-------------|-----------|
+| `profile_photos/{userId}.jpg` | User profile photos | Any authenticated user (own photo) | `user_profiles.profile_photo_url` |
+| `challenge_icons/{challengeId}.jpg` | Private challenge icon images | Challenge admin (via direct table UPDATE) | `private_challenges.cover_image_url` |
+
+**Security note**: Storage-level RLS on `avatars` allows any authenticated user to upload. The authorization boundary for challenge icons is the **table-level RLS** on `private_challenges` (`created_by = auth.uid()`), not storage. A user could upload an image to `challenge_icons/` for a challenge they don't own, but the table UPDATE to set the URL would be blocked by RLS. Previous attempt (2026-03-28) to use a separate `private-challenge-photos` bucket caused 15 RLS crashes and was reverted.

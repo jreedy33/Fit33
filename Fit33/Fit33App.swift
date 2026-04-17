@@ -143,15 +143,22 @@ struct Fit33App: App {
             // UIKit / CADisplayLink work must be on main
             await MainActor.run {
                 StartupWaterfall.shared.mark("DeferredInit (total)")
+                // ⚡️ Battery: MainThreadWatchdog runs a 500ms-loop thread and
+                // ProductionFPSMonitor schedules a CADisplayLink at 60Hz —
+                // both are development instruments, not production telemetry.
+                // Gate to DEBUG so release builds don't burn battery doing
+                // work no one reads. MetricKit covers real-world crashes.
+                #if DEBUG
                 MainThreadWatchdog.shared.start()
-                _ = MetricKitSubscriber.shared
                 ProductionFPSMonitor.shared.start()
+                #endif
+                _ = MetricKitSubscriber.shared
                 HapticManager.shared.prepareAll()
-                
+
                 #if DEBUG
                 SessionLogManager.shared.checkForCrashLog()
                 #endif
-                
+
                 StartupWaterfall.shared.end("DeferredInit (total)")
             }
             
@@ -606,7 +613,10 @@ struct Fit33App: App {
                     switch newPhase {
                     case .active:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became active")
+                        #if DEBUG
                         MainThreadWatchdog.shared.resume()
+                        ProductionFPSMonitor.shared.start()
+                        #endif
                         
                         // ═══ IMMEDIATE (main thread, sync) ═══
                         NotificationManager.shared.performSmartCheck()
@@ -686,7 +696,10 @@ struct Fit33App: App {
                         // ⚡️ PERSISTENCE: Save workout state before app becomes inactive
                         WorkoutManager.shared.saveWorkoutStateOnBackground()
                     case .background:
+                        #if DEBUG
                         MainThreadWatchdog.shared.pause()
+                        ProductionFPSMonitor.shared.stop()
+                        #endif
                         AdvancedSessionLogger.shared.deactivate()
                         SessionLogManager.shared.log(.info, category: .session, message: "App entered background")
                         // 🔧 DEV: Mark clean shutdown before going to background

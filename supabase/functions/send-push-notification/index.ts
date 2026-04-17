@@ -103,12 +103,26 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-key',
 }
 
+// Derive the expected project ref from the auto-provisioned SUPABASE_URL
+// (https://<ref>.supabase.co). Supabase reserves the `SUPABASE_*` env prefix,
+// so we can't set a dedicated `SUPABASE_PROJECT_REF` secret; parsing the URL
+// keeps us tied to whatever project actually runs this function.
+const EXPECTED_SUPABASE_PROJECT_REF = (() => {
+  const raw = Deno.env.get('SUPABASE_URL') || ''
+  const match = raw.match(/^https?:\/\/([a-z0-9]+)\.supabase\.co/i)
+  return match?.[1] ?? ''
+})()
+
 function isServiceRoleJWT(token: string): boolean {
   try {
     const parts = token.split('.')
     if (parts.length !== 3) return false
     const payload = JSON.parse(atob(parts[1]))
-    return payload.role === 'service_role' && payload.ref === 'ehooeghabzefgoqzugrc'
+    if (payload.role !== 'service_role') return false
+    // If SUPABASE_PROJECT_REF is not configured, fail closed rather than
+    // accept any service_role JWT from any project.
+    if (!EXPECTED_SUPABASE_PROJECT_REF) return false
+    return payload.ref === EXPECTED_SUPABASE_PROJECT_REF
   } catch {
     return false
   }

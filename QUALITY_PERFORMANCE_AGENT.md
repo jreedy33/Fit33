@@ -14,12 +14,16 @@
 6. **Thread safety**: Shared mutable state must use `NSLock`, `@MainActor`, or actor isolation. `@Published` properties must only be mutated on the main thread.
 7. **HealthKit permission checks**: All HealthKit fetch methods must check `isAuthorized` before executing queries. Query callbacks must log errors via `AppLogger` instead of silently returning nil. iOS can revoke health data access at any time.
 8. **Performance monitoring stack**: The app has 4 production performance systems — use them, don't add new ones:
-   - `MetricKitSubscriber` — Apple hang/launch/CPU/disk diagnostics (auto-delivered every 24h, zero overhead)
-   - `ProductionFPSMonitor` — CADisplayLink-based, logs only when FPS drops below 55 for 500ms+
-   - `MainThreadWatchdog` — semaphore ping every 0.5s, reports freezes > 1.5s
+   - `MetricKitSubscriber` — Apple hang/launch/CPU/disk diagnostics (auto-delivered every 24h, zero overhead). **Active in release**; this is the canonical crash telemetry.
+   - `ProductionFPSMonitor` — CADisplayLink-based, logs only when FPS drops below 55 for 500ms+. **`#if DEBUG` gated as of 2026-04-17**; production builds do not schedule the display link. If you need runtime FPS data, lean on MetricKit.
+   - `MainThreadWatchdog` — semaphore ping every 0.5s, reports freezes > 1.5s. **`#if DEBUG` gated as of 2026-04-17**; pauses on `.background` and resumes on `.active` in debug only.
    - `ScrollPerformanceTracker` + `trackScrollJank(screen:)` — logs fast-scroll events via `SessionLogManager.logScroll`
    - Crash reports now include `thermal_state` in `additional_context`
    - `PerformanceBenchmarkView` — DEBUG-only dashboard in Settings with pass/fail metrics
+8b. **Instrumentation gate rule**: Any instrumentation that uses `CADisplayLink`, `Thread.sleep`, or a repeating `Timer`/`DispatchSourceTimer` MUST be either
+   - `#if DEBUG` gated (preferred for non-product-critical telemetry), OR
+   - paused on `.background` scenePhase AND resumed on `.active`.
+   Shipping a 60Hz `CADisplayLink` or a 500ms repeating thread to release users costs battery with zero user benefit. Canonical fix: `Fit33App.swift` gates `ProductionFPSMonitor.start()` and `MainThreadWatchdog.start()` to DEBUG, and `.onChange(of: scenePhase)` pauses them on background.
 9. **Sorting/filtering 1000+ items MUST run off main thread**: Use `Task.detached` or background Core Data context. The workout generator, swap graph, and filter cache all run 5000+ exercise iterations — these must NEVER block the main thread.
 10. **Suppress per-item debug logging during bulk operations**: Use `WorkoutGeneratorService.suppressPerExerciseLogs` pattern. Logging 1000+ items on the main thread was the #1 cause of generation freezes.
 11. **Tab switch handlers must be minimal**: Only critical state updates (tab selection, button hide) should be synchronous. All logging and analytics should use the single summary log at the end, not per-step logs.
@@ -1129,3 +1133,17 @@ await bgContext.perform {
 **P1 FIXED: Reaction fetch cancellation noise** — `ChallengeReactionsView.fetchReactions` logged `NSURLErrorCancelled` (-999) at `.error` level. Added cancellation check — cancelled requests now log at `.debug`.
 
 **P1 FIXED: fetchReceivedWorkouts 502 handling** — `FriendService.fetchReceivedWorkouts` had no retry logic. Added 3-attempt retry with exponential backoff for timeout/502 errors. Exhausted retries log at `.warning` instead of `.error`.
+
+### 2026-03-30: v1.37 Crash Fixes (172 crashes analyzed)
+
+**P0 FIXED: Watchdog log level inflation (155 crashes)** — `MainThreadWatchdog` in `AppPerformanceSystem.swift` logged freeze detection (`MAIN THREAD FROZEN`, `UI is unresponsive`, `Main thread unblocked after Xs (CRITICAL)`, `blocked >30s! Possible DEADLOCK!`) at `AppLogger.error` level, which auto-forwards to `CrashReportingService.reportError()`. These diagnostic monitoring events inflated crash counts by 155. Changed all four to `AppLogger.warning`. The watchdog still logs and monitors — just doesn't pollute crash reports.
+
+**P0 FIXED: Watchdog background race (2135s false positive)** — The watchdog checked `isPaused` before sending the main-thread ping, but the app could go to background between the ping dispatch and the `semaphore.wait` timeout. The `MAIN THREAD FROZEN` / `UI is unresponsive` logs fired before the second `isPaused` check (which only guarded the "unblocked" log). Added an `isPaused` guard immediately after the initial timeout, before any freeze logging. Prevents false multi-minute/hour "freeze" reports when the app is simply suspended.
+
+**Rule — Watchdog logs at `.warning`, not `.error`**: `MainThreadWatchdog` diagnostics (freeze detection, unresponsive UI, unblock timing) MUST use `AppLogger.warning`. Only actual application errors (data corruption, auth failures, API errors) should use `.error`. The `.error` → crash reporting pipeline is for bugs, not monitoring.
+
+**P1 FIXED: Social fetch timeouts without retry (15 crashes)** — Four social methods called in parallel from `FriendsTabView.refreshAllFriendsData()` had no retry logic and logged timeouts at `.error`: `FriendService.fetchPendingRequests()`, `PrivateChallengeService.fetchPendingInvites()`, `FriendRankingService.fetchRankedFriends()`, `ActivityFeedService.fetchFeed()`. Added 3-attempt retry with exponential backoff (2s, 4s) for `NSURLErrorTimedOut`. Exhausted retries log at `.warning`.
+
+**P2 FIXED: PushNotificationService UUID type** — `DeviceTokenRecord.user_id` was `String` set to `userId.uuidString`. Changed to `UUID` type. Added 2-attempt retry for timeout. Same UUID type mismatch pattern fixed in WeightTrackingService/LimitationsService.
+
+**P2 FIXED: LimitationsService UUID type** — `.eq("user_id", value: userId.uuidString)` passed `String` to a `uuid` column. Changed to pass `userId` (UUID) directly. Added 2-attempt retry for timeout.

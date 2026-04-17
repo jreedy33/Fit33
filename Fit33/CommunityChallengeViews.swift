@@ -986,7 +986,7 @@ struct CommunityLeaderboardWidget: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(themeColor.opacity(0.5))
                     .textCase(.uppercase)
-                    .frame(width: 52, alignment: .trailing)
+                    .frame(width: 68, alignment: .trailing)
                 
                 Text("STREAK")
                     .font(.system(size: 9, weight: .semibold))
@@ -1098,7 +1098,9 @@ struct CommunityLeaderboardWidget: View {
                             .foregroundColor(themeColor)
                     }
                 }
-                .frame(width: 52, alignment: .trailing)
+                .frame(width: 68, alignment: .trailing)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 
                 // Streak
                 HStack(spacing: 2) {
@@ -1850,7 +1852,9 @@ struct CommunityLeaderboardView: View {
                         .foregroundColor(.green)
                 }
             }
-            .frame(width: 55, alignment: .trailing)
+            .frame(width: 70, alignment: .trailing)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             
             // Days
             Text("\(entry.daysCompleted)")

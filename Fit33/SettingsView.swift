@@ -1,4 +1,6 @@
 import SwiftUI
+import SafariServices
+import StoreKit
 
 struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -17,6 +19,7 @@ struct SettingsView: View {
     #endif
     
     @State private var showBugReportSheet = false
+    @State private var showFAQ = false
     @State private var isSyncingProfile = false
     @State private var syncProfileStatus = ""
     @State private var showTutorialTest = false
@@ -215,28 +218,37 @@ struct SettingsView: View {
                         // Privacy & Security Section
                         settingsSection(title: "Privacy & Security") {
                             VStack(spacing: 0) {
-                                navigationRow(
-                                    icon: "lock.fill",
-                                    title: "Privacy Settings",
-                                    subtitle: "Control your data",
-                                    color: .blue
-                                ) {
-                                    // Navigate to privacy settings
-                                }
-                                
-                                Divider().padding(.leading, 52)
-                                
-                                navigationRow(
-                                    icon: "shield.fill",
-                                    title: "Security",
-                                    subtitle: "Password and authentication",
-                                    color: .green
-                                ) {
-                                    // Navigate to security settings
+                                NavigationLink(destination: PrivacySettingsView()) {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "lock.fill")
+                                            .font(.title3)
+                                            .foregroundColor(.blue)
+                                            .frame(width: 28)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Privacy Settings")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.primary)
+                                            
+                                            Text("Control your data")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                    }
+                                    .padding(Spacing.md)
+                                    .contentShape(Rectangle())
                                 }
                             }
                         }
-                        
+
                         // Data & Backup Section
                         settingsSection(title: "Data & Backup") {
                             VStack(spacing: 0) {
@@ -661,7 +673,8 @@ struct SettingsView: View {
                                     subtitle: "Get answers to common questions",
                                     color: .purple
                                 ) {
-                                    // Navigate to help
+                                    HapticManager.impact(.light)
+                                    showFAQ = true
                                 }
                                 
                                 Divider().padding(.leading, 52)
@@ -720,7 +733,8 @@ struct SettingsView: View {
                                     subtitle: "Share your feedback",
                                     color: .yellow
                                 ) {
-                                    // Open app store rating
+                                    HapticManager.impact(.light)
+                                    Self.requestAppStoreReview()
                                 }
                             }
                         }
@@ -860,9 +874,33 @@ struct SettingsView: View {
         .sheet(isPresented: $showBugReportSheet) {
             ManualBugReportView()
         }
+        .sheet(isPresented: $showFAQ) {
+            if let url = URL(string: AppConfig.Support.helpCenterURL) {
+                SafariSheet(url: url)
+                    .ignoresSafeArea()
+            }
+        }
         .fullScreenCover(isPresented: $showTutorialTest) {
             WelcomeTutorialView(isPresented: $showTutorialTest)
         }
+    }
+
+    // MARK: - Rate App
+
+    /// Triggers SKStoreReviewController, falling back to App Store write-review URL.
+    private static func requestAppStoreReview() {
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) {
+            SKStoreReviewController.requestReview(in: scene)
+            return
+        }
+        // Fallback: App Store write-review deep link.
+        guard let appId = AppConfig.appStoreAppId, !appId.isEmpty,
+              let url = URL(string: "https://apps.apple.com/app/id\(appId)?action=write-review") else {
+            return
+        }
+        UIApplication.shared.open(url)
     }
     
     // MARK: - Section Container
@@ -1435,4 +1473,23 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+}
+
+// MARK: - Safari Sheet Wrapper
+
+/// Thin wrapper around `SFSafariViewController` so SwiftUI can present it as a sheet.
+/// Used for Settings → Help & FAQ.
+struct SafariSheet: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let config = SFSafariViewController.Configuration()
+        config.entersReaderIfAvailable = false
+        let vc = SFSafariViewController(url: url, configuration: config)
+        vc.preferredControlTintColor = UIColor.systemBlue
+        vc.dismissButtonStyle = .done
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }

@@ -56,6 +56,19 @@ struct FriendActivity: Codable, Identifiable {
     }
 }
 
+struct ActivityExerciseInfo: Codable {
+    let name: String
+    let sets: Int
+    let maxWeight: Double?
+    let maxReps: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case name, sets
+        case maxWeight = "max_weight"
+        case maxReps = "max_reps"
+    }
+}
+
 struct ActivityMetadata: Codable {
     let workoutName: String?
     let durationSeconds: Int?
@@ -63,6 +76,7 @@ struct ActivityMetadata: Codable {
     let totalSets: Int?
     let xpEarned: Int?
     let muscleGroups: [String]?
+    let exercises: [ActivityExerciseInfo]?
     
     enum CodingKeys: String, CodingKey {
         case workoutName = "workout_name"
@@ -71,6 +85,7 @@ struct ActivityMetadata: Codable {
         case totalSets = "total_sets"
         case xpEarned = "xp_earned"
         case muscleGroups = "muscle_groups"
+        case exercises
     }
 }
 
@@ -133,30 +148,46 @@ class ActivityFeedService: ObservableObject {
         guard SupabaseManager.shared.isAuthenticated else { return }
         await MainActor.run { isLoading = true }
         
-        do {
-            struct FeedParams: Encodable {
-                let p_limit: Int
-                let p_offset: Int
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
+            do {
+                struct FeedParams: Encodable {
+                    let p_limit: Int
+                    let p_offset: Int
+                }
+                let result: [FriendActivity] = try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_friend_activity_feed", params: FeedParams(p_limit: 20, p_offset: 0))
+                    .execute()
+                    .value
+                
+                await MainActor.run {
+                    self.activities = result
+                    self.isLoading = false
+                }
+                return
+            } catch is CancellationError {
+                AppLogger.debug("🔕 Activity feed fetch cancelled (tab switch)", category: .social)
+                await MainActor.run { self.isLoading = false }
+                return
+            } catch let error as URLError where error.code == .cancelled {
+                AppLogger.debug("🔕 Activity feed fetch cancelled (tab switch)", category: .social)
+                await MainActor.run { self.isLoading = false }
+                return
+            } catch {
+                if Task.isCancelled { await MainActor.run { self.isLoading = false }; return }
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut
+                if isTimeout && attempt < maxAttempts {
+                    AppLogger.warning("fetchFeed timeout (attempt \(attempt)/\(maxAttempts)), retrying...", category: .social)
+                    try? await Task.sleep(for: .seconds(pow(2.0, Double(attempt))))
+                } else if isTimeout {
+                    AppLogger.warning("❌ Failed to fetch activity feed: \(error)", category: .social)
+                } else {
+                    AppLogger.error("❌ Failed to fetch activity feed: \(error)", category: .social)
+                }
             }
-            let result: [FriendActivity] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_friend_activity_feed", params: FeedParams(p_limit: 20, p_offset: 0))
-                .execute()
-                .value
-            
-            await MainActor.run {
-                self.activities = result
-                self.isLoading = false
-            }
-        } catch is CancellationError {
-            AppLogger.debug("🔕 Activity feed fetch cancelled (tab switch)", category: .social)
-            await MainActor.run { self.isLoading = false }
-        } catch let error as URLError where error.code == .cancelled {
-            AppLogger.debug("🔕 Activity feed fetch cancelled (tab switch)", category: .social)
-            await MainActor.run { self.isLoading = false }
-        } catch {
-            AppLogger.error("❌ Failed to fetch activity feed: \(error)", category: .social)
-            await MainActor.run { self.isLoading = false }
         }
+        await MainActor.run { self.isLoading = false }
     }
     
     func sendReaction(activityId: UUID, emoji: String) async -> Bool {
@@ -181,7 +212,7 @@ class ActivityFeedService: ObservableObject {
         }
     }
     
-    func postWorkoutActivity(workoutId: String, name: String, duration: Int, exercises: Int, sets: Int, xp: Int, muscles: [String]) async {
+    func postWorkoutActivity(workoutId: String, name: String, duration: Int, exercises: Int, sets: Int, xp: Int, muscles: [String], exerciseDetails: [[String: Any]] = []) async {
         do {
             struct PostParams: Encodable {
                 let p_workout_id: String
@@ -191,7 +222,16 @@ class ActivityFeedService: ObservableObject {
                 let p_total_sets: Int
                 let p_xp_earned: Int
                 let p_muscle_groups: [String]
+                let p_exercises_json: String
             }
+            
+            var exercisesJSON = "[]"
+            if !exerciseDetails.isEmpty, JSONSerialization.isValidJSONObject(exerciseDetails) {
+                if let data = try? JSONSerialization.data(withJSONObject: exerciseDetails) {
+                    exercisesJSON = String(data: data, encoding: .utf8) ?? "[]"
+                }
+            }
+            
             try await SupabaseManager.shared.supabaseClient
                 .rpc("post_workout_activity", params: PostParams(
                     p_workout_id: workoutId,
@@ -200,7 +240,8 @@ class ActivityFeedService: ObservableObject {
                     p_exercise_count: exercises,
                     p_total_sets: sets,
                     p_xp_earned: xp,
-                    p_muscle_groups: muscles
+                    p_muscle_groups: muscles,
+                    p_exercises_json: exercisesJSON
                 ))
                 .execute()
         } catch {
@@ -512,45 +553,14 @@ struct FriendActivityCard: View {
     }
     
     private var profilePhoto: some View {
-        ZStack {
-            if let urlString = activity.userProfilePhotoUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                    default:
-                        initialsCircle
-                    }
-                }
-                .frame(width: 48, height: 48)
-                .clipShape(Circle())
-            } else {
-                initialsCircle
-            }
-            
-            // Gradient ring
-            Circle()
-                .stroke(
-                    LinearGradient(colors: muscleGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 2.5
-                )
-                .frame(width: 52, height: 52)
-        }
-    }
-    
-    private var initialsCircle: some View {
-        Circle()
-            .fill(
-                LinearGradient(colors: muscleGradient.map { $0.opacity(0.3) }, startPoint: .topLeading, endPoint: .bottomTrailing)
-            )
-            .frame(width: 48, height: 48)
-            .overlay(
-                Text(String(activity.displayName.prefix(2)).uppercased())
-                    .font(.ds_labelLarge)
-                    .foregroundColor(muscleGradient.first ?? .blue)
-            )
+        CachedFriendPhoto(
+            friendId: activity.userId.uuidString,
+            photoUrl: activity.userProfilePhotoUrl,
+            name: activity.displayName,
+            size: 48,
+            showGradientRing: true,
+            gradientColors: muscleGradient
+        )
     }
     
     private var levelBadge: some View {

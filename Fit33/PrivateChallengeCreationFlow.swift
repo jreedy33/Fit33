@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 struct PrivateChallengeCreationFlow: View {
     @Environment(\.dismiss) private var dismiss
@@ -41,6 +42,11 @@ struct PrivateChallengeCreationFlow: View {
     // Friend invitation
     @State private var selectedFriends: [Friend] = []
     @State private var searchText = ""
+    
+    // Challenge icon photo
+    @State private var iconPhotoItem: PhotosPickerItem?
+    @State private var iconImageData: Data?
+    @State private var iconImage: Image?
     
     // State
     @State private var isCreating = false
@@ -283,10 +289,66 @@ struct PrivateChallengeCreationFlow: View {
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
             
-            // Emoji picker
+            // Icon picker — emoji or uploaded photo
             VStack(spacing: 12) {
-                Text(selectedEmoji)
-                    .font(.system(size: 60))
+                if let iconImage {
+                    iconImage
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 80, height: 80)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3))
+                } else {
+                    Text(selectedEmoji)
+                        .font(.system(size: 60))
+                }
+                
+                HStack(spacing: 12) {
+                    PhotosPicker(selection: $iconPhotoItem, matching: .images) {
+                        Label("Upload Icon", systemImage: "photo.fill")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule()
+                                    .fill(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
+                            )
+                    }
+                    .onChange(of: iconPhotoItem) { _, newItem in
+                        Task {
+                            if let newItem,
+                               let data = try? await newItem.loadTransferable(type: Data.self) {
+                                iconImageData = data
+                                if let uiImage = UIImage(data: data) {
+                                    iconImage = Image(uiImage: uiImage)
+                                }
+                                HapticManager.impact(.medium)
+                            }
+                        }
+                    }
+                    
+                    if iconImage != nil {
+                        Button(action: {
+                            iconPhotoItem = nil
+                            iconImageData = nil
+                            iconImage = nil
+                            HapticManager.impact(.light)
+                        }) {
+                            Label("Remove", systemImage: "xmark.circle.fill")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.white.opacity(0.12))
+                                )
+                        }
+                    }
+                }
                 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
@@ -294,18 +356,24 @@ struct PrivateChallengeCreationFlow: View {
                             Button(action: {
                                 HapticManager.impact(.light)
                                 selectedEmoji = emoji
+                                // Clear photo when emoji is tapped
+                                if iconImage != nil {
+                                    iconPhotoItem = nil
+                                    iconImageData = nil
+                                    iconImage = nil
+                                }
                             }) {
                                 Text(emoji)
                                     .font(.ds_heading1)
                                     .frame(width: 44, height: 44)
                                     .background(
                                         Circle()
-                                            .fill(selectedEmoji == emoji ? Color.purple.opacity(0.3) : Color.white.opacity(0.1))
+                                            .fill(selectedEmoji == emoji && iconImage == nil ? Color.purple.opacity(0.3) : Color.white.opacity(0.1))
                                     )
                                     .overlay(
                                         Circle()
                                             .stroke(
-                                                selectedEmoji == emoji
+                                                selectedEmoji == emoji && iconImage == nil
                                                     ? AnyShapeStyle(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                                                     : AnyShapeStyle(Color.clear),
                                                 lineWidth: 2
@@ -798,8 +866,17 @@ struct PrivateChallengeCreationFlow: View {
             VStack(spacing: 16) {
                 // Challenge icon + title
                 VStack(spacing: 8) {
-                    Text(selectedEmoji)
-                        .font(.system(size: 48))
+                    if let iconImage {
+                        iconImage
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 64, height: 64)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2))
+                    } else {
+                        Text(selectedEmoji)
+                            .font(.system(size: 48))
+                    }
                     
                     Text(challengeTitle)
                         .font(.title3)
@@ -964,6 +1041,20 @@ struct PrivateChallengeCreationFlow: View {
         
         if let id = challengeId {
             createdChallengeId = id
+            
+            // Upload challenge icon if user selected a photo
+            if let imageData = iconImageData {
+                if let compressed = UIImage(data: imageData)?.jpegData(compressionQuality: 0.8) {
+                    do {
+                        let _ = try await privateChallengeService.uploadChallengeIcon(
+                            challengeId: id,
+                            imageData: compressed
+                        )
+                    } catch {
+                        AppLogger.warning("Failed to upload challenge icon: \(error.localizedDescription)", category: .social)
+                    }
+                }
+            }
             
             // Send invites to selected friends
             for friend in selectedFriends {

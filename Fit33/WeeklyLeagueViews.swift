@@ -91,6 +91,8 @@ struct WeeklyLeagueWidget: View {
                     leagueContent(standing: standing)
                 } else if leagueService.isLoading {
                     loadingContent
+                } else if leagueService.notPlaced {
+                    notPlacedContent
                 } else {
                     joinContent
                 }
@@ -194,43 +196,7 @@ struct WeeklyLeagueWidget: View {
                     }
                 }
                 
-                // Rank position bar
-                GeometryReader { geo in
-                    let total = max(standing.groupSize, 1)
-                    let promoFraction = CGFloat(standing.promotionCount) / CGFloat(total)
-                    let relegFraction = CGFloat(standing.relegationCount) / CGFloat(total)
-                    let safeFraction = 1.0 - promoFraction - relegFraction
-                    let userPosition = CGFloat(standing.myRank - 1) / CGFloat(max(total - 1, 1))
-                    
-                    ZStack(alignment: .leading) {
-                        // Zone segments
-                        HStack(spacing: 1) {
-                            if promoFraction > 0 {
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color.green.opacity(colorScheme == .dark ? 0.25 : 0.2))
-                                    .frame(width: max(geo.size.width * promoFraction - 1, 4))
-                            }
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.gray.opacity(colorScheme == .dark ? 0.15 : 0.1))
-                                .frame(width: max(geo.size.width * safeFraction - (promoFraction > 0 ? 1 : 0) - (relegFraction > 0 ? 1 : 0), 4))
-                            if relegFraction > 0 {
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color.red.opacity(colorScheme == .dark ? 0.25 : 0.2))
-                                    .frame(width: max(geo.size.width * relegFraction - 1, 4))
-                            }
-                        }
-                        .frame(height: 6)
-                        .clipShape(Capsule())
-                        
-                        // User marker
-                        Circle()
-                            .fill(standing.tierSwiftUIColor)
-                            .frame(width: 10, height: 10)
-                            .shadow(color: standing.tierSwiftUIColor.opacity(0.5), radius: 3)
-                            .offset(x: max(0, min(geo.size.width - 10, geo.size.width * userPosition - 5)))
-                    }
-                }
-                .frame(height: 10)
+                leaguePositionBar(standing: standing)
             }
             
             // Compact stats row
@@ -332,6 +298,89 @@ struct WeeklyLeagueWidget: View {
             .frame(width: 1, height: 28)
     }
     
+    /// Rank position bar: relegation (red) | safety (grey) | promotion (green)
+    /// Left = bottom of league (demotion), Right = top (promotion)
+    private func leaguePositionBar(standing: LeagueStanding) -> some View {
+        let total = max(standing.groupSize, 1)
+        let promoFraction = CGFloat(standing.promotionCount) / CGFloat(total)
+        let relegFraction = CGFloat(standing.relegationCount) / CGFloat(total)
+        let userPosition = 1.0 - CGFloat(standing.myRank - 1) / CGFloat(max(total - 1, 1))
+        
+        return GeometryReader { geo in
+            let w = geo.size.width
+            
+            ZStack(alignment: .leading) {
+                // Base track (safety zone color)
+                Capsule()
+                    .fill(Color.gray.opacity(colorScheme == .dark ? 0.15 : 0.1))
+                    .frame(height: 6)
+                
+                // Relegation zone — left edge
+                if relegFraction > 0 {
+                    Capsule()
+                        .fill(Color.red.opacity(colorScheme == .dark ? 0.3 : 0.25))
+                        .frame(width: w * relegFraction, height: 6)
+                }
+                
+                // Promotion zone — right edge
+                if promoFraction > 0 {
+                    Capsule()
+                        .fill(Color.green.opacity(colorScheme == .dark ? 0.3 : 0.25))
+                        .frame(width: w * promoFraction, height: 6)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                
+                // User marker dot
+                Circle()
+                    .fill(standing.tierSwiftUIColor)
+                    .frame(width: 10, height: 10)
+                    .shadow(color: standing.tierSwiftUIColor.opacity(0.5), radius: 3)
+                    .offset(x: max(0, min(w - 10, w * userPosition - 5)))
+            }
+        }
+        .frame(height: 10)
+        .clipped()
+    }
+    
+    /// Thin per-row position bar showing where a specific rank falls in the zones
+    private func rowPositionBar(rank: Int, standing: LeagueStanding) -> some View {
+        let total = max(standing.groupSize, 1)
+        let promoFraction = CGFloat(standing.promotionCount) / CGFloat(total)
+        let relegFraction = CGFloat(standing.relegationCount) / CGFloat(total)
+        let position = 1.0 - CGFloat(rank - 1) / CGFloat(max(total - 1, 1))
+        
+        return GeometryReader { geo in
+            let w = geo.size.width
+            
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.gray.opacity(colorScheme == .dark ? 0.12 : 0.08))
+                    .frame(height: 3)
+                
+                if relegFraction > 0 {
+                    Capsule()
+                        .fill(Color.red.opacity(colorScheme == .dark ? 0.2 : 0.15))
+                        .frame(width: w * relegFraction, height: 3)
+                }
+                
+                if promoFraction > 0 {
+                    Capsule()
+                        .fill(Color.green.opacity(colorScheme == .dark ? 0.2 : 0.15))
+                        .frame(width: w * promoFraction, height: 3)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: .black.opacity(0.3), radius: 1)
+                    .offset(x: max(0, min(w - 6, w * position - 3)))
+            }
+        }
+        .frame(height: 6)
+        .clipped()
+    }
+    
     // MARK: - Mini Leaderboard
     
     private func miniLeaderboard(standing: LeagueStanding) -> some View {
@@ -368,73 +417,78 @@ struct WeeklyLeagueWidget: View {
             guard !entry.isCurrentUser else { return }
             showingProfile = ProfileUser(leagueEntry: entry)
         } label: {
-        HStack(spacing: 8) {
-            ZStack {
-                if entry.rank <= 3 {
-                    Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
-                        .font(.system(size: 14))
-                } else {
-                    Text("#\(entry.rank)")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .secondary)
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                ZStack {
+                    if entry.rank <= 3 {
+                        Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
+                            .font(.system(size: 14))
+                    } else {
+                        Text("#\(entry.rank)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .secondary)
+                    }
                 }
-            }
-            .frame(width: 24)
-            
-            CachedFriendPhoto(
-                friendId: entry.userId.uuidString,
-                photoUrl: entry.profilePhotoUrl,
-                name: entry.displayName,
-                size: 26,
-                showGradientRing: entry.isCurrentUser || entry.isFriend == true,
-                gradientColors: entry.isCurrentUser
-                    ? standing.tierGradient
-                    : entry.isFriend == true ? [.green, .green.opacity(0.6)] : [.gray.opacity(0.3)]
-            )
-            
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 3) {
-                    Text(entry.isCurrentUser ? "You" : entry.firstName)
-                        .font(.system(size: 13, weight: entry.isCurrentUser ? .bold : .medium))
-                        .foregroundColor(entry.isCurrentUser ? .primary : .secondary)
-                        .lineLimit(1)
+                .frame(width: 24)
+                
+                CachedFriendPhoto(
+                    friendId: entry.userId.uuidString,
+                    photoUrl: entry.profilePhotoUrl,
+                    name: entry.displayName,
+                    size: 26,
+                    showGradientRing: entry.isCurrentUser || entry.isFriend == true,
+                    gradientColors: entry.isCurrentUser
+                        ? standing.tierGradient
+                        : entry.isFriend == true ? [.green, .green.opacity(0.6)] : [.gray.opacity(0.3)]
+                )
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 3) {
+                        Text(entry.isCurrentUser ? "You" : entry.firstName)
+                            .font(.system(size: 13, weight: entry.isCurrentUser ? .bold : .medium))
+                            .foregroundColor(entry.isCurrentUser ? .primary : .secondary)
+                            .lineLimit(1)
+                        
+                        if entry.isVerified == true || entry.isGoldVerified == true {
+                            VerifiedBadge(size: 11, isGold: entry.isGoldVerified == true || (standing.tierRank == 7 && entry.rank <= 5))
+                        }
+                    }
                     
-                    if entry.isVerified == true || entry.isGoldVerified == true {
-                        VerifiedBadge(size: 11, isGold: entry.isGoldVerified == true || (standing.tierRank == 7 && entry.rank <= 5))
+                    if !entry.isCurrentUser, entry.isFriend == true {
+                        Text("Friend")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.green)
+                    } else if !entry.isCurrentUser, let mc = entry.mutualFriendCount, mc > 0 {
+                        Text("\(mc) mutual")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(.blue)
                     }
                 }
                 
-                if !entry.isCurrentUser, entry.isFriend == true {
-                    Text("Friend")
+                Spacer()
+                
+                if isPromoZone {
+                    Image(systemName: "arrow.up")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundColor(.green)
-                } else if !entry.isCurrentUser, let mc = entry.mutualFriendCount, mc > 0 {
-                    Text("\(mc) mutual")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundColor(.blue)
+                } else if isRelegZone {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.red)
+                }
+                
+                HStack(spacing: 2) {
+                    Text("\(entry.points)")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
+                    Text("pts")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
                 }
             }
             
-            Spacer()
-            
-            if isPromoZone {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(.green)
-            } else if isRelegZone {
-                Image(systemName: "arrow.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(.red)
-            }
-            
-            HStack(spacing: 2) {
-                Text("\(entry.points)")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
-                Text("pts")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.secondary)
-            }
+            // Mini position bar per row
+            rowPositionBar(rank: entry.rank, standing: standing)
         }
         .padding(.vertical, 5)
         .padding(.horizontal, Spacing.xs)
@@ -460,6 +514,62 @@ struct WeeklyLeagueWidget: View {
         .frame(maxWidth: .infinity)
         .padding(Spacing.lg)
         .sleekCard(cornerRadius: 24, accentColor: .yellow)
+    }
+    
+    // MARK: - Not Placed (missed Monday placement)
+    
+    private var notPlacedContent: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(colors: [.gray.opacity(0.2), .gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .frame(width: 56, height: 56)
+                
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.ds_heading2)
+                    .foregroundStyle(
+                        LinearGradient(colors: [.gray, .secondary], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+            }
+            
+            VStack(spacing: 4) {
+                Text("League Starts Monday")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                
+                if let tierName = leagueService.notPlacedTierName {
+                    Text("You'll be placed in the \(tierName) league when the new week begins.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                } else {
+                    Text("Open the app on Monday to be placed in next week's league.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+            }
+            
+            HStack(spacing: 6) {
+                Image(systemName: "bell.fill")
+                    .font(.ds_bodySmall)
+                Text("Next Week")
+                    .fontWeight(.semibold)
+            }
+            .font(.subheadline)
+            .foregroundColor(.white)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, 10)
+            .background(Color.secondary.opacity(0.5))
+            .cornerRadius(20)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .sleekCard(cornerRadius: 24, accentColor: .gray)
     }
     
     // MARK: - Join Prompt (first time)
@@ -633,6 +743,9 @@ struct WeeklyLeagueDetailView: View {
                         .stroke(Color.gray.opacity(0.15), lineWidth: 1)
                 )
                 .padding(.horizontal, Spacing.md)
+                
+                detailLeaguePositionBar(standing: standing)
+                    .padding(.horizontal, Spacing.md)
             }
         }
         .padding(.bottom, 8)
@@ -654,6 +767,82 @@ struct WeeklyLeagueDetailView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+    
+    private func detailLeaguePositionBar(standing: LeagueStanding) -> some View {
+        let total = max(standing.groupSize, 1)
+        let promoFraction = CGFloat(standing.promotionCount) / CGFloat(total)
+        let relegFraction = CGFloat(standing.relegationCount) / CGFloat(total)
+        let userPosition = 1.0 - CGFloat(standing.myRank - 1) / CGFloat(max(total - 1, 1))
+        
+        return GeometryReader { geo in
+            let w = geo.size.width
+            
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.gray.opacity(colorScheme == .dark ? 0.15 : 0.1))
+                    .frame(height: 6)
+                
+                if relegFraction > 0 {
+                    Capsule()
+                        .fill(Color.red.opacity(colorScheme == .dark ? 0.3 : 0.25))
+                        .frame(width: w * relegFraction, height: 6)
+                }
+                
+                if promoFraction > 0 {
+                    Capsule()
+                        .fill(Color.green.opacity(colorScheme == .dark ? 0.3 : 0.25))
+                        .frame(width: w * promoFraction, height: 6)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                
+                Circle()
+                    .fill(standing.tierSwiftUIColor)
+                    .frame(width: 10, height: 10)
+                    .shadow(color: standing.tierSwiftUIColor.opacity(0.5), radius: 3)
+                    .offset(x: max(0, min(w - 10, w * userPosition - 5)))
+            }
+        }
+        .frame(height: 10)
+        .clipped()
+    }
+    
+    private func fullRowPositionBar(rank: Int, standing: LeagueStanding) -> some View {
+        let total = max(standing.groupSize, 1)
+        let promoFraction = CGFloat(standing.promotionCount) / CGFloat(total)
+        let relegFraction = CGFloat(standing.relegationCount) / CGFloat(total)
+        let position = 1.0 - CGFloat(rank - 1) / CGFloat(max(total - 1, 1))
+        
+        return GeometryReader { geo in
+            let w = geo.size.width
+            
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.gray.opacity(colorScheme == .dark ? 0.12 : 0.08))
+                    .frame(height: 3)
+                
+                if relegFraction > 0 {
+                    Capsule()
+                        .fill(Color.red.opacity(colorScheme == .dark ? 0.2 : 0.15))
+                        .frame(width: w * relegFraction, height: 3)
+                }
+                
+                if promoFraction > 0 {
+                    Capsule()
+                        .fill(Color.green.opacity(colorScheme == .dark ? 0.2 : 0.15))
+                        .frame(width: w * promoFraction, height: 3)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: .black.opacity(0.3), radius: 1)
+                    .offset(x: max(0, min(w - 6, w * position - 3)))
+            }
+        }
+        .frame(height: 6)
+        .clipped()
     }
     
     // MARK: - Tab Picker
@@ -745,89 +934,93 @@ struct WeeklyLeagueDetailView: View {
             guard !entry.isCurrentUser else { return }
             showingProfile = ProfileUser(leagueEntry: entry)
         } label: {
-        HStack(spacing: 12) {
-            ZStack {
-                if entry.rank <= 3 {
-                    Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
-                        .font(.ds_heading3)
-                } else {
-                    Text("#\(entry.rank)")
-                        .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                        .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .secondary)
+        VStack(spacing: 6) {
+            HStack(spacing: 12) {
+                ZStack {
+                    if entry.rank <= 3 {
+                        Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
+                            .font(.ds_heading3)
+                    } else {
+                        Text("#\(entry.rank)")
+                            .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
+                            .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .secondary)
+                    }
                 }
-            }
-            .frame(width: 32)
-            
-            CachedFriendPhoto(
-                friendId: entry.userId.uuidString,
-                photoUrl: entry.profilePhotoUrl,
-                name: entry.displayName,
-                size: 40,
-                showGradientRing: entry.isCurrentUser || entry.isFriend == true,
-                gradientColors: entry.isCurrentUser
-                    ? standing.tierGradient
-                    : entry.isFriend == true ? [.green, .green.opacity(0.6)] : [.gray.opacity(0.3)]
-            )
-            
-            VStack(alignment: .leading, spacing: 2) {
-                if !entry.isCurrentUser, entry.isFriend == true {
-                    Text("Friend")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(.green)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.green.opacity(0.15)))
-                }
+                .frame(width: 32)
                 
-                HStack(spacing: 6) {
-                    Text(entry.isCurrentUser ? "You" : entry.displayName)
-                        .font(.subheadline)
-                        .fontWeight(entry.isCurrentUser ? .bold : .medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
+                CachedFriendPhoto(
+                    friendId: entry.userId.uuidString,
+                    photoUrl: entry.profilePhotoUrl,
+                    name: entry.displayName,
+                    size: 40,
+                    showGradientRing: entry.isCurrentUser || entry.isFriend == true,
+                    gradientColors: entry.isCurrentUser
+                        ? standing.tierGradient
+                        : entry.isFriend == true ? [.green, .green.opacity(0.6)] : [.gray.opacity(0.3)]
+                )
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    if !entry.isCurrentUser, entry.isFriend == true {
+                        Text("Friend")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.green.opacity(0.15)))
+                    }
                     
-                    if entry.isVerified == true || entry.isGoldVerified == true {
-                        VerifiedBadge(size: 13, isGold: entry.isGoldVerified == true || (standing.tierRank == 7 && entry.rank <= 5))
+                    HStack(spacing: 6) {
+                        Text(entry.isCurrentUser ? "You" : entry.displayName)
+                            .font(.subheadline)
+                            .fontWeight(entry.isCurrentUser ? .bold : .medium)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        if entry.isVerified == true || entry.isGoldVerified == true {
+                            VerifiedBadge(size: 13, isGold: entry.isGoldVerified == true || (standing.tierRank == 7 && entry.rank <= 5))
+                        }
+                    }
+                    
+                    if entry.isCurrentUser || entry.isFriend == true {
+                        if let workouts = entry.workoutsCompleted, workouts > 0 {
+                            Text("\(workouts) workout\(workouts == 1 ? "" : "s")")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    } else if let mc = entry.mutualFriendCount, mc > 0 {
+                        Text("\(mc) mutual friend\(mc == 1 ? "" : "s")")
+                            .font(.caption2)
+                            .foregroundColor(.blue.opacity(0.8))
                     }
                 }
                 
-                if entry.isCurrentUser || entry.isFriend == true {
-                    if let workouts = entry.workoutsCompleted, workouts > 0 {
-                        Text("\(workouts) workout\(workouts == 1 ? "" : "s")")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                } else if let mc = entry.mutualFriendCount, mc > 0 {
-                    Text("\(mc) mutual friend\(mc == 1 ? "" : "s")")
-                        .font(.caption2)
-                        .foregroundColor(.blue.opacity(0.8))
+                Spacer()
+                
+                if isPromoZone {
+                    Image(systemName: "chevron.up")
+                        .font(.ds_caption)
+                        .foregroundColor(.green)
+                        .padding(Spacing.xxs)
+                        .background(Circle().fill(Color.green.opacity(0.15)))
+                } else if isRelegZone {
+                    Image(systemName: "chevron.down")
+                        .font(.ds_caption)
+                        .foregroundColor(.red)
+                        .padding(Spacing.xxs)
+                        .background(Circle().fill(Color.red.opacity(0.15)))
+                }
+                
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("\(entry.points)")
+                        .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
+                        .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
+                    Text("pts")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
                 }
             }
             
-            Spacer()
-            
-            if isPromoZone {
-                Image(systemName: "chevron.up")
-                    .font(.ds_caption)
-                    .foregroundColor(.green)
-                    .padding(Spacing.xxs)
-                    .background(Circle().fill(Color.green.opacity(0.15)))
-            } else if isRelegZone {
-                Image(systemName: "chevron.down")
-                    .font(.ds_caption)
-                    .foregroundColor(.red)
-                    .padding(Spacing.xxs)
-                    .background(Circle().fill(Color.red.opacity(0.15)))
-            }
-            
-            VStack(alignment: .trailing, spacing: 1) {
-                Text("\(entry.points)")
-                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
-                    .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
-                Text("pts")
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
-            }
+            fullRowPositionBar(rank: entry.rank, standing: standing)
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)

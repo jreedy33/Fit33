@@ -588,30 +588,43 @@ class PrivateChallengeService: ObservableObject {
     
     func fetchPendingInvites() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
-        do {
-            struct EmptyParams: Encodable {}
-            
-            let result: [PrivateChallengeInvite] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_private_challenge_invites_for_me", params: EmptyParams())
-                .execute()
-                .value
-            
-            pendingInvites = result
-            
-            // Preload inviter photos for instant display on dashboard
-            let inviterPhotos: [(id: String, url: String?)] = result.map {
-                (id: $0.inviterId.uuidString, url: $0.inviterPhotoUrl)
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
+            do {
+                struct EmptyParams: Encodable {}
+                
+                let result: [PrivateChallengeInvite] = try await SupabaseManager.shared.supabaseClient
+                    .rpc("get_private_challenge_invites_for_me", params: EmptyParams())
+                    .execute()
+                    .value
+                
+                pendingInvites = result
+                
+                let inviterPhotos: [(id: String, url: String?)] = result.map {
+                    (id: $0.inviterId.uuidString, url: $0.inviterPhotoUrl)
+                }
+                if !inviterPhotos.isEmpty {
+                    FriendPhotoCache.shared.preloadPhotos(for: inviterPhotos)
+                }
+                
+                #if DEBUG
+                AppLogger.info("Successfully fetched \(result.count) pending invites", category: .social)
+                #endif
+                return
+            } catch {
+                if error is CancellationError || Task.isCancelled { return }
+                let nsError = error as NSError
+                let isTimeout = nsError.domain == NSURLErrorDomain &&
+                    (nsError.code == NSURLErrorTimedOut || nsError.code == NSURLErrorCancelled)
+                if isTimeout && attempt < maxAttempts {
+                    AppLogger.warning("fetchPendingInvites timeout (attempt \(attempt)/\(maxAttempts)), retrying...", category: .social)
+                    try? await Task.sleep(for: .seconds(pow(2.0, Double(attempt))))
+                } else if isTimeout {
+                    AppLogger.warning("Error fetching private invites: \(error.localizedDescription)", category: .social)
+                } else {
+                    AppLogger.error("Error fetching private invites: \(error.localizedDescription)", category: .social)
+                }
             }
-            if !inviterPhotos.isEmpty {
-                FriendPhotoCache.shared.preloadPhotos(for: inviterPhotos)
-            }
-            
-            #if DEBUG
-            AppLogger.info("Successfully fetched \(result.count) pending invites", category: .social)
-            #endif
-        } catch {
-            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
-            AppLogger.error("Error fetching private invites: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -1377,6 +1390,80 @@ class PrivateChallengeService: ObservableObject {
         case "calories":    return max(data.calories, data.mealCalories)
         case "sleep":       return data.sleepMinutes
         default:            return 0
+        }
+    }
+    
+    // MARK: - Challenge Icon Upload
+    
+    /// Upload a challenge icon image and update the challenge's cover_image_url.
+    /// Uses the `avatars` storage bucket with `challenge_icons/` prefix.
+    func uploadChallengeIcon(challengeId: UUID, imageData: Data) async throws -> String {
+        let fileName = "challenge_icons/\(challengeId.uuidString).jpg"
+        let bucket = "avatars"
+        
+        try await SupabaseManager.shared.supabaseClient.storage
+            .from(bucket)
+            .upload(
+                path: fileName,
+                file: imageData,
+                options: FileOptions(
+                    cacheControl: "3600",
+                    contentType: "image/jpeg",
+                    upsert: true
+                )
+            )
+        
+        let publicUrl = try SupabaseManager.shared.supabaseClient.storage
+            .from(bucket)
+            .getPublicURL(path: fileName)
+        
+        let urlString = publicUrl.absoluteString
+        
+        // Update the challenge record with the icon URL
+        try await SupabaseManager.shared.supabaseClient
+            .from("private_challenges")
+            .update(["cover_image_url": urlString])
+            .eq("challenge_id", value: challengeId.uuidString)
+            .execute()
+        
+        AppLogger.info("Challenge icon uploaded: \(urlString)", category: .social)
+        
+        await fetchMyChallenges()
+        cacheData()
+        return urlString
+    }
+    
+    /// Remove the challenge icon and revert to emoji display.
+    func removeChallengeIcon(challengeId: UUID) async -> Bool {
+        let fileName = "challenge_icons/\(challengeId.uuidString).jpg"
+        let bucket = "avatars"
+        
+        do {
+            try await SupabaseManager.shared.supabaseClient.storage
+                .from(bucket)
+                .remove(paths: [fileName])
+        } catch {
+            AppLogger.warning("Could not delete challenge icon from storage: \(error.localizedDescription)", category: .social)
+        }
+        
+        do {
+            struct ClearIcon: Encodable {
+                let cover_image_url: String? = nil
+            }
+            
+            try await SupabaseManager.shared.supabaseClient
+                .from("private_challenges")
+                .update(ClearIcon())
+                .eq("challenge_id", value: challengeId.uuidString)
+                .execute()
+            
+            AppLogger.info("Challenge icon removed for \(challengeId)", category: .social)
+            await fetchMyChallenges()
+            cacheData()
+            return true
+        } catch {
+            AppLogger.error("Error removing challenge icon URL: \(error.localizedDescription)", category: .social)
+            return false
         }
     }
     

@@ -182,12 +182,15 @@ struct DashboardView: View {
                     .id("top")
                     
                     LazyVStack(spacing: 0) {
+                    // Custom header with title and profile icon
+                    customHeaderView
+                        .padding(.top, 0)
+                        .padding(.bottom, 16)
                     
                     DashboardNotificationBannerWrapper()
                     
                     // Header with user info
                     headerView
-                        .padding(.top, 12)
                         .padding(.bottom, 16)
                     
                     // Unified notification carousel (friend requests, received workouts, challenge invites)
@@ -323,11 +326,8 @@ struct DashboardView: View {
                     await loadPersonalizedRecommendation()
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .modifier(DashboardNavToolbar(
-                showingWidgetSettings: $showingWidgetSettings,
-                profilePhotoURL: profilePhotoURL
-            ))
+            .navigationBarHidden(true)
+            .adaptiveToolbarBackground()
             .sheet(isPresented: $showingWorkoutCreation) {
                 WorkoutCreationView(workoutType: workoutCreationType)
             }

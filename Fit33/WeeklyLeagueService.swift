@@ -10,6 +10,7 @@
 
 import Foundation
 import SwiftUI
+import Combine
 
 // MARK: - League Models
 
@@ -239,6 +240,9 @@ class WeeklyLeagueService: ObservableObject {
     @Published var history: [LeagueHistoryEntry] = []
     @Published var isLoading = false
     @Published var hasJoined = false
+    @Published var notPlaced = false
+    @Published var notPlacedTierName: String?
+    @Published var notPlacedNextWeek: String?
     @Published var error: String?
     
     // MARK: - Cache
@@ -246,9 +250,27 @@ class WeeklyLeagueService: ObservableObject {
     private let standingCacheDateKey = "fit33_league_cache_date"
     private let dailyLoginKey = "fit33_league_daily_login"
     private let cacheDuration: TimeInterval = 120 // 2 minutes
+    private var cancellables = Set<AnyCancellable>()
     
     private init() {
-        loadCachedStanding()
+        if !PrivacySettingsManager.shared.hideFromWeeklyLeague {
+            loadCachedStanding()
+        }
+        
+        PrivacySettingsManager.shared.$hideFromWeeklyLeague
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] hidden in
+                guard let self else { return }
+                if hidden {
+                    self.standing = nil
+                    self.hasJoined = false
+                    UserDefaults.standard.removeObject(forKey: self.standingCacheKey)
+                    UserDefaults.standard.removeObject(forKey: self.standingCacheDateKey)
+                    AppLogger.debug("🏆 [LEAGUE] Cleared league data — user enabled privacy hide", category: .social)
+                }
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Fetch / Join League
@@ -256,9 +278,14 @@ class WeeklyLeagueService: ObservableObject {
     /// Main entry point: get or create the user's league membership for this week.
     /// Lazily processes past weeks (promotions/relegations) on the server.
     func fetchOrJoinLeague(force: Bool = false) async {
+        guard !PrivacySettingsManager.shared.hideFromWeeklyLeague else {
+            self.standing = nil
+            self.hasJoined = false
+            AppLogger.debug("[PRIVACY] Skipping league join — user has weekly league hidden", category: .social)
+            return
+        }
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
         
-        // Throttle: skip if we fetched recently (unless forced)
         if !force, let cacheDate = UserDefaults.standard.object(forKey: standingCacheDateKey) as? Date,
            Date().timeIntervalSince(cacheDate) < cacheDuration,
            standing != nil {
@@ -269,20 +296,45 @@ class WeeklyLeagueService: ObservableObject {
         error = nil
         
         do {
-            let result: LeagueStanding = try await SupabaseManager.shared.supabaseClient
+            let response = try await SupabaseManager.shared.supabaseClient
                 .rpc("get_or_join_weekly_league", params: ["p_user_id": userId.uuidString])
                 .execute()
-                .value
+            
+            if let json = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any] {
+                if json["hidden"] as? Bool == true {
+                    self.standing = nil
+                    self.hasJoined = false
+                    self.notPlaced = false
+                    AppLogger.debug("🏆 [LEAGUE] Server returned hidden=true — user is hidden from league", category: .social)
+                    isLoading = false
+                    return
+                }
+                
+                if json["not_placed"] as? Bool == true {
+                    self.standing = nil
+                    self.hasJoined = false
+                    self.notPlaced = true
+                    self.notPlacedTierName = json["tier_name"] as? String
+                    self.notPlacedNextWeek = json["next_week_start"] as? String
+                    AppLogger.debug("🏆 [LEAGUE] Not placed this week — roster locked. Next week: \(self.notPlacedNextWeek ?? "?")", category: .social)
+                    isLoading = false
+                    return
+                }
+            }
+            
+            let result = try JSONDecoder().decode(LeagueStanding.self, from: response.data)
             
             self.standing = result
             self.hasJoined = true
+            self.notPlaced = false
+            self.notPlacedTierName = nil
+            self.notPlacedNextWeek = nil
             cacheStanding(result)
             
             #if DEBUG
             AppLogger.debug("🏆 [LEAGUE] Joined/fetched league: \(result.tierName) league, rank #\(result.myRank)/\(result.groupSize), \(result.myPoints) pts", category: .social)
             #endif
             
-            // Award daily login points (once per day)
             await awardDailyLoginPoints()
             
         } catch is CancellationError {
@@ -377,6 +429,11 @@ class WeeklyLeagueService: ObservableObject {
     
     /// Get the full leaderboard for the current group (used in detail view)
     func fetchFullLeaderboard() async {
+        guard !PrivacySettingsManager.shared.hideFromWeeklyLeague else {
+            self.standing = nil
+            self.hasJoined = false
+            return
+        }
         guard let userId = SupabaseManager.shared.currentUser?.id,
               let groupId = standing?.groupId else { return }
         

@@ -50,6 +50,13 @@ struct UserProfileDTO: Codable {
     let weekStartDay: String?
     let isVerified: Bool?
     let isGoldVerified: Bool?
+    // Privacy preferences
+    let privacyHidePhoto: Bool?
+    let privacyHideActivity: Bool?
+    let privacyHideLeague: Bool?
+    let privacyHideContactSync: Bool?
+    let privacyHideSearch: Bool?
+    let privacyHideActiveStatus: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, name, email, birthday, age, gender, bmr, tdee, equipment, xp
@@ -81,6 +88,12 @@ struct UserProfileDTO: Codable {
         case profilePhotoUrl = "profile_photo_url"
         case isVerified = "is_verified"
         case isGoldVerified = "is_gold_verified"
+        case privacyHidePhoto = "privacy_hide_photo"
+        case privacyHideActivity = "privacy_hide_activity"
+        case privacyHideLeague = "privacy_hide_league"
+        case privacyHideContactSync = "privacy_hide_contact_sync"
+        case privacyHideSearch = "privacy_hide_search"
+        case privacyHideActiveStatus = "privacy_hide_active_status"
     }
 }
 

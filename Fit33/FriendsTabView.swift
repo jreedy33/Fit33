@@ -60,6 +60,10 @@ struct FriendsTabView: View {
             ZStack {
             ScrollView(.vertical) {
                 VStack(spacing: 0) {
+                    FriendsHeaderWrapper(navigationPath: $navigationPath)
+                        .padding(.top, 0)
+                        .padding(.bottom, 16)
+                    
                     FriendsStoriesWrapper(
                         navigationPath: $navigationPath,
                         sentRequestIds: $sentRequestIds,
@@ -103,7 +107,7 @@ struct FriendsTabView: View {
                     }
                 }
                 .padding(.horizontal, Spacing.md)
-                .padding(.top, 12)
+                .padding(.top, 8)
                 .padding(.bottom, 20)
             }
             .refreshable {
@@ -120,13 +124,7 @@ struct FriendsTabView: View {
             )
                 
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .floatingTopBarLeading {
-                FriendsHeaderTitleView()
-            }
-            .floatingTopBarTrailing {
-                FriendsHeaderActionsView(navigationPath: $navigationPath)
-            }
+            .navigationBarHidden(true)
             .adaptiveToolbarBackground()
             .navigationDestination(for: String.self) { destination in
                 if destination == "FriendsList" {
@@ -3279,24 +3277,27 @@ struct FriendsSpotlightCard: View {
 
 struct FriendsLeagueWrapper: View {
     @StateObject private var leagueService = WeeklyLeagueService.shared
+    @ObservedObject private var privacyManager = PrivacySettingsManager.shared
     @Binding var navigationPath: NavigationPath
     
     var body: some View {
-        WeeklyLeagueWidget(
-            leagueService: leagueService,
-            onTap: {
-                if leagueService.standing != nil {
-                    navigationPath.append("LeagueDetail")
-                } else {
-                    Task {
-                        await leagueService.fetchOrJoinLeague(force: true)
-                        if leagueService.standing != nil {
-                            navigationPath.append("LeagueDetail")
+        if !privacyManager.hideFromWeeklyLeague {
+            WeeklyLeagueWidget(
+                leagueService: leagueService,
+                onTap: {
+                    if leagueService.standing != nil {
+                        navigationPath.append("LeagueDetail")
+                    } else {
+                        Task {
+                            await leagueService.fetchOrJoinLeague(force: true)
+                            if leagueService.standing != nil {
+                                navigationPath.append("LeagueDetail")
+                            }
                         }
                     }
                 }
-            }
-        )
+            )
+        }
     }
 }
 
@@ -3529,8 +3530,22 @@ struct FriendsPrivateChallengeRow: View {
                     .frame(width: 48, height: 48)
                     .rotationEffect(.degrees(-90))
                 
-                Text(challenge.displayEmoji)
-                    .font(.ds_heading3)
+                if let coverUrl = challenge.coverImageUrl, let url = URL(string: coverUrl) {
+                    AsyncImage(url: url) { phase in
+                        if case .success(let img) = phase {
+                            img.resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 40, height: 40)
+                                .clipShape(Circle())
+                        } else {
+                            Text(challenge.displayEmoji)
+                                .font(.ds_heading3)
+                        }
+                    }
+                } else {
+                    Text(challenge.displayEmoji)
+                        .font(.ds_heading3)
+                }
             }
             
             VStack(alignment: .leading, spacing: 3) {

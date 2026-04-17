@@ -86,13 +86,26 @@ class DeepLinkManager: ObservableObject {
             return handleCustomScheme(url)
         }
         
-        // Handle universal links (https://fit33.app/...)
-        if scheme == "https" && url.host?.contains("fit33") == true {
+        // Handle universal links — strict host allowlist so a phishing domain
+        // like "fit33-login.com" or "evil.fit33phish.io" cannot hijack our
+        // in-app routing.
+        if scheme == "https", let host = url.host?.lowercased(),
+           Self.allowedUniversalLinkHosts.contains(host) {
             return handleUniversalLink(url)
         }
-        
+
         return false
     }
+
+    /// Hosts that may deep-link into the app via https universal links.
+    /// Keep in sync with `Fit33/Fit33.entitlements` (apple-app-site-association).
+    private static let allowedUniversalLinkHosts: Set<String> = [
+        "fit33.app",
+        "www.fit33.app",
+        "doublethr33s.com",
+        "www.doublethr33s.com",
+        "admin.doublethr33s.com"
+    ]
     
     /// Handle custom URL scheme (fit33://...)
     private func handleCustomScheme(_ url: URL) -> Bool {

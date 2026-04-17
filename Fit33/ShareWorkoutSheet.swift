@@ -9,6 +9,7 @@ struct ShareWorkoutSheet: View {
     
     let workout: Workout
     let accentColor: Color
+    var onFinish: (() -> Void)? = nil
     
     @ObservedObject private var friendService = FriendService.shared
     @ObservedObject private var rankingService = FriendRankingService.shared
@@ -94,23 +95,32 @@ struct ShareWorkoutSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if selectedFriend != nil && !showingSuccess {
+                    if !showingSuccess {
                         Button(action: {
-                            withAnimation(.spring(response: 0.3)) {
-                                selectedFriend = nil
+                            if selectedFriend != nil {
+                                withAnimation(.spring(response: 0.3)) {
+                                    selectedFriend = nil
+                                }
+                            } else {
+                                dismiss()
                             }
                         }) {
                             Image(systemName: "chevron.left")
                                 .font(.ds_labelLarge)
+                                .foregroundColor(.primary)
                         }
                     }
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                    Button(action: {
+                        onFinish?()
                         dismiss()
+                    }) {
+                        Text("Done")
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                     }
-                    .fontWeight(.semibold)
                 }
             }
             .adaptiveToolbarBackground()

@@ -88,7 +88,8 @@ enum AppConfig {
         static let redirectUri = "fit33://whoop"
         static let authorizationUrl = "https://api.prod.whoop.com/oauth/oauth2/auth"
         static let tokenUrl = "https://api.prod.whoop.com/oauth/oauth2/token"
-        static let apiBaseUrl = "https://api.prod.whoop.com"
+        /// Must match OpenAPI `servers[0].url`; `https://api.prod.whoop.com` + `/v2/*` returns ingress 404 "default backend - 404".
+        static let apiBaseUrl = "https://api.prod.whoop.com/developer"
         static let scopes = "read:recovery read:cycles read:workout read:sleep read:profile read:body_measurement"
     }
     
@@ -123,12 +124,25 @@ enum AppConfig {
     #endif
     
     // MARK: - App Store / Distribution
-    
+
     enum AppStore {
         /// Update this with your actual App Store ID after publishing
         static let appId = "6478515926"  // Update with actual App Store ID
         static let appStoreURL = "https://apps.apple.com/app/fit33/id\(appId)"
         static let appWebsiteURL = "https://fit33.app"
+    }
+
+    /// Convenience accessor for `SKStoreReviewController` fallback URL builder.
+    static var appStoreAppId: String? { AppStore.appId }
+
+    // MARK: - Support / Help Center
+
+    enum Support {
+        /// Help Center web page shown inside an `SFSafariViewController` from Settings.
+        /// Must be a publicly reachable HTTPS URL.
+        static let helpCenterURL = "https://fit33.app/help-center.html"
+        /// Landing page for Support email, Apple-required in-app "Contact Us".
+        static let supportEmail = "support@doublethr33s.com"
     }
     
     // MARK: - Feature Flags

@@ -110,6 +110,8 @@ struct WhoopSettingsView: View {
                         .font(.ds_bodySmall)
                         .foregroundColor(.red)
                         .multilineTextAlignment(.center)
+                        .accessibilityLabel("WHOOP connection error")
+                        .accessibilityValue(error)
                 }
             }
         }
@@ -234,6 +236,8 @@ struct WhoopSettingsView: View {
                     .font(.ds_bodySmall)
                     .foregroundColor(.red)
                     .multilineTextAlignment(.center)
+                    .accessibilityLabel("WHOOP sync error")
+                    .accessibilityValue(error)
             }
         }
         .padding(.horizontal, Spacing.md)

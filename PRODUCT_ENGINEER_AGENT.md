@@ -24,6 +24,16 @@
 
 ---
 
+## Sprint 2 (2026-04-18) Must-Know Patterns
+
+- **Blocking + reporting UI**: `BlockedUsersView` in Settings → Privacy & Security; Long-press "Report & Block" `.contextMenu` on private-challenge chat (`PrivateChallengeDetailView`) and activity feed cards (`FriendActivityFeedView`). Both call `FriendService.reportContent(...)` + `FriendService.blockUser(userId:)` and purge local state. NEVER build a new reporting UI — extend the existing pattern.
+- **Moderation hide propagates via realtime**: Sender's own flagged chat or feed row disappears thanks to `RealtimeService.subscribeFriendActivityFeed` (UPDATE → `ActivityFeedService.applyModerationHide`) and `PrivateChallengeService` UPDATE sub (→ `hiddenChatMessageIds: Set<UUID>`). Any new social surface that the moderation webhook hides MUST register a realtime UPDATE handler.
+- **Cardio gamification parity**: `CardioActiveWorkoutView.saveWorkout` calls `UserManager.completeCardioWorkout(...)` after the cloud save. Never ship a new workout type without calling the matching `complete…Workout(...)` — otherwise XP, streak, feed, quests, challenges, and badges all silently skip.
+- **Offline sync chip**: `DashboardOfflineSyncChip` is the ONLY Dashboard surface for "Saved offline". If a new feature enqueues into `CloudSyncRetryQueue`, the chip automatically surfaces it — don't build a sibling chip.
+- **Push flush on every social write**: every successful social write (`FriendService`, `ChallengeService`, `CommunityChallengeService`, `PrivateChallengeService`, `ActivityFeedService`) MUST end with `PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "<source>")`. Missing the flush was the Sprint 2 Q2-35 regression.
+
+---
+
 ## Architecture Overview
 
 ### App Structure

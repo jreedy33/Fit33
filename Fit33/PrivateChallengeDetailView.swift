@@ -32,6 +32,8 @@ struct PrivateChallengeDetailView: View {
     @State private var chatText = ""
     @State private var isSendingMessage = false
     @State private var showModerationWarning = false
+    // Sprint 2 Q2-7: Report-and-Block sheet (long-press a non-self message)
+    @State private var reportTarget: PrivateChallengeMessage?
     
     private var accentGradient: LinearGradient {
         LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
@@ -142,6 +144,24 @@ struct PrivateChallengeDetailView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("Your message was not sent because it may violate our community guidelines. Please keep conversations respectful.")
+        }
+        // Sprint 2 Q2-7 — Report & Block confirmation
+        .confirmationDialog(
+            "Report this message?",
+            isPresented: Binding(
+                get: { reportTarget != nil },
+                set: { if !$0 { reportTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let target = reportTarget {
+                Button("Report & Block", role: .destructive) {
+                    Task { await performReportAndBlock(message: target) }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+        } message: {
+            Text("We'll hide this message, flag it for review, and block the sender. You can manage blocks in Settings → Privacy & Security → Blocked Users.")
         }
         .task {
             await loadDetail()
@@ -711,7 +731,11 @@ struct PrivateChallengeDetailView: View {
             }
             
             VStack(spacing: Spacing.sm) {
-                if chatMessages.isEmpty {
+                let visibleChatMessages = chatMessages.filter {
+                    !friendService.blockedUserIds.contains($0.senderId)
+                        && !PrivateChallengeService.shared.hiddenChatMessageIds.contains($0.messageId)
+                }
+                if visibleChatMessages.isEmpty {
                     VStack(spacing: Spacing.xs) {
                         Image(systemName: "bubble.left.and.bubble.right")
                             .font(.ds_heading2)
@@ -725,7 +749,7 @@ struct PrivateChallengeDetailView: View {
                     }
                     .padding(.vertical, Spacing.lg)
                 } else {
-                    let previewMessages = Array(chatMessages.prefix(5).reversed())
+                    let previewMessages = Array(visibleChatMessages.prefix(5).reversed())
                     VStack(spacing: Spacing.xs) {
                         ForEach(Array(previewMessages.enumerated()), id: \.element.id) { index, message in
                             if shouldShowDateHeader(for: message, in: previewMessages, at: index) {
@@ -794,6 +818,28 @@ struct PrivateChallengeDetailView: View {
             isSendingMessage = false
         }
     }
+
+    /// Sprint 2 Q2-7 — report a message + block the sender. Local chat is
+    /// purged immediately (optimistic) and the server hides the row for
+    /// everyone via content_moderation_log + user_blocks.
+    private func performReportAndBlock(message: PrivateChallengeMessage) async {
+        let senderId = message.senderId
+        let targetId = message.messageId
+        async let reported = friendService.reportContent(
+            tableName: "private_challenge_chat",
+            recordId: targetId.uuidString,
+            reportedUserId: senderId,
+            contentSnippet: message.content,
+            reason: "Reported in private challenge chat"
+        )
+        async let blocked = friendService.blockUser(userId: senderId)
+        _ = await (reported, blocked)
+
+        // Purge this sender from the local chat buffer immediately.
+        chatMessages.removeAll { $0.senderId == senderId }
+        HapticManager.notification(.success)
+        reportTarget = nil
+    }
     
     private func chatBubble(message: PrivateChallengeMessage) -> some View {
         Group {
@@ -853,6 +899,15 @@ struct PrivateChallengeDetailView: View {
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .fill(Color.primary.opacity(0.06))
                             )
+                            .contextMenu {
+                                // Sprint 2 Q2-7 — long-press "Report & Block"
+                                Button(role: .destructive) {
+                                    reportTarget = message
+                                } label: {
+                                    Label("Report & Block", systemImage: "flag.fill")
+                                }
+                            }
+                            .accessibilityHint("Long-press to report or block this user")
                     }
                     
                     Spacer(minLength: 40)
@@ -1102,7 +1157,12 @@ struct PrivateChallengeDetailView: View {
                 
                 VStack(spacing: 0) {
                     ScrollView(showsIndicators: false) {
-                        let allMessages = chatMessages.reversed() as [PrivateChallengeMessage]
+                        let allMessages = chatMessages
+                            .filter {
+                                !friendService.blockedUserIds.contains($0.senderId)
+                                    && !PrivateChallengeService.shared.hiddenChatMessageIds.contains($0.messageId)
+                            }
+                            .reversed() as [PrivateChallengeMessage]
                         LazyVStack(spacing: Spacing.xs) {
                             ForEach(Array(allMessages.enumerated()), id: \.element.id) { index, message in
                                 if shouldShowDateHeader(for: message, in: Array(allMessages), at: index) {

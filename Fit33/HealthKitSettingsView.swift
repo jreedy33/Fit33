@@ -367,14 +367,12 @@ struct HealthKitSettingsView: View {
                     Text(workout.workoutName)
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    
-                    // Source badge
-                    if workout.isFromNikeRunClub {
-                        sourceBadge("Nike", color: .black)
-                    } else if workout.isFromStrava {
-                        sourceBadge("Strava", color: .orange)
-                    } else if workout.isFromApple {
-                        sourceBadge("Watch", color: .gray)
+
+                    // Brand-colored badge for any third-party origin the
+                    // mapper recognizes (Strava, Nike, Peloton, Garmin,
+                    // Zwift, Apple Watch, Fitbit, WHOOP, Oura, ...).
+                    if workout.origin != .unknown && workout.origin != .fit33 {
+                        originBadge(workout.origin)
                     }
                 }
                 
@@ -410,21 +408,35 @@ struct HealthKitSettingsView: View {
         .padding(.vertical, 6)
     }
     
-    private func sourceBadge(_ name: String, color: Color) -> some View {
-        Text(name)
-            .font(.caption2)
-            .fontWeight(.medium)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15))
-            .foregroundColor(color)
-            .cornerRadius(4)
+    private func originBadge(_ origin: WorkoutOrigin) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: origin.badgeIcon)
+                .font(.system(size: 9, weight: .bold))
+            Text(origin.displayName)
+                .font(.caption2)
+                .fontWeight(.bold)
+        }
+        .foregroundColor(origin.badgeForeground)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            Capsule().fill(
+                LinearGradient(
+                    colors: origin.badgeGradient,
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+        )
     }
-    
+
     private func workoutColor(for workout: HealthKitWorkout) -> Color {
-        if workout.isFromNikeRunClub { return .black }
-        if workout.isFromStrava { return .orange }
-        
+        // Prefer the brand accent (second color in the gradient) for any
+        // recognized third-party origin; fall back to activity-type color.
+        let origin = workout.origin
+        if origin != .unknown && origin != .fit33 {
+            return origin.badgeGradient.last ?? .red
+        }
         switch workout.workoutType {
         case .running: return .green
         case .cycling: return .blue

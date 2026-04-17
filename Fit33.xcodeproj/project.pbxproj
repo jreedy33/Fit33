@@ -211,6 +211,8 @@
 		7C98FAC82EEDB4A0001AE1F3 /* SmartExerciseSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */; };
 		7CA0643A2F7ACA48004CF656 /* PrivacySettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */; };
 		7CA0643C2F7ACA56004CF656 /* PrivacySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */; };
+		7CAA26030001000000000042 /* BlockedUsersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA26040001000000000042 /* BlockedUsersView.swift */; };
+		7CAA26050001000000000042 /* CloudSyncRetryQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA26060001000000000042 /* CloudSyncRetryQueue.swift */; };
 		7CA81D852F6EF0E80020170A /* AdvancedSessionLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */; };
 		7CAA1F1B2F3ACBB2008200B9 /* VideoStreamingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F1A2F3ACBB1008200B9 /* VideoStreamingService.swift */; };
 		7CAA1F1F2F3ACBCB008200B9 /* VideoThumbnailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F1E2F3ACBCB008200B9 /* VideoThumbnailService.swift */; };
@@ -240,6 +242,7 @@
 		7CACB56F2F2E7DA1003A7C91 /* HealthInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CACB56E2F2E7DA1003A7C91 /* HealthInsightsView.swift */; };
 		7CACB5722F2E8431003A7C91 /* HealthKitSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CACB5712F2E8431003A7C91 /* HealthKitSettingsView.swift */; };
 		7CACB5732F2E8431003A7C91 /* HealthKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CACB5702F2E8431003A7C91 /* HealthKitService.swift */; };
+		B0B3B0B30000000000000001 /* WorkoutOriginMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B3B0B30000000000000002 /* WorkoutOriginMapper.swift */; };
 		7CACB5752F2E8C78003A7C91 /* ContactsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CACB5742F2E8C78003A7C91 /* ContactsService.swift */; };
 		7CACB5772F2E9712003A7C91 /* ChallengeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CACB5762F2E9712003A7C91 /* ChallengeService.swift */; };
 		7CACB5792F2E9717003A7C91 /* ChallengeSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CACB5782F2E9717003A7C91 /* ChallengeSetupView.swift */; };
@@ -360,6 +363,7 @@
 		F1B8335D6A4949F6A5A7D290 /* ExerciseIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B8335C6A4949F1A5A7D290 /* ExerciseIntelligenceService.swift */; };
 		F40E4CCD94470224DB0AA9AF /* ExerciseReplacementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 741C41078B34368F572BC6C7 /* ExerciseReplacementView.swift */; };
 		F8C6B4D3EA0950721B4DE5F6 /* exercises.json in Resources */ = {isa = PBXBuildFile; fileRef = E7B5A3C2D9F84E61A0B3C4D5 /* exercises.json */; };
+		7CAA26010001000000000042 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7CAA26020001000000000042 /* PrivacyInfo.xcprivacy */; };
 		FA2E4662BC37D02FC51DEA14 /* ExerciseTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86A84D12A40EEB9478A8010D /* ExerciseTypes.swift */; };
 		FAE442E28C12550D0E7EA1C0 /* RestTimerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639347F1ADEA94D5F2F09470 /* RestTimerViews.swift */; };
 /* End PBXBuildFile section */
@@ -601,6 +605,8 @@
 		7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartExerciseSearchService.swift; sourceTree = "<group>"; };
 		7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsManager.swift; sourceTree = "<group>"; };
 		7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsView.swift; sourceTree = "<group>"; };
+		7CAA26040001000000000042 /* BlockedUsersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedUsersView.swift; sourceTree = "<group>"; };
+		7CAA26060001000000000042 /* CloudSyncRetryQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncRetryQueue.swift; sourceTree = "<group>"; };
 		7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSessionLogger.swift; sourceTree = "<group>"; };
 		7CAA1F1A2F3ACBB1008200B9 /* VideoStreamingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoStreamingService.swift; sourceTree = "<group>"; };
 		7CAA1F1E2F3ACBCB008200B9 /* VideoThumbnailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoThumbnailService.swift; sourceTree = "<group>"; };
@@ -629,6 +635,7 @@
 		7CACB56C2F2E7D91003A7C91 /* HealthDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataService.swift; sourceTree = "<group>"; };
 		7CACB56E2F2E7DA1003A7C91 /* HealthInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthInsightsView.swift; sourceTree = "<group>"; };
 		7CACB5702F2E8431003A7C91 /* HealthKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitService.swift; sourceTree = "<group>"; };
+		B0B3B0B30000000000000002 /* WorkoutOriginMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutOriginMapper.swift; sourceTree = "<group>"; };
 		7CACB5712F2E8431003A7C91 /* HealthKitSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitSettingsView.swift; sourceTree = "<group>"; };
 		7CACB5742F2E8C78003A7C91 /* ContactsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsService.swift; sourceTree = "<group>"; };
 		7CACB5762F2E9712003A7C91 /* ChallengeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeService.swift; sourceTree = "<group>"; };
@@ -756,6 +763,7 @@
 		E6CA4EF5A48F356087AB9009 /* DashboardView+Activity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "DashboardView+Activity.swift"; path = "Fit33/DashboardView+Activity.swift"; sourceTree = SOURCE_ROOT; };
 		E748445FAA426582F14ACB75 /* SmartProgramMiniCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SmartProgramMiniCard.swift; path = Fit33/SmartProgramMiniCard.swift; sourceTree = SOURCE_ROOT; };
 		E7B5A3C2D9F84E61A0B3C4D5 /* exercises.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = exercises.json; path = Fit33/Resources/exercises.json; sourceTree = SOURCE_ROOT; };
+		7CAA26020001000000000042 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Fit33/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT; };
 		E8354565A7AE5145685CA422 /* ActiveWorkoutView+Init.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ActiveWorkoutView+Init.swift"; path = "Fit33/ActiveWorkoutView+Init.swift"; sourceTree = SOURCE_ROOT; };
 		E8DCB31EA13C425893DF2D7F /* DashboardOuraWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardOuraWidget.swift; sourceTree = "<group>"; };
 		EDC5458D8A66EB61E8BB665F /* OnboardingPhotoPickers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingPhotoPickers.swift; path = Fit33/OnboardingPhotoPickers.swift; sourceTree = SOURCE_ROOT; };
@@ -851,6 +859,8 @@
 				7C1B0A562F4F8BA00094AF68 /* BackgroundChallengeSyncService.swift */,
 				7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */,
 				7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */,
+				7CAA26040001000000000042 /* BlockedUsersView.swift */,
+				7CAA26060001000000000042 /* CloudSyncRetryQueue.swift */,
 				7C3DF1D12F2D263900A9CDA7 /* BodyCompositionTrackingService.swift */,
 				7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */,
 				7CB08CA22EDE395600236ECB /* BugReportService.swift */,
@@ -964,6 +974,7 @@
 				7C558B0D2ED4D37B00A01E1F /* HealthKitManager.swift */,
 				7CACB5702F2E8431003A7C91 /* HealthKitService.swift */,
 				7CACB5712F2E8431003A7C91 /* HealthKitSettingsView.swift */,
+				B0B3B0B30000000000000002 /* WorkoutOriginMapper.swift */,
 				7C792ABF2F2AAE6E0048A97E /* HealthyRecipesCarousel.swift */,
 				7CAFD5592EDF780500920F0D /* HydrationService.swift */,
 				7CAFD55B2EDF780B00920F0D /* HydrationWidget.swift */,
@@ -971,6 +982,7 @@
 				7C3DF1CD2F2D262D00A9CDA7 /* InBodyService.swift */,
 				7C3DF1CE2F2D262D00A9CDA7 /* InBodySettingsView.swift */,
 				7CB08C7B2ED81D0700236ECB /* Info.plist */,
+				7CAA26020001000000000042 /* PrivacyInfo.xcprivacy */,
 				B1234567890123456789A008 /* IntelligentWorkoutGenerator.swift */,
 				7CAA1FA22F4AAAA0008200B9 /* KeychainHelper.swift */,
 				7C0C421F2F09DB7200F02E84 /* LearningEngineDebugView.swift */,
@@ -1334,6 +1346,7 @@
 				A12345678901234567890130 /* Preview Assets.xcassets in Resources */,
 				A1234567890123456789012E /* Assets.xcassets in Resources */,
 				F8C6B4D3EA0950721B4DE5F6 /* exercises.json in Resources */,
+				7CAA26010001000000000042 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1557,6 +1570,7 @@
 				7C53E2282F353FE200C2F7EC /* FriendSelectionSheet.swift in Sources */,
 				7CACB5722F2E8431003A7C91 /* HealthKitSettingsView.swift in Sources */,
 				7CACB5732F2E8431003A7C91 /* HealthKitService.swift in Sources */,
+				B0B3B0B30000000000000001 /* WorkoutOriginMapper.swift in Sources */,
 				7C0C41F62F09CE0100F02E84 /* ExerciseNicknameService.swift in Sources */,
 				7C1B0A532F4F7D5C0094AF68 /* SocialSystemSimulatorView.swift in Sources */,
 				7C792ACA2F2AB51C0048A97E /* RecipePreferenceService.swift in Sources */,
@@ -1712,6 +1726,8 @@
 				18E64D00BC44E6C542CD9FC0 /* NewOnboardingView+Verification.swift in Sources */,
 				4A2040139B619AABA76B110C /* NewOnboardingView+Steps.swift in Sources */,
 				7CA0643C2F7ACA56004CF656 /* PrivacySettingsView.swift in Sources */,
+				7CAA26030001000000000042 /* BlockedUsersView.swift in Sources */,
+				7CAA26050001000000000042 /* CloudSyncRetryQueue.swift in Sources */,
 				97654C0E855922138D5FBA13 /* NewOnboardingView+Social.swift in Sources */,
 				95144156935EEE1587BF825F /* NewOnboardingView+Completion.swift in Sources */,
 			);
@@ -1783,7 +1799,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 43;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1813,7 +1829,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 43;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1967,7 +1983,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 43;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1976,7 +1992,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "";
 				"INFOPLIST_KEY_CFBundleDisplayName[sdk=iphoneos*]" = Fit33;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera access to scan food barcodes for meal tracking.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Fit33 uses the camera to scan nutrition labels and capture progress photos.";
 				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "This app does not access clinical health records.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Fit33 tracks your daily steps to help you reach your fitness goals.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Fit33 may write health data to sync your activity.";
@@ -2005,7 +2021,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 43;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2014,7 +2030,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Fit33;
 				"INFOPLIST_KEY_CFBundleDisplayName[sdk=iphoneos*]" = Fit33;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
-				INFOPLIST_KEY_NSCameraUsageDescription = "This app needs camera access to scan food barcodes for meal tracking.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Fit33 uses the camera to scan nutrition labels and capture progress photos.";
 				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "This app does not access clinical health records.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Fit33 tracks your daily steps to help you reach your fitness goals.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Fit33 may write health data to sync your activity.";

@@ -587,6 +587,58 @@ struct DashboardQuestCelebrationWrapper: View {
     }
 }
 
+/// Sprint 2 Q2-34 — "Syncing N workout(s)…" chip surfaced on the Dashboard
+/// whenever `CloudSyncRetryQueue` has pending entries. Owns its own
+/// @StateObject so pending-count changes don't recompute the whole Dashboard
+/// (widget isolation rule).
+struct DashboardOfflineSyncChip: View {
+    @StateObject private var queue = CloudSyncRetryQueue.shared
+
+    var body: some View {
+        if queue.pendingCount > 0 {
+            HStack(spacing: 10) {
+                Image(systemName: queue.isDraining ? "arrow.triangle.2.circlepath" : "icloud.slash")
+                    .font(.subheadline)
+                    .foregroundStyle(.white)
+                    .symbolEffect(.pulse, options: queue.isDraining ? .repeating : .nonRepeating)
+                    .frame(width: 26, height: 26)
+                    .background(
+                        Circle().fill(LinearGradient(
+                            colors: [.orange, .red.opacity(0.85)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(queue.isDraining ? "Syncing \(queue.pendingCount) workout\(queue.pendingCount == 1 ? "" : "s")…" : "\(queue.pendingCount) workout\(queue.pendingCount == 1 ? "" : "s") saved offline")
+                        .font(.subheadline).fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text(queue.isDraining ? "Will upload as soon as you're back online." : "Tap to retry upload now.")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+                if !queue.isDraining {
+                    Button("Retry") { queue.drainIfDue() }
+                        .font(.caption).fontWeight(.semibold)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                        .foregroundColor(.accentColor)
+                        .accessibilityHint("Retries uploading queued workouts")
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(Color.cardBackground)
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .padding(.horizontal, Spacing.md)
+            .padding(.bottom, 12)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(queue.isDraining ? "Syncing queued workouts" : "\(queue.pendingCount) workouts waiting to sync")
+        }
+    }
+}
+
 struct DashboardNotificationBannerWrapper: View {
     @StateObject private var notificationManager = NotificationManager.shared
     @AppStorage("notification_banner_dismissed") private var dismissedNotificationBanner = false

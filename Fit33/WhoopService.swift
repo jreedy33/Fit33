@@ -201,6 +201,10 @@ final class WhoopService: ObservableObject {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "whoop", isConnected: true)
         }
 
+        // Remove any HealthKit-imported WHOOP rows so the WHOOP OAuth
+        // feed is the single source of truth for this user going forward.
+        await HealthDataService.shared.removeHealthKitDuplicates(for: .whoop)
+
         await fetchProfile()
         await syncAllData()
     }

@@ -1003,6 +1003,21 @@ struct CardioCompletionView: View {
                 savedSuccessfully = workoutId != nil
                 isSaving = false
             }
+
+            // Sprint 2 Q2-5 — wire into gamification (XP, streak, league,
+            // quests, challenges, feed, badges). Mirrors strength parity.
+            if let id = workoutId {
+                await MainActor.run {
+                    UserManager.shared.completeCardioWorkout(
+                        workoutId: id,
+                        activityType: workoutData.activityType,
+                        durationSeconds: workoutData.durationSeconds,
+                        distanceMeters: workoutData.distanceMeters,
+                        caloriesBurned: Int(workoutData.caloriesBurned),
+                        averageHeartRate: workoutData.averageHeartRate
+                    )
+                }
+            }
             
             // Check for any new PRs achieved (these would have been saved during saveCardioWorkout)
             let prs = await SupabaseManager.shared.fetchCardioPRs(activityType: workoutData.activityType)

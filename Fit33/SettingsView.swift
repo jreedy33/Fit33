@@ -246,6 +246,39 @@ struct SettingsView: View {
                                     .padding(Spacing.md)
                                     .contentShape(Rectangle())
                                 }
+
+                                Divider().padding(.leading, 52)
+
+                                NavigationLink(destination: BlockedUsersView()) {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "hand.raised.fill")
+                                            .font(.title3)
+                                            .foregroundColor(.red)
+                                            .frame(width: 28)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Blocked Users")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.primary)
+
+                                            Text("Manage who you've blocked")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                    }
+                                    .padding(Spacing.md)
+                                    .contentShape(Rectangle())
+                                }
+                                .accessibilityLabel("Blocked Users")
+                                .accessibilityHint("Manage the list of users you have blocked")
                             }
                         }
 

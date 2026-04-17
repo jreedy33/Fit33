@@ -186,7 +186,11 @@ final class StravaService: ObservableObject {
         Task {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "strava", isConnected: true)
         }
-        
+
+        // Remove any HealthKit-imported Strava rows so the richer OAuth
+        // sync becomes the single source of truth (no duplicates).
+        await HealthDataService.shared.removeHealthKitDuplicates(for: .strava)
+
         // Sync activities after connecting
         await syncActivities()
     }

@@ -1835,10 +1835,51 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             AppLogger.debug("Opening stats tab for weekly progress", category: .general)
             
         default:
-            AppLogger.debug("Unhandled notification type: \(type)", category: .general)
+            // Sprint 2 Q2-36 — hard allowlist. Anything not in
+            // `NotificationManager.knownNotificationTypes` is a server drift
+            // bug; log at .error so it surfaces in crash reports / analytics
+            // instead of silently no-opping.
+            if NotificationManager.knownNotificationTypes.contains(type) {
+                AppLogger.debug("Notification type \(type) known but routed to default — review handleNotificationType", category: .general)
+            } else {
+                AppLogger.error("⚠️ Unknown notification type received from server: \(type)", category: .general)
+                SessionLogManager.shared.log(.warning, category: .pushNotification, message: "Unknown notification type", metadata: ["type": type])
+            }
+            DeepLinkManager.shared.pendingDestination = .dashboard
         }
     }
-    
+
+    /// Every notification `type` string this client will ever route. Used by
+    /// `handleNotificationType` to distinguish server drift (unknown) from
+    /// "handled but currently no-ops" (known). Keep in lockstep with the
+    /// switch above and the edge-function / server-side senders.
+    ///
+    /// A Fit33Tests unit test (`NotificationAllowlistTests`) enforces parity
+    /// with `NotificationType.allCases` so new enum cases can't be added
+    /// without also being added here.
+    static let knownNotificationTypes: Set<String> = [
+        // Social
+        "shared_workout", "friend_request", "friend_request_accepted",
+        "friend_accepted", "contact_joined", "community_friend_joined",
+        // 1v1 / group challenges
+        "challenge_invite", "group_challenge_invite", "group_challenge_started",
+        "challenge_accepted", "challenge_progress", "challenge_completed",
+        "challenge_cancelled", "challenge_update", "challenge_reaction",
+        // Private challenges
+        "private_challenge_invite", "private_challenge_member_joined",
+        "private_challenge_progress", "private_challenge_message",
+        "private_challenge_update",
+        // Achievements & motivation
+        "personal_record", "streak_milestone", "level_up", "goal_achieved",
+        "weekly_progress", "morning_motivation",
+        // Health / nutrition
+        "nutrition_reminder", "protein_goal", "water_reminder", "steps_goal",
+        "weight_reminder",
+        // Workout reminders
+        "daily_workout_reminder", "streak_protection", "comeback_reminder",
+        "workout_complete"
+    ]
+
     /// Handle local notification categories (fallback when no userInfo type)
     private func handleNotificationCategory(_ category: String) {
         switch category {

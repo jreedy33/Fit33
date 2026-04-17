@@ -701,12 +701,17 @@ struct CardioWorkoutDTO: Codable, Hashable {
     let startedAt: String
     let completedAt: String
     
-    // Source tracking (for Strava, Apple Health, etc.)
+    // Source tracking
+    // `source` = transport (strava / fitbit / whoop / oura / healthkit / fit33)
+    // `originApp` = canonical ORIGIN (strava / nike_run_club / peloton / apple_watch / ...)
+    //               Set for HealthKit-imported rows so we know the true author
+    //               even though the transport was Apple Health.
     let source: String?
     let externalId: String?
     let externalUrl: String?
     let totalElevationGain: Double?
-    
+    let originApp: String?
+
     enum CodingKeys: String, CodingKey {
         case id
         case activityType = "activity_type"
@@ -733,11 +738,39 @@ struct CardioWorkoutDTO: Codable, Hashable {
         case externalId = "external_id"
         case externalUrl = "external_url"
         case totalElevationGain = "total_elevation_gain"
+        case originApp = "origin_app"
     }
-    
-    /// Whether this workout was synced from Strava
+
+    /// Canonical origin of this workout (prefers `origin_app` when set,
+    /// falls back to the transport `source` for first-party OAuth rows
+    /// written before the `origin_app` column existed).
+    var resolvedOrigin: WorkoutOrigin {
+        if let origin = originApp, let mapped = WorkoutOrigin(rawValue: origin) {
+            return mapped
+        }
+        switch source {
+        case "strava": return .strava
+        case "fitbit": return .fitbit
+        case "whoop":  return .whoop
+        case "oura":   return .oura
+        case "fit33":  return .fit33
+        default:
+            // Legacy HealthKit rows without origin_app: best-effort parse of workout name.
+            if let name = workoutName?.lowercased() {
+                if name.hasPrefix("strava") { return .strava }
+                if name.contains("nike") { return .nikeRunClub }
+                if name.contains("peloton") { return .peloton }
+                if name.contains("garmin") { return .garmin }
+                if name.contains("zwift") { return .zwift }
+                if name.contains("apple watch") || name.hasPrefix("watch ") { return .appleWatch }
+            }
+            return .unknown
+        }
+    }
+
+    /// Whether this workout was synced from Strava (transport OR origin).
     var isFromStrava: Bool {
-        source == "strava"
+        source == "strava" || originApp == "strava"
     }
 }
 

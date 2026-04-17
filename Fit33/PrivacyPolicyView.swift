@@ -89,7 +89,7 @@ struct PrivacyPolicyView: View {
                     }
                     
                     subsection(title: "Open Food Facts") {
-                        Text("For barcode scanning, we may query the Open Food Facts database to retrieve product information.")
+                        Text("When you scan a nutrition label with the camera, the captured image is processed on-device with OCR. We may query the Open Food Facts database to enrich product information based on the recognized text. No image is uploaded.")
                     }
                     
                     subsection(title: "Google AdMob") {

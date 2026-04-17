@@ -98,10 +98,11 @@ function computeQuietHoursEndUTC(prefs: { quiet_hours_end: string | null; timezo
   return new Date(utcGuess.getTime() - offsetHours * 60 * 60 * 1000)
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-key',
-}
+// Sprint 2 (2026-04-18): CORS headers built per-request via the shared
+// allowlist. This function is called server-to-server (pg_net trigger)
+// and from no browser origin, so the allowlist is effectively empty —
+// but we keep the shape consistent with the rest of the fleet.
+import { buildCorsHeaders } from "../_shared/cors.ts"
 
 // Derive the expected project ref from the auto-provisioned SUPABASE_URL
 // (https://<ref>.supabase.co). Supabase reserves the `SUPABASE_*` env prefix,
@@ -129,6 +130,7 @@ function isServiceRoleJWT(token: string): boolean {
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req)
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }

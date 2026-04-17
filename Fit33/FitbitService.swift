@@ -223,7 +223,11 @@ final class FitbitService: ObservableObject {
         Task {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "fitbit", isConnected: true)
         }
-        
+
+        // Remove any HealthKit-imported Fitbit rows so the Fitbit OAuth
+        // feed is the single source of truth for this user going forward.
+        await HealthDataService.shared.removeHealthKitDuplicates(for: .fitbit)
+
         // Fetch user profile and sync data
         await fetchUserProfile()
         await syncAllData()

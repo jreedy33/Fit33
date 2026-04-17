@@ -166,6 +166,11 @@ final class MemoryPressureHandler {
     private let cleanupCooldown: TimeInterval = 15 // Generous cooldown to prevent main thread churn
     private let emergencyCooldown: TimeInterval = 60 // Prevent emergency spam loop
     private let maxEmergencyAttempts: Int = 3 // Stop after 3 failed attempts
+    /// Sprint 2 Q2-26 — retained so the 30s monitor can be paused when the
+    /// app is backgrounded (prevents a wall clock Timer from firing, spinning
+    /// task_info, and defeating iOS's "do nothing while suspended" contract).
+    private var monitorTimer: Timer?
+    private var lifecycleObservers: [NSObjectProtocol] = []
     
     // ⚡️ MEMORY THRESHOLDS — tuned for iPhone 16 Pro (8GB RAM)
     // The app's normal working set is ~400-550MB after loading 5500+ exercises,
@@ -178,8 +183,19 @@ final class MemoryPressureHandler {
     private init() {
         setupMemoryWarningObserver()
         startPeriodicMonitoring()
+        setupLifecycleObservers()
     }
-    
+
+    deinit {
+        if let observer = memoryWarningObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        for observer in lifecycleObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        monitorTimer?.invalidate()
+    }
+
     private func setupMemoryWarningObserver() {
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
@@ -190,11 +206,40 @@ final class MemoryPressureHandler {
             self?.handleMemoryWarning(level: .critical)
         }
     }
-    
+
     private func startPeriodicMonitoring() {
-        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        monitorTimer?.invalidate()
+        let timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.checkMemoryPressure()
         }
+        // Keep running even while the user is scrolling — the check is fast.
+        RunLoop.main.add(timer, forMode: .common)
+        monitorTimer = timer
+    }
+
+    /// Sprint 2 Q2-26 — pause the 30s polling Timer on background/inactive
+    /// and restart on active. Prevents the ObservableObject from doing any
+    /// work while the app is suspended and avoids the Timer surviving as a
+    /// retained cycle if the handler ever changed ownership.
+    private func setupLifecycleObservers() {
+        let nc = NotificationCenter.default
+        lifecycleObservers.append(
+            nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.monitorTimer?.invalidate()
+                self?.monitorTimer = nil
+            }
+        )
+        lifecycleObservers.append(
+            nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.monitorTimer?.invalidate()
+                self?.monitorTimer = nil
+            }
+        )
+        lifecycleObservers.append(
+            nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.startPeriodicMonitoring()
+            }
+        )
     }
     
     private func checkMemoryPressure() {

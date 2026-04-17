@@ -14,6 +14,9 @@
 6. **UUID type safety**: NEVER use `?? ""` as a fallback for `currentUser?.id.uuidString` in Supabase queries. Always use `guard let userId = currentUser?.id else { return }`. Passing an empty string to a UUID column causes Postgres `operator does not exist: uuid = text`.
 7. **Cloud sync pagination**: All Supabase fetch queries MUST include `.limit()`. `fetchWorkoutHistory()` caps at 200, `fetchMealLogs()` caps at 100. Never fetch unbounded result sets -- causes memory spikes and slow syncs proportional to user history size.
 8. **No duplicate foreground fetches**: Foreground refresh is centralized in `Fit33App.swift` scenePhase handler. DashboardView only handles dashboard-specific work (meals, hydration, quests). NEVER duplicate social/challenge/health fetches between App and Dashboard.
+9. **Moderation flip must propagate via realtime** (Sprint 2, Q2-46): the moderation webhook updates `is_hidden = true` AFTER insert. Client UI that persists the sender's own row (chat, activity feed) MUST subscribe to `UpdateAction` on that table and drop any row where `is_hidden` flipped to true. Reference: `RealtimeService.subscribeFriendActivityFeed` + `PrivateChallengeService` realtime channel both tail the update stream. Do NOT rely on refetching — server RPCs filter hidden rows but the local cache keeps them until refreshed.
+10. **Legacy `group_challenge_members` table is REVOKE-hardened** (Sprint 2, Q2-15): RLS is enabled; `INSERT`/`UPDATE`/`DELETE` have been revoked from `authenticated`; `ALL` revoked from `anon`. Only `service_role` + SECURITY DEFINER RPCs may write. Never add a new client path that writes this table directly — use `challenge_participants` for the live challenge system. See `supabase/20260418_group_challenge_members_invariant.sql`.
+11. **Social compliance RPCs** (Sprint 2, Q2-7): `get_blocked_users()` and `report_content(p_table_name, p_record_id, p_reported_user_id, p_content_snippet, p_reason)` are the canonical App Review compliance surfaces. `report_content` hard-filters `p_table_name` against an allowlist (`private_challenge_chat`, `challenge_reactions`, `shared_workouts`, `group_challenges`, `private_challenges`, `community_challenges`, `friend_activity_feed`, `user_profiles`) and writes to `content_moderation_log` with `flagged_categories=["user_report"]`.
 
 ---
 
@@ -633,3 +636,31 @@ Never use `user.id?.uuidString ?? ""` or `user.id ?? UUID()` as fallbacks for us
 **Swift changes**: `WeeklyLeagueService` has new `@Published var notPlaced: Bool`, `notPlacedTierName: String?`, `notPlacedNextWeek: String?`. `fetchOrJoinLeague()` parses `not_placed` JSON response and sets these. `WeeklyLeagueViews.swift` adds `notPlacedContent` widget showing "League Starts Monday" with tier info.
 
 **Key invariant**: After Monday UTC, the roster for each league group is frozen. No new members can join existing groups until the next week's cron run.
+
+### 2026-04-17: `cardio_workouts.origin_app` — True Third-Party Origin Tracking
+
+**Problem**: When a third-party app (Strava, Nike Run Club, Peloton, Garmin, Zwift, Apple Watch, …) wrote a workout to Apple Health and Fit33 pulled it in, the row was saved with `source='healthkit'` and the dashboard rendered a generic red "Apple Health" heart badge. The original author was lost. A prior skip (`if workout.isFromStrava { continue }`) made it worse: Strava-via-HealthKit runs were dropped entirely when the user had no Strava OAuth connected.
+
+**Migration**: `supabase/20260417_cardio_workouts_origin_app.sql` adds a `TEXT origin_app` column + index `idx_cardio_workouts_user_origin_source (user_id, origin_app, source)`. Best-effort backfill derives the origin from `workout_name` prefix ("Strava Running", "Nike Run Club Run", "Apple Watch Cycling", etc.) for existing rows.
+
+**Semantics (critical)**:
+- `source` = **transport** (`strava` | `fitbit` | `whoop` | `oura` | `healthkit` | `fit33`).
+- `origin_app` = **canonical author** (`strava` | `nike_run_club` | `peloton` | `garmin` | `zwift` | `apple_watch` | `fitbit` | `whoop` | `oura` | `map_my_run` | `runkeeper` | `adidas_running` | `fit33`).
+
+A Strava run pulled via Apple Health has `source='healthkit'` and `origin_app='strava'`. A Strava run pulled via direct OAuth has `source='strava'` and `origin_app='strava'`.
+
+**Swift mapper**: `Fit33/WorkoutOriginMapper.swift` is the single source of truth. `WorkoutOrigin.from(sourceName:sourceBundle:)` maps HK metadata → enum case. Prefers `bundleIdentifier` (stable across rebrands/localizations), falls back to case-insensitive name match. Apple Watch check runs LAST so third-party apps that happen to write through Apple frameworks aren't mis-classified.
+
+**Dedupe rules (MANDATORY — prevent duplicate rows)**:
+
+1. **HK sync guard** (`HealthDataService.saveAllHealthKitDataToSupabase()`): before saving an HK workout, call `isOAuthConnected(for: workout.origin)`. If true, SKIP the HK save — the OAuth feed will write a richer row directly (route maps, segments, elevation). Currently checks: Strava, Fitbit, WHOOP, Oura. Extensible: add new cases to `WorkoutOrigin.hasFirstPartyOAuth` + `isOAuthConnected(for:)` when adding new OAuth integrations.
+
+2. **OAuth connect backfill** (`HealthDataService.removeHealthKitDuplicates(for:)`): called from `StravaService` / `FitbitService` / `WhoopService` / `OuraService` the moment OAuth succeeds (inline, before `syncActivities`/`syncAllData`). Deletes `cardio_workouts` rows where `user_id=current AND source='healthkit' AND origin_app=<origin>`. Generic by origin — adding OAuth for Garmin/Peloton later only requires one new call site.
+
+**NEVER** re-introduce the `if workout.isFromStrava { continue }` skip in `HealthDataService` — it would permanently drop Strava-via-HK runs for users without OAuth connected.
+
+**Display (generic across all third parties)**: `DashboardWorkoutCards.sourceBadge` and `HealthKitSettingsView.originBadge` both read `cardioWorkout.resolvedOrigin` (DTO computed var) or `workout.origin` (HK sugar) and render the mapper's brand-colored capsule. Brand colors are Strava #FC4C02, Peloton #DF2C35, Garmin #007CC3, Zwift #FC6719, Fitbit #00B0B9, WHOOP black+#E11D48, Oura deep plum, Apple Watch space gray→silver, NRC pure black, MapMyRun #CE0E2D, Runkeeper #002A5C, adidas Running orange. Never hardcode these in views — always go through `WorkoutOriginMapper`.
+
+**DTO changes**: `CardioWorkoutDTO.originApp: String?` added with `origin_app` coding key. `resolvedOrigin` computed var prefers `origin_app`, falls back to `source`, then best-effort-parses `workout_name` for pre-migration rows. `isFromStrava` now checks `source == "strava" || originApp == "strava"`.
+
+**HK DTO**: `HealthKitWorkoutInsert.originApp: String?` added with `origin_app` coding key. Set from `WorkoutOrigin.rawValue` in `HealthDataService.saveHealthKitWorkout` (nil only when origin is `.unknown`).

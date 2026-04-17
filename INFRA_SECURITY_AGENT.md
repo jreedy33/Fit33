@@ -19,14 +19,23 @@
 | `moderate-content` (precheck) | User JWT OR service role | OpenAI billing | `OPENAI_API_KEY` | Fit33/PII: never logs raw content >500 chars |
 | `moderate-content` (webhook) | **BOTH**: platform `Authorization: Bearer <service_role_key>` (because `verify_jwt: true` is the Supabase default) **AND** `x-moderation-secret` shared secret (constant-time compare, checked in function body) | n/a | `MODERATION_WEBHOOK_SECRET`, `OPENAI_API_KEY`, service_role key on the DB webhook | Configured in DB Webhook HTTP headers. Do **not** delete the Authorization header or platform rejects the request before our code runs. Both secrets must be present. |
 | `send-verification` | User JWT OR service role | DB-backed via `check_phone_verification_rate_limit` RPC (10/hr/phone), falls back to in-memory | `TWILIO_*`, `SUPABASE_SERVICE_ROLE_KEY` | Burnable on previous build — fixed 2026-04-17 |
-| `verify-code` | None required (OTP flow) | In-memory (15/15min/phone) | `TWILIO_*` | OTP provides its own rate limit via Twilio; TODO: add JWT once post-OTP session exists |
+| `verify-code` | User JWT OR service role (since Sprint 2, 2026-04-18) | In-memory (15/15min/phone) | `TWILIO_*` | Sprint 2: `requireUserAuth` now enforced; client sends session `accessToken`. CORS migrated to shared `buildCorsHeaders`. |
 | `generate-ai-insights` | Service role OR admin email in `ai_insights_admin_emails` table | n/a | `ANTHROPIC_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Must NEVER accept a plain user JWT; anyone signed in could dump platform-wide data |
 | `usda-food-search` | User JWT OR service role (ALL actions) | Per-IP (30/min) | `USDA_API_KEY` | `search`/`details` were anonymous pre-2026-04-17 |
 | `notify-contacts-user-joined` | User JWT with `auth.uid() === body.new_user_id` (IDOR guard) OR service role | n/a | `SUPABASE_SERVICE_ROLE_KEY` | Attacker could spam push to contacts of any user pre-2026-04-17 |
 | `send-push-notification` | Service role via `Authorization` header OR `x-cron-key` header, both verified against `SUPABASE_PROJECT_REF` env var | n/a | `APNS_*`, `SUPABASE_PROJECT_REF` | Hardcoded project ref removed 2026-04-17 |
 
 **Rule**: every new edge function MUST be added to this table in the same PR.
-**Rule**: CORS allow-origin is now centralized in `supabase/functions/_shared/cors.ts`. Never write `Access-Control-Allow-Origin: *` in a new function — import `buildCorsHeaders(req)`.
+**Rule**: CORS allow-origin is now centralized in `supabase/functions/_shared/cors.ts`. Never write `Access-Control-Allow-Origin: *` in a new function — import `buildCorsHeaders(req)`. Sprint 2 (2026-04-18) verified ALL `supabase/functions/**/index.ts` comply.
+
+### App Store Compliance Checklist (Sprint 2, 2026-04-18)
+
+Social apps MUST ship these or App Review rejects:
+1. **Privacy manifest** — `Fit33/PrivacyInfo.xcprivacy` declares Required Reason APIs (UserDefaults CA92.1, FileTimestamp C617.1, DiskSpace E174.1, SystemBootTime 35F9.1) + `NSPrivacyCollectedDataTypes` (see file for full set). Verify third-party SPM deps also ship manifests via Xcode → Product → Archive → Distribute → "Privacy Report".
+2. **User blocking** — `get_blocked_users()` RPC + `BlockedUsersView` in Settings → Privacy & Security. Reachable in ≤3 taps from any profile.
+3. **Content reporting** — `report_content(p_table_name, p_record_id, p_reported_user_id, p_content_snippet, p_reason)` RPC writes to `content_moderation_log` with `flagged_categories=["user_report"]`. "Report & Block" long-press menus on chat messages and feed cards.
+4. **Two-layer moderation** — Layer 1 (client precheck via `moderate-content` with user JWT) + Layer 2 (DB webhook with `Authorization: Bearer <service_role>` + `x-moderation-secret`). Sender's own flagged posts now vanish via realtime `UPDATE` subs on `is_hidden` (Q2-46 fix).
+5. **Accurate copy** — Scanner is OCR, NOT barcode lookup. `TermsConditionsView`, `PrivacyPolicyView`, `SUPPORT_AGENT.md` all say "nutrition label lookup (photo-based OCR)".
 
 ### Lessons Learned (April 2026 Security Audit)
 

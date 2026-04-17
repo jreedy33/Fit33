@@ -437,7 +437,16 @@ class RealtimeService: ObservableObject {
             schema: "public",
             table: "friend_activity_feed"
         )
-        
+
+        // Sprint 2 Q2-46 — pick up is_hidden flips from the moderation
+        // webhook so a flagged post vanishes from the sender's feed in real
+        // time (they never refetch after send).
+        let updates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "friend_activity_feed"
+        )
+
         Task {
             for await _ in insertions {
                 AppLogger.debug("New friend activity feed item!", category: .network)
@@ -447,10 +456,22 @@ class RealtimeService: ObservableObject {
                 ActivityFeedService.shared.lastRealtimeUpdate = Date()
             }
         }
-        
+
+        Task {
+            for await action in updates {
+                let record = action.record
+                let isHidden = (record["is_hidden"] as? AnyJSON)?.boolValue ?? false
+                guard isHidden,
+                      let idStr = jsonString(record["id"]),
+                      let activityId = UUID(uuidString: idStr) else { continue }
+                AppLogger.info("Realtime: activity \(activityId.uuidString.prefix(8)) hidden by moderation", category: .network)
+                await ActivityFeedService.shared.applyModerationHide(activityId: activityId)
+            }
+        }
+
         await channel.subscribe()
         friendActivityFeedChannel = channel
-        
+
         AppLogger.debug("Subscribed to friend_activity_feed for user \(userId)", category: .network)
     }
     

@@ -47,12 +47,11 @@ struct FriendsTabView: View {
     @State private var lastRefreshedAt: Date?
     @State private var lastContactsRefreshAt: Date?
     @State private var isManualRefreshing = false
-    @State private var autoRefreshTimer: Timer?
     @State private var activeRefreshTask: Task<Void, Never>?
-    
-    /// Staggered auto-refresh: ticks every 30s, alternating between 1v1/league and community/private.
-    /// This gives each category a 60s polling cycle without doubling network load at any tick.
-    private let autoRefreshInterval: TimeInterval = 30
+
+    // Sprint 2 Q2-27: 30s staggered polling Timer removed. Live updates now
+    // come from Supabase Realtime subscriptions (friendships, friend_activity_feed,
+    // community/private challenge channels) and user-initiated pull-to-refresh.
     
     
     var body: some View {
@@ -181,7 +180,8 @@ struct FriendsTabView: View {
 
             hasAppearedBefore = true
             updateCachedSuggestions()
-            startAutoRefreshTimer()
+            // Sprint 2 Q2-27: 30s polling timer removed. Live updates now come
+            // from Supabase Realtime subscriptions and pull-to-refresh.
             
             // Fire suggestion refresh independently (once per app session).
             // This runs PYMK + contacts in parallel, not gated behind Batch 1+2,
@@ -211,17 +211,15 @@ struct FriendsTabView: View {
                         lastRefreshedAt = Date()
                     }
                 }
-                // Re-start timer when tab appears
-                startAutoRefreshTimer()
+                // Sprint 2 Q2-27: no auto-refresh timer.
             }
         }
         .onDisappear {
             // Preserve rank deltas — user will see accumulated changes on return
             communityService.markCommunityViewHidden()
-            
-            // Cancel in-flight refresh and stop timer to save battery
+
+            // Cancel any in-flight refresh to save battery.
             activeRefreshTask?.cancel()
-            stopAutoRefreshTimer()
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
             if newPhase == .active && oldPhase != .active {
@@ -236,9 +234,7 @@ struct FriendsTabView: View {
                         lastRefreshedAt = Date()
                     }
                 }
-                startAutoRefreshTimer()
-            } else if newPhase == .background {
-                stopAutoRefreshTimer()
+                // Sprint 2 Q2-27: no auto-refresh timer on foreground.
             }
         }
         .sheet(item: $showingFriendProfile) { profileUser in
@@ -269,47 +265,11 @@ struct FriendsTabView: View {
         )
     }
     
-    // MARK: - Auto-Refresh Timer (Live Opponent Data)
-    
-    /// Start a staggered background timer that alternates between challenge types every 30s.
-    /// Even ticks (0s, 60s, 120s): fetch 1v1 + league
-    /// Odd ticks (30s, 90s, 150s): fetch community + private challenges
-    /// This is a fallback for when Supabase Realtime misses an event.
-    /// Uses .default RunLoop mode (NOT .common) so it never fires during
-    /// scroll tracking or tab switch animations — preventing UI freezes.
-    private func startAutoRefreshTimer() {
-        stopAutoRefreshTimer() // Prevent duplicates
-        var fireCount = 0
-        let timer = Timer.scheduledTimer(withTimeInterval: autoRefreshInterval, repeats: true) { timer in
-            fireCount += 1
-            if fireCount >= 120 {
-                timer.invalidate()
-                return
-            }
-            Task { @MainActor in
-                if fireCount.isMultiple(of: 2) {
-                    // Even ticks: 1v1 challenges + league (existing behavior)
-                    async let active: () = challengeService.fetchActiveChallenges()
-                    async let groups: () = challengeService.fetchActiveGroupChallenges()
-                    async let league: () = leagueService.fetchOrJoinLeague(force: false)
-                    _ = await (active, groups, league)
-                } else {
-                    // Odd ticks: community + private challenges
-                    async let community: () = communityService.fetchMyChallenges()
-                    async let privateFetch: () = privateChallengeService.fetchMyChallenges()
-                    _ = await (community, privateFetch)
-                }
-                lastRefreshedAt = Date()
-            }
-        }
-        autoRefreshTimer = timer
-    }
-    
-    private func stopAutoRefreshTimer() {
-        autoRefreshTimer?.invalidate()
-        autoRefreshTimer = nil
-    }
-    
+    // MARK: - Live Refresh (Realtime + pull-to-refresh)
+    // Sprint 2 Q2-27: replaced the 30s staggered polling timer with Supabase
+    // Realtime subscriptions. Challenge/league/friend state is now pushed
+    // live; the tab relies on `.refreshable` for user-initiated refreshes.
+
     // MARK: - Header
     
     // MARK: - Suggestion Cache

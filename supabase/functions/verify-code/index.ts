@@ -2,18 +2,19 @@
 // VERIFY SMS CODE
 // Supabase Edge Function + Twilio Verify
 // =====================================================
-// This edge function verifies the code entered by the user
-// 
+// This edge function verifies the code entered by the user.
+//
+// Sprint 2 (2026-04-18) — migrated off `Access-Control-Allow-Origin: *`
+// onto the shared buildCorsHeaders allowlist. Also now requires the caller
+// to authenticate (user JWT or service role). The platform already applies
+// verify_jwt=true, so this is defense in depth.
+//
 // Deploy with: supabase functions deploy verify-code
 // =====================================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { buildCorsHeaders, requireUserAuth } from "../_shared/cors.ts"
 
 const verifyRateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const VERIFY_RATE_LIMIT_MAX = 15
@@ -31,6 +32,8 @@ function checkVerifyRateLimit(phone: string): boolean {
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req)
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -46,6 +49,14 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
       )
     }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(supabaseUrl, supabaseKey)
+
+    // Require a valid caller (user JWT or service role). No anonymous verifies.
+    const authResult = await requireUserAuth(req, supabase, corsHeaders)
+    if (!authResult.ok) return authResult.response
 
     const { phone_number, code } = await req.json()
 
@@ -76,7 +87,7 @@ serve(async (req) => {
 
     // Verify code via Twilio Verify API
     const twilioUrl = `https://verify.twilio.com/v2/Services/${twilioVerifyServiceSid}/VerificationCheck`
-    
+
     const twilioResponse = await fetch(twilioUrl, {
       method: 'POST',
       headers: {
@@ -92,13 +103,13 @@ serve(async (req) => {
     const twilioData = await twilioResponse.json()
 
     if (!twilioResponse.ok) {
-      console.error('Twilio error:', twilioData)
-      throw new Error(twilioData.message || 'Verification failed')
+      // Don't leak Twilio's error payload to clients.
+      console.error('Twilio error status=', twilioResponse.status)
+      throw new Error('Verification failed')
     }
 
     console.log(`Verification status: ${twilioData.status}`)
 
-    // Check if verification was successful
     if (twilioData.status !== 'approved') {
       return new Response(
         JSON.stringify({
@@ -113,17 +124,12 @@ serve(async (req) => {
       )
     }
 
-    // Update database with verified status
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseKey)
-
-    // Get user from auth header
-    const authHeader = req.headers.get('Authorization')
-    if (authHeader) {
+    // Update database with verified status (only if called with a user JWT).
+    if (!authResult.auth.isServiceRole && authResult.auth.userId) {
+      const authHeader = req.headers.get('Authorization')!
       const token = authHeader.replace('Bearer ', '')
       const { data: { user } } = await supabase.auth.getUser(token)
-      
+
       if (user) {
         const { error: rpcError } = await supabase.rpc('confirm_phone_verification', {
           p_phone_number: formattedPhone
@@ -149,12 +155,13 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('Error:', error.message)
-    const isClientError = error.message === 'Verification failed' || error.message?.includes('Invalid')
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error('verify-code error:', message)
+    const isClientError = message === 'Verification failed' || message.includes('Invalid')
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message
+        error: isClientError ? message : 'Verification failed'
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

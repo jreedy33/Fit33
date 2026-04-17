@@ -110,7 +110,7 @@ struct TermsConditionsView: View {
                     bulletPoint("Supabase - for cloud storage")
                     bulletPoint("Google AdMob - for advertisements")
                     bulletPoint("USDA FoodData Central - for nutrition data")
-                    bulletPoint("Open Food Facts - for barcode scanning")
+                    bulletPoint("Open Food Facts - for nutrition label lookup (photo-based OCR)")
                     
                     Text("Your use of these services is subject to their respective terms and privacy policies. We are not responsible for third-party service availability or content.")
                 }

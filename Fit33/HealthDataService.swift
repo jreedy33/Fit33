@@ -777,18 +777,34 @@ final class HealthDataService: ObservableObject {
             restingHR: healthKit.restingHeartRate
         )
         
-        // Save workouts (Nike Run Club runs, Apple Watch workouts, etc.)
+        // Save workouts from every third-party app that wrote to HealthKit
+        // (Strava, Nike Run Club, Peloton, Garmin, Zwift, Apple Watch, ...).
+        //
+        // Priority rules:
+        //   - Fit33's own round-trip writes are always skipped.
+        //   - If the user has a first-party OAuth integration connected for
+        //     the app that authored this workout (Strava/Fitbit/WHOOP/Oura),
+        //     SKIP the HealthKit copy — that integration will write a richer
+        //     row directly, and saving both would produce duplicates.
         var savedCount = 0
+        var skippedByOAuth = 0
         for workout in healthKit.recentWorkouts {
-            if workout.isFromFit33 { continue }
-            if workout.isFromStrava { continue }
-            
+            let origin = workout.origin
+            if origin == .fit33 { continue }
+            if isOAuthConnected(for: origin) {
+                skippedByOAuth += 1
+                continue
+            }
+
             // Only save workouts from today/recent (7 days)
             if calendar.isDate(workout.startDate, inSameDayAs: today) ||
                workout.startDate > calendar.date(byAdding: .day, value: -7, to: today)! {
                 await saveHealthKitWorkout(workout)
                 savedCount += 1
             }
+        }
+        if skippedByOAuth > 0 {
+            AppLogger.debug("Skipped \(skippedByOAuth) HealthKit workouts owned by connected OAuth integrations", category: .health)
         }
         
         // Save sleep data if available
@@ -871,22 +887,17 @@ final class HealthDataService: ObservableObject {
         default: workoutType = workout.workoutName
         }
         
-        // Determine source name for display
-        let sourceName: String
-        if workout.isFromNikeRunClub {
-            sourceName = "Nike Run Club"
-        } else if workout.isFromStrava {
-            sourceName = "Strava"
-        } else if workout.isFromApple {
-            sourceName = "Apple Watch"
-        } else {
-            sourceName = workout.sourceName
-        }
-        
+        // Resolve canonical origin (Strava / Nike / Peloton / Garmin / ...)
+        // from the HKWorkout's sourceBundle + sourceName. This is what
+        // drives both the persisted `origin_app` column and the display
+        // name prepended to `workout_name`.
+        let origin = workout.origin
+        let displayName: String = (origin == .unknown) ? workout.sourceName : origin.displayName
+
         let insert = HealthKitWorkoutInsert(
             userId: userId.uuidString,
             activityType: workoutType,
-            workoutName: "\(sourceName) \(workoutType)",
+            workoutName: "\(displayName) \(workoutType)",
             goalType: "open_goal",
             goalAchieved: true,
             durationSeconds: Int(workout.duration),
@@ -895,7 +906,8 @@ final class HealthDataService: ObservableObject {
             startedAt: Self.iso8601.string(from: workout.startDate),
             completedAt: Self.iso8601.string(from: workout.endDate),
             source: "healthkit",
-            externalId: workout.id.uuidString
+            externalId: workout.id.uuidString,
+            originApp: (origin == .unknown) ? nil : origin.rawValue
         )
         
         do {
@@ -903,13 +915,57 @@ final class HealthDataService: ObservableObject {
                 .from("cardio_workouts")
                 .upsert(insert, onConflict: "user_id,source,external_id")
                 .execute()
-            AppLogger.info("Saved HealthKit workout: \(sourceName) \(workoutType) (\(Int(workout.duration / 60))m)", category: .health)
+            AppLogger.info("Saved HealthKit workout: \(displayName) \(workoutType) [\(origin.rawValue)] (\(Int(workout.duration / 60))m)", category: .health)
         } catch {
             // Silently handle duplicates (already exists in DB)
             if !error.localizedDescription.contains("duplicate") &&
                !error.localizedDescription.contains("conflict") {
-                AppLogger.error("Failed to save HealthKit workout (\(sourceName) \(workoutType)): \(error.localizedDescription)", category: .health)
+                AppLogger.error("Failed to save HealthKit workout (\(displayName) \(workoutType)): \(error.localizedDescription)", category: .health)
             }
+        }
+    }
+
+    // MARK: - Origin/OAuth helpers
+
+    /// Returns true when the user has a first-party OAuth integration
+    /// connected that owns workouts from this origin. Used by the HealthKit
+    /// sync loop to avoid saving a duplicate HealthKit-imported copy when
+    /// the richer OAuth feed is already writing the row.
+    private func isOAuthConnected(for origin: WorkoutOrigin) -> Bool {
+        switch origin {
+        case .strava: return StravaService.shared.isConnected
+        case .fitbit: return FitbitService.shared.isConnected
+        case .whoop:  return WhoopService.shared.isConnected
+        case .oura:   return OuraService.shared.isConnected
+        default:      return false
+        }
+    }
+
+    /// Remove any HealthKit-imported cardio_workouts rows whose true origin
+    /// matches the given key. Called by OAuth services (Strava/Fitbit/
+    /// WHOOP/Oura) the moment the user connects, so the cleaner OAuth feed
+    /// becomes the single source of truth and we never display a duplicate.
+    ///
+    /// Generic by design: pass any WorkoutOrigin rawValue — the function
+    /// just deletes `source='healthkit' AND origin_app=<key>` for the
+    /// current user. Adding OAuth for Garmin/Peloton/etc. later needs no
+    /// changes here.
+    func removeHealthKitDuplicates(for origin: WorkoutOrigin) async {
+        guard let userId = SupabaseManager.shared.currentUser?.id else { return }
+        guard SupabaseManager.shared.isAuthenticated else { return }
+
+        do {
+            try await SupabaseManager.shared.supabaseClient
+                .from("cardio_workouts")
+                .delete()
+                .eq("user_id", value: userId.uuidString)
+                .eq("source", value: "healthkit")
+                .eq("origin_app", value: origin.rawValue)
+                .execute()
+            AppLogger.info("[ORIGIN] Removed HealthKit-imported \(origin.rawValue) rows after OAuth connect", category: .health)
+            NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
+        } catch {
+            AppLogger.warning("[ORIGIN] Failed to remove HealthKit \(origin.rawValue) duplicates: \(error.localizedDescription)", category: .health)
         }
     }
     
@@ -1632,7 +1688,11 @@ struct HealthKitWorkoutInsert: Codable {
     let completedAt: String
     let source: String
     let externalId: String
-    
+    /// Canonical key of the app that originally authored the workout
+    /// (e.g. "strava", "nike_run_club", "apple_watch"). Independent of
+    /// `source` which tracks the transport (always "healthkit" here).
+    let originApp: String?
+
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case activityType = "activity_type"
@@ -1646,6 +1706,7 @@ struct HealthKitWorkoutInsert: Codable {
         case completedAt = "completed_at"
         case source
         case externalId = "external_id"
+        case originApp = "origin_app"
     }
 }
 

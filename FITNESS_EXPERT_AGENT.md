@@ -421,6 +421,28 @@ Squat (467) · Curl (271) · Press (15) · Push Up (9) · Fly (8) · Hip Hinge (
 - `WorkoutGeneratorService.generateFromCoreData` remains `nonisolated`, runs via `Task.detached`.
 - `WorkoutGenerationContext` snapshots `@MainActor` state for background generation.
 
+### 2026-04-18: Cardio XP Curve & Gamification Parity (Sprint 2, Q2-5)
+
+**Problem before Sprint 2**: `CardioActiveWorkoutView.saveWorkout()` persisted the cardio row to Supabase but never called into the gamification system. Users who only did cardio had no XP, no streak updates, no daily-quest progress, no league points, no badges, and no friend-feed post. Cardio was a second-class citizen.
+
+**Fix**: `UserManager.completeCardioWorkout(workoutId:activityType:durationSeconds:distanceMeters:caloriesBurned:averageHeartRate:)` is the cardio equivalent of `completeWorkout(Workout)` and is called from `CardioActiveWorkoutView.saveWorkout()` after the cardio row is persisted. It wires:
+- **XP** — signed off below.
+- **Streak** — via `updateStreak()`.
+- **League points** — `+50` via `WeeklyLeagueService.addPoints(.workout)` (parity with strength; cardio IS a workout).
+- **Daily quests** — `DailyQuestService.onWorkoutCompleted(durationSeconds:totalSets: 0)` (cardio has no sets).
+- **Challenges** — reuses `ChallengeService.checkStravaWorkoutForChallenges(source: "cardio")` so `run`/`walk`/`active_minutes`/`workout_streak` challenge types progress.
+- **Badges** — `BadgeService.onWorkoutCompleted` + `onStreakUpdated`, plus `StreakShieldService.checkAndAwardShield`.
+- **Friend activity feed** — new `post_cardio_activity` RPC (`supabase/20260418_post_cardio_activity.sql`) writes an `activity_type = 'cardio_completed'` row with cardio-specific metadata (cardio_type, distance, calories, avg HR, xp). Respects `PrivacySettingsManager.hideFriendActivity` opt-out.
+
+**XP curve (approved)** — deliberately weighted below strength so XP-per-minute is roughly balanced:
+- Base 20
+- +10 per 15 minutes of duration, capped at +40 (60 min workout saturates)
+- +10 if distance ≥ 3 km (meaningful road / bike / run milestone)
+- +10 if calories ≥ 300 (sustained effort)
+- **Typical values**: 30 min jog → 40 XP; 45 min bike with 10 km → 60 XP; 60 min hike with 8 km / 500 cal → 80 XP. Strength analog (25 base + 5/ex + 15 for 30+ min) lands in the 40–80 XP range, so the two systems are in-line.
+
+**Challenge type mapping**: `activityType` sent to `checkStravaWorkoutForChallenges` is the lowercased `activityType.rawValue` with spaces → `_`. Values like `"running"`/`"walking"` match via `.contains("run")` / `.contains("walk")`, and ANY cardio type progresses `active_minutes` challenges.
+
 ### 2026-03-27: WHOOP Recovery-Aware Workout Suggestions
 
 **New capability**: When a WHOOP band is connected, `WorkoutSuggestionEngine.buildRecoverySuggestion()` checks WHOOP physiological recovery before suggesting a muscle-group split.

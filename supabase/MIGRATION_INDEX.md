@@ -136,6 +136,17 @@ The **canonical version** is the one in the latest file listed below.
 **Run order**: 46 → 47 → 48 (standalone, idempotent).
 **Paired code changes**: edge functions `moderate-content`, `send-verification`, `generate-ai-insights`, `usda-food-search`, `notify-contacts-user-joined`, `send-push-notification` all redeploy this sprint with tightened auth.
 
+## Sprint 2 Submit-Ready (2026-04-18)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 49 | `20260418_blocking_and_reporting.sql` | 🆕 Ready | `get_blocked_users()` + `report_content()` RPCs for App Review social compliance |
+| 50 | `20260418_group_challenge_members_invariant.sql` | 🆕 Ready | Legacy `group_challenge_members` hardening: REVOKE direct writes + COMMENT invariant |
+| 51 | `20260418_post_cardio_activity.sql` | 🆕 Ready | `post_cardio_activity()` RPC — cardio parity in friend activity feed |
+
+**Run order**: 49 → 50 → 51 (standalone, idempotent).
+**Paired code changes**: `BlockedUsersView`, Settings integration, Report+Block sheets in chat & activity feed (Q2-7); cardio gamification wires (`UserManager.completeCardioWorkout`, Q2-5); `verify-code` / `send-push-notification` CORS migration (Q2-22).
+
 ---
 
 ## Process for New Migrations

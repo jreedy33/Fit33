@@ -327,6 +327,65 @@ class FriendService: ObservableObject {
             return false
         }
     }
+
+    /// Fetches the authenticated user's block list with profile info. Used by
+    /// the Settings → Blocked Users screen (Sprint 2 Q2-7).
+    func fetchBlockedUsers() async -> [BlockedUser] {
+        guard SupabaseManager.shared.isAuthenticated else { return [] }
+        do {
+            let rows: [BlockedUser] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_blocked_users")
+                .execute()
+                .value
+
+            // Keep the local cache in sync with the authoritative server list.
+            let serverIds = Set(rows.map { $0.userId })
+            if blockedUserIds != serverIds {
+                blockedUserIds = serverIds
+                persistBlockedUserIds()
+            }
+            return rows
+        } catch {
+            AppLogger.error("Error fetching blocked users: \(error.localizedDescription)", category: .social)
+            return []
+        }
+    }
+
+    /// Reports user-authored content for admin review. Writes a row to
+    /// `content_moderation_log` server-side with `flagged_categories=["user_report"]`.
+    /// Typically called alongside `blockUser` from a Report-and-Block sheet (Sprint 2 Q2-7).
+    @discardableResult
+    func reportContent(
+        tableName: String,
+        recordId: String,
+        reportedUserId: UUID,
+        contentSnippet: String,
+        reason: String? = nil
+    ) async -> Bool {
+        do {
+            struct ReportParams: Encodable {
+                let p_table_name: String
+                let p_record_id: String
+                let p_reported_user_id: String
+                let p_content_snippet: String
+                let p_reason: String?
+            }
+            try await SupabaseManager.shared.supabaseClient
+                .rpc("report_content", params: ReportParams(
+                    p_table_name: tableName,
+                    p_record_id: recordId,
+                    p_reported_user_id: reportedUserId.uuidString,
+                    p_content_snippet: contentSnippet,
+                    p_reason: reason
+                ))
+                .execute()
+            AppLogger.info("Content reported (\(tableName)#\(recordId.prefix(8)))", category: .social)
+            return true
+        } catch {
+            AppLogger.error("Error reporting content: \(error.localizedDescription)", category: .social)
+            return false
+        }
+    }
     
     // MARK: - Friend Requests
     
@@ -1003,6 +1062,31 @@ struct MutualFriend: Codable, Identifiable {
         case name
         case username
         case profilePhotoUrl = "profile_photo_url"
+    }
+}
+
+/// A user the caller has blocked. Populated by `get_blocked_users` RPC.
+struct BlockedUser: Codable, Identifiable {
+    let userId: UUID
+    let name: String?
+    let username: String?
+    let profilePhotoUrl: String?
+    let blockedAt: Date?
+
+    var id: UUID { userId }
+
+    var displayName: String {
+        if let name, !name.isEmpty { return name }
+        if let username, !username.isEmpty { return "@\(username)" }
+        return "Blocked user"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case name
+        case username
+        case profilePhotoUrl = "profile_photo_url"
+        case blockedAt = "blocked_at"
     }
 }
 

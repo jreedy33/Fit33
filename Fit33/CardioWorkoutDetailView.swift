@@ -739,7 +739,8 @@ struct CardioWorkoutDetailView_Previews: PreviewProvider {
                 source: nil,
                 externalId: nil,
                 externalUrl: nil,
-                totalElevationGain: nil
+                totalElevationGain: nil,
+                originApp: nil
             ))
         }
     }

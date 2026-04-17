@@ -699,6 +699,110 @@ class UserManager: ObservableObject {
         
         return baseXP + exerciseBonus + durationBonus
     }
+
+    // MARK: - Cardio gamification (Sprint 2 Q2-5)
+
+    /// Sprint 2 Q2-5 — cardio parity with strength. Mirrors `completeWorkout`
+    /// for cardio sessions: awards XP, updates streak, posts to the friend
+    /// activity feed, progresses daily quests + league points + badges, and
+    /// forwards to challenge progress. Called from `CardioActiveWorkoutView`
+    /// after the cardio row is persisted in Supabase.
+    ///
+    /// XP curve (fitness-expert signoff): deliberately weighted below strength
+    /// to keep XP-per-minute roughly equal to strength's 40–80 XP band.
+    ///   • base 20
+    ///   • +10 per 15 minutes of duration, capped at +40 (60+ min workout)
+    ///   • +10 if distance ≥ 3 km (road / bike / run milestone)
+    ///   • +10 if calories ≥ 300 (sustained effort)
+    /// Typical 30 min run ≈ 40 XP; 45 min bike with 10 km ≈ 60 XP.
+    func completeCardioWorkout(
+        workoutId: String,
+        activityType: String,
+        durationSeconds: Int,
+        distanceMeters: Double,
+        caloriesBurned: Int,
+        averageHeartRate: Int?
+    ) {
+        guard let user = currentUser else { return }
+
+        let xp = calculateCardioXP(
+            durationSeconds: durationSeconds,
+            distanceMeters: distanceMeters,
+            caloriesBurned: caloriesBurned
+        )
+
+        user.totalWorkouts += 1
+        addXP(xp)
+        updateStreak()
+
+        do {
+            try viewContext.save()
+            checkForAchievements()
+            scheduleDebouncedCloudSync()
+        } catch {
+            #if DEBUG
+            AppLogger.error("Error completing cardio workout: \(error.localizedDescription)", category: .workout)
+            #endif
+        }
+
+        let totalWorkouts = Int(user.totalWorkouts)
+        let currentStreak = Int(user.currentStreak)
+
+        Task {
+            // League points (+50) — parity with strength workouts.
+            await WeeklyLeagueService.shared.addPoints(source: .workout)
+
+            // Daily quest progression. Cardio has no sets, so pass 0.
+            await DailyQuestService.shared.onWorkoutCompleted(
+                durationSeconds: durationSeconds,
+                totalSets: 0
+            )
+
+            // Challenge progression — reuse the Strava pipeline since it already
+            // gates on workoutType + distance/duration + handles run/walk/
+            // active_minutes/workout_streak.
+            await ChallengeService.shared.checkStravaWorkoutForChallenges(
+                workoutType: activityType,
+                distanceMeters: distanceMeters,
+                durationSeconds: durationSeconds,
+                source: "cardio"
+            )
+
+            // Badges (total workouts + streak milestones).
+            await BadgeService.shared.onWorkoutCompleted(totalWorkouts: totalWorkouts)
+            await BadgeService.shared.onStreakUpdated(streak: currentStreak)
+            StreakShieldService.shared.checkAndAwardShield(totalWorkouts: totalWorkouts)
+
+            // Friend activity feed — respect the same privacy opt-out as
+            // `completeWorkout`.
+            guard !PrivacySettingsManager.shared.hideFriendActivity else {
+                AppLogger.debug("[PRIVACY] Skipping cardio activity feed post — friend activity hidden", category: .social)
+                return
+            }
+            await ActivityFeedService.shared.postCardioActivity(
+                workoutId: workoutId,
+                activityType: activityType,
+                durationSeconds: durationSeconds,
+                distanceMeters: distanceMeters,
+                caloriesBurned: caloriesBurned,
+                averageHeartRate: averageHeartRate,
+                xpEarned: Int(xp)
+            )
+        }
+    }
+
+    private func calculateCardioXP(
+        durationSeconds: Int,
+        distanceMeters: Double,
+        caloriesBurned: Int
+    ) -> Int32 {
+        let base: Int32 = 20
+        let fifteenMinChunks = Int32(durationSeconds / (15 * 60))
+        let durationBonus = min(Int32(40), fifteenMinChunks * 10)
+        let distanceBonus: Int32 = distanceMeters >= 3000 ? 10 : 0
+        let calorieBonus: Int32 = caloriesBurned >= 300 ? 10 : 0
+        return base + durationBonus + distanceBonus + calorieBonus
+    }
     
     private func checkForAchievements() {
         guard let user = currentUser else { return }

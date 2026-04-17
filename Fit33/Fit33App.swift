@@ -685,6 +685,10 @@ struct Fit33App: App {
                             
                             // Priority 7: Update badge with real counts now that data is fresh
                             await NotificationManager.shared.updateBadgeCount()
+
+                            // Priority 8 (Sprint 2 Q2-34): drain any queued cloud writes
+                            // that failed while offline / during a previous finish.
+                            await MainActor.run { CloudSyncRetryQueue.shared.drainIfDue() }
                         }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")

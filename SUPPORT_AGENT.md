@@ -55,7 +55,7 @@ The Support Agent must maintain expert-level understanding of:
 | **Home** (Tab 1) | `DashboardView` | Widgets: streak, hydration, weight, steps, programs, daily quests, weekly league, recovery day card |
 | **Workout** (Tab 2) | `WorkoutTabView` | Workout generator, active workout tracking, workout history, exercise library |
 | **Social** (Tab 3) | `FriendsTabView` | Friends list, friend requests, rankings, 1v1 challenges, group challenges, community challenges, shared workouts |
-| **Meals** (Tab 4) | `MealPlanView` | Food search (USDA), barcode scanner, meal logging, macro tracking, recipe browser, shopping list, smart meal recommendations |
+| **Meals** (Tab 4) | `MealPlanView` | Food search (USDA), nutrition-label OCR (camera), meal logging, macro tracking, recipe browser, shopping list, smart meal recommendations |
 | **Stats** (Tab 5) | `WorkoutProgressView` | XP & levels, workout charts, muscle heatmap, achievements, personal records, body composition |
 
 #### Workout System (Deep Knowledge Required)
@@ -331,6 +331,17 @@ The Support Agent owns and maintains the FAQ page. See `FAQ_PLAN.md` for the com
 - **CMS Moderation page tabs**: Queue, Overview (stats/repeat offenders), Suspensions (active/history/lift), Blocks (from existing `user_blocks` table).
 - **User detail integration**: `/users/[id]` now has Moderation tab showing reports against user + suspension history.
 - **FAQ impact**: May need new FAQ entries for "How do I report someone?", "Why was my account suspended?", "How do I appeal a suspension?".
+
+### 2026-04-18: Blocking & Reporting (Sprint 2, App Store Compliance)
+
+**Users can now block and report from anywhere that renders user-generated content.**
+
+- **Settings → Privacy & Security → Blocked Users**: new `BlockedUsersView` lists every user the caller has blocked (via `get_blocked_users` RPC) with name, avatar, block date, and an "Unblock" button.
+- **Profile → Block**: `FriendProfileView` exposes a Block action in both the friend and non-friend states. Blocking immediately removes the user from feeds, chats, and suggested-friends.
+- **Long-press → Report & Block**: `PrivateChallengeDetailView` chat messages from other users and `FriendActivityFeedView` cards both expose a `.contextMenu` "Report & Block" action. Tapping it confirms via `.confirmationDialog`, then calls `FriendService.reportContent(...)` (writes to `content_moderation_log` with `flagged_categories=["user_report"]`) AND `FriendService.blockUser(...)` in parallel.
+- **Sender's own flagged posts**: when the moderation webhook marks a sender's own chat/feed row as `is_hidden`, the row is now removed in real time via Supabase realtime UPDATE subscriptions. No more "why did my message reappear for a few seconds" bug.
+- **Scanner copy**: all user-facing copy (Terms, Privacy Policy, this Support doc) calls it "nutrition label lookup (photo-based OCR)". The app does NOT do UPC/EAN barcode lookups. Support responses should match.
+- **FAQ additions needed**: "How do I unblock someone?" (Settings → Privacy & Security → Blocked Users → Unblock), "What happens when I block someone?" (removed from feeds, chats, league; can't see your profile), "How do I report a specific message?" (long-press message or feed card → Report & Block).
 
 ### 2026-03-27: WHOOP Integration
 

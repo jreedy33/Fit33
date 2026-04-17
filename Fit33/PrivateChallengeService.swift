@@ -435,6 +435,11 @@ class PrivateChallengeService: ObservableObject {
     /// Detail views observe this to auto-refresh their member list.
     @Published var memberChangeToken = UUID()
     @Published var chatMessageToken = UUID()
+
+    /// Sprint 2 Q2-46 — set of chat message IDs that the moderation webhook
+    /// flipped to `is_hidden = true` during this session. Chat UIs must filter
+    /// these out regardless of whether the refetched row still contains them.
+    @Published var hiddenChatMessageIds: Set<UUID> = []
     
     /// Realtime channel for live updates
     private var realtimeChannel: RealtimeChannelV2?
@@ -1126,7 +1131,11 @@ class PrivateChallengeService: ObservableObject {
                 ))
                 .execute()
                 .value
-            
+
+            // Sprint 2 Q2-35 — flush queued push notifications so recipients
+            // see chat messages pushed in-app while they're backgrounded.
+            PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "private_challenge_chat")
+
             return .sent(messageId: messageId)
         } catch {
             AppLogger.error("Error sending private challenge message: \(error.localizedDescription)", category: .social)
@@ -1232,6 +1241,15 @@ class PrivateChallengeService: ObservableObject {
             schema: "public",
             table: "private_challenge_chat"
         )
+
+        // Sprint 2 Q2-46 — pick up is_hidden flips from the moderation
+        // webhook so a flagged message disappears from the sender's own chat
+        // in real time (previously persisted locally until refetch).
+        let chatUpdates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "private_challenge_chat"
+        )
         
         // Handle member changes → instant UI refresh
         Task {
@@ -1276,7 +1294,22 @@ class PrivateChallengeService: ObservableObject {
                 chatMessageToken = UUID()
             }
         }
-        
+
+        Task {
+            for await action in chatUpdates {
+                let record = action.record
+                let isHidden = (record["is_hidden"] as? AnyJSON)?.boolValue ?? false
+                guard isHidden else { continue }
+                let idStr = (record["id"] as? AnyJSON)?.stringValue
+                guard let id = idStr, let messageId = UUID(uuidString: id) else { continue }
+                AppLogger.info("Realtime: chat \(messageId.uuidString.prefix(8)) hidden by moderation", category: .social)
+                await MainActor.run {
+                    self.hiddenChatMessageIds.insert(messageId)
+                    self.chatMessageToken = UUID()
+                }
+            }
+        }
+
         await channel.subscribe()
         realtimeChannel = channel
         AppLogger.info("Successfully subscribed to private real-time updates", category: .social)

@@ -559,44 +559,48 @@ struct RecentCardioWorkoutCard: View {
     private var isFromHealthKit: Bool {
         cardioWorkout.source == "healthkit"
     }
-    
+
+    /// Canonical origin (Strava/Nike/Peloton/Garmin/etc.) resolved from
+    /// the row's `origin_app` column, or the legacy `source` column for
+    /// pre-migration OAuth rows.
+    private var origin: WorkoutOrigin { cardioWorkout.resolvedOrigin }
+
     private var sourceDisplayName: String {
-        if cardioWorkout.isFromStrava { return "Strava" }
-        if isFromHealthKit {
-            if let name = cardioWorkout.workoutName {
-                if name.contains("Nike") { return "Nike Run Club" }
-                if name.contains("Apple") { return "Apple Watch" }
-                if name.contains("Peloton") { return "Peloton" }
-            }
-            return "Health"
-        }
+        if origin != .unknown { return origin.displayName }
+        if isFromHealthKit { return "Health" }
         return "Cardio"
     }
-    
+
     @ViewBuilder
     private var sourceBadge: some View {
-        if cardioWorkout.isFromStrava {
+        if origin != .unknown {
+            // Every known third-party origin (Strava, Nike, Peloton, Garmin,
+            // Zwift, Apple Watch, Fitbit, WHOOP, Oura, MapMyRun, ...) gets
+            // a brand-colored capsule driven by WorkoutOriginMapper.
             HStack(spacing: 3) {
-                Image(systemName: "figure.run")
+                Image(systemName: origin.badgeIcon)
                     .font(.system(size: 9, weight: .bold))
-                Text("Strava")
+                Text(origin.displayName)
                     .font(.caption2)
                     .fontWeight(.bold)
             }
-            .foregroundColor(.white)
+            .foregroundColor(origin.badgeForeground)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(
                 Capsule()
                     .fill(
                         LinearGradient(
-                            colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color(red: 252/255, green: 100/255, blue: 30/255)],
+                            colors: origin.badgeGradient,
                             startPoint: .leading,
                             endPoint: .trailing
                         )
                     )
             )
         } else if isFromHealthKit {
+            // Unknown third-party app that wrote to Apple Health — fall
+            // back to the generic Apple Health heart so the user still
+            // sees the transport source.
             HStack(spacing: 3) {
                 Image(systemName: "heart.fill")
                     .font(.system(size: 9, weight: .bold))

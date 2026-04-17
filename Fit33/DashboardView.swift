@@ -188,7 +188,10 @@ struct DashboardView: View {
                         .padding(.bottom, 16)
                     
                     DashboardNotificationBannerWrapper()
-                    
+
+                    // Sprint 2 Q2-34 — shows when a workout save failed offline and is queued for retry.
+                    DashboardOfflineSyncChip()
+
                     // Header with user info
                     headerView
                         .padding(.bottom, 16)

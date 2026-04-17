@@ -160,15 +160,23 @@ extension ActiveWorkoutView {
             }
         }
         
-        // Save workout to cloud for sync across devices
+        // Save workout to cloud for sync across devices. Failures enqueue
+        // onto the persistent retry queue (Sprint 2 Q2-34) so a network blip
+        // at finish-time no longer silently loses sets.
         if SupabaseManager.shared.isAuthenticated {
             Task {
                 do {
                     try await SupabaseManager.shared.saveWorkoutToCloud(workout: workout)
                 } catch {
                     AppLogger.error("⚠️ Failed to sync workout to cloud: \(error)", category: .network)
+                    await MainActor.run {
+                        CloudSyncRetryQueue.shared.enqueueWorkoutCloudSync(workout)
+                    }
                 }
             }
+        } else {
+            // Not authenticated yet — still queue so it flushes after auth recovers.
+            CloudSyncRetryQueue.shared.enqueueWorkoutCloudSync(workout)
         }
         
         // 🔧 Show completion view FIRST (before clearing active state)

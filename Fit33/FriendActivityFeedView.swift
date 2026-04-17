@@ -143,6 +143,14 @@ class ActivityFeedService: ObservableObject {
     func removeBlockedUser(_ userId: UUID) {
         activities.removeAll { $0.userId == userId }
     }
+
+    /// Sprint 2 Q2-46 — called from `RealtimeService` when a `friend_activity_feed`
+    /// row flips to `is_hidden = true` (moderation webhook). Removes the row
+    /// from the in-memory feed so the sender no longer sees their own
+    /// flagged post.
+    func applyModerationHide(activityId: UUID) {
+        activities.removeAll { $0.activityId == activityId }
+    }
     
     func fetchFeed() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
@@ -159,9 +167,14 @@ class ActivityFeedService: ObservableObject {
                     .rpc("get_friend_activity_feed", params: FeedParams(p_limit: 20, p_offset: 0))
                     .execute()
                     .value
-                
+
+                // Sprint 2 Q2-7 — defensive client-side filter against stale
+                // server responses that predate a block.
+                let blocked = await MainActor.run { FriendService.shared.blockedUserIds }
+                let filtered = result.filter { !blocked.contains($0.userId) }
+
                 await MainActor.run {
-                    self.activities = result
+                    self.activities = filtered
                     self.isLoading = false
                 }
                 return
@@ -204,6 +217,11 @@ class ActivityFeedService: ObservableObject {
                 .execute()
             
             HapticManager.notification(.success)
+            // Sprint 2 Q2-35 — flush push queue so the activity owner gets a
+            // push about the reaction (previously only the in-app badge updated).
+            await MainActor.run {
+                PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "activity_reaction")
+            }
             await fetchFeed()
             return true
         } catch {
@@ -249,6 +267,43 @@ class ActivityFeedService: ObservableObject {
         }
     }
     
+    /// Sprint 2 Q2-5 — post a cardio_completed row to friend_activity_feed so
+    /// cardio workouts show up in friends' feeds the same way strength does.
+    func postCardioActivity(
+        workoutId: String,
+        activityType: String,
+        durationSeconds: Int,
+        distanceMeters: Double,
+        caloriesBurned: Int,
+        averageHeartRate: Int?,
+        xpEarned: Int
+    ) async {
+        do {
+            struct Params: Encodable {
+                let p_workout_id: String
+                let p_activity_type: String
+                let p_duration_seconds: Int
+                let p_distance_meters: Double
+                let p_calories_burned: Int
+                let p_average_heart_rate: Int?
+                let p_xp_earned: Int
+            }
+            try await SupabaseManager.shared.supabaseClient
+                .rpc("post_cardio_activity", params: Params(
+                    p_workout_id: workoutId,
+                    p_activity_type: activityType,
+                    p_duration_seconds: durationSeconds,
+                    p_distance_meters: distanceMeters,
+                    p_calories_burned: caloriesBurned,
+                    p_average_heart_rate: averageHeartRate,
+                    p_xp_earned: xpEarned
+                ))
+                .execute()
+        } catch {
+            AppLogger.error("❌ Failed to post cardio activity: \(error)", category: .social)
+        }
+    }
+
     func fetchMyReactions() async {
         do {
             struct Params: Encodable {
@@ -403,6 +458,7 @@ struct FriendActivityCard: View {
     @State private var isSendingReaction = false
     @State private var showWorkoutPreview = false
     @State private var showingProfile: ProfileUser?
+    @State private var showReportConfirmation = false
     
     private let quickEmojis = ["🔥", "💪", "🙌", "🏆", "👏", "🎯"]
     
@@ -478,6 +534,38 @@ struct FriendActivityCard: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
         .sleekCard(cornerRadius: CornerRadius.xl, accentColor: muscleGradient.first ?? .cyan)
+        .contextMenu {
+            // Sprint 2 Q2-7 — long-press Report & Block on feed activities
+            Button(role: .destructive) {
+                showReportConfirmation = true
+            } label: {
+                Label("Report & Block", systemImage: "flag.fill")
+            }
+        }
+        .confirmationDialog(
+            "Report this post?",
+            isPresented: $showReportConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Report & Block", role: .destructive) {
+                Task {
+                    let snippet = (activity.metadata.muscleGroups?.joined(separator: ",") ?? "") +
+                        " | type=\(activity.activityType)"
+                    _ = await FriendService.shared.reportContent(
+                        tableName: "friend_activity_feed",
+                        recordId: activity.activityId.uuidString,
+                        reportedUserId: activity.userId,
+                        contentSnippet: snippet,
+                        reason: "Reported from activity feed"
+                    )
+                    _ = await FriendService.shared.blockUser(userId: activity.userId)
+                    HapticManager.notification(.success)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("We'll hide this post, flag it for review, and block \(activity.displayName). You can manage blocks in Settings → Privacy & Security → Blocked Users.")
+        }
         .sheet(isPresented: $showWorkoutPreview) {
             if let workoutId = activity.workoutId {
                 FriendWorkoutPreviewView(

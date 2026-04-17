@@ -201,6 +201,10 @@ final class OuraService: ObservableObject {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "oura", isConnected: true)
         }
 
+        // Remove any HealthKit-imported Oura rows so the Oura OAuth feed
+        // is the single source of truth for this user going forward.
+        await HealthDataService.shared.removeHealthKitDuplicates(for: .oura)
+
         await fetchPersonalInfo()
         await syncAllData()
     }

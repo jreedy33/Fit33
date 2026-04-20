@@ -29,10 +29,11 @@ class ExerciseNicknameService: ObservableObject {
     
     /// Get the display name for an Exercise object
     func displayName(for exercise: Exercise) -> String {
-        guard let name = exercise.name else {
-            // If exercises are still loading, show loading state
-            return ExerciseLibraryService.shared.isExercisesReady ? "Exercise" : "Loading..."
-        }
+        // Defensive: return an empty string for a nil-name row so callers can filter it out.
+        // Rendering "Exercise" / "Loading..." on a grey card is the exact placeholder state
+        // we never want to show — the Exercise Library view now filters these rows before
+        // they reach the card renderer (see ExerciseLibraryView.body).
+        guard let name = exercise.name, !name.isEmpty else { return "" }
         return displayName(for: name)
     }
     

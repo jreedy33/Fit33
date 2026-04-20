@@ -359,8 +359,18 @@ final class HealthDataService: ObservableObject {
             }
         }
         
-        // Save WHOOP workouts to cardio_workouts (using existing FitbitCardioWorkoutInsert)
+        // Save WHOOP workouts to cardio_workouts (using existing FitbitCardioWorkoutInsert).
+        //
+        // Dedup policy (see Support doc "WHOOP duplicate workout rows"):
+        //   WHOOP's API can return multiple `workout` records for a single
+        //   physical session (e.g. an auto-detected generic "Activity" with
+        //   sport_name=nil alongside the user-logged specific sport). Our
+        //   legacy guard only deduped on `(source='whoop', external_id)`,
+        //   so each returned id produced its own row. We now also reject any
+        //   incoming WHOOP workout whose time window overlaps ≥50% with an
+        //   existing WHOOP-origin row, keeping the higher-quality row.
         var savedWorkouts = 0
+        var skippedAsDuplicate = 0
         for workout in WhoopService.shared.recentWorkouts {
             guard workout.scoreState == "SCORED" else { continue }
             
@@ -371,9 +381,10 @@ final class HealthDataService: ObservableObject {
             let kilojoules = workout.score?.kilojoule ?? 0
             let calories = kilojoules / 4.184
             
+            let activityType = mapWhoopSportToActivityType(sportId: workout.sportId, sportName: workout.sportName)
             let insert = FitbitCardioWorkoutInsert(
                 userId: userId.uuidString,
-                activityType: mapWhoopSportToActivityType(workout.sportName),
+                activityType: activityType,
                 workoutName: workout.sportName ?? "WHOOP Workout",
                 goalType: "open_goal",
                 goalAchieved: true,
@@ -393,7 +404,8 @@ final class HealthDataService: ObservableObject {
             )
             
             do {
-                let existing: [CardioWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
+                // 1. Exact external_id match (same WHOOP workout, already synced).
+                let exact: [CardioWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
                     .from("cardio_workouts")
                     .select()
                     .eq("user_id", value: userId.uuidString)
@@ -401,14 +413,85 @@ final class HealthDataService: ObservableObject {
                     .eq("external_id", value: workout.id)
                     .execute()
                     .value
-                
-                if existing.isEmpty {
-                    try await SupabaseManager.shared.supabaseClient
-                        .from("cardio_workouts")
-                        .insert(insert)
-                        .execute()
-                    savedWorkouts += 1
+                if !exact.isEmpty { continue }
+
+                // 2. Time-overlap match against any WHOOP-origin row (either
+                //    from a prior OAuth insert with a different external_id,
+                //    or an HK-imported row with origin_app='whoop'). We pull
+                //    candidates by fetching rows that START anywhere in a
+                //    ±2h window around the incoming workout — overlap is
+                //    computed in Swift because Supabase doesn't expose a
+                //    range-overlap operator through the REST client.
+                let windowStart = startDate.addingTimeInterval(-2 * 3600)
+                let windowEnd = endDate.addingTimeInterval(2 * 3600)
+                let candidates: [CardioWorkoutDTO] = try await SupabaseManager.shared.supabaseClient
+                    .from("cardio_workouts")
+                    .select()
+                    .eq("user_id", value: userId.uuidString)
+                    .gte("started_at", value: ISO8601DateFormatter().string(from: windowStart))
+                    .lte("started_at", value: ISO8601DateFormatter().string(from: windowEnd))
+                    .execute()
+                    .value
+
+                let incomingQuality = cardioQualityScore(
+                    activityType: activityType,
+                    durationSeconds: durationSeconds,
+                    caloriesBurned: calories,
+                    distanceMeters: workout.score?.distanceMeter ?? 0,
+                    averageHeartRate: workout.score?.averageHeartRate
+                )
+
+                var overlapLoserIds: [String] = []
+                var shouldSkip = false
+                for candidate in candidates where candidate.resolvedOrigin == .whoop {
+                    guard let candidateStart = isoFmt.date(from: candidate.startedAt),
+                          let candidateEnd = isoFmt.date(from: candidate.completedAt) else { continue }
+                    let overlap = timeRangeOverlapFraction(
+                        aStart: startDate, aEnd: endDate,
+                        bStart: candidateStart, bEnd: candidateEnd
+                    )
+                    if overlap < 0.5 { continue }
+
+                    let candidateQuality = cardioQualityScore(
+                        activityType: candidate.activityType,
+                        durationSeconds: candidate.durationSeconds,
+                        caloriesBurned: candidate.caloriesBurned,
+                        distanceMeters: candidate.distanceMeters,
+                        averageHeartRate: candidate.averageHeartRate
+                    )
+                    if candidateQuality >= incomingQuality {
+                        shouldSkip = true
+                    } else {
+                        overlapLoserIds.append(candidate.id)
+                    }
                 }
+
+                if shouldSkip {
+                    skippedAsDuplicate += 1
+                    continue
+                }
+
+                // Delete any lower-quality overlapping rows before inserting
+                // the richer incoming one, so the history list only shows a
+                // single row for this physical session.
+                for loserId in overlapLoserIds {
+                    do {
+                        try await SupabaseManager.shared.supabaseClient
+                            .from("cardio_workouts")
+                            .delete()
+                            .eq("id", value: loserId)
+                            .execute()
+                        AppLogger.info("[WHOOP] Replaced lower-quality duplicate row \(loserId) with WHOOP id=\(workout.id)", category: .health)
+                    } catch {
+                        AppLogger.warning("[WHOOP] Failed to delete duplicate row \(loserId): \(error.localizedDescription)", category: .health)
+                    }
+                }
+
+                try await SupabaseManager.shared.supabaseClient
+                    .from("cardio_workouts")
+                    .insert(insert)
+                    .execute()
+                savedWorkouts += 1
             } catch {
                 AppLogger.warning("[WHOOP] Failed to save workout \(workout.id): \(error)", category: .health)
             }
@@ -420,7 +503,41 @@ final class HealthDataService: ObservableObject {
             }
         }
         
+        if skippedAsDuplicate > 0 {
+            AppLogger.info("[WHOOP] Skipped \(skippedAsDuplicate) overlapping duplicate workout records", category: .health)
+        }
         AppLogger.info("[WHOOP] HealthDataService sync complete", category: .health)
+    }
+
+    // MARK: - Cardio dedup helpers
+
+    /// Fraction of the shorter of [aStart,aEnd] and [bStart,bEnd] that is
+    /// covered by the other range. Returns 0 when the ranges are disjoint.
+    /// Using the shorter-side denominator means a fully-contained short
+    /// workout inside a longer one still scores 1.0 and is treated as a
+    /// duplicate of the longer record.
+    private func timeRangeOverlapFraction(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) -> Double {
+        let overlapStart = max(aStart, bStart)
+        let overlapEnd = min(aEnd, bEnd)
+        let overlap = overlapEnd.timeIntervalSince(overlapStart)
+        if overlap <= 0 { return 0 }
+        let aLen = max(1, aEnd.timeIntervalSince(aStart))
+        let bLen = max(1, bEnd.timeIntervalSince(bStart))
+        let shorter = min(aLen, bLen)
+        return overlap / shorter
+    }
+
+    /// Rough "richness" score used to decide which of two overlapping cardio
+    /// rows should win. Higher = more descriptive / more data.
+    private func cardioQualityScore(activityType: String, durationSeconds: Int, caloriesBurned: Double, distanceMeters: Double, averageHeartRate: Int?) -> Int {
+        var score = 0
+        let generic: Set<String> = ["other", "workout", "unknown", ""]
+        if !generic.contains(activityType.lowercased()) { score += 10 }
+        if let hr = averageHeartRate, hr > 0 { score += 3 }
+        if distanceMeters > 0 { score += 2 }
+        if caloriesBurned > 0 { score += 1 }
+        if durationSeconds > 0 { score += 1 }
+        return score
     }
     
     // MARK: - WHOOP Insert Models
@@ -490,17 +607,55 @@ final class HealthDataService: ObservableObject {
         }
     }
 
-    private func mapWhoopSportToActivityType(_ sport: String?) -> String {
-        guard let sport = sport?.lowercased() else { return "other" }
+    /// Map a WHOOP workout to one of our canonical `activity_type` keys.
+    ///
+    /// Prefers the numeric `sport_id` (stable across locales) and falls back
+    /// to fuzzy matching on `sport_name`. Covers the common WHOOP sport ids
+    /// published at https://developer.whoop.com/docs/developing/sport-ids —
+    /// any unmapped id still resolves to "other" but the richer auto-detected
+    /// workout will usually take precedence over the generic record via the
+    /// time-overlap dedup in `syncWhoopData`.
+    private func mapWhoopSportToActivityType(sportId: Int?, sportName: String?) -> String {
+        // 1. Sport-id first (deterministic). The ids below are stable
+        //    across WHOOP API versions for the sports we already display.
+        if let id = sportId {
+            switch id {
+            case 0:   return "outdoor_run"             // Running
+            case 1:   return "outdoor_cycle"            // Cycling
+            case 16:  return "swimming"                 // Swim
+            case 28:  return "hiit"                     // HIIT / Functional fitness
+            case 43:  return "outdoor_cycle"            // Mountain Biking
+            case 44:  return "walk"                     // Hiking / Rucking
+            case 45:  return "strength_training"        // Weightlifting
+            case 48:  return "walk"                     // Walking
+            case 59:  return "rowing"                   // Rowing
+            case 63:  return "elliptical"               // Elliptical
+            case 65:  return "treadmill"                // Treadmill (WHOOP sport_id)
+            case 66:  return "yoga"                     // Yoga
+            case 71:  return "yoga"                     // Pilates (grouped with yoga)
+            case 123: return "hiit"                     // HIIT
+            case 125: return "yoga"                     // Meditation — grouped for display
+            case 126: return "strength_training"        // Powerlifting
+            case 127: return "hiit"                     // Rock Climbing — default to hiit bucket
+            case 228: return "strength_training"        // Strength Trainer
+            case 230: return "yoga"                     // Pilates
+            default: break
+            }
+        }
+
+        // 2. Fallback: fuzzy match on sport_name.
+        guard let sport = sportName?.lowercased() else { return "other" }
         if sport.contains("run") { return sport.contains("treadmill") ? "treadmill" : "outdoor_run" }
-        if sport.contains("cycling") || sport.contains("bike") { return "outdoor_cycle" }
+        if sport.contains("treadmill") { return "treadmill" }
+        if sport.contains("cycling") || sport.contains("bike") || sport.contains("cycle") { return "outdoor_cycle" }
         if sport.contains("swim") { return "swimming" }
-        if sport.contains("walk") || sport.contains("hike") { return "walk" }
-        if sport.contains("yoga") || sport.contains("pilates") { return "yoga" }
-        if sport.contains("rowing") { return "rowing" }
-        if sport.contains("strength") || sport.contains("weight") { return "strength_training" }
-        if sport.contains("hiit") || sport.contains("crossfit") || sport.contains("functional") { return "hiit" }
+        if sport.contains("walk") || sport.contains("hike") || sport.contains("ruck") { return "walk" }
+        if sport.contains("yoga") || sport.contains("pilates") || sport.contains("meditation") { return "yoga" }
+        if sport.contains("row") { return "rowing" }
+        if sport.contains("strength") || sport.contains("weight") || sport.contains("lift") || sport.contains("powerlifting") { return "strength_training" }
+        if sport.contains("hiit") || sport.contains("crossfit") || sport.contains("functional") || sport.contains("circuit") { return "hiit" }
         if sport.contains("elliptical") { return "elliptical" }
+        if sport.contains("stair") { return "stair_climber" }
         return "other"
     }
     

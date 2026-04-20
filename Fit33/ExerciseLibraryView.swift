@@ -364,40 +364,33 @@ struct ExerciseLibraryView: View {
                     ScrollView {
                         Color.clear.frame(height: 0).id("top")
                         
-                        if filteredExercises.isEmpty && !exerciseLibrary.isExercisesReady {
-                            VStack(spacing: Spacing.md) {
-                                ProgressView()
-                                    .scaleEffect(1.2)
-                                    .tint(.blue)
-                                Text("Loading exercises...")
-                                    .font(.ds_bodyMedium)
-                                    .foregroundColor(.secondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, Spacing.xxl)
-                        } else {
-                            LazyVStack(spacing: 10) {
-                                ForEach(Array(filteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
+                        // No loading / placeholder state — preWarmCache() inline-seeds from the
+                        // bundle JSON on a background context during app init, so by the time
+                        // this view appears, Core Data already has real Exercise rows to render.
+                        // If the list is briefly empty on a very fast tap, show nothing (not a
+                        // grey placeholder card) until .onChange(isExercisesReady) refreshes.
+                        LazyVStack(spacing: 10) {
+                            ForEach(Array(filteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
+                                // Skip any faulted row whose name hasn't materialized yet —
+                                // rendering those produced the grey "Exercise" placeholder cards.
+                                if let name = exercise.name, !name.isEmpty {
                                     NavigationLink(value: exercise) {
                                         CompactExerciseRowContent(exercise: exercise, showChevron: true)
                                     }
                                     .buttonStyle(PlainButtonStyle())
                                     .simultaneousGesture(TapGesture().onEnded {
-                                        if let name = exercise.name {
-                                            ExerciseLibraryFilterCache.shared.trackExerciseSelection(exerciseName: name)
-                                            VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
-                                        }
+                                        ExerciseLibraryFilterCache.shared.trackExerciseSelection(exerciseName: name)
+                                        VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
                                     })
-                                    // 🚀 Smart prefetch: preload video when exercise becomes visible
                                     .onAppear {
                                         prefetchVisibleExercise(exercise: exercise, index: index)
                                     }
                                 }
                             }
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.top, 4)
-                            .padding(.bottom, 20)
                         }
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.top, 4)
+                        .padding(.bottom, 20)
                     }
                     .scrollDismissesKeyboard(.immediately)
                     .id(forceRenderID)

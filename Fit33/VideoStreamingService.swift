@@ -492,18 +492,10 @@ class VideoStreamingService: ObservableObject {
     /// constrained path. Logs at `.debug` for battery/perf visibility.
     ///
     /// Sprint 3 (Q2-30) unified gate used by every prefetch entry point.
+    /// Sprint 4 — reads the nonisolated snapshot on `NetworkMonitor.shared`,
+    /// which is safe from any actor context without a main-queue hop.
     private func shouldSkipBackgroundPrefetch(reason: String) -> Bool {
-        // `NetworkMonitor.shared.shouldAvoidBackgroundTraffic` is main-actor
-        // isolated. We read it via DispatchQueue.main.sync when we're off the
-        // main queue; if we're already on main, we read directly.
-        let shouldSkip: Bool = {
-            if Thread.isMainThread {
-                return NetworkMonitor.shared.shouldAvoidBackgroundTraffic
-            }
-            return DispatchQueue.main.sync {
-                NetworkMonitor.shared.shouldAvoidBackgroundTraffic
-            }
-        }()
+        let shouldSkip = NetworkMonitor.shared.shouldAvoidBackgroundTraffic
         if shouldSkip {
             AppLogger.debug("📶 Skipping video prefetch — expensive/constrained network (\(reason))", category: .performance)
         }

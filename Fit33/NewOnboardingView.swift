@@ -351,352 +351,28 @@ struct NewOnboardingView: View {
             // Main onboarding flow (auth standard mode + all other steps share the same layout
             // so keyboard stays up seamlessly when transitioning between text-input steps)
             else if currentStep != .limitations && currentStep != .confirmation {
-                let keyboardUp = keyboardObserver.keyboardHeight > 0
-                
-                ZStack(alignment: .bottom) {
-                    // Main content
-                    VStack(spacing: 0) {
-                        // Header
-                        onboardingSharedHeader(compact: keyboardUp)
-                            .animation(nil, value: currentStep)  // Don't animate header on step changes
-                        
-                        // Content (type-erased AnyView — NO .id() here, it would break @FocusState keyboard transfer)
-                        currentStepContent
-                            .animation(.easeInOut(duration: 0.25), value: currentStep)
-                        
-                        Spacer()
-                    }
-                    
-                    // Floating button bar (auth step has custom buttons, others use shared bar)
-                    if currentStep == .auth && hasStartedAuth {
-                        VStack(spacing: 0) {
-                            HStack(spacing: 12) {
-                                if isSignUp && isOnConfirmPasswordStep {
-                                    Button(action: {
-                                        isOnConfirmPasswordStep = false
-                                        confirmPassword = ""
-                                    }) {
-                                        Image(systemName: "chevron.left")
-                                            .font(.ds_labelLarge)
-                                            .foregroundColor(.gray)
-                                            .frame(width: 52, height: 52)
-                                            .background(Circle().fill(Color(.systemGray6)))
-                                            .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
-                                    }
-                                    .accessibilityLabel("Go back")
-                                    .accessibilityHint("Returns to previous step")
-                                } else {
-                                    Button(action: {
-                                        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                                            hasStartedAuth = false
-                                            focusedField = nil
-                                        }
-                                    }) {
-                                        Image(systemName: "chevron.left")
-                                            .font(.ds_labelLarge)
-                                            .foregroundColor(.gray)
-                                            .frame(width: 52, height: 52)
-                                            .background(Circle().fill(Color(.systemGray6)))
-                                            .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
-                                    }
-                                    .accessibilityLabel("Go back")
-                                    .accessibilityHint("Returns to previous step")
-                                }
-                                
-                                Button(action: { 
-                                    if isSignUp && !isOnConfirmPasswordStep && isPasswordValid {
-                                        isOnConfirmPasswordStep = true
-                                    } else {
-                                        handleAuth()
-                                    }
-                                }) {
-                                    HStack(spacing: 8) {
-                                        if supabaseManager.isLoading {
-                                            ProgressView()
-                                                .progressViewStyle(CircularProgressViewStyle(tint: isAuthFormValid ? .blue : .gray))
-                                                .scaleEffect(0.9)
-                                        }
-                                        Text(isSignUp ? "Continue" : "Sign In")
-                                            .font(.headline)
-                                            .fontWeight(.semibold)
-                                    }
-                                    .foregroundStyle(
-                                        isAuthFormValid
-                                            ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
-                                            : AnyShapeStyle(Color.gray)
-                                    )
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, Spacing.md)
-                                    .background(Capsule().fill(Color(.systemGray6)))
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(
-                                                isAuthFormValid
-                                                    ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
-                                                    : AnyShapeStyle(Color.gray.opacity(0.3)),
-                                                lineWidth: 2
-                                            )
-                                    )
-                                }
-                                .disabled(!isAuthFormValid || supabaseManager.isLoading)
-                                .accessibilityLabel(isSignUp ? "Continue" : "Sign In")
-                                .accessibilityHint("Proceeds to next onboarding step")
-                            }
-                        }
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
-                        .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
-                        .animation(nil, value: isOnConfirmPasswordStep)
-                    } else {
-                        onboardingSharedButtonBar
-                            .padding(.horizontal, Spacing.lg)
-                            .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
-                            .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
-                            .animation(nil, value: currentStep)
-                            .animation(nil, value: isCheckingUsername)
-                    }
-                }
+                mainOnboardingFlow
             }
             
             // Limitations step - separate layout with bounded scroll area
             else if currentStep == .limitations {
-                VStack(spacing: 0) {
-                    // Header
-                    onboardingSharedHeader(compact: false)
-                    
-                    // Scrollable list container - fills remaining space above buttons
-                    ScrollView(showsIndicators: true) {
-                        VStack(spacing: 16) {
-                            // "No limitations" option at top for easy access
-                            Button(action: { 
-                                selectionFeedback.selectionChanged()
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    selectedLimitations.removeAll()
-                                    limitationAccommodations.removeAll()
-                                }
-                            }) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: selectedLimitations.isEmpty ? "checkmark.circle.fill" : "circle")
-                                        .font(.ds_heading3)
-                                    Text("No injuries or limitations")
-                                        .font(.subheadline.weight(.semibold))
-                                    Spacer()
-                                }
-                                .foregroundStyle(
-                                    selectedLimitations.isEmpty
-                                        ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
-                                        : AnyShapeStyle(Color.secondary)
-                                )
-                                .padding(.vertical, 14)
-                                .padding(.horizontal, Spacing.md)
-                                .background(
-                                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                                        .fill(selectedLimitations.isEmpty 
-                                            ? AnyShapeStyle(Color.green.opacity(0.1))
-                                            : AnyShapeStyle(LinearGradient(
-                                                colors: colorScheme == .dark 
-                                                    ? [Color(white: 0.14), Color(white: 0.10)]
-                                                    : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            ))
-                                        )
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                                        .stroke(selectedLimitations.isEmpty ? Color.green.opacity(0.3) : Color.clear, lineWidth: 1.5)
-                                )
-                            }
-                            .padding(.bottom, 12)
-                            
-                            // Limitation options
-                            VStack(spacing: 10) {
-                                ForEach(AffectedArea.commonAreas, id: \.self) { area in
-                                    limitationRowWithDropdown(for: area)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.top, 8)
-                        .padding(.bottom, 16)
-                    }
-                    .clipped() // Hard clip at the scroll boundary
-                    
-                    // Fixed button bar at bottom
-                    onboardingSharedButtonBar
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.top, 16)
-                        .padding(.bottom, 50)
-                }
+                limitationsStepView
             }
-            
+
             // Confirmation step - separate layout with bounded scroll area
             else if currentStep == .confirmation {
-                VStack(spacing: 0) {
-                    // Header
-                    onboardingSharedHeader(compact: false)
-                    
-                    // Scrollable list container - fills remaining space above buttons
-                    ScrollView(showsIndicators: true) {
-                        VStack(spacing: 12) {
-                            // Show error message if signup failed
-                            if showError && !errorMessage.isEmpty {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "exclamationmark.triangle.fill")
-                                            .foregroundColor(.red)
-                                        Text("Account Creation Failed")
-                                            .font(.subheadline)
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(.red)
-                                    }
-                                    Text(errorMessage)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    
-                                    if errorMessage.contains("weak") || errorMessage.contains("password") {
-                                        Text("💡 Tip: Use at least 8 characters with letters, numbers, and symbols")
-                                            .font(.caption2)
-                                            .foregroundColor(.blue)
-                                            .padding(.top, 4)
-                                        
-                                        Button(action: {
-                                            showError = false
-                                            errorMessage = ""
-                                            navigateTo(.auth)
-                                        }) {
-                                            Text("Change Password")
-                                                .font(.caption)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(.white)
-                                                .padding(.horizontal, Spacing.md)
-                                                .padding(.vertical, Spacing.xs)
-                                                .background(Capsule().fill(Color.blue))
-                                        }
-                                        .padding(.top, 4)
-                                    }
-                                }
-                                .padding()
-                                .background(RoundedRectangle(cornerRadius: 10).fill(Color.red.opacity(0.1)))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.red.opacity(0.3), lineWidth: 1))
-                                .padding(.bottom, 8)
-                            }
-                            
-                            confirmationRowSimple(title: "Name", value: name.isEmpty ? "-" : name, editStep: .auth, focusField: .name)
-                            confirmationRowSimple(title: "Email", value: email.isEmpty ? "-" : email, editStep: .auth, focusField: .email)
-                            confirmationRowSimple(title: "Username", value: username.isEmpty ? "-" : "@\(username)", editStep: .username, focusField: .username)
-                            confirmationRowSimple(title: "Birthday", value: birthday, editStep: .basics, focusField: .birthday)
-                            confirmationRowSimple(title: "Gender", value: selectedGender ?? "Not specified", editStep: .basics)
-                            confirmationRowSimple(title: "Height", value: formatHeightDisplay(), editStep: .body, focusField: .height)
-                            confirmationRowSimple(title: "Weight", value: "\(weight) \(weightUnit == .lbs ? "lbs" : "kg")", editStep: .body, focusField: .weight)
-                            confirmationRowSimple(title: "Goals", value: selectedGoals.joined(separator: ", "), editStep: .goal)
-                            confirmationRowSimple(title: "Experience", value: selectedExperience, editStep: .experience)
-                            confirmationRowSimple(title: "Location", value: selectedWorkoutLocation.rawValue.capitalized, editStep: .workoutLocation)
-                            confirmationRowSimple(title: "Equipment", value: selectedEquipment.isEmpty ? "None" : Array(selectedEquipment).sorted().joined(separator: ", "), editStep: .equipment)
-                            confirmationRowSimple(title: "Limitations", value: selectedLimitations.isEmpty ? "None" : "\(selectedLimitations.count) selected", editStep: .limitations)
-                            confirmationRowSimple(title: "Days/Week", value: "\(selectedDays)", editStep: .schedule)
-                        }
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.top, 8)
-                        .padding(.bottom, 16)
-                    }
-                    .clipped() // Hard clip at the scroll boundary
-                    
-                    // Fixed button bar at bottom
-                    onboardingSharedButtonBar
-                        .padding(.horizontal, Spacing.lg)
-                        .padding(.top, 16)
-                        .padding(.bottom, 50)
-                }
+                confirmationStepView
             }
         }
         .preferredColorScheme(.light)
         .sheet(isPresented: $showTermsSheet) {
             TermsAndConditionsSheet()
         }
-        .onChange(of: focusedField) { oldField, newField in
-            // When user focuses on auth fields, show the onboarding header
-            if currentStep == .auth && !hasStartedAuth {
-                if newField == .email || newField == .password || newField == .confirmPassword {
-                    let fieldToFocus = newField  // Capture the field
-                    // Trigger layout change
-                    hasStartedAuth = true
-                    // Re-establish focus immediately and after animations
-                    DispatchQueue.main.async {
-                        focusedField = fieldToFocus
-                    }
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(0.1))
-                        guard !Task.isCancelled else { return }
-                        focusedField = fieldToFocus
-                    }
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(0.3))
-                        guard !Task.isCancelled else { return }
-                        focusedField = fieldToFocus
-                    }
-                }
-            }
+        .onChange(of: focusedField) { _, newField in
+            handleFocusedFieldChange(newField)
         }
         .onChange(of: currentStep) { oldStep, newStep in
-            // Set focus based on the new step
-            switch newStep {
-            case .auth:
-                // Keep hasStartedAuth true when going back from username (user wants to see their filled form)
-                // Only reset to welcome screen when coming from far away steps
-                if oldStep == .username || oldStep == .phoneNumber {
-                    hasStartedAuth = true  // Keep in standard mode to show filled form
-                    // Check if we need to restore confirm password step
-                    // If confirm password has content, user was on that step
-                    if !confirmPassword.isEmpty && passwordsMatch {
-                        isOnConfirmPasswordStep = true
-                        DispatchQueue.main.async {
-                            focusedField = .confirmPassword
-                        }
-                    } else {
-                        // Focus on password field (or email if password empty)
-                        DispatchQueue.main.async {
-                            focusedField = password.isEmpty ? .email : .password
-                        }
-                    }
-                } else if oldStep != .auth {
-                    hasStartedAuth = false  // Reset to welcome screen
-                }
-            case .phoneNumber:
-                focusedField = .phoneNumber
-            case .username:
-                // Check if there's a pending social username to pre-fill (from Facebook/Instagram)
-                if let socialUsername = UserDefaults.standard.string(forKey: "pending_social_username"), username.isEmpty {
-                    username = socialUsername
-                    UserDefaults.standard.removeObject(forKey: "pending_social_username")
-                    AppLogger.debug("Pre-filled username from social login: @\(socialUsername)", category: .auth)
-                }
-                // Transfer focus immediately so keyboard stays up when coming from auth/phone
-                let targetField: FocusedField = name.isEmpty ? .name : .username
-                focusedField = targetField
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(0.1))
-                    guard !Task.isCancelled else { return }
-                    focusedField = targetField
-                }
-            case .basics:
-                focusedField = .birthday
-            case .body:
-                focusedField = .height
-                Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(0.1))
-                    guard !Task.isCancelled else { return }
-                    focusedField = .height
-                }
-            case .equipment:
-                // Sync equipment location with workout location
-                selectedEquipmentLocation = mapWorkoutLocationToEquipmentLocation(selectedWorkoutLocation)
-                // Pre-select default equipment based on location
-                selectedEquipment = selectedEquipmentLocation.defaultEquipment
-            default:
-                focusedField = nil
-            }
+            handleCurrentStepChange(oldStep: oldStep, newStep: newStep)
         }
         .onChange(of: selectedWorkoutLocation) { _, newLocation in
             // When workout location changes, update equipment location
@@ -723,21 +399,7 @@ struct NewOnboardingView: View {
             titleVisibility: .visible,
             presenting: completionError
         ) { _ in
-            Button("Edit Details") {
-                // Navigate back to the profile step so the user can fix their input.
-                navigateTo(.profile)
-                completionError = nil
-            }
-            Button("Start Over", role: .destructive) {
-                Task {
-                    await rollbackCloudProfileIfNeeded()
-                    completionError = nil
-                    navigateTo(.auth)
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                completionError = nil
-            }
+            completionErrorDialogButtons
         }
         .onAppear {
             OnboardingSessionManager.shared.startNewSession()
@@ -765,6 +427,442 @@ struct NewOnboardingView: View {
             // Clean up timers to prevent leaks
             sendCodeTimer?.invalidate()
             sendCodeTimer = nil
+        }
+    }
+
+    // MARK: - Main onboarding flow branch
+    //
+    // Extracted from `body` because the auth standard / username / basics /
+    // body / goal / equipment / schedule steps all share this layout, and the
+    // ZStack + VStack + conditional floating-bar chain kept pushing `body`
+    // past Swift's type-checker budget.
+    private var mainOnboardingFlow: some View {
+        let keyboardUp = keyboardObserver.keyboardHeight > 0
+        return ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                onboardingSharedHeader(compact: keyboardUp)
+                    .animation(nil, value: currentStep)
+
+                // Type-erased AnyView — NO .id() here, it would break
+                // @FocusState keyboard transfer between text-input steps.
+                currentStepContent
+                    .animation(.easeInOut(duration: 0.25), value: currentStep)
+
+                Spacer()
+            }
+
+            if currentStep == .auth && hasStartedAuth {
+                authFloatingButtonBar(keyboardUp: keyboardUp)
+            } else {
+                onboardingSharedButtonBar
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
+                    .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
+                    .animation(nil, value: currentStep)
+                    .animation(nil, value: isCheckingUsername)
+            }
+        }
+    }
+
+    // MARK: - Completion error dialog buttons
+    //
+    // Extracted from the `.confirmationDialog(...)` in `body` so the closure
+    // isn't inline. Keeps the button wiring + rollback semantics identical.
+    @ViewBuilder
+    private var completionErrorDialogButtons: some View {
+        Button("Edit Details") {
+            // Sprint 3 (Q2-37) recovery path: weight/height parse failures are
+            // surfaced here, so send the user back to the `.body` step (height
+            // + weight) where they can fix the bad input. The prior string
+            // was `.profile` which isn't an OnboardingStep case — the error
+            // was masked while this closure was inline because the enclosing
+            // body expression was busting the type-checker budget.
+            navigateTo(.body)
+            completionError = nil
+        }
+        Button("Start Over", role: .destructive) {
+            Task {
+                await rollbackCloudProfileIfNeeded()
+                completionError = nil
+                navigateTo(.auth)
+            }
+        }
+        Button("Cancel", role: .cancel) {
+            completionError = nil
+        }
+    }
+
+    // MARK: - currentStep change handler
+    //
+    // Extracted from `.onChange(of: currentStep)` because the 6-arm switch +
+    // Task { @MainActor in } closures were a major contributor to `body`
+    // busting the type-checker budget.
+    private func handleCurrentStepChange(oldStep: OnboardingStep, newStep: OnboardingStep) {
+        switch newStep {
+        case .auth:
+            handleAuthStepEntry(from: oldStep)
+        case .phoneNumber:
+            focusedField = .phoneNumber
+        case .username:
+            handleUsernameStepEntry()
+        case .basics:
+            focusedField = .birthday
+        case .body:
+            handleBodyStepEntry()
+        case .equipment:
+            // Sync equipment location with workout location, then pre-select
+            // default equipment based on that location.
+            selectedEquipmentLocation = mapWorkoutLocationToEquipmentLocation(selectedWorkoutLocation)
+            selectedEquipment = selectedEquipmentLocation.defaultEquipment
+        default:
+            focusedField = nil
+        }
+    }
+
+    private func handleAuthStepEntry(from oldStep: OnboardingStep) {
+        // Keep hasStartedAuth true when going back from username (user wants to
+        // see their filled form). Only reset to welcome screen when coming from
+        // far-away steps.
+        if oldStep == .username || oldStep == .phoneNumber {
+            hasStartedAuth = true
+            if !confirmPassword.isEmpty && passwordsMatch {
+                isOnConfirmPasswordStep = true
+                DispatchQueue.main.async {
+                    focusedField = .confirmPassword
+                }
+            } else {
+                DispatchQueue.main.async {
+                    focusedField = password.isEmpty ? .email : .password
+                }
+            }
+        } else if oldStep != .auth {
+            hasStartedAuth = false
+        }
+    }
+
+    private func handleUsernameStepEntry() {
+        // Pre-fill username from a pending social login (Facebook / Instagram),
+        // then transfer focus immediately so the keyboard stays up when
+        // coming from auth / phone.
+        if let socialUsername = UserDefaults.standard.string(forKey: "pending_social_username"), username.isEmpty {
+            username = socialUsername
+            UserDefaults.standard.removeObject(forKey: "pending_social_username")
+            AppLogger.debug("Pre-filled username from social login: @\(socialUsername)", category: .auth)
+        }
+        let targetField: FocusedField = name.isEmpty ? .name : .username
+        focusedField = targetField
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.1))
+            guard !Task.isCancelled else { return }
+            focusedField = targetField
+        }
+    }
+
+    private func handleBodyStepEntry() {
+        focusedField = .height
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.1))
+            guard !Task.isCancelled else { return }
+            focusedField = .height
+        }
+    }
+
+    // MARK: - Auth step floating button bar
+    //
+    // Extracted from `body` to keep the top-level expression under Swift's
+    // type-checker budget. The continue button's two `AnyShapeStyle` ternaries
+    // (foreground + capsule stroke) were the worst offender — each one forces
+    // the checker to unify `LinearGradient` vs `Color` through `AnyShapeStyle`.
+    private func authFloatingButtonBar(keyboardUp: Bool) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                if isSignUp && isOnConfirmPasswordStep {
+                    authBackButton {
+                        isOnConfirmPasswordStep = false
+                        confirmPassword = ""
+                    }
+                } else {
+                    authBackButton {
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                            hasStartedAuth = false
+                            focusedField = nil
+                        }
+                    }
+                }
+
+                authContinueButton
+            }
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.bottom, keyboardUp ? keyboardObserver.keyboardHeight + 10 : 50)
+        .animation(.easeOut(duration: 0.25), value: keyboardObserver.keyboardHeight)
+        .animation(nil, value: isOnConfirmPasswordStep)
+    }
+
+    private func authBackButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.ds_labelLarge)
+                .foregroundColor(.gray)
+                .frame(width: 52, height: 52)
+                .background(Circle().fill(Color(.systemGray6)))
+                .overlay(Circle().stroke(Color.gray.opacity(0.3), lineWidth: 1.5))
+        }
+        .accessibilityLabel("Go back")
+        .accessibilityHint("Returns to previous step")
+    }
+
+    private var authContinueButton: some View {
+        Button(action: {
+            if isSignUp && !isOnConfirmPasswordStep && isPasswordValid {
+                isOnConfirmPasswordStep = true
+            } else {
+                handleAuth()
+            }
+        }) {
+            HStack(spacing: 8) {
+                if supabaseManager.isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: isAuthFormValid ? .blue : .gray))
+                        .scaleEffect(0.9)
+                }
+                Text(isSignUp ? "Continue" : "Sign In")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+            }
+            .foregroundStyle(authContinueForeground)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Spacing.md)
+            .background(Capsule().fill(Color(.systemGray6)))
+            .overlay(
+                Capsule().stroke(authContinueStroke, lineWidth: 2)
+            )
+        }
+        .disabled(!isAuthFormValid || supabaseManager.isLoading)
+        .accessibilityLabel(isSignUp ? "Continue" : "Sign In")
+        .accessibilityHint("Proceeds to next onboarding step")
+    }
+
+    private var authContinueForeground: AnyShapeStyle {
+        isAuthFormValid
+            ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+            : AnyShapeStyle(Color.gray)
+    }
+
+    private var authContinueStroke: AnyShapeStyle {
+        isAuthFormValid
+            ? AnyShapeStyle(LinearGradient(colors: [.blue, .blue, .cyan.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
+            : AnyShapeStyle(Color.gray.opacity(0.3))
+    }
+
+    // MARK: - Limitations step
+    //
+    // Extracted from `body` to keep the top-level `Group { if ... else if ... }`
+    // under Swift's type-checker budget. The "No limitations" pill alone is
+    // ~50 lines of nested shape/gradient modifiers — exactly the expression
+    // shape the type-checker chokes on when it lives inline in `body`.
+    private var limitationsStepView: some View {
+        VStack(spacing: 0) {
+            onboardingSharedHeader(compact: false)
+
+            ScrollView(showsIndicators: true) {
+                VStack(spacing: 16) {
+                    noLimitationsPill
+                        .padding(.bottom, 12)
+
+                    VStack(spacing: 10) {
+                        ForEach(AffectedArea.commonAreas, id: \.self) { area in
+                            limitationRowWithDropdown(for: area)
+                        }
+                    }
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+            }
+            .clipped()
+
+            onboardingSharedButtonBar
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, 16)
+                .padding(.bottom, 50)
+        }
+    }
+
+    /// The "No injuries or limitations" opt-out pill shown at the top of the
+    /// limitations step. Split out so its gradient/overlay stack doesn't
+    /// balloon the limitations step expression.
+    private var noLimitationsPill: some View {
+        Button(action: {
+            selectionFeedback.selectionChanged()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                selectedLimitations.removeAll()
+                limitationAccommodations.removeAll()
+            }
+        }) {
+            HStack(spacing: 10) {
+                Image(systemName: selectedLimitations.isEmpty ? "checkmark.circle.fill" : "circle")
+                    .font(.ds_heading3)
+                Text("No injuries or limitations")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+            }
+            .foregroundStyle(noLimitationsForeground)
+            .padding(.vertical, 14)
+            .padding(.horizontal, Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md)
+                    .fill(noLimitationsBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.md)
+                    .stroke(
+                        selectedLimitations.isEmpty ? Color.green.opacity(0.3) : Color.clear,
+                        lineWidth: 1.5
+                    )
+            )
+        }
+    }
+
+    private var noLimitationsForeground: AnyShapeStyle {
+        selectedLimitations.isEmpty
+            ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+            : AnyShapeStyle(Color.secondary)
+    }
+
+    private var noLimitationsBackground: AnyShapeStyle {
+        if selectedLimitations.isEmpty {
+            return AnyShapeStyle(Color.green.opacity(0.1))
+        }
+        let colors: [Color] = colorScheme == .dark
+            ? [Color(white: 0.14), Color(white: 0.10)]
+            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)]
+        return AnyShapeStyle(
+            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+    }
+
+    // MARK: - Confirmation step
+    //
+    // Extracted from `body` for the same type-checker reason as the limitations
+    // step. The per-row list is long enough on its own to justify isolation.
+    private var confirmationStepView: some View {
+        VStack(spacing: 0) {
+            onboardingSharedHeader(compact: false)
+
+            ScrollView(showsIndicators: true) {
+                VStack(spacing: 12) {
+                    confirmationErrorBanner
+
+                    confirmationRowSimple(title: "Name", value: name.isEmpty ? "-" : name, editStep: .auth, focusField: .name)
+                    confirmationRowSimple(title: "Email", value: email.isEmpty ? "-" : email, editStep: .auth, focusField: .email)
+                    confirmationRowSimple(title: "Username", value: username.isEmpty ? "-" : "@\(username)", editStep: .username, focusField: .username)
+                    confirmationRowSimple(title: "Birthday", value: birthday, editStep: .basics, focusField: .birthday)
+                    confirmationRowSimple(title: "Gender", value: selectedGender ?? "Not specified", editStep: .basics)
+                    confirmationRowSimple(title: "Height", value: formatHeightDisplay(), editStep: .body, focusField: .height)
+                    confirmationRowSimple(title: "Weight", value: "\(weight) \(weightUnit == .lbs ? "lbs" : "kg")", editStep: .body, focusField: .weight)
+                    confirmationRowSimple(title: "Goals", value: selectedGoals.joined(separator: ", "), editStep: .goal)
+                    confirmationRowSimple(title: "Experience", value: selectedExperience, editStep: .experience)
+                    confirmationRowSimple(title: "Location", value: selectedWorkoutLocation.rawValue.capitalized, editStep: .workoutLocation)
+                    confirmationRowSimple(title: "Equipment", value: selectedEquipment.isEmpty ? "None" : Array(selectedEquipment).sorted().joined(separator: ", "), editStep: .equipment)
+                    confirmationRowSimple(title: "Limitations", value: selectedLimitations.isEmpty ? "None" : "\(selectedLimitations.count) selected", editStep: .limitations)
+                    confirmationRowSimple(title: "Days/Week", value: "\(selectedDays)", editStep: .schedule)
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+            }
+            .clipped()
+
+            onboardingSharedButtonBar
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, 16)
+                .padding(.bottom, 50)
+        }
+    }
+
+    // MARK: - Confirmation step error banner
+    //
+    // Extracted from `body` so the confirmation step's ScrollView doesn't push
+    // the top-level body past Swift's type-checker budget ("unable to
+    // type-check this expression in reasonable time"). The banner itself is
+    // a ~40-line nest of HStack/VStack/Text/Button/background modifiers —
+    // exactly the shape the type-checker struggles with inline.
+    @ViewBuilder
+    private var confirmationErrorBanner: some View {
+        if showError && !errorMessage.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
+                    Text("Account Creation Failed")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.red)
+                }
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if errorMessage.contains("weak") || errorMessage.contains("password") {
+                    Text("💡 Tip: Use at least 8 characters with letters, numbers, and symbols")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                        .padding(.top, 4)
+
+                    Button(action: {
+                        showError = false
+                        errorMessage = ""
+                        navigateTo(.auth)
+                    }) {
+                        Text("Change Password")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.vertical, Spacing.xs)
+                            .background(Capsule().fill(Color.blue))
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding()
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.red.opacity(0.1)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.red.opacity(0.3), lineWidth: 1))
+            .padding(.bottom, 8)
+        }
+    }
+
+    // MARK: - Focus handling
+    //
+    // Extracted from the main `body` to keep the `.onChange(of: focusedField)`
+    // closure small enough for the Swift type-checker. The body previously
+    // triggered "unable to type-check this expression in reasonable time" at
+    // the three-way `newField == .email || .password || .confirmPassword`
+    // check because the surrounding view is ~750 lines.
+    private func handleFocusedFieldChange(_ newField: FocusedField?) {
+        guard currentStep == .auth, !hasStartedAuth else { return }
+        let authFields: Set<FocusedField> = [.email, .password, .confirmPassword]
+        guard let newField, authFields.contains(newField) else { return }
+
+        let fieldToFocus = newField
+        hasStartedAuth = true
+
+        // Re-establish focus immediately and after animations so the keyboard
+        // doesn't drop while the header layout change animates in.
+        DispatchQueue.main.async {
+            focusedField = fieldToFocus
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.1))
+            guard !Task.isCancelled else { return }
+            focusedField = fieldToFocus
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
+            guard !Task.isCancelled else { return }
+            focusedField = fieldToFocus
         }
     }
 }

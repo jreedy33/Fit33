@@ -24,7 +24,6 @@ struct ProfileView: View {
     // Connected apps (for reactive UI updates)
     @StateObject private var stravaService = StravaService.shared
     @StateObject private var fitbitService = FitbitService.shared
-    @StateObject private var inBodyService = InBodyService.shared
     @StateObject private var healthKitService = HealthKitService.shared
     
     // Editing states
@@ -588,43 +587,6 @@ struct ProfileView: View {
                                         Spacer()
                                         
                                         if fitbitService.isConnected {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(.green)
-                                        }
-                                        
-                                        Image(systemName: "chevron.right")
-                                            .font(.ds_labelMedium)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .padding(.horizontal, Spacing.md)
-                                    .padding(.vertical, 14)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                
-                                Divider()
-                                    .padding(.leading, 56)
-                                
-                                // InBody
-                                NavigationLink(value: ProfileRoute.inBody) {
-                                    HStack(spacing: 12) {
-                                        // InBody teal/cyan icon
-                                        Image(systemName: "figure.stand")
-                                            .font(.ds_bodyRegular).fontWeight(.medium)
-                                            .foregroundColor(Color(red: 0/255, green: 150/255, blue: 167/255))
-                                            .frame(width: 28)
-                                        
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("InBody")
-                                                .font(.subheadline)
-                                                .foregroundColor(.primary)
-                                            Text(inBodyService.isConnected ? "Connected" : "Body composition tracking")
-                                                .font(.caption)
-                                                .foregroundColor(inBodyService.isConnected ? .green : .secondary)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        if inBodyService.isConnected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
                                         }

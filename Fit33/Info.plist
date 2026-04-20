@@ -71,6 +71,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.gofit.app.challengeSync</string>
+		<string>com.gofit.app.challengeSyncProcessing</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>
@@ -78,6 +79,7 @@
 		<string>bluetooth-central</string>
 		<string>fetch</string>
 		<string>processing</string>
+		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

@@ -413,3 +413,28 @@ The `avatars` bucket serves two purposes:
 | `challenge_icons/{challengeId}.jpg` | Private challenge icon images | Challenge admin (via direct table UPDATE) | `private_challenges.cover_image_url` |
 
 **Security note**: Storage-level RLS on `avatars` allows any authenticated user to upload. The authorization boundary for challenge icons is the **table-level RLS** on `private_challenges` (`created_by = auth.uid()`), not storage. A user could upload an image to `challenge_icons/` for a challenge they don't own, but the table UPDATE to set the URL would be blocked by RLS. Previous attempt (2026-03-28) to use a separate `private-challenge-photos` bucket caused 15 RLS crashes and was reverted.
+
+### 2026-04-20: Silent Push Opponent Wake — APNs + BGTask Hardening
+
+**New background-priority APNs path**: `wake-challenge-opponents` edge function sends `aps.content-available: 1` silent pushes with headers `apns-push-type: background`, `apns-priority: 5`, `apns-expiration: +1h`. **Priority 5 is mandatory** — APNs silently drops silent pushes sent at priority 10. Apple's per-device silent-push budget is ~2-3/hr; we enforce a 15-min window per recipient via `silent_push_wake_log` (service-role-only RLS) to stay under.
+
+**Device-side abuse prevention (defense in depth)**:
+- `ChallengeOpponentWakeService` actor (Swift) debounces to 60s between requests per device.
+- Only invokes the edge function when `(activeChallenges + activeGroupChallenges + privateChallenges).count > 0`.
+- Every call is auth-guarded via `SupabaseManager.shared.isAuthenticated`.
+
+**Info.plist changes** (`Fit33/Info.plist`):
+- `UIBackgroundModes` now includes `remote-notification` — without it iOS drops silent pushes before `didReceiveRemoteNotification` fires.
+- `BGTaskSchedulerPermittedIdentifiers` adds `com.gofit.app.challengeSyncProcessing` for the new `BGProcessingTask` (alongside existing BGAppRefreshTask id).
+
+**BGTask expiration handling**: `BackgroundChallengeSyncService` now cancels the in-flight sync Task, schedules the next cycle, AND calls `setTaskCompleted(success: false)` from every expiration handler. Previously an expiry left the chain silently dead — the app would stop receiving BG wakes entirely until next launch.
+
+**Silent-push handler time budget**: `SilentPushHandler.handle(userInfo:completion:)` MUST call `completion(_:)` within ~30s or iOS penalizes our future background-delivery budget. Implementation self-caps at 25s via an independent timeout Task.
+
+**Not implemented (deferred)**: server-side OAuth pull for WHOOP/Oura/Fitbit. Would require migrating OAuth access/refresh tokens from iOS Keychain to an encrypted-at-rest server store + KMS/vault key management + a re-auth migration path for existing users. Phase 2 silent-push wake already covers most of the gap because third-party fitness apps generally bridge into Apple Health on-device.
+
+**Rules**:
+- Never use priority 10 on a silent push (APNs drops it).
+- Never route silent pushes through `push_notification_queue` — that table is for user-visible alerts with retry/quiet-hours logic; silent pushes are opportunistic and must skip quiet hours.
+- Never add a client-readable RLS policy to `silent_push_wake_log` — the rate-limit record is an internal abuse-prevention signal, not user data.
+- When adding a new silent push type, add a `case` in `SilentPushHandler.handle(userInfo:completion:)`; do NOT overload `challenge_wake`.

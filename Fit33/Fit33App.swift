@@ -69,6 +69,21 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             PushNotificationService.shared.handleRegistrationError(error)
         }
     }
+    
+    /// Silent push entry point (aps.content-available = 1). iOS invokes this
+    /// when a background-priority APNs payload arrives, giving us ~30s to do
+    /// work before we MUST call `completionHandler(_:)`. See `SilentPushHandler`
+    /// for routing; currently handles `type: "challenge_wake"` from the
+    /// `wake-challenge-opponents` edge function.
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        Task { @MainActor in
+            SilentPushHandler.handle(userInfo: userInfo, completion: completionHandler)
+        }
+    }
 }
 
 @main
@@ -96,7 +111,14 @@ struct Fit33App: App {
         
         // BGTaskScheduler.register must be called before app finishes launching
         BackgroundChallengeSyncService.shared.setup()
-        
+
+        // ⚡️ Touch ExerciseLibraryService.shared on the FIRST tick of app init so its
+        // preWarmCache() Task.detached runs immediately (bg context fetch + inline bundle seed
+        // if Core Data is empty). This guarantees the Exercise Library tab has real cards
+        // ready before the user can navigate to it — no "Loading exercises..." state, no
+        // grey placeholder cards. See ExerciseLibraryService.preWarmCache() for seed logic.
+        _ = ExerciseLibraryService.shared
+
         // One-time Core Data migration — moved off main thread to prevent startup freeze
         let needsExerciseRefresh = !UserDefaults.standard.bool(forKey: "exercise_lever_fix_applied_v1")
         if needsExerciseRefresh {
@@ -113,11 +135,37 @@ struct Fit33App: App {
                     } catch {
                         AppLogger.error("Error clearing exercises: \(error.localizedDescription)", category: .general)
                     }
+
+                    // Immediately re-seed from bundle on the SAME bg context so the Exercise
+                    // Library tab always has real cards to show — no grey placeholder state.
+                    let bundleExercises = ExerciseDataProvider.shared.exercises
+                    guard !bundleExercises.isEmpty else { return }
+                    AppLogger.info("🌱 [ExerciseLibrary] Re-seeding \(bundleExercises.count) exercises from bundle after migration wipe", category: .data)
+                    var inserted = 0
+                    for data in bundleExercises {
+                        guard !data.name.isEmpty, !data.category.isEmpty else { continue }
+                        let exercise = Exercise(context: bgContext)
+                        exercise.id = UUID()
+                        exercise.name = data.name
+                        exercise.category = data.category
+                        exercise.muscleGroups = data.muscleGroups as NSObject
+                        exercise.equipment = data.equipment
+                        exercise.instructions = data.instructions
+                        exercise.isFavorite = false
+                        inserted += 1
+                    }
+                    do {
+                        try bgContext.save()
+                        AppLogger.info("✅ [ExerciseLibrary] Bundle re-seed saved: \(inserted) exercises (viewContext auto-merges)", category: .data)
+                    } catch {
+                        AppLogger.error("❌ [ExerciseLibrary] Bundle re-seed save failed: \(error.localizedDescription)", category: .data)
+                    }
                 }
                 await MainActor.run {
                     ExerciseLibraryService.shared.invalidateCache()
+                    ExerciseLibraryService.shared.isExercisesReady = true
                     UserDefaults.standard.set(true, forKey: "exercise_lever_fix_applied_v1")
-                    AppLogger.info("Core Data cleared - exercises will reload from Supabase automatically", category: .general)
+                    AppLogger.info("Core Data cleared and re-seeded from bundle - cloud sync will replace with fresh catalog later", category: .general)
                 }
             }
         }
@@ -689,6 +737,15 @@ struct Fit33App: App {
                             // Priority 8 (Sprint 2 Q2-34): drain any queued cloud writes
                             // that failed while offline / during a previous finish.
                             await MainActor.run { CloudSyncRetryQueue.shared.drainIfDue() }
+                            
+                            // Priority 9 (2026-04-20): silent-push opponent wake.
+                            // Once our own data is fresh on the server, poke our
+                            // opponents' devices so their HealthKit / meal /
+                            // hydration data syncs too — meaning we see the most
+                            // up-to-date numbers on the very next refresh. The
+                            // edge function applies a 15-min/recipient server
+                            // throttle; this call is also device-debounced to 60s.
+                            await ChallengeOpponentWakeService.shared.requestWake(trigger: .foreground)
                         }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")

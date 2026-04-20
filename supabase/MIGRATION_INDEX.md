@@ -147,6 +147,44 @@ The **canonical version** is the one in the latest file listed below.
 **Run order**: 49 → 50 → 51 (standalone, idempotent).
 **Paired code changes**: `BlockedUsersView`, Settings integration, Report+Block sheets in chat & activity feed (Q2-7); cardio gamification wires (`UserManager.completeCardioWorkout`, Q2-5); `verify-code` / `send-push-notification` CORS migration (Q2-22).
 
+## Challenge Background Refresh (2026-04-20)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 52 | `20260420_challenge_opponent_wake.sql` | 🆕 Ready | `silent_push_wake_log` table + RLS + 7-day prune cron; `trigger_challenge_opponent_wake()` pg_cron every 30 min invokes `wake-challenge-opponents` edge function. |
+
+**Run order**: 52 (standalone, idempotent). Requires `internal_config` rows `supabase_url`, `service_role_key`, `anon_key` (already seeded by migration 20260324_push_notification_cron.sql).
+**Paired code changes**:
+- New edge function: `supabase/functions/wake-challenge-opponents/index.ts` (deploy with `supabase functions deploy wake-challenge-opponents` — uses same APNS_* secrets as `send-push-notification`).
+- New Swift files: `Fit33/SilentPushHandler.swift`, `Fit33/ChallengeOpponentWakeService.swift`.
+- Modified: `Fit33/BackgroundChallengeSyncService.swift` (adds `BGProcessingTask` + per-source throttle + post-sync opponent-wake call), `Fit33/Fit33App.swift` (AppDelegate `didReceiveRemoteNotification` + scenePhase `.active` wake trigger), `Fit33/Info.plist` (adds `com.gofit.app.challengeSyncProcessing` BGTask identifier + `remote-notification` UIBackgroundMode).
+
+## Cardio History Cleanup (2026-04-20)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 53 | `20260420_cardio_workouts_overlap_dedup.sql` | 🆕 Ready | One-time cleanup of duplicate WHOOP `cardio_workouts` rows (same user, same origin, overlapping time windows). Keeps the richest row via a scored comparison (specific `activity_type`, heart-rate, distance, calories). Client-side dedup now lives in `HealthDataService.syncWhoopData`; this migration fixes the rows that were already inserted before the fix. |
+
+**Run order**: 53 (standalone, idempotent). Safe to re-run — the CTE compares every row against every other row in the same (user, origin) window and deletes only the loser.
+**Paired code changes**: `Fit33/HealthDataService.swift` — `syncWhoopData` time-overlap dedup + scoring.
+
+## Daily Quest Overhaul (2026-04-20)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 54 | `20260420_daily_quests_actionable_fixes.sql` | 🆕 Ready | Fixes three UX bugs in `get_daily_quests`: (1) honour `quest_templates.requires_context` gates so users without a program stop seeing "Program Day"; (2) retires the "Double Session — 2 workouts today" template; (3) restores `tracking` / `wildcard` / `social` pool categories that the prior pool-builder was silently dropping. |
+
+**Run order**: 54 (standalone, idempotent). Supersedes selector logic from `20260325_quest_challenge_sync.sql` — no paired code change needed; app reads quests via the same RPC signature.
+**Paired code changes**: none (RPC signature unchanged).
+
+## Exercise Library Realtime (2026-04-20)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 55 | `20260420_exercises_realtime.sql` | ✅ Deployed | Enables Realtime REPLICA IDENTITY FULL on `exercises` so admin CMS edits live-sync to the iOS app; covered by commit `403d1ee`. |
+
+**Paired code changes**: `Fit33/ExerciseLibraryView.swift` realtime subscription wiring.
+
 ---
 
 ## Process for New Migrations

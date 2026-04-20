@@ -40,14 +40,31 @@ class BackgroundChallengeSyncService {
     
     private let healthStore = HKHealthStore()
     
-    /// BGTask identifier — must match Info.plist BGTaskSchedulerPermittedIdentifiers
+    /// BGAppRefreshTask identifier — short-quota periodic refresh (~15-30 min windows).
+    /// Must match Info.plist `BGTaskSchedulerPermittedIdentifiers`.
     static let bgTaskIdentifier = "com.gofit.app.challengeSync"
     
-    /// Minimum interval between background syncs (prevents excessive syncing)
-    private let minimumSyncInterval: TimeInterval = 600 // 10 minutes
-    private let lastSyncKey = "bg_challenge_last_sync"
+    /// BGProcessingTask identifier — longer-quota (~5 min) opportunistic sync.
+    /// iOS typically runs these overnight while charging, giving us a near-free
+    /// daily sync for users who leave the app closed for long stretches.
+    /// Must match Info.plist `BGTaskSchedulerPermittedIdentifiers`.
+    static let bgProcessingTaskIdentifier = "com.gofit.app.challengeSyncProcessing"
+    
+    /// Per-source throttle window. One noisy source (steps) no longer starves
+    /// the others (e.g. active energy / distance) because each has its own timer.
+    /// Workouts are flagged high-priority and bypass the throttle entirely.
+    private let perSourceThrottleInterval: TimeInterval = 600 // 10 minutes per source
+    
+    /// UserDefaults key prefix for per-source last-sync timestamps.
+    /// Key form: `bg_challenge_last_sync_<source>` (e.g. `bg_challenge_last_sync_steps`).
+    private let lastSyncKeyPrefix = "bg_challenge_last_sync_"
     
     private init() {}
+    
+    /// Last-sync UserDefaults key for a given source.
+    private func lastSyncKey(for source: String) -> String {
+        return "\(lastSyncKeyPrefix)\(source)"
+    }
     
     // ═══════════════════════════════════════════════════════════
     // MARK: - Setup (Call once at app launch)
@@ -58,11 +75,14 @@ class BackgroundChallengeSyncService {
     func setup() {
         enableHealthKitBackgroundDelivery()
         registerBackgroundTask()
+        registerBackgroundProcessingTask()
         scheduleNextBackgroundSync()
+        scheduleNextProcessingSync()
         
         AppLogger.debug("🔄 [BG SYNC] BackgroundChallengeSyncService initialized", category: .social)
         AppLogger.debug("   └─ HealthKit background delivery: enabled for steps, workouts, active energy", category: .health)
-        AppLogger.debug("   └─ BGTask periodic sync: registered", category: .social)
+        AppLogger.debug("   └─ BGAppRefreshTask: registered (~15 min windows)", category: .social)
+        AppLogger.debug("   └─ BGProcessingTask: registered (~5 min, typically overnight)", category: .social)
     }
     
     // ═══════════════════════════════════════════════════════════
@@ -182,20 +202,23 @@ class BackgroundChallengeSyncService {
     ///   HKObserverQuery completionHandler. If not called, iOS stops delivering.
     private func handleBackgroundHealthUpdate(source: String, isHighPriority: Bool, onComplete: @escaping () -> Void) {
         let now = Date()
-        let lastSync = UserDefaults.standard.double(forKey: lastSyncKey)
+        let sourceKey = lastSyncKey(for: source)
+        let lastSync = UserDefaults.standard.double(forKey: sourceKey)
         let lastSyncDate = Date(timeIntervalSince1970: lastSync)
         let elapsed = now.timeIntervalSince(lastSyncDate)
         
         // High-priority events (workout completions) always sync immediately.
-        // Low-priority events (steps, energy) throttle to once per 10 minutes.
-        if !isHighPriority && elapsed < minimumSyncInterval {
-            AppLogger.debug("⏭️ [BG SYNC] Skipping \(source) — synced \(Int(elapsed))s ago (throttled)", category: .social)
+        // Low-priority events (steps, energy, distance, exercise_time) throttle
+        // independently per source — a step flood no longer suppresses an
+        // active-energy or distance event fired in the same window.
+        if !isHighPriority && elapsed < perSourceThrottleInterval {
+            AppLogger.debug("⏭️ [BG SYNC] Skipping \(source) — synced \(Int(elapsed))s ago (per-source throttle)", category: .social)
             onComplete()
             return
         }
         
         AppLogger.debug("🔄 [BG SYNC] HealthKit background update: \(source)\(isHighPriority ? " ⚡️ IMMEDIATE" : "")", category: .health)
-        UserDefaults.standard.set(now.timeIntervalSince1970, forKey: lastSyncKey)
+        UserDefaults.standard.set(now.timeIntervalSince1970, forKey: sourceKey)
 
         // Perform the sync and call the completion handler when done
         Task {
@@ -230,7 +253,7 @@ class BackgroundChallengeSyncService {
     // MARK: - BGTaskScheduler Periodic Refresh
     // ═══════════════════════════════════════════════════════════
     
-    /// Register the background task with iOS.
+    /// Register the BGAppRefreshTask handler with iOS.
     /// Must be called before the app finishes launching.
     private func registerBackgroundTask() {
         BGTaskScheduler.shared.register(
@@ -245,41 +268,107 @@ class BackgroundChallengeSyncService {
             self.handleBackgroundTask(refreshTask)
         }
         
-        AppLogger.info("✅ [BG SYNC] BGTask registered: \(Self.bgTaskIdentifier)", category: .social)
+        AppLogger.info("✅ [BG SYNC] BGAppRefreshTask registered: \(Self.bgTaskIdentifier)", category: .social)
     }
     
-    /// Schedule the next background refresh.
-    /// iOS will wake the app approximately every 15-30 minutes (depends on user patterns).
+    /// Register the BGProcessingTask handler with iOS.
+    /// Processing tasks get ~5-minute budgets and run opportunistically when
+    /// the device is idle — most commonly overnight while charging. This gives
+    /// us a near-free daily sync even when the app hasn't been opened all day.
+    private func registerBackgroundProcessingTask() {
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.bgProcessingTaskIdentifier,
+            using: nil
+        ) { task in
+            guard let processingTask = task as? BGProcessingTask else {
+                AppLogger.error("❌ [BG SYNC] Unexpected processing task type: \(type(of: task))", category: .social)
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleBackgroundProcessingTask(processingTask)
+        }
+        
+        AppLogger.info("✅ [BG SYNC] BGProcessingTask registered: \(Self.bgProcessingTaskIdentifier)", category: .social)
+    }
+    
+    /// Schedule the next BGAppRefreshTask.
+    /// iOS decides when to actually run it (typically every 15-30 min based on
+    /// usage patterns — sometimes zero times a day for dormant users, which is
+    /// why the BGProcessingTask + silent-push layers exist as safety nets).
     func scheduleNextBackgroundSync() {
         let request = BGAppRefreshTaskRequest(identifier: Self.bgTaskIdentifier)
-        // Ask iOS to run this no earlier than 15 minutes from now
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         
         do {
             try BGTaskScheduler.shared.submit(request)
-            AppLogger.debug("📅 [BG SYNC] Next background sync scheduled (earliest: ~15 min)", category: .social)
+            AppLogger.debug("📅 [BG SYNC] Next BGAppRefresh scheduled (earliest: ~15 min)", category: .social)
         } catch {
-            AppLogger.error("❌ [BG SYNC] Failed to schedule background task: \(error.localizedDescription)", category: .social)
+            AppLogger.error("❌ [BG SYNC] Failed to schedule BGAppRefreshTask: \(error.localizedDescription)", category: .social)
         }
     }
     
-    /// Handle the BGTask when iOS wakes the app.
-    private func handleBackgroundTask(_ task: BGAppRefreshTask) {
-        AppLogger.debug("🔄 [BG SYNC] BGTask fired — syncing challenge data...", category: .social)
+    /// Schedule the next BGProcessingTask.
+    /// Targets the overnight/idle window. `requiresExternalPower = false` keeps
+    /// us eligible even when not charging (better coverage); network is required
+    /// since we need to hit Supabase.
+    func scheduleNextProcessingSync() {
+        let request = BGProcessingTaskRequest(identifier: Self.bgProcessingTaskIdentifier)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 2 * 60 * 60) // 2h
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = false
         
-        // Schedule the NEXT background sync immediately (so it keeps repeating)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            AppLogger.debug("📅 [BG SYNC] Next BGProcessing scheduled (earliest: ~2h)", category: .social)
+        } catch {
+            AppLogger.error("❌ [BG SYNC] Failed to schedule BGProcessingTask: \(error.localizedDescription)", category: .social)
+        }
+    }
+    
+    /// Handle the BGAppRefreshTask when iOS wakes the app.
+    private func handleBackgroundTask(_ task: BGAppRefreshTask) {
+        AppLogger.debug("🔄 [BG SYNC] BGAppRefresh fired — syncing challenge data...", category: .social)
+        
+        // Reschedule the NEXT refresh immediately so the chain never breaks,
+        // even if this run crashes or expires below.
         scheduleNextBackgroundSync()
         
-        // Set up expiration handler
-        task.expirationHandler = {
-            AppLogger.debug("⏰ [BG SYNC] BGTask expired before completion", category: .social)
-        }
-        
-        // Perform the sync
-        Task {
+        let syncTask = Task {
             await performChallengeSyncInBackground()
             task.setTaskCompleted(success: true)
-            AppLogger.info("✅ [BG SYNC] BGTask completed successfully", category: .social)
+            AppLogger.info("✅ [BG SYNC] BGAppRefresh completed successfully", category: .social)
+        }
+        
+        // If iOS cuts us off, cancel the in-flight work, mark the task complete
+        // as failed, and ensure the next cycle is still scheduled.
+        task.expirationHandler = {
+            AppLogger.warning("⏰ [BG SYNC] BGAppRefresh expired before completion — cancelling sync", category: .social)
+            syncTask.cancel()
+            self.scheduleNextBackgroundSync()
+            task.setTaskCompleted(success: false)
+        }
+    }
+    
+    /// Handle the BGProcessingTask when iOS wakes the app.
+    /// Same sync logic as BGAppRefresh — the only difference is the longer
+    /// execution budget and typical overnight scheduling.
+    private func handleBackgroundProcessingTask(_ task: BGProcessingTask) {
+        AppLogger.debug("🔄 [BG SYNC] BGProcessing fired — syncing challenge data...", category: .social)
+        
+        // Reschedule the NEXT processing run immediately so the chain never breaks.
+        scheduleNextProcessingSync()
+        
+        let syncTask = Task {
+            await performChallengeSyncInBackground()
+            task.setTaskCompleted(success: true)
+            AppLogger.info("✅ [BG SYNC] BGProcessing completed successfully", category: .social)
+        }
+        
+        task.expirationHandler = {
+            AppLogger.warning("⏰ [BG SYNC] BGProcessing expired before completion — cancelling sync", category: .social)
+            syncTask.cancel()
+            self.scheduleNextProcessingSync()
+            task.setTaskCompleted(success: false)
         }
     }
     
@@ -361,5 +450,14 @@ class BackgroundChallengeSyncService {
         let duration = Date().timeIntervalSince(start)
         AppLogger.info("✅ [BG SYNC] Background sync complete in \(String(format: "%.1f", duration))s", category: .social)
         AppLogger.debug("   └─ Synced to \(activeCount) 1v1 + \(groupCount) group + \(privateChallengeCount) private + \(communityChallengeCount) community challenges", category: .social)
+        
+        // ── Step 7: Nudge opponents so their stats show up fresh for US next time.
+        // Fire-and-forget silent push wake to every opponent in our active
+        // challenges. Server-side throttle (15 min/recipient) prevents abuse
+        // regardless of how often this path runs. Safe no-op when edge function
+        // is unavailable.
+        Task.detached(priority: .background) {
+            await ChallengeOpponentWakeService.shared.requestWake(trigger: .backgroundSync)
+        }
     }
 }

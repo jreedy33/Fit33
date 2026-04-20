@@ -17,6 +17,14 @@ class NetworkMonitor: ObservableObject {
     /// for background traffic decisions.
     @Published private(set) var isConstrained: Bool = false
 
+    /// Sprint 4 build fix — nonisolated snapshot of `isExpensive || isConstrained`
+    /// so off-main callers (video prefetch paths, background sync, analytics)
+    /// can consult the "avoid background traffic" heuristic without forcing a
+    /// synchronous main-queue hop. Bool writes are atomic on all supported
+    /// architectures and staleness by at most one `pathUpdateHandler` tick is
+    /// acceptable for a prefetch-gating decision.
+    nonisolated(unsafe) private var _shouldAvoidBackgroundTraffic: Bool = false
+
     enum ConnectionType {
         case wifi, cellular, wired, unknown
     }
@@ -32,12 +40,20 @@ class NetworkMonitor: ObservableObject {
     /// Sprint 3 (Q2-30) — introduced so `VideoPreloadManager` and
     /// `VideoStreamingService` stop bleeding cellular data / battery when the
     /// user is on LTE or Low Data Mode.
-    var shouldAvoidBackgroundTraffic: Bool {
-        isExpensive || isConstrained
+    /// Sprint 4 — now `nonisolated` (reads the atomic snapshot above) so any
+    /// actor context can query it without hopping to main.
+    nonisolated var shouldAvoidBackgroundTraffic: Bool {
+        _shouldAvoidBackgroundTraffic
     }
 
     private init() {
         monitor.pathUpdateHandler = { [weak self] path in
+            // Mirror the expensive/constrained state into the nonisolated
+            // snapshot synchronously on the monitor's own queue so that a
+            // non-main reader sees the new value the same tick that a
+            // main-actor observer does.
+            self?._shouldAvoidBackgroundTraffic = path.isExpensive || path.isConstrained
+
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let wasConnected = self.isConnected

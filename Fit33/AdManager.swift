@@ -63,7 +63,7 @@ class AdManager: NSObject, ObservableObject {
     
     // Rewarded Ad Unit IDs
     // Test ID: ca-app-pub-3940256099942544/1712485313 (use during development)
-    // Production ID: TODO — Create rewarded video unit in AdMob dashboard (publisher: ca-app-pub-8809892203317185)
+    // Production ID: ca-app-pub-8809892203317185/5259396920
     #if DEBUG
     private let rewardedAdUnitID = "ca-app-pub-3940256099942544/1712485313" // Test rewarded ads
     #else

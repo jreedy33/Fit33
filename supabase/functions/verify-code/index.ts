@@ -15,6 +15,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { buildCorsHeaders, requireUserAuth } from "../_shared/cors.ts"
+import { redactPhone } from "../_shared/log.ts"
 
 const verifyRateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const VERIFY_RATE_LIMIT_MAX = 15
@@ -82,8 +83,9 @@ serve(async (req) => {
       formattedPhone = '+' + formattedPhone
     }
 
-    const redacted = formattedPhone.slice(0, -4).replace(/\d/g, '*') + formattedPhone.slice(-4)
-    console.log(`Verifying code for: ${redacted}`)
+    // Sprint 3 (M-10): use shared redactor so every platform log line masks
+    // the phone number consistently. Previously each function rolled its own.
+    console.log(`Verifying code for: ${redactPhone(formattedPhone)}`)
 
     // Verify code via Twilio Verify API
     const twilioUrl = `https://verify.twilio.com/v2/Services/${twilioVerifyServiceSid}/VerificationCheck`

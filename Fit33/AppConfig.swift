@@ -161,6 +161,17 @@ enum AppConfig {
     static var enableCrashDetection: Bool {
         return isDebug
     }
+
+    /// Sprint 3 (Q2-40): kill-switch for unfinished analytics detectors in
+    /// `PersonalizedInsightsService` — `detectBestWorkoutTime`,
+    /// `analyzeHydrationPerformanceCorrelation`, and the social/nutrition
+    /// pattern stubs. These return hardcoded or synthetic data today, which
+    /// risks surfacing bogus coaching to users ("you lift heavier when
+    /// hydrated"). OFF in production. Flip to `true` for internal builds
+    /// that want to exercise the UI code paths.
+    enum FeatureFlags {
+        static let personalizedInsightsV2: Bool = false
+    }
 }
 
 // MARK: - Logging Helper

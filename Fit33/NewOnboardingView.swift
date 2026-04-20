@@ -29,6 +29,9 @@ struct NewOnboardingView: View {
     @State var name = ""
     @State var errorMessage = ""
     @State var showError = false
+    /// Sprint 3 (Q2-37): non-nil triggers a confirmation dialog letting the
+    /// user retry or abandon onboarding (with cloud-profile rollback).
+    @State var completionError: OnboardingError?
     @State var emailAlreadyExists = false
     @State var acceptedTerms = false
     @State var showTermsSheet = false
@@ -708,6 +711,34 @@ struct NewOnboardingView: View {
         // NOTE: Removed the onChange(of: supabaseManager.isAuthenticated) handler
         // because it was incorrectly triggering on session restore at app launch.
         // The OAuthNewUserNeedsOnboarding notification is the correct and only trigger.
+        // Sprint 3 (Q2-37): surface weight/height parse failures + give the
+        // user a clean recovery path (retry, or start-over which wipes any
+        // orphan cloud profile that may have been created).
+        .confirmationDialog(
+            completionError?.errorDescription ?? "",
+            isPresented: Binding(
+                get: { completionError != nil },
+                set: { if !$0 { completionError = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: completionError
+        ) { _ in
+            Button("Edit Details") {
+                // Navigate back to the profile step so the user can fix their input.
+                navigateTo(.profile)
+                completionError = nil
+            }
+            Button("Start Over", role: .destructive) {
+                Task {
+                    await rollbackCloudProfileIfNeeded()
+                    completionError = nil
+                    navigateTo(.auth)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                completionError = nil
+            }
+        }
         .onAppear {
             OnboardingSessionManager.shared.startNewSession()
             

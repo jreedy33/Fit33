@@ -427,9 +427,18 @@ extension ActiveWorkoutView {
     }
     
     func startTimer() {
+        // Sprint 3 (Q2-33): `ActiveWorkoutView` is a struct, so `[weak self]`
+        // doesn't apply. The live anchor is the class-backed `workoutManager`.
+        // We capture it weakly and self-invalidate if it disappears, so a
+        // rogue/stale timer can never outlive the workout session and keep
+        // mutating `@State` storage from a now-detached view.
         guard let startTime = workoutManager.workoutStartTime else {
             AppLogger.warning("⚠️ [TIMER] No workout start time available, using current time", category: .workout)
-            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [self] _ in
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak workoutManager] t in
+                guard workoutManager != nil else {
+                    t.invalidate()
+                    return
+                }
                 elapsedTime += 1
             }
             if let t = timer { RunLoop.main.add(t, forMode: .common) }
@@ -438,7 +447,11 @@ extension ActiveWorkoutView {
         
         elapsedTime = Date().timeIntervalSince(startTime)
         
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak workoutManager] t in
+            guard workoutManager != nil else {
+                t.invalidate()
+                return
+            }
             elapsedTime = Date().timeIntervalSince(startTime)
         }
         if let t = timer { RunLoop.main.add(t, forMode: .common) }

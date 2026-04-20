@@ -12,7 +12,6 @@ import HealthKit
 // MARK: - HealthKit Settings View
 
 struct HealthKitSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var healthKit = HealthKitService.shared
     @State private var showDisconnectAlert = false
@@ -23,48 +22,43 @@ struct HealthKitSettingsView: View {
     private let healthColor = Color(red: 1.0, green: 0.23, blue: 0.19) // Apple Health red
     
     var body: some View {
-        NavigationStack {
-            ZStack {
-                // Background
-                (colorScheme == .dark ? Color.black : Color(white: 0.95))
-                    .ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // Header
-                        healthKitHeader
-                        
-                        if healthKit.isAuthorized {
-                            // Connected State
-                            connectedContent
-                        } else {
-                            // Not Connected State
-                            notConnectedContent
-                        }
+        // NOTE: This view is always pushed onto a parent NavigationStack
+        // (Profile → Settings → Apple Health, or Profile → Apple Health via
+        // ProfileRoute.healthKit). Wrapping in an inner NavigationStack here
+        // nests stacks, which breaks `.navigationDestination` resolution and
+        // produced a yellow-triangle black screen + bounce back to home.
+        // Keep this view stack-free and let the parent provide navigation context.
+        ZStack {
+            (colorScheme == .dark ? Color.black : Color(white: 0.95))
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 24) {
+                    healthKitHeader
+
+                    if healthKit.isAuthorized {
+                        connectedContent
+                    } else {
+                        notConnectedContent
                     }
-                    .padding()
                 }
+                .padding()
             }
-            .navigationTitle("Apple Health")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") { dismiss() }
-                }
+        }
+        .navigationTitle("Apple Health")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Disconnect Apple Health?", isPresented: $showDisconnectAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Disconnect", role: .destructive) {
+                healthKit.disconnect()
             }
-            .alert("Disconnect Apple Health?", isPresented: $showDisconnectAlert) {
-                Button("Cancel", role: .cancel) { }
-                Button("Disconnect", role: .destructive) {
-                    healthKit.disconnect()
-                }
-            } message: {
-                Text("Your workouts from Nike Run Club, Apple Watch, and other apps will no longer sync. You can reconnect anytime.")
-            }
-            .alert("Error", isPresented: .init(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-                Button("OK") { errorMessage = nil }
-            } message: {
-                Text(errorMessage ?? "")
-            }
+        } message: {
+            Text("Your workouts from Nike Run Club, Apple Watch, and other apps will no longer sync. You can reconnect anytime.")
+        }
+        .alert("Error", isPresented: .init(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
     

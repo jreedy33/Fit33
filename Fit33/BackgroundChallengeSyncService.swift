@@ -196,10 +196,32 @@ class BackgroundChallengeSyncService {
         
         AppLogger.debug("🔄 [BG SYNC] HealthKit background update: \(source)\(isHighPriority ? " ⚡️ IMMEDIATE" : "")", category: .health)
         UserDefaults.standard.set(now.timeIntervalSince1970, forKey: lastSyncKey)
-        
+
         // Perform the sync and call the completion handler when done
         Task {
             await performChallengeSyncInBackground()
+
+            // Sprint 3 Q2-28: Notify HealthKitManager so it can refresh its
+            // @Published UI state. This replaces the duplicate foreground
+            // `HKObserverQuery` we used to run inside HealthKitManager.
+            await MainActor.run {
+                switch source {
+                case "workout":
+                    // Ensure cardio_workouts row is in place BEFORE we notify
+                    // Dashboard / HealthKitManager to reload.
+                    Task {
+                        await HealthKitService.shared.syncAllData(force: true)
+                        await MainActor.run {
+                            NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
+                        }
+                    }
+                case "steps", "active_energy", "distance", "exercise_time":
+                    NotificationCenter.default.post(name: .healthStepsDidUpdate, object: nil)
+                default:
+                    break
+                }
+            }
+
             onComplete()
         }
     }

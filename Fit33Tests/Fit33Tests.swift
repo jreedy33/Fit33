@@ -5,12 +5,7 @@
 //  Created by Joseph Reed on 3/8/26.
 //
 
-import Testing
-
-struct Fit33Tests {
-
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
-    }
-
-}
+// Intentionally empty: the Fit33Tests target's smoke test is now
+// `NotificationAllowlistTests.swift` (added Sprint 2). The empty
+// `@Test func example()` placeholder that used to live here was removed
+// in Sprint 3 (Q2-44) to stop broadcasting "no real tests here yet".

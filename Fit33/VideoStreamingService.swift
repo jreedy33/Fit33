@@ -118,8 +118,13 @@ class VideoStreamingService: ObservableObject {
         
         // Then refresh from network only if stale
         loadVideoMappingsFromDatabase()
-        
-        configureAudioSession()
+
+        // Sprint 3 (Q2-31): AVAudioSession is NO LONGER configured / activated
+        // at init time. It gets activated lazily in `createOptimizedPlayer` the
+        // first time a player is created, and deactivated on memory warning /
+        // app background via `deactivateAudioSessionIfActive()`. This stops the
+        // app from holding an active playback session for its entire lifetime,
+        // which was interrupting the user's background audio every launch.
     }
     
     private func genderCacheDiskURL() -> URL? {
@@ -410,12 +415,51 @@ class VideoStreamingService: ObservableObject {
         return nil
     }
     
-    // MARK: - Audio Session Configuration
-    private func configureAudioSession() {
+    // MARK: - Audio Session Lifecycle (Sprint 3 Q2-31)
+    //
+    // Historically this service configured `.playback` with `.mixWithOthers`
+    // at `init()` and never called `setActive(false)`. That kept the app's
+    // audio session active for the entire lifetime of the process, which:
+    //   - interrupted the user's background music app every launch,
+    //   - drained battery via the persistent audio-engine graph,
+    //   - blocked other apps from making the phone vibrate silently (Focus).
+    //
+    // We now activate lazily on first player creation and deactivate on
+    // memory warning / `clearPreloadCache()` / explicit app-background.
+
+    private let audioSessionLock = NSLock()
+    private var isAudioSessionActive = false
+
+    private func activateAudioSessionIfNeeded() {
+        audioSessionLock.lock()
+        defer { audioSessionLock.unlock() }
+        guard !isAudioSessionActive else { return }
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+            isAudioSessionActive = true
+            AppLogger.debug("🔊 AVAudioSession activated (first video player created)", category: .performance)
         } catch {
-            AppLogger.warning("Audio session setup failed: \(error.localizedDescription)", category: .general)
+            AppLogger.warning("Audio session activation failed: \(error.localizedDescription)", category: .general)
+        }
+    }
+
+    /// Deactivate the playback session if we currently hold it active.
+    /// Safe to call from anywhere — no-op if already inactive.
+    /// Called from `clearPreloadCache()` (memory warning + app-background path).
+    func deactivateAudioSessionIfActive() {
+        audioSessionLock.lock()
+        defer { audioSessionLock.unlock() }
+        guard isAudioSessionActive else { return }
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            isAudioSessionActive = false
+            AppLogger.debug("🔇 AVAudioSession deactivated (returned to other apps)", category: .performance)
+        } catch {
+            // Apple's docs: deactivation can fail with 560030580 ('!act')
+            // when another process still holds the session. Not fatal; iOS
+            // will reclaim when the other process releases.
+            AppLogger.debug("Audio session deactivate (non-fatal): \(error.localizedDescription)", category: .general)
         }
     }
     
@@ -431,12 +475,39 @@ class VideoStreamingService: ObservableObject {
     
     /// Prefetch a single video (call when user hovers/scrolls near an exercise)
     func prefetchVideo(for exerciseName: String) {
+        // Sprint 3 (Q2-30): skip speculative prefetch on cellular / Low Data Mode.
+        // On-demand playback via `getPlayer(for:)` is never gated.
+        if shouldSkipBackgroundPrefetch(reason: "prefetchVideo(for:)") { return }
+
         guard !prefetchingExercises.contains(exerciseName),
               preloadedPlayers[exerciseName] == nil,
               let url = getVideoURL(for: exerciseName) else { return }
         
         prefetchingExercises.insert(exerciseName)
         preloadPlayer(for: exerciseName, url: url)
+    }
+
+    /// Returns true if we should NOT do speculative prefetch right now because
+    /// the user is on cellular, hotspot, Low Data Mode, or an otherwise
+    /// constrained path. Logs at `.debug` for battery/perf visibility.
+    ///
+    /// Sprint 3 (Q2-30) unified gate used by every prefetch entry point.
+    private func shouldSkipBackgroundPrefetch(reason: String) -> Bool {
+        // `NetworkMonitor.shared.shouldAvoidBackgroundTraffic` is main-actor
+        // isolated. We read it via DispatchQueue.main.sync when we're off the
+        // main queue; if we're already on main, we read directly.
+        let shouldSkip: Bool = {
+            if Thread.isMainThread {
+                return NetworkMonitor.shared.shouldAvoidBackgroundTraffic
+            }
+            return DispatchQueue.main.sync {
+                NetworkMonitor.shared.shouldAvoidBackgroundTraffic
+            }
+        }()
+        if shouldSkip {
+            AppLogger.debug("📶 Skipping video prefetch — expensive/constrained network (\(reason))", category: .performance)
+        }
+        return shouldSkip
     }
     
     // MARK: - 🏋️ Program-Aware Prefetching
@@ -447,6 +518,7 @@ class VideoStreamingService: ObservableObject {
     func prefetchActiveProgramVideos(program: FullCloudProgram, currentDay: Int) {
         prefetchQueue.async { [weak self] in
             guard let self = self else { return }
+            if self.shouldSkipBackgroundPrefetch(reason: "prefetchActiveProgramVideos") { return }
             
             var exercisesToPrefetch: [String] = []
             
@@ -469,6 +541,7 @@ class VideoStreamingService: ObservableObject {
     
     /// Prefetch videos for a specific program day (call when viewing day details)
     func prefetchProgramDay(exercises: [String]) {
+        if shouldSkipBackgroundPrefetch(reason: "prefetchProgramDay") { return }
         AppLogger.debug("Prefetching \(exercises.count) exercises for program day", category: .general)
         prefetchVideos(for: exercises)
     }
@@ -479,7 +552,8 @@ class VideoStreamingService: ObservableObject {
     func prefetchProgramPreview(program: FullCloudProgram) {
         prefetchQueue.async { [weak self] in
             guard let self = self else { return }
-            
+            if self.shouldSkipBackgroundPrefetch(reason: "prefetchProgramPreview") { return }
+
             var exercisesToPrefetch: [String] = []
             
             // Only first day, limited exercises (was first 3 days, 10 exercises)
@@ -535,6 +609,9 @@ class VideoStreamingService: ObservableObject {
     }
     
     private func createOptimizedPlayer(url: URL) -> AVPlayer {
+        // Sprint 3 (Q2-31): lazily activate audio session on first player build.
+        activateAudioSessionIfNeeded()
+
         // Create asset with optimized loading
         let asset = AVURLAsset(url: url, options: [
             AVURLAssetPreferPreciseDurationAndTimingKey: false, // Faster loading
@@ -576,6 +653,11 @@ class VideoStreamingService: ObservableObject {
         preloadedPlayers.removeAll()
         preloadOrder.removeAll()
         prefetchingExercises.removeAll()
+
+        // Sprint 3 (Q2-31): with no players in flight we can give the audio
+        // session back to the system so other apps (music, navigation) resume.
+        deactivateAudioSessionIfActive()
+
         AppLogger.debug("Cleared prefetch cache", category: .general)
     }
     

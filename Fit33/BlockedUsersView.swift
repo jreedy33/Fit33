@@ -76,7 +76,7 @@ struct BlockedUsersView: View {
                     .font(.title3)
                     .foregroundColor(.red)
                 Text("Blocked Users")
-                    .font(.ds_headline)
+                    .font(.ds_heading3)
             }
             Text("Blocked users can't see your profile, add you as a friend, react to your posts, or message you. You can unblock someone at any time.")
                 .font(.ds_caption)

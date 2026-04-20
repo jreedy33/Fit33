@@ -24,6 +24,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { buildCorsHeaders, requireUserAuth } from "../_shared/cors.ts"
+import { redactPhone } from "../_shared/log.ts"
 
 // Fallback in-memory limiter — only used if the DB RPC is unavailable.
 const sendRateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -115,8 +116,9 @@ serve(async (req) => {
       )
     }
 
-    const redacted = formattedPhone.slice(0, -4).replace(/\d/g, '*') + formattedPhone.slice(-4)
-    console.log(`Sending verification to: ${redacted}`)
+    // Sprint 3 (M-10): shared redactor for consistent masking across
+    // every edge function that touches a phone number.
+    console.log(`Sending verification to: ${redactPhone(formattedPhone)}`)
 
     // Send verification via Twilio Verify API
     const twilioUrl = `https://verify.twilio.com/v2/Services/${twilioVerifyServiceSid}/Verifications`

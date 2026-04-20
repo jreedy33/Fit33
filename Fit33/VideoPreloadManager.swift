@@ -159,6 +159,15 @@ final class VideoPreloadManager: ObservableObject {
             prefetchLog("Already processing - skipping update", level: "SKIP")
             return
         }
+
+        // Sprint 3 (Q2-30): respect cellular / Low Data Mode. Users on expensive
+        // or constrained connections still get on-demand playback (handled in
+        // RemoteVideoPlayerView). Only the speculative prefetcher is gated here.
+        if NetworkMonitor.shared.shouldAvoidBackgroundTraffic {
+            prefetchLog("Prefetch skipped — expensive/constrained network (Low Data Mode or cellular)", level: "SKIP")
+            return
+        }
+
         isProcessing = true
         defer { isProcessing = false }
         

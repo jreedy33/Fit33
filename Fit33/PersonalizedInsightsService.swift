@@ -618,6 +618,12 @@ class PersonalizedInsightsService: ObservableObject {
     }
     
     private func analyzeHydrationPerformanceCorrelation(userId: UUID, data: [DailySummaryLight]) async {
+        // Sprint 3 (Q2-40): gated behind `personalizedInsightsV2`. `volumeValues`
+        // below is `[]` — the correlation is mathematically meaningless, so
+        // we'd otherwise surface bogus coaching like "you lift heavier when
+        // hydrated" with no real data backing it. Flip the flag once we wire
+        // real workout volume through.
+        guard AppConfig.FeatureFlags.personalizedInsightsV2 else { return }
         let validDays = data.filter { $0.hydration != nil && $0.workoutCount ?? 0 > 0 }
         guard validDays.count >= 5 else { return }
         
@@ -978,9 +984,11 @@ class PersonalizedInsightsService: ObservableObject {
     }
     
     private func detectBestWorkoutTime(userId: UUID) async {
-        // This would analyze workout_time_performance table
-        // For now, create a placeholder insight
-        
+        // Sprint 3 (Q2-40): hardcoded "morning_person" with fabricated
+        // confidence + volume multiplier. Gated until we actually analyze
+        // the `workout_time_performance` table.
+        guard AppConfig.FeatureFlags.personalizedInsightsV2 else { return }
+
         struct PatternUpsert: Encodable {
             let user_id: String
             let pattern_type: String
@@ -1015,11 +1023,16 @@ class PersonalizedInsightsService: ObservableObject {
     }
     
     private func detectNutritionPatterns(userId: UUID) async {
+        // Sprint 3 (Q2-40): empty stub. Gate so future scaffolding cannot
+        // surface synthesized coaching before real analysis ships.
+        guard AppConfig.FeatureFlags.personalizedInsightsV2 else { return }
         // Detect if user is consistently high/low on certain macros
         // Placeholder for now
     }
     
     private func detectSocialPatterns(userId: UUID) async {
+        // Sprint 3 (Q2-40): empty stub. Same gate as nutrition patterns.
+        guard AppConfig.FeatureFlags.personalizedInsightsV2 else { return }
         // Check if challenges boost workout frequency
         // Placeholder for now
     }

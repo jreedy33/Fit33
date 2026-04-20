@@ -1,5 +1,29 @@
 import SwiftUI
 
+/// Sprint 3 (Q2-37): explicit error states raised from `completeOnboarding()`.
+/// Shown to the user via a confirmation dialog with the option to retry or
+/// start over (deleting any already-created cloud profile).
+enum OnboardingError: LocalizedError, Identifiable {
+    case invalidWeight
+    case invalidHeight
+
+    var id: String {
+        switch self {
+        case .invalidWeight: return "invalid_weight"
+        case .invalidHeight: return "invalid_height"
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidWeight:
+            return "We couldn't read your weight. Please edit it and try again."
+        case .invalidHeight:
+            return "We couldn't read your height. Please edit it and try again."
+        }
+    }
+}
+
 extension NewOnboardingView {
     func confirmationRowSimple(title: String, value: String, editStep: OnboardingStep? = nil, focusField: FocusedField? = nil) -> some View {
         Button(action: {
@@ -360,7 +384,44 @@ extension NewOnboardingView {
         }
     }
     
+    /// Sprint 3 (Q2-37): trigger the error dialog from the completion flow.
+    func presentOnboardingCompletionError(_ error: OnboardingError) {
+        completionError = error
+    }
+
+    /// Sprint 3 (Q2-37): if an OAuth user has already had a cloud profile row
+    /// created (via `createProfileForOAuthUser` earlier in this session) but
+    /// we detected invalid inputs afterwards, blow away the orphan so they
+    /// can start fresh without the server-side "email already exists" trap.
+    ///
+    /// Idempotent: silently no-ops if no cloud profile exists yet.
+    func rollbackCloudProfileIfNeeded() async {
+        guard supabaseManager.isAuthenticated else {
+            AppLogger.debug("Onboarding rollback: not authenticated, nothing to undo", category: .auth)
+            return
+        }
+        AppLogger.warning("Onboarding rollback: deleting orphan cloud profile so user can restart", category: .auth)
+        do {
+            try await supabaseManager.deleteAccount()
+        } catch {
+            // Deletion may fail if the row was never created — treat as no-op.
+            AppLogger.debug("Onboarding rollback: deleteAccount failed (expected if no profile exists): \(error.localizedDescription)", category: .auth)
+        }
+    }
+
     func completeOnboarding() {
+        // Sprint 3 (Q2-37): validate every SYNCHRONOUS input up-front, BEFORE
+        // we kick any detached `Task {}` that writes to Supabase. The old
+        // sequence fired the OAuth-profile Task at ~line 430, then parsed
+        // weight synchronously at ~line 542. A failed weight parse `return`ed
+        // without awaiting or cancelling that task, leaving a cloud profile
+        // row with no matching local `User` — the classic "orphan account".
+        guard let parsedWeight = Double(weight) else {
+            AppLogger.error("Onboarding completion aborted — invalid weight input", category: .ui)
+            presentOnboardingCompletionError(.invalidWeight)
+            return
+        }
+
         // Log onboarding completion
         SessionLogManager.shared.logOnboardingComplete(
             totalSteps: OnboardingStep.allCases.count,
@@ -370,9 +431,7 @@ extension NewOnboardingView {
         // Collect all onboarding data for logging
         let heightCmValue = Double(heightInCm)
         var weightKgValue: Double = 0
-        if let w = Double(weight) {
-            weightKgValue = weightUnit == .lbs ? w / 2.20462 : w
-        }
+        weightKgValue = weightUnit == .lbs ? parsedWeight / 2.20462 : parsedWeight
         let ageValue = calculatedAge > 0 ? calculatedAge : nil
         
         let onboardingData: [String: Any] = [
@@ -531,17 +590,13 @@ extension NewOnboardingView {
         // Get height in cm
         let heightInt = Int16(heightInCm)
         
-        // Get weight in kg
+        // Get weight in kg (parsedWeight is guaranteed non-nil from the
+        // Sprint 3 up-front validation at the top of this function).
         let weightInt: Int16
-        if let w = Double(weight) {
-            if weightUnit == .lbs {
-                weightInt = Int16(w / 2.20462) // Convert lbs to kg
-            } else {
-                weightInt = Int16(w)
-            }
+        if weightUnit == .lbs {
+            weightInt = Int16(parsedWeight / 2.20462) // Convert lbs to kg
         } else {
-            AppLogger.error("Invalid weight", category: .ui)
-            return
+            weightInt = Int16(parsedWeight)
         }
         
         let limitationsStr = selectedLimitations.isEmpty ? "None" : selectedLimitations.map { "\($0.rawValue): \((limitationAccommodations[$0] ?? .beCareful).displayName)" }.joined(separator: ", ")
@@ -556,13 +611,12 @@ extension NewOnboardingView {
             heightInches = Int16(Double(heightInCm) / 2.54)
         }
         
-        // Get original weight in lbs for storage
+        // Get original weight in lbs for storage (reuse parsedWeight).
         let weightLbs: Double
         if weightUnit == .lbs {
-            weightLbs = Double(weight) ?? 0
+            weightLbs = parsedWeight
         } else {
-            // Convert from kg to lbs
-            weightLbs = (Double(weight) ?? 0) * 2.20462
+            weightLbs = parsedWeight * 2.20462
         }
         
         // Use full international phone number (with country code) if verified

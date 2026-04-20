@@ -88,7 +88,7 @@ Social apps MUST ship these or App Review rejects:
 | No admin 2FA/MFA | NOT FIXED | `admin-cms/src/app/api/auth/login/route.ts` | Enable Supabase MFA (TOTP) |
 | No admin rate limiting | NOT FIXED | `admin-cms/src/app/api/admin/route.ts` | Add per-endpoint rate limits |
 | No admin audit logging | NOT FIXED | Admin CMS | Create `admin_audit_log` table |
-| Phone numbers logged as PII | NOT FIXED | `supabase/functions/send-verification/` | Redact to `+1***XXX` |
+| Phone numbers logged as PII | **FIXED Sprint 3** (M-10) | `supabase/functions/_shared/log.ts::redactPhone()` | `send-verification` + `verify-code` both call the shared helper; output `+1***-***-1234`. Reuse for any new edge function that touches a phone number. |
 
 ### What's Working
 

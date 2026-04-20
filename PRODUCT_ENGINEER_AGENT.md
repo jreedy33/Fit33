@@ -24,6 +24,12 @@
 
 ---
 
+## Sprint 3 (2026-04-18) Must-Know Patterns
+
+- **Onboarding completion ordering — validate sync inputs BEFORE any cloud-write `Task`.** `completeOnboarding()` now parses `weight` at the top, `guard`s on failure, and surfaces `OnboardingError.invalidWeight` via `@State completionError` + `.confirmationDialog` with Edit / Start Over / Cancel. The dialog's Start Over calls `rollbackCloudProfileIfNeeded()` → `SupabaseManager.deleteAccount()` (idempotent). Rule: any future onboarding step that both (a) validates synchronous input and (b) kicks an async cloud write MUST validate first. Orphan cloud profiles are a P0 support trap.
+- **Feature flag unfinished insights.** `AppConfig.FeatureFlags.personalizedInsightsV2 = false` gates `PersonalizedInsightsService.detectBestWorkoutTime`, `analyzeHydrationPerformanceCorrelation`, `detectNutritionPatterns`, `detectSocialPatterns`. These return fabricated / empty data today. NEVER surface new coaching copy backed by stub logic — add a flag.
+- **No nested NavigationStacks** (restated): Sprint 3 added no new pushed-setting views, but the rule from Sprint 2 remains the canonical source of truth for the "black screen bouncing back to root" class of bug.
+
 ## Sprint 2 (2026-04-18) Must-Know Patterns
 
 - **Blocking + reporting UI**: `BlockedUsersView` in Settings → Privacy & Security; Long-press "Report & Block" `.contextMenu` on private-challenge chat (`PrivateChallengeDetailView`) and activity feed cards (`FriendActivityFeedView`). Both call `FriendService.reportContent(...)` + `FriendService.blockUser(userId:)` and purge local state. NEVER build a new reporting UI — extend the existing pattern.
@@ -31,6 +37,7 @@
 - **Cardio gamification parity**: `CardioActiveWorkoutView.saveWorkout` calls `UserManager.completeCardioWorkout(...)` after the cloud save. Never ship a new workout type without calling the matching `complete…Workout(...)` — otherwise XP, streak, feed, quests, challenges, and badges all silently skip.
 - **Offline sync chip**: `DashboardOfflineSyncChip` is the ONLY Dashboard surface for "Saved offline". If a new feature enqueues into `CloudSyncRetryQueue`, the chip automatically surfaces it — don't build a sibling chip.
 - **Push flush on every social write**: every successful social write (`FriendService`, `ChallengeService`, `CommunityChallengeService`, `PrivateChallengeService`, `ActivityFeedService`) MUST end with `PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "<source>")`. Missing the flush was the Sprint 2 Q2-35 regression.
+- **NEVER nest `NavigationStack` inside a pushed detail view.** Every `*SettingsView` that is pushed via `NavigationLink(destination:)` or `.navigationDestination(for:)` MUST be stack-free — just set `.navigationTitle` / `.toolbar` and let the parent stack provide navigation context. A pushed view that wraps itself in `NavigationStack { … }` breaks `.navigationDestination` resolution in the subtree, renders SwiftUI's yellow-triangle placeholder, and on `dismiss()` bounces the user all the way back to the root tab. This bit Apple Health on 2026-04-18 (`HealthKitSettingsView`). Compare against `StravaSettingsView` / `FitbitSettingsView` / `OuraSettingsView` / `WhoopSettingsView` — none of them wrap themselves in a stack. Only top-level **presented sheets / full-screen covers** (e.g. `StravaAuthSheet`, `ChallengeFlowStartView`) should host their own `NavigationStack`.
 
 ---
 

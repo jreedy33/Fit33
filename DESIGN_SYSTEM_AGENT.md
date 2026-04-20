@@ -16,6 +16,14 @@
 
 ---
 
+## Motion Standards (Sprint 3)
+
+- **Every decorative animation must gate on BOTH `ProcessInfo.isLowPowerModeEnabled` AND `@Environment(\.accessibilityReduceMotion)`**. Either one means: render the final state, skip the easing. Canonical implementation: `AnimatedOrbBackground.shouldDisableMotion` in `AdaptiveColors.swift`.
+- Ambient / decorative animations (orbs, gradients, pulses, shimmer, parallax) must short-circuit. Functional animations (presentation transitions, state-change tint) can use the SwiftUI system-level respect-for-reduce-motion and generally don't need per-animation gating.
+- A new decorative animation without both checks is a DESIGN_SYSTEM violation — block it in review.
+
+---
+
 ## Principles
 
 1. **Mechanical, not creative** — You don't decide what the tokens should be. `DESIGN_AGENT.md` defines the tokens. You apply them.

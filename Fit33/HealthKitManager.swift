@@ -37,8 +37,6 @@ class HealthKitManager: ObservableObject {
     private let stepSyncDebounceInterval: TimeInterval = 30 // Only sync every 30 seconds max
     private var isSyncingSteps = false // Prevent concurrent syncs
     
-    private var isObservingSteps = false
-    private var isObservingWorkouts = false
     
     // Step data structure
     struct DailySteps: Identifiable {
@@ -96,9 +94,10 @@ class HealthKitManager: ObservableObject {
             // Update integration status in database
             await SupabaseManager.shared.updateIntegrationStatus(integration: "apple_health", isConnected: true)
             
-            // Start observing steps and workouts after authorization
-            startObservingSteps()
-            startObservingWorkouts()
+            // Sprint 3 Q2-28: HK observer ownership lives in
+            // BackgroundChallengeSyncService. We subscribe to its notifications
+            // instead of running our own HKObserverQuery.
+            subscribeToSyncNotifications()
             
             // Initial data fetch
             await fetchTodaySteps()
@@ -376,8 +375,7 @@ class HealthKitManager: ObservableObject {
         }
         
         if isAuthorized {
-            startObservingSteps()
-            startObservingWorkouts()
+            subscribeToSyncNotifications()
             Task {
                 await fetchTodaySteps()
                 await fetchWeeklySteps()
@@ -385,73 +383,61 @@ class HealthKitManager: ObservableObject {
             }
         }
     }
-    
-    // MARK: - Real-time Step Observation
-    
-    /// Observe step changes in real-time
-    private func startObservingSteps() {
-        guard !isObservingSteps else { return }
-        isObservingSteps = true
-        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
-        
-        // Create an observer query that fires whenever new step data is available
-        let query = HKObserverQuery(sampleType: stepType, predicate: nil) { [weak self] query, completionHandler, error in
-            if let error = error {
-                AppLogger.error("Observer query error: \(error.localizedDescription)", category: .health)
-                completionHandler()
-                return
-            }
-            
-            // Fetch updated step count
+
+    // MARK: - HK Observer (Unified — Sprint 3 Q2-28)
+    //
+    // Before Sprint 3, `HealthKitManager` ran its own foreground `HKObserverQuery`
+    // for `stepCount` and `workoutType`, AND `BackgroundChallengeSyncService`
+    // registered another pair (plus energy/distance/exerciseTime) with immediate
+    // background delivery. Both fired in the foreground, so every HK delivery
+    // triggered duplicate fetches and duplicate cloud syncs.
+    //
+    // Single owner now: `BackgroundChallengeSyncService` runs all HK observers.
+    // When it finishes a sync it posts `.healthStepsDidUpdate` (step/energy/
+    // distance/exerciseTime) and/or `.externalWorkoutSynced` (workouts) on the
+    // main thread. We refresh our `@Published` UI state off those notifications.
+
+    private var syncNotificationObservers: [NSObjectProtocol] = []
+
+    private func subscribeToSyncNotifications() {
+        guard syncNotificationObservers.isEmpty else { return }
+
+        let stepsObserver = NotificationCenter.default.addObserver(
+            forName: .healthStepsDidUpdate,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
             Task {
-                await self?.fetchTodaySteps()
-                await self?.syncTodayStepsToCloud()
+                await self.fetchTodaySteps()
+                await self.syncTodayStepsToCloud()
             }
-            
-            completionHandler()
         }
-        
-        healthStore.execute(query)
-        AppLogger.info("Started observing step changes", category: .health)
-        
-        // Note: Background delivery requires special entitlements
-        // The observer query above already provides real-time updates when app is active
+        syncNotificationObservers.append(stepsObserver)
+
+        let workoutObserver = NotificationCenter.default.addObserver(
+            forName: .externalWorkoutSynced,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // `BackgroundChallengeSyncService` has already persisted the new
+            // workout to `cardio_workouts`. We just refresh our local caches so
+            // any view observing HealthKitManager sees the updated counts.
+            Task { [weak self] in
+                guard let self else { return }
+                await self.fetchTodaySteps()
+                await self.fetchWeeklySteps()
+            }
+        }
+        syncNotificationObservers.append(workoutObserver)
+
+        AppLogger.info("HealthKitManager subscribed to unified HK sync notifications", category: .health)
     }
-    
-    // MARK: - Real-time Workout Observation
-    
-    /// Observe new workouts in real-time (Apple Watch, Nike Run Club, Strava, etc.)
-    /// When a new workout is recorded in any connected app and synced to Apple Health,
-    /// this observer fires and triggers a sync to create a Recent Activity card.
-    private func startObservingWorkouts() {
-        guard !isObservingWorkouts else { return }
-        isObservingWorkouts = true
-        let workoutType = HKObjectType.workoutType()
-        
-        let query = HKObserverQuery(sampleType: workoutType, predicate: nil) { [weak self] _, completionHandler, error in
-            if let error = error {
-                AppLogger.error("Workout observer error: \(error.localizedDescription)", category: .health)
-                completionHandler()
-                return
-            }
-            
-            AppLogger.info("New workout detected in Apple Health — syncing to Recent Activity", category: .health)
-            
-            Task {
-                // Sync HealthKit workouts and persist to Supabase (creates cardio_workouts records)
-                await HealthKitService.shared.syncAllData(force: true)
-                
-                // Post notification so Dashboard reloads cardio workouts immediately
-                await MainActor.run {
-                    NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
-                }
-            }
-            
-            completionHandler()
+
+    deinit {
+        for observer in syncNotificationObservers {
+            NotificationCenter.default.removeObserver(observer)
         }
-        
-        healthStore.execute(query)
-        AppLogger.info("Started observing workout changes (external apps)", category: .health)
     }
     
     // MARK: - Fetch Step Data
@@ -821,4 +807,14 @@ extension Notification.Name {
     /// is detected via HealthKit and synced to cardio_workouts in Supabase.
     /// Dashboard should reload cardio workouts when this fires.
     static let externalWorkoutSynced = Notification.Name("externalWorkoutSynced")
+
+    /// Posted by `BackgroundChallengeSyncService` when HealthKit delivers new
+    /// step / activeEnergy / distance / exerciseTime data AND the throttle has
+    /// allowed a sync to run. Observed by `HealthKitManager` to refresh its
+    /// `@Published todaySteps` / `weeklySteps` / `monthlyAverage` state.
+    ///
+    /// Sprint 3 (Q2-28) unified HK observer ownership under
+    /// `BackgroundChallengeSyncService`; `HealthKitManager` no longer runs its
+    /// own `HKObserverQuery` for steps or workouts.
+    static let healthStepsDidUpdate = Notification.Name("healthStepsDidUpdate")
 }

@@ -29,12 +29,11 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
-    // Quick client-side check before the server roundtrip
-    if (!document.cookie.includes('admin_logged_in')) {
-      router.replace('/login')
-      return
-    }
-
+    // Sprint 4 (Q2-21): the `document.cookie.includes('admin_logged_in')`
+    // precheck is gone — the auth cookie is now httpOnly and middleware
+    // already gates every route AdminShell mounts on. This fetch is the
+    // single source of truth: it returns the admin email on 200 and drives
+    // the /login redirect on any non-200.
     fetch('/api/auth/session')
       .then(res => res.ok ? res.json() : Promise.reject())
       .then(data => {

@@ -69,6 +69,20 @@ When a task comes in, route it to the right agent:
 | Feature documentation | Support & Knowledge | All Agents (knowledge input) |
 | Help center / FAQ page | Support & Knowledge | Infra (deployment), Product Engineer (in-app) |
 | Bug-to-feature mapping | Support & Knowledge | Product Engineer (feature planning) |
+| Content moderation pipeline (Sprint 1–2) | Infra & Security | Data & Backend (RLS + RPCs), Product Engineer (client fail-closed) |
+| Blocking & reporting UI (Sprint 2) | Product Engineer | Data & Backend (`get_blocked_users`, `report_content` RPCs), Design (dialog copy) |
+| Offline cloud-write retry queue (Sprint 2) | Product Engineer | Quality & Performance (drain timing, scenePhase) |
+| Notification type allowlist (Sprint 2) | Quality & Performance | Product Engineer (routing), Data & Backend (server `type` strings) |
+| Cardio XP / streak / feed parity (Sprint 2) | Product Engineer | Fitness Expert (XP rules), Data & Backend (`post_cardio_activity` RPC) |
+| HealthKit observer ownership (Sprint 3) | Quality & Performance | Product Engineer (UI refresh via NotificationCenter) |
+| Video prefetch network gating (Sprint 3) | Quality & Performance | — |
+| AVAudioSession refcounting (Sprint 3) | Quality & Performance | — |
+| Reduce-motion enforcement (Sprint 3) | Quality & Performance | Design System Enforcement |
+| Admin CMS cookie hardening (Sprint 4) | Infra & Security | Product Engineer (server-component rewrite) |
+| Image cache consolidation (Sprint 4) | Product Engineer | — |
+| OTP timer lifecycle (Sprint 4) | Product Engineer | Quality & Performance (rule #17) |
+| Migration-index pre-commit hook (Sprint 4) | Data & Backend | Infra & Security |
+| Done-claim audit script (Sprint 4) | Quality & Performance | — |
 
 ---
 

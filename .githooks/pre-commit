@@ -1,0 +1,17 @@
+#!/bin/bash
+# Sprint 4 (AGD-9) — Opt-in pre-commit hook driver.
+#
+# Enable for this clone with:
+#   git config core.hooksPath .githooks
+#
+# Add new hook scripts to this driver below. Each script is expected to exit
+# non-zero to block the commit.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# AGD-9: migration index drift guard
+"${REPO_ROOT}/scripts/pre_commit_migration_check.sh"
+
+exit 0

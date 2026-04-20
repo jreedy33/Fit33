@@ -17,11 +17,12 @@ struct PhoneVerificationSheet: View {
     @State private var isVerificationCodeSent = false
     @State private var isVerifyingCode = false
     @State private var verificationError = ""
-    @State private var resendCountdown = 0
-    @State private var sendCodeCountdown = 0
+    // Sprint 4 (Q2-38): countdowns unified behind `PhoneOTPCountdown`
+    // (defined in `ExistingUserPhonePrompt.swift`). Each owns its own
+    // `Timer` with store + invalidate; `.onDisappear` releases both.
+    @StateObject private var resendCountdown = PhoneOTPCountdown()
+    @StateObject private var sendCodeCountdown = PhoneOTPCountdown()
     @State private var attempts = 0
-    @State private var resendTimer: Timer?
-    @State private var sendCodeTimer: Timer?
     
     @FocusState private var focusedField: Field?
     
@@ -194,14 +195,14 @@ struct PhoneVerificationSheet: View {
             
             // Send Code Button
             if isPhoneNumberValid {
-                let canSend = sendCodeCountdown == 0
-                
+                let canSend = !sendCodeCountdown.isRunning
+
                 Button(action: sendVerificationCode) {
                     HStack(spacing: 10) {
-                        if sendCodeCountdown > 0 {
+                        if sendCodeCountdown.secondsRemaining > 0 {
                             Image(systemName: "clock.fill")
                                 .font(.ds_labelMedium)
-                            Text("Retry in \(sendCodeCountdown)s")
+                            Text("Retry in \(sendCodeCountdown.secondsRemaining)s")
                         } else {
                             Image(systemName: "paperplane.fill")
                                 .font(.ds_labelMedium)
@@ -346,8 +347,8 @@ struct PhoneVerificationSheet: View {
                     .foregroundColor(.secondary)
                 }
                 
-                if resendCountdown > 0 {
-                    Text("Resend in \(resendCountdown)s")
+                if resendCountdown.secondsRemaining > 0 {
+                    Text("Resend in \(resendCountdown.secondsRemaining)s")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else {
@@ -508,7 +509,7 @@ struct PhoneVerificationSheet: View {
         withAnimation(.easeInOut(duration: 0.2)) {
             isVerificationCodeSent = true
         }
-        startResendCountdown()
+        resendCountdown.start(duration: 30)
         
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(0.3))
@@ -561,43 +562,15 @@ struct PhoneVerificationSheet: View {
         verificationCode = ""
         verificationError = ""
         
-        // Start 30s cooldown
-        sendCodeCountdown = 30
-        startSendCodeCountdown()
-        
+        // Start 30s cooldown before another send is allowed
+        sendCodeCountdown.start(duration: 30)
+
         focusedField = .phoneNumber
     }
-    
-    private func startResendCountdown() {
-        resendCountdown = 30
-        resendTimer?.invalidate()
-        resendTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
-            if resendCountdown > 0 {
-                resendCountdown -= 1
-            } else {
-                timer.invalidate()
-                resendTimer = nil
-            }
-        }
-    }
-    
-    private func startSendCodeCountdown() {
-        sendCodeTimer?.invalidate()
-        sendCodeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
-            if sendCodeCountdown > 0 {
-                sendCodeCountdown -= 1
-            } else {
-                timer.invalidate()
-                sendCodeTimer = nil
-            }
-        }
-    }
-    
+
     private func cleanupTimers() {
-        resendTimer?.invalidate()
-        resendTimer = nil
-        sendCodeTimer?.invalidate()
-        sendCodeTimer = nil
+        resendCountdown.invalidate()
+        sendCodeCountdown.invalidate()
     }
 }
 

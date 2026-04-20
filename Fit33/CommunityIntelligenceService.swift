@@ -263,39 +263,6 @@ class CommunityIntelligenceService {
     
     // MARK: - Get Community Insights
     
-    /// Gets recommended programs based on community success rates
-    func getRecommendedPrograms(
-        userAge: Int,
-        userGender: String,
-        userGoal: String,
-        userExperience: String
-    ) async -> [CommunityProgramRecommendation] {
-        
-        do {
-            let response: [ProgramRecommendationDTO] = try await SupabaseManager.shared.supabaseClient
-                .rpc("get_recommended_programs_for_profile", params: [
-                    "p_age_range": getAgeRange(userAge),
-                    "p_gender": userGender,
-                    "p_goal": userGoal,
-                    "p_experience": userExperience
-                ])
-                .execute()
-                .value
-            
-            return response.map { dto in
-                CommunityProgramRecommendation(
-                    programName: dto.programName,
-                    successRate: dto.successRate,
-                    avgCompletionRate: dto.avgCompletionRate,
-                    userCount: dto.userCount
-                )
-            }
-        } catch {
-            AppLogger.error("❌ [COMMUNITY] Failed to fetch program recommendations: \(error)", category: .social)
-            return []
-        }
-    }
-    
     /// Gets top exercises for a muscle group based on community data
     func getTopExercisesForMuscleGroup(
         muscleGroup: String,
@@ -532,18 +499,6 @@ struct CommunityData {
     let sampleSize: Int
 }
 
-struct CommunityProgramRecommendation {
-    let programName: String
-    let successRate: Double
-    let avgCompletionRate: Double
-    let userCount: Int
-    
-    var displayText: String {
-        let successPercent = Int(successRate * 100)
-        return "\(programName) - \(successPercent)% success rate (\(userCount) users)"
-    }
-}
-
 struct ExerciseRecommendation {
     let exerciseName: String
     let avgPerformance: Double
@@ -654,20 +609,6 @@ struct ExerciseEffectivenessDTO: Codable {
         case userEquipment = "user_equipment"
         case isFavorited = "is_favorited"
         case completionRate = "completion_rate"
-    }
-}
-
-struct ProgramRecommendationDTO: Codable {
-    let programName: String
-    let successRate: Double
-    let avgCompletionRate: Double
-    let userCount: Int
-    
-    enum CodingKeys: String, CodingKey {
-        case programName = "program_name"
-        case successRate = "success_rate"
-        case avgCompletionRate = "avg_completion_rate"
-        case userCount = "user_count"
     }
 }
 

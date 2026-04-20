@@ -82,7 +82,7 @@ Social apps MUST ship these or App Review rejects:
 |-------|--------|---------|-----------------|
 | Supabase URL + anon key hardcoded | NOT FIXED | `SupabaseManager.swift:25-26`, `FoodDatabaseService.swift:265-268` | Move to `Secrets.swift` via `AppConfig` |
 | Dev menu password in git | NOT FIXED | `AppConfig.swift:88` | Remove password; use `#if DEBUG` gating only |
-| Strava/Fitbit client IDs in source | NOT FIXED | `AppConfig.swift:49,64` | Move to `Secrets.swift` |
+| Strava/Fitbit client IDs in source | FIXED Sprint 4 (H-5) | `AppConfig.swift:58,73` | Now `Secrets.stravaClientId` / `Secrets.fitbitClientId`. No literal fallback; `Secrets.template.swift` is the committed scaffold. |
 | No App Tracking Transparency | NOT FIXED | `AdManager.swift` | Add ATT flow before AdMob init |
 | Admin session tokens in sessionStorage (XSS) | NOT FIXED | `admin-cms/src/lib/auth.ts` | Switch to httpOnly Secure cookies |
 | No admin 2FA/MFA | NOT FIXED | `admin-cms/src/app/api/auth/login/route.ts` | Enable Supabase MFA (TOTP) |
@@ -108,32 +108,12 @@ Social apps MUST ship these or App Review rejects:
 Secrets.template.swift (committed) → Developer copies to Secrets.swift (gitignored) → AppConfig reads from Secrets
 ```
 
-### Required Additions to Secrets.template.swift
-```swift
-// Add these:
-static let supabaseURL = "<SUPABASE_URL>"
-static let supabaseAnonKey = "<SUPABASE_ANON_KEY>"
-static let devMenuPassword = "<DEV_MENU_PASSWORD>"  // Or remove entirely
-static let stravaClientId = "<STRAVA_CLIENT_ID>"
-static let fitbitClientId = "<FITBIT_CLIENT_ID>"
-```
+### Canonical rule (Sprint 4, H-5)
+- `Secrets.swift` (gitignored) is the ONLY source for every third-party client ID, client secret, and API key.
+- `AppConfig.swift` MUST NOT contain literal fallback strings for credentials. Every integration enum (`Strava`, `Fitbit`, `Whoop`, `Supabase`, `Spoonacular`, …) reads exclusively from `Secrets.*`. If `Secrets.swift` is missing, the build fails — that is the intended behavior.
+- `Secrets.template.swift` (committed) lists the expected keys with `<PLACEHOLDER>` values. New integrations MUST add their keys to the template in the same PR that consumes them.
 
-### Required Updates to AppConfig.swift
-```swift
-// Add these:
-static let supabaseURL: String = Secrets.supabaseURL
-static let supabaseAnonKey: String = Secrets.supabaseAnonKey
-
-enum Strava {
-    static let clientId = Secrets.stravaClientId  // Was: "198007"
-    // ...
-}
-
-enum Fitbit {
-    static let clientId = Secrets.fitbitClientId  // Was: "23TRK9"
-    // ...
-}
-```
+Verified during Sprint 4: grep of `AppConfig.swift` returns zero literal credential fallbacks for Strava, Fitbit, or Whoop. The Supabase URL + anon key that were inline in `SupabaseManager.swift` / `FoodDatabaseService.swift` during the Sprint 2 audit are the remaining follow-up (tracked as the first row of the "Security Vulnerabilities" table above).
 
 ---
 
@@ -143,6 +123,7 @@ enum Fitbit {
 - Supabase auth: SDK handles token refresh. Always check session before API calls.
 - OAuth (Strava/Fitbit/InBody): secrets in `Secrets.swift`, tokens in Keychain (NOT UserDefaults)
 - Admin CMS: httpOnly Secure SameSite=Strict cookies. Require MFA. Rate limit logins (5 per 15 min per IP).
+- **Admin CMS client reads (Sprint 4, Q2-21)**: no client-side JS ever reads an auth flag cookie. `admin_logged_in` is `httpOnly: true` and exists only so `clearAuthCookies()` can sweep it on logout. Middleware gates every protected route on the httpOnly `admin_access_token`; `/` (the one path middleware skips) is a **server component** (`admin-cms/src/app/page.tsx`) that reads cookies via `next/headers` + `cookies()` and calls `redirect()`. **Never add `document.cookie.includes(...)` back**; if you need auth-dependent rendering, either put it behind middleware or make the containing page a server component that reads cookies server-side and passes booleans as props.
 - NEVER force-unwrap URLs. Always use `guard let url = URL(string:)`.
 
 ### PII Redaction

@@ -11,9 +11,13 @@ import SwiftUI
 // - Community success data
 // - Body type and preferences
 
-/// Canonical program recommendation engine. Other recommendation entry points
-/// (ProgramLibraryService.getRecommendedPrograms, CollaborativeLearningEngine.getRecommendedPrograms,
-/// CommunityIntelligenceService.getRecommendedPrograms) should eventually delegate here.
+/// Canonical program recommendation engine. Sprint 4 (Q2-41, scoped) deleted
+/// the unreferenced `CollaborativeLearningEngine.getRecommendedPrograms` and
+/// `CommunityIntelligenceService.getRecommendedPrograms` methods. The one
+/// surviving legacy entry point — `ProgramLibraryService.getRecommendedPrograms`,
+/// still consumed by `ProgramExplorerView` — is tracked as Q2-41-b in
+/// `MASTER_TODO.md` for a future migration that maps `WorkoutProgram` ->
+/// `ExtendedProgram`. All new callers must use this type directly.
 class SmartProgramRecommender {
     static let shared = SmartProgramRecommender()
     

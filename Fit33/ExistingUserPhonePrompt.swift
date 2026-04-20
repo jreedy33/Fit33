@@ -17,8 +17,13 @@ struct ExistingUserPhonePrompt: View {
     @State private var isVerifyingCode = false
     @State private var isPhoneVerified = false
     @State private var verificationError = ""
-    @State private var resendCountdown = 0
-    @State private var sendCodeCountdown = 0
+
+    // Sprint 4 (Q2-38): countdowns are owned by `PhoneOTPCountdown` which
+    // stores + invalidates its `Timer`. The previous implementation fired
+    // `Timer.scheduledTimer` without storing a reference, leaking a live
+    // timer on every tap and on `.onDisappear`.
+    @StateObject private var resendCountdown = PhoneOTPCountdown()
+    @StateObject private var sendCodeCountdown = PhoneOTPCountdown()
     
     @FocusState private var focusedField: Field?
     
@@ -102,6 +107,10 @@ struct ExistingUserPhonePrompt: View {
                     }
                 }
             }
+            .onDisappear {
+                resendCountdown.invalidate()
+                sendCodeCountdown.invalidate()
+            }
         }
     }
     
@@ -171,8 +180,8 @@ struct ExistingUserPhonePrompt: View {
             // Send Code Button
             Button(action: sendVerificationCode) {
                 HStack {
-                    if sendCodeCountdown > 0 {
-                        Text("Retry in \(sendCodeCountdown)s")
+                    if sendCodeCountdown.secondsRemaining > 0 {
+                        Text("Retry in \(sendCodeCountdown.secondsRemaining)s")
                     } else {
                         Text("Send Verification Code")
                     }
@@ -184,13 +193,13 @@ struct ExistingUserPhonePrompt: View {
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(
-                            isPhoneNumberValid && sendCodeCountdown == 0
+                            isPhoneNumberValid && !sendCodeCountdown.isRunning
                                 ? LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing)
                                 : LinearGradient(colors: [.gray, .gray], startPoint: .leading, endPoint: .trailing)
                         )
                 )
             }
-            .disabled(!isPhoneNumberValid || sendCodeCountdown > 0)
+            .disabled(!isPhoneNumberValid || sendCodeCountdown.isRunning)
             
             if !verificationError.isEmpty {
                 Text(verificationError)
@@ -262,8 +271,8 @@ struct ExistingUserPhonePrompt: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 
-                if resendCountdown > 0 {
-                    Text("Resend in \(resendCountdown)s")
+                if resendCountdown.secondsRemaining > 0 {
+                    Text("Resend in \(resendCountdown.secondsRemaining)s")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 } else {
@@ -363,16 +372,8 @@ struct ExistingUserPhonePrompt: View {
     
     private func sendVerificationCode() {
         verificationError = ""
-        sendCodeCountdown = 30
-        
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
-            if sendCodeCountdown > 0 {
-                sendCodeCountdown -= 1
-            } else {
-                timer.invalidate()
-            }
-        }
-        
+        sendCodeCountdown.start(duration: 30)
+
         Task {
             let cleanNumber = fullPhoneNumber.replacingOccurrences(of: "+", with: "")
             let success = await phoneVerificationService.sendVerificationCode(to: cleanNumber)
@@ -382,14 +383,7 @@ struct ExistingUserPhonePrompt: View {
                     withAnimation {
                         isVerificationCodeSent = true
                     }
-                    resendCountdown = 60
-                    Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
-                        if resendCountdown > 0 {
-                            resendCountdown -= 1
-                        } else {
-                            timer.invalidate()
-                        }
-                    }
+                    resendCountdown.start(duration: 60)
                 } else {
                     verificationError = "Failed to send code. Please try again."
                 }
@@ -425,4 +419,49 @@ struct ExistingUserPhonePrompt: View {
         onComplete: { phone in AppLogger.debug("Completed: \(phone)", category: .auth) },
         onSkip: { AppLogger.debug("Skipped", category: .auth) }
     )
+}
+
+// MARK: - PhoneOTPCountdown (Sprint 4 Q2-38)
+/// Owns one `Timer` and publishes the seconds remaining. Shared by
+/// `ExistingUserPhonePrompt` and `PhoneVerificationSheet` so every OTP flow
+/// in the app uses the same store+invalidate lifecycle — the prior inline
+/// `Timer.scheduledTimer` pattern in `ExistingUserPhonePrompt` never stored
+/// its reference, so every send leaked a timer.
+///
+/// Contract:
+/// - Host view must call `invalidate()` from `.onDisappear` (cheap + idempotent).
+/// - `start(duration:)` is self-protecting: it invalidates any prior timer
+///   before scheduling a new one, so rapid-tap loops cannot stack timers.
+/// - Closure uses `[weak self]` and self-invalidates if the instance is
+///   released without `.onDisappear` firing (e.g. app background tear-down).
+final class PhoneOTPCountdown: ObservableObject {
+    @Published private(set) var secondsRemaining: Int = 0
+    private var timer: Timer?
+
+    var isRunning: Bool { secondsRemaining > 0 }
+
+    func start(duration: Int) {
+        invalidate()
+        guard duration > 0 else { return }
+        secondsRemaining = duration
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
+            guard let self else {
+                t.invalidate()
+                return
+            }
+            if self.secondsRemaining > 0 {
+                self.secondsRemaining -= 1
+            }
+            if self.secondsRemaining == 0 {
+                t.invalidate()
+                self.timer = nil
+            }
+        }
+    }
+
+    func invalidate() {
+        timer?.invalidate()
+        timer = nil
+        if secondsRemaining != 0 { secondsRemaining = 0 }
+    }
 }

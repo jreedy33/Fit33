@@ -58,6 +58,25 @@ Development and maintenance scripts for BuiltSimple. These are **not** part of t
 | `extract_for_classification.sh` | Extracts exercise data in batches for AI classification |
 | `increment_build.sh` | Auto-increments build number (debug builds only) |
 | `increment_version.sh` | Auto-increments patch version in project.pbxproj |
+| `perf_lint.sh` | Build-time lint rules (sync Core Data in init, `UserDefaults.synchronize()`, etc.) |
+| `pre_commit_migration_check.sh` | Fails commits when staged `supabase/*.sql` files are missing from `supabase/MIGRATION_INDEX.md`. See "Git Hooks" below. |
+| `audit_done_claims.sh` | Validates every `[x]` entry in `MASTER_TODO.md` that cites a file path — flags stale references after moves/renames. Run manually. |
+
+## Git Hooks (Opt-In)
+
+Sprint 4 (AGD-8, AGD-9) added a small hook bundle under `.githooks/` that prevents drift in the migration index and (optionally) catches other repo-hygiene issues before commit. Hooks are **opt-in per clone**, never forced via CI.
+
+Enable for your clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+What you get after enabling:
+
+- **`pre-commit`** runs `scripts/pre_commit_migration_check.sh`, which blocks any commit that stages a new `supabase/*.sql` migration without also listing its basename in `supabase/MIGRATION_INDEX.md`.
+
+Bypass in an emergency with `git commit --no-verify` — the hook is intentionally forgiving. To disable again: `git config --unset core.hooksPath`.
 
 ## Output Files
 

@@ -35,7 +35,7 @@ class CollaborativeLearningEngine: ObservableObject {
     private var similarUserCache: [String: [SimilarUser]] = [:]  // userId -> similar users
     private var exercisePairingCache: [String: [ExercisePairing]] = [:]  // exercise -> best pairings
     nonisolated(unsafe) private(set) var globalTrendsCache: GlobalTrends?  // Exposed for sync access in scoring
-    private var successfulProgramsCache: [SuccessfulProgram] = []
+
     
     // MARK: - Constants
     
@@ -99,29 +99,6 @@ class CollaborativeLearningEngine: ObservableObject {
         exercisePairingCache[exerciseName.lowercased()] = pairings
         
         return Array(pairings.prefix(limit))
-    }
-    
-    // TODO: Delegate to SmartProgramRecommender.shared for unified recommendation logic
-    func getRecommendedPrograms(
-        for userProfile: UserProfileSnapshot
-    ) async -> [SuccessfulProgram] {
-        let similarUsers = await getSimilarUsers(to: userProfile)
-        
-        // Find programs completed by similar users with high success
-        var recommendedPrograms: [SuccessfulProgram] = []
-        
-        for program in successfulProgramsCache {
-            // Check if similar users completed this program
-            let completedBySimilar = program.userIds.contains { userId in
-                similarUsers.contains { $0.userId == userId }
-            }
-            
-            if completedBySimilar && program.completionRate > 0.7 {
-                recommendedPrograms.append(program)
-            }
-        }
-        
-        return recommendedPrograms.sorted { $0.completionRate > $1.completionRate }
     }
     
     // MARK: - Data Recording (Called after workout completion)
@@ -235,14 +212,11 @@ class CollaborativeLearningEngine: ObservableObject {
         do {
             // 1. Fetch global exercise statistics
             await fetchGlobalExerciseStats()
-            
-            // 2. Fetch successful programs
-            await fetchSuccessfulPrograms()
-            
-            // 3. Build exercise pairing index
+
+            // 2. Build exercise pairing index
             await buildExercisePairingIndex()
-            
-            // 4. Update user similarity clusters
+
+            // 3. Update user similarity clusters
             await updateUserSimilarityClusters()
             
             lastSyncDate = Date()
@@ -536,93 +510,6 @@ class CollaborativeLearningEngine: ObservableObject {
         }
     }
     
-    private func fetchSuccessfulPrograms() async {
-        do {
-            // Try materialized view first
-            struct ProgramStat: Decodable {
-                let program_name: String
-                let program_type: String?
-                let completion_count: Int
-                let avg_completion_rate: Double
-                let user_ids: [String]
-            }
-            
-            let programs: [ProgramStat] = try await supabase
-                .from("program_success_stats")
-                .select()
-                .gte("completion_count", value: minDataPoints)
-                .order("avg_completion_rate", ascending: false)
-                .limit(50)
-                .execute()
-                .value
-            
-            successfulProgramsCache = programs.map { program in
-                SuccessfulProgram(
-                    templateId: program.program_name,
-                    programName: program.program_name,
-                    completionRate: program.avg_completion_rate,
-                    totalCompletions: program.completion_count,
-                    userIds: program.user_ids
-                )
-            }
-            
-            AppLogger.debug("🌐 [COLLABORATIVE] Loaded \(programs.count) successful programs from materialized view", category: .workout)
-            
-        } catch {
-            AppLogger.warning("⚠️ [COLLABORATIVE] Materialized view not ready, using base table: \(error)", category: .workout)
-            await fetchSuccessfulProgramsFromBaseTable()
-        }
-    }
-    
-    private func fetchSuccessfulProgramsFromBaseTable() async {
-        do {
-            struct ProgramRow: Decodable {
-                let user_id: UUID
-                let program_name: String
-                let program_type: String?
-                let completion_rate: Double
-            }
-            
-            let completions: [ProgramRow] = try await supabase
-                .from("collaborative_program_completions")
-                .select()
-                .gte("completion_rate", value: 0.8)
-                .limit(500)
-                .execute()
-                .value
-            
-            // Group by program name and calculate stats
-            var programStats: [String: (completions: Int, totalRate: Double, userIds: Set<String>)] = [:]
-            for completion in completions {
-                let name = completion.program_name
-                var stat = programStats[name, default: (completions: 0, totalRate: 0.0, userIds: Set())]
-                stat.completions += 1
-                stat.totalRate += completion.completion_rate
-                stat.userIds.insert(completion.user_id.uuidString)
-                programStats[name] = stat
-            }
-            
-            successfulProgramsCache = programStats
-                .filter { $0.value.completions >= minDataPoints }
-                .map { name, stat in
-                    SuccessfulProgram(
-                        templateId: name,
-                        programName: name,
-                        completionRate: stat.totalRate / Double(stat.completions),
-                        totalCompletions: stat.completions,
-                        userIds: Array(stat.userIds)
-                    )
-                }
-                .sorted { $0.completionRate > $1.completionRate }
-            
-            AppLogger.debug("🌐 [COLLABORATIVE] Loaded \(successfulProgramsCache.count) successful programs (base table)", category: .workout)
-            
-        } catch {
-            AppLogger.warning("⚠️ [COLLABORATIVE] Could not fetch programs: \(error)", category: .workout)
-            successfulProgramsCache = []
-        }
-    }
-    
     private func buildExercisePairingIndex() async {
         do {
             // Try materialized view first
@@ -818,14 +705,6 @@ struct GlobalTrends {
     var exercisePopularity: [String: Double]  // exercise name -> popularity (0-1)
     var exerciseSuccessRates: [String: Double]  // exercise name -> completion rate
     var lastUpdated: Date
-}
-
-struct SuccessfulProgram {
-    let templateId: String
-    let programName: String
-    let completionRate: Double
-    let totalCompletions: Int
-    let userIds: [String]
 }
 
 struct CompletedExercise {

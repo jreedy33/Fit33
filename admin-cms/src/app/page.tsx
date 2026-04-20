@@ -1,22 +1,11 @@
-'use client'
+import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-
-export default function Home() {
-  const router = useRouter()
-
-  useEffect(() => {
-    if (document.cookie.includes('admin_logged_in')) {
-      router.replace('/dashboard')
-    } else {
-      router.replace('/login')
-    }
-  }, [router])
-
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="spinner" style={{ width: 32, height: 32 }} />
-    </div>
-  )
+// Sprint 4 (Q2-21): server component. Reads the httpOnly `admin_access_token`
+// cookie directly so we never expose a client-visible login flag. Middleware
+// skips `/`, so this is the only page that has to make its own auth decision.
+export default async function Home() {
+  const cookieStore = await cookies()
+  const hasAccessToken = Boolean(cookieStore.get('admin_access_token')?.value)
+  redirect(hasAccessToken ? '/dashboard' : '/login')
 }

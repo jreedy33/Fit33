@@ -1,6 +1,22 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Image Cache Config (Sprint 4 Q2-42)
+/// Centralized NSCache budget for every in-app image cache. The dead
+/// `ImageCache` actor in `PerformanceOptimizer.swift` used the same 100 /
+/// 50 MB numbers; consolidating them here means future caches (e.g. when
+/// Q2-42-b merges `FriendPhotoCache` + `ProfilePhotoCache`) inherit one
+/// tuning knob instead of drifting.
+enum ImageCacheConfig {
+    static let maxImageCount: Int = 100
+    static let maxTotalCostBytes: Int = 50 * 1024 * 1024
+
+    static func configure(_ cache: NSCache<NSString, UIImage>) {
+        cache.countLimit = maxImageCount
+        cache.totalCostLimit = maxTotalCostBytes
+    }
+}
+
 // MARK: - Friend Photo Cache
 /// Caches friends' profile photos in memory and disk for fast loading throughout the app
 /// Used in: FriendProfileView, ReceivedWorkoutsView, FriendsListView, ReceivedWorkoutPreviewWidget
@@ -17,11 +33,8 @@ final class FriendPhotoCache {
     }
     
     private init() {
-        // Allow enough for community/private challenges with many participants
-        memoryCache.countLimit = 100 // Max 100 photos in memory (community challenges can have 50+)
-        memoryCache.totalCostLimit = 50 * 1024 * 1024 // 50MB limit
-        
-        // Create cache directory if needed
+        ImageCacheConfig.configure(memoryCache)
+
         if let cacheDir = cacheDirectoryURL {
             try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         }

@@ -27,9 +27,15 @@ export function setAuthCookies(
     ...COOKIE_OPTIONS,
     maxAge: ACCESS_TOKEN_MAX_AGE,
   })
-  // Non-httpOnly cookie so the client can check "am I logged in?" without exposing tokens
+  // Sprint 4 (Q2-21): `admin_logged_in` is now httpOnly. The middleware +
+  // `/api/auth/session` already enforce auth on every protected route, and
+  // `/` (the only path middleware skips) is now a server component that
+  // reads cookies server-side via `next/headers`. No client-side JS reads
+  // this cookie — it is retained only because `clearAuthCookies()` still
+  // sweeps it on logout and some production browsers may still have the
+  // non-httpOnly version set.
   response.cookies.set('admin_logged_in', '1', {
-    httpOnly: false,
+    httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',

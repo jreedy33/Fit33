@@ -330,32 +330,6 @@ extension View {
     }
 }
 
-// MARK: - Image Loading Optimizer
-
-/// Async image loading with memory caching
-actor ImageCache {
-    static let shared = ImageCache()
-    
-    private var cache = NSCache<NSString, UIImage>()
-    
-    init() {
-        cache.countLimit = 100 // Max 100 images
-        cache.totalCostLimit = 50 * 1024 * 1024 // 50MB
-    }
-    
-    func image(for key: String) -> UIImage? {
-        cache.object(forKey: key as NSString)
-    }
-    
-    func setImage(_ image: UIImage, for key: String) {
-        cache.setObject(image, forKey: key as NSString)
-    }
-    
-    func clear() {
-        cache.removeAllObjects()
-    }
-}
-
 // MARK: - Debouncer for Search/Filter
 
 final class Debouncer {

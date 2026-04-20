@@ -49,6 +49,7 @@ class RealtimeService: ObservableObject {
     private var privateMembersChannel: RealtimeChannelV2?
     private var friendActivityFeedChannel: RealtimeChannelV2?
     private var privacyChangeChannel: RealtimeChannelV2?
+    private var exercisesChannel: RealtimeChannelV2?
     
     // MARK: - Debounce State
     
@@ -291,6 +292,7 @@ class RealtimeService: ObservableObject {
         await subscribePrivateMembers(userId: userId)
         await subscribeFriendActivityFeed(userId: userId)
         await subscribePrivacyChanges(userId: userId)
+        await subscribeExercises(userId: userId)
         
         // Start periodic cadence refresh for auto-tracked challenges (steps, active_minutes, etc.)
         startAutoTrackedRefreshTimer()
@@ -337,6 +339,9 @@ class RealtimeService: ObservableObject {
         if let channel = privacyChangeChannel {
             await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
         }
+        if let channel = exercisesChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
         
         // Also tear down service-level realtime channels so they can re-subscribe on reconnect.
         // Without this, the services hold a stale channel reference and the guard in
@@ -361,6 +366,7 @@ class RealtimeService: ObservableObject {
         privateMembersChannel = nil
         friendActivityFeedChannel = nil
         privacyChangeChannel = nil
+        exercisesChannel = nil
         
         isConnected = false
         AppLogger.info("Disconnected from all channels", category: .network)
@@ -423,6 +429,94 @@ class RealtimeService: ObservableObject {
         privacyChangeChannel = channel
         
         AppLogger.debug("Subscribed to privacy_change_events (league + activity) for user \(userId)", category: .network)
+    }
+    
+    // MARK: - Exercise Library Subscription (Admin CMS → App live sync)
+    
+    /// Subscribe to the `exercises` table so admin CMS edits appear in the app
+    /// within seconds instead of waiting up to 6 hours for the next full
+    /// re-sync. INSERT/UPDATE events decode the row into an `ExerciseDTO` and
+    /// upsert it in Core Data; DELETE events remove the row by id.
+    ///
+    /// Requires: `public.exercises` in the supabase_realtime publication with
+    /// REPLICA IDENTITY FULL — set by migration 20260420_exercises_realtime.sql.
+    private func subscribeExercises(userId: UUID) async {
+        let client = SupabaseManager.shared.supabaseClient
+        let channel = client.realtimeV2.channel("exercises-\(userId.uuidString)")
+        
+        let inserts = channel.postgresChange(InsertAction.self, schema: "public", table: "exercises")
+        let updates = channel.postgresChange(UpdateAction.self, schema: "public", table: "exercises")
+        let deletes = channel.postgresChange(DeleteAction.self, schema: "public", table: "exercises")
+        
+        let decoder = JSONDecoder()
+        
+        Task { [weak self] in
+            for await action in inserts {
+                guard let self else { break }
+                await self.handleExerciseRowChange(record: action.record, decoder: decoder, kind: "INSERT")
+            }
+        }
+        
+        Task { [weak self] in
+            for await action in updates {
+                guard let self else { break }
+                await self.handleExerciseRowChange(record: action.record, decoder: decoder, kind: "UPDATE")
+            }
+        }
+        
+        Task { [weak self] in
+            for await action in deletes {
+                guard let self else { break }
+                await self.handleExerciseRowDelete(oldRecord: action.oldRecord)
+            }
+        }
+        
+        await channel.subscribe()
+        exercisesChannel = channel
+        
+        AppLogger.debug("Subscribed to exercises table (CMS live sync)", category: .network)
+        logRealtimeEvent(type: "SUBSCRIBED", source: "exercises",
+                        details: "✅ Listening for INSERT/UPDATE/DELETE on public.exercises (admin CMS → app live sync)")
+    }
+    
+    private func handleExerciseRowChange(record: [String: AnyJSON], decoder: JSONDecoder, kind: String) async {
+        // Skip user-created custom exercises — those live in the custom_exercises
+        // path and don't come from the admin CMS.
+        if jsonBool(record["is_custom"]) == true { return }
+        
+        let name = jsonString(record["name"]) ?? "<unknown>"
+        let id   = jsonString(record["id"])   ?? "?"
+        
+        do {
+            // `[String: AnyJSON]` is JSON-encodable, so round-trip through
+            // JSON and decode as our existing ExerciseDTO to reuse all field
+            // mappings (snake_case ↔ camelCase, FlexibleInt, MuscleField, ...).
+            let data = try JSONEncoder().encode(record)
+            let dto = try decoder.decode(ExerciseDTO.self, from: data)
+            
+            logRealtimeEvent(type: "EXERCISE_\(kind)", source: "exercises",
+                            details: "🏋️ \(kind) '\(dto.name)' (\(id.prefix(8))) from CMS — upserting locally")
+            
+            await ExerciseLibraryService.shared.upsertExerciseFromCloud(dto)
+        } catch {
+            AppLogger.error("Realtime exercises \(kind) decode failed for '\(name)': \(error.localizedDescription)", category: .network)
+            logRealtimeEvent(type: "EXERCISE_\(kind)_ERROR", source: "exercises",
+                            details: "❌ Decode failed for '\(name)' (\(id.prefix(8))): \(error.localizedDescription)", isError: true)
+        }
+    }
+    
+    private func handleExerciseRowDelete(oldRecord: [String: AnyJSON]) async {
+        guard let idString = jsonString(oldRecord["id"]),
+              let uuid = UUID(uuidString: idString) else {
+            AppLogger.warning("Realtime exercises DELETE: missing id in oldRecord", category: .network)
+            return
+        }
+        let name = jsonString(oldRecord["name"]) ?? "<unknown>"
+        
+        logRealtimeEvent(type: "EXERCISE_DELETE", source: "exercises",
+                        details: "🗑️ DELETE '\(name)' (\(idString.prefix(8))) from CMS — removing locally")
+        
+        await ExerciseLibraryService.shared.deleteExerciseById(uuid)
     }
     
     // MARK: - Friend Activity Feed Subscription

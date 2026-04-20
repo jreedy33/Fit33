@@ -62,12 +62,44 @@ class ExerciseLibraryService: ObservableObject {
             await MainActor.run { StartupWaterfall.shared.mark("ExerciseLibrary.preWarmCache") }
             let startTime = CFAbsoluteTimeGetCurrent()
             
-            // Fetch exercise names on background context (avoids blocking main thread)
+            // Fetch exercise names on background context (avoids blocking main thread).
+            // If Core Data is effectively empty (fresh install / post-migration wipe),
+            // inline-seed from the bundle JSON in the SAME background transaction so
+            // the Exercise Library tab never renders a loading / grey-placeholder state.
             let nameList: [String] = await bgContext.perform {
                 let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                 request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
                 request.propertiesToFetch = ["name"]
-                let exercises = (try? bgContext.fetch(request)) ?? []
+                var exercises = (try? bgContext.fetch(request)) ?? []
+
+                if exercises.count < 100 {
+                    let bundleExercises = ExerciseDataProvider.shared.exercises
+                    if !bundleExercises.isEmpty {
+                        AppLogger.info("🌱 [ExerciseLibrary] Core Data has only \(exercises.count) exercises — inline-seeding \(bundleExercises.count) from bundle (bg context)", category: .data)
+                        var inserted = 0
+                        for data in bundleExercises {
+                            guard !data.name.isEmpty, !data.category.isEmpty else { continue }
+                            let exercise = Exercise(context: bgContext)
+                            exercise.id = UUID()
+                            exercise.name = data.name
+                            exercise.category = data.category
+                            exercise.muscleGroups = data.muscleGroups as NSObject
+                            exercise.equipment = data.equipment
+                            exercise.instructions = data.instructions
+                            exercise.isFavorite = false
+                            inserted += 1
+                        }
+                        do {
+                            try bgContext.save()
+                            AppLogger.info("✅ [ExerciseLibrary] Inline bundle seed complete: \(inserted) exercises saved (viewContext will auto-merge)", category: .data)
+                            // Re-fetch so isExercisesReady check below sees the seeded rows
+                            exercises = (try? bgContext.fetch(request)) ?? []
+                        } catch {
+                            AppLogger.error("❌ [ExerciseLibrary] Inline bundle seed save failed: \(error.localizedDescription)", category: .data)
+                        }
+                    }
+                }
+
                 return exercises.compactMap { $0.name }
             }
             
@@ -852,6 +884,142 @@ class ExerciseLibraryService: ObservableObject {
         } catch {
             AppLogger.error("❌ [ExerciseLibrary] Bundle seed failed: \(error)", category: .data)
         }
+    }
+    
+    // MARK: - Real-time Upsert / Delete (CMS-driven)
+    //
+    // These power the admin CMS → app live update flow: RealtimeService listens
+    // for INSERT/UPDATE/DELETE on the `exercises` table and calls these methods
+    // so a single exercise changes instantly without a full re-sync of 5500+ rows.
+    //
+    // ⚠️ Both mutate Core Data on the main thread (viewContext). Small scope —
+    // one row lookup + field assignment + save — so it's fast and safe.
+    
+    /// Upsert a single exercise (from Supabase Realtime or a direct fetch) into
+    /// Core Data. Matches by UUID first, then falls back to (case-insensitive)
+    /// name so inserts arriving before their ID is known still de-duplicate.
+    @MainActor
+    func upsertExerciseFromCloud(_ dto: ExerciseDTO) {
+        guard !dto.name.isEmpty else { return }
+        
+        let ctx = viewContext
+        let uuid: UUID? = dto.id.flatMap { UUID(uuidString: $0) }
+        
+        let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+        if let uuid {
+            request.predicate = NSPredicate(format: "id == %@", uuid as CVarArg)
+        } else {
+            request.predicate = NSPredicate(format: "name ==[cd] %@", dto.name)
+        }
+        request.fetchLimit = 1
+        
+        let existing = (try? ctx.fetch(request))?.first
+        let exercise = existing ?? Exercise(context: ctx)
+        
+        if existing == nil {
+            exercise.id = uuid ?? UUID()
+        } else if let uuid, exercise.id != uuid {
+            exercise.id = uuid
+        }
+        
+        applyDTO(dto, to: exercise)
+        
+        do {
+            try ctx.save()
+            invalidateCache()
+            AppLogger.info("✅ [ExerciseLibrary] Upserted '\(dto.name)' from realtime (\(existing == nil ? "INSERT" : "UPDATE"))", category: .data)
+        } catch {
+            AppLogger.error("❌ [ExerciseLibrary] Realtime upsert save failed for '\(dto.name)': \(error.localizedDescription)", category: .data)
+        }
+    }
+    
+    /// Delete a single exercise by its Supabase UUID. Used when the admin CMS
+    /// removes an exercise — we delete it locally so it vanishes from the UI
+    /// immediately instead of after the next 6-hour re-sync.
+    @MainActor
+    func deleteExerciseById(_ id: UUID) {
+        let ctx = viewContext
+        let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        request.fetchLimit = 1
+        
+        guard let existing = (try? ctx.fetch(request))?.first else {
+            AppLogger.debug("🗑️ [ExerciseLibrary] Realtime delete — no local row for \(id)", category: .data)
+            return
+        }
+        
+        let name = existing.name ?? "<unknown>"
+        ctx.delete(existing)
+        
+        do {
+            try ctx.save()
+            invalidateCache()
+            AppLogger.info("🗑️ [ExerciseLibrary] Deleted '\(name)' from realtime", category: .data)
+        } catch {
+            AppLogger.error("❌ [ExerciseLibrary] Realtime delete save failed for '\(name)': \(error.localizedDescription)", category: .data)
+        }
+    }
+    
+    /// Copy every editable field from a cloud DTO onto a Core Data `Exercise`.
+    /// Mirrors the assignment block inside `performSync(with:)` so edits made in
+    /// the admin CMS update exactly the same columns the full sync does.
+    private func applyDTO(_ dto: ExerciseDTO, to exercise: Exercise) {
+        exercise.name = dto.name
+        exercise.category = dto.category.isEmpty ? "General" : dto.category
+        
+        let primary = dto.primaryMusclesArray
+        exercise.muscleGroups = (primary.isEmpty ? ["General"] : primary) as NSObject
+        exercise.secondaryMuscles = dto.secondaryMusclesArray as NSObject
+        
+        exercise.equipment = (dto.equipment?.isEmpty == false) ? dto.equipment! : "Bodyweight"
+        exercise.instructions = dto.instructions ?? "No instructions available"
+        exercise.exerciseDescription = dto.description
+        exercise.stepsToPerform = dto.stepsToPerform
+        exercise.workoutType = dto.workoutType
+        
+        exercise.movementPattern = dto.movementPattern
+        exercise.forceType = dto.forceType
+        exercise.movementType = dto.movementType
+        exercise.laterality = dto.laterality
+        exercise.planeOfMotion = dto.planeOfMotion
+        exercise.difficultyLevel = Int16(dto.difficultyLevel ?? 0)
+        exercise.complexityScore = Int16(dto.complexityScore ?? 0)
+        exercise.strengthRating = Int16(dto.strengthRating ?? 0)
+        exercise.hypertrophyRating = Int16(dto.hypertrophyRating ?? 0)
+        exercise.powerRating = Int16(dto.powerRating ?? 0)
+        exercise.enduranceRating = Int16(dto.enduranceRating ?? 0)
+        exercise.bodyPosition = dto.bodyPosition
+        exercise.benchAngle = dto.benchAngle
+        exercise.gripType = dto.gripType
+        exercise.gripWidth = dto.gripWidth
+        exercise.optimalRepRangeMin = Int16(dto.optimalRepRangeMin ?? 0)
+        exercise.optimalRepRangeMax = Int16(dto.optimalRepRangeMax ?? 0)
+        exercise.placementInWorkout = dto.placementInWorkout
+        exercise.fatigability = Int16(dto.fatigability ?? 0)
+        exercise.popularityScore = Int16(dto.popularityScore ?? 0)
+        exercise.homeGymFriendly = dto.homeGymFriendly ?? false
+        exercise.practicalityScore = Int16(dto.practicalityScore ?? 50)
+        
+        exercise.fatLossRating = Int16(dto.fatLossRating ?? 5)
+        exercise.generalFitnessRating = Int16(dto.generalFitnessRating ?? 5)
+        exercise.isCompound = dto.isCompound ?? false
+        exercise.supersetable = dto.supersetable ?? true
+        
+        exercise.setValue(dto.exerciseFamily, forKey: "exerciseFamily")
+        exercise.setValue(dto.baseExerciseName, forKey: "baseExerciseName")
+        exercise.setValue(dto.complementaryFamilies, forKey: "complementaryFamilies")
+        exercise.setValue(dto.isEquipmentPrimary ?? false, forKey: "isEquipmentPrimary")
+        exercise.setValue(dto.equipmentCategory, forKey: "equipmentCategory")
+        exercise.setValue(dto.durationBased ?? false, forKey: "durationBased")
+        exercise.setValue(Int16(dto.recommendedSets ?? 3), forKey: "recommendedSets")
+        exercise.setValue(Int16(dto.restSeconds ?? 60), forKey: "restSeconds")
+        exercise.setValue(Int16(dto.musclesWorkedCount ?? 2), forKey: "musclesWorkedCount")
+        exercise.setValue(Int16(dto.priorityBuildMuscle ?? 70), forKey: "priorityBuildMuscle")
+        exercise.setValue(Int16(dto.priorityGetLean ?? 70), forKey: "priorityGetLean")
+        exercise.setValue(Int16(dto.priorityHome ?? 50), forKey: "priorityHome")
+        exercise.setValue(Int16(dto.priorityGym ?? 70), forKey: "priorityGym")
+        
+        exercise.videoFilename = dto.videoFilename
     }
     
     func getAllExercises() -> [Exercise] {

@@ -358,6 +358,8 @@ user_notification_preferences (server-side push preference enforcement)
 - Old 15-arg overload was DROPped to avoid ambiguity.
 - Step quests (`walk_3k_steps`, `walk_5k_steps`, `walk_7500_steps`, `walk_10k_steps`, `hit_step_goal`) have their `target_value`, `title`, and `description` overridden when the user has an active step challenge.
 - `GRANT EXECUTE` updated for the new 16-param signature.
+- **2026-04-20 rewrite** (`supabase/20260420_daily_quests_actionable_fixes.sql`): now respects `quest_templates.requires_context` (`has_program` / `has_friends` / `has_challenge` / `no_friends` / `no_challenge` / `free_user`) AND `quest_templates.min_workouts` in the eligibility pool. The prior selector filtered only by `category` + `p_has_friends`, so `complete_program_day` was handed out to users without a program. Pool now includes every category (`workout`, `nutrition`, `steps`, `social`, `tracking`, `wildcard`, `reward`). Hard-day fallback is `['exercise_sets_25','walk_10k_steps','hit_step_goal']` — do NOT revert to `complete_2_workouts`.
+- **Retired template**: `complete_2_workouts` is `is_active = FALSE` (bad training advice; most users can't complete 2 workouts/day). Kept in-table so historical user_daily_quests rows still resolve.
 
 **`accept_friend_request` function**:
 - Now inserts into `app_notifications` in addition to `push_notification_queue`.
@@ -404,6 +406,20 @@ user_notification_preferences (server-side push preference enforcement)
 
 **Critical**: Materialized views use `REFRESH MATERIALIZED VIEW CONCURRENTLY` which requires a UNIQUE index. Both `mv_user_engagement_scores` and `mv_retention_cohorts` have these.
 
+### 2026-04-20: `cardio_workouts` Overlap Dedup (one-time cleanup)
+
+**Migration**: `supabase/20260420_cardio_workouts_overlap_dedup.sql`
+
+**Problem**: Same user + same canonical origin (WHOOP most commonly) could produce multiple rows in `cardio_workouts` whose time windows overlapped — distinct `external_id`s for a single physical session. The existing unique index `idx_cardio_workouts_user_source_external (user_id, source, external_id)` did not catch these. Dashboard Workout History showed both rows with the WHOOP badge.
+
+**Fix**: CTE-based sessionization — for each `(user_id, canonical_origin)` partition, order by `started_at,id`, walk the rows accumulating a running `MAX(completed_at)`, start a new "cluster" whenever the current row begins strictly after the previous running max end. Within each cluster of size >1, keep the row with the highest "quality score" (+10 specific `activity_type` (not other/workout/unknown/""), +3 HR, +2 distance, +1 calories, +1 duration) — tie-break on newer `created_at`, then larger `id`. Delete the rest.
+
+`canonical_origin` is `COALESCE(origin_app, legacy source→origin map)` to mirror `CardioWorkoutDTO.resolvedOrigin`. Rows with NULL canonical_origin (pure HealthKit with unknown author) are skipped — they can legitimately overlap if two different unknown apps wrote to Apple Health.
+
+**Idempotent**: post-run there are no same-user/same-origin pairs with `a.started_at < b.completed_at AND b.started_at < a.completed_at`. Migration emits a `RAISE NOTICE` with the residual-pair count for verification.
+
+**Client-side companion**: `HealthDataService.syncWhoopData` now performs the same overlap check before every WHOOP insert (±2h fetch window, Swift-side 50% overlap fraction computed using the shorter side as denominator), so the problem does not recur. If Strava/Fitbit/Oura ever start producing overlapping records, port the same check to their sync path; the migration already handles all origins.
+
 ### 2026-03-27: WHOOP Integration Tables
 
 **New table: `whoop_recovery_data`**
@@ -439,3 +455,40 @@ user_notification_preferences (server-side push preference enforcement)
 **Rule**: When adding a new column to social RPCs, patch ALL RPCs in a SINGLE migration to prevent ordering issues. Never split `is_verified` and `is_gold_verified` across separate files.
 
 **Swift DTOs**: All already have `isGoldVerified: Bool?` with `is_gold_verified` coding key — no Swift changes needed. League RPCs (`get_or_join_weekly_league`, `get_league_leaderboard`) and `get_friends`/`get_friend_activity_feed` were unaffected (not overwritten).
+
+### 2026-04-20: Exercises Realtime (CMS → App live sync)
+
+**Migration**: `supabase/20260420_exercises_realtime.sql`
+
+**Problem**: Admin CMS edits to `exercises` took up to 6 hours to appear in the iOS app (hardcoded `exerciseSyncInterval = 6h` in `ExerciseLibraryService`) AND were invisible to cold-start fetches because the app reads `mv_public_exercises` (materialized view) which never auto-refreshed when its base table changed.
+
+**Fix**:
+1. `ALTER TABLE public.exercises REPLICA IDENTITY FULL` — so realtime `UPDATE` events ship the entire NEW row (not just changed columns).
+2. `ALTER PUBLICATION supabase_realtime ADD TABLE public.exercises` — enables WebSocket event broadcasting (idempotent guard).
+3. `CREATE UNIQUE INDEX idx_mv_public_exercises_id_unique ON mv_public_exercises(id)` — required for `REFRESH MATERIALIZED VIEW CONCURRENTLY` (non-blocking refresh on every save).
+4. `refresh_mv_public_exercises()` RPC (SECURITY DEFINER, service_role only) — CMS admin API calls this after every `update_exercise` / `delete_exercise` so cold-start launches also see the latest data.
+
+**iOS integration** (`Fit33/RealtimeService.swift`): `subscribeExercises()` listens for INSERT/UPDATE/DELETE on `public.exercises`, decodes the record into the existing `ExerciseDTO` (reused via `JSONEncoder(JSONObject)` round-trip), and calls `ExerciseLibraryService.shared.upsertExerciseFromCloud(dto)` or `deleteExerciseById(id)`. Skips rows where `is_custom = true`.
+
+**ExerciseLibraryService new methods** (`@MainActor`): `upsertExerciseFromCloud(_ dto:)` (match by UUID, fall back to name) and `deleteExerciseById(_ id:)`. Both call `invalidateCache()` which synchronously rebuilds the name/id dictionaries so the next SwiftUI read sees the change.
+
+**Rules**:
+- `exercises` MUST stay in the `supabase_realtime` publication with `REPLICA IDENTITY FULL` — removing either breaks the live CMS sync.
+- Any new bulk update script that writes to `exercises` MUST end with `SELECT refresh_mv_public_exercises()` (or the CMS equivalent) so cold-start users see the new data.
+- Never replace the admin CMS `rpc('refresh_mv_public_exercises')` fire-and-forget with a blocking call — CONCURRENTLY is fast but not instantaneous on 5500 rows and the iOS app already got the change via Realtime.
+
+### 2026-04-20: silent_push_wake_log + wake-challenge-opponents
+
+**New table**: `silent_push_wake_log (id BIGSERIAL, user_id UUID FK user_profiles, triggered_by TEXT CHECK ('foreground'|'cron'|'background_sync'), sent_at TIMESTAMPTZ DEFAULT NOW())`. RLS enabled with **zero policies** → service-role only (by design; clients never read/write this). Index: `(user_id, sent_at DESC)` for the 15-min throttle lookup. Daily prune via pg_cron at 03:10 UTC drops rows >7 days.
+
+**New pg_cron job**: `wake-stale-challenge-opponents` runs `SELECT trigger_challenge_opponent_wake()` every 30 min (`*/30 * * * *`). Function calls the `wake-challenge-opponents` edge function with `x-cron-key` service-role JWT header using the same `internal_config` pattern as `process_push_notification_queue` (migration 20260324).
+
+**New edge function**: `wake-challenge-opponents` sends APNs silent pushes (`aps.content-available: 1`, `apns-push-type: background`, `apns-priority: 5`). Accepts `{source: "foreground"|"cron"|"background_sync"}`. Foreground mode: caller's JWT resolves their opponents across `challenge_participants` (status=accepted, joined group_challenges where status=active) + `private_challenge_members` (end_date NULL or ≥ today). Cron mode: service-role JWT, every participant in any active challenge. 15-min throttle per `user_id` via `silent_push_wake_log` before APNs dispatch. Uses same APNS_* secrets as `send-push-notification`.
+
+**Migration**: `supabase/20260420_challenge_opponent_wake.sql`.
+
+**Rules**:
+- `silent_push_wake_log` must stay RLS-on, policy-free. Never add a client-readable policy — the rate-limit log is an internal abuse-prevention signal.
+- Silent pushes do NOT go through `push_notification_queue`. That table is for user-visible alerts with retry/quiet-hours logic; silent pushes are fire-and-forget and MUST skip quiet hours.
+- When adding a new silent push type, create a new edge function (or a typed branch in an existing one) — do NOT extend `send-push-notification`. The two APNs code paths have different priority/push-type headers and must not be merged.
+- The `trigger_<something>` pg_cron wrapper pattern (reads `internal_config` → `net.http_post` with `x-cron-key`) is now canonical. Reuse it for any future server-scheduled edge-function invocation.

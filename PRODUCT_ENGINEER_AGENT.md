@@ -24,6 +24,11 @@
 
 ---
 
+## Sprint 4 (2026-04-20) Must-Know Patterns
+
+- **CMS exercise edits flow into the app live.** Saving an exercise in `admin.doublethr33s.com/exercises/[id]` writes `public.exercises`, fires a Supabase Realtime `UPDATE`, and `RealtimeService.subscribeExercises()` → `ExerciseLibraryService.upsertExerciseFromCloud(dto)` patches the single Core Data row and invalidates the exercise cache so the `ExerciseLibraryView` reflects the change on the next SwiftUI recompute. Same path for INSERT/DELETE. NEVER trigger `forceSyncExercises()` in response — the surgical upsert is the whole point. The CMS also fire-and-forgets `rpc('refresh_mv_public_exercises')` so cold-start users (which read the matview) also see the change.
+- Requires SQL migration `supabase/20260420_exercises_realtime.sql` to be applied (adds `exercises` to `supabase_realtime`, sets `REPLICA IDENTITY FULL`, creates the `mv_public_exercises(id)` unique index, and exposes the `refresh_mv_public_exercises()` SECURITY DEFINER RPC). Missing that migration = CMS edits silently take up to 6 h to land in-app.
+
 ## Sprint 3 (2026-04-18) Must-Know Patterns
 
 - **Onboarding completion ordering — validate sync inputs BEFORE any cloud-write `Task`.** `completeOnboarding()` now parses `weight` at the top, `guard`s on failure, and surfaces `OnboardingError.invalidWeight` via `@State completionError` + `.confirmationDialog` with Edit / Start Over / Cancel. The dialog's Start Over calls `rollbackCloudProfileIfNeeded()` → `SupabaseManager.deleteAccount()` (idempotent). Rule: any future onboarding step that both (a) validates synchronous input and (b) kicks an async cloud write MUST validate first. Orphan cloud profiles are a P0 support trap.
@@ -348,6 +353,7 @@ struct MyNewView: View {
 - Nutrition tab uses **two-phase rendering**: core content first, heavy widgets (recipes, hydration, weight tracker, orb background) after 150ms via `showSecondaryWidgets` flag
 - Exercise tab defers `VideoThumbnailService.preGeneratePosterFrames` by 500ms
 - `ExerciseLibraryFilterCache.precomputeRecommendedList` runs on `Task.detached` (NOT MainActor)
+- **Exercise Library tab never renders a placeholder/loading state.** Real cards are guaranteed because `ExerciseLibraryService.preWarmCache()` inline-seeds from `ExerciseDataProvider.shared.exercises` (bundle JSON) on its background Core Data context when Core Data has <100 rows. `Fit33App.init()` touches `ExerciseLibraryService.shared` on its first line to fire pre-warm immediately, and the one-time exercise migration wipe also re-seeds before completing. The `ForEach` in `ExerciseLibraryView` filters out any Exercise row whose `name` is nil/empty so a faulted row can never render the grey "Exercise" / "Loading..." placeholder card. Never re-add a spinner/skeleton branch here — fix the data layer instead.
 - Challenge syncs are throttled to 15s cooldown across `syncHealthKitDataToChallenges`, `syncAllTrackingToChallenges`, and `recalculateAllChallengeProgress`
 
 ### AnimatedOrbBackground

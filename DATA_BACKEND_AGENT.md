@@ -17,6 +17,7 @@
 9. **Moderation flip must propagate via realtime** (Sprint 2, Q2-46): the moderation webhook updates `is_hidden = true` AFTER insert. Client UI that persists the sender's own row (chat, activity feed) MUST subscribe to `UpdateAction` on that table and drop any row where `is_hidden` flipped to true. Reference: `RealtimeService.subscribeFriendActivityFeed` + `PrivateChallengeService` realtime channel both tail the update stream. Do NOT rely on refetching — server RPCs filter hidden rows but the local cache keeps them until refreshed.
 10. **Legacy `group_challenge_members` table is REVOKE-hardened** (Sprint 2, Q2-15): RLS is enabled; `INSERT`/`UPDATE`/`DELETE` have been revoked from `authenticated`; `ALL` revoked from `anon`. Only `service_role` + SECURITY DEFINER RPCs may write. Never add a new client path that writes this table directly — use `challenge_participants` for the live challenge system. See `supabase/20260418_group_challenge_members_invariant.sql`.
 11. **Social compliance RPCs** (Sprint 2, Q2-7): `get_blocked_users()` and `report_content(p_table_name, p_record_id, p_reported_user_id, p_content_snippet, p_reason)` are the canonical App Review compliance surfaces. `report_content` hard-filters `p_table_name` against an allowlist (`private_challenge_chat`, `challenge_reactions`, `shared_workouts`, `group_challenges`, `private_challenges`, `community_challenges`, `friend_activity_feed`, `user_profiles`) and writes to `content_moderation_log` with `flagged_categories=["user_report"]`.
+12. **Admin CMS exercise edits are real-time** (2026-04-20): saving an exercise in `admin.doublethr33s.com` fires a `public.exercises` Realtime event → `RealtimeService.subscribeExercises()` → `ExerciseLibraryService.upsertExerciseFromCloud(dto)`. Do NOT add a full `forceSyncExercises()` call anywhere in response to CMS edits — it wipes Core Data and is 1000x more expensive than the surgical upsert. The CMS also fires `rpc('refresh_mv_public_exercises')` so cold-start launches (which read `mv_public_exercises`) see the change too. Requires `exercises` to remain in the `supabase_realtime` publication with `REPLICA IDENTITY FULL` (migration `20260420_exercises_realtime.sql`).
 
 ---
 
@@ -382,6 +383,27 @@ When creating views, NEVER use `SECURITY DEFINER`. All views in the `public` sch
 - Title/description dynamically generated (e.g. "10K Challenge Steps").
 - Old 15-arg function signature was DROPped.
 
+### 2026-04-20: Daily Quests — actionable + skill-aware
+
+Migration `supabase/20260420_daily_quests_actionable_fixes.sql` replaces the 16-arg `get_daily_quests`. Two things were quietly broken in the previous selector (`20260325_quest_challenge_sync.sql`):
+
+1. **`requires_context` was never enforced.** The pool WHERE clauses only filtered by `category` + `p_has_friends` for social. So `complete_program_day` (tagged `has_program`), `add_friend` (`no_friends`), `start_first_challenge` (`no_challenge`), and `watch_ads` (`free_user`) were handed out to users who could not complete them. The new selector runs every quest through a single eligibility check that respects `requires_context` AND `min_workouts` before splitting into easy/medium/hard pools.
+2. **Categories `tracking`, `wildcard`, `reward` were dropped** by the old pool filter, so `beat_personal_record`, `perfect_day`, `early_bird_workout`, `log_cardio`, `log_weight`, `check_progress`, `sleep_7_hours`, `weekly_weigh_in`, `favorite_a_workout`, and `watch_ads` could never be selected. The new selector draws from every category; gating is handled by `requires_context` / `min_workouts` only.
+
+**Retired quest template**: `complete_2_workouts` ("Double Session") is marked `is_active = FALSE, weight = 0`. Two strength workouts in one day is not general-audience training advice and most users cannot complete it. The Swift `.complete2Workouts` case and `onWorkoutCompleted` → `reportProgress(.complete2Workouts)` call are harmless — they no-op because `hasQuest()` will return false when the quest is not assigned. The `user_daily_quests` row is kept in-place (historical completions still resolve to a template via `LEFT JOIN quest_templates`).
+
+**`min_workouts` gates added** on V2 templates (were 0 for most). See the migration for the full list. Key thresholds:
+- 0:  `complete_workout`, `walk_3k/5k_steps`, `log_breakfast/lunch/dinner`, `add_friend`, `watch_ads`, `stretch_session`, `log_cardio`.
+- 3:  `exercise_sets_15`, `walk_7500_steps`, `early_bird_workout`, `send_challenge`, `maintain_streak`.
+- 6:  `walk_10k_steps`, `log_water_8`, `burn_300_calories`.
+- 10: `exercise_sets_25`, `hit_protein_goal`, `perfect_day`.
+- 15: `beat_personal_record`, `beat_volume_pr`, `league_3_workouts`.
+- 50: `top_3_league`.
+
+**Migration cleanup step** drops today's `user_daily_quests` rows for any user who currently has either retired quest and hasn't completed anything yet today, so the selector re-seeds with valid quests on next fetch (the selector only runs when `COUNT(*) = 0` per user/date). Users who already completed something today keep their progress — the stale quest just sits unfinished until tomorrow's reset.
+
+**Hard-day fallback changed** from `ARRAY['complete_2_workouts']` to `ARRAY['exercise_sets_25', 'walk_10k_steps', 'hit_step_goal']`. Keep this if you ever rewrite the selector again — a 2-workout/day fallback is poor advice.
+
 **Core Data threading rules** (reinforced):
 - `ExerciseLibraryService.init()` no longer calls `viewContext.count(for:)` synchronously — uses `preWarmCache()` on background context.
 - `WorkoutSuggestionEngine` uses a private `bgContext` with `performAndWait` — NOT `viewContext`.
@@ -664,3 +686,48 @@ A Strava run pulled via Apple Health has `source='healthkit'` and `origin_app='s
 **DTO changes**: `CardioWorkoutDTO.originApp: String?` added with `origin_app` coding key. `resolvedOrigin` computed var prefers `origin_app`, falls back to `source`, then best-effort-parses `workout_name` for pre-migration rows. `isFromStrava` now checks `source == "strava" || originApp == "strava"`.
 
 **HK DTO**: `HealthKitWorkoutInsert.originApp: String?` added with `origin_app` coding key. Set from `WorkoutOrigin.rawValue` in `HealthDataService.saveHealthKitWorkout` (nil only when origin is `.unknown`).
+
+### 2026-04-20: WHOOP overlap dedup — third dedup layer
+
+**Problem**: Even with the `(user_id, source='whoop', external_id)` guard + the HK/OAuth dedup rules above, users connected to WHOOP could see **two rows per physical session** in Workout History (one labeled "Workout", one "Other" — both with the WHOOP badge, same start time, ~identical duration/calories). Root cause: WHOOP's `/v2/activity/workout` endpoint can return multiple distinct `id`s for a single session — typically an auto-detected generic "Activity" (sport_name=null → `activity_type="other"`) alongside the user-logged specific sport. Different `external_id`s → prior dedup didn't catch them.
+
+**Fix (client-side, `HealthDataService.syncWhoopData`)**: for each incoming WHOOP workout, after the exact `external_id` check, we fetch all user rows whose `started_at` falls within ±2h of the incoming window and compare against any that `resolvedOrigin == .whoop`. If any overlap ≥50% (by shorter-side fraction, so a fully-contained short row still counts as a dup), the one with the higher `cardioQualityScore` wins; the loser is either skipped (if existing wins) or deleted before insert (if incoming wins). Score: +10 specific `activity_type` (not in other/workout/unknown/""), +3 HR, +2 distance, +1 calories, +1 duration.
+
+**One-time cleanup**: `supabase/20260420_cardio_workouts_overlap_dedup.sql` sessionizes existing rows per `(user_id, canonical_origin)` using a running MAX(completed_at) sessionization CTE and deletes losers per overlap cluster using the same scoring. Safe to re-run (idempotent — post-run no same-user/same-origin overlaps remain). Migration emits a NOTICE with residual-overlap count for verification.
+
+**Activity-type mapper**: `mapWhoopSportToActivityType(sportId:sportName:)` now takes `sport_id` first (deterministic) and falls back to fuzzy `sport_name`. Covers the common WHOOP sport ids (0=Running, 1=Cycling, 16=Swim, 45=Weightlifting, 66=Yoga, 123=HIIT, 126=Powerlifting, 228=Strength Trainer, 230=Pilates, …). Reduces the number of records that bucket into "other", which is what the dedup uses to pick the richer row.
+
+**Generalization**: the overlap-dedup rule applies to any OAuth integration, not just WHOOP. If Strava/Fitbit/Oura ever start emitting duplicate records per session, port the same time-overlap check into their sync paths. The SQL migration already handles all origins (whoop/strava/fitbit/oura/fit33) in a single pass.
+
+### 2026-04-20: Three-layer challenge background refresh
+
+**Problem**: Opponents' step/activity numbers could go stale in a 1v1, group, or private challenge because Apple Health data is device-locked — if the opponent doesn't open the app and iOS's opportunistic `BGAppRefreshTask` never fires, nothing syncs and we see yesterday's numbers. Manual inputs (hydration, protein) were already near-realtime via `log_*_challenge_progress` RPCs + `RealtimeService` subscriptions; this fix targets the auto-tracked (HealthKit-backed) gap.
+
+**Solution layers** (each one is a safety net for the one above):
+
+1. **On-device hardening** — `Fit33/BackgroundChallengeSyncService.swift`
+   - Registers TWO BGTask identifiers now: `com.gofit.app.challengeSync` (BGAppRefreshTask, ~15 min windows) and `com.gofit.app.challengeSyncProcessing` (BGProcessingTask, ~5 min, typically overnight while charging). Both identifiers live in `Info.plist` under `BGTaskSchedulerPermittedIdentifiers`.
+   - Throttle is now **per-source** (`steps`, `active_energy`, `distance`, `exercise_time`) instead of a single global 10-min timer. A step-event flood no longer starves an active-energy event. Keys: `bg_challenge_last_sync_<source>` in UserDefaults.
+   - BGTask expiration handlers cancel in-flight work, mark the task failed, AND re-schedule the next cycle. Previously an expiry left the chain dead.
+
+2. **Silent-push opponent wake** — `supabase/functions/wake-challenge-opponents/` + `Fit33/SilentPushHandler.swift` + `Fit33/ChallengeOpponentWakeService.swift`
+   - Edge function accepts `{source: "foreground" | "background_sync" | "cron"}`. Foreground/background_sync modes require a user JWT and resolve the caller's opponents across `challenge_participants` + `private_challenge_members`. Cron mode requires service-role and resolves ALL active-challenge participants (each device wakes itself, then every opponent sees the fresh numbers via realtime).
+   - Rate limit: `silent_push_wake_log` table (service-role-only RLS), 15-min window per `user_id`. Enforced in TypeScript before APNs call. Apple's silent-push budget is ~2-3/hr/device, so 15 min is the safe floor.
+   - APNs payload is `{aps: {content-available: 1}, type: "challenge_wake"}` with headers `apns-push-type: background`, `apns-priority: 5`, `apns-expiration: +1h`. **Never use priority 10 on a silent push — Apple will drop it.**
+   - Triggered from: (a) `Fit33App.swift` scenePhase `.active` (after foreground sync), (b) `BackgroundChallengeSyncService.performChallengeSyncInBackground` (at the end, fire-and-forget), (c) `pg_cron` `wake-stale-challenge-opponents` every 30 min.
+   - Device-side debounce: 60s in `ChallengeOpponentWakeService` on top of the server-side 15-min throttle.
+   - Requires `Info.plist` → `UIBackgroundModes` contains `remote-notification` (added in this migration — without it iOS drops silent pushes before they reach `didReceiveRemoteNotification`).
+
+3. **Server-side OAuth pull** — **NOT IMPLEMENTED (blocked by architecture).** Original plan: pg_cron every 15 min pulls WHOOP/Oura/Fitbit activity via OAuth APIs directly, bypassing the opponent's device. Blocker: OAuth access/refresh tokens are stored in iOS Keychain only (`WhoopService.swift`, `OuraService.swift`, `FitbitService.swift`) — Supabase has no `user_oauth_tokens` table, only `user_profiles.is_<provider>_connected` booleans. Implementing server-side pull would require a new encrypted-at-rest token store + re-auth migration path for existing users + KMS/vault secret management. Tracked as a follow-up; Phase 2 (silent push) covers ~95% of the case because WHOOP/Oura/Fitbit already bridge into HealthKit on-device for most users.
+
+**Configuration required** (once per environment):
+- `internal_config` must have `supabase_url`, `service_role_key`, `anon_key` (already seeded by `20260324_push_notification_cron.sql`).
+- Edge function secrets: `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`, `APNS_PRIVATE_KEY` (same set used by `send-push-notification`).
+- Deploy: `supabase functions deploy wake-challenge-opponents`.
+
+**Silent-push handler contract**: `SilentPushHandler.handle(userInfo:completion:)` MUST call `completion(_:)` within ~30s or iOS drops our future background-delivery budget. Implementation self-caps at 25s via a timeout Task. Routes on the top-level `type` string; unknown types return `.noData`. Adding a new silent-push type = add a new `case` in `SilentPushHandler.handle` — do NOT overload `challenge_wake`.
+
+**Do not add**:
+- A second, shorter server throttle window — Apple APNs will drop us.
+- A silent-push path that goes through `push_notification_queue` — that table is for user-visible alerts with retry logic; silent pushes are fire-and-forget opportunistic wakes. The two paths must stay separate.
+- Direct inserts into `silent_push_wake_log` from client code — RLS denies it; only the edge function (service role) writes there.

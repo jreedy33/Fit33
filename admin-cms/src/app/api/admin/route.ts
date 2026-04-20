@@ -1657,6 +1657,14 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: error.message }, { status: 500 })
         }
 
+        // Refresh the mv_public_exercises materialized view so cold-start
+        // app launches see the change. Fire-and-forget — the iOS app also
+        // receives a Supabase Realtime event directly from the `exercises`
+        // table update, so the UI updates instantly even if this lags.
+        admin.rpc('refresh_mv_public_exercises').then(({ error: rpcErr }) => {
+          if (rpcErr) console.error('[update_exercise] mv refresh failed:', rpcErr.message)
+        })
+
         return NextResponse.json({ exercise: data })
       }
 
@@ -1670,6 +1678,10 @@ export async function POST(req: NextRequest) {
         if (error) {
           return NextResponse.json({ error: error.message }, { status: 500 })
         }
+
+        admin.rpc('refresh_mv_public_exercises').then(({ error: rpcErr }) => {
+          if (rpcErr) console.error('[delete_exercise] mv refresh failed:', rpcErr.message)
+        })
 
         return NextResponse.json({ success: true })
       }

@@ -712,6 +712,21 @@ struct DailyQuestsWidget: View {
     
     // MARK: - Dynamic Quest Descriptions
     
+    /// Heuristic: detects whether the server-sent description for a generic
+    /// workout quest is one of the split-personalized strings produced by
+    /// `get_daily_quests` (migration 57). Falls back to the legacy engine
+    /// text only when the description still looks like a stock template.
+    private static func isPersonalizedWorkoutDescription(_ text: String) -> Bool {
+        let markers = [
+            "Your legs are fresh",
+            "Chest, shoulders",
+            "Back & biceps",
+            "Upper body is recovered",
+            "Everything is fresh"
+        ]
+        return markers.contains { text.contains($0) }
+    }
+
     private func dynamicDescription(for quest: DailyQuest) -> String {
         guard let key = QuestKey(rawValue: quest.questKey) else {
             return quest.description
@@ -722,6 +737,11 @@ struct DailyQuestsWidget: View {
             let suggestion = WorkoutSuggestionEngine.shared.suggestForToday()
             if suggestion.isFromProgram, let dayName = suggestion.programDayName {
                 return "Your program says \(dayName) — let's go!"
+            }
+            // Server now personalizes description for split-aware workout
+            // slots ("Your legs are fresh…"). Prefer it when present.
+            if Self.isPersonalizedWorkoutDescription(quest.description) {
+                return quest.description
             }
             if !suggestion.suggestedMuscles.isEmpty {
                 let names = suggestion.suggestedMuscles.prefix(2).map { $0.rawValue.capitalized }
@@ -740,6 +760,9 @@ struct DailyQuestsWidget: View {
         case .complete2Workouts:
             return "Knock out 2 workouts today"
         case .workout30Min:
+            if Self.isPersonalizedWorkoutDescription(quest.description) {
+                return quest.description
+            }
             return "Complete a 30+ min workout"
         case .exerciseSets15:
             return "Hit 15 sets in a single workout"
@@ -748,8 +771,14 @@ struct DailyQuestsWidget: View {
         case .tryNewExercise:
             return "Try an exercise you haven't done recently"
         case .upperBodyWorkout:
+            if Self.isPersonalizedWorkoutDescription(quest.description) {
+                return quest.description
+            }
             return WorkoutSuggestionEngine.shared.smartQuestDescription(isUpperBody: true)
         case .lowerBodyWorkout:
+            if Self.isPersonalizedWorkoutDescription(quest.description) {
+                return quest.description
+            }
             return WorkoutSuggestionEngine.shared.smartQuestDescription(isUpperBody: false)
             
         case .logBreakfast:

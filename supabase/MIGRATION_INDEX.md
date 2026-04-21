@@ -193,6 +193,21 @@ The **canonical version** is the one in the latest file listed below.
 
 **Paired code changes**: `Fit33/ChallengeService.respondToChallenge` now calls the new RPCs and interprets the structured status, skipping heavy post-accept sync on idempotent replays.
 
+## Index Verification (DB-5, Sprint 5 — 2026-04-20)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| — | `verify_query_performance.sql` | 🛠️ Verifier (not a migration) | Read-only audit that lists every expected index on hot tables (challenges, friendships, shared_workouts, daily rollups, push log, moderation, workout_history, etc.) and marks each row `OK` or `MISSING`. Replaces the never-created `optimize_query_performance.sql` from MASTER_TODO. Run ad hoc or in CI: `psql $SUPABASE_DB_URL -f supabase/verify_query_performance.sql | grep MISSING`. Extend the `expected_indexes` CTE whenever a new hot-path index ships. |
+
+## Daily Quest Program + Focus Aware (2026-04-21)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 57 | `20260421_daily_quests_program_and_focus_aware.sql` | 🆕 Ready | Adds two optional params to `get_daily_quests` (`p_suggested_split TEXT`, `p_fatigued_regions TEXT[]`) and uses them to (1) force slot 1 to a workout-category quest that matches the user's recovered split (`complete_program_day` when in a program; otherwise `lower_body_workout` / `upper_body_workout` / `workout_30_min` / `complete_workout`), (2) exclude `upper_body_workout` / `lower_body_workout` from the pool when the matching region is fatigued, and (3) rewrite the stored title/description for the workout slot ("Leg Day", "Push Day", …) so the UI reads like a personalized recommendation. Supersedes the 16-arg selector from migration 54. |
+
+**Run order**: 57 (standalone, idempotent). Drops both the 16-arg and 18-arg overloads before recreating, so safe to re-run.
+**Paired code changes**: `Fit33/DailyQuestService.swift` gains `suggestedSplit` + `fatiguedRegions` context (sourced from `WorkoutSuggestionEngine`) and wires `onWorkoutWithFocus` into `UserManager.completeWorkout` so upper/lower body quests progress. `Fit33/DailyQuestViews.swift` prefers the server-sent personalized description for generic workout quests.
+
 ---
 
 ## Process for New Migrations

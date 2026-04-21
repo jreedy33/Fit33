@@ -91,7 +91,11 @@ struct MacroLinePoint: Identifiable {
 
 struct WorkoutStatsSection: View {
     var body: some View {
-        LazyVStack(spacing: Spacing.md) {
+        // Use VStack (not LazyVStack) so all widget heights stabilize on first layout.
+        // LazyVStack deferred `.task` loads until scroll-into-view, which caused the
+        // bottom of the section to rubber-band as placeholders (180pt) were replaced
+        // with taller/shorter real charts mid-scroll.
+        VStack(spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text("My Stats")
                     .font(.ds_heading1)
@@ -261,9 +265,9 @@ struct NutritionTrendsChartWidget: View {
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if isLoading {
-                    chartPlaceholder
+                    chartPlaceholder(height: 200)
                 } else if dataPoints.isEmpty {
-                    emptyChartState(message: "Log meals to see nutrition trends")
+                    emptyChartState(message: "Log meals to see nutrition trends", height: 200)
                 } else {
                     if !dataPoints.isEmpty {
                         let avgCal = dataPoints.reduce(0) { $0 + $1.calories } / max(1, Double(dataPoints.count))
@@ -338,6 +342,7 @@ struct CalorieBalanceChartWidget: View {
     @State private var dataPoints: [CalorieBalancePoint] = []
     @State private var isLoading = true
     @State private var selectedDate: Date?
+    @State private var rawSelection: Date?
     @State private var selectedLines: Set<String> = ["Intake", "Burned"]
 
     private let balanceColors: [(name: String, color: Color)] = [
@@ -357,9 +362,9 @@ struct CalorieBalanceChartWidget: View {
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if isLoading {
-                    chartPlaceholder
+                    chartPlaceholder(height: 180)
                 } else if dataPoints.isEmpty {
-                    emptyChartState(message: "Log meals and complete workouts to see your calorie balance")
+                    emptyChartState(message: "Log meals and complete workouts to see your calorie balance", height: 180)
                 } else {
                     if !dataPoints.isEmpty {
                         let netColor: Color = netAvg > 0 ? .orange : .green
@@ -388,32 +393,19 @@ struct CalorieBalanceChartWidget: View {
                     .frame(height: 180)
                     .chartYAxis { AxisMarks(position: .leading) { _ in AxisValueLabel().font(.ds_caption); AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3])) } }
                     .chartXAxis { AxisMarks(values: .automatic(desiredCount: 5)) { value in AxisValueLabel { if let d = value.as(Date.self) { Text(shortDateLabel(d, timeframe: timeframe)).font(.ds_caption) } } } }
-                    .chartOverlay { proxy in
-                        GeometryReader { geo in
-                            Rectangle().fill(Color.clear).contentShape(Rectangle())
-                                .gesture(
-                                    LongPressGesture(minimumDuration: 0.2)
-                                        .sequenced(before: DragGesture(minimumDistance: 0))
-                                        .onChanged { value in
-                                            switch value {
-                                            case .second(true, let drag):
-                                                guard let drag = drag else { return }
-                                                let plotFrame = geo[proxy.plotFrame!]
-                                                let xInPlot = drag.location.x - plotFrame.origin.x
-                                                guard let date: Date = proxy.value(atX: xInPlot) else { return }
-                                                if let nearest = dataPoints.min(by: { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }) {
-                                                    let prev = selectedDate
-                                                    selectedDate = nearest.date
-                                                    if prev == nil || !Calendar.current.isDate(prev!, inSameDayAs: nearest.date) {
-                                                        HapticManager.impact(.light)
-                                                    }
-                                                }
-                                            default: break
-                                            }
-                                        }
-                                        .onEnded { _ in withAnimation(.easeOut(duration: 0.15)) { selectedDate = nil } }
-                                )
+                    .chartXSelection(value: $rawSelection)
+                    .onChange(of: rawSelection) { _, newValue in
+                        guard let newValue else {
+                            withAnimation(.easeOut(duration: 0.15)) { selectedDate = nil }
+                            return
                         }
+                        guard let nearest = dataPoints.min(by: { abs($0.date.timeIntervalSince(newValue)) < abs($1.date.timeIntervalSince(newValue)) }) else { return }
+                        let shouldHaptic: Bool = {
+                            guard let current = selectedDate else { return true }
+                            return !Calendar.current.isDate(current, inSameDayAs: nearest.date)
+                        }()
+                        selectedDate = nearest.date
+                        if shouldHaptic { HapticManager.impact(.light) }
                     }
                     .chartOverlay { proxy in
                         GeometryReader { geo in
@@ -564,9 +556,9 @@ struct WorkoutVolumeChartWidget: View {
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if isLoading {
-                    chartPlaceholder
+                    chartPlaceholder(height: 200)
                 } else if dataPoints.isEmpty {
-                    emptyChartState(message: "Complete workouts to see volume trends")
+                    emptyChartState(message: "Complete workouts to see volume trends", height: 200)
                 } else {
                     Chart {
                         ForEach(dataPoints) { point in
@@ -641,8 +633,8 @@ struct WorkoutFrequencyChartWidget: View {
             StatsTimeframePicker(selected: $timeframe)
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                if isLoading { chartPlaceholder }
-                else if dataPoints.isEmpty { emptyChartState(message: "Start working out to track frequency") }
+                if isLoading { chartPlaceholder(height: 180) }
+                else if dataPoints.isEmpty { emptyChartState(message: "Start working out to track frequency", height: 180) }
                 else {
                     Chart(dataPoints) { point in
                         BarMark(x: .value("Date", point.date, unit: timeframe == .week ? .day : .weekOfYear), y: .value("Count", point.count))
@@ -732,8 +724,8 @@ struct StrengthProgressChartWidget: View {
             StatsTimeframePicker(selected: $timeframe)
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                if isLoading { chartPlaceholder }
-                else if dataPoints.isEmpty { emptyChartState(message: "Track exercises to see strength trends") }
+                if isLoading { chartPlaceholder(height: 220) }
+                else if dataPoints.isEmpty { emptyChartState(message: "Track exercises to see strength trends", height: 220) }
                 else {
                     Button {
                         HapticManager.impact(.light)
@@ -915,7 +907,7 @@ struct PersonalRecordsWidget: View {
                     ForEach(0..<4, id: \.self) { _ in RoundedRectangle(cornerRadius: CornerRadius.lg).fill(Color.cardBackground.opacity(0.5)).frame(height: 130) }
                 }
             } else if records.isEmpty {
-                emptyChartState(message: "Complete workouts to earn personal records")
+                emptyChartState(message: "Complete workouts to earn personal records", height: 280)
             } else {
                 GeometryReader { geo in
                     let cardWidth = geo.size.width
@@ -1053,7 +1045,7 @@ struct BodyWeightTrendWidget: View {
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 if weightService.monthlyTrend.isEmpty && weightService.recentLogs.isEmpty {
-                    emptyChartState(message: "Log your weight to see trends")
+                    emptyChartState(message: "Log your weight to see trends", height: 180)
                 } else {
                     let trendData = weightService.monthlyTrend.isEmpty ? weightService.recentLogs.map { WeightTrendPoint(date: $0.loggedAt, weight: $0.weightLbs) } : weightService.monthlyTrend
                     Chart {
@@ -1110,8 +1102,8 @@ struct WorkoutDurationChartWidget: View {
             StatsTimeframePicker(selected: $timeframe)
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                if isLoading { chartPlaceholder }
-                else if dataPoints.isEmpty { emptyChartState(message: "Complete workouts to track duration") }
+                if isLoading { chartPlaceholder(height: 180) }
+                else if dataPoints.isEmpty { emptyChartState(message: "Complete workouts to track duration", height: 180) }
                 else {
                     let avgDur = Double(dataPoints.reduce(0) { $0 + $1.duration }) / max(1, Double(dataPoints.count))
                     Chart {
@@ -1167,8 +1159,8 @@ struct MuscleGroupDistributionWidget: View {
             SectionHeader(title: "Muscle Group Focus", icon: "figure.strengthtraining.traditional", iconColor: .red)
 
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                if isLoading { chartPlaceholder }
-                else if slices.isEmpty { emptyChartState(message: "Work out to see muscle distribution") }
+                if isLoading { chartPlaceholder(height: 160) }
+                else if slices.isEmpty { emptyChartState(message: "Work out to see muscle distribution", height: 160) }
                 else {
                     HStack(spacing: Spacing.md) {
                         Chart(slices) { slice in
@@ -1303,46 +1295,24 @@ private struct InteractiveLineChartModifier<DataPoint>: ViewModifier {
     let formatValue: (Double) -> String
     let accentColor: Color
     @Binding var selectedDate: Date?
-    @GestureState private var isHolding = false
+    @State private var rawSelection: Date?
 
     func body(content: Content) -> some View {
         content
-            .chartOverlay { proxy in
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(Color.clear)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            LongPressGesture(minimumDuration: 0.2)
-                                .sequenced(before: DragGesture(minimumDistance: 0))
-                                .updating($isHolding) { value, state, _ in
-                                    switch value {
-                                    case .second(true, _): state = true
-                                    default: break
-                                    }
-                                }
-                                .onChanged { value in
-                                    switch value {
-                                    case .second(true, let drag):
-                                        guard let drag = drag else { return }
-                                        let plotFrame = geo[proxy.plotFrame!]
-                                        let xInPlot = drag.location.x - plotFrame.origin.x
-                                        guard let date: Date = proxy.value(atX: xInPlot) else { return }
-                                        if let nearest = findNearest(to: date) {
-                                            let prev = selectedDate
-                                            selectedDate = nearest[keyPath: dateKeyPath]
-                                            if prev == nil || !Calendar.current.isDate(prev!, inSameDayAs: nearest[keyPath: dateKeyPath]) {
-                                                HapticManager.impact(.light)
-                                            }
-                                        }
-                                    default: break
-                                    }
-                                }
-                                .onEnded { _ in
-                                    withAnimation(.easeOut(duration: 0.15)) { selectedDate = nil }
-                                }
-                        )
+            .chartXSelection(value: $rawSelection)
+            .onChange(of: rawSelection) { _, newValue in
+                guard let newValue else {
+                    withAnimation(.easeOut(duration: 0.15)) { selectedDate = nil }
+                    return
                 }
+                guard let nearest = findNearest(to: newValue) else { return }
+                let snapped = nearest[keyPath: dateKeyPath]
+                let shouldHaptic: Bool = {
+                    guard let current = selectedDate else { return true }
+                    return !Calendar.current.isDate(current, inSameDayAs: snapped)
+                }()
+                selectedDate = snapped
+                if shouldHaptic { HapticManager.impact(.light) }
             }
             .chartOverlay { proxy in
                 GeometryReader { geo in
@@ -1464,17 +1434,17 @@ private struct ChartToggleGrid: View {
 
 // MARK: - Shared Helpers
 
-private var chartPlaceholder: some View {
-    RoundedRectangle(cornerRadius: CornerRadius.sm).fill(Color.cardBackground.opacity(0.5)).frame(height: 180)
+private func chartPlaceholder(height: CGFloat = 180) -> some View {
+    RoundedRectangle(cornerRadius: CornerRadius.sm).fill(Color.cardBackground.opacity(0.5)).frame(height: height)
         .overlay { ProgressView().tint(.adaptiveSecondaryText) }
 }
 
-private func emptyChartState(message: String) -> some View {
+private func emptyChartState(message: String, height: CGFloat = 180) -> some View {
     VStack(spacing: Spacing.sm) {
         Image(systemName: "chart.line.downtrend.xyaxis").font(.ds_heading1).foregroundColor(.adaptiveSecondaryText)
         Text(message).font(.ds_bodyMedium).foregroundColor(.adaptiveSecondaryText).multilineTextAlignment(.center)
     }
-    .frame(maxWidth: .infinity).frame(height: 140)
+    .frame(maxWidth: .infinity).frame(height: height)
 }
 
 private func shortDateLabel(_ date: Date, timeframe: StatsTimeframe) -> String {

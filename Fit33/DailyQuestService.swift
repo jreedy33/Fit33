@@ -358,9 +358,20 @@ class DailyQuestService: ObservableObject {
         let hasWeightLog: Bool
         let hydrationActive: Bool
         let leagueRank: Int
+        /// Recommended split for today based on muscle recovery history.
+        /// One of "push" | "pull" | "legs" | "upper" | "full" | "core_cardio", or nil
+        /// when the user has an active program (server uses `complete_program_day`).
+        let suggestedSplit: String?
+        /// Fatigued body regions the server should avoid scheduling. Subset of
+        /// {"upper","lower"}. Upper = any of chest/back/shoulders/biceps/triceps
+        /// still recovering; lower = any of quads/hamstrings/glutes/calves.
+        let fatiguedRegions: [String]
     }
     
-    private func gatherUserContext() -> UserQuestContext {
+    /// Builds the per-user context used to personalize today's quest selection.
+    /// Async because it awaits `WorkoutSuggestionEngine` for off-main-thread
+    /// muscle-recovery state from Core Data.
+    private func gatherUserContext() async -> UserQuestContext {
         let hasCloudProgram = CloudProgramService.shared.activeProgram != nil
         let hasGeneratedProgram = GeneratedProgramService.shared.activeProgram != nil
         let hasSmartProgram = SmartProgramEngine.shared.userPrograms.contains { !$0.isCompleted }
@@ -389,7 +400,25 @@ class DailyQuestService: ObservableObject {
         let hasWeightLog = WeightTrackingService.shared.statistics != nil
         let hydrationActive = HydrationService.shared.settings.dailyGoalMl > 0
         let leagueRank = WeeklyLeagueService.shared.standing?.myRank ?? 0
-        
+
+        // Muscle-recovery-aware split suggestion. Program users get their
+        // `complete_program_day` slot via the `requires_context` gate, so we
+        // skip the suggestion to keep the RPC payload minimal.
+        var suggestedSplit: String? = nil
+        var fatiguedRegions: [String] = []
+        if !hasProgram {
+            let suggestion = await WorkoutSuggestionEngine.shared.suggestForTodayAsync()
+            suggestedSplit = Self.encodeSplitFamily(suggestion.splitFamily)
+
+            let states = await WorkoutSuggestionEngine.shared.getMuscleRecoveryStatesAsync()
+            let upperCats: Set<WorkoutSuggestionEngine.MuscleCategory> = [.chest, .back, .shoulders, .biceps, .triceps]
+            let lowerCats: Set<WorkoutSuggestionEngine.MuscleCategory> = [.quads, .hamstrings, .glutes, .calves]
+            let upperFatigued = states.contains { upperCats.contains($0.category) && !$0.isRecovered }
+            let lowerFatigued = states.contains { lowerCats.contains($0.category) && !$0.isRecovered }
+            if upperFatigued { fatiguedRegions.append("upper") }
+            if lowerFatigued { fatiguedRegions.append("lower") }
+        }
+
         return UserQuestContext(
             hasProgram: hasProgram,
             hasFriends: hasFriends,
@@ -403,8 +432,23 @@ class DailyQuestService: ObservableObject {
             avgDuration: avgDuration,
             hasWeightLog: hasWeightLog,
             hydrationActive: hydrationActive,
-            leagueRank: leagueRank
+            leagueRank: leagueRank,
+            suggestedSplit: suggestedSplit,
+            fatiguedRegions: fatiguedRegions
         )
+    }
+
+    /// Contract: must match the string literals accepted by `get_daily_quests`
+    /// (`p_suggested_split`). Keep in sync with the SQL migration.
+    private static func encodeSplitFamily(_ family: WorkoutSuggestionEngine.SplitFamily) -> String {
+        switch family {
+        case .push:       return "push"
+        case .pull:       return "pull"
+        case .legs:       return "legs"
+        case .upperBody:  return "upper"
+        case .fullBody:   return "full"
+        case .coreCardio: return "core_cardio"
+        }
     }
     
     // MARK: - Day 1 Beginner Quests
@@ -585,7 +629,7 @@ class DailyQuestService: ObservableObject {
         error = nil
         
         // Gather user context for personalized quest selection
-        let ctx = gatherUserContext()
+        let ctx = await gatherUserContext()
         
         // Day 1: show hardcoded beginner quests instead of server quests
         if ctx.totalWorkouts == 0 {
@@ -613,13 +657,16 @@ class DailyQuestService: ObservableObject {
                 let p_hydration_active: Bool
                 let p_league_rank: Int
                 let p_active_step_challenge_target: Int?
-                
+                let p_suggested_split: String?
+                let p_fatigued_regions: [String]?
+
                 enum CodingKeys: String, CodingKey {
                     case p_user_id, p_timezone, p_has_program, p_has_friends, p_has_challenge
                     case p_step_goal, p_fitness_goal, p_is_subscriber, p_workout_streak
                     case p_total_workouts, p_preferred_time, p_avg_duration
                     case p_has_weight_log, p_hydration_active, p_league_rank
                     case p_active_step_challenge_target
+                    case p_suggested_split, p_fatigued_regions
                 }
                 
                 func encode(to encoder: Encoder) throws {
@@ -642,6 +689,12 @@ class DailyQuestService: ObservableObject {
                     if let stepTarget = p_active_step_challenge_target, stepTarget > 0 {
                         try container.encode(stepTarget, forKey: .p_active_step_challenge_target)
                     }
+                    if let split = p_suggested_split, !split.isEmpty {
+                        try container.encode(split, forKey: .p_suggested_split)
+                    }
+                    if let regions = p_fatigued_regions, !regions.isEmpty {
+                        try container.encode(regions, forKey: .p_fatigued_regions)
+                    }
                 }
             }
             
@@ -661,7 +714,9 @@ class DailyQuestService: ObservableObject {
                 p_has_weight_log: ctx.hasWeightLog,
                 p_hydration_active: ctx.hydrationActive,
                 p_league_rank: ctx.leagueRank,
-                p_active_step_challenge_target: ctx.activeStepChallengeTarget > 0 ? ctx.activeStepChallengeTarget : nil
+                p_active_step_challenge_target: ctx.activeStepChallengeTarget > 0 ? ctx.activeStepChallengeTarget : nil,
+                p_suggested_split: ctx.suggestedSplit,
+                p_fatigued_regions: ctx.fatiguedRegions.isEmpty ? nil : ctx.fatiguedRegions
             )
             
             let response: DailyQuestsResponse = try await SupabaseManager.shared.supabaseClient
@@ -879,14 +934,32 @@ class DailyQuestService: ObservableObject {
         await reportProgress(questKey: .completeWorkout)
     }
     
-    /// Call when a workout targets specific body parts
+    /// Call when a workout targets specific body parts. `bodyParts` is the set
+    /// of muscle-group strings pulled from `WorkoutExercise.safeMuscleGroups`
+    /// (e.g. "chest", "upper chest", "lats", "front delts", "quads"). We match
+    /// on substring so the full exercise-database vocabulary is covered — the
+    /// previous exact-match set missed "lats", "delts", "hamstrings" variants,
+    /// etc., which was preventing upper/lower-body quests from progressing.
     func onWorkoutWithFocus(bodyParts: Set<String>) async {
-        let upperBodyParts: Set<String> = ["chest", "back", "shoulders", "arms", "biceps", "triceps"]
-        let lowerBodyParts: Set<String> = ["legs", "quads", "hamstrings", "glutes", "calves"]
-        
-        let isUpperBody = !bodyParts.intersection(upperBodyParts).isEmpty
-        let isLowerBody = !bodyParts.intersection(lowerBodyParts).isEmpty
-        
+        let normalized = bodyParts.map { $0.lowercased() }
+
+        // Any token that contributes to the upper body. Includes delt/trap/lat
+        // variants so "Front Delts" / "Upper Back" / "Side Delts" all count.
+        let upperTokens: [String] = [
+            "chest", "back", "lat", "shoulder", "delt", "trap",
+            "arm", "bicep", "tricep", "forearm"
+        ]
+        let lowerTokens: [String] = [
+            "leg", "quad", "hamstring", "glute", "calf", "calves", "hip", "thigh"
+        ]
+
+        let isUpperBody = normalized.contains { muscle in
+            upperTokens.contains { muscle.contains($0) }
+        }
+        let isLowerBody = normalized.contains { muscle in
+            lowerTokens.contains { muscle.contains($0) }
+        }
+
         if isUpperBody {
             await reportProgress(questKey: .upperBodyWorkout)
         }

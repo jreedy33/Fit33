@@ -647,6 +647,10 @@ class WeightTrackingService: ObservableObject {
             }
             
             calculateTrends()
+
+            // Keep both weight widgets (home + nutrition) in sync after deletion
+            NotificationCenter.default.post(name: .weightDidUpdate, object: nil)
+
             AppLogger.info("✅ [Weight] Deleted log", category: .health)
             return true
         } catch {

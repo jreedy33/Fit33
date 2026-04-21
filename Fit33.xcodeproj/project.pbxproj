@@ -199,6 +199,7 @@
 		7C87B63B2EEA3F4D00AC01F3 /* SmartExerciseSwapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C87B63A2EEA3F4D00AC01F3 /* SmartExerciseSwapView.swift */; };
 		7C8CE7E52F968F48007CD766 /* ChallengeOpponentWakeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CE7E32F968F46007CD766 /* ChallengeOpponentWakeService.swift */; };
 		7C8CE7E62F968F48007CD766 /* SilentPushHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CE7E42F968F46007CD766 /* SilentPushHandler.swift */; };
+		7C8CE8A62F971261007CD766 /* DailyQuestService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CE8A52F971261007CD766 /* DailyQuestService.swift */; };
 		7C8EB1C02F26ABD4007BFA55 /* PerformanceOptimizations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */; };
 		7C8EB1C32F26B03C007BFA55 /* StravaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */; };
 		7C8EB1C42F26B03C007BFA55 /* StravaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C12F26B03C007BFA55 /* StravaService.swift */; };
@@ -209,12 +210,12 @@
 		7C98FAC02EEBCD58001AE1F3 /* EquipmentHierarchyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FABF2EEBCD58001AE1F3 /* EquipmentHierarchyService.swift */; };
 		7C98FAC22EEBCDA9001AE1F3 /* WorkoutCalorieCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC12EEBCDA9001AE1F3 /* WorkoutCalorieCalculator.swift */; };
 		7C98FAC42EEC7EA8001AE1F3 /* SessionLogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */; };
-		7CAA0420202604200A000001 /* RequestCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA0420202604200B000002 /* RequestCoalescer.swift */; };
 		7C98FAC62EECA9F4001AE1F3 /* DevSessionLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */; };
 		7C98FAC82EEDB4A0001AE1F3 /* SmartExerciseSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */; };
 		7CA0643A2F7ACA48004CF656 /* PrivacySettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */; };
 		7CA0643C2F7ACA56004CF656 /* PrivacySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */; };
 		7CA81D852F6EF0E80020170A /* AdvancedSessionLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */; };
+		7CAA0420202604200A000001 /* RequestCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA0420202604200B000002 /* RequestCoalescer.swift */; };
 		7CAA1F1B2F3ACBB2008200B9 /* VideoStreamingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F1A2F3ACBB1008200B9 /* VideoStreamingService.swift */; };
 		7CAA1F1F2F3ACBCB008200B9 /* VideoThumbnailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F1E2F3ACBCB008200B9 /* VideoThumbnailService.swift */; };
 		7CAA1F812F424534008200B9 /* AppHealthDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F802F424534008200B9 /* AppHealthDiagnostics.swift */; };
@@ -596,6 +597,7 @@
 		7C87B63A2EEA3F4D00AC01F3 /* SmartExerciseSwapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartExerciseSwapView.swift; sourceTree = "<group>"; };
 		7C8CE7E32F968F46007CD766 /* ChallengeOpponentWakeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeOpponentWakeService.swift; sourceTree = "<group>"; };
 		7C8CE7E42F968F46007CD766 /* SilentPushHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilentPushHandler.swift; sourceTree = "<group>"; };
+		7C8CE8A52F971261007CD766 /* DailyQuestService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyQuestService.swift; sourceTree = "<group>"; };
 		7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizations.swift; sourceTree = "<group>"; };
 		7C8EB1C12F26B03C007BFA55 /* StravaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaService.swift; sourceTree = "<group>"; };
 		7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaSettingsView.swift; sourceTree = "<group>"; };
@@ -606,12 +608,12 @@
 		7C98FABF2EEBCD58001AE1F3 /* EquipmentHierarchyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentHierarchyService.swift; sourceTree = "<group>"; };
 		7C98FAC12EEBCDA9001AE1F3 /* WorkoutCalorieCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCalorieCalculator.swift; sourceTree = "<group>"; };
 		7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionLogManager.swift; sourceTree = "<group>"; };
-		7CAA0420202604200B000002 /* RequestCoalescer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestCoalescer.swift; sourceTree = "<group>"; };
 		7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevSessionLogsView.swift; sourceTree = "<group>"; };
 		7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartExerciseSearchService.swift; sourceTree = "<group>"; };
 		7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsManager.swift; sourceTree = "<group>"; };
 		7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsView.swift; sourceTree = "<group>"; };
 		7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSessionLogger.swift; sourceTree = "<group>"; };
+		7CAA0420202604200B000002 /* RequestCoalescer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestCoalescer.swift; sourceTree = "<group>"; };
 		7CAA1F1A2F3ACBB1008200B9 /* VideoStreamingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoStreamingService.swift; sourceTree = "<group>"; };
 		7CAA1F1E2F3ACBCB008200B9 /* VideoThumbnailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoThumbnailService.swift; sourceTree = "<group>"; };
 		7CAA1F802F424534008200B9 /* AppHealthDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppHealthDiagnostics.swift; sourceTree = "<group>"; };
@@ -1114,6 +1116,7 @@
 				7C6DE3F22F5CAD4D00BCA276 /* StreakLogicTests.swift */,
 				7C6DE3F02F5CAD4700BCA276 /* StreakShieldService.swift */,
 				7C8405C12EE64C420009ED0F /* StrengthProfileRecommendationEngine.swift */,
+				7C8CE8A52F971261007CD766 /* DailyQuestService.swift */,
 				7C47F9E22EE3BF8600BEC4D7 /* StretchModeView.swift */,
 				61306134393365612D636432392D343930382D393365622D /* StringArrayValueTransformer.swift */,
 				7C1B0A362F4F74380094AF68 /* SupabaseDTOs.swift */,
@@ -1417,6 +1420,7 @@
 				A12345678901234567890162 /* UserManager.swift in Sources */,
 				7C8405C82EE685400009ED0F /* AdvancedIntelligenceService.swift in Sources */,
 				7C6DE3862F5BE07700BCA276 /* FriendActivityFeedView.swift in Sources */,
+				7C8CE8A62F971261007CD766 /* DailyQuestService.swift in Sources */,
 				7C6DE3872F5BE07700BCA276 /* FriendWorkoutPreviewView.swift in Sources */,
 				7CAAA0012F5BF00100AAA001 /* WorkoutReplayEngine.swift in Sources */,
 				7CAAA0032F5BF00100AAA003 /* WorkoutReplayView.swift in Sources */,

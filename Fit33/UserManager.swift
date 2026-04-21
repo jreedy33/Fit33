@@ -342,51 +342,51 @@ class UserManager: ObservableObject {
     // ═══════════════════════════════════════════════════════════════════════════
     func updateStreak() {
         guard let user = currentUser else { return }
-        
+
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        let lastWorkoutDate = user.lastWorkoutDate ?? Date.distantPast
-        let daysSinceLastWorkout = calendar.dateComponents([.day], from: calendar.startOfDay(for: lastWorkoutDate), to: today).day ?? 0
-        
-        // Calculate max allowed gap based on user's workout frequency
-        let availableDays = max(2, Int(user.availableDays))  // Minimum 2 days/week
-        let maxAllowedGap = calculateMaxAllowedGap(daysPerWeek: availableDays)
-        
+        let availableDays = max(2, Int(user.availableDays))
+
+        let transition = Fit33StreakLogic.transition(
+            lastWorkoutDate: user.lastWorkoutDate,
+            now: Date(),
+            currentStreak: Int(user.currentStreak),
+            daysPerWeek: availableDays,
+            calendar: calendar
+        )
+
         #if DEBUG
-        AppLogger.debug("[STREAK] Checking streak: days since last=\(daysSinceLastWorkout), available days/week=\(availableDays), max gap=\(maxAllowedGap), current streak=\(user.currentStreak)", category: .general)
+        AppLogger.debug("[STREAK] Checking streak: days since last=\(transition.daysSinceLastWorkout), available days/week=\(availableDays), max gap=\(transition.maxAllowedGap), current streak=\(user.currentStreak)", category: .general)
         #endif
-        
-        if daysSinceLastWorkout == 0 {
+
+        switch transition.outcome {
+        case .sameDay:
             // Already worked out today - no change to streak
             #if DEBUG
             AppLogger.debug("[STREAK] Already worked out today, no streak change", category: .general)
             #endif
             return
-        } else if daysSinceLastWorkout <= maxAllowedGap {
-            // Within acceptable rest period - INCREMENT streak!
-            user.currentStreak += 1
+        case .incremented(let newValue):
+            user.currentStreak = Int16(newValue)
             if user.currentStreak > user.longestStreak {
                 user.longestStreak = user.currentStreak
             }
             #if DEBUG
-            AppLogger.info("[STREAK] Within rest window (\(daysSinceLastWorkout) ≤ \(maxAllowedGap)) - streak now: \(user.currentStreak)", category: .general)
+            AppLogger.info("[STREAK] Within rest window (\(transition.daysSinceLastWorkout) ≤ \(transition.maxAllowedGap)) - streak now: \(user.currentStreak)", category: .general)
             #endif
-        } else {
-            // Too many days off - streak broken
-            let oldStreak = user.currentStreak
+        case .broken(let previous):
             user.currentStreak = 1
             #if DEBUG
-            AppLogger.warning("[STREAK] Streak broken! (\(daysSinceLastWorkout) > \(maxAllowedGap)) - was \(oldStreak), now 1", category: .general)
+            AppLogger.warning("[STREAK] Streak broken! (\(transition.daysSinceLastWorkout) > \(transition.maxAllowedGap)) - was \(previous), now 1", category: .general)
             #endif
-            
-            // Log for analytics
+
             SessionLogManager.shared.logStreakBroken(
-                previousStreak: Int(oldStreak),
+                previousStreak: previous,
                 streakType: "workout",
-                daysMissed: daysSinceLastWorkout
+                daysMissed: transition.daysSinceLastWorkout
             )
         }
-        
+
         user.lastWorkoutDate = today
         
         do {
@@ -641,7 +641,19 @@ class UserManager: ObservableObject {
                 }
                 let durationSeconds = Int(workout.duration)
                 await DailyQuestService.shared.onWorkoutCompleted(durationSeconds: durationSeconds, totalSets: totalSets)
-                
+
+                // Full set of trained muscle groups (every entry on every
+                // exercise, not just the primary). Used twice below: once to
+                // progress upper/lower-body daily quests, once for the feed.
+                let allTrainedMuscles: Set<String> = Set(
+                    exercises.flatMap { $0.safeMuscleGroups.map { $0.lowercased() } }
+                )
+
+                // Advance upper/lower-body daily quests based on what was
+                // actually trained. Must run even when the user has hidden
+                // their activity feed (privacy only gates social posting).
+                await DailyQuestService.shared.onWorkoutWithFocus(bodyParts: allTrainedMuscles)
+
                 // Post to friend activity feed (skip if user opted out)
                 let muscleGroups = exercises.compactMap { $0.safeMuscleGroups.first?.lowercased() }
                 let uniqueMuscles = Array(Set(muscleGroups))
@@ -1049,5 +1061,104 @@ extension View {
     /// Check if premium feature is available
     func isPremiumAvailable() -> Bool {
         return PremiumManager.shared.isPremiumUser
+    }
+}
+
+// MARK: - Streak Transition Logic (Sprint 5 L-9/L-10)
+// Pure, stateless helpers so streak behavior can be unit tested across time
+// zones, clock rollovers, and app-kill-across-midnight scenarios without
+// needing a Core Data user. Behavior MUST stay in sync with
+// `UserManager.updateStreak()` above; edit both in lockstep.
+
+enum Fit33StreakLogic {
+
+    enum Outcome: Equatable {
+        /// Caller already worked out today — do not increment or touch last
+        /// workout date. UI shows the same streak.
+        case sameDay
+        /// Streak incremented to `newValue` (1 if this is the first workout).
+        case incremented(newValue: Int)
+        /// Gap exceeded tolerance — streak reset to 1. `previous` is the
+        /// streak the user had before it broke (for analytics).
+        case broken(previous: Int)
+    }
+
+    struct Transition: Equatable {
+        let outcome: Outcome
+        let daysSinceLastWorkout: Int
+        let maxAllowedGap: Int
+    }
+
+    /// Computes how a streak should change given a wall-clock "now".
+    /// - Parameters:
+    ///   - lastWorkoutDate: The `lastWorkoutDate` stored on the user (nil if
+    ///     they've never completed a workout).
+    ///   - now: The wall-clock moment the workout completed.
+    ///   - currentStreak: Their existing streak count (non-negative).
+    ///   - daysPerWeek: How many days per week they train. Clamped to >= 2.
+    ///   - calendar: Calendar to use for day math. Pass a calendar whose
+    ///     `timeZone` matches the user's current locale — tests inject fixed
+    ///     timezones here to exercise travel + DST scenarios.
+    static func transition(
+        lastWorkoutDate: Date?,
+        now: Date,
+        currentStreak: Int,
+        daysPerWeek: Int,
+        calendar: Calendar
+    ) -> Transition {
+        let availableDays = max(2, daysPerWeek)
+        let maxAllowedGap = maxAllowedGap(daysPerWeek: availableDays)
+
+        let today = calendar.startOfDay(for: now)
+        let lastDay = calendar.startOfDay(for: lastWorkoutDate ?? Date.distantPast)
+        let rawDays = calendar.dateComponents([.day], from: lastDay, to: today).day ?? 0
+        // Treat negative deltas (clock ran backwards, user flew east across
+        // the date line, etc.) as same-day so we never double-count or break.
+        let daysSince = max(0, rawDays)
+
+        if lastWorkoutDate == nil {
+            // First workout ever. Distinguish between "starting streak" and
+            // "same day" to keep logging parity with the old implementation.
+            return Transition(
+                outcome: .incremented(newValue: max(1, currentStreak + 1)),
+                daysSinceLastWorkout: daysSince,
+                maxAllowedGap: maxAllowedGap
+            )
+        }
+
+        if daysSince == 0 {
+            return Transition(
+                outcome: .sameDay,
+                daysSinceLastWorkout: 0,
+                maxAllowedGap: maxAllowedGap
+            )
+        }
+
+        if daysSince <= maxAllowedGap {
+            return Transition(
+                outcome: .incremented(newValue: currentStreak + 1),
+                daysSinceLastWorkout: daysSince,
+                maxAllowedGap: maxAllowedGap
+            )
+        }
+
+        return Transition(
+            outcome: .broken(previous: currentStreak),
+            daysSinceLastWorkout: daysSince,
+            maxAllowedGap: maxAllowedGap
+        )
+    }
+
+    /// Mirror of `UserManager.calculateMaxAllowedGap(daysPerWeek:)` — kept
+    /// `internal` so tests can assert it without reaching into UserManager.
+    static func maxAllowedGap(daysPerWeek: Int) -> Int {
+        switch daysPerWeek {
+        case 6...7: return 2
+        case 5:     return 2
+        case 4:     return 3
+        case 3:     return 3
+        case 2:     return 4
+        default:    return 3
+        }
     }
 }

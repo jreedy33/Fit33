@@ -45,7 +45,13 @@ struct SwipeableSetRow<Content: View>: View {
             // Main content
             content
                 .offset(x: offset)
-                .gesture(
+                // Use simultaneousGesture (not .gesture) so this DragGesture does NOT
+                // create a failure-requirement with inner gestures. `.gesture` makes the
+                // Menu / Button presses wait for this drag to fail, which manifests as
+                // "System gesture gate timed out" in the console and a visibly laggy /
+                // stuck-open W/F/D menu on rows that are mid-animation (e.g. a completed
+                // set with an active rest-timer border re-rendering every frame).
+                .simultaneousGesture(
                     DragGesture(minimumDistance: 20) // Require 20pt drag before triggering (less sensitive)
                         .onChanged { value in
                             // Only allow left swipe (negative translation) and must be mostly horizontal
@@ -115,7 +121,14 @@ struct SetRowView: View {
                     ForEach(SetType.allCases, id: \.self) { type in
                         Button(action: {
                             HapticManager.selectionChanged()
-                            withAnimation(.easeInOut(duration: 0.15)) {
+                            // Defer the state change to the next run-loop tick so the
+                            // Menu can fully dismiss before SwiftUI re-renders the row.
+                            // Without this, updating setData.setType (an @Published on
+                            // WorkoutSetData) while the Menu is dismissing causes a
+                            // visible lag / stuck-open menu on already-completed sets,
+                            // where the row has additional in-flight state (checkmark,
+                            // text color, active rest timer, throttledSave).
+                            Task { @MainActor in
                                 setData.setType = type
                             }
                         }) {

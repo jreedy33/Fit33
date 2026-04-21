@@ -12,6 +12,11 @@ struct WorkoutHistoryDetailView: View {
     @State private var refreshTrigger = UUID()
     @State private var isFavorite: Bool = false
     @State private var isFavoriteProcessing: Bool = false
+    /// Wearable cardio row (WHOOP / Apple Watch / Oura / Fitbit / Garmin)
+    /// that time-overlapped this Fit33 workout — resolved via
+    /// `WorkoutWearableMerger` in `loadWearableEnrichment()`. `nil` until the
+    /// day's cardio is fetched or when no wearable recorded this session.
+    @State private var wearableEnrichment: CardioWorkoutDTO? = nil
     
     private var workoutExercises: [WorkoutExercise] {
         let exercises = workout.exercises?.allObjects as? [WorkoutExercise] ?? []
@@ -288,6 +293,11 @@ struct WorkoutHistoryDetailView: View {
                 
                 // Content
                 VStack(spacing: 20) {
+                    // Wearable insights (WHOOP / Apple Watch / Oura / Fitbit / Garmin)
+                    if let wearable = wearableEnrichment {
+                        wearableInsightsCard(wearable)
+                    }
+
                     // Muscle Breakdown
                     if !muscleBreakdown.isEmpty {
                         muscleBreakdownCard
@@ -339,6 +349,31 @@ struct WorkoutHistoryDetailView: View {
         .onAppear {
             // Initialize local favorite state from Core Data
             isFavorite = workout.isFavorite
+        }
+        .task {
+            await loadWearableEnrichment()
+        }
+    }
+
+    /// Fetch any wearable cardio row (WHOOP / Apple Watch / Oura / Fitbit /
+    /// Garmin) that time-overlapped this Fit33 workout and cache the match.
+    /// Uses `fetchRecentCardioWorkouts(limit: 100)` which is sorted by
+    /// `completed_at DESC` — enough coverage for any recently-viewed
+    /// workout. For older workouts without a nearby wearable row the
+    /// enrichment stays `nil` and the UI simply omits the card.
+    private func loadWearableEnrichment() async {
+        // Defensive: only hit the network when logged in. `fetchRecentCardioWorkouts`
+        // already returns [] if not authenticated, but this avoids the call
+        // entirely in the signed-out preview path.
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        do {
+            let cardio = try await SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 100)
+            let match = WorkoutWearableMerger.wearableEnrichment(for: workout, in: cardio)
+            await MainActor.run {
+                self.wearableEnrichment = match
+            }
+        } catch {
+            AppLogger.warning("[WEARABLE-MERGE] Failed to fetch cardio for detail enrichment: \(error.localizedDescription)", category: .workout)
         }
     }
     
@@ -406,19 +441,31 @@ struct WorkoutHistoryDetailView: View {
                     .fill(Color.gray.opacity(0.2))
                     .frame(width: 1, height: 35)
                 
-                // Calories
+                // Calories — wearable-measured (WHOOP / Apple Watch / Oura /
+                // Fitbit / Garmin) takes priority over the Fit33 MET formula
+                // when available. See `WorkoutWearableMerger.effectiveCalories`.
                 VStack(spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "flame.fill")
                             .font(.ds_bodySmall)
                             .foregroundColor(.orange)
-                        Text(workout.caloriesBurned > 0 ? "\(Int(workout.caloriesBurned))" : "--")
+                        Text({
+                            let cal = Int(WorkoutWearableMerger.effectiveCalories(workout: workout, wearable: wearableEnrichment))
+                            return cal > 0 ? "\(cal)" : "--"
+                        }())
                             .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
-                    Text("Calories")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    if WorkoutWearableMerger.caloriesAreWearableMeasured(workout: workout, wearable: wearableEnrichment),
+                       let origin = wearableEnrichment?.resolvedOrigin {
+                        Text("\(origin.displayName) · Calories")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Calories")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -467,6 +514,106 @@ struct WorkoutHistoryDetailView: View {
         .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.15 : 0.08), radius: 8, x: 0, y: 4)
     }
     
+    // MARK: - Wearable Insights Card
+
+    /// Rendered when a wearable (WHOOP / Apple Watch / Oura / Fitbit /
+    /// Garmin) recorded a time-overlapping workout during this session.
+    /// Shows the wearable's avg HR, max HR, calories, and duration —
+    /// inline under the Fit33 workout details so there's no duplicate
+    /// "Strength Training" entry in the history list. Data source is
+    /// `CardioWorkoutDTO` in `cardio_workouts` (imported by either the
+    /// first-party OAuth path or `HealthDataService.saveHealthKitWorkout`).
+    private func wearableInsightsCard(_ wearable: CardioWorkoutDTO) -> some View {
+        let origin = wearable.resolvedOrigin
+        let duration = wearable.durationSeconds
+        let avgHR = wearable.averageHeartRate ?? 0
+        let maxHR = wearable.maxHeartRate ?? 0
+        let cals = Int(wearable.caloriesBurned)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: origin.badgeGradient,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 32, height: 32)
+                    Image(systemName: origin.badgeIcon)
+                        .font(.ds_labelMedium)
+                        .foregroundColor(origin.badgeForeground)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(origin.displayName) Insights")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                    Text("Recorded alongside this workout")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+
+            HStack(spacing: 0) {
+                wearableStatColumn(
+                    icon: "heart.fill",
+                    iconColor: .pink,
+                    value: avgHR > 0 ? "\(avgHR)" : "--",
+                    label: "Avg HR"
+                )
+                wearableDivider
+                wearableStatColumn(
+                    icon: "bolt.heart.fill",
+                    iconColor: .red,
+                    value: maxHR > 0 ? "\(maxHR)" : "--",
+                    label: "Max HR"
+                )
+                wearableDivider
+                wearableStatColumn(
+                    icon: "flame.fill",
+                    iconColor: .orange,
+                    value: cals > 0 ? "\(cals)" : "--",
+                    label: "Calories"
+                )
+                wearableDivider
+                wearableStatColumn(
+                    icon: "clock.fill",
+                    iconColor: origin.badgeGradient.last ?? accentColor,
+                    value: formatDuration(Int32(duration)),
+                    label: "Duration"
+                )
+            }
+        }
+        .padding(Spacing.md)
+        .background(glassCard)
+    }
+
+    private var wearableDivider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 1, height: 35)
+    }
+
+    private func wearableStatColumn(icon: String, iconColor: Color, value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(iconColor)
+                Text(value)
+                    .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
+                    .foregroundColor(.primary)
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     // MARK: - Muscle Breakdown Card
     private var muscleBreakdownCard: some View {
         VStack(alignment: .leading, spacing: 14) {

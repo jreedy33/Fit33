@@ -221,6 +221,7 @@ extension ActiveWorkoutView {
                                         if let from = fromIndex, let to = toIndex, from != to {
                                             let item = exercises.remove(at: from)
                                             exercises.insert(item, at: min(to, exercises.count))
+                                            syncExercisesToWorkoutManager()
                                         }
                                         
                                         // Reset drag state after move
@@ -287,6 +288,7 @@ extension ActiveWorkoutView {
                         let count = WorkoutManager.userDefaultSetCount
                         workoutManager.exerciseSetsData[exerciseId] = (0..<count).map { _ in WorkoutSetData() }
                     }
+                    syncExercisesToWorkoutManager()
                     UserBehaviorLearningEngine.shared.recordCustomWorkoutAddition(exerciseName: newExercise.name ?? "")
                 })
                 .environmentObject(workoutManager)

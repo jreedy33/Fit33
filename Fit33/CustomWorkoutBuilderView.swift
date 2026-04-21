@@ -61,6 +61,12 @@ struct CustomWorkoutBuilderView: View {
     @State private var showingAddExercise = false
     @State private var isLoadingExercises = false
     @State private var suggestedSwaps: [SwapSuggestion] = []
+    // Shuffle: cached pages of 3 complementary suggestions each. `complementaryPageIndex`
+    // is the currently displayed page; pressing the shuffle button advances to the next
+    // page (wraps around). We pre-compute all pages once in `loadComplementarySuggestions`
+    // so shuffling is instant and doesn't re-query `ExerciseSwapService` on every tap.
+    @State private var complementaryPages: [[SwapSuggestion]] = []
+    @State private var complementaryPageIndex: Int = 0
     
     private var replacingExercise: Exercise? {
         if case .replace(let exercise, _) = mode { return exercise }
@@ -70,6 +76,14 @@ struct CustomWorkoutBuilderView: View {
     private var currentWorkoutExercises: [Exercise] {
         if case .addToWorkout(let exercises, _) = mode { return exercises }
         return []
+    }
+    
+    /// Only hide the complementary-suggestions block when we're in "Add to workout"
+    /// mode (not replace-mode, where suggestions ARE the primary UI) AND the user
+    /// is actively searching — either the keyboard is up or there's a non-empty query.
+    private var shouldHideComplementsForSearch: Bool {
+        guard replacingExercise == nil else { return false }
+        return isSearchFocused || !searchText.isEmpty
     }
     
     // ⚡️ SNAPPY SEARCH: Focus state for instant keyboard dismiss
@@ -543,7 +557,11 @@ struct CustomWorkoutBuilderView: View {
                         }
                         .frame(height: 0)
                         
-                        if !suggestedSwaps.isEmpty {
+                        // Hide the "Complements Your Workout" block while the user is
+                        // actively searching — the keyboard + dropdown was covering the
+                        // intentional search results. Replace-mode suggestions stay
+                        // visible because they ARE the primary UI in that flow.
+                        if !suggestedSwaps.isEmpty && !shouldHideComplementsForSearch {
                             suggestedReplacementsSection
                         }
                         
@@ -1018,6 +1036,29 @@ struct CustomWorkoutBuilderView: View {
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
+                Spacer(minLength: Spacing.xs)
+                // Shuffle only applies to the "Complements Your Workout" surface, and
+                // only when we actually have more than one page of candidates to cycle.
+                if replacingExercise == nil && complementaryPages.count > 1 {
+                    Button(action: shuffleComplementarySuggestions) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "shuffle")
+                                .font(.ds_labelMedium)
+                            Text("Shuffle")
+                                .font(.ds_labelMedium)
+                        }
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xxs)
+                        .background(
+                            Capsule()
+                                .fill(Color.orange.opacity(0.12))
+                        )
+                    }
+                    .scaleButtonStyle(.subtle)
+                    .accessibilityLabel("Shuffle recommended complementary exercises")
+                    .accessibilityHint("Shows a different set of three suggestions")
+                }
             }
             .padding(.horizontal, Spacing.md)
             
@@ -1083,9 +1124,13 @@ struct CustomWorkoutBuilderView: View {
     
     private func loadComplementarySuggestions(for workoutExercises: [Exercise]) {
         let workoutIds = Set(workoutExercises.compactMap { $0.id })
+        let desiredPageCount = 3
+        let pageSize = 3
+        let maxCandidates = desiredPageCount * pageSize // 9
         var candidates: [SwapSuggestion] = []
         var seenIds = Set<UUID>()
         
+        // Pass 1: prioritize truly complementary pairings across all current exercises.
         for exercise in workoutExercises {
             let sections = ExerciseSwapService.shared.getSwapSuggestions(
                 for: exercise,
@@ -1093,14 +1138,21 @@ struct CustomWorkoutBuilderView: View {
             )
             for section in sections {
                 for suggestion in section.suggestions where suggestion.swapType == .complementary {
-                    guard let id = suggestion.exercise.id, !seenIds.contains(id), !workoutIds.contains(id) else { continue }
+                    guard let id = suggestion.exercise.id,
+                          !seenIds.contains(id),
+                          !workoutIds.contains(id) else { continue }
                     seenIds.insert(id)
                     candidates.append(suggestion)
+                    if candidates.count >= maxCandidates { break }
                 }
+                if candidates.count >= maxCandidates { break }
             }
+            if candidates.count >= maxCandidates { break }
         }
         
-        if candidates.count < 3 {
+        // Pass 2: backfill with any remaining suggestions (similar / variants) so we can
+        // still offer multiple shuffle pages even when complementary pairings are sparse.
+        if candidates.count < maxCandidates {
             for exercise in workoutExercises {
                 let sections = ExerciseSwapService.shared.getSwapSuggestions(
                     for: exercise,
@@ -1108,18 +1160,42 @@ struct CustomWorkoutBuilderView: View {
                 )
                 for section in sections {
                     for suggestion in section.suggestions {
-                        guard let id = suggestion.exercise.id, !seenIds.contains(id), !workoutIds.contains(id) else { continue }
+                        guard let id = suggestion.exercise.id,
+                              !seenIds.contains(id),
+                              !workoutIds.contains(id) else { continue }
                         seenIds.insert(id)
                         candidates.append(suggestion)
-                        if candidates.count >= 3 { break }
+                        if candidates.count >= maxCandidates { break }
                     }
-                    if candidates.count >= 3 { break }
+                    if candidates.count >= maxCandidates { break }
                 }
-                if candidates.count >= 3 { break }
+                if candidates.count >= maxCandidates { break }
             }
         }
         
-        suggestedSwaps = Array(candidates.prefix(3))
+        // Partition into pages of `pageSize`. Short trailing pages are kept so even a
+        // partial page is reachable via shuffle; if we end up with <=1 page the shuffle
+        // button will hide itself.
+        var pages: [[SwapSuggestion]] = []
+        var index = 0
+        while index < candidates.count {
+            let end = min(index + pageSize, candidates.count)
+            pages.append(Array(candidates[index..<end]))
+            index = end
+        }
+        
+        complementaryPages = pages
+        complementaryPageIndex = 0
+        suggestedSwaps = pages.first ?? []
+    }
+    
+    /// Advance to the next page of complementary suggestions. Wraps back to page 0
+    /// after the last page so the user can keep cycling through recommendations.
+    private func shuffleComplementarySuggestions() {
+        guard complementaryPages.count > 1 else { return }
+        HapticManager.selectionChanged()
+        complementaryPageIndex = (complementaryPageIndex + 1) % complementaryPages.count
+        suggestedSwaps = complementaryPages[complementaryPageIndex]
     }
     
     // MARK: - Helper Functions

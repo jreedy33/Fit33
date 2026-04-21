@@ -41,7 +41,11 @@ extension DashboardView {
                 ForEach(combinedRecentWorkouts.prefix(3), id: \.id) { item in
                     switch item {
                     case .strength(let workout, let isMostRecent):
-                        RecentWorkoutCard(workout: workout, isMostRecent: isMostRecent)
+                        RecentWorkoutCard(
+                            workout: workout,
+                            isMostRecent: isMostRecent,
+                            wearableEnrichment: workout.id.flatMap { wearableEnrichmentByWorkout[$0] }
+                        )
                     case .cardio(let cardioWorkout, let isMostRecent):
                         RecentCardioWorkoutCard(cardioWorkout: cardioWorkout, isMostRecent: isMostRecent)
                     }

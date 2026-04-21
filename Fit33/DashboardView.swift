@@ -40,8 +40,13 @@ struct DashboardView: View {
     @State var navigateToGeneratedPrograms = false
     @State var isNavigating = false  // 🔧 Debounce protection
     
-    // Smart personalized recommendation
-    @State var personalizedRecommendation: AdvancedIntelligenceService.PersonalizedRecommendation?
+    // Smart personalized recommendation.
+    // Hydrated synchronously from the disk cache on view init so the
+    // welcome card renders the last known "close the gap" nudge the
+    // instant the dashboard appears — no blank state, no flicker. The
+    // cache is kept fresh by `BackgroundChallengeSyncService` (every
+    // HealthKit background delivery + BGAppRefresh/BGProcessing cycle).
+    @State var personalizedRecommendation: AdvancedIntelligenceService.PersonalizedRecommendation? = RecommendationCache.read()
     @State var isLoadingRecommendation = false
     @State var currentMotivationalMessage: String = ""
     
@@ -85,14 +90,29 @@ struct DashboardView: View {
     
     // ⚡️ PERFORMANCE: Cached combined workouts — updated via onChange, not recomputed every body eval
     @State var combinedRecentWorkouts: [RecentWorkoutItem] = []
+    /// Map of Fit33 `Workout.id` → wearable cardio row that overlapped it.
+    /// Computed in `rebuildCombinedWorkouts` via `WorkoutWearableMerger` so
+    /// `RecentWorkoutCard` can render the origin chip (WHOOP / Apple Watch /
+    /// …) without re-running the overlap math on every body eval.
+    @State var wearableEnrichmentByWorkout: [UUID: CardioWorkoutDTO] = [:]
     @State var showRecoveryWidget: Bool = false
-    
+
     private func rebuildCombinedWorkouts() {
+        let strengthList = Array(recentWorkouts.prefix(5))
+        // Collapse wearable-origin strength cardio rows (WHOOP / Apple Watch /
+        // Oura / Fitbit / Garmin) that overlap a Fit33 strength workout —
+        // otherwise the user sees the same session twice on the Home
+        // "Recent Activity" list.
+        let merged = WorkoutWearableMerger.merge(
+            strength: strengthList,
+            cardio: recentCardioWorkouts
+        )
+
         var items: [RecentWorkoutItem] = []
-        for workout in recentWorkouts.prefix(5) {
+        for workout in strengthList {
             items.append(.strength(workout, isMostRecent: false))
         }
-        for cardio in recentCardioWorkouts {
+        for cardio in merged.filteredCardio {
             items.append(.cardio(cardio, isMostRecent: false))
         }
         items.sort { $0.date > $1.date }
@@ -105,6 +125,7 @@ struct DashboardView: View {
             }
         }
         combinedRecentWorkouts = items
+        wearableEnrichmentByWorkout = merged.enrichmentByWorkoutID
     }
     
     // Streak info popup
@@ -225,14 +246,17 @@ struct DashboardView: View {
                         Spacer()
                     }
                     .padding(.bottom, 12)
-                    
+
+                    // Swipeable Workout Carousel: [Custom+Auto Buttons] <-> [Active Program]
+                    // Ordered above Challenges so the "Ready for today's workout?"
+                    // header leads directly into the primary workout CTA; the
+                    // Challenge widget is a secondary social action.
+                    swipeableWorkoutCarousel
+                        .padding(.bottom, 16)
+
                     // Challenge Cards (1v1 active, group active, pending sent, get started)
                     DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation)
                         .environmentObject(userManager)
-                        .padding(.bottom, 16)
-                    
-                    // Swipeable Workout Carousel: [Custom+Auto Buttons] <-> [Active Program]
-                    swipeableWorkoutCarousel
                         .padding(.bottom, 16)
                     
                     // Weight/Hydration Widget Row (below challenge widget)
@@ -538,18 +562,26 @@ struct DashboardView: View {
                 await insightsService.fetchStreaks()
             }
             
-            // 2. Motivational message (async — Core Data fetches run off main thread)
+            // 2. Motivational message is ONLY used as a last-resort fallback
+            // when the personalized recommendation can't be loaded (e.g.
+            // unauthenticated / offline). We generate it lazily so it's
+            // ready if needed, but we don't commit it to the welcome card
+            // until after the recommendation has been attempted — otherwise
+            // the card flashes a random motivational line ("your back could
+            // use some work") before the real "close the gap" nudge
+            // ("so close — walk 493 more steps") arrives.
             let messageTask = Task { await self.generateMotivationalMessage() }
             
-            // 3. Recommendation + cardio (independent, parallel)
-            Task { await loadPersonalizedRecommendation() }
+            // 3. Cardio (independent, fire-and-forget)
             Task { await loadRecentCardioWorkouts() }
             
-            // 4. Health sync (independent, already uses Task.detached internally)
-            Task { await HealthDataService.shared.syncAllHealthData(force: false) }
+            // 4. Health sync (awaitable — recommendation needs fresh step
+            // counts so the "walk N more steps" nudge can surface on first
+            // load instead of only after pull-to-refresh)
+            let healthTask = Task { await HealthDataService.shared.syncAllHealthData(force: false) }
             
             // 5. Social/challenge data (needs auth — wait only for these)
-            Task {
+            let socialTask = Task {
                 if !SupabaseManager.shared.isAuthenticated {
                     AppLogger.info("[DASHBOARD] Auth not ready — waiting via publisher (up to 10s)...", category: .performance)
                     let authReady = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
@@ -612,8 +644,24 @@ struct DashboardView: View {
                 _ = await (friends, pending, received, feed, ranked, activeCh, groupCh, invites, sent, priv, rt, quests, contacts, photo)
             }
             
-            // Await motivational message result (should already be done by now)
-            currentMotivationalMessage = await messageTask.value
+            // Wait for steps + quests to be loaded before computing the
+            // recommendation. This eliminates the welcome-card flicker
+            // where the card briefly showed a lower-priority message
+            // (e.g. "You perform best in the afternoons") before the
+            // Priority 1.5 "close the gap" nudge could surface with live
+            // quest/step data.
+            _ = await (healthTask.value, socialTask.value)
+            await loadPersonalizedRecommendation()
+            
+            // Only fall back to the random motivational message if the
+            // recommendation truly couldn't load (unauth / offline).
+            // Otherwise keep the motivational text suppressed so it never
+            // flashes on top of the real recommendation.
+            if personalizedRecommendation == nil {
+                currentMotivationalMessage = await messageTask.value
+            } else {
+                messageTask.cancel()
+            }
             
             let dashMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
             AppLogger.info("[DASHBOARD] Initial load completed in \(dashMs)ms", category: .performance)
@@ -626,6 +674,13 @@ struct DashboardView: View {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 await loadPersonalizedRecommendation()
             }
+        }
+        // Refresh the welcome card recommendation when quest state changes.
+        // This keeps the "close the gap" nudge accurate — e.g. as soon as
+        // the user finishes their workout quest, the card flips from
+        // "great day for legs" to "walk 500 more steps to hit 3/3 goals".
+        .onChange(of: dailyQuestService.completedCount) { _, _ in
+            Task { await loadPersonalizedRecommendation() }
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
             // Only refresh when coming from background (not from inactive which happens during navigation)

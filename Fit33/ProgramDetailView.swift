@@ -112,11 +112,14 @@ struct SmartProgramOverviewView: View {
     }
     
     private func cancelProgram() {
-        // Remove the program from SmartProgramEngine
-        SmartProgramEngine.shared.userPrograms.removeAll { $0.id == program.id }
-        // Save the updated list (triggers local + cloud sync)
-        if let data = try? JSONEncoder().encode(SmartProgramEngine.shared.userPrograms) {
-            UserDefaults.standard.set(data, forKey: "smart_user_programs")
+        // Dismiss immediately for snappy UX; the engine handles local + cloud
+        // deletion. Previously this removed the program from in-memory state
+        // and local UserDefaults only — `loadProgramsFromCloud()` would then
+        // re-append it on next launch from the stale `user_programs` row.
+        // `SmartProgramEngine.cancelProgram(id:)` now DELETEs the cloud row.
+        let programId = program.id
+        Task {
+            await SmartProgramEngine.shared.cancelProgram(id: programId)
         }
         dismiss()
     }

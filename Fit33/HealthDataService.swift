@@ -1058,6 +1058,8 @@ final class HealthDataService: ObservableObject {
             durationSeconds: Int(workout.duration),
             distanceMeters: workout.distance ?? 0,
             caloriesBurned: Int(workout.calories ?? 0),
+            averageHeartRate: workout.averageHeartRate,
+            maxHeartRate: workout.maxHeartRate,
             startedAt: Self.iso8601.string(from: workout.startDate),
             completedAt: Self.iso8601.string(from: workout.endDate),
             source: "healthkit",
@@ -1065,17 +1067,75 @@ final class HealthDataService: ObservableObject {
             originApp: (origin == .unknown) ? nil : origin.rawValue
         )
         
-        do {
-            try await SupabaseManager.shared.supabaseClient
-                .from("cardio_workouts")
-                .upsert(insert, onConflict: "user_id,source,external_id")
-                .execute()
-            AppLogger.info("Saved HealthKit workout: \(displayName) \(workoutType) [\(origin.rawValue)] (\(Int(workout.duration / 60))m)", category: .health)
-        } catch {
-            // Silently handle duplicates (already exists in DB)
-            if !error.localizedDescription.contains("duplicate") &&
-               !error.localizedDescription.contains("conflict") {
-                AppLogger.error("Failed to save HealthKit workout (\(displayName) \(workoutType)): \(error.localizedDescription)", category: .health)
+        // One-shot retry on transient failures (timeout / network / 5xx).
+        // Dev-session logs observed `The request timed out` drop an entire
+        // WHOOP strength import, which then hides the wearable-insights card
+        // on the matching Fit33 workout (see `WorkoutWearableMerger`). A
+        // single 2s-delay retry recovers the common iOS background-sync
+        // network blip without impacting duplicate/conflict behaviour (that
+        // short-circuits before the retry).
+        await upsertCardioWorkoutWithRetry(
+            insert: insert,
+            displayName: displayName,
+            workoutType: workoutType,
+            origin: origin,
+            durationMinutes: Int(workout.duration / 60)
+        )
+    }
+
+    /// Retries `cardio_workouts` upsert once on transient failure. Duplicate
+    /// / conflict errors are swallowed silently (same contract as the
+    /// pre-retry implementation — ON CONFLICT is expected when the row
+    /// already exists from a prior sync).
+    private func upsertCardioWorkoutWithRetry(
+        insert: HealthKitWorkoutInsert,
+        displayName: String,
+        workoutType: String,
+        origin: WorkoutOrigin,
+        durationMinutes: Int
+    ) async {
+        let label = "\(displayName) \(workoutType)"
+        let originTag = "[\(origin.rawValue)]"
+
+        for attempt in 1...2 {
+            do {
+                try await SupabaseManager.shared.supabaseClient
+                    .from("cardio_workouts")
+                    .upsert(insert, onConflict: "user_id,source,external_id")
+                    .execute()
+                if attempt == 1 {
+                    AppLogger.info("Saved HealthKit workout: \(label) \(originTag) (\(durationMinutes)m)", category: .health)
+                } else {
+                    AppLogger.info("Saved HealthKit workout on retry: \(label) \(originTag) (\(durationMinutes)m)", category: .health)
+                }
+                return
+            } catch {
+                let message = error.localizedDescription.lowercased()
+
+                // Duplicate row — already stored, no retry needed.
+                if message.contains("duplicate") || message.contains("conflict") {
+                    return
+                }
+
+                // Transient conditions worth a single retry. Anything else
+                // (auth, RLS, 4xx) will keep failing — log and bail.
+                let isTransient = message.contains("timed out")
+                    || message.contains("timeout")
+                    || message.contains("network connection")
+                    || message.contains("offline")
+                    || message.contains("temporarily")
+                    || message.contains("503")
+                    || message.contains("502")
+                    || message.contains("500")
+
+                if attempt == 1 && isTransient {
+                    AppLogger.warning("HealthKit workout save transient failure, retrying: \(label): \(error.localizedDescription)", category: .health)
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    continue
+                }
+
+                AppLogger.error("Failed to save HealthKit workout (\(label)): \(error.localizedDescription)", category: .health)
+                return
             }
         }
     }
@@ -1839,6 +1899,15 @@ struct HealthKitWorkoutInsert: Codable {
     let durationSeconds: Int
     let distanceMeters: Double
     let caloriesBurned: Int
+    /// Average bpm over the workout's time range. Computed from HealthKit
+    /// heart-rate samples by `HealthKitService.fetchHeartRateStats` and
+    /// persisted so the detail-view WHOOP Insights card can render Avg HR
+    /// for wearable-imported strength sessions (WHOOP / Apple Watch /
+    /// Garmin via HealthKit). `nil` when the source app didn't write HR.
+    let averageHeartRate: Int?
+    /// Peak bpm over the workout's time range. Same source + nil
+    /// semantics as `averageHeartRate`.
+    let maxHeartRate: Int?
     let startedAt: String
     let completedAt: String
     let source: String
@@ -1857,6 +1926,8 @@ struct HealthKitWorkoutInsert: Codable {
         case durationSeconds = "duration_seconds"
         case distanceMeters = "distance_meters"
         case caloriesBurned = "calories_burned"
+        case averageHeartRate = "average_heart_rate"
+        case maxHeartRate = "max_heart_rate"
         case startedAt = "started_at"
         case completedAt = "completed_at"
         case source

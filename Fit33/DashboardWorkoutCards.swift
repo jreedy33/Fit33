@@ -4,6 +4,12 @@ import CoreData
 struct RecentWorkoutCard: View {
     let workout: Workout
     var isMostRecent: Bool = false // Whether this is the most recent workout (gets special outline)
+    /// Wearable cardio row (WHOOP / Apple Watch / Oura / Fitbit / Garmin)
+    /// that overlapped this Fit33 workout — populated by
+    /// `WorkoutWearableMerger`. When non-nil, the card renders a small
+    /// origin chip so the user knows their wearable corroborated the
+    /// session (full HR / strain lives on `WorkoutHistoryDetailView`).
+    var wearableEnrichment: CardioWorkoutDTO? = nil
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
     
@@ -123,7 +129,10 @@ struct RecentWorkoutCard: View {
     }
     
     private var formattedCalories: String {
-        let cal = Int(workout.caloriesBurned)
+        // Prefer wearable-measured calories when one recorded this session —
+        // optical HR beats the Fit33 MET formula by a wide margin. Falls back
+        // to the stored formula value otherwise. See `WorkoutWearableMerger.effectiveCalories`.
+        let cal = Int(WorkoutWearableMerger.effectiveCalories(workout: workout, wearable: wearableEnrichment))
         return cal > 0 ? "\(cal)" : "--"
     }
     
@@ -239,7 +248,7 @@ struct RecentWorkoutCard: View {
                             .font(.ds_bodySmall)
                             .foregroundColor(.secondary)
                         
-                        if !topMuscles.isEmpty {
+                        if !topMuscles.isEmpty || wearableEnrichment != nil {
                             HStack(spacing: Spacing.xxs) {
                                 ForEach(topMuscles, id: \.self) { muscle in
                                     Text(muscle)
@@ -251,6 +260,9 @@ struct RecentWorkoutCard: View {
                                             Capsule()
                                                 .fill(workoutGradient[0].opacity(0.12))
                                         )
+                                }
+                                if let wearable = wearableEnrichment {
+                                    wearableOriginChip(for: wearable)
                                 }
                             }
                         }
@@ -462,6 +474,39 @@ struct RecentWorkoutCard: View {
             let remainingMinutes = minutes % 60
             return "\(hours)h \(remainingMinutes)m"
         }
+    }
+
+    /// Compact "+ WHOOP" (or Apple Watch / Oura / Fitbit / Garmin) chip
+    /// shown when a wearable corroborated this Fit33 session. Tapping the
+    /// card still opens the Fit33 detail view, which renders the full
+    /// wearable card (HR, calories, origin-branded gradient).
+    @ViewBuilder
+    private func wearableOriginChip(for wearable: CardioWorkoutDTO) -> some View {
+        let origin = wearable.resolvedOrigin
+        HStack(spacing: 3) {
+            Image(systemName: origin.badgeIcon)
+                .font(.system(size: 9, weight: .semibold))
+            Text(origin.displayName)
+                .font(.ds_caption)
+                .fontWeight(.semibold)
+            if let hr = wearable.averageHeartRate, hr > 0 {
+                Text("· \(hr) bpm")
+                    .font(.ds_caption)
+            }
+        }
+        .foregroundColor(origin.badgeForeground)
+        .padding(.horizontal, Spacing.xs)
+        .padding(.vertical, 3)
+        .background(
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: origin.badgeGradient,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
     }
 }
 

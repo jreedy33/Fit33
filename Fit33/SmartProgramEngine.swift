@@ -1916,6 +1916,42 @@ class SmartProgramEngine: ObservableObject {
         }
     }
     
+    /// Cancel / delete a single program. Removes it from in-memory state,
+    /// local cache, AND deletes the matching row from Supabase
+    /// `user_programs`. Without the cloud delete, `loadProgramsFromCloud()`
+    /// would re-append the program on next launch (bug: cancel > force
+    /// quit > reopen resurrected the program). Callers: ProgramDetailView's
+    /// "Cancel Program" action.
+    func cancelProgram(id: String) async {
+        await MainActor.run {
+            userPrograms.removeAll { $0.id == id }
+            // Persist the cleared local list immediately so a fast
+            // relaunch before the cloud delete finishes still sees the
+            // program gone (cloud will then catch up on next sync).
+            if let data = try? JSONEncoder().encode(userPrograms) {
+                defaults.set(data, forKey: programsKey)
+            }
+            objectWillChange.send()
+        }
+
+        guard let userId = SupabaseManager.shared.currentUser?.id else {
+            AppLogger.warning("⚠️ [PROGRAMS] Not authenticated, skipping cloud delete for \(id)", category: .workout)
+            return
+        }
+
+        do {
+            try await SupabaseManager.shared.supabaseClient
+                .from("user_programs")
+                .delete()
+                .eq("id", value: id)
+                .eq("user_id", value: userId.uuidString)
+                .execute()
+            AppLogger.info("🗑️ [PROGRAMS] Deleted program \(id) from cloud", category: .workout)
+        } catch {
+            AppLogger.error("❌ [PROGRAMS] Failed to delete program \(id) from cloud: \(error)", category: .workout)
+        }
+    }
+
     /// Clear all user program data - called on logout/account deletion
     /// This ensures no data from one user is visible to another
     func clearAllData() {

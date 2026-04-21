@@ -34,30 +34,55 @@ struct WorkoutHistoryFullView: View {
         }
     }
     
+    /// Merged view of `allWorkouts` + `cardioWorkouts`. Wearable-origin
+    /// strength cardio rows that time-overlap a Fit33 strength workout are
+    /// collapsed into the Fit33 row (see `WorkoutWearableMerger`). The
+    /// wearable's metrics are surfaced via `enrichmentByWorkoutID` so the
+    /// card / detail view can show the HR + origin badge.
+    private var mergedCardio: WorkoutWearableMerger.Result {
+        WorkoutWearableMerger.merge(
+            strength: Array(allWorkouts),
+            cardio: cardioWorkouts
+        )
+    }
+
     private var groupedItems: [(Date, [HistoryItem])] {
         let calendar = Calendar.current
+        let merged = mergedCardio
         var items: [HistoryItem] = allWorkouts.map { .strength($0) }
-        items.append(contentsOf: cardioWorkouts.map { .cardio($0) })
-        
+        items.append(contentsOf: merged.filteredCardio.map { .cardio($0) })
+
         let grouped = Dictionary(grouping: items) { item in
             calendar.startOfDay(for: item.date)
         }
         return grouped.sorted { $0.key > $1.key }
     }
-    
-    private var totalWorkouts: Int { allWorkouts.count + cardioWorkouts.count }
+
+    private var totalWorkouts: Int { allWorkouts.count + mergedCardio.filteredCardio.count }
     private var totalExercises: Int {
         allWorkouts.reduce(0) { $0 + (($1.exercises?.count) ?? 0) }
     }
     private var totalDuration: TimeInterval {
+        // Use merged cardio list so a wearable strength session isn't
+        // double-counted against the Fit33 workout it overlaps with.
         let strengthTime = allWorkouts.reduce(0.0) { $0 + Double($1.duration) }
-        let cardioTime = cardioWorkouts.reduce(0.0) { $0 + Double($1.durationSeconds) }
+        let cardioTime = mergedCardio.filteredCardio.reduce(0.0) { $0 + Double($1.durationSeconds) }
         return strengthTime + cardioTime
     }
-    
+
     private var totalCalories: Int {
-        let strengthCals = allWorkouts.reduce(0.0) { $0 + $1.caloriesBurned }
-        let cardioCals = cardioWorkouts.reduce(0.0) { $0 + $1.caloriesBurned }
+        // When a wearable recorded a Fit33 session (merged via overlap dedup),
+        // swap the Fit33 MET-formula estimate for the wearable's measured
+        // value — it's materially more accurate and is what's shown on the
+        // individual card / detail view, so header totals must agree.
+        let merged = mergedCardio
+        let strengthCals = allWorkouts.reduce(0.0) { partial, workout in
+            partial + WorkoutWearableMerger.effectiveCalories(
+                workout: workout,
+                wearable: workout.id.flatMap { merged.enrichmentByWorkoutID[$0] }
+            )
+        }
+        let cardioCals = merged.filteredCardio.reduce(0.0) { $0 + $1.caloriesBurned }
         return Int(strengthCals + cardioCals)
     }
     
@@ -76,12 +101,14 @@ struct WorkoutHistoryFullView: View {
                         emptyStateView
                             .padding(.horizontal, 20)
                     } else {
+                        let wearableMap = mergedCardio.enrichmentByWorkoutID
                         LazyVStack(spacing: 20) {
                             ForEach(Array(groupedItems.enumerated()), id: \.offset) { _, dayGroup in
                                 WorkoutHistoryDaySectionCombined(
                                     date: dayGroup.0,
                                     items: dayGroup.1,
-                                    showAds: adManager.adsEnabled
+                                    showAds: adManager.adsEnabled,
+                                    wearableEnrichment: wearableMap
                                 )
                                 .padding(.horizontal, 20)
                             }
@@ -291,6 +318,10 @@ struct WorkoutHistoryDaySectionCombined: View {
     let date: Date
     let items: [WorkoutHistoryFullView.HistoryItem]
     let showAds: Bool
+    /// Map of Fit33 `Workout.id` → wearable cardio row that overlapped it.
+    /// Populated by `WorkoutWearableMerger`. When a strength item's UUID is
+    /// present, `RecentWorkoutCard` renders a small wearable origin chip.
+    var wearableEnrichment: [UUID: CardioWorkoutDTO] = [:]
     @Environment(\.colorScheme) private var colorScheme
     
     private var displayDate: String {
@@ -333,7 +364,10 @@ struct WorkoutHistoryDaySectionCombined: View {
                     
                     switch item {
                     case .strength(let workout):
-                        RecentWorkoutCard(workout: workout)
+                        RecentWorkoutCard(
+                            workout: workout,
+                            wearableEnrichment: workout.id.flatMap { wearableEnrichment[$0] }
+                        )
                     case .cardio(let cardio):
                         RecentCardioWorkoutCard(cardioWorkout: cardio)
                     }

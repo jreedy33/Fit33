@@ -294,14 +294,43 @@ final class HealthKitService: ObservableObject {
                 healthStore.execute(query)
             }
             
-            let workouts = samples.compactMap { sample -> HealthKitWorkout? in
+            let rawWorkouts = samples.compactMap { sample -> HealthKitWorkout? in
                 guard let workout = sample as? HKWorkout else { return nil }
                 let hkWorkout = HealthKitWorkout(from: workout)
                 // Skip workouts that Fit33 wrote to HealthKit — avoids duplicates
                 if hkWorkout.isFromFit33 { return nil }
                 return hkWorkout
             }
-            
+
+            // Enrich with per-workout HR stats in parallel. Each workout
+            // fires two HKStatisticsQuery reads bounded by its own
+            // start/end, so the `cardio_workouts` insert downstream can
+            // persist `average_heart_rate` / `max_heart_rate` for
+            // wearable-imported strength sessions (WHOOP / Apple Watch).
+            // Without this enrichment the detail-view WHOOP Insights card
+            // would show `--` for both HR metrics — see
+            // `WorkoutHistoryDetailView.wearableInsightsCard`.
+            let workouts: [HealthKitWorkout] = await withTaskGroup(
+                of: (Int, Int?, Int?).self,
+                returning: [HealthKitWorkout].self
+            ) { group in
+                for (idx, workout) in rawWorkouts.enumerated() {
+                    group.addTask { [self] in
+                        let stats = await self.fetchHeartRateStats(
+                            start: workout.startDate,
+                            end: workout.endDate
+                        )
+                        return (idx, stats.avg, stats.max)
+                    }
+                }
+                var enriched = rawWorkouts
+                for await (idx, avg, peak) in group {
+                    enriched[idx].averageHeartRate = avg
+                    enriched[idx].maxHeartRate = peak
+                }
+                return enriched
+            }
+
             await MainActor.run {
                 recentWorkouts = workouts
                 
@@ -552,6 +581,61 @@ final class HealthKitService: ObservableObject {
             healthStore.execute(query)
         }
     }
+
+    /// Discrete maximum value for a quantity type over `predicate`. Mirrors
+    /// `fetchAverage` but runs `HKStatisticsQuery` with `.discreteMax` so
+    /// per-workout peak HR imports cleanly into `cardio_workouts.max_heart_rate`.
+    nonisolated private func fetchMax(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate) async -> Double? {
+        guard let quantityType = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
+
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsQuery(
+                quantityType: quantityType,
+                quantitySamplePredicate: predicate,
+                options: .discreteMax
+            ) { _, result, error in
+                guard let result = result, let peak = result.maximumQuantity() else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let unit: HKUnit
+                switch identifier {
+                case .heartRate, .restingHeartRate:
+                    unit = HKUnit.count().unitDivided(by: .minute())
+                default:
+                    unit = .count()
+                }
+
+                continuation.resume(returning: peak.doubleValue(for: unit))
+            }
+            healthStore.execute(query)
+        }
+    }
+
+    /// Average + peak bpm for `start...end`. Used to enrich `HealthKitWorkout`
+    /// rows after they're pulled by `syncRecentWorkouts` so the
+    /// `cardio_workouts` insert has HR stats — which then drives the
+    /// wearable insights card (see `WorkoutWearableMerger` +
+    /// `WorkoutHistoryDetailView.wearableInsightsCard`). Returns `(nil, nil)`
+    /// when HealthKit has no HR samples in the range or authorization is
+    /// missing; both conditions are silent-failures so we don't spam logs
+    /// for every manually-logged strength session.
+    nonisolated func fetchHeartRateStats(start: Date, end: Date) async -> (avg: Int?, max: Int?) {
+        guard end > start else { return (nil, nil) }
+        let predicate = HKQuery.predicateForSamples(
+            withStart: start,
+            end: end,
+            options: .strictStartDate
+        )
+        async let avgBpm = fetchAverage(for: .heartRate, predicate: predicate)
+        async let maxBpm = fetchMax(for: .heartRate, predicate: predicate)
+        let (avg, peak) = await (avgBpm, maxBpm)
+        return (
+            avg.map { Int($0.rounded()) },
+            peak.map { Int($0.rounded()) }
+        )
+    }
     
     // MARK: - Write Workout to HealthKit
     
@@ -629,6 +713,17 @@ struct HealthKitWorkout: Identifiable {
     let distance: Double? // meters
     let sourceName: String
     let sourceBundle: String?
+    /// Average bpm over `startDate...endDate`, computed from the heart-rate
+    /// samples HealthKit stored during the workout. `nil` when the source
+    /// app didn't write HR samples (e.g. a manually-logged workout) or
+    /// when authorization is missing. Populated by
+    /// `HealthKitService.enrichHeartRate(for:)` before the workout reaches
+    /// `cardio_workouts`. Required so the detail view's "WHOOP Insights"
+    /// card can show Avg HR for HealthKit-imported strength sessions.
+    var averageHeartRate: Int?
+    /// Peak bpm over `startDate...endDate`. Same source + nil semantics as
+    /// `averageHeartRate`.
+    var maxHeartRate: Int?
     
     var durationMinutes: Int {
         Int(duration / 60)
@@ -716,6 +811,8 @@ struct HealthKitWorkout: Identifiable {
         self.distance = hkWorkout.totalDistance?.doubleValue(for: .meter())
         self.sourceName = hkWorkout.sourceRevision.source.name
         self.sourceBundle = hkWorkout.sourceRevision.source.bundleIdentifier
+        self.averageHeartRate = nil
+        self.maxHeartRate = nil
     }
 }
 
@@ -773,7 +870,7 @@ extension HealthKitWorkout {
         )
     }
     
-    init(id: UUID, workoutType: HKWorkoutActivityType, startDate: Date, endDate: Date, duration: TimeInterval, calories: Double?, distance: Double?, sourceName: String, sourceBundle: String?) {
+    init(id: UUID, workoutType: HKWorkoutActivityType, startDate: Date, endDate: Date, duration: TimeInterval, calories: Double?, distance: Double?, sourceName: String, sourceBundle: String?, averageHeartRate: Int? = nil, maxHeartRate: Int? = nil) {
         self.id = id
         self.workoutType = workoutType
         self.startDate = startDate
@@ -783,6 +880,8 @@ extension HealthKitWorkout {
         self.distance = distance
         self.sourceName = sourceName
         self.sourceBundle = sourceBundle
+        self.averageHeartRate = averageHeartRate
+        self.maxHeartRate = maxHeartRate
     }
 }
 #endif

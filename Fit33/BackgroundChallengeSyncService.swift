@@ -58,7 +58,17 @@ class BackgroundChallengeSyncService {
     /// UserDefaults key prefix for per-source last-sync timestamps.
     /// Key form: `bg_challenge_last_sync_<source>` (e.g. `bg_challenge_last_sync_steps`).
     private let lastSyncKeyPrefix = "bg_challenge_last_sync_"
-    
+
+    /// Currently-running `performChallengeSyncInBackground` invocation, if
+    /// any. Concurrent callers (e.g. three HealthKit observers firing in the
+    /// same millisecond) await this shared Task instead of spawning their
+    /// own. Without this the main-actor pipeline backs up by N× the per-run
+    /// cost — which is how a ~800ms sync turned into a 2.4s main-thread hang
+    /// on workout completions (3 HK observers wake at once).
+    /// Accessed only from `@MainActor` (see `performChallengeSyncInBackground`).
+    @MainActor
+    private var inFlightSyncTask: Task<Void, Never>?
+
     private init() {}
     
     /// Last-sync UserDefaults key for a given source.
@@ -227,17 +237,16 @@ class BackgroundChallengeSyncService {
             // Sprint 3 Q2-28: Notify HealthKitManager so it can refresh its
             // @Published UI state. This replaces the duplicate foreground
             // `HKObserverQuery` we used to run inside HealthKitManager.
+            //
+            // NOTE: `performChallengeSyncInBackground` already calls
+            // `HealthKitService.syncAllData(force: true)` as Step 1, so the
+            // `cardio_workouts` row is written before we post here. A
+            // previous implementation did a SECOND `syncAllData(force: true)`
+            // on the workout path — that was a double sync and is removed.
             await MainActor.run {
                 switch source {
                 case "workout":
-                    // Ensure cardio_workouts row is in place BEFORE we notify
-                    // Dashboard / HealthKitManager to reload.
-                    Task {
-                        await HealthKitService.shared.syncAllData(force: true)
-                        await MainActor.run {
-                            NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
-                        }
-                    }
+                    NotificationCenter.default.post(name: .externalWorkoutSynced, object: nil)
                 case "steps", "active_energy", "distance", "exercise_time":
                     NotificationCenter.default.post(name: .healthStepsDidUpdate, object: nil)
                 default:
@@ -386,13 +395,33 @@ class BackgroundChallengeSyncService {
     ///
     /// After this completes, the Dashboard's `.onChange(of: healthKitService.lastSyncDate)`
     /// will fire to refresh the UI (recent activity cards + stats).
+    ///
+    /// Concurrent callers coalesce to a single in-flight run (see
+    /// `inFlightSyncTask`). HealthKit wakes the app with multiple observer
+    /// types at once (workout + steps + active_energy), so without this
+    /// coalescing the main-actor pipeline runs the same work 3× back-to-back.
     @MainActor
     func performChallengeSyncInBackground() async {
+        if let existing = inFlightSyncTask {
+            AppLogger.debug("🔁 [BG SYNC] Coalescing into in-flight sync", category: .social)
+            await existing.value
+            return
+        }
+        let task = Task { @MainActor [weak self] in
+            await self?.performSyncBody()
+            self?.inFlightSyncTask = nil
+        }
+        inFlightSyncTask = task
+        await task.value
+    }
+
+    @MainActor
+    private func performSyncBody() async {
         guard SupabaseManager.shared.isAuthenticated else {
             AppLogger.debug("⏭️ [BG SYNC] Not authenticated — skipping", category: .social)
             return
         }
-        
+
         let start = Date()
         AppLogger.debug("🔄 [BG SYNC] Starting background sync (all sources)...", category: .social)
         
@@ -450,7 +479,17 @@ class BackgroundChallengeSyncService {
         let duration = Date().timeIntervalSince(start)
         AppLogger.info("✅ [BG SYNC] Background sync complete in \(String(format: "%.1f", duration))s", category: .social)
         AppLogger.debug("   └─ Synced to \(activeCount) 1v1 + \(groupCount) group + \(privateChallengeCount) private + \(communityChallengeCount) community challenges", category: .social)
-        
+
+        // ── Step 6b: Refresh the dashboard welcome-card recommendation cache ──
+        // Quests + health are already fresh by this point (Steps 1 & 4b), so
+        // this run picks up today's "close the gap" nudge with live data.
+        // Caching it to disk means the next cold launch can hydrate the
+        // welcome card instantly — no blank state, no flicker before the
+        // real message appears. Also ensures daily-quests fetched above are
+        // reflected before we compute the recommendation.
+        await DailyQuestService.shared.fetchDailyQuests()
+        await AdvancedIntelligenceService.shared.refreshCachedRecommendation()
+
         // ── Step 7: Nudge opponents so their stats show up fresh for US next time.
         // Fire-and-forget silent push wake to every opponent in our active
         // challenges. Server-side throttle (15 min/recipient) prevents abuse

@@ -11,6 +11,7 @@
 
 import Foundation
 import SwiftUI
+import CoreData
 
 // MARK: - Quest Models
 
@@ -366,6 +367,12 @@ class DailyQuestService: ObservableObject {
         /// {"upper","lower"}. Upper = any of chest/back/shoulders/biceps/triceps
         /// still recovering; lower = any of quads/hamstrings/glutes/calves.
         let fatiguedRegions: [String]
+        /// Active-challenge types the user is currently competing on. Powers the
+        /// server-side CHALLENGE OVERRIDE in `get_daily_quests` (migration
+        /// 20260423). Subset of: steps, walk, run, active_minutes, calories,
+        /// hydrate, protein, workout_streak, lift. De-duped + stable order so
+        /// the RPC cache stays warm across identical inputs.
+        let activeChallengeTypes: [String]
     }
     
     /// Builds the per-user context used to personalize today's quest selection.
@@ -401,6 +408,16 @@ class DailyQuestService: ObservableObject {
         let hydrationActive = HydrationService.shared.settings.dailyGoalMl > 0
         let leagueRank = WeeklyLeagueService.shared.standing?.myRank ?? 0
 
+        // Collect active-challenge types (both 1v1 + group). Sorted + de-duped
+        // so the RPC sees a stable input and skips re-selection on re-fetch.
+        // Types mirror `ChallengeType.rawValue` — keep in sync with the SQL
+        // override table in migration 20260423.
+        let oneOnOneTypes  = ChallengeService.shared.activeChallenges.map { $0.challengeType }
+        let groupTypes     = ChallengeService.shared.activeGroupChallenges.map { $0.challengeType }
+        let activeChallengeTypes = Array(Set(oneOnOneTypes + groupTypes))
+            .filter { !$0.isEmpty }
+            .sorted()
+
         // Muscle-recovery-aware split suggestion. Program users get their
         // `complete_program_day` slot via the `requires_context` gate, so we
         // skip the suggestion to keep the RPC payload minimal.
@@ -434,7 +451,8 @@ class DailyQuestService: ObservableObject {
             hydrationActive: hydrationActive,
             leagueRank: leagueRank,
             suggestedSplit: suggestedSplit,
-            fatiguedRegions: fatiguedRegions
+            fatiguedRegions: fatiguedRegions,
+            activeChallengeTypes: activeChallengeTypes
         )
     }
 
@@ -659,6 +677,7 @@ class DailyQuestService: ObservableObject {
                 let p_active_step_challenge_target: Int?
                 let p_suggested_split: String?
                 let p_fatigued_regions: [String]?
+                let p_active_challenge_types: [String]?
 
                 enum CodingKeys: String, CodingKey {
                     case p_user_id, p_timezone, p_has_program, p_has_friends, p_has_challenge
@@ -667,6 +686,7 @@ class DailyQuestService: ObservableObject {
                     case p_has_weight_log, p_hydration_active, p_league_rank
                     case p_active_step_challenge_target
                     case p_suggested_split, p_fatigued_regions
+                    case p_active_challenge_types
                 }
                 
                 func encode(to encoder: Encoder) throws {
@@ -695,6 +715,9 @@ class DailyQuestService: ObservableObject {
                     if let regions = p_fatigued_regions, !regions.isEmpty {
                         try container.encode(regions, forKey: .p_fatigued_regions)
                     }
+                    if let types = p_active_challenge_types, !types.isEmpty {
+                        try container.encode(types, forKey: .p_active_challenge_types)
+                    }
                 }
             }
             
@@ -716,7 +739,8 @@ class DailyQuestService: ObservableObject {
                 p_league_rank: ctx.leagueRank,
                 p_active_step_challenge_target: ctx.activeStepChallengeTarget > 0 ? ctx.activeStepChallengeTarget : nil,
                 p_suggested_split: ctx.suggestedSplit,
-                p_fatigued_regions: ctx.fatiguedRegions.isEmpty ? nil : ctx.fatiguedRegions
+                p_fatigued_regions: ctx.fatiguedRegions.isEmpty ? nil : ctx.fatiguedRegions,
+                p_active_challenge_types: ctx.activeChallengeTypes.isEmpty ? nil : ctx.activeChallengeTypes
             )
             
             let response: DailyQuestsResponse = try await SupabaseManager.shared.supabaseClient
@@ -748,7 +772,17 @@ class DailyQuestService: ObservableObject {
             if hasQuest(.watchAds) {
                 AdManager.shared.prepareRewardedAd()
             }
-            
+
+            // Backfill catch-up. When the RPC just assigned fresh rows (e.g.
+            // after a quest-row reset, a new day rollover partway through,
+            // or a fresh re-install) the new quests land at 0/1 even though
+            // today's workouts / meals / steps may have already happened.
+            // Push the existing local state back up so the server flips
+            // `is_completed` + awards XP instead of forcing the user to do
+            // the thing again. Best-effort; each reportProgress call no-ops
+            // if the quest isn't assigned.
+            await backfillTodayProgress()
+
         } catch {
             self.error = error.localizedDescription
             
@@ -892,6 +926,72 @@ class DailyQuestService: ObservableObject {
         }
     }
     
+    // MARK: - Backfill (catch-up after quest reassignment)
+
+    /// Walks today's local data sources and replays `reportProgress` for any
+    /// quest that's already satisfied by existing state but whose server-side
+    /// row is still 0. Safe to call repeatedly — `reportProgress` no-ops when
+    /// the quest isn't assigned OR is already complete. The goal here is
+    /// specifically the "I did a workout and then my quest reset to 0/1"
+    /// scenario, plus meals/water/weight that happened before today's quests
+    /// were picked. HealthKit-only data (steps, active minutes, sleep) flows
+    /// through the existing observers so we don't duplicate that path here.
+    private func backfillTodayProgress() async {
+        guard !quests.isEmpty else { return }
+
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+
+        // ── Workouts: count today's completed Core Data workouts and replay
+        // the same `onWorkoutCompleted` calls the active workout flow makes.
+        // Uses the shared view context because this runs on the main actor.
+        let ctx = PersistenceController.shared.container.viewContext
+        let wRequest: NSFetchRequest<Workout> = Workout.fetchRequest()
+        wRequest.predicate = NSPredicate(
+            format: "isCompleted == true AND date >= %@ AND date < %@",
+            today as NSDate,
+            (cal.date(byAdding: .day, value: 1, to: today) ?? today) as NSDate
+        )
+        wRequest.fetchLimit = 10
+        let todaysWorkouts = (try? ctx.fetch(wRequest)) ?? []
+
+        if !todaysWorkouts.isEmpty {
+            // Replay each workout once so `complete_workout`, `workout_30_min`,
+            // `exercise_sets_*`, `early_bird_workout`, and the upper/lower
+            // focus quests all tick. `reportProgress` guards against
+            // double-tick on already-complete quests.
+            for workout in todaysWorkouts {
+                let exercises = (workout.exercises?.allObjects as? [WorkoutExercise]) ?? []
+                let totalSets = exercises.reduce(0) { total, ex in
+                    total + ((ex.sets?.allObjects as? [WorkoutSet])?.filter(\.isCompleted).count ?? 0)
+                }
+                let durationSeconds = Int(workout.duration)
+                await onWorkoutCompleted(durationSeconds: durationSeconds, totalSets: totalSets)
+
+                let trained: Set<String> = Set(
+                    exercises.flatMap { $0.safeMuscleGroups.map { $0.lowercased() } }
+                )
+                if !trained.isEmpty {
+                    await onWorkoutWithFocus(bodyParts: trained)
+                }
+            }
+        }
+
+        // ── Meals logged today (live via MealService — already scoped).
+        let mealsToday = MealService.shared.todaysMeals
+        for meal in mealsToday {
+            await onMealLogged(mealType: meal.mealType.rawValue)
+        }
+
+        // ── Hydration logged today. `entryCount` is today's glasses total;
+        // we pass it as the increment so the server catches up in one call
+        // (the RPC caps at target so overshooting is safe).
+        let glassesToday = HydrationService.shared.todaySummary?.entryCount ?? 0
+        if glassesToday > 0 {
+            await onWaterLogged(glasses: glassesToday)
+        }
+    }
+
     // MARK: - Convenience Methods for Common Actions
     
     /// Call when a workout is completed

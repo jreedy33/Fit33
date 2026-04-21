@@ -2,6 +2,18 @@ import SwiftUI
 import CoreData
 
 extension ActiveWorkoutView {
+    /// Mirror local `@State var exercises` back to `workoutManager.currentExercises` and
+    /// immediately flush to UserDefaults. MUST be called after every mutation to the
+    /// local `exercises` array (add / remove / shuffle / drag-reorder). Without this,
+    /// mid-workout changes are invisible to `saveActiveWorkoutToStorage()` — which
+    /// snapshots from `currentExercises` — so an iOS background-kill restores the
+    /// original exercises only and silently drops anything added during the session.
+    @MainActor
+    func syncExercisesToWorkoutManager() {
+        workoutManager.currentExercises = exercises
+        workoutManager.saveActiveWorkoutToStorage()
+    }
+
     func handleSetCompletion(for exercise: Exercise, setData: WorkoutSetData) {
         guard let exerciseId = exercise.id?.uuidString else { return }
         
@@ -322,6 +334,8 @@ extension ActiveWorkoutView {
         workoutManager.exerciseSetsData.removeValue(forKey: exerciseId)
         exerciseRestTimers.removeValue(forKey: exerciseId)
         
+        syncExercisesToWorkoutManager()
+        
         AppLogger.debug("🗑️ Removed exercise at index \(index)", category: .workout)
     }
     
@@ -354,6 +368,8 @@ extension ActiveWorkoutView {
         withAnimation(.easeInOut(duration: 0.3)) {
             exercises[index] = newExercise
         }
+        
+        syncExercisesToWorkoutManager()
         
         // Transfer any sets data to the new exercise (or initialize fresh)
         let existingSets = workoutManager.exerciseSetsData[oldExerciseId] ?? []

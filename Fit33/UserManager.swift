@@ -7,8 +7,26 @@ class UserManager: ObservableObject {
     @Published var hasCompletedOnboarding: Bool = false
     @Published var showLevelUpCelebration: Bool = false
     @Published var newLevelReached: Int = 0
-    @Published var isVerified: Bool = false
-    @Published var isGoldVerified: Bool = false
+
+    // Verified badge state is cached in UserDefaults so cold start shows the
+    // correct badge (none / blue / gold) instantly, without waiting for the
+    // Supabase profile fetch. The cloud sync still writes to these properties
+    // in the background and will update the UI if the tier changes.
+    private static let cachedIsVerifiedKey = "fit33_cached_is_verified"
+    private static let cachedIsGoldVerifiedKey = "fit33_cached_is_gold_verified"
+
+    @Published var isVerified: Bool = UserDefaults.standard.bool(forKey: UserManager.cachedIsVerifiedKey) {
+        didSet {
+            guard oldValue != isVerified else { return }
+            UserDefaults.standard.set(isVerified, forKey: UserManager.cachedIsVerifiedKey)
+        }
+    }
+    @Published var isGoldVerified: Bool = UserDefaults.standard.bool(forKey: UserManager.cachedIsGoldVerifiedKey) {
+        didSet {
+            guard oldValue != isGoldVerified else { return }
+            UserDefaults.standard.set(isGoldVerified, forKey: UserManager.cachedIsGoldVerifiedKey)
+        }
+    }
     
     private let viewContext = PersistenceController.shared.container.viewContext
     private let supabaseManager = SupabaseManager.shared
@@ -320,6 +338,12 @@ class UserManager: ObservableObject {
         AppLogger.info("UserManager: Resetting state for sign-out...", category: .auth)
         currentUser = nil
         hasCompletedOnboarding = false
+        // Clear cached verified badge so the next account on this device does
+        // not inherit the previous user's verification status.
+        isVerified = false
+        isGoldVerified = false
+        UserDefaults.standard.removeObject(forKey: UserManager.cachedIsVerifiedKey)
+        UserDefaults.standard.removeObject(forKey: UserManager.cachedIsGoldVerifiedKey)
         AppLogger.info("UserManager: State reset complete", category: .auth)
     }
     

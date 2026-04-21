@@ -346,6 +346,7 @@
 		AB0C42948B3EFC1DAA689E96 /* OnboardingPhotoPickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC5458D8A66EB61E8BB665F /* OnboardingPhotoPickers.swift */; };
 		ABAB453F8DC93B27AA9FDD26 /* WorkoutUIHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B94982A8B87143C4F2CB59 /* WorkoutUIHelpers.swift */; };
 		B0B3B0B30000000000000001 /* WorkoutOriginMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B3B0B30000000000000002 /* WorkoutOriginMapper.swift */; };
+		B0B3B0B40000000000000001 /* WorkoutWearableMerger.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B3B0B40000000000000002 /* WorkoutWearableMerger.swift */; };
 		B1234567890123456789A001 /* WorkoutProgramEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789A002 /* WorkoutProgramEngine.swift */; };
 		B1234567890123456789A003 /* ProgramLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789A004 /* ProgramLibraryView.swift */; };
 		B1234567890123456789A005 /* ProgramScheduleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789A006 /* ProgramScheduleView.swift */; };
@@ -751,6 +752,7 @@
 		AE5149DF9FC46167F14F6A9A /* DashboardWidgetSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DashboardWidgetSettings.swift; path = Fit33/DashboardWidgetSettings.swift; sourceTree = SOURCE_ROOT; };
 		B0954704AEDC9D0BCAFFB73A /* DashboardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DashboardModels.swift; path = Fit33/DashboardModels.swift; sourceTree = SOURCE_ROOT; };
 		B0B3B0B30000000000000002 /* WorkoutOriginMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutOriginMapper.swift; sourceTree = "<group>"; };
+		B0B3B0B40000000000000002 /* WorkoutWearableMerger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutWearableMerger.swift; sourceTree = "<group>"; };
 		B1234567890123456789A002 /* WorkoutProgramEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutProgramEngine.swift; sourceTree = "<group>"; };
 		B1234567890123456789A004 /* ProgramLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgramLibraryView.swift; sourceTree = "<group>"; };
 		B1234567890123456789A006 /* ProgramScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgramScheduleView.swift; sourceTree = "<group>"; };
@@ -983,6 +985,7 @@
 				7CACB5702F2E8431003A7C91 /* HealthKitService.swift */,
 				7CACB5712F2E8431003A7C91 /* HealthKitSettingsView.swift */,
 				B0B3B0B30000000000000002 /* WorkoutOriginMapper.swift */,
+				B0B3B0B40000000000000002 /* WorkoutWearableMerger.swift */,
 				7C792ABF2F2AAE6E0048A97E /* HealthyRecipesCarousel.swift */,
 				7CAFD5592EDF780500920F0D /* HydrationService.swift */,
 				7CAFD55B2EDF780B00920F0D /* HydrationWidget.swift */,
@@ -1587,6 +1590,7 @@
 				7CACB5722F2E8431003A7C91 /* HealthKitSettingsView.swift in Sources */,
 				7CACB5732F2E8431003A7C91 /* HealthKitService.swift in Sources */,
 				B0B3B0B30000000000000001 /* WorkoutOriginMapper.swift in Sources */,
+				B0B3B0B40000000000000001 /* WorkoutWearableMerger.swift in Sources */,
 				7C0C41F62F09CE0100F02E84 /* ExerciseNicknameService.swift in Sources */,
 				7C1B0A532F4F7D5C0094AF68 /* SocialSystemSimulatorView.swift in Sources */,
 				7C792ACA2F2AB51C0048A97E /* RecipePreferenceService.swift in Sources */,
@@ -1815,7 +1819,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 48;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1826,7 +1830,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.37;
+				MARKETING_VERSION = 1.38;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1845,7 +1849,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 48;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1856,7 +1860,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.37;
+				MARKETING_VERSION = 1.38;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1999,7 +2003,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 48;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2021,7 +2025,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.37;
+				MARKETING_VERSION = 1.38;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2037,7 +2041,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 48;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2059,7 +2063,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.37;
+				MARKETING_VERSION = 1.38;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

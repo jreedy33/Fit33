@@ -1287,6 +1287,19 @@ class AdvancedIntelligenceService: ObservableObject {
         }
     }
     
+    /// Compute a fresh recommendation and write it to the disk cache.
+    /// Called opportunistically from `BackgroundChallengeSyncService` so the
+    /// dashboard welcome card can hydrate instantly on the next cold launch
+    /// with today's "close the gap" nudge — no blank state, no flicker.
+    /// No-op if the user isn't authenticated.
+    func refreshCachedRecommendation() async {
+        guard let userId = SupabaseManager.shared.currentUser?.id else { return }
+        let streak = Int(UserManager.shared.currentUser?.currentStreak ?? 0)
+        let rec = await getPersonalizedRecommendation(userId: userId, streak: streak)
+        RecommendationCache.write(rec)
+        AppLogger.debug("[INTELLIGENCE] Cached recommendation refreshed: \(rec.message)", category: .performance)
+    }
+
     /// Generate a personalized, actionable recommendation for the dashboard
     func getPersonalizedRecommendation(userId: UUID, streak: Int) async -> PersonalizedRecommendation {
         // Collect all intelligence data in parallel
@@ -1321,15 +1334,89 @@ class AdvancedIntelligenceService: ObservableObject {
             )
         }
         
-        // Priority 2: Undertrained muscle groups
-        let undertrainedMuscles = volumes.filter { $0.status == .undertrained }
-        if let needsWork = undertrainedMuscles.first {
-            let muscleDisplay = needsWork.muscleGroup.capitalized
+        // Priority 1.5: "Close the gap" nudge — if the user is already
+        // engaged today (≥1 quest completed) and at least one open quest is
+        // within easy reach, push them over the finish line BEFORE we
+        // surface a workout suggestion. This avoids the embarrassing
+        // "go do legs!" message when the user already finished a leg
+        // workout and just needs 500 more steps to hit 3/3 goals.
+        if let nudge = getNearlyCompleteQuestNudge() {
+            return nudge
+        }
+
+        // Whether the user has already crossed the daily-quest workout slot
+        // today (any workout counts per migration 58). Used to suppress a
+        // redundant second-workout suggestion below.
+        let completedWorkoutToday = hasCompletedWorkoutQuestToday()
+
+        // Priority 2: Workout-focus recommendation, aligned with the daily
+        // quest's workout slot. Both surfaces now use the same signal
+        // (WorkoutSuggestionEngine.suggestForToday) so they never contradict
+        // — previously this priority surfaced the most-undertrained muscle
+        // by 7-day volume, which could clash with the quest's recovery-based
+        // split ("Lower Abs could use work" vs "Leg Day — legs are fresh").
+        //
+        // We still fire priority 2 only when the user has a concrete muscle-
+        // volume deficit OR the suggestion says there's a clearly recovered
+        // split to train today, so lower priorities (nutrition, hydration,
+        // completion-rate, celebration) can still surface on days where a
+        // workout suggestion isn't the most useful thing to show.
+        let suggestion = await WorkoutSuggestionEngine.shared.suggestForTodayAsync()
+        let hasUndertrained = volumes.contains { $0.status == .undertrained }
+        let shouldSuggestWorkout = !completedWorkoutToday
+            && (hasUndertrained
+                || suggestion.whoopRecoveryOverride
+                || suggestion.isFromProgram)
+
+        if shouldSuggestWorkout {
+            if suggestion.whoopRecoveryOverride {
+                return PersonalizedRecommendation(
+                    message: suggestion.primaryMessage,
+                    icon: "bed.double.fill",
+                    priority: 92,
+                    actionType: .rest
+                )
+            }
+            if suggestion.isFromProgram, let dayName = suggestion.programDayName {
+                return PersonalizedRecommendation(
+                    message: "Today's program day: \(dayName) 🎯",
+                    icon: "calendar",
+                    priority: 90,
+                    actionType: .workout(muscleGroup: nil)
+                )
+            }
+            // Phrase as a soft suggestion, not a label. The daily quest card
+            // works the same way — title stays neutral ("Crush a Workout"),
+            // the description surfaces the suggestion with 💡. This keeps
+            // both surfaces consistent and makes it clear the user isn't
+            // locked into the suggested split.
+            let alignedMessage: String
+            let alignedMuscle: String?
+            switch suggestion.splitFamily {
+            case .legs:
+                alignedMessage = "Your legs are fresh — great day to train them 🦵"
+                alignedMuscle = "legs"
+            case .push:
+                alignedMessage = "Chest, shoulders & triceps are fresh — push day suits you 💪"
+                alignedMuscle = "chest"
+            case .pull:
+                alignedMessage = "Back & biceps are fresh — a pull session would feel great 🎯"
+                alignedMuscle = "back"
+            case .upperBody:
+                alignedMessage = "Upper body is recovered — ready when you are 💪"
+                alignedMuscle = nil
+            case .fullBody:
+                alignedMessage = "Everything is fresh — full-body session is wide open 🔥"
+                alignedMuscle = nil
+            case .coreCardio:
+                alignedMessage = "Good day for core & cardio — keep the engine running 🏃"
+                alignedMuscle = "core"
+            }
             return PersonalizedRecommendation(
-                message: "Your \(muscleDisplay) could use some work this week! 🎯",
+                message: alignedMessage,
                 icon: "figure.strengthtraining.traditional",
                 priority: 90,
-                actionType: .workout(muscleGroup: needsWork.muscleGroup)
+                actionType: .workout(muscleGroup: alignedMuscle)
             )
         }
         
@@ -1426,7 +1513,172 @@ class AdvancedIntelligenceService: ObservableObject {
         // Fallback: Streak-based motivation
         return getStreakBasedRecommendation(streak: streak)
     }
-    
+
+    // MARK: - Daily-Quest "Close the Gap" Nudge
+
+    /// Picks the single best open quest to nudge the user to finish, or
+    /// `nil` if none is close enough / the user isn't engaged yet today.
+    ///
+    /// Gatekeeping rules:
+    /// 1. User has completed ≥1 quest today (they're engaged, not avoiding).
+    /// 2. Picked quest has ≥60% live progress (don't nudge fresh zeros).
+    /// 3. Gap is achievable in the remaining day (bounded by quest type).
+    /// 4. Workout-style quests are excluded — Priority 2 already handles
+    ///    "go train" prompts, and by that code path we already know the
+    ///    workout quest hasn't been completed today.
+    private func getNearlyCompleteQuestNudge() -> PersonalizedRecommendation? {
+        let quests = DailyQuestService.shared.quests
+        guard !quests.isEmpty else { return nil }
+
+        let completedCount = quests.filter(\.isCompleted).count
+        guard completedCount >= 1 else { return nil }
+
+        struct Candidate {
+            let quest: DailyQuest
+            let gap: Int
+            let progress: Double
+            let message: String
+        }
+
+        var candidates: [Candidate] = []
+        for quest in quests where !quest.isCompleted && quest.targetValue > 0 {
+            let current = liveQuestValue(for: quest)
+            let gap = max(0, quest.targetValue - current)
+            guard gap > 0 else { continue }
+            let progress = min(Double(current) / Double(quest.targetValue), 1.0)
+            guard progress >= 0.6 else { continue }
+            guard let message = nudgeMessage(for: quest, gap: gap) else { continue }
+            candidates.append(Candidate(quest: quest, gap: gap, progress: progress, message: message))
+        }
+
+        // Pick the quest closest to done — smallest remaining gap by %.
+        guard let best = candidates.max(by: { $0.progress < $1.progress }) else {
+            return nil
+        }
+
+        return PersonalizedRecommendation(
+            message: best.message,
+            icon: "flag.checkered",
+            priority: 95,
+            actionType: .general
+        )
+    }
+
+    /// True if today's primary workout quest slot is already satisfied.
+    /// Matches the quest keys that migration 58 made "any workout counts".
+    private func hasCompletedWorkoutQuestToday() -> Bool {
+        let workoutKeys: Set<String> = [
+            QuestKey.completeWorkout.rawValue,
+            QuestKey.completeProgramDay.rawValue,
+            QuestKey.workout30Min.rawValue,
+            QuestKey.complete2Workouts.rawValue,
+            QuestKey.exerciseSets15.rawValue,
+            QuestKey.exerciseSets25.rawValue,
+            QuestKey.upperBodyWorkout.rawValue,
+            QuestKey.lowerBodyWorkout.rawValue,
+            QuestKey.earlyBirdWorkout.rawValue,
+            QuestKey.beginnerFirstWorkout.rawValue
+        ]
+        return DailyQuestService.shared.quests.contains {
+            workoutKeys.contains($0.questKey) && $0.isCompleted
+        }
+    }
+
+    /// Live value for a quest — mirrors `DailyQuestsWidget.liveCurrentValue`
+    /// so the welcome card and each quest card agree on "how close am I?".
+    /// Keep in sync when new live-backed quest keys are added.
+    private func liveQuestValue(for quest: DailyQuest) -> Int {
+        guard let key = QuestKey(rawValue: quest.questKey) else {
+            return quest.currentValue
+        }
+        switch key {
+        // Steps + movement
+        case .walk3kSteps, .walk5kSteps, .walk7500Steps, .walk10kSteps, .hitStepGoal:
+            return max(HealthKitService.shared.todaySteps, quest.currentValue)
+        case .activeMinutes30:
+            return max(HealthKitService.shared.todayActiveMinutes, quest.currentValue)
+        case .burn300Calories:
+            return max(HealthKitService.shared.todayCalories, quest.currentValue)
+
+        // Hydration (hydrationBeforeNoon uses the same glasses count —
+        // we gate its nudge on time-of-day in nudgeMessage).
+        case .logWater, .logWater3, .logWater8, .hydrationBeforeNoon:
+            let glasses = HydrationService.shared.todaySummary?.entryCount ?? 0
+            return max(glasses, quest.currentValue)
+
+        // Meals
+        case .log3Meals, .logMeal:
+            return max(MealService.shared.todaysMeals.count, quest.currentValue)
+
+        // Macros / protein
+        case .hitProteinGoal:
+            let todayProtein = MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
+            return max(todayProtein, quest.currentValue)
+        case .logAllMacros:
+            let meals = MealService.shared.todaysMeals
+            let logged = (meals.contains { $0.protein > 0 } ? 1 : 0)
+                       + (meals.contains { $0.carbs > 0 } ? 1 : 0)
+                       + (meals.contains { $0.fat > 0 } ? 1 : 0)
+            return max(logged, quest.currentValue)
+
+        default:
+            return quest.currentValue
+        }
+    }
+
+    /// Per-quest-type nudge copy. Returns nil for quests we don't have a
+    /// meaningful "keep going" message for (binary / social / sleep /
+    /// workout quests handled by other priorities or not actionable
+    /// mid-day).
+    private func nudgeMessage(for quest: DailyQuest, gap: Int) -> String? {
+        guard let key = QuestKey(rawValue: quest.questKey) else { return nil }
+        let xp = quest.xpReward
+        switch key {
+        // Steps + movement
+        case .walk3kSteps, .walk5kSteps, .walk7500Steps, .walk10kSteps, .hitStepGoal:
+            return "So close — walk \(formattedStepGap(gap)) more steps to finish \(quest.title) (+\(xp) XP) 🎯"
+        case .activeMinutes30:
+            let minText = gap == 1 ? "minute" : "minutes"
+            return "Just \(gap) more active \(minText) to finish \(quest.title) — take a quick walk (+\(xp) XP) 🏃"
+        case .burn300Calories:
+            return "\(gap) more active calories to finish \(quest.title) — get moving (+\(xp) XP) 🔥"
+
+        // Hydration
+        case .logWater, .logWater3, .logWater8:
+            let noun = gap == 1 ? "glass" : "glasses"
+            return "Only \(gap) more \(noun) of water to finish \(quest.title) (+\(xp) XP) 💧"
+        case .hydrationBeforeNoon:
+            // Only actionable before noon — after noon the quest is
+            // effectively dead for the day and surfacing it feels stale.
+            let hour = Calendar.current.component(.hour, from: Date())
+            guard hour < 12 else { return nil }
+            let noun = gap == 1 ? "glass" : "glasses"
+            return "\(gap) more \(noun) before noon to finish \(quest.title) (+\(xp) XP) 💧"
+
+        // Meals
+        case .log3Meals, .logMeal:
+            let noun = gap == 1 ? "meal" : "meals"
+            return "Log \(gap) more \(noun) to finish \(quest.title) (+\(xp) XP) 🍽️"
+
+        // Macros / protein
+        case .hitProteinGoal:
+            return "Just \(gap)g more protein to finish \(quest.title) (+\(xp) XP) 🥩"
+        case .logAllMacros:
+            let noun = gap == 1 ? "macro" : "macros"
+            return "Log \(gap) more \(noun) (P/C/F) to finish \(quest.title) (+\(xp) XP) 🥗"
+
+        default:
+            return nil
+        }
+    }
+
+    private func formattedStepGap(_ steps: Int) -> String {
+        if steps >= 1000 {
+            return String(format: "%.1fk", Double(steps) / 1000.0)
+        }
+        return "\(steps)"
+    }
+
     // MARK: - Weight Trend Recommendations
     
     /// Get a recommendation based on user's weight tracking progress
@@ -1580,6 +1832,62 @@ struct IntelligenceEffectiveExercise {
     let effectivenessScore: Double
     let progressionVelocity: Double
     let timesPerformed: Int
+}
+
+// MARK: - Recommendation Disk Cache
+//
+// The dashboard welcome-card recommendation is cached to disk so that on a
+// cold launch the card can render with the last known message immediately —
+// no blank state, no flicker. The cache is refreshed opportunistically from:
+//
+// 1. Foreground computes in `DashboardView+Helpers.loadPersonalizedRecommendation`.
+// 2. Every background challenge sync (see `BackgroundChallengeSyncService
+//    .performSyncBody`), so that even if the user hasn't opened the app in
+//    hours, by the time they do the cache already holds a fresh "close the
+//    gap" nudge computed against today's live step/quest data.
+//
+// Cache entries are scoped to the current calendar day — a "walk 493 more
+// steps" nudge from yesterday must never bleed into today's welcome card.
+enum RecommendationCache {
+    private static let key = "fit33.cachedPersonalizedRecommendation.v1"
+
+    private struct Entry: Codable {
+        let message: String
+        let icon: String
+        let priority: Int
+        let cachedAt: Date
+    }
+
+    /// Read the last cached recommendation, or nil if missing / stale.
+    /// Safe to call from any thread — touches only `UserDefaults`.
+    static func read() -> AdvancedIntelligenceService.PersonalizedRecommendation? {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let entry = try? JSONDecoder().decode(Entry.self, from: data) else {
+            return nil
+        }
+        guard Calendar.current.isDate(entry.cachedAt, inSameDayAs: Date()) else {
+            return nil
+        }
+        return AdvancedIntelligenceService.PersonalizedRecommendation(
+            message: entry.message,
+            icon: entry.icon,
+            priority: entry.priority,
+            actionType: .general  // actionType is only used for analytics; .general is safe
+        )
+    }
+
+    /// Persist a freshly computed recommendation to disk.
+    static func write(_ rec: AdvancedIntelligenceService.PersonalizedRecommendation) {
+        let entry = Entry(
+            message: rec.message,
+            icon: rec.icon,
+            priority: rec.priority,
+            cachedAt: Date()
+        )
+        if let data = try? JSONEncoder().encode(entry) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
 }
 
 // Import Supabase client type

@@ -75,8 +75,11 @@ class GeneratedProgramService: ObservableObject {
     func stopCurrentProgram() {
         activeProgram = nil
         currentDay = nil
-        UserDefaults.standard.removeObject(forKey: activeKey)
-        
+        // Route through saveActiveProgram() so the currentDay companion key
+        // is cleared too. Doing only `removeObject(forKey: activeKey)` left
+        // the "_currentDay" key behind, which could resurrect stale state.
+        saveActiveProgram()
+
         AppLogger.debug("⏹️ Stopped current program", category: .workout)
     }
     
@@ -361,13 +364,26 @@ class GeneratedProgramService: ObservableObject {
     }
     
     private func saveActiveProgram() {
-        guard let program = activeProgram else { return }
+        // When activeProgram is nil (user just cancelled/deleted) we MUST
+        // remove the stored keys — otherwise on next launch
+        // `loadActiveProgram()` reads the stale blob and resurrects the
+        // cancelled program. Early-return'ing here was the reason Cancel >
+        // Force Quit > Reopen put the user straight back into the program.
+        guard let program = activeProgram else {
+            UserDefaults.standard.removeObject(forKey: activeKey)
+            UserDefaults.standard.removeObject(forKey: "\(activeKey)_currentDay")
+            return
+        }
         let encoder = JSONEncoder()
         if let data = try? encoder.encode(program) {
             UserDefaults.standard.set(data, forKey: activeKey)
         }
         if let day = currentDay, let dayData = try? encoder.encode(day) {
             UserDefaults.standard.set(dayData, forKey: "\(activeKey)_currentDay")
+        } else {
+            // Day was cleared alongside the program — drop its stored copy
+            // too so nothing stale can be read back.
+            UserDefaults.standard.removeObject(forKey: "\(activeKey)_currentDay")
         }
     }
     
@@ -397,13 +413,20 @@ class GeneratedProgramService: ObservableObject {
     /// Delete a specific program
     func deleteProgram(_ program: DynamicProgramGenerator.GeneratedProgram) {
         generatedPrograms.removeAll { $0.id == program.id }
-        
-        if activeProgram?.id == program.id {
+
+        let wasActive = activeProgram?.id == program.id
+        if wasActive {
             activeProgram = nil
             currentDay = nil
         }
-        
+
         savePrograms()
+        // Must persist the cleared active-program state too — otherwise the
+        // UserDefaults keys stay populated and the next launch re-activates
+        // the just-deleted program.
+        if wasActive {
+            saveActiveProgram()
+        }
     }
 }
 

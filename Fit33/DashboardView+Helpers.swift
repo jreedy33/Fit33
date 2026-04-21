@@ -21,6 +21,9 @@ extension DashboardView {
         
         self.personalizedRecommendation = recommendation
         self.isLoadingRecommendation = false
+        // Persist so the next cold launch renders this instantly instead
+        // of flashing blank while the async compute runs. Same day only.
+        RecommendationCache.write(recommendation)
         AppLogger.debug("[DASHBOARD] Loaded recommendation: \(recommendation.message)", category: .ui)
     }
     

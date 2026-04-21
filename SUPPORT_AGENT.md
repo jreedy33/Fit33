@@ -1,358 +1,209 @@
 # Staff Support & Knowledge Agent
 
-> **Role**: Staff Support & Knowledge Specialist
-> **Domain**: User-facing knowledge, FAQ management, feature documentation, pain point tracking, bug-to-feature mapping, user education
-> **File**: `SUPPORT_AGENT.md`
-> **One-Line Summary**: "How users understand, use, and get help with the app"
+> **Role**: User-facing knowledge, FAQ, pain-point tracking, bug-to-feature mapping, user education. "How users understand, use, and get help with the app."
+>
+> Full feature inventory, dated FAQ entries, integration copy (WHOOP/Oura/Fitbit/Strava), and historical pain-point registry live in [`docs/history/SUPPORT_AGENT.md`](docs/history/SUPPORT_AGENT.md).
+
+Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`.
+
+This agent does NOT build features — it ensures users can successfully USE features.
 
 ---
 
-## Mandatory Standards (ALL Agents Must Follow)
+## Invariants (will mislead users / create support tickets if violated)
 
-1. **Logging**: ALWAYS use `AppLogger` — NEVER `print()`. Categories: `.network`, `.data`, `.workout`, `.social`, `.nutrition`, `.health`, `.ui`, `.performance`, `.auth`, `.general`. Levels: `.debug`, `.info`, `.warning`, `.error`.
-2. **No force unwraps** in production code. Use `guard let`, `if let`, or nil-coalescing.
-3. **Design tokens**: Use `.ds_*` font tokens and `Color.cardBackground` — no hardcoded `.system(size:)` or local cardBackground properties.
-4. **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — never `DispatchQueue.main.asyncAfter`.
-5. **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`.
-6. **Database security — tables**: Every new table MUST have `ENABLE ROW LEVEL SECURITY` + CRUD policies scoped to `user_id = auth.uid()`.
-7. **Database security — views**: NEVER create views with `SECURITY DEFINER`. All public views MUST use `security_invoker = on`.
+1. **Scanner is OCR, NOT barcode lookup.** The camera scanner in Meals reads the text on the nutrition-facts panel. Do NOT tell users "scan the barcode" — that feature is not shipped (tracked as Q2-6). User-facing copy must say "nutrition label lookup (photo-based OCR)" everywhere: Terms, Privacy Policy, FAQ, in-app tooltips, Support replies. Correct response to "how do I scan food?" → "Point the camera at the **nutrition facts panel** — we read the text directly. True barcode lookup is coming."
+2. **Knowledge MUST update within 1 sprint of the code change.** Every user-facing PR = append to the relevant App Knowledge table + add/update FAQ entries. Stale support docs = wrong answers to users.
+3. **Pain points documented within 24h of discovery.** Maintain the Pain Point registry below with `[PP-XXX]` IDs. Mark resolved when engineering ships the fix; keep the entry for future audit.
+4. **FAQ after EVERY feature build, bug fix, and UI change.** Feature build → new FAQ entries. Bug fix → update if user-visible behavior changed. UI change → update screenshots/descriptions.
+5. **Block + report patterns are NEVER reinvented.** Report & Block menus live on `PrivateChallengeDetailView` chat rows and `FriendActivityFeedView` cards via `.contextMenu`. `BlockedUsersView` lives in Settings → Privacy & Security. New user-generated surfaces MUST reuse these — App Review rejects otherwise. (Also in `PRODUCT_ENGINEER_AGENT.md` invariant 20.)
 
 ---
 
-## Mission
+## App Knowledge — Feature Map (user-facing)
 
-The Support Agent is the **single source of truth for how users experience Fit33**. This agent deeply understands every feature, every flow, every edge case, and every potential point of confusion. Their job is to:
+### Auth + Onboarding
+| Flow | What happens | Key files |
+|---|---|---|
+| Sign up | Email/password OR Apple/Google/Facebook (Supabase) | `NewOnboardingView.swift`, `SocialAuthService.swift` |
+| Onboarding quiz | 13 steps: basics → body stats → goals → equipment → experience → schedule → limitations → phone verify | `NewOnboardingView.swift` |
+| Phone verify | Twilio SMS, 45 countries, max 3 attempts | `PhoneVerificationSheet.swift` |
+| Onboarding recovery | Progress saved per-step in UserDefaults; restores on relaunch | `NewOnboardingView.swift` (`OnboardingSessionManager`) |
 
-1. **Know the app inside and out** — every screen, every button, every flow, every setting
-2. **Anticipate user questions** before they're asked
-3. **Document solutions** to common problems in a living FAQ
-4. **Track pain points** and translate them into actionable feedback for the engineering team
-5. **Bridge the gap** between what the app does and what users think it does
-6. **Continuously update** knowledge after every feature build, bug fix, or UI change
+### 5 Main Tabs
+| Tab | View | What it does |
+|---|---|---|
+| Home | `DashboardView` | Widgets: streak, hydration, weight, steps, programs, daily quests, weekly league, recovery card |
+| Workout | `WorkoutTabView` | Generator, active workout, history, exercise library |
+| Social | `FriendsTabView` | Friends, requests, rankings, 1v1 / group / community challenges, shared workouts |
+| Meals | `MealPlanView` | USDA food search, nutrition-label OCR (camera), meal logging, macro tracking, recipes, shopping list |
+| Stats | `WorkoutProgressView` | XP + levels, charts, muscle heatmap, achievements, PRs, body comp |
 
-This agent does NOT build features — they ensure users can successfully USE features.
+### Workout System
+Auto-Generate (`WorkoutGeneratorService` + `SmartExerciseSelectionEngine`) · Smart Programs 7/14/21/30d (`SmartProgramEngine`, `DynamicProgramGenerator`) · Active Workout (`ActiveWorkoutView` + `WorkoutManager`) · Exercise Library 6428 exercises (`ExerciseLibraryService`) · Swap (`SmartExerciseSwapView`) · Warm-Up (`SmartWarmUpGenerator`) · Stretch Mode · Custom Builder (`CustomWorkoutBuilderView`) · History (`WorkoutHistoryDetailView`) · Replay (`WorkoutReplayEngine` + `WorkoutReplayView`) · Recovery Day (`RecoveryDayEngine` + `RecoveryDayViews`).
 
----
+### Nutrition
+Food search (USDA edge function) · **Nutrition-label OCR** (NOT barcode lookup) · Macro tracking (`MealService`) · Recipe browser (Spoonacular) · Recipe import from URL · Saved meals · Shopping list · Smart recommendations (`ContextualMealEngine`) · "What to eat right now" (`WhatToEatView`).
 
-## Core Responsibilities
+### Social + Challenges
+Add friends (QR, contacts, search) · Friend profiles · 1v1 challenges · Group challenges · Community challenges · Shared workouts · Reactions · Rankings · **Block + Report** (Settings → Privacy & Security · Long-press context menu on chat and feed).
 
-### 1. App Knowledge Mastery
+### Gamification
+XP + Levels · Daily Quests (3/day, resets midnight local) · Weekly Leagues (Duolingo-style, placement Monday 00:15 UTC) · Streaks · Streak Shields · PRs · Achievements.
 
-The Support Agent must maintain expert-level understanding of:
+### Health Integrations
+| Integration | Data | Connect |
+|---|---|---|
+| Apple HealthKit | Steps, workouts, weight, body comp | Settings |
+| Strava | Running/cycling | Settings → Strava |
+| Fitbit | Steps, HR, sleep | Settings → Fitbit |
+| WHOOP | Recovery, HRV, strain, sleep stages, SpO2, skin temp, workouts | Settings → WHOOP |
+| InBody | Body comp scans | Settings → InBody |
+| Bluetooth equipment | Treadmill / bike auto-connect | `BluetoothFitnessManager` |
 
-#### Authentication & Onboarding
-| Flow | What Happens | Key Files |
-|------|-------------|-----------|
-| Sign Up | Email, Apple, Google, or Facebook auth via Supabase | `NewOnboardingView.swift`, `SocialAuthService.swift` |
-| Onboarding Quiz | 13-step flow: basics → body stats → goals → equipment → experience → schedule → limitations → phone verify | `NewOnboardingView.swift` |
-| Phone Verification | Twilio SMS verify, 45 countries supported, max 3 attempts | `PhoneVerificationSheet.swift` |
-| Onboarding Recovery | Progress saved per-step via UserDefaults; restores on relaunch | `NewOnboardingView.swift` (OnboardingSessionManager) |
-| Sign In | Email/password + social auth, "Forgot Password?" link available | `NewOnboardingView.swift` |
+### Tracking
+Weight · Body comp · Hydration · Steps · Activity rings · Muscle heatmap.
 
-#### Main App Navigation (5 Tabs)
-| Tab | View | What It Does |
-|-----|------|-------------|
-| **Home** (Tab 1) | `DashboardView` | Widgets: streak, hydration, weight, steps, programs, daily quests, weekly league, recovery day card |
-| **Workout** (Tab 2) | `WorkoutTabView` | Workout generator, active workout tracking, workout history, exercise library |
-| **Social** (Tab 3) | `FriendsTabView` | Friends list, friend requests, rankings, 1v1 challenges, group challenges, community challenges, shared workouts |
-| **Meals** (Tab 4) | `MealPlanView` | Food search (USDA), nutrition-label OCR (camera), meal logging, macro tracking, recipe browser, shopping list, smart meal recommendations |
-| **Stats** (Tab 5) | `WorkoutProgressView` | XP & levels, workout charts, muscle heatmap, achievements, personal records, body composition |
+### Settings + Account
+Profile / Units / Notifications / Cloud Backup / Data Download / Privacy Policy / Bug Reports / **Delete Account** / **Blocked Users**.
 
-#### Workout System (Deep Knowledge Required)
-| Feature | How It Works | User Question Pattern |
-|---------|-------------|----------------------|
-| **Auto-Generate Workout** | AI selects exercises based on goals, equipment, experience, limitations, and history via `WorkoutGeneratorService` + `SmartExerciseSelectionEngine` | "Why did I get this exercise?" / "How do I change my workout?" |
-| **Smart Programs** | 7/14/21/30-day programs with periodization, deload weeks, progressive overload via `SmartProgramEngine` + `DynamicProgramGenerator` | "What program should I do?" / "Why did my program change?" |
-| **Active Workout** | Set/rep/weight logging, rest timer, exercise swap, superset support, drag-to-reorder via `ActiveWorkoutView` + `WorkoutManager` | "How do I log a set?" / "How do I swap an exercise?" |
-| **Exercise Library** | 500+ exercises with video demos, muscle group filtering, equipment filtering via `ExerciseLibraryService` | "How do I find an exercise?" / "Do you have [specific exercise]?" |
-| **Exercise Swap** | Smart swap suggests alternatives matching same muscle group + equipment via `SmartExerciseSwapView` | "Can I change an exercise mid-workout?" |
-| **Warm-Up Generator** | Auto-generates warm-up based on workout muscles via `SmartWarmUpGenerator` | "Should I warm up first?" |
-| **Stretch Mode** | Guided stretching routine via `StretchModeView` | "How do I stretch after my workout?" |
-| **Custom Workout Builder** | Manual exercise selection + ordering via `CustomWorkoutBuilderView` | "Can I build my own workout?" |
-| **Workout History** | Full history with detail views via `WorkoutHistoryDetailView` | "Where are my past workouts?" |
-| **Workout Replay** | Post-workout coaching insights (volume analysis, plateau detection, PR context) via `WorkoutReplayEngine` + `WorkoutReplayView` | "What do my workout stats mean?" |
-| **Recovery Day** | Personalized stretching/mobility/foam rolling on rest days via `RecoveryDayEngine` + `RecoveryDayViews` | "What should I do on rest days?" |
+### Running + Cardio
+GPS running with Live Activities · Indoor cardio equipment · Cardio goals.
 
-#### Nutrition System
-| Feature | How It Works | User Question Pattern |
-|---------|-------------|----------------------|
-| **Food Search** | USDA FoodData Central via Supabase Edge Function (`usda-food-search`) | "How do I log food?" / "Why can't I find [food]?" |
-| **Barcode Scanner** | ⚠️ Label OCR only — reads nutrition-fact tables and ingredient lists from the camera. No UPC/EAN/GTIN barcode lookup ships yet. Do NOT tell users we scan barcodes. Tracked as `Q2-6` in MASTER_TODO. | "How do I scan food?" → Respond: "Point the camera at the **nutrition facts panel** — we read the text directly. True barcode lookup is coming; for now search the product name in USDA." |
-| **Macro Tracking** | Daily calorie/protein/carb/fat tracking via `MealService` | "How do I set my calorie goal?" / "Where do I see my macros?" |
-| **Recipe Browser** | Spoonacular API recipes with filtering via `RecipeBrowserView` | "How do I find recipes?" |
-| **Recipe Import** | Import recipes from URL via `RecipeImportView` | "Can I add my own recipes?" |
-| **Saved Meals** | Save frequently eaten meals for quick logging via `SavedMealsService` | "How do I save a meal?" |
-| **Shopping List** | Generated from meal plans via `ShoppingListView` | "Where's my shopping list?" |
-| **Smart Meal Recommendations** | Context-aware meal suggestions via `ContextualMealEngine` | "What should I eat?" |
-| **"What to Eat Right Now"** | Time-of-day + macro-gap aware suggestions via `WhatToEatView` | "What should I eat right now?" |
-
-#### Social & Challenges System
-| Feature | How It Works | User Question Pattern |
-|---------|-------------|----------------------|
-| **Add Friends** | QR code, contacts, or search via `QRCodeService` + `ContactsService` | "How do I add friends?" |
-| **Friend Profiles** | View friend's stats, workouts, achievements | "Can I see my friend's workouts?" |
-| **1v1 Challenges** | Create head-to-head challenges (steps, workouts, etc.) via `ChallengeService` | "How do I challenge a friend?" |
-| **Group Challenges** | Multi-person challenges with leaderboards via `ChallengeService` | "Can I challenge multiple friends?" |
-| **Community Challenges** | Public challenges anyone can join via `CommunityChallengeService` | "Are there public challenges?" |
-| **Share Workouts** | Send completed workouts to friends via `WorkoutSharingService` + `ShareWorkoutSheet` | "How do I share my workout?" |
-| **Reactions** | React to friends' activities via `ChallengeReactionsView` | "How do I react to a friend's workout?" |
-| **Rankings** | Friend leaderboards by XP, streaks, etc. | "Where do I see rankings?" |
-
-#### Gamification System
-| Feature | How It Works | User Question Pattern |
-|---------|-------------|----------------------|
-| **XP & Levels** | Earn XP from workouts, quests, challenges. Level up system. | "How do I earn XP?" / "What are levels?" |
-| **Daily Quests** | 3 quests per day with XP rewards via `DailyQuestService` | "What are daily quests?" / "When do quests reset?" |
-| **Weekly Leagues** | Duolingo-style tiered leagues via `WeeklyLeagueService` | "What are weekly leagues?" / "How do I rank up?" |
-| **Streaks** | Consecutive workout days tracked via `StreakShieldService` | "How do streaks work?" / "I lost my streak!" |
-| **Streak Shields** | Protect streaks on missed days | "What is a streak shield?" |
-| **Personal Records** | Auto-detected PRs with celebrations via `PersonalRecordService` | "How are PRs tracked?" |
-| **Achievements** | Milestone unlocks via `AchievementService` | "How do I unlock achievements?" |
-
-#### Health Integrations
-| Integration | What Syncs | User Question Pattern |
-|-------------|-----------|----------------------|
-| **Apple HealthKit** | Steps, workouts, weight, body composition via `HealthKitService` | "How do I connect Apple Health?" |
-| **Strava** | Running/cycling activities via `StravaService` | "How do I connect Strava?" |
-| **Fitbit** | Steps, heart rate, sleep | "How do I connect Fitbit?" |
-| **InBody** | Body composition scans via `BodyCompositionTrackingService` | "How do I import InBody scans?" |
-| **Bluetooth Equipment** | Treadmill/bike auto-connect via `BluetoothFitnessManager` | "How do I connect my treadmill?" |
-
-#### Tracking & Progress
-| Feature | How It Works | User Question Pattern |
-|---------|-------------|----------------------|
-| **Weight Tracking** | Manual entry + HealthKit sync via `WeightTrackingService` | "How do I log my weight?" |
-| **Body Composition** | InBody integration + manual via `BodyCompositionTrackingService` | "How do I track body fat?" |
-| **Hydration Tracking** | Daily water intake widget on Dashboard | "How do I track water?" |
-| **Step Tracking** | HealthKit steps + step goal via `StepTrackerView` | "How do I see my steps?" |
-| **Activity Rings** | Daily activity ring visualization via `ActivityRingsView` | "What are the activity rings?" |
-| **Muscle Heatmap** | Visual muscle group training frequency | "What is the muscle heatmap?" |
-
-#### Settings & Account
-| Feature | How It Works | User Question Pattern |
-|---------|-------------|----------------------|
-| **Profile Settings** | Edit name, photo, goals, equipment, limitations via `SettingsView` | "How do I change my settings?" |
-| **Unit Settings** | Metric/Imperial toggle via `UnitSettingsManager` | "How do I switch to kg?" |
-| **Notification Settings** | Push notification preferences | "How do I turn off notifications?" |
-| **Cloud Backup** | Supabase cloud sync via `CloudBackupView` | "Is my data backed up?" |
-| **Data Download** | Export personal data via `DataDownloadView` | "Can I download my data?" |
-| **Privacy Policy** | In-app privacy policy view | "Where's the privacy policy?" |
-| **Bug Reports** | In-app bug report submission via `BugReportService` | "How do I report a bug?" |
-| **Delete Account** | Full account deletion with data purge | "How do I delete my account?" |
-
-#### Running & Cardio
-| Feature | How It Works | User Question Pattern |
-|---------|-------------|----------------------|
-| **GPS Running** | Outdoor run tracking with Live Activities via `RunningManager` | "How do I track a run?" |
-| **Cardio Equipment** | Indoor cardio workout tracking | "Can I log treadmill workouts?" |
-| **Cardio Goals** | Set distance/time/calorie targets via `CardioGoalSetupView` | "How do I set a running goal?" |
-
-#### Premium & Monetization
-| Feature | Current State | User Question Pattern |
-|---------|--------------|----------------------|
-| **Premium Status** | Currently all features free (StoreKit integration pending) | "What's included in premium?" |
-| **Ads** | AdMob integration via `AdManager` (ATT pending) | "How do I remove ads?" |
-| **Premium Upgrade** | UI exists but no purchase flow yet via `PremiumUpgradeView` | "How do I upgrade?" |
+### Premium + Monetization
+Currently all features free (StoreKit integration pending). AdMob present (ATT pending). Upgrade UI exists but no purchase flow yet (`PremiumUpgradeView`).
 
 ---
 
-### 2. Pain Point Tracking
+## Pain Point Registry (living)
 
-The Support Agent maintains a living registry of user pain points:
-
-#### Pain Point Template
+### Template
 ```
-## [PP-XXX] Pain Point Title
-- **Category**: Onboarding | Workout | Nutrition | Social | Tracking | Settings | Performance
-- **Severity**: Critical (can't use app) | High (major friction) | Medium (annoying) | Low (cosmetic)
-- **Frequency**: Every user | Most users | Some users | Rare
-- **Description**: What the user experiences
-- **Root Cause**: Technical reason (reference code/service)
-- **Workaround**: If any exists
-- **Recommended Fix**: What engineering should do
-- **Status**: Open | Reported | In Progress | Resolved
-- **Related Agent**: Which agent should fix this
+[PP-XXX] Title
+Category / Severity / Frequency
+Description (what the user experiences)
+Root cause (code/service)
+Workaround
+Recommended fix
+Status: Open | Reported | In Progress | Resolved
+Related Agent
 ```
 
-#### Known Pain Points (Current)
-
-| ID | Pain Point | Severity | Root Cause |
-|----|-----------|----------|------------|
-| PP-001 | App loses data when offline | High | No offline queue (H-4 in MASTER_TODO) |
-| PP-002 | Keyboard doesn't dismiss on tap outside | Medium | Missing `.scrollDismissesKeyboard` (M-8) |
-| PP-003 | Challenge progress shows on wrong day | Critical | Timezone mismatch (C-7) |
-| PP-004 | Can't find specific foods in search | Medium | USDA API coverage gaps |
-| PP-005 | Streak lost unexpectedly | High | Timezone + recovery day counting logic |
-| PP-006 | Workout feels repetitive | Medium | Exercise selection history weighting |
-| PP-007 | No VoiceOver support | High | Missing accessibility labels (H-2) |
-| PP-008 | Cards look slightly different colors on different screens | Low | `Color(white: 0.12)` inconsistency (UI-3) |
-| PP-009 | Can't take progress photos | High | Feature not yet built (FEATURE_GAME_PLAN.md #1) |
-| PP-010 | Rest days feel empty/useless | Medium | Recovery Day feature exists but may need promotion |
-| PP-011 | Social features fail on cold launch | Critical | Auth race condition: MainTabView loads before `checkAuth()` completes; social fetches fire unauthenticated. **FIXED March 2026** — auth guards added to all social service methods |
-| PP-012 | Blank step/workout data with no guidance | High | HealthKit permission revoked shows empty data with no user guidance to re-enable. **FIXED March 2026** — `isAuthorized` checks added to all HealthKit fetches |
-| PP-013 | Exercise swap erases completed sets | High | `WorkoutManager.replaceExercise` discarded all set data. **FIXED March 2026** — completed sets now preserved during swap |
-| PP-014 | "Account creation failed" dead-end during signup | Critical | `signUp()` created auth user but profile creation failed. Retry fails with "already registered" — permanent dead end. **FIXED March 2026** — recovery logic signs in if user already exists, ensures profile, surfaces actual errors |
-| PP-015 | "Session expired" during phone verification on signup | Critical | Email/password signup deferred account creation to after phone verification (~10 steps later). `@State password` lost by then. Apple Sign-In with same email worked (authenticates immediately). **FIXED March 2026** — account now created immediately after password entry. |
-
----
-
-### 3. Bug-to-Feature Mapping
-
-When users report "bugs" that are actually missing features or misunderstood behavior, the Support Agent documents the mapping:
-
-| User Reports | Actual Situation | Response Strategy |
-|-------------|-----------------|-------------------|
-| "The app gave me the wrong workout" | Auto-gen selected exercises user doesn't prefer | Explain how auto-gen works; suggest using custom builder or exercise swap |
-| "My streak disappeared" | Timezone issue or missed recovery day | Explain streak rules; mention streak shields; file bug if timezone-related |
-| "I can't find my food" | USDA doesn't have every branded product | Suggest generic alternatives. **Do NOT mention barcode scanning** — our "scanner" is label-OCR only, not UPC lookup (Q2-6). Tell users to point the camera at the nutrition-facts panel if they want OCR capture. |
-| "The app crashed during my workout" | Memory leak or force unwrap | Collect crash context; route to Quality & Performance Agent |
-| "My challenge progress is wrong" | Timezone mismatch between client/server | Acknowledge known issue; route to Data & Backend Agent |
-| "The app doesn't work offline" | No offline queue implemented | Acknowledge limitation; explain cloud-dependent features |
-| "I can't see my friend's workout" | Privacy settings or sync delay | Walk through friend connection status; check Realtime subscription |
+### Current
+| ID | Pain point | Severity | Root cause | Status |
+|---|---|---|---|---|
+| PP-001 | App loses data when offline | High | No offline queue (H-4) | Resolved (CloudSyncRetryQueue) |
+| PP-002 | Keyboard doesn't dismiss on tap outside | Medium | Missing `.scrollDismissesKeyboard` (M-8) | Open |
+| PP-003 | Challenge progress shows on wrong day | Critical | Timezone mismatch (C-7) | Open |
+| PP-004 | Can't find specific foods in search | Medium | USDA coverage gaps | Open |
+| PP-005 | Streak lost unexpectedly | High | Timezone + recovery day counting | Open |
+| PP-006 | Workout feels repetitive | Medium | Exercise selection history weighting | Open |
+| PP-007 | No VoiceOver support | High | Missing accessibility labels (H-2) | Open |
+| PP-008 | Cards slightly different colors across screens | Low | `Color(white: 0.12)` inconsistency (UI-3) | Open |
+| PP-009 | Can't take progress photos | High | Feature not built | Open |
+| PP-010 | Rest days feel empty | Medium | Recovery Day exists but low discoverability | Open |
+| PP-011 | Social features fail on cold launch | Critical | Auth race condition | **Resolved (Mar 2026)** |
+| PP-012 | Blank health data with no guidance | High | HealthKit permission revoked, empty with no CTA | **Resolved (Mar 2026)** |
+| PP-013 | Exercise swap erases completed sets | High | `WorkoutManager.replaceExercise` discarded sets | **Resolved (Mar 2026)** |
+| PP-014 | "Account creation failed" dead end | Critical | `signUp()` created auth user + profile failed + retry rejected as "already registered" | **Resolved (Mar 2026)** — recovery logic + error surfacing |
+| PP-015 | "Session expired" during phone verify | Critical | Email/password signup deferred account creation; `@State password` lost across 10 steps | **Resolved (Mar 2026)** — account now created immediately after password entry |
 
 ---
 
-### 4. FAQ Management
+## Bug-to-Feature Mapping (most common user reports)
 
-The Support Agent owns and maintains the FAQ page. See `FAQ_PLAN.md` for the comprehensive plan.
-
-**FAQ Update Protocol:**
-1. After EVERY feature build → add FAQ entries for the new feature
-2. After EVERY bug fix → update relevant FAQ if the fix changes user-facing behavior
-3. After EVERY UI change → update screenshots/descriptions in affected FAQ entries
-4. Weekly → review crash reports and bug reports for new FAQ patterns
-5. Monthly → audit entire FAQ for accuracy against current codebase
+| User reports | Actual situation | Response strategy |
+|---|---|---|
+| "Gave me the wrong workout" | Auto-gen picked exercises user doesn't prefer | Explain auto-gen; suggest Custom Builder or Swap |
+| "My streak disappeared" | Timezone OR missed recovery day | Explain rules; mention streak shields; file timezone bug if applicable |
+| **"I can't find my food"** | **USDA doesn't cover every branded product** | **Suggest generic alternative. DO NOT mention barcode scanning — we only OCR the label.** |
+| "App crashed during workout" | Memory leak / force unwrap | Collect device+iOS+screen+action; route to Quality |
+| "Challenge progress is wrong" | Timezone mismatch client/server | Acknowledge known issue; route to Data & Backend |
+| "Doesn't work offline" | No offline queue for some flows (most covered by `CloudSyncRetryQueue`) | Acknowledge limitation; explain cloud-only flows |
+| "Can't see friend's workout" | Privacy setting or sync delay | Check friend status; check realtime sub |
 
 ---
 
-### 5. Knowledge Update Protocol
+## Knowledge Update Protocol (every PR)
 
-**After every code change, the Support Agent must:**
-
-```
-1. READ the PR/commit to understand what changed
+1. READ the PR / commit to understand what changed.
 2. IDENTIFY user-facing impact:
-   - New feature? → Add to App Knowledge section + write FAQ entries
-   - Bug fix? → Update Pain Point registry (mark resolved) + update FAQ
-   - UI change? → Update navigation/flow documentation
-   - Backend change? → Check if user-visible behavior changed
-3. UPDATE this document's knowledge tables
-4. UPDATE FAQ_PLAN.md with new entries
-5. NOTIFY if a change creates a new potential pain point
-```
+   - New feature → add to App Knowledge + write FAQ entries.
+   - Bug fix → update Pain Point registry (mark resolved) + update FAQ.
+   - UI change → update navigation / flow description.
+   - Backend change → check if user-visible behavior changed.
+3. UPDATE this doc's knowledge tables.
+4. UPDATE `FAQ_PLAN.md` with new entries.
+5. NOTIFY if the change creates a new potential pain point.
+
+---
+
+## "A user asked me..." quick reference
+- **"How do I...?"** → App Knowledge tables above.
+- **"Why did the app...?"** → Bug-to-Feature Mapping.
+- **"Is there a way to...?"** → `FEATURE_GAME_PLAN.md` (planned) or acknowledge gap.
+- **"App crashed when..."** → device + iOS + screen + action, route to Quality.
+- **"I lost my data"** → offline? timezone? sync delay? Route to Data if persistent.
+- **"Can I connect...?"** → Health Integrations table.
+- **"How do I block / report someone?"** → Settings → Privacy & Security → Blocked Users (unblock). Long-press chat message or feed card → Report & Block.
 
 ---
 
 ## Interaction with Other Agents
 
-### What I Need FROM Other Agents
+### What I need FROM
+| Agent | What |
+|---|---|
+| Product Engineer | Heads-up on any user-facing view change; feature specs pre-build |
+| Design | Visual specs so FAQ matches UI |
+| Data & Backend | API behavior changes; error message text |
+| Quality | Crash report summaries; performance regressions |
+| Fitness Expert | Plain-language explanations of workout logic |
+| Infra & Security | Auth flow changes; privacy policy updates |
+| Device Compatibility | Device-specific issues |
+| Supabase | Data-migration impacts on user-visible data |
+| Design System | UI consistency changes affecting FAQ |
 
-| Agent | What I Need |
-|-------|------------|
-| **Product Engineer** | Notification when any user-facing view changes; feature specs before build |
-| **Design Agent** | Updated visual specs so FAQ descriptions match actual UI |
-| **Data & Backend** | Notification when API behavior changes; error message text |
-| **Quality & Performance** | Crash report summaries; performance regression alerts |
-| **Fitness Expert** | Plain-language explanations of workout logic for FAQ |
-| **Infra & Security** | Auth flow changes; privacy policy updates |
-| **Device Compatibility** | Known device-specific issues for FAQ |
-| **Supabase Agent** | Data migration impacts on user-visible data |
-| **Design System** | UI consistency changes that affect FAQ screenshots |
-
-### What I Provide TO Other Agents
-
-| Agent | What I Provide |
-|-------|---------------|
-| **Product Engineer** | User pain points prioritized by frequency/severity → feature requests |
-| **Quality & Performance** | Bug patterns from user reports → test case suggestions |
-| **Fitness Expert** | User confusion about workout logic → simplification suggestions |
-| **Design Agent** | UI elements users can't find or misunderstand → UX improvement suggestions |
-| **All Agents** | FAQ as a reference for "how should this work from user's perspective" |
+### What I provide TO
+| Agent | What |
+|---|---|
+| Product Engineer | Pain points prioritized by freq/severity → feature requests |
+| Quality | Bug patterns from user reports → test cases |
+| Fitness Expert | User confusion about logic → simplification |
+| Design | UI elements users can't find / misunderstand → UX suggestions |
+| All | FAQ as "how should this work from the user's perspective" |
 
 ---
 
 ## Owned Files
-
 | File | Purpose |
-|------|---------|
-| `SUPPORT_AGENT.md` | This file — role definition and app knowledge base |
-| `FAQ_PLAN.md` | FAQ page plan, structure, and content |
-| `privacy-policy.md` | Privacy policy content (co-owned with Infra & Security) |
+|---|---|
+| `SUPPORT_AGENT.md` | This file |
+| `FAQ_PLAN.md` | FAQ structure + content |
+| `privacy-policy.md` | Privacy policy (co-owned with Infra & Security) |
 
-## Co-Owned Files
-
-| File | Primary Owner | My Role |
-|------|--------------|---------|
-| `MASTER_TODO.md` | All Agents | Update with user-reported issues |
+### Co-owned
+| File | Primary | My role |
+|---|---|---|
+| `MASTER_TODO.md` | All agents | User-reported issues |
 | `WelcomeTutorialView.swift` | Product Engineer | Review tutorial content for accuracy |
-| `ONBOARDING_AUDIT.md` | All Agents | Validate onboarding from user perspective |
+| `ONBOARDING_AUDIT.md` | All agents | User-perspective validation |
 | `BugReportView.swift` | Product Engineer | Ensure bug report captures right info |
 
 ---
 
 ## Success Metrics
-
 | Metric | Target |
-|--------|--------|
-| FAQ coverage | Every user-facing feature has at least 3 FAQ entries |
-| Pain point response time | New pain points documented within 24h of discovery |
-| Knowledge freshness | All entries updated within 1 sprint of related code change |
-| FAQ accuracy | 100% of FAQ answers match current app behavior |
-| User issue resolution | 80%+ of common questions answerable via FAQ |
+|---|---|
+| FAQ coverage | Every user-facing feature has ≥ 3 FAQ entries |
+| Pain-point response | New entries documented ≤ 24h of discovery |
+| Knowledge freshness | All entries updated ≤ 1 sprint of related code change |
+| FAQ accuracy | 100% matches current behavior |
+| User issue resolution | 80%+ answerable via FAQ |
 
 ---
 
-## Quick Reference: "A User Asked Me..."
-
-**"How do I...?"** → Check App Knowledge tables above → Point to specific feature + flow
-
-**"Why did the app...?"** → Check Bug-to-Feature Mapping → Explain logic or acknowledge bug
-
-**"Is there a way to...?"** → Check FEATURE_GAME_PLAN.md for planned features → Acknowledge gap or point to workaround
-
-**"The app broke/crashed when..."** → Collect: device, iOS version, screen, action taken → Route to Quality & Performance Agent
-
-**"I lost my data..."** → Check: offline? timezone? sync delay? → Route to Data & Backend if persistent
-
-**"Can I connect...?"** → Check Health Integrations table → Explain supported integrations
-
----
-
-*The Support Agent ensures no user question goes unanswered. Every feature has documentation. Every pain point has a ticket. Every FAQ is accurate. The goal: users never need to contact support because the answers are already there.*
-
----
-
-### 2026-03-27: CMS Moderation & User Safety Tools
-
-**New moderation system** — users can now report other users (harassment, spam, inappropriate, cheating). Reports flow into the CMS Moderation queue at `/moderation` where admins can review, resolve, dismiss, or suspend reported users.
-
-- **`user_reports` table**: Reporter, reported user, reason, description, status (pending → reviewing → resolved/dismissed). RLS allows users to insert and read own reports.
-- **`user_suspensions` table**: Admin-managed. Timed or permanent. Users check via `is_user_suspended()` RPC.
-- **CMS Moderation page tabs**: Queue, Overview (stats/repeat offenders), Suspensions (active/history/lift), Blocks (from existing `user_blocks` table).
-- **User detail integration**: `/users/[id]` now has Moderation tab showing reports against user + suspension history.
-- **FAQ impact**: May need new FAQ entries for "How do I report someone?", "Why was my account suspended?", "How do I appeal a suspension?".
-
-### 2026-04-18: Blocking & Reporting (Sprint 2, App Store Compliance)
-
-**Users can now block and report from anywhere that renders user-generated content.**
-
-- **Settings → Privacy & Security → Blocked Users**: new `BlockedUsersView` lists every user the caller has blocked (via `get_blocked_users` RPC) with name, avatar, block date, and an "Unblock" button.
-- **Profile → Block**: `FriendProfileView` exposes a Block action in both the friend and non-friend states. Blocking immediately removes the user from feeds, chats, and suggested-friends.
-- **Long-press → Report & Block**: `PrivateChallengeDetailView` chat messages from other users and `FriendActivityFeedView` cards both expose a `.contextMenu` "Report & Block" action. Tapping it confirms via `.confirmationDialog`, then calls `FriendService.reportContent(...)` (writes to `content_moderation_log` with `flagged_categories=["user_report"]`) AND `FriendService.blockUser(...)` in parallel.
-- **Sender's own flagged posts**: when the moderation webhook marks a sender's own chat/feed row as `is_hidden`, the row is now removed in real time via Supabase realtime UPDATE subscriptions. No more "why did my message reappear for a few seconds" bug.
-- **Scanner copy**: all user-facing copy (Terms, Privacy Policy, this Support doc) calls it "nutrition label lookup (photo-based OCR)". The app does NOT do UPC/EAN barcode lookups. Support responses should match.
-- **FAQ additions needed**: "How do I unblock someone?" (Settings → Privacy & Security → Blocked Users → Unblock), "What happens when I block someone?" (removed from feeds, chats, league; can't see your profile), "How do I report a specific message?" (long-press message or feed card → Report & Block).
-
-### 2026-03-27: WHOOP Integration
-
-**New integration**: WHOOP band support added. Users connect in Settings > WHOOP via OAuth. Syncs recovery score, HRV, strain, sleep stages, workouts, SpO2, and skin temperature.
-
-**FAQ entries needed**:
-- "How do I connect my WHOOP?" — Settings > WHOOP > Connect WHOOP > sign in with WHOOP credentials
-- "What data does WHOOP sync?" — Recovery score, HRV, strain, sleep (stages, performance, consistency), workouts, SpO2, skin temp
-- "Where do I see my WHOOP data?" — Dashboard (recovery widget), Health Insights (recovery/strain trends, vitals), workout suggestions are recovery-aware
-- "Why does the app suggest a recovery day?" — When WHOOP recovery score is below 33% (red zone), the app suggests light activity instead of heavy training
-- "How do I disconnect WHOOP?" — Settings > WHOOP > Disconnect
-
-**Health Integrations table update**:
-| WHOOP | Recovery, strain, HRV, sleep stages, SpO2, workouts via `WhoopService` | "How do I connect WHOOP?" |
+## See Also
+- `PRODUCT_ENGINEER_AGENT.md` — navigation, block/report patterns
+- `.cursor/rules/codingrules.mdc` — cross-cutting rules
+- `docs/history/SUPPORT_AGENT.md` — full feature inventory, dated FAQ additions, integration copy

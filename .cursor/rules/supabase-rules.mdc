@@ -1,0 +1,79 @@
+---
+description: Supabase SQL + Edge Function rules (RLS, SECURITY DEFINER, migrations, realtime, cron)
+globs: ["supabase/**/*.sql", "supabase/functions/**/*.ts"]
+alwaysApply: false
+---
+# Supabase Rules (SQL + Edge Functions)
+
+These rules only load when editing files under `supabase/`. Cross-cutting rules live in `codingrules.mdc`. For Swift-side DTO / decoder expectations see `swiftui-rules.mdc`.
+
+## New Table
+- **RLS is MANDATORY**: Every new table MUST have `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` + SELECT/INSERT/UPDATE/DELETE policies scoped to `auth.uid() = user_id`. Tables without RLS are publicly accessible — this is a critical vulnerability.
+- **User FK is mandatory**: Every `user_id` column MUST be `UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE`.
+- **Standard columns**: `id UUID DEFAULT gen_random_uuid() PRIMARY KEY`, `user_id` (as above), `created_at TIMESTAMPTZ DEFAULT now()`, `updated_at TIMESTAMPTZ DEFAULT now()`.
+- **Always index `user_id`** (at minimum).
+- **`delete_user_account()` update**: Every new user-data table MUST be added to the `delete_user_account()` RPC in the same PR.
+
+## Views
+- **NEVER use `SECURITY DEFINER` on views**. Always `security_invoker = on`. SECURITY DEFINER views bypass RLS for all callers — Supabase linter flags these as critical.
+- **App-queryable views**: Views queried directly via PostgREST must filter by `auth.uid()` in the view definition.
+- **Admin/analytics views** that aggregate across users live in a non-`public` schema OR stay `public` with `security_invoker = on` + service-role-only access.
+
+## RPCs (Functions)
+- **`SECURITY DEFINER` RPCs MUST NOT accept a user-id-like parameter** (`p_user_id`, `user_id_to_delete`, …) — always use `auth.uid()` inside. If you must accept one, gate at the top:
+  ```sql
+  IF auth.uid() IS NOT NULL AND p_user_id <> auth.uid() THEN
+    RAISE EXCEPTION 'Forbidden' USING ERRCODE = '42501';
+  END IF;
+  ```
+  (The `IS NOT NULL` clause lets service role / pg_cron through.)
+- **Validate inputs**: non-NULL user_id, valid dates, enum membership.
+- **Return structured data**: `JSONB` or `RETURNS TABLE`, not `void`.
+- **Drop all overloads first**: When deploying an RPC, `DROP FUNCTION IF EXISTS` for EVERY possible parameter-type overload before `CREATE OR REPLACE`. Postgres treats `(TEXT,TEXT)` and `(UUID,UUID)` as separate functions — leaving overloads causes PostgREST "ambiguous function" errors.
+- **`RETURNS TABLE` + parameter-name collisions**: Add `#variable_conflict use_column` at the top of the function body if any parameter name collides with a column name.
+- **RECORD variable init**: NEVER `ROW(0,0,0)` — the fields have no names and `v_record.field_name` fails at runtime. Use `SELECT 0 AS field_name, ... INTO v_record` instead.
+- **Swift decoder sync**: `RETURNS jsonb` ↔ Swift `Decodable struct`; `RETURNS boolean` ↔ `Bool`. If you change a `RETURNS` clause, update the Swift decoder in `SupabaseManager.swift` / `*Service.swift` in the same commit.
+- **Atomic column additions**: When adding a column (e.g. `is_gold_verified`) that appears in multiple social RPCs, patch ALL affected RPCs in a single migration. Split migrations cause later files to overwrite earlier ones.
+
+## Migrations
+- **Always wrap in `BEGIN; ... COMMIT;`**. Always idempotent (`IF NOT EXISTS`, `DROP ... IF EXISTS` before `CREATE`).
+- **Naming**: `YYYYMMDD_HH_description.sql` (or `YYYYMMDD_description.sql`). Add to `supabase/MIGRATION_INDEX.md` in the same PR.
+- **Never drop a table without grepping the codebase**. `crash_reports` was dropped when empty, but `CrashReportingService.swift` still wrote to it → crashes on every error.
+- **`REFRESH MATERIALIZED VIEW CONCURRENTLY` requires a UNIQUE index** on the view. Add it before scheduling refreshes.
+
+## Realtime
+- **`REPLICA IDENTITY FULL`** is mandatory for any table broadcast via realtime — so `UPDATE` events ship the entire NEW row (not just changed columns). `ALTER TABLE public.<t> REPLICA IDENTITY FULL;`
+- **Publication membership**: `ALTER PUBLICATION supabase_realtime ADD TABLE public.<t>;` (idempotent guard required). Removing either breaks live sync — `exercises` depends on both for CMS → app sync.
+- **MVs mirroring realtime tables need a refresh RPC**. `refresh_mv_public_exercises()` is called by the CMS admin API after every `update_exercise` / `delete_exercise` so cold-start users (who read `mv_public_exercises`) see the change.
+
+## Challenge / Push Notifications
+- **Silent-push rate-limit log is service-role only**. `silent_push_wake_log` has RLS enabled with ZERO policies. Never add a client-readable policy.
+- **Silent pushes do NOT route through `push_notification_queue`**. The queue is for user-visible alerts (retry + quiet hours). Silent pushes are opportunistic fire-and-forget.
+- **`trigger_<x>` pg_cron wrapper pattern is canonical** for any server-scheduled edge-function invocation: read `internal_config` → `net.http_post` with `x-cron-key` service-role JWT. Reuse for every future cron → edge function.
+- **Notification type strings**: Push payloads from `accept_friend_request` use `friend_accepted`; in-app `app_notifications` rows use `friend_request_accepted`. App code handles both.
+- **`app_notifications` schema**: Uses `reference_id` (UUID) + `from_user_id` (UUID), NOT a `data` JSONB column.
+
+## Daily Quests
+- **`get_daily_quests` has 16 params (current)** including `p_active_step_challenge_target INT DEFAULT 0`. Old 15-arg overload is DROPped.
+- **Respects `quest_templates.requires_context` + `min_workouts`**. Hard-day fallback is `['exercise_sets_25','walk_10k_steps','hit_step_goal']` — do NOT revert to `complete_2_workouts` (retired; `is_active = FALSE`; too aggressive).
+
+## Weekly League Roster Lock
+- **Placement is Monday-only**: `auto_place_all_league_members()` runs via `pg_cron` at 00:15 UTC every Monday. All users with `user_league_tier` rows are batch-placed into groups. `get_or_join_weekly_league` returns `{"not_placed": true}` for unplaced users on Tuesday–Sunday.
+- **Inactivity penalty**: Users placed by cron who never open the app earn 0 points → relegated at week end.
+- **Never add mid-week placement**: Do NOT add code paths that insert into `league_members` after Monday. The roster must be frozen Tuesday–Sunday.
+
+## WHOOP Overlap Dedup
+- **`cardio_workouts` overlap dedup key** is `(user_id, canonical_origin)` where `canonical_origin = COALESCE(origin_app, legacy source→origin map)`. Canonical sessionization walks rows by `started_at, id` and picks the highest-quality row per cluster (activity-type specificity +10, HR +3, distance +2, calories +1, duration +1). Keep the client-side check in `HealthDataService.syncWhoopData` aligned (±2h fetch window, 50% overlap via shorter-side denominator).
+
+## PR Review Checklist
+- [ ] FK constraint on every user-data column
+- [ ] RLS enabled + policies defined
+- [ ] View uses `security_invoker = on` (if applicable)
+- [ ] No duplicate data with existing tables
+- [ ] Indexes on `user_id` + common query columns
+- [ ] `ON DELETE CASCADE` behavior
+- [ ] `SupabaseDTOs.swift` updated (Optional for nullable)
+- [ ] `delete_user_account()` updated if new user-data table
+- [ ] RPC overloads fully dropped before `CREATE OR REPLACE`
+- [ ] Swift decoder updated if `RETURNS` clause changed
+- [ ] `MIGRATION_INDEX.md` updated

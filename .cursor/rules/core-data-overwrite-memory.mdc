@@ -1,0 +1,62 @@
+---
+description: Backup of CoreDataExtensions.swift as of 2026-03-22 in case something breaks
+globs: "**/CoreDataExtensions.swift"
+alwaysApply: false
+---
+
+# CoreDataExtensions.swift — Known Good State (2026-03-22)
+
+If CoreDataExtensions.swift breaks, restore to this version:
+
+```swift
+import Foundation
+import CoreData
+
+// MARK: - Exercise Extension
+extension Exercise {
+    func getMuscleGroups() -> [String]? {
+        return self.muscleGroups as? [String]
+    }
+    
+    func setMuscleGroups(_ groups: [String]) {
+        self.muscleGroups = groups as NSObject
+    }
+}
+
+// MARK: - User Extension  
+extension User {
+    func getEquipment() -> [String]? {
+        return self.equipment as? [String]
+    }
+    
+    func setEquipment(_ items: [String]) {
+        self.equipment = items as NSObject
+    }
+}
+
+// MARK: - WorkoutExercise Extension
+extension WorkoutExercise {
+    var safeDisplayName: String {
+        if let exerciseName = exercise?.displayName, !exerciseName.isEmpty {
+            return exerciseName
+        }
+        if let workoutExerciseId = id?.uuidString,
+           let cachedName = ExerciseNameCache.shared.getName(forWorkoutExerciseId: workoutExerciseId),
+           !cachedName.isEmpty {
+            return cachedName
+        }
+        if !ExerciseLibraryService.shared.isExercisesReady {
+            return "Loading..."
+        }
+        return "Exercise"
+    }
+    
+    var safeCategory: String {
+        exercise?.category ?? "Strength"
+    }
+    
+    var safeMuscleGroups: [String] {
+        (exercise?.muscleGroups as? [String]) ?? []
+    }
+}
+```

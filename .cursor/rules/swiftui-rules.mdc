@@ -1,0 +1,81 @@
+---
+description: Swift / SwiftUI rules for the Fit33 iOS app (logging, concurrency, Core Data, performance, widget isolation)
+globs: ["Fit33/**/*.swift"]
+alwaysApply: false
+---
+# Swift / SwiftUI Rules (Fit33 iOS)
+
+These rules only load when editing Swift files under `Fit33/`. Cross-cutting rules (Agent Team Protocol, general principles, deploy shortcuts) live in `codingrules.mdc`.
+
+## Code Quality
+- **Logging**: ALWAYS use `AppLogger` (from `Logger.swift`) — NEVER `print()`. Categories: `.network`, `.data`, `.workout`, `.social`, `.nutrition`, `.health`, `.ui`, `.performance`, `.auth`, `.general`.
+- **No force unwraps**: Never use `!` on optionals in production code. Use `guard let`, `if let`, or `??`.
+- **Design tokens**: Use `.ds_*` font tokens from `DesignSystem.swift` and `Color.cardBackground` from `AdaptiveColors.swift`. NEVER hardcode `.font(.system(size:))` or define local `cardBackground` properties.
+- **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — NEVER `DispatchQueue.main.asyncAfter`.
+- **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`. Decorative elements get `.accessibilityHidden(true)`.
+- **Thread safety**: `@Published` properties must only be mutated on the main thread. Use `@MainActor`, `NSLock`, or actor isolation for shared mutable state.
+
+## Stability & Performance
+- **No sync Core Data in `init()` or `.task`**: Never call `context.fetch()` or `context.execute()` synchronously on the main thread during app startup. Use `context.perform { }` or a background context (`container.newBackgroundContext()`).
+- **Auth guard before RPCs**: Every Supabase RPC call (especially from background sync paths like `syncHealthKitDataToChallenges`) MUST check `SupabaseManager.shared.isAuthenticated` first. Server-side `auth.uid()` returns NULL on expired sessions, causing "Not authenticated" errors that multiply through retry logic.
+- **JSONSerialization safety**: ALWAYS call `JSONSerialization.isValidJSONObject(obj)` before `JSONSerialization.data(withJSONObject:)`. `try?`/`try` does NOT catch Objective-C `NSInvalidArgumentException` — it bypasses Swift error handling entirely and causes SIGABRT. Critical for MetricKit payloads (`MXMetricPayload.jsonRepresentation()`).
+- **HealthKit error classification**: Errors containing "Protected health data", "No data available", or "authorization not determined" are EXPECTED (device locked, no samples yet). Log at `.debug`, never `.error`. Use case-insensitive matching (`lowercased().contains(...)`) — wording varies across iOS versions.
+- **Heavy sync work off main actor**: Functions like `generateMotivationalMessage()` (~300 lines) must run via `Task.detached` when called from `.task` (which runs on main actor). `WorkoutSuggestionEngine` is intentionally NOT `@MainActor` — it uses a private `bgContext` with `performAndWait` so it can run on any thread.
+- **Dashboard `.task` parallelism**: Dashboard initial load fires ALL independent work as separate `Task {}` blocks — recommendations, motivational message, cardio, health sync, and social fetches run in parallel. Auth wait uses a Combine publisher on `$isAuthenticated` (no polling). All 14 social/challenge/quest calls run in a single `async let` group.
+- **Startup timing**: Critical startup paths (auth check, limitations fetch, cloud sync) should log elapsed milliseconds via `CFAbsoluteTimeGetCurrent()` so regressions are visible in crash reports.
+
+## Singleton `init()` & UserDefaults
+- **No `UserDefaults.synchronize()`**: iOS auto-batches writes. `.synchronize()` forces synchronous disk I/O — never call it.
+- **Singleton `init()` must return instantly**: Core Data fetches and heavy work in service `init()` MUST be wrapped in `Task {}` or `Task { @MainActor in }`. Pattern: `MealService`, `CloudProgramService`, `SmartProgramEngine`.
+- **Exception**: UserDefaults reads + small JSON decodes (<50KB) ARE safe and encouraged synchronously in `init()` to populate `@Published` properties before the first SwiftUI frame (instant UI). Pattern: `DailyQuestService.loadCachedQuests()`, `ChallengeService.loadCachedChallengesSync()`.
+- **Computed properties in SwiftUI body MUST NOT fetch Core Data**: Cache results from async background fetches. `getUserStoredWeight()` pattern: return cached value instantly, kick off async fetch to populate cache.
+
+## View Composition / Widget Isolation
+- **No duplicate fetches in `.onAppear`**: If data is already loaded in `.task(id:)` on the same view, do NOT duplicate the fetch in `.onAppear` — `.onAppear` fires on every tab switch back. Use `.onChange(scenePhase)` for foreground resume instead.
+- **Isolate `ObservableObject` subscriptions in wrapper views**: When a parent view subscribes to many services, a change in ANY service recomputes the entire body. Fix: convert parent subscriptions to plain `let` references and wrap sections that need live updates in small independent `View` structs owning their own `@StateObject`. Example: `DashboardQuestsWrapper`.
+- **Widget isolation rule (mandatory for new features)**: Any widget in a `ScrollView` with 5+ siblings MUST be its own `View` struct owning its service subscriptions (`@StateObject`/`@ObservedObject`). Parent views must NEVER read `@EnvironmentObject`/`@ObservedObject` properties inline for widget rendering — pass only stable values (bindings, constants, cached `@State`) to isolated wrappers. Pattern: `DashboardQuestsWrapper`, `DashboardHeaderWrapper`, `DashboardChallengesWrapper` in `DashboardView+Helpers.swift`.
+- **`@FetchRequest` must have `fetchLimit`**: When a view only displays N items (e.g. `prefix(10)`), set `fetchLimit: N`. Without it Core Data fetches ALL matching rows and every row change triggers view invalidation. Dashboard uses `fetchLimit: 10`.
+- **Horizontal `DragGesture` in vertical `ScrollView`**: Use `.simultaneousGesture(DragGesture(minimumDistance: 25))` — NOT `.highPriorityGesture` with minimumDistance 8. High priority with low distance steals touches from vertical scroll.
+
+## Core Data Context Safety
+- **NEVER use service singleton caches inside `bgContext.perform`**: `ExerciseLibraryService.shared.getExercise(byName:)` and `.getAllExercises()` return viewContext objects. Inside `bgContext.perform`, always use `bgContext.fetch()` to get objects.
+- **NEVER use `getAllExercises()` on a non-`@MainActor` class**: The returned viewContext objects are unsafe to access from background threads. Use pre-extracted cache data (e.g., `exerciseAnalysisCache` in `SmartExercisePairingEngine`) for background work; resolve names to `Exercise` objects only for final results.
+- **`bgContext.mergePolicy` is MANDATORY**: Every `newBackgroundContext()` that sets `automaticallyMergesChangesFromParent = true` MUST also set `bgContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy`. Without it, concurrent parent context saves can produce cross-context object references that crash on relationship assignment.
+- **`Task { }` on `@MainActor` types inherits main actor**: Use `Task.detached` for work that must run off main thread. `Task { [self] in }` on an `@MainActor` class runs ON main.
+- **DEBUG context guard**: Use `#if DEBUG exercise?.assertContext(bgContext) #endif` before setting relationships in background context blocks (helper defined in `PersistenceController.swift`).
+- **`SmartExercisePairingEngine` is NOT `@MainActor`**: Uses a background Core Data context for exercise fetches in `buildPairingDatabase()`. The old pattern of `MainActor.run { getAllExercises() }` caused 6fps drops by fetching 5500+ exercises on the main thread.
+
+## Video / AVFoundation
+- **AVFoundation object creation MUST happen off main thread**: `AVURLAsset`, `AVPlayerItem`, `AVQueuePlayer`, `AVPlayerLooper` construction must use `Task.detached`. Only final `@Published` assignment uses `MainActor.run`.
+- **`GenderFilterService.getVideoFilename()` has O(n) fuzzy fallback**: Never call from the main thread in a hot path. Use `Task.detached` when calling from video load methods.
+
+## Social / Profile Architecture
+- **`ProfileUser`** is the universal model for displaying any user profile (friend or non-friend). Defined in `FriendProfileView.swift`. Has convenience inits from `Friend`, `UserSearchResult`, `SuggestedFriend`, `LeagueEntry`, `CommunityLeaderboardEntry`, `FriendActivity`.
+- **`FriendProfileView`** accepts `ProfileUser` (via `init(user:)` or `init(friend:)`). Shows full profile for friends, streamlined card (photo/name/goal/add friend/block) for non-friends. Never create a separate profile view — extend this one.
+- **Daily Goals** (`DailyQuestService`) must never return empty. Every code path (no auth, server error, empty response) falls back to `defaultGoals()`. The generic "Daily Quests" placeholder was removed — real goals always show.
+
+## Dashboard Notification Cards
+- **Unified carousel**: All dashboard notification types (friend requests, received workouts, 1v1/group/private challenge invites) live in a single `DashboardNotificationCarousel` in `DashboardModels.swift`. Do NOT add separate notification containers to `DashboardView` — add new notification types to the `NotificationItem` enum in the carousel.
+- **Card styling**: All notification cards use `staticCardBackground(accentColor:secondaryColor:)` (defined in `ReceivedWorkoutPreviewWidget.swift`) — a static raised-card effect matching active challenge widgets. No animated `AngularGradient` glow on notification cards.
+- **Sort order**: Friend requests always first (highest priority), then all others sorted oldest-first by date.
+
+## Daily Quest / Challenge Integration (app-side)
+- **Step quest challenge sync**: When a user has an active step challenge, the `get_daily_quests` RPC receives `p_active_step_challenge_target` from the app. Swift sends this from `ChallengeService.shared.activeChallenges` and `activeGroupChallenges` (challenge types: `"steps"`, `"walk"`).
+- **Notification type consistency**: Push notifications from `accept_friend_request` use `friend_accepted`; in-app `app_notifications` rows use `friend_request_accepted`. `NotificationManager.handleNotificationType` must handle BOTH strings. The `app_notifications` table schema uses `reference_id` (UUID) and `from_user_id` (UUID), NOT a `data` JSONB column.
+
+## Weekly League (app-side `not_placed` handling)
+- **Placement is Monday-only** (enforced server-side). `get_or_join_weekly_league` returns `{"not_placed": true}` for unplaced users on Tuesday–Sunday.
+- **Swift handling**: `WeeklyLeagueService.notPlaced` + `notPlacedTierName` + `notPlacedNextWeek`. Widget shows "League Starts Monday" state via `notPlacedContent` in `WeeklyLeagueViews.swift`.
+
+## Main Tab Navigation
+- **Current pattern**: All five main tabs use **hidden system nav bar** + **custom in-layout headers** (see `DESIGN_AGENT.md` → *iOS 26 Liquid Glass Readiness* and `LEGACY_CUSTOM_HEADERS.md`).
+- **Optional**: `floatingTopBarLeading` / `floatingTopBarActiveWorkoutTimer()` in `DesignSystem.swift` support a system-toolbar + Liquid Glass style if you switch back.
+
+## Build Phase Lint
+- **`scripts/perf_lint.sh`** runs automatically on every build (added to Xcode Build Phases). Catches `UserDefaults.synchronize()`, cross-context risks, `performAndWait`, and sync Core Data in `init()`. Errors fail the build; warnings require manual review.
+
+## File Organization
+- For NEW code: keep files under 200–300 lines when practical.
+- Extract reusable components to separate files (follow `OnboardingComponents.swift`).
+- For large views, use `extension ViewName` in separate files (e.g., `DashboardView+Header.swift`) — keep all stored properties in the main struct, methods in focused extension files.
+- Do NOT refactor existing large files unless explicitly requested — too risky for a working app. Exception: performance-critical extraction of wrapper views from large SwiftUI views when explicitly requested.

@@ -1,0 +1,25 @@
+---
+description: Navigation Migration Phase 3 - COMPLETED. All NavigationLink(destination:) converted to value-based navigation.
+alwaysApply: false
+---
+
+# Navigation Migration Phase 3 — COMPLETED ✅
+
+All ~56 `NavigationLink(destination:)` and `NavigationLink(isActive:)` instances across 16 files have been converted to modern `NavigationLink(value:)` + `.navigationDestination(for:)` / `.navigationDestination(isPresented:)`. Build succeeds with zero remaining legacy patterns.
+
+## Route Enums Created
+- `DashboardRoute` (10 cases) — DashboardView.swift
+- `SettingsRoute` (11 cases) — SettingsView.swift
+- `ProfileRoute` (6 cases) — ProfileView.swift
+- `ProgressRoute` (2 cases) — WorkoutProgressView.swift
+- `PersonalizedProgramRoute` (2 cases) — PersonalizedProgramsView.swift
+- `DevMenuRoute` (1 case) — DevMenuView.swift
+- `InBodyRoute` (1 case) — InBodySettingsView.swift
+- `UnitSettingsRoute` (1 case) — UnitSettingsView.swift
+- `CloudScheduleDayRoute`, `ProgramScheduleDayRoute`, `ProgramScheduleWorkoutRoute`, `ProgramScheduleExerciseRoute` — route structs with simple params
+
+## Hashable Conformances Added
+WorkoutProgram, SmartProgramTemplate, SmartActiveProgram, SmartProgramDay, ActiveChallenge, ActiveGroupChallenge, CardioWorkoutDTO (all hash by `id`)
+
+## Key Pattern: DashboardView
+DashboardView's navigation destinations were extracted into a `DashboardNavigationDestinations` ViewModifier to prevent Swift type-checker timeout on the large body.

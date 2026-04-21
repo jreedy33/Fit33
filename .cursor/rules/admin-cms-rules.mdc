@@ -1,0 +1,35 @@
+---
+description: Admin CMS (Next.js) rules — CSP, auth cookies, R2 URLs, Vercel deploy procedure
+globs: ["admin-cms/**"]
+alwaysApply: false
+---
+# Admin CMS Rules (Next.js — `admin.doublethr33s.com`)
+
+These rules only load when editing files under `admin-cms/`. Cross-cutting rules live in `codingrules.mdc`.
+
+## Content Security Policy
+- **CSP lives in TWO places**: `admin-cms/next.config.ts` AND `admin-cms/src/middleware.ts`. BOTH must be updated when adding new external domains — the middleware CSP overrides the config one for authenticated routes.
+- **After changing CSP**, test by reloading a protected page and verifying no `Refused to connect to` errors in DevTools.
+
+## Auth Cookies
+- **httpOnly Secure SameSite=Strict cookies** for admin session tokens. Never store admin session data in `localStorage` or `sessionStorage` (XSS risk).
+- **No client-side cookie reads for auth state**: `document.cookie.includes(...)` must NOT be used to check login state. Auth is gated by middleware reading the httpOnly `admin_access_token`. If a page needs auth-dependent rendering, either gate it behind middleware or make the containing page a **server component** (`admin-cms/src/app/page.tsx` pattern) that reads cookies via `next/headers` + `cookies()` and `redirect()` or passes booleans as props.
+- **`admin_logged_in` cookie** is `httpOnly: true` and exists only so `clearAuthCookies()` can sweep it on logout — never read it from the client.
+- **Rate limit logins**: 5 attempts per 15 minutes per IP. Require MFA for admin sign-in.
+
+## R2 Video URLs
+- **Base URL**: `https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev/{video_filename}`.
+- **Do NOT use `encodeURIComponent`** on filenames — they contain parentheses and hyphens that break when encoded. Use the raw filename.
+
+## Vercel Deployment
+- **ONE Vercel project**: `fitapp` (domain `admin.doublethr33s.com`). There is no `admin-cms` Vercel project — do not try to deploy to it.
+- **Deploy procedure**: `git add` changed files under `admin-cms/`, `git commit`, `git push origin main`. Vercel auto-deploys from `main`.
+- **NEVER use `npx vercel --prod` or the Vercel API** — always push to GitHub.
+- **"Deploy to CMS" shortcut**: When the user says "deploy to CMS" or "deploy CMS", immediately (1) `git add` all changed files under `admin-cms/`, (2) `git commit` with a descriptive message, (3) `git push origin main`. No questions asked.
+
+## Admin API Actions
+- Every `POST /api/admin` action requires the httpOnly admin cookie + email whitelist check.
+- `POST /api/ai-chat` streams to an external API — ensure no PII leaks in prompts.
+
+## CMS → App Live Sync
+- Writes to `exercises` (create/update/delete) must call `rpc('refresh_mv_public_exercises')` fire-and-forget after the write so cold-start users (reading `mv_public_exercises`) see the change. Never replace this with a blocking call — `CONCURRENTLY` is fast but not instantaneous on 5500 rows, and the iOS app already received the change via Supabase Realtime.

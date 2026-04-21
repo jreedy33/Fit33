@@ -1,0 +1,52 @@
+---
+alwaysApply: true
+---
+# Coding Rules (Universal)
+
+This file contains ONLY cross-cutting rules that apply to every file in the repo. Code-specific rules live in glob-scoped rule files that load automatically when their matching files are edited.
+
+## Scoped Rule Files (auto-loaded by glob)
+- `.cursor/rules/swiftui-rules.mdc` — globs `Fit33/**/*.swift`. Swift / SwiftUI rules: AppLogger (no `print()`), no force unwraps, `.ds_*` design tokens, structured concurrency (`Task {}`, never `DispatchQueue.main.asyncAfter`), `@MainActor` discipline, widget isolation, `@FetchRequest fetchLimit`, Core Data `bgContext`/`mergePolicy`, AVFoundation off-main-thread, singleton `init()` lightweight, accessibility, main tab navigation, dashboard notification carousel, `ProfileUser`/`FriendProfileView` architecture, Weekly League `not_placed` handling (Swift), `scripts/perf_lint.sh` build phase.
+- `.cursor/rules/supabase-rules.mdc` — globs `supabase/**/*.sql`, `supabase/functions/**/*.ts`. Supabase rules: RLS on every table, `security_invoker = on` for views, `SECURITY DEFINER` RPCs never accept `user_id` (use `auth.uid()`), `REPLICA IDENTITY FULL` + publication for realtime, no `ROW(0,0,0)` for RECORD init, migration idempotency + `BEGIN;/COMMIT;`, drop all overloads before `CREATE OR REPLACE`, Weekly League Monday-only placement, WHOOP dedup, silent-push queue separation.
+- `.cursor/rules/admin-cms-rules.mdc` — globs `admin-cms/**`. Admin CMS rules: CSP in both `next.config.ts` AND `middleware.ts`, httpOnly Secure SameSite=Strict cookies (no client-side cookie reads for auth), R2 URLs without `encodeURIComponent`, Vercel deploy = `git push origin main` (project `fitapp`).
+- `.cursor/rules/codingrules.mdc` (this file, `alwaysApply: true`) — Agent Team Protocol, general principles, making-changes discipline, file organization, data & testing, deploy-to-CMS shortcut.
+
+When editing a file, the matching scoped rule loads automatically. When reading/answering questions without editing, read the relevant scoped file manually if needed.
+
+## Agent Team Protocol
+- **Doc architecture** (three layers):
+  1. `.cursor/rules/*.mdc` — universal (`codingrules.mdc`, `alwaysApply: true`) and scoped (`swiftui-rules.mdc`, `supabase-rules.mdc`, `admin-cms-rules.mdc`) rules. Auto-loaded. Don't duplicate in agent docs.
+  2. `*_AGENT.md` in repo root — short "Invariants + Map" per agent (~100–220 lines). Opens with numbered invariants ("will cause bugs if violated"), then canonical tokens / map / owned files / See Also.
+  3. `docs/history/*_AGENT.md` — long-form historical context (sprint changelogs, dated decisions, migrations). Read ONLY when you need dated context. Treat as immutable archive.
+- **"Consult my agents"** = read the relevant `*_AGENT.md` in the repo root BEFORE making changes. Route via `ENGINEERING_TEAM.md` ownership matrix.
+- **After every task**, update docs at the right layer:
+  - If the change introduces a new rule-shaped invariant that applies to ONE file type (Swift / SQL / CMS) → add it to the matching scoped rule file.
+  - If the invariant applies to ALL agents (cross-cutting) → add it to `codingrules.mdc`.
+  - If the new fact is agent-specific need-to-know (e.g. a new canonical model / service ownership) → add to the current `*_AGENT.md`.
+  - Dated narrative / audit / migration notes → append to `docs/history/*_AGENT.md` (NOT the current agent file).
+- **Agent files**: `QUALITY_PERFORMANCE_AGENT.md`, `PRODUCT_ENGINEER_AGENT.md`, `DATA_BACKEND_AGENT.md`, `INFRA_SECURITY_AGENT.md`, `SUPABASE_AGENT.md`, `FITNESS_EXPERT_AGENT.md`, `DESIGN_AGENT.md`, `DESIGN_SYSTEM_AGENT.md`, `DEVICE_COMPATIBILITY_AGENT.md`, `SUPPORT_AGENT.md`.
+
+## General Principles
+- Always prefer simple solutions.
+- Keep the codebase clean and organized.
+- Avoid duplication — check whether similar code/functionality already exists before adding new code.
+- Write code that accounts for different environments: dev, test, and prod.
+
+## Making Changes
+- Only make changes that are requested or clearly related to the change being requested.
+- When fixing a bug, exhaust all options with the existing implementation before introducing new patterns or technology.
+- If you must introduce a new pattern, remove the old implementation to avoid duplicate logic.
+- Never overwrite the `.env` file without first asking and confirming.
+
+## File Organization
+- For NEW code: keep files under 200–300 lines when practical.
+- Do NOT refactor existing large files unless explicitly requested — too risky for a working app. (Exception: performance-critical extraction of wrapper views from large SwiftUI views when explicitly requested.)
+- Extract reusable components to separate files.
+- Avoid writing one-time scripts in source files.
+
+## Data & Testing
+- Mocking/stubbing/fake data is ONLY for tests — never for dev or prod code.
+- Never add fake-data patterns that affect dev or prod environments.
+
+## Deploy-to-CMS Shortcut
+- When the user says "deploy to CMS" or "deploy CMS", immediately: (1) `git add` all changed files under `admin-cms/`, (2) `git commit` with a descriptive message, (3) `git push origin main`. No questions asked. Vercel auto-deploys from `main` to the `fitapp` project. (Full CMS rules in `admin-cms-rules.mdc`.)

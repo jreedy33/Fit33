@@ -476,6 +476,139 @@ enum DifficultyMatch: String {
     case tooHard = "May be too advanced"
 }
 
+// MARK: - ExtendedProgram Bridge (Sprint 5 Q2-41-b)
+//
+// `ProgramExplorerView` browses a large descriptive catalog typed as
+// `ExtendedProgram` (100 canned entries in `ProgramLibraryService`), while
+// `SmartProgramRecommender` scores `WorkoutProgram` values that actually
+// carry executable `schedule` data (~10 entries from `WorkoutProgramEngine`).
+// Sprint 5 retired the duplicated scoring pass in
+// `ProgramLibraryService.getRecommendedPrograms` and routes all recommendation
+// calls through `SmartProgramRecommender`. The mapper below synthesizes an
+// `ExtendedProgram` from a `WorkoutProgram` so the explorer's "Recommended
+// for You" carousel can keep its existing `ExtendedProgram`-typed navigation
+// target (`ProgramDetailFullView(program:)`) without duplicating scoring
+// logic. Fields without a source on `WorkoutProgram` (location, gradient
+// colors, popularity, featured/new flags) get derived or default values —
+// they only affect display chrome, never scoring.
+
+extension ExtendedProgram {
+
+    /// Bridge a `WorkoutProgram` (scheduled, schedulable) into the descriptive
+    /// `ExtendedProgram` shape that `ProgramExplorerView` consumes.
+    ///
+    /// Called from `SmartProgramRecommender.getRecommendedExtendedPrograms`.
+    /// Do NOT use elsewhere — if you need both model worlds, go through the
+    /// recommender so the mapping stays consistent.
+    static func from(workoutProgram p: WorkoutProgram) -> ExtendedProgram {
+        ExtendedProgram(
+            id: p.id,
+            name: p.name,
+            subtitle: "\(p.difficulty.rawValue) · \(p.focus.rawValue)",
+            description: p.description,
+            duration: ExtendedProgram.matchDuration(days: p.duration),
+            difficulty: p.difficulty,
+            location: ExtendedProgram.inferLocation(from: p.equipment),
+            goals: ExtendedProgram.inferGoals(from: p.focus),
+            frequency: WorkoutFrequency(rawValue: p.workoutsPerWeek) ?? .four,
+            split: ExtendedProgram.inferSplit(from: p.focus),
+            equipment: p.equipment,
+            icon: p.icon,
+            gradientColors: ExtendedProgram.gradient(from: p.color),
+            workoutsPerWeek: p.workoutsPerWeek,
+            avgWorkoutMinutes: p.estimatedTimePerWorkout,
+            benefits: p.benefits,
+            preview: p.preview,
+            tags: [p.focus.rawValue.lowercased(), p.difficulty.rawValue.lowercased()],
+            popularityScore: 80, // Recommended items get a flat high score
+            isFeatured: false,
+            isNew: false
+        )
+    }
+
+    /// Snap an exact-day count to the closest `ProgramDuration` bucket so the
+    /// chip rendering in `ProgramExplorerView` stays stable.
+    private static func matchDuration(days: Int) -> ProgramDuration {
+        let buckets: [ProgramDuration] = [
+            .oneWeek, .twoWeeks, .oneMonth, .sixWeeks, .twoMonths, .threeMonths, .fourMonths
+        ]
+        return buckets.min(by: { abs($0.days - days) < abs($1.days - days) }) ?? .oneMonth
+    }
+
+    /// Heuristic: any barbell / machines / cables implies a gym program;
+    /// otherwise assume home or minimal. Hybrid when a program lists both
+    /// bodyweight + heavy gear.
+    private static func inferLocation(from equipment: [String]) -> ProgramLocation {
+        let lower = Set(equipment.map { $0.lowercased() })
+        let gymSignals: Set<String> = ["barbell", "machines", "cables", "smith machine"]
+        let bodyweightLike: Set<String> = ["bodyweight", "none"]
+        let hasGym = !lower.isDisjoint(with: gymSignals)
+        let hasBodyweight = !lower.isDisjoint(with: bodyweightLike)
+        if hasGym && hasBodyweight { return .hybrid }
+        if hasGym { return .gym }
+        if hasBodyweight && lower.count == 1 { return .minimal }
+        return .home
+    }
+
+    /// Map `WorkoutProgram.focus` -> primary `ProgramGoal`s. Kept as an array
+    /// so browse filters still match (e.g. a Hypertrophy program tags both
+    /// `buildMuscle` and `bodybuilding`).
+    private static func inferGoals(from focus: ProgramFocus) -> [ProgramGoal] {
+        switch focus {
+        case .strength:            return [.gainStrength, .buildMuscle]
+        case .hypertrophy:         return [.buildMuscle, .bodybuilding]
+        case .powerbuilding:       return [.gainStrength, .buildMuscle, .powerlifting]
+        case .endurance:           return [.improveEndurance, .loseWeight]
+        case .bodyweight:          return [.toneUp, .generalFitness]
+        case .fullBody:            return [.generalFitness, .buildMuscle]
+        case .upperLower:          return [.buildMuscle, .gainStrength]
+        case .pushPullLegs:        return [.buildMuscle, .bodybuilding]
+        case .bodypart:            return [.bodybuilding, .buildMuscle]
+        case .athletic:            return [.athletic, .improveEndurance]
+        }
+    }
+
+    private static func inferSplit(from focus: ProgramFocus) -> TrainingSplit {
+        switch focus {
+        case .fullBody, .endurance, .bodyweight, .athletic: return .fullBody
+        case .upperLower:                                    return .upperLower
+        case .pushPullLegs:                                  return .pushPullLegs
+        case .bodypart:                                      return .bro
+        case .strength, .hypertrophy, .powerbuilding:        return .custom
+        }
+    }
+
+    /// `WorkoutProgram.color` is a named color string (e.g. "blue"). Map it
+    /// to a two-stop hex gradient consistent with the explorer's other cards.
+    private static func gradient(from color: String) -> [String] {
+        switch color.lowercased() {
+        case "red":    return ["#FF6B6B", "#EE5A52"]
+        case "orange": return ["#FFA726", "#FB8C00"]
+        case "yellow": return ["#FFEE58", "#FDD835"]
+        case "green":  return ["#66BB6A", "#43A047"]
+        case "mint":   return ["#4DD0E1", "#00ACC1"]
+        case "teal":   return ["#26C6DA", "#0097A7"]
+        case "cyan":   return ["#29B6F6", "#0288D1"]
+        case "blue":   return ["#42A5F5", "#1E88E5"]
+        case "indigo": return ["#5C6BC0", "#3949AB"]
+        case "purple": return ["#AB47BC", "#8E24AA"]
+        case "pink":   return ["#EC407A", "#D81B60"]
+        default:       return ["#42A5F5", "#1E88E5"]
+        }
+    }
+}
+
+extension SmartProgramRecommender {
+
+    /// Sprint 5 Q2-41-b entry point for `ProgramExplorerView` and any other
+    /// surface that needs `ExtendedProgram`-typed recommendations. Scoring
+    /// stays in `getTopRecommendedPrograms`; this call just maps the results.
+    func getRecommendedExtendedPrograms(for user: User, limit: Int = 5) -> [ExtendedProgram] {
+        getTopRecommendedPrograms(for: user, limit: limit)
+            .map { ExtendedProgram.from(workoutProgram: $0.program) }
+    }
+}
+
 // MARK: - Enhanced Program Suggestion Card Data
 
 extension SmartProgramRecommender {

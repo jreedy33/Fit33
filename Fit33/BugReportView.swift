@@ -61,6 +61,10 @@ struct BugReportView: View {
                     }
                     .padding()
                 }
+                // Sprint 5 M-9: bug reports have multi-line text views; allow
+                // interactive swipe-to-dismiss so the user can review their
+                // screenshot while writing.
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -275,6 +275,33 @@ class StrengthProfileRecommendationEngine {
                 )
             }
         }
+
+        // SECOND: First-time exercise? Try to find a similar exercise the user HAS done.
+        // This gives a far better starting suggestion than generic strength-profile defaults
+        // (e.g. first Dumbbell Bicep Curl → use their last Barbell Curl numbers).
+        // Matching uses SmartExercisePairingEngine scoring (movement + muscles + equipment +
+        // grip/plane/force). Only runs when exact-name history is missing.
+        if let similar = fetchSimilarExercisePerformance(
+            exerciseName: exerciseName,
+            context: context
+        ) {
+            return (1...numberOfSets).map { setNumber in
+                // Light fatigue taper on later sets to match how generic recs behave
+                var w = similar.weight
+                if setNumber > 2 {
+                    w = (w * 0.95)
+                    w = w < 20 ? (round(w / 2.5) * 2.5) : (round(w / 5) * 5)
+                }
+                return SmartRecommendation(
+                    weight: w,
+                    reps: similar.reps,
+                    sets: numberOfSets,
+                    isPlaceholder: false, // Based on real history of a similar lift
+                    confidenceLevel: 0.75,
+                    adjustmentNote: "Based on your \(similar.similarToName)"
+                )
+            }
+        }
         
         // FALLBACK: No history - generate smart recommendations
         var recommendations: [SmartRecommendation] = []
@@ -614,7 +641,7 @@ class StrengthProfileRecommendationEngine {
         exerciseName: String,
         context: NSManagedObjectContext
     ) -> (weight: Double, reps: Int)? {
-        
+
         let request: NSFetchRequest<WorkoutSet> = WorkoutSet.fetchRequest()
         request.predicate = NSPredicate(
             format: "workoutExercise.exercise.name ==[c] %@ AND isCompleted == YES AND weight > 0",
@@ -624,7 +651,7 @@ class StrengthProfileRecommendationEngine {
             NSSortDescriptor(keyPath: \WorkoutSet.workoutExercise?.workout?.date, ascending: false)
         ]
         request.fetchLimit = 1
-        
+
         do {
             if let lastSet = try context.fetch(request).first {
                 return (lastSet.weight, Int(lastSet.reps))
@@ -632,7 +659,65 @@ class StrengthProfileRecommendationEngine {
         } catch {
             AppLogger.warning("⚠️ Error fetching last performance: \(error)", category: .workout)
         }
-        
+
+        return nil
+    }
+
+    // Short-lived memoization for positive similar-exercise lookups so we don't repeat
+    // the work within a workout-start pass. Negative results are not cached (pairing
+    // engine's own `pairingCache` + Core Data index keep the miss path cheap).
+    // Cleared whenever `clearSimilarExerciseCache()` is called externally.
+    private var similarExerciseCache: [String: (weight: Double, reps: Int, similarToName: String)] = [:]
+
+    func clearSimilarExerciseCache() {
+        similarExerciseCache.removeAll()
+    }
+
+    /// Look up the user's most recent working set from the most similar exercise they've done.
+    /// Uses `SmartExercisePairingEngine.findSubstitutes` for similarity ranking (already factors
+    /// in movement pattern, primary/secondary muscles, equipment group, grip, plane of motion,
+    /// force vector, difficulty). Walks the ranked list and returns the first candidate with
+    /// Core Data history. Returns nil when no similar exercise with history is available.
+    ///
+    /// Caveat: weight units can differ between variants (e.g. per-hand dumbbell vs. barbell
+    /// total). The pairing engine already score-weights equipment match, so high-ranked
+    /// candidates are usually in the same `EquipmentGroup`. We accept the inherent looseness
+    /// because the UI renders this as a "SUGGESTED" placeholder, never as a hard value.
+    private func fetchSimilarExercisePerformance(
+        exerciseName: String,
+        context: NSManagedObjectContext
+    ) -> (weight: Double, reps: Int, similarToName: String)? {
+        let cacheKey = exerciseName.lowercased()
+        if let cached = similarExerciseCache[cacheKey] {
+            return cached
+        }
+
+        let exReq: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+        exReq.predicate = NSPredicate(format: "name ==[c] %@", exerciseName)
+        exReq.fetchLimit = 1
+        guard let exercise = (try? context.fetch(exReq))?.first else { return nil }
+
+        // userEquipment: nil → no filter, we look across the full catalog. The user
+        // has already DONE a similar exercise (we only consider candidates with history),
+        // so equipment availability is proven by the history row itself.
+        let pairings = SmartExercisePairingEngine.shared.findSubstitutes(
+            for: exercise,
+            limit: 15,
+            userEquipment: nil
+        )
+
+        for pairing in pairings {
+            guard let altName = pairing.exercise.name, !altName.isEmpty else { continue }
+            if let perf = fetchLastPerformance(exerciseName: altName, context: context) {
+                let result = (weight: perf.weight, reps: perf.reps, similarToName: altName)
+                similarExerciseCache[cacheKey] = result
+                #if DEBUG
+                AppLogger.debug("💡 [SIMILAR] '\(exerciseName)' → using '\(altName)' history: \(Int(perf.weight))lb × \(perf.reps) (score: \(pairing.matchScore))", category: .workout)
+                #endif
+                return result
+            }
+        }
+
         return nil
     }
     

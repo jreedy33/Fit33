@@ -126,41 +126,39 @@ class WorkoutManager: ObservableObject {
     }
     
     // Initialize sets for an exercise if not already present (call this BEFORE rendering)
-    // UPDATED: Now creates 3 sets by default instead of 1
+    // Row count = max(previous workout's set count, user's default set count).
+    // Sets are always empty WorkoutSetData — previous values render as grey TextField
+    // placeholders (see SetRowView.weightPlaceholder / reps placeholder), never as
+    // pre-filled values. Tapping the checkmark without typing still falls back to the
+    // previous-set values in SetRowView's completion handler.
     @MainActor func initializeSetsForExercise(id: String, exerciseName: String = "") {
         if exerciseSetsData[id] == nil || exerciseSetsData[id]?.isEmpty == true {
             let defaultCount = Self.userDefaultSetCount
-            var prefilledSets: [WorkoutSetData]? = nil
-
-            if !exerciseName.isEmpty {
-                if let preWarmed = PreviewWarmupService.shared.getPreviousSets(forExerciseId: id, exerciseName: exerciseName),
-                   !preWarmed.isEmpty {
-                    prefilledSets = preWarmed.map { prev in
-                        let setData = WorkoutSetData()
-                        setData.weight = prev.weight
-                        setData.reps = prev.reps
-                        return setData
-                    }
-                } else if let cached = ExerciseHistoryService.shared.previousSetsCache[exerciseName],
-                          !cached.isEmpty {
-                    prefilledSets = cached.map { cloudSet in
-                        let setData = WorkoutSetData()
-                        setData.weight = cloudSet.weight
-                        setData.reps = cloudSet.reps
-                        return setData
-                    }
-                }
-            }
-
-            var sets = prefilledSets ?? (0..<defaultCount).map { _ in WorkoutSetData() }
-            while sets.count < defaultCount {
-                sets.append(WorkoutSetData())
-            }
+            let previousCount = Self.previousSetCount(forExerciseId: id, exerciseName: exerciseName)
+            let rowCount = max(previousCount, defaultCount)
+            let sets = (0..<rowCount).map { _ in WorkoutSetData() }
             exerciseSetsData[id] = sets
             #if DEBUG
-            AppLogger.debug("📦 Initialized \(sets.count) sets for exercise \(id.prefix(8))", category: .data)
+            AppLogger.debug("📦 Initialized \(sets.count) empty sets for exercise \(id.prefix(8)) (prev: \(previousCount), default: \(defaultCount))", category: .data)
             #endif
         }
+    }
+
+    /// Look up how many working sets the user performed last time for this exercise.
+    /// Checks the pre-warmed cache first, then the Supabase history cache. Safe to call
+    /// with an empty `exerciseName` (returns 0). Runs on main actor because both caches
+    /// are @MainActor-isolated.
+    @MainActor static func previousSetCount(forExerciseId id: String, exerciseName: String) -> Int {
+        guard !exerciseName.isEmpty else { return 0 }
+        if let preWarmed = PreviewWarmupService.shared.getPreviousSets(forExerciseId: id, exerciseName: exerciseName),
+           !preWarmed.isEmpty {
+            return preWarmed.count
+        }
+        if let cached = ExerciseHistoryService.shared.previousSetsCache[exerciseName],
+           !cached.isEmpty {
+            return cached.count
+        }
+        return 0
     }
     
     // ⚡️ CRITICAL PERFORMANCE: Pre-fetch all Core Data properties BEFORE navigation
@@ -194,7 +192,10 @@ class WorkoutManager: ObservableObject {
     
     // Ensure all exercises have initialized sets (call on workout start)
     // OPTIMIZED: Batch all updates to trigger only ONE SwiftUI re-render
-    // SMART: Creates sets matching previous workout count (or 3 by default)
+    // SMART: Row count = max(previous workout's set count, user's default set count).
+    // Sets are always empty — previous values render as grey placeholders in the UI
+    // (see SetRowView.weightPlaceholder). This matches the user's "repeat exercise"
+    // expectation: never pre-fill values, always show last workout's numbers as hints.
     @MainActor func initializeSetsForExercises(_ exercises: [Exercise]) {
         #if DEBUG
         let startTime = CFAbsoluteTimeGetCurrent()
@@ -209,36 +210,14 @@ class WorkoutManager: ObservableObject {
                 if exerciseSetsData[exerciseId] == nil || exerciseSetsData[exerciseId]?.isEmpty == true {
                     let exerciseName = exercise.name ?? ""
                     let defaultCount = Self.userDefaultSetCount
+                    let previousCount = Self.previousSetCount(forExerciseId: exerciseId, exerciseName: exerciseName)
+                    let rowCount = max(previousCount, defaultCount)
+                    let sets = (0..<rowCount).map { _ in WorkoutSetData() }
 
-                    var prefilledSets: [WorkoutSetData]? = nil
-
-                    if let preWarmed = PreviewWarmupService.shared.getPreviousSets(forExerciseId: exerciseId, exerciseName: exerciseName),
-                       !preWarmed.isEmpty {
-                        prefilledSets = preWarmed.map { prev in
-                            let setData = WorkoutSetData()
-                            setData.weight = prev.weight
-                            setData.reps = prev.reps
-                            return setData
-                        }
-                    }
-                    else if let cached = ExerciseHistoryService.shared.previousSetsCache[exerciseName],
-                            !cached.isEmpty {
-                        prefilledSets = cached.map { cloudSet in
-                            let setData = WorkoutSetData()
-                            setData.weight = cloudSet.weight
-                            setData.reps = cloudSet.reps
-                            return setData
-                        }
-                    }
-
-                    var sets = prefilledSets ?? (0..<defaultCount).map { _ in WorkoutSetData() }
-                    while sets.count < defaultCount {
-                        sets.append(WorkoutSetData())
-                    }
                     updates[exerciseId] = sets
                     totalSets += sets.count
                     #if DEBUG
-                    AppLogger.debug("📦 Initialized \(sets.count) sets for exercise \(exerciseId.prefix(8)) (\(exerciseName))", category: .data)
+                    AppLogger.debug("📦 Initialized \(sets.count) empty sets for '\(exerciseName)' \(exerciseId.prefix(8)) (prev: \(previousCount), default: \(defaultCount))", category: .data)
                     #endif
                 }
             }
@@ -298,6 +277,11 @@ class WorkoutManager: ObservableObject {
         Task { @MainActor in
             ExerciseSwapService.shared.clearSwapCache()
         }
+        // Similar-exercise suggestions are cached by exercise name for the current
+        // workout. Drop them when the workout ends so the next workout picks up any
+        // fresh history the user just created (e.g. they did Barbell Curl today, so
+        // tomorrow's Dumbbell Curl suggestion should reflect it).
+        StrengthProfileRecommendationEngine.shared.clearSimilarExerciseCache()
     }
     
     var canGenerateWorkout: Bool {

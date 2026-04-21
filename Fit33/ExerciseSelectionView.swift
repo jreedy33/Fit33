@@ -1,6 +1,15 @@
 import SwiftUI
 import CoreData
 
+/// Sprint 5 M-25 (partial) — planned unification: new entry points should use
+/// `CustomWorkoutBuilderView(mode: .build)` which already owns the richer
+/// picker (filters, pinning, favorites, live exercise count, strength-level
+/// personalization). `ExerciseSelectionView` only survives because it is
+/// embedded inline inside `WorkoutCreationView.customWorkoutView` with a
+/// dedicated "Start Workout" CTA below it — migrating that flow requires
+/// changing `CustomWorkoutBuilderView` to expose a `@Binding` instead of a
+/// dismissing sheet, which is tracked as a follow-up. Do NOT add new callers
+/// of `ExerciseSelectionView` — use `CustomWorkoutBuilderView` instead.
 struct ExerciseSelectionView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var selectedExercises: [Exercise]

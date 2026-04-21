@@ -205,6 +205,10 @@ struct ChallengeCreationFlow: View {
                     .padding(.bottom, 160)
                 }
                 .scrollIndicators(.hidden)
+                // Sprint 5 M-9: dismiss keyboard as the user drags through the
+                // challenge-creation flow. The custom duration step has a
+                // numeric TextField that otherwise stays focused between steps.
+                .scrollDismissesKeyboard(.interactively)
             }
             .onAppear {
                 AppLogger.debug("🏆 [CHALLENGE FLOW] View appeared - challenging \(friend.displayName)", category: .social)
@@ -526,7 +530,7 @@ struct ChallengeCreationFlow: View {
                     .padding(.vertical, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(white: 0.14))
+                            .fill(Color.cardBackground)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)

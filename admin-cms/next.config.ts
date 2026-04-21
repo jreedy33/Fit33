@@ -24,23 +24,10 @@ const nextConfig: NextConfig = {
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
           // Control browser features/permissions
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
-          // Content Security Policy
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https:",
-              "font-src 'self' data:",
-              "media-src 'self' https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev",
-              "connect-src 'self' https://*.supabase.co https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev",
-              "frame-ancestors 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-              "upgrade-insecure-requests",
-            ].join('; '),
-          },
+          // Content-Security-Policy is set per-request by `src/middleware.ts`
+          // with a fresh nonce + `'strict-dynamic'`; Sprint 5 (Q2-20) dropped
+          // the duplicated static CSP here so there is a single source of
+          // truth and we can't accidentally regress to `'unsafe-inline'`.
         ],
       },
     ]

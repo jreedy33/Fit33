@@ -615,6 +615,16 @@ class ChallengeService: ObservableObject {
         let now = Date()
         guard now.timeIntervalSince(lastActiveFetchTime) > fetchMinInterval else { return }
         lastActiveFetchTime = now
+        // Sprint 5 M-8: dedupe concurrent dashboard + realtime triggers so we
+        // never hit `get_active_challenges` twice in parallel. The 5s throttle
+        // above is MainActor-serialized but the RPC + decode are not — a
+        // coalesced in-flight Task guarantees single network round-trip.
+        await RequestCoalescer.shared.coalesceVoid(key: "fetchActiveChallenges") { [weak self] in
+            await self?._fetchActiveChallengesBody()
+        }
+    }
+
+    private func _fetchActiveChallengesBody() async {
         do {
             struct TimezoneParams: Encodable {
                 let p_timezone: String
@@ -1212,6 +1222,15 @@ class ChallengeService: ObservableObject {
         }
         lastGroupFetchTime = now
         AppLogger.debug("[GROUP] Fetching active group challenges via RPC...", category: .social)
+        // Sprint 5 M-8: see comment on `fetchActiveChallenges` — same dedupe
+        // rationale. Group challenges get a separate key so they don't block
+        // each other.
+        await RequestCoalescer.shared.coalesceVoid(key: "fetchActiveGroupChallenges") { [weak self] in
+            await self?._fetchActiveGroupChallengesBody()
+        }
+    }
+
+    private func _fetchActiveGroupChallengesBody() async {
         do {
             struct TimezoneParams: Encodable {
                 let p_timezone: String
@@ -1514,21 +1533,47 @@ class ChallengeService: ObservableObject {
             // Get challenge details BEFORE accepting (need type/unit for progress sync)
             let inviteDetails = pendingInvites.first { $0.challengeId == challengeId }
             AppLogger.debug("Invite details: \(inviteDetails?.title ?? "not found")", category: .social)
-            
-            struct RespondParams: Encodable {
-                let p_challenge_id: String
-                let p_accept: Bool
+
+            // Sprint 5 (C-6): use atomic `accept_challenge` / `decline_challenge`
+            // RPCs which take a `SELECT ... FOR UPDATE` on the participant row
+            // — fixes double-tap accepts that previously slipped two UPDATE
+            // statements past the idempotency check and produced duplicate
+            // pushes / flashing UI. The RPCs return a structured jsonb payload
+            // so we can distinguish "accepted just now" from "already accepted"
+            // and skip the heavy post-accept sync on idempotent replays.
+            struct AtomicResponseParams: Encodable { let p_challenge_id: String }
+            struct AtomicResponse: Decodable {
+                let status: String
+                let all_accepted: Bool?
+                let cancelled: Bool?
+                let challenge_status: String?
+                let message: String?
             }
-            
-            AppLogger.debug("Calling respond_to_challenge RPC...", category: .social)
-            let _: Bool = try await SupabaseManager.shared.supabaseClient
-                .rpc("respond_to_challenge", params: RespondParams(
-                    p_challenge_id: challengeId.uuidString,
-                    p_accept: accept
-                ))
+
+            let rpcName = accept ? "accept_challenge" : "decline_challenge"
+            AppLogger.debug("Calling \(rpcName) RPC (atomic, C-6)...", category: .social)
+            let response: AtomicResponse = try await SupabaseManager.shared.supabaseClient
+                .rpc(rpcName, params: AtomicResponseParams(p_challenge_id: challengeId.uuidString))
                 .execute()
                 .value
-            AppLogger.info("respond_to_challenge RPC call successful", category: .social)
+            AppLogger.info("\(rpcName) RPC -> status=\(response.status)", category: .social)
+
+            switch response.status {
+            case "not_found":
+                AppLogger.warning("\(rpcName): challenge not found (\(response.message ?? "n/a"))", category: .social)
+                return false
+            case "cancelled":
+                AppLogger.info("\(rpcName): challenge already cancelled server-side; clearing local pending", category: .social)
+                await MainActor.run { pendingInvites.removeAll { $0.challengeId == challengeId } }
+                await fetchPendingInvites()
+                return false
+            case "already_accepted":
+                AppLogger.debug("\(rpcName): server reports already accepted — treating as idempotent success", category: .social)
+            case "already_declined":
+                AppLogger.debug("\(rpcName): server reports already declined — treating as idempotent success", category: .social)
+            default:
+                break
+            }
             
             // Force refresh from server to ensure UI updates properly
             await MainActor.run {

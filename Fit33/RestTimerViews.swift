@@ -296,26 +296,42 @@ struct RestTimerView: View {
 struct RestTimerSetupView: View {
     @Environment(\.dismiss) private var dismiss
     let onSetTimer: (TimeInterval) -> Void
-    
+
     @State private var selectedMinutes: Int = 2
     @State private var selectedSeconds: Int = 0
-    
+
     private let minuteOptions = Array(0...10)
     private let secondOptions = Array(stride(from: 0, to: 60, by: 15))
-    
+
+    // Sprint 5 F-6: Canonical rest-time presets.
+    // Chosen from common training protocols:
+    //   - 30s/45s: conditioning/superset
+    //   - 60s/90s: hypertrophy
+    //   - 2m/3m: strength/compound
+    //   - 5m: max-effort / heavy singles
+    private static let presetDurations: [TimeInterval] = [30, 45, 60, 90, 120, 180, 300]
+
+    private var totalSeconds: TimeInterval {
+        TimeInterval(selectedMinutes * 60 + selectedSeconds)
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 30) {
+            VStack(spacing: 24) {
                 Text("Set Rest Timer")
                     .font(.title)
                     .fontWeight(.bold)
-                
+
                 Text("Choose how long to rest between sets for this exercise")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
-                
+
+                // Sprint 5 F-6: quick preset chips so users can one-tap a
+                // standard rest interval without scrolling two pickers.
+                presetChips
+
                 // Time picker
                 HStack(spacing: 20) {
                     VStack {
@@ -329,7 +345,7 @@ struct RestTimerSetupView: View {
                         .pickerStyle(.wheel)
                         .frame(width: 100, height: 150)
                     }
-                    
+
                     VStack {
                         Text("Seconds")
                             .font(.headline)
@@ -342,13 +358,13 @@ struct RestTimerSetupView: View {
                         .frame(width: 100, height: 150)
                     }
                 }
-                
+
                 // Preview
                 Text("Rest Time: \(selectedMinutes):\(String(format: "%02d", selectedSeconds))")
                     .font(.title2)
                     .fontWeight(.semibold)
                     .foregroundColor(.blue)
-                
+
                 Spacer()
             }
             .padding()
@@ -371,5 +387,64 @@ struct RestTimerSetupView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Sprint 5 F-6: Preset Chips
+
+    @ViewBuilder
+    private var presetChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Self.presetDurations, id: \.self) { preset in
+                    presetChip(for: preset)
+                }
+            }
+            .padding(.horizontal, Spacing.md)
+        }
+    }
+
+    @ViewBuilder
+    private func presetChip(for seconds: TimeInterval) -> some View {
+        let isSelected = Int(totalSeconds) == Int(seconds)
+        Button(action: { applyPreset(seconds) }) {
+            Text(Self.formatPreset(seconds))
+                .font(.ds_labelMedium)
+                .fontWeight(.semibold)
+                .foregroundColor(isSelected ? .white : .blue)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? Color.blue : Color.blue.opacity(0.12))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color.blue.opacity(isSelected ? 0.0 : 0.25), lineWidth: 1)
+                )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel("Rest \(Self.formatPreset(seconds))")
+        .accessibilityHint("Sets rest timer to \(Self.formatPreset(seconds))")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func applyPreset(_ seconds: TimeInterval) {
+        HapticManager.impact(.light)
+        let total = Int(seconds)
+        selectedMinutes = total / 60
+        // Snap to nearest 15s bucket matching secondOptions.
+        let remainder = total % 60
+        let snapped = secondOptions.min(by: {
+            abs($0 - remainder) < abs($1 - remainder)
+        }) ?? 0
+        selectedSeconds = snapped
+    }
+
+    private static func formatPreset(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds)
+        if total < 60 { return "\(total)s" }
+        let m = total / 60
+        let s = total % 60
+        return s == 0 ? "\(m)m" : "\(m)m \(s)s"
     }
 }

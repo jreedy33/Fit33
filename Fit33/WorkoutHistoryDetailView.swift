@@ -857,6 +857,10 @@ struct PremiumExerciseRow: View {
     let workoutExercise: WorkoutExercise
     let accentColor: Color
     @State private var isExpanded = false
+    // Sprint 5 F-3: per-exercise notes editor state.
+    @State private var exerciseNotesDraft: String = ""
+    @State private var isEditingNotes: Bool = false
+    @FocusState private var notesFieldFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
     
@@ -1141,6 +1145,14 @@ struct PremiumExerciseRow: View {
                                 }
                             }
                             .padding(.bottom, 8)
+
+                            // Sprint 5 F-3: per-exercise notes (inline editor).
+                            Divider()
+                                .padding(.horizontal, Spacing.md)
+
+                            exerciseNotesSection
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, 8)
                         }
                     }
                 }
@@ -1302,6 +1314,106 @@ struct PremiumExerciseRow: View {
             return "\(Int(weight))"
         } else {
             return String(format: "%.1f", weight)
+        }
+    }
+
+    // MARK: - Per-exercise Notes (Sprint 5 F-3)
+
+    @ViewBuilder
+    private var exerciseNotesSection: some View {
+        let saved = (workoutExercise.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "note.text")
+                    .font(.caption)
+                Text("Notes")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Spacer()
+                if isEditingNotes {
+                    Button("Save") {
+                        saveExerciseNotes()
+                    }
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(accentColor)
+                    .accessibilityLabel("Save exercise notes")
+                    .accessibilityHint("Saves your note for this exercise")
+                } else {
+                    Button(saved.isEmpty ? "Add" : "Edit") {
+                        exerciseNotesDraft = workoutExercise.notes ?? ""
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isEditingNotes = true
+                        }
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(50))
+                            notesFieldFocused = true
+                        }
+                    }
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(accentColor)
+                    .accessibilityLabel(saved.isEmpty ? "Add exercise note" : "Edit exercise note")
+                    .accessibilityHint("Opens an inline editor for this exercise's note")
+                }
+            }
+            .foregroundColor(.secondary)
+
+            if isEditingNotes {
+                TextEditor(text: $exerciseNotesDraft)
+                    .font(.caption)
+                    .foregroundColor(.primary)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 54, maxHeight: 100)
+                    .padding(Spacing.xs)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.sm, style: .continuous)
+                            .fill(Color.cardBackground)
+                    )
+                    .focused($notesFieldFocused)
+                    .accessibilityLabel("Exercise notes")
+                    .accessibilityHint("Capture form cues, RPE, or reminders for this exercise")
+            } else if !saved.isEmpty {
+                Text(saved)
+                    .font(.caption)
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(Spacing.xs)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.sm, style: .continuous)
+                            .fill(Color.cardBackground)
+                    )
+            } else {
+                Text("Tap Add to capture form cues, RPE, or reminders.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+        }
+    }
+
+    private func saveExerciseNotes() {
+        let trimmed = exerciseNotesDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        workoutExercise.notes = trimmed.isEmpty ? nil : trimmed
+        do {
+            if let ctx = workoutExercise.managedObjectContext, ctx.hasChanges {
+                try ctx.save()
+            }
+        } catch {
+            AppLogger.error("Failed to save exercise notes: \(error)", category: .data)
+        }
+        notesFieldFocused = false
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isEditingNotes = false
+        }
+        HapticManager.impact(.light)
+
+        // Kick the parent workout back up to cloud so notes persist across devices.
+        // MainActor hop keeps Core Data access on the same thread that owns viewContext.
+        if let workout = workoutExercise.workout {
+            Task { @MainActor in
+                try? await SupabaseManager.shared.saveWorkoutToCloud(workout: workout)
+            }
         }
     }
 }

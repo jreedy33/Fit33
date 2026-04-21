@@ -531,6 +531,12 @@ extension NewOnboardingView {
                             .foregroundColor(.red)
                             .multilineTextAlignment(.center)
                     }
+
+                    // M-19 (Sprint 5): sign-in blocked by unverified email
+                    if signInEmailUnverified {
+                        emailUnverifiedBanner
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                     
                     // Auth Provider Hint (when user tries email login but has Apple/Google account)
                     if showAuthProviderHint {
@@ -825,6 +831,11 @@ extension NewOnboardingView {
         errorMessage = ""
         emailAlreadyExists = false
         passwordResetSent = false
+        // M-19 (Sprint 5): also clear the unverified-email banner when toggling
+        // modes so it doesn't bleed across Sign Up / Sign In.
+        signInEmailUnverified = false
+        signInResendError = ""
+        signInResendSuccess = false
         acceptedTerms = false  // Uncheck terms when switching modes
         // Reset password step and clear all password fields when switching auth modes
         let currentFocus = focusedField
@@ -857,6 +868,11 @@ extension NewOnboardingView {
         showError = false
         errorMessage = ""
         showAuthProviderHint = false
+        // M-19 (Sprint 5): reset unverified-email banner on every new sign-in
+        // attempt; it'll re-appear if the new attempt hits the same error.
+        signInEmailUnverified = false
+        signInResendError = ""
+        signInResendSuccess = false
         
         if isSignUp {
             // Create account NOW while password @State is still available.
@@ -943,6 +959,22 @@ extension NewOnboardingView {
                             navigateTo(.basics)
                         }
                     }
+                } catch let authError as SupabaseManager.SupabaseAuthError {
+                    // M-19 (Sprint 5): typed "email not confirmed" path — show
+                    // a bespoke banner with Resend + "I've Verified" instead
+                    // of a generic red error string.
+                    if case .emailNotConfirmed(let unverifiedEmail) = authError {
+                        await MainActor.run {
+                            signInUnverifiedEmail = unverifiedEmail
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                signInEmailUnverified = true
+                            }
+                            signInResendSuccess = false
+                            signInResendError = ""
+                            showError = false
+                            AppLogger.info("Sign-in blocked: email not confirmed for \(unverifiedEmail)", category: .auth)
+                        }
+                    }
                 } catch {
                     await MainActor.run {
                         // Check if it's a credential error and they might have used social login
@@ -957,6 +989,182 @@ extension NewOnboardingView {
                 }
             }
         }
+    }
+
+    // MARK: - Email Unverified (M-19 Sprint 5)
+
+    /// Resend the signup confirmation email to an existing unverified account.
+    /// No-op if `signInUnverifiedEmail` is empty (shouldn't happen — guarded
+    /// here defensively so a mis-state doesn't silently succeed).
+    func resendSignInEmailConfirmation() {
+        let targetEmail = signInUnverifiedEmail
+        guard !targetEmail.isEmpty else {
+            signInResendError = "Missing email; tap Sign In again."
+            return
+        }
+
+        signInResendSuccess = false
+        signInResendError = ""
+        signInResendPending = true
+
+        Task {
+            do {
+                try await supabaseManager.resendEmailConfirmation(email: targetEmail)
+                await MainActor.run {
+                    signInResendPending = false
+                    signInResendSuccess = true
+                }
+            } catch {
+                await MainActor.run {
+                    signInResendPending = false
+                    let desc = error.localizedDescription.lowercased()
+                    if desc.contains("rate") || desc.contains("limit") || desc.contains("too many") {
+                        signInResendError = "Please wait a moment before requesting another email."
+                    } else {
+                        signInResendError = "Could not resend. Please try again."
+                    }
+                }
+            }
+        }
+    }
+
+    /// User tapped "I've Verified My Email" — refresh the session and retry
+    /// sign-in if the email is now confirmed. If still unconfirmed we keep the
+    /// banner up with a clarifying message.
+    func confirmSignInEmailAndRetry() {
+        signInResendError = ""
+        signInResendPending = true
+
+        Task {
+            let confirmed = await supabaseManager.isCurrentUserEmailConfirmed()
+            if confirmed {
+                // Session is already valid after the refresh; retry sign-in path
+                // so we land on the normal post-sign-in behavior (sync + routing).
+                await MainActor.run {
+                    signInResendPending = false
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        signInEmailUnverified = false
+                    }
+                }
+                // Re-run sign-in to trigger syncAllDataFromCloud + routing.
+                do {
+                    try await supabaseManager.signIn(email: signInUnverifiedEmail, password: password)
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    await MainActor.run {
+                        userManager.reloadCurrentUser()
+                        if userManager.hasCompletedOnboarding {
+                            AppLogger.info("Email verified + signed in - routing to main app", category: .auth)
+                        } else {
+                            navigateTo(.basics)
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        errorMessage = error.localizedDescription
+                        showError = true
+                    }
+                }
+            } else {
+                await MainActor.run {
+                    signInResendPending = false
+                    signInResendError = "Still not verified. Check your inbox and tap the confirmation link."
+                }
+            }
+        }
+    }
+
+    /// Banner shown under the auth form when sign-in was blocked by an
+    /// unverified email. Self-contained so `authFormContent` can embed it
+    /// directly without re-plumbing any state.
+    var emailUnverifiedBanner: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "envelope.badge.fill")
+                    .font(.ds_heading3)
+                    .foregroundColor(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Verify your email to sign in")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                    Text("We sent a link to \(signInUnverifiedEmail)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    resendSignInEmailConfirmation()
+                } label: {
+                    HStack(spacing: 6) {
+                        if signInResendPending {
+                            ProgressView().scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text(signInResendPending ? "Sending…" : "Resend Email")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.xs)
+                    .background(Capsule().fill(Color.orange))
+                }
+                .disabled(signInResendPending)
+                .accessibilityLabel("Resend verification email")
+                .accessibilityHint("Sends another verification link to \(signInUnverifiedEmail)")
+
+                Button {
+                    confirmSignInEmailAndRetry()
+                } label: {
+                    Text("I've Verified")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.xs)
+                        .background(Capsule().fill(Color.orange.opacity(0.12)))
+                        .overlay(Capsule().stroke(Color.orange.opacity(0.35), lineWidth: 1))
+                }
+                .disabled(signInResendPending)
+                .accessibilityLabel("I've verified my email")
+                .accessibilityHint("Retries sign in after you confirm via the email link")
+
+                Spacer(minLength: 0)
+            }
+
+            if signInResendSuccess {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Email sent — check your inbox.")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                    Spacer(minLength: 0)
+                }
+            }
+
+            if !signInResendError.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundColor(.red)
+                    Text(signInResendError)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(Spacing.md)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.md)
+                .fill(Color.orange.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
+                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                )
+        )
     }
 
     // MARK: - Social Login Handlers

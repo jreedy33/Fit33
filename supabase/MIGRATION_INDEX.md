@@ -185,6 +185,14 @@ The **canonical version** is the one in the latest file listed below.
 
 **Paired code changes**: `Fit33/ExerciseLibraryView.swift` realtime subscription wiring.
 
+## Atomic Challenge Accept/Decline (C-6, Sprint 5 — 2026-04-20)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 56 | `20260420_atomic_challenge_rpcs.sql` | 🆕 Ready | New `accept_challenge(uuid)` + `decline_challenge(uuid)` RPCs with `SELECT ... FOR UPDATE` on the caller's `challenge_participants` row. Idempotent (returns `already_accepted` / `already_declined` instead of raising) and structured (`jsonb` with `status`/`all_accepted`/`cancelled`). Legacy `respond_to_challenge` left in place for older installed clients. |
+
+**Paired code changes**: `Fit33/ChallengeService.respondToChallenge` now calls the new RPCs and interprets the structured status, skipping heavy post-accept sync on idempotent replays.
+
 ---
 
 ## Process for New Migrations

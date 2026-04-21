@@ -694,7 +694,7 @@ struct NutritionEditorView: View {
                                 .padding(.vertical, 14)
                                 .background(
                                     RoundedRectangle(cornerRadius: CornerRadius.md)
-                                        .fill(Color(white: 0.15))
+                                        .fill(Color.cardBackground)
                                 )
                                 .foregroundColor(.white)
                         }
@@ -710,7 +710,7 @@ struct NutritionEditorView: View {
                                 .padding(.vertical, 14)
                                 .background(
                                     RoundedRectangle(cornerRadius: CornerRadius.md)
-                                        .fill(Color(white: 0.15))
+                                        .fill(Color.cardBackground)
                                 )
                                 .foregroundColor(.white)
                         }
@@ -757,7 +757,7 @@ struct NutritionEditorView: View {
                             .padding()
                             .background(
                                 RoundedRectangle(cornerRadius: CornerRadius.lg)
-                                    .fill(Color(white: 0.15))
+                                    .fill(Color.cardBackground)
                             )
                             
                             // Quick serving buttons
@@ -805,7 +805,7 @@ struct NutritionEditorView: View {
                                     .padding(.vertical, 14)
                                     .background(
                                         RoundedRectangle(cornerRadius: CornerRadius.md)
-                                            .fill(Color(white: 0.15))
+                                            .fill(Color.cardBackground)
                                     )
                                     .foregroundColor(.white)
                             }

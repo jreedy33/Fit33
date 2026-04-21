@@ -551,10 +551,37 @@ struct WorkoutExerciseDTO: Codable {
     let exerciseName: String
     let order: Int
     let sets: [WorkoutSetDTO]
-    
+    // Sprint 5 F-3: Per-exercise user note. Stored inside the embedded
+    // `exercises` JSONB on workout_history — no schema migration required.
+    let notes: String?
+
     enum CodingKeys: String, CodingKey {
-        case id, order, sets
+        case id, order, sets, notes
         case exerciseName = "exercise_name"
+    }
+
+    init(
+        id: String,
+        exerciseName: String,
+        order: Int,
+        sets: [WorkoutSetDTO],
+        notes: String? = nil
+    ) {
+        self.id = id
+        self.exerciseName = exerciseName
+        self.order = order
+        self.sets = sets
+        self.notes = notes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.exerciseName = try c.decode(String.self, forKey: .exerciseName)
+        self.order = try c.decode(Int.self, forKey: .order)
+        self.sets = try c.decode([WorkoutSetDTO].self, forKey: .sets)
+        // Tolerate missing key for historical rows.
+        self.notes = try c.decodeIfPresent(String.self, forKey: .notes)
     }
 }
 

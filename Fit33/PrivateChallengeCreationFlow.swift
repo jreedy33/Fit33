@@ -103,6 +103,10 @@ struct PrivateChallengeCreationFlow: View {
                         .padding(.bottom, 120)
                     }
                     .scrollIndicators(.hidden)
+                    // Sprint 5 M-9: naming step opens the keyboard immediately;
+                    // let the user swipe it away while scrolling to the next
+                    // step instead of having to hit Return.
+                    .scrollDismissesKeyboard(.interactively)
                     
                     Spacer(minLength: 0)
                     

@@ -149,19 +149,15 @@ extension ActiveWorkoutView {
                         PreviousSetData(setNumber: index + 1, recommendation: rec)
                     }
                     
+                    // Sets are always empty — suggested values render as grey/orange
+                    // placeholders via `previousExerciseSets`. Row count matches the number
+                    // of recommendations (or defaultCount, whichever is larger).
                     var smartSets: [WorkoutSetData]? = nil
                     if !recs.isEmpty {
-                        smartSets = recs.map { rec in
-                            let setData = WorkoutSetData()
-                            setData.weight = rec.weight
-                            setData.reps = rec.reps
-                            return setData
-                        }
-                        while smartSets!.count < defaultCount {
-                            smartSets!.append(WorkoutSetData())
-                        }
+                        let rowCount = max(recs.count, defaultCount)
+                        smartSets = (0..<rowCount).map { _ in WorkoutSetData() }
                     }
-                    
+
                     recommendations.append((exerciseId: exerciseId, data: smartPreviousData, sets: smartSets))
                     
                     #if DEBUG
@@ -182,7 +178,10 @@ extension ActiveWorkoutView {
                         
                         if let smartSets = rec.sets {
                             let existingSets = wm.getSetsForExercise(id: rec.exerciseId)
-                            if existingSets.count == 1 && existingSets.first?.weight == 0 && existingSets.first?.reps == 0 {
+                            let allEmpty = existingSets.allSatisfy { $0.weight == 0 && $0.reps == 0 && !$0.isCompleted }
+                            // Only resize if the user hasn't touched anything and row count differs.
+                            // We don't overwrite values — placeholders come from `previousExerciseSets`.
+                            if allEmpty && existingSets.count != smartSets.count {
                                 wm.updateSetsForExercise(id: rec.exerciseId, sets: smartSets)
                             }
                         }
@@ -359,16 +358,11 @@ extension ActiveWorkoutView {
                     previousExerciseSets[exerciseId] = smartPreviousData
                     let currentSets = wm.getSetsForExercise(id: exerciseId)
                     if currentSets.allSatisfy({ $0.weight == 0 && $0.reps == 0 && !$0.isCompleted }) {
-                        var smartSets = recommendations.map { rec in
-                            let setData = WorkoutSetData()
-                            setData.weight = rec.weight
-                            setData.reps = rec.reps
-                            return setData
+                        let rowCount = max(recommendations.count, defaultCount)
+                        if rowCount != currentSets.count {
+                            let smartSets = (0..<rowCount).map { _ in WorkoutSetData() }
+                            wm.updateSetsForExercise(id: exerciseId, sets: smartSets)
                         }
-                        while smartSets.count < defaultCount {
-                            smartSets.append(WorkoutSetData())
-                        }
-                        wm.updateSetsForExercise(id: exerciseId, sets: smartSets)
                     }
                     #if DEBUG
                     AppLogger.debug("💡 Generated smart recommendations for '\(exerciseName)'", category: .workout)
@@ -378,7 +372,11 @@ extension ActiveWorkoutView {
         }
     }
 
-    /// Sync the exercise's set count and pre-fill values from previous workout data
+    /// Adjust the exercise's row count to match `max(previousData.count, defaultSetCount)`.
+    /// Does NOT copy weight/reps into `setData` — previous values render as grey placeholders
+    /// in `SetRowView` (via `previousSet`). Pre-filling real values would overwrite the
+    /// placeholder-only UX the user expects when repeating an exercise.
+    /// Only runs when the user hasn't touched any rows yet (all empty, none completed).
     func syncSetsWithPreviousData(exerciseId: String, previousData: [PreviousSetData], wm: WorkoutManager) {
         let currentSets = wm.getSetsForExercise(id: exerciseId)
         let allEmpty = currentSets.allSatisfy { $0.weight == 0 && $0.reps == 0 && !$0.isCompleted }
@@ -386,19 +384,12 @@ extension ActiveWorkoutView {
         guard allEmpty else { return }
 
         let defaultCount = WorkoutManager.userDefaultSetCount
-        var newSets = previousData.map { prev in
-            let setData = WorkoutSetData()
-            setData.weight = prev.weight
-            setData.reps = prev.reps
-            return setData
-        }
-        while newSets.count < defaultCount {
-            newSets.append(WorkoutSetData())
-        }
+        let targetCount = max(previousData.count, defaultCount)
 
-        if !newSets.isEmpty {
-            wm.updateSetsForExercise(id: exerciseId, sets: newSets)
-        }
+        guard targetCount != currentSets.count else { return }
+
+        let newSets = (0..<targetCount).map { _ in WorkoutSetData() }
+        wm.updateSetsForExercise(id: exerciseId, sets: newSets)
     }
 
     func handleWorkoutAppear() {

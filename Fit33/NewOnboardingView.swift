@@ -59,6 +59,17 @@ struct NewOnboardingView: View {
     @State var isEmailVerified = false
     @State var emailVerificationError = ""
     @State var isCheckingEmailVerification = false
+
+    // M-19 (Sprint 5): "email not confirmed" blocked state on sign-in.
+    // Fires when Supabase returns `email_not_confirmed` — the user has an
+    // account but hasn't clicked the verification link in their inbox yet.
+    // The `authStep` renders a dedicated banner with Resend + "I've Verified"
+    // buttons; on success the user is signed in for real.
+    @State var signInEmailUnverified = false
+    @State var signInUnverifiedEmail = ""
+    @State var signInResendPending = false
+    @State var signInResendSuccess = false
+    @State var signInResendError = ""
     
     // Constants for phone verification limits
     let maxPhoneVerificationAttempts = 3

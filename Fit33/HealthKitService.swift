@@ -179,6 +179,20 @@ final class HealthKitService: ObservableObject {
     
     /// Sync all health data from HealthKit (throttled)
     nonisolated func syncAllData(force: Bool = false) async {
+        // Sprint 5 M-8: two paths can call this in the same second — dashboard
+        // `.task`, `BackgroundChallengeSyncService` tick, and the foreground
+        // resume handler. The legacy `isSyncing` guard causes the second
+        // caller to BAIL immediately, so its `await` returns before data is
+        // actually fresh. Coalescing makes the second caller **wait** for the
+        // first sync to finish, which is the semantics every caller assumes.
+        // Keyed by force flag so a non-force caller doesn't wait for a forced
+        // sync it didn't ask for (different throttle semantics).
+        await RequestCoalescer.shared.coalesceVoid(key: "HealthKit.syncAllData.force=\(force)") {
+            await self._syncAllDataBody(force: force)
+        }
+    }
+
+    nonisolated private func _syncAllDataBody(force: Bool) async {
         let (shouldProceed, authorized) = await MainActor.run {
             guard isAuthorized else { return (false, false) }
             if isSyncing {
@@ -195,9 +209,9 @@ final class HealthKitService: ObservableObject {
             return (true, isAuthorized)
         }
         guard shouldProceed else { return }
-        
+
         StartupWaterfall.shared.mark("HealthKit.syncAll")
-        
+
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.syncTodayStats(authorized: authorized) }
             group.addTask { await self.syncRecentWorkouts() }
@@ -205,20 +219,20 @@ final class HealthKitService: ObservableObject {
             group.addTask { await self.syncSleep() }
             group.addTask { await self.syncWeeklyData(authorized: authorized) }
         }
-        
+
         await MainActor.run {
             isLoading = false
             isSyncing = false
         }
-        
+
         AppLogger.info("HealthKit full sync complete", category: .health)
-        
+
         await HealthDataService.shared.persistHealthKitDataToSupabase()
-        
+
         StartupWaterfall.shared.end("HealthKit.syncAll")
-        
+
         await ChallengeService.shared.syncHealthKitDataToChallenges()
-        
+
         await MainActor.run {
             lastSyncDate = Date()
             UserDefaults.standard.set(lastSyncDate, forKey: "healthkit_last_sync")

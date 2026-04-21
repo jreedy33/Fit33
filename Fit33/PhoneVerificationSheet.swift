@@ -276,40 +276,63 @@ struct PhoneVerificationSheet: View {
                 )
             }
             
-            // 6-digit code input field with iOS auto-fill support
-            TextField("000000", text: $verificationCode)
-                .keyboardType(.numberPad)
-                .textContentType(.oneTimeCode)  // Enables iOS auto-fill from SMS
-                .autocorrectionDisabled()
-                .multilineTextAlignment(.center)
-                .font(.system(size: 32, weight: .bold, design: .monospaced))
-                .tracking(12)  // Letter spacing for readability
-                .focused($focusedField, equals: .verificationCode)
-                .padding(.horizontal, Spacing.lg)
-                .padding(.vertical, 18)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
-                        .shadow(color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .stroke(
-                            LinearGradient(colors: [Color.blue.opacity(0.4), Color.cyan.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            lineWidth: 1.5
-                        )
-                )
-                .onChange(of: verificationCode) { _, newValue in
-                    let digits = newValue.filter { $0.isNumber }
-                    verificationCode = String(digits.prefix(6))
-                    
-                    if verificationCode.count == 6 {
-                        verifyCode()
+            // Sprint 5 (Q2-38-b): digit-box OTP entry — canonical across
+            // `ExistingUserPhonePrompt`, onboarding, and this 2FA sheet so
+            // users see the same verification UX regardless of entry point.
+            // Hidden TextField captures input + enables iOS SMS auto-fill;
+            // visible tiles render one digit each with the active slot
+            // highlighted.
+            ZStack {
+                TextField("", text: $verificationCode)
+                    .keyboardType(.numberPad)
+                    .textContentType(.oneTimeCode)
+                    .autocorrectionDisabled()
+                    .focused($focusedField, equals: .verificationCode)
+                    .opacity(0)
+                    .onChange(of: verificationCode) { _, newValue in
+                        let digits = newValue.filter { $0.isNumber }
+                        if digits != verificationCode {
+                            verificationCode = String(digits.prefix(6))
+                        }
+                        if verificationCode.count == 6 {
+                            verifyCode()
+                        }
                     }
+
+                GeometryReader { geo in
+                    let tileWidth = min(50, (geo.size.width - 50) / 6)
+                    let tileHeight = tileWidth * 1.2
+                    HStack(spacing: max(6, (geo.size.width - tileWidth * 6) / 5)) {
+                        ForEach(0..<6, id: \.self) { index in
+                            ZStack {
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
+                                    .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.95))
+
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
+                                    .stroke(
+                                        index == verificationCode.count ? Color.blue : Color.clear,
+                                        lineWidth: 2
+                                    )
+
+                                Text(getDigit(at: index))
+                                    .font(.system(size: min(28, tileWidth * 0.56), weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                            }
+                            .frame(width: tileWidth, height: tileHeight)
+                            .accessibilityLabel("Verification digit \(index + 1) of 6")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
+                .frame(height: 72)
+                .onTapGesture {
+                    focusedField = .verificationCode
+                }
+            }
             
-            // Hint for auto-fill
-            Text("Tap 'From Messages' above keyboard to auto-fill")
+            // Sprint 5 (Q2-38-b): copy aligned with onboarding's hint so users
+            // see the same message wherever they land.
+            Text("Tap the code above the keyboard to auto-fill")
                 .font(.caption)
                 .foregroundColor(.secondary.opacity(0.7))
             
@@ -509,7 +532,9 @@ struct PhoneVerificationSheet: View {
         withAnimation(.easeInOut(duration: 0.2)) {
             isVerificationCodeSent = true
         }
-        resendCountdown.start(duration: 30)
+        // Sprint 5 (Q2-38-b): 60s resend canonical — matches onboarding +
+        // `ExistingUserPhonePrompt` so users see the same cooldown everywhere.
+        resendCountdown.start(duration: 60)
         
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(0.3))

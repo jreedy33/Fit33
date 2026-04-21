@@ -258,6 +258,11 @@ struct DSSecondaryButton: View {
 
 // MARK: - Empty State
 
+/// Sprint 5 M-24 name alias. New call sites should prefer `EmptyStateView`
+/// since the prefix-less name reads better inside screens. Existing
+/// `DSEmptyState` references continue to work.
+typealias EmptyStateView = DSEmptyState
+
 /// Reusable empty state view with optional CTA.
 struct DSEmptyState: View {
     let icon: String
@@ -292,6 +297,51 @@ struct DSEmptyState: View {
             }
         }
         .padding(Spacing.lg)
+    }
+}
+
+// MARK: - Haptic Tokens (Sprint 5 M-23)
+//
+// Semantic haptic vocabulary so call sites read like product intent
+// (`HapticStyle.select.fire()`) rather than hardware primitives
+// (`UIImpactFeedbackGenerator(style: .light).impactOccurred()`). Forwards to
+// the pre-warmed generators in `HapticManager` to keep latency at zero.
+//
+// Why not just call `HapticManager` directly? Designers think in
+// **categories** (selection, confirm, warning, success) while UIKit exposes
+// **physical intensities** (light/medium/heavy impact, success/warning/error
+// notification). Giving product code the category vocabulary makes it
+// obvious when a new screen uses the wrong tone — e.g. `.warning` for a
+// confirmation is clearly wrong, `.heavy` is just an opinion.
+
+enum HapticStyle {
+    /// Subtle light tap — toggling a filter chip, tab switch, quick select.
+    case select
+    /// Medium impact — committing an intentional user action (save, start).
+    case confirm
+    /// Heavy tap — a deliberate "this changes state" moment (delete button
+    /// pressed, not the confirm itself).
+    case impactHeavy
+    /// `UINotificationFeedbackGenerator.success` — async work finished OK.
+    case success
+    /// `UINotificationFeedbackGenerator.warning` — caution (e.g. invalid
+    /// input but not fatal).
+    case warning
+    /// `UINotificationFeedbackGenerator.error` — destructive path, hard fail.
+    case error
+
+    /// Trigger the haptic immediately. Safe to call from any thread (the
+    /// underlying `HapticManager` is main-actor friendly via UIKit).
+    @inline(__always)
+    func fire() {
+        switch self {
+        case .select:      HapticManager.selectionChanged()
+        case .confirm:     HapticManager.tap()
+        case .impactHeavy: HapticManager.heavyTap()
+        case .success:     HapticManager.success()
+        case .warning:     HapticManager.warning()
+        case .error:       HapticManager.error()
+        }
     }
 }
 

@@ -34,14 +34,11 @@ struct ProgramExplorerView: View {
     }
     
     private var recommendedPrograms: [ExtendedProgram] {
+        // Sprint 5 Q2-41-b — route through the canonical `SmartProgramRecommender`
+        // so scoring stays in one place. See the mapper in
+        // `SmartProgramRecommender.swift` → `ExtendedProgram.from(workoutProgram:)`.
         guard let user = userManager.currentUser else { return [] }
-        return libraryService.getRecommendedPrograms(
-            forExperience: user.experienceLevel ?? "Intermediate",
-            goal: user.fitnessGoal ?? "General Fitness",
-            availableDays: Int(user.availableDays),
-            equipment: user.getEquipment() ?? ["Dumbbells"],
-            limit: 5
-        )
+        return SmartProgramRecommender.shared.getRecommendedExtendedPrograms(for: user, limit: 5)
     }
     
     private var hasActiveFilters: Bool {
@@ -289,11 +286,30 @@ struct ProgramExplorerView: View {
             GridItem(.flexible(), spacing: 16)
         ]
         
-        return LazyVGrid(columns: columns, spacing: 16) {
-            ForEach(filteredPrograms) { program in
-                ProgramTile(program: program) {
-                    selectedProgram = program
-                    navigateToDetail = true
+        return Group {
+            if filteredPrograms.isEmpty {
+                // Sprint 5 M-24 — dedicated empty state for aggressive filters
+                // or search queries with no matches. CTA clears filters so the
+                // user doesn't have to toggle each chip off individually.
+                EmptyStateView(
+                    icon: "magnifyingglass",
+                    title: "No Programs Found",
+                    subtitle: "Try removing a filter or adjusting your search.",
+                    actionTitle: hasActiveFilters || !searchText.isEmpty ? "Clear Filters" : nil,
+                    actionIcon: "xmark.circle.fill",
+                    action: hasActiveFilters || !searchText.isEmpty ? {
+                        clearAllFilters()
+                        searchText = ""
+                    } : nil
+                )
+            } else {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(filteredPrograms) { program in
+                        ProgramTile(program: program) {
+                            selectedProgram = program
+                            navigateToDetail = true
+                        }
+                    }
                 }
             }
         }

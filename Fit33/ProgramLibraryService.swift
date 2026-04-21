@@ -265,96 +265,17 @@ class ProgramLibraryService: ObservableObject {
     }
     
     // MARK: - Smart Recommendations
-    
-    // TODO: Delegate to SmartProgramRecommender.shared for unified recommendation logic
-    func getRecommendedPrograms(
-        forExperience experience: String,
-        goal: String,
-        availableDays: Int,
-        equipment: [String],
-        limit: Int = 5
-    ) -> [ExtendedProgram] {
-        // Map experience string to difficulty
-        let difficulty: ProgramDifficulty
-        switch experience.lowercased() {
-        case "beginner": difficulty = .beginner
-        case "advanced": difficulty = .advanced
-        default: difficulty = .intermediate
-        }
-        
-        // Map goal string to ProgramGoal
-        let programGoal: ProgramGoal
-        switch goal.lowercased() {
-        case "build muscle", "bulk": programGoal = .buildMuscle
-        case "lose weight", "cut": programGoal = .loseWeight
-        case "strength": programGoal = .gainStrength
-        case "endurance", "cardio": programGoal = .improveEndurance
-        case "tone", "toning": programGoal = .toneUp
-        default: programGoal = .generalFitness
-        }
-        
-        // Map available days to frequency
-        let frequency: WorkoutFrequency
-        switch availableDays {
-        case 2: frequency = .two
-        case 3: frequency = .three
-        case 4: frequency = .four
-        case 5: frequency = .five
-        case 6: frequency = .six
-        case 7: frequency = .seven
-        default: frequency = .four
-        }
-        
-        // Determine location based on equipment
-        let hasGymEquipment = equipment.contains { 
-            ["barbell", "machines", "cables", "smith machine"].contains($0.lowercased())
-        }
-        let location: ProgramLocation? = hasGymEquipment ? .gym : .home
-        
-        // Score and rank programs
-        let scoredPrograms = allPrograms.map { program -> (ExtendedProgram, Int) in
-            var score = 0
-            
-            // Difficulty match (most important)
-            if program.difficulty == difficulty { score += 30 }
-            else if let progIdx = ProgramDifficulty.allCases.firstIndex(of: program.difficulty),
-                    let diffIdx = ProgramDifficulty.allCases.firstIndex(of: difficulty),
-                    abs(progIdx - diffIdx) == 1 { score += 15 }
-            
-            // Goal match
-            if program.goals.contains(programGoal) { score += 25 }
-            if program.primaryGoal == programGoal { score += 10 }
-            
-            // Frequency match
-            if program.frequency == frequency { score += 20 }
-            else if abs(program.frequency.rawValue - frequency.rawValue) == 1 { score += 10 }
-            
-            // Location match
-            if let loc = location {
-                if program.location == loc { score += 15 }
-                else if program.location == .hybrid { score += 10 }
-            }
-            
-            // Equipment compatibility
-            let programEquipmentSet = Set(program.equipment.map { $0.lowercased() })
-            let userEquipmentSet = Set(equipment.map { $0.lowercased() })
-            if programEquipmentSet.isSubset(of: userEquipmentSet) { score += 15 }
-            
-            // Popularity bonus
-            score += program.popularityScore / 10
-            
-            // Featured bonus
-            if program.isFeatured { score += 5 }
-            
-            return (program, score)
-        }
-        
-        return scoredPrograms
-            .sorted { $0.1 > $1.1 }
-            .prefix(limit)
-            .map { $0.0 }
-    }
-    
+    //
+    // Sprint 5 (Q2-41-b): the legacy in-service `getRecommendedPrograms` was
+    // deleted. All callers now go through `SmartProgramRecommender.shared`
+    // which owns the canonical scoring (experience, goal, age, equipment,
+    // training-age) and returns `ProgramRecommendation` over `WorkoutProgram`.
+    // Consumers that still need browseable `ExtendedProgram` values (like
+    // `ProgramExplorerView`'s "Recommended for You" carousel) call the
+    // `getRecommendedExtendedPrograms(for:limit:)` helper on
+    // `SmartProgramRecommender` which uses `ExtendedProgram.from(workoutProgram:)`
+    // to bridge between the two model types.
+
     // MARK: - Generate Program Library (100 Programs)
     
     private func generateComprehensiveProgramLibrary() -> [ExtendedProgram] {

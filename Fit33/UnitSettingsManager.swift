@@ -41,7 +41,19 @@ class UnitSettingsManager: ObservableObject {
             syncToCloud()
         }
     }
-    
+
+    /// Sprint 5 M-18: user-facing override for birthday/date input order.
+    /// `.auto` defers to `localeUsesMonthFirstDate`. Explicit picks let a US
+    /// user traveling in the UK stick with MM/DD (or vice versa) without
+    /// re-configuring system region. Stored in UserDefaults; cloud-synced
+    /// alongside the other unit prefs.
+    @Published var dateFormatOverride: DateFormatOverride {
+        didSet {
+            UserDefaults.standard.set(dateFormatOverride.rawValue, forKey: "dateFormatOverride")
+            syncToCloud()
+        }
+    }
+
     /// Flag to prevent sync loops when loading from cloud
     private var isSyncingFromCloud = false
     
@@ -97,6 +109,27 @@ class UnitSettingsManager: ObservableObject {
         var id: String { rawValue }
         var displayName: String { rawValue }
     }
+
+    /// Birthday / date input order override (Sprint 5 M-18).
+    ///
+    /// `.auto` reads the region from `Locale.current` and picks MM/DD for US /
+    /// FSM / Marshall Islands / Palau, DD/MM everywhere else. `.monthFirst`
+    /// and `.dayFirst` force a specific order regardless of region.
+    enum DateFormatOverride: String, CaseIterable, Identifiable {
+        case auto       = "auto"
+        case monthFirst = "month_first"
+        case dayFirst   = "day_first"
+
+        var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .auto:       return "Automatic (\(Locale.current.region?.identifier ?? "US"))"
+            case .monthFirst: return "Month First (MM/DD/YYYY)"
+            case .dayFirst:   return "Day First (DD/MM/YYYY)"
+            }
+        }
+    }
     
     // MARK: - Locale Detection
     
@@ -117,10 +150,17 @@ class UnitSettingsManager: ObservableObject {
     /// Countries that use MM/DD/YYYY date format (most use DD/MM/YYYY)
     private static let monthFirstDateCountries = ["US", "FM", "MH", "PW"]
     
-    /// Returns true if the user's locale uses MM/DD/YYYY format, false for DD/MM/YYYY
+    /// Returns true if the user's locale uses MM/DD/YYYY format, false for DD/MM/YYYY.
+    /// Sprint 5 M-18: consults the manual override first so travelers /
+    /// multi-region users can lock in a preference.
     static var localeUsesMonthFirstDate: Bool {
-        let countryCode = Locale.current.region?.identifier ?? "US"
-        return monthFirstDateCountries.contains(countryCode)
+        switch UnitSettingsManager.shared.dateFormatOverride {
+        case .monthFirst: return true
+        case .dayFirst:   return false
+        case .auto:
+            let countryCode = Locale.current.region?.identifier ?? "US"
+            return monthFirstDateCountries.contains(countryCode)
+        }
     }
     
     /// Returns the appropriate date format string based on locale
@@ -175,6 +215,13 @@ class UnitSettingsManager: ObservableObject {
             self.startWeekOn = start
         } else {
             self.startWeekOn = UnitSettingsManager.localeWeekStart
+        }
+
+        if let saved = UserDefaults.standard.string(forKey: "dateFormatOverride"),
+           let override = DateFormatOverride(rawValue: saved) {
+            self.dateFormatOverride = override
+        } else {
+            self.dateFormatOverride = .auto
         }
     }
     
@@ -260,6 +307,7 @@ class UnitSettingsManager: ObservableObject {
         distanceUnit = usesImperial ? .imperial : .metric
         heightUnit = usesImperial ? .imperial : .metric
         startWeekOn = UnitSettingsManager.localeWeekStart
+        dateFormatOverride = .auto
     }
     
     // MARK: - Cloud Sync

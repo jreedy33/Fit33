@@ -409,6 +409,13 @@ class SupabaseManager: ObservableObject {
             await MainActor.run { isLoading = false }
             SessionLogManager.shared.logAuthFailure(method: "email", error: error.localizedDescription)
             AppLogger.error("Sign in error: \(error.localizedDescription)", category: .auth)
+
+            // M-19 (Sprint 5): surface unverified-email as a typed error so the
+            // onboarding UI can show a dedicated resend/blocked banner instead
+            // of a generic "invalid credentials" message.
+            if isEmailNotConfirmedError(error) {
+                throw SupabaseAuthError.emailNotConfirmed(email: email)
+            }
             throw error
         }
     }
@@ -779,6 +786,11 @@ class SupabaseManager: ObservableObject {
 
             try await client.auth.signOut()
 
+            // Sprint 5 M-8: flush any in-flight coalesced fetches so a task
+            // that was kicked off for the previous user can't land on the
+            // next user's `@Published` state.
+            await RequestCoalescer.shared.reset()
+
             await MainActor.run {
                 // Clear Core Data and UserDefaults
                 PersistenceController.shared.clearAllUserData()
@@ -1040,6 +1052,67 @@ class SupabaseManager: ObservableObject {
             AppLogger.error("Password reset error: \(error.localizedDescription)", category: .auth)
             AppLogger.error("Password reset full error: \(error)", category: .auth)
             throw error
+        }
+    }
+
+    // MARK: - Email Verification (M-19, Sprint 5)
+    // Supabase project setting "Confirm email" must be enabled for this flow to
+    // actually block sign-in. When it's on, GoTrue returns an `email_not_confirmed`
+    // error during `signInWithPassword` for users whose `email_confirmed_at` is
+    // NULL. The client recognizes that error, throws `.emailNotConfirmed`, and the
+    // onboarding UI shows a dedicated "check your inbox" banner with a resend
+    // button (see `NewOnboardingView+Auth.swift`). Enable this in the Supabase
+    // dashboard at Auth > Providers > Email > "Confirm email" = ON.
+
+    /// Strongly-typed auth errors surfaced to onboarding so the UI can render a
+    /// bespoke state (resend button, blocked banner, etc.) instead of a raw
+    /// localized string.
+    enum SupabaseAuthError: LocalizedError {
+        case emailNotConfirmed(email: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .emailNotConfirmed:
+                return "Please verify your email before signing in."
+            }
+        }
+    }
+
+    /// Heuristic for Supabase/GoTrue "email not confirmed" errors. Error shape
+    /// varies across SDK versions so we do a lowercase substring match.
+    private func isEmailNotConfirmedError(_ error: Error) -> Bool {
+        let desc = error.localizedDescription.lowercased()
+        return desc.contains("email not confirmed")
+            || desc.contains("email_not_confirmed")
+            || desc.contains("not verified")
+            || desc.contains("confirm your email")
+    }
+
+    /// Re-send the signup confirmation email for a user whose account exists
+    /// but hasn't clicked the verification link yet. Throws on failure.
+    /// Uses Supabase's GoTrue `resend` endpoint with `type: .signup`.
+    func resendEmailConfirmation(email: String) async throws {
+        AppLogger.debug("Resending email confirmation to \(email)", category: .auth)
+        do {
+            try await client.auth.resend(email: email, type: .signup)
+            AppLogger.info("Resent email confirmation to \(email)", category: .auth)
+        } catch {
+            AppLogger.error("Resend email confirmation failed: \(error.localizedDescription)", category: .auth)
+            throw error
+        }
+    }
+
+    /// Check whether the current signed-in user has confirmed their email. Used
+    /// by onboarding after the user taps "I've verified" to refresh the session
+    /// and see the updated `email_confirmed_at` claim.
+    func isCurrentUserEmailConfirmed() async -> Bool {
+        do {
+            try await client.auth.refreshSession()
+            let user = try await client.auth.session.user
+            return user.emailConfirmedAt != nil
+        } catch {
+            AppLogger.warning("Could not refresh session to check email confirmation: \(error.localizedDescription)", category: .auth)
+            return false
         }
     }
     
@@ -4140,7 +4213,8 @@ class SupabaseManager: ObservableObject {
                     id: we.id?.uuidString ?? UUID().uuidString,
                     exerciseName: we.exercise?.name ?? "Unknown",
                     order: Int(we.order),
-                    sets: setDTOs
+                    sets: setDTOs,
+                    notes: we.notes
                 )
                 exerciseDTOs.append(exerciseDTO)
             }
@@ -4260,6 +4334,7 @@ class SupabaseManager: ObservableObject {
                                 let workoutExerciseId = UUID(uuidString: exerciseDTO.id) ?? UUID()
                                 workoutExercise.id = workoutExerciseId
                                 workoutExercise.order = Int16(exerciseDTO.order)
+                                workoutExercise.notes = exerciseDTO.notes
                                 workoutExercise.workout = workout
                                 #if DEBUG
                                 exercise?.assertContext(bgContext)
@@ -4304,6 +4379,7 @@ class SupabaseManager: ObservableObject {
                             let workoutExerciseId = UUID(uuidString: exerciseDTO.id) ?? UUID()
                             workoutExercise.id = workoutExerciseId
                             workoutExercise.order = Int16(exerciseDTO.order)
+                            workoutExercise.notes = exerciseDTO.notes
                             workoutExercise.workout = workout
                             #if DEBUG
                             exercise?.assertContext(bgContext)

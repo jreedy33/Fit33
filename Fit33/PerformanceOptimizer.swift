@@ -59,31 +59,10 @@ struct ImmediateTapModifier: ViewModifier {
     }
 }
 
-/// Button with immediate haptic feedback
-struct FastButtonStyle: ButtonStyle {
-    let feedbackStyle: FeedbackStyle
-    
-    enum FeedbackStyle {
-        case light, medium, heavy, selection
-    }
-    
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .opacity(configuration.isPressed ? 0.9 : 1.0)
-            .animation(FastAnimations.instant, value: configuration.isPressed)
-            .onChange(of: configuration.isPressed) { _, isPressed in
-                if isPressed {
-                    switch feedbackStyle {
-                    case .light: HapticManager.lightTap()
-                    case .medium: HapticManager.tap()
-                    case .heavy: HapticManager.heavyTap()
-                    case .selection: HapticManager.selectionChanged()
-                    }
-                }
-            }
-    }
-}
+// Sprint 5 M-21: `FastButtonStyle` deleted. The canonical scale-on-press
+// button style is `UniversalScaleButtonStyle` in `SharedUtilities.swift`
+// (expose via `.scaleButtonStyle(_:withHaptic:)`). `FastButtonStyle` was
+// zero-call dead code that duplicated the press + haptic behavior.
 
 /// High-performance row for lists (minimal view hierarchy)
 struct FastListRow<Content: View>: View {
@@ -133,13 +112,6 @@ extension View {
         self
             .scaleEffect(isPressed ? 0.97 : 1.0)
             .animation(FastAnimations.instant, value: isPressed)
-    }
-}
-
-extension Button {
-    /// Apply fast button style with haptic feedback
-    func fastStyle(_ style: FastButtonStyle.FeedbackStyle = .medium) -> some View {
-        self.buttonStyle(FastButtonStyle(feedbackStyle: style))
     }
 }
 

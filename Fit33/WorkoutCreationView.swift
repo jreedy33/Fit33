@@ -77,6 +77,9 @@ struct WorkoutCreationView: View {
             }
             .padding()
         }
+        // Sprint 5 M-9: upstream workout-name TextField focuses the keyboard;
+        // let the user swipe it away once they scroll into the results list.
+        .scrollDismissesKeyboard(.interactively)
     }
     
     private var generateWorkoutLoadingView: some View {

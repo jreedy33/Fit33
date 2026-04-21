@@ -96,6 +96,22 @@ struct UnitSettingsView: View {
             } footer: {
                 Text("Affects weekly statistics and calendar views")
             }
+
+            // Sprint 5 M-18 — birthday / date format override.
+            Section {
+                ForEach(UnitSettingsManager.DateFormatOverride.allCases) { option in
+                    unitRow(
+                        title: option.displayName,
+                        isSelected: unitSettings.dateFormatOverride == option
+                    ) {
+                        unitSettings.dateFormatOverride = option
+                    }
+                }
+            } header: {
+                Text("Date Format")
+            } footer: {
+                Text("Controls how birthdays and date inputs are entered. Automatic picks MM/DD in the US and DD/MM elsewhere.")
+            }
         }
         .navigationTitle("Units & Localization")
         .navigationBarTitleDisplayMode(.large)
@@ -180,9 +196,29 @@ struct UnitsLocalizationSettingsSection: View {
                 )
             }
             .buttonStyle(.plain)
+
+            Divider().padding(.leading, 16)
+
+            // Sprint 5 M-18 — surface the chosen date format in the parent
+            // settings card so users know how birthdays will be entered.
+            NavigationLink(value: UnitSettingsRoute.unitSettings) {
+                settingsRowContent(
+                    title: "Date Format",
+                    value: dateFormatSummary
+                )
+            }
+            .buttonStyle(.plain)
         }
         .navigationDestination(for: UnitSettingsRoute.self) { _ in
             UnitSettingsView()
+        }
+    }
+
+    private var dateFormatSummary: String {
+        switch unitSettings.dateFormatOverride {
+        case .auto:       return UnitSettingsManager.localeUsesMonthFirstDate ? "MM/DD/YYYY (Auto)" : "DD/MM/YYYY (Auto)"
+        case .monthFirst: return "MM/DD/YYYY"
+        case .dayFirst:   return "DD/MM/YYYY"
         }
     }
     

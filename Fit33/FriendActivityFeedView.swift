@@ -154,8 +154,19 @@ class ActivityFeedService: ObservableObject {
     
     func fetchFeed() async {
         guard SupabaseManager.shared.isAuthenticated else { return }
+        // Sprint 5 M-8: coalesce concurrent feed fetches. The dashboard
+        // wrapper + `.task(id: tab)` in `FriendActivityFeedView` + realtime
+        // refresh can all fire within a few hundred ms of each other on app
+        // resume. Without this, three `get_friend_activity_feed` RPCs run in
+        // parallel with three JSON decodes and three `@Published` broadcasts.
+        await RequestCoalescer.shared.coalesceVoid(key: "ActivityFeedService.fetchFeed") { [weak self] in
+            await self?._fetchFeedBody()
+        }
+    }
+
+    private func _fetchFeedBody() async {
         await MainActor.run { isLoading = true }
-        
+
         let maxAttempts = 3
         for attempt in 1...maxAttempts {
             do {
@@ -392,21 +403,15 @@ struct FriendActivityFeedSection: View {
     }
     
     private var emptyState: some View {
-        VStack(spacing: Spacing.md) {
-            Image(systemName: "person.2.wave.2.fill")
-                .font(.ds_heading1)
-                .foregroundColor(.secondary)
-            Text("No Friend Activity Yet")
-                .font(.ds_heading3)
-                .foregroundColor(.primary)
-            Text("When your friends complete workouts, they'll show up here!")
-                .font(.ds_bodyMedium)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
+        // Sprint 5 M-24 — use the canonical `EmptyStateView` from
+        // `DesignSystem.swift` so typography and spacing stay in lock-step
+        // with other empty surfaces.
+        EmptyStateView(
+            icon: "person.2.wave.2.fill",
+            title: "No Friend Activity Yet",
+            subtitle: "When your friends complete workouts, they'll show up here!"
+        )
         .frame(maxWidth: .infinity)
-        .padding(.vertical, Spacing.xl)
-        .padding(.horizontal, Spacing.md)
     }
 }
 

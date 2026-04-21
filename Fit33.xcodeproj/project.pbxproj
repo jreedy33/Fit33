@@ -209,6 +209,7 @@
 		7C98FAC02EEBCD58001AE1F3 /* EquipmentHierarchyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FABF2EEBCD58001AE1F3 /* EquipmentHierarchyService.swift */; };
 		7C98FAC22EEBCDA9001AE1F3 /* WorkoutCalorieCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC12EEBCDA9001AE1F3 /* WorkoutCalorieCalculator.swift */; };
 		7C98FAC42EEC7EA8001AE1F3 /* SessionLogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */; };
+		7CAA0420202604200A000001 /* RequestCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA0420202604200B000002 /* RequestCoalescer.swift */; };
 		7C98FAC62EECA9F4001AE1F3 /* DevSessionLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */; };
 		7C98FAC82EEDB4A0001AE1F3 /* SmartExerciseSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */; };
 		7CA0643A2F7ACA48004CF656 /* PrivacySettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */; };
@@ -605,6 +606,7 @@
 		7C98FABF2EEBCD58001AE1F3 /* EquipmentHierarchyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentHierarchyService.swift; sourceTree = "<group>"; };
 		7C98FAC12EEBCDA9001AE1F3 /* WorkoutCalorieCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCalorieCalculator.swift; sourceTree = "<group>"; };
 		7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionLogManager.swift; sourceTree = "<group>"; };
+		7CAA0420202604200B000002 /* RequestCoalescer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequestCoalescer.swift; sourceTree = "<group>"; };
 		7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevSessionLogsView.swift; sourceTree = "<group>"; };
 		7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartExerciseSearchService.swift; sourceTree = "<group>"; };
 		7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsManager.swift; sourceTree = "<group>"; };
@@ -1077,6 +1079,7 @@
 				7C1B0A382F4F74520094AF68 /* Secrets.swift */,
 				7C6DE40E2F5DEAA700BCA276 /* ServiceProtocols.swift */,
 				7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */,
+				7CAA0420202604200B000002 /* RequestCoalescer.swift */,
 				7C590B8F2ED2D1DB002BD2B0 /* SettingsView.swift */,
 				7C590B972ED2E2DB002BD2B0 /* SevenDayProgramDetailView.swift */,
 				7C8405DD2EE8B78E0009ED0F /* SharedUtilities.swift */,
@@ -1496,6 +1499,7 @@
 				7C3DF1CC2F2CF7FF00A9CDA7 /* ImportedRecipeDetailView.swift in Sources */,
 				7C8EB1C42F26B03C007BFA55 /* StravaService.swift in Sources */,
 				7C98FAC42EEC7EA8001AE1F3 /* SessionLogManager.swift in Sources */,
+				7CAA0420202604200A000001 /* RequestCoalescer.swift in Sources */,
 				7CAA1FA12F4AAAA0008200B9 /* SystemMetrics.swift in Sources */,
 				7CAA1FA32F4AAAA0008200B9 /* KeychainHelper.swift in Sources */,
 				7CACB5792F2E9717003A7C91 /* ChallengeSetupView.swift in Sources */,

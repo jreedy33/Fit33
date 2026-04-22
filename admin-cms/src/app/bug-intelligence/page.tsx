@@ -87,9 +87,13 @@ const AGENTS = [
     'device-compatibility', 'support', 'unknown',
 ] as const
 
+// Solid colors used inside Pills (white text on solid backgrounds reads well on
+// both light and dark surfaces, so these stay as literal hex).
 const STATUS_COLORS: Record<string, string> = {
     new: '#3b82f6', triaged: '#a855f7', in_progress: '#f59e0b',
     resolved: '#22c55e', wont_fix: '#6b7280', duplicate: '#6b7280',
+    pending: '#f59e0b', approved: '#3b82f6', merged: '#22c55e',
+    rejected: '#ef4444', stale: '#6b7280',
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -252,29 +256,26 @@ export default function BugIntelligencePage() {
             <div style={{ padding: 24, maxWidth: 1800, margin: '0 auto' }}>
                 <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
                     <div>
-                        <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Bug Intelligence</h1>
-                        <p style={{ color: '#6b7280', margin: '4px 0 0' }}>
+                        <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Bug Intelligence</h1>
+                        <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0' }}>
                             Fingerprinted bugs from logs + crashes. Claude triage runs every 4 hours.
                         </p>
                     </div>
                     <button
                         onClick={() => triggerTriage()}
                         disabled={triggering}
-                        style={{
-                            padding: '10px 20px', borderRadius: 8, border: 'none',
-                            background: triggering ? '#6b7280' : '#6366f1', color: '#fff',
-                            fontWeight: 600, cursor: triggering ? 'wait' : 'pointer',
-                        }}
+                        className="btn btn-primary"
+                        style={{ opacity: triggering ? 0.6 : 1, cursor: triggering ? 'wait' : 'pointer' }}
                     >
                         {triggering ? 'Triaging…' : 'Run triage now'}
                     </button>
                 </header>
 
-                        {overview && <OverviewRow overview={overview} />}
+                {overview && <OverviewRow overview={overview} />}
 
-                        {metrics.length > 0 && <AgentLeaderboard metrics={metrics} />}
+                {metrics.length > 0 && <AgentLeaderboard metrics={metrics} />}
 
-                        <div style={{ display: 'grid', gridTemplateColumns: selectedFp ? '1fr 560px' : '1fr', gap: 24, marginTop: 24 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: selectedFp ? '1fr 560px' : '1fr', gap: 24, marginTop: 24 }}>
                     <FingerprintList
                         fingerprints={sortedFingerprints}
                         loading={loading}
@@ -308,6 +309,12 @@ export default function BugIntelligencePage() {
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 1, high: 2, medium: 3, low: 4 }
 
+const cardStyle: React.CSSProperties = {
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border)',
+    borderRadius: 12,
+}
+
 function OverviewRow({ overview }: { overview: Overview }) {
     const total = Object.values(overview.fingerprints_by_status).reduce((a, b) => a + b, 0)
     const critical = overview.reports_last_7d_by_severity.critical ?? 0
@@ -317,18 +324,18 @@ function OverviewRow({ overview }: { overview: Overview }) {
 
     const cards = [
         { label: 'Total fingerprints', value: total, sub: `${overview.fingerprints_by_status.new ?? 0} new, ${overview.fingerprints_by_status.triaged ?? 0} triaged` },
-        { label: 'Critical + high (7d)', value: critical + high, sub: `${critical} crit / ${high} high`, color: '#dc2626' },
-        { label: 'Trends (24h)', value: overview.trends_last_24h.length, sub: `${newTrends} new / ${regressions} regression`, color: '#f97316' },
-        { label: 'Pending review', value: overview.pending_reports_count, sub: 'Reports awaiting action', color: '#6366f1' },
+        { label: 'Critical + high (7d)', value: critical + high, sub: `${critical} crit / ${high} high`, color: 'var(--danger)' },
+        { label: 'Trends (24h)', value: overview.trends_last_24h.length, sub: `${newTrends} new / ${regressions} regression`, color: 'var(--warning)' },
+        { label: 'Pending review', value: overview.pending_reports_count, sub: 'Reports awaiting action', color: 'var(--accent)' },
     ]
 
     return (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
             {cards.map(c => (
-                <div key={c.label} style={{ background: '#fff', padding: 16, borderRadius: 12, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb' }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5 }}>{c.label}</div>
-                    <div style={{ fontSize: 32, fontWeight: 700, color: c.color ?? '#111827', margin: '6px 0' }}>{c.value}</div>
-                    <div style={{ fontSize: 13, color: '#6b7280' }}>{c.sub}</div>
+                <div key={c.label} style={{ ...cardStyle, padding: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{c.label}</div>
+                    <div style={{ fontSize: 32, fontWeight: 700, color: c.color ?? 'var(--text-primary)', margin: '6px 0' }}>{c.value}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{c.sub}</div>
                 </div>
             ))}
         </div>
@@ -343,32 +350,32 @@ function AgentLeaderboard({ metrics }: { metrics: AgentMetric[] }) {
         return b.reports_merged - a.reports_merged
     })
     return (
-        <section style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', marginTop: 16, padding: 16 }}>
+        <section style={{ ...cardStyle, marginTop: 16, padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-                <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Agent leaderboard (last 30 days)</h2>
-                <span style={{ fontSize: 11, color: '#6b7280' }}>Merged PRs close the loop automatically via github-pr-webhook</span>
+                <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Agent leaderboard (last 30 days)</h2>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Merged PRs close the loop automatically via github-pr-webhook</span>
             </div>
             <div style={{ overflow: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
-                        <tr style={{ background: '#f9fafb', textAlign: 'left' }}>
+                        <tr style={{ background: 'var(--bg-tertiary)', textAlign: 'left' }}>
                             {['Agent', 'Reports', 'Pending', 'Merged', 'Fix rate', 'Median TTF', 'Occ.', 'Users', 'Avg conf'].map(h => (
-                                <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e5e7eb' }}>{h}</th>
+                                <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid var(--border)' }}>{h}</th>
                             ))}
                         </tr>
                     </thead>
                     <tbody>
                         {sorted.map(m => (
-                            <tr key={m.agent_owner} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                <td style={{ padding: '8px 10px', fontWeight: 600 }}>{m.agent_owner}</td>
-                                <td style={{ padding: '8px 10px' }}>{m.reports_total}</td>
-                                <td style={{ padding: '8px 10px', color: m.reports_pending > 0 ? '#b45309' : '#6b7280' }}>{m.reports_pending}</td>
-                                <td style={{ padding: '8px 10px', color: '#16a34a', fontWeight: m.reports_merged > 0 ? 600 : 400 }}>{m.reports_merged}</td>
-                                <td style={{ padding: '8px 10px' }}>{m.fix_rate_pct != null ? `${m.fix_rate_pct}%` : '—'}</td>
-                                <td style={{ padding: '8px 10px' }}>{m.median_time_to_fix_hours != null ? `${m.median_time_to_fix_hours}h` : '—'}</td>
-                                <td style={{ padding: '8px 10px', color: '#6b7280' }}>{m.total_occurrences_affected.toLocaleString()}</td>
-                                <td style={{ padding: '8px 10px', color: '#6b7280' }}>{m.total_users_affected}</td>
-                                <td style={{ padding: '8px 10px', color: '#6b7280' }}>{m.avg_confidence != null ? m.avg_confidence.toFixed(2) : '—'}</td>
+                            <tr key={m.agent_owner} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>{m.agent_owner}</td>
+                                <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{m.reports_total}</td>
+                                <td style={{ padding: '8px 10px', color: m.reports_pending > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{m.reports_pending}</td>
+                                <td style={{ padding: '8px 10px', color: 'var(--success)', fontWeight: m.reports_merged > 0 ? 600 : 400 }}>{m.reports_merged}</td>
+                                <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{m.fix_rate_pct != null ? `${m.fix_rate_pct}%` : '—'}</td>
+                                <td style={{ padding: '8px 10px', color: 'var(--text-primary)' }}>{m.median_time_to_fix_hours != null ? `${m.median_time_to_fix_hours}h` : '—'}</td>
+                                <td style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>{m.total_occurrences_affected.toLocaleString()}</td>
+                                <td style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>{m.total_users_affected}</td>
+                                <td style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>{m.avg_confidence != null ? m.avg_confidence.toFixed(2) : '—'}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -390,15 +397,15 @@ function FingerprintList({
     onTriage: (fp: string) => void
 }) {
     return (
-        <section style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <section style={{ ...cardStyle, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input
                     placeholder="Search sample message…"
                     value={filters.search}
                     onChange={e => setFilters({ ...filters, search: e.target.value })}
-                    style={{ flex: 1, minWidth: 220, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+                    style={{ flex: 1, minWidth: 220 }}
                 />
-                <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })} style={selectStyle}>
+                <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })} style={{ maxWidth: 180 }}>
                     <option value="all">All statuses</option>
                     <option value="new">New</option>
                     <option value="triaged">Triaged</option>
@@ -407,11 +414,11 @@ function FingerprintList({
                     <option value="wont_fix">Won&apos;t fix</option>
                     <option value="duplicate">Duplicate</option>
                 </select>
-                <select value={filters.agent} onChange={e => setFilters({ ...filters, agent: e.target.value })} style={selectStyle}>
+                <select value={filters.agent} onChange={e => setFilters({ ...filters, agent: e.target.value })} style={{ maxWidth: 200 }}>
                     <option value="all">All agents</option>
                     {AGENTS.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
-                <select value={filters.severity_min} onChange={e => setFilters({ ...filters, severity_min: e.target.value })} style={selectStyle}>
+                <select value={filters.severity_min} onChange={e => setFilters({ ...filters, severity_min: e.target.value })} style={{ maxWidth: 180 }}>
                     <option value="">All severities</option>
                     <option value="critical">Critical only</option>
                     <option value="high">High+</option>
@@ -420,9 +427,9 @@ function FingerprintList({
             </div>
 
             {loading ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Loading fingerprints…</div>
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading fingerprints…</div>
             ) : fingerprints.length === 0 ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>
                     No fingerprints match these filters.
                 </div>
             ) : (
@@ -442,10 +449,6 @@ function FingerprintList({
     )
 }
 
-const selectStyle: React.CSSProperties = {
-    padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, background: '#fff',
-}
-
 function FingerprintRow({ fp, selected, onSelect, onTriage }: {
     fp: Fingerprint; selected: boolean; onSelect: () => void; onTriage: () => void
 }) {
@@ -455,9 +458,9 @@ function FingerprintRow({ fp, selected, onSelect, onTriage }: {
             onClick={onSelect}
             style={{
                 padding: '12px 16px',
-                borderBottom: '1px solid #f3f4f6',
+                borderBottom: '1px solid var(--border)',
                 cursor: 'pointer',
-                background: selected ? '#eef2ff' : '#fff',
+                background: selected ? 'rgba(37, 99, 235, 0.12)' : 'transparent',
                 display: 'grid',
                 gridTemplateColumns: '1fr auto',
                 gap: 12,
@@ -469,18 +472,18 @@ function FingerprintRow({ fp, selected, onSelect, onTriage }: {
                     <Pill label={fp.source} color={fp.source === 'crash' ? '#dc2626' : '#6366f1'} />
                     <Pill label={fp.status} color={STATUS_COLORS[fp.status] ?? '#6b7280'} />
                     {rep && <Pill label={rep.severity} color={SEVERITY_COLORS[rep.severity] ?? '#6b7280'} />}
-                    {rep && <Pill label={rep.agent_owner} color="#374151" />}
-                    {fp.resolution_pr_url && <Pill label="PR" color="#16a34a" />}
+                    {rep && <Pill label={rep.agent_owner} color="#475569" />}
+                    {fp.resolution_pr_url && <Pill label="PR" color="#22c55e" />}
                 </div>
-                <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 13, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {fp.sample_message || fp.normalized_message}
                 </div>
                 {rep && (
-                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {rep.title}
                     </div>
                 )}
-                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                     {fp.occurrence_count} occurrences · {fp.unique_user_count} user{fp.unique_user_count === 1 ? '' : 's'} · last seen {timeAgo(fp.last_seen_at)}
                     {fp.affected_screens && fp.affected_screens.length > 0 && ` · ${fp.affected_screens.slice(0, 3).join(', ')}${fp.affected_screens.length > 3 ? '…' : ''}`}
                 </div>
@@ -488,7 +491,8 @@ function FingerprintRow({ fp, selected, onSelect, onTriage }: {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <button
                     onClick={(e) => { e.stopPropagation(); onTriage() }}
-                    style={smallButton}
+                    className="btn btn-ghost"
+                    style={{ padding: '4px 12px', fontSize: 12 }}
                     title="Re-run Claude triage on this fingerprint"
                 >
                     Triage
@@ -510,11 +514,6 @@ function Pill({ label, color }: { label: string; color: string }) {
     )
 }
 
-const smallButton: React.CSSProperties = {
-    fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #d1d5db',
-    background: '#fff', cursor: 'pointer', color: '#111827',
-}
-
 function DetailPanel({
     fp, reports, trends, onClose, onUpdateFingerprint, onReviewReport, onCreatePr, onRetriage, triggering,
 }: {
@@ -529,17 +528,17 @@ function DetailPanel({
     triggering: boolean
 }) {
     return (
-        <aside style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', padding: 16, alignSelf: 'start', maxHeight: '85vh', overflowY: 'auto' }}>
+        <aside style={{ ...cardStyle, padding: 16, alignSelf: 'start', maxHeight: '85vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Fingerprint detail</h2>
-                <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#6b7280' }}>×</button>
+                <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Fingerprint detail</h2>
+                <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'var(--text-secondary)' }}>×</button>
             </div>
 
-            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: '#6b7280', wordBreak: 'break-all', marginBottom: 8 }}>
+            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', marginBottom: 8 }}>
                 {fp.fingerprint}
             </div>
 
-            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, background: '#f9fafb', padding: 10, borderRadius: 6, marginBottom: 12, border: '1px solid #e5e7eb', maxHeight: 120, overflowY: 'auto' }}>
+            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, background: 'var(--bg-tertiary)', padding: 10, borderRadius: 6, marginBottom: 12, border: '1px solid var(--border)', maxHeight: 120, overflowY: 'auto', color: 'var(--text-primary)' }}>
                 {fp.sample_message}
             </div>
 
@@ -555,24 +554,24 @@ function DetailPanel({
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
                     Status
                     <select
                         value={fp.status}
                         onChange={e => onUpdateFingerprint({ status: e.target.value })}
-                        style={{ ...selectStyle, width: '100%', marginTop: 4 }}
+                        style={{ marginTop: 4 }}
                     >
                         {['new', 'triaged', 'in_progress', 'resolved', 'wont_fix', 'duplicate'].map(s => (
                             <option key={s} value={s}>{s}</option>
                         ))}
                     </select>
                 </label>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
                     Assigned agent
                     <select
                         value={fp.assigned_agent ?? ''}
                         onChange={e => onUpdateFingerprint({ assigned_agent: e.target.value })}
-                        style={{ ...selectStyle, width: '100%', marginTop: 4 }}
+                        style={{ marginTop: 4 }}
                     >
                         <option value="">— unassigned —</option>
                         {AGENTS.map(a => <option key={a} value={a}>{a}</option>)}
@@ -580,15 +579,20 @@ function DetailPanel({
                 </label>
             </div>
 
-            <button onClick={onRetriage} disabled={triggering} style={{ ...smallButton, width: '100%', marginBottom: 16 }}>
+            <button
+                onClick={onRetriage}
+                disabled={triggering}
+                className="btn btn-ghost"
+                style={{ width: '100%', marginBottom: 16, justifyContent: 'center' }}
+            >
                 {triggering ? 'Running…' : 'Re-run Claude triage'}
             </button>
 
             {trends.length > 0 && (
                 <section style={{ marginBottom: 16 }}>
-                    <h3 style={{ fontSize: 13, fontWeight: 700, margin: '0 0 8px' }}>Trend signals ({trends.length})</h3>
+                    <h3 style={{ fontSize: 13, fontWeight: 700, margin: '0 0 8px', color: 'var(--text-primary)' }}>Trend signals ({trends.length})</h3>
                     {trends.slice(0, 5).map(t => (
-                        <div key={t.id} style={{ fontSize: 12, padding: '6px 8px', background: '#fff7ed', borderRadius: 6, marginBottom: 4, border: '1px solid #fed7aa' }}>
+                        <div key={t.id} style={{ fontSize: 12, padding: '6px 8px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: 6, marginBottom: 4, border: '1px solid rgba(245, 158, 11, 0.3)', color: 'var(--text-primary)' }}>
                             <strong>{t.trend_type}</strong> · {t.today_count} today vs baseline {t.baseline_mean?.toFixed(1) ?? '—'} · {timeAgo(t.detected_at)}
                             {t.spike_ratio && ` · ${t.spike_ratio.toFixed(1)}×`}
                         </div>
@@ -597,11 +601,11 @@ function DetailPanel({
             )}
 
             <section>
-                <h3 style={{ fontSize: 13, fontWeight: 700, margin: '0 0 8px' }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, margin: '0 0 8px', color: 'var(--text-primary)' }}>
                     Claude reports ({reports.length})
                 </h3>
                 {reports.length === 0 ? (
-                    <div style={{ fontSize: 12, color: '#6b7280' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                         No triage reports yet. Click &quot;Re-run Claude triage&quot; above.
                     </div>
                 ) : reports.map(r => (
@@ -615,8 +619,8 @@ function DetailPanel({
 function MetaItem({ label, value }: { label: string; value: string }) {
     return (
         <div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase' }}>{label}</div>
-            <div style={{ color: '#111827' }}>{value}</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{label}</div>
+            <div style={{ color: 'var(--text-primary)' }}>{value}</div>
         </div>
     )
 }
@@ -626,57 +630,64 @@ function ReportCard({ r, onReview, onCreatePr }: {
 }) {
     return (
         <div style={{
-            padding: 12, border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 10,
-            background: r.review_status === 'pending' ? '#fefce8' : '#fff',
+            padding: 12,
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            marginBottom: 10,
+            // Pending reports get a subtle amber wash; reviewed ones use the
+            // deeper tertiary surface so they recede.
+            background: r.review_status === 'pending'
+                ? 'rgba(245, 158, 11, 0.08)'
+                : 'var(--bg-tertiary)',
         }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                 <Pill label={r.severity} color={SEVERITY_COLORS[r.severity] ?? '#6b7280'} />
-                <Pill label={r.agent_owner} color="#374151" />
+                <Pill label={r.agent_owner} color="#475569" />
                 <Pill label={r.review_status} color={STATUS_COLORS[r.review_status] ?? '#6b7280'} />
-                <span style={{ fontSize: 11, color: '#6b7280', alignSelf: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', alignSelf: 'center' }}>
                     conf {r.confidence.toFixed(2)} · {r.trigger_reason} · {timeAgo(r.created_at)}
                 </span>
             </div>
 
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{r.title}</div>
-            <div style={{ fontSize: 12, color: '#374151', marginBottom: 8, whiteSpace: 'pre-wrap' }}>{r.summary}</div>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: 'var(--text-primary)' }}>{r.title}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, whiteSpace: 'pre-wrap' }}>{r.summary}</div>
 
             {r.invariant_violated && (
-                <div style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', padding: '4px 8px', borderRadius: 4, marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--warning)', background: 'rgba(245, 158, 11, 0.12)', padding: '4px 8px', borderRadius: 4, marginBottom: 8 }}>
                     Invariant: {r.invariant_violated}
                 </div>
             )}
 
             {r.file_path && (
-                <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: '#6366f1', marginBottom: 4 }}>
+                <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--accent)', marginBottom: 4 }}>
                     → {r.file_path}
                 </div>
             )}
 
             {r.code_diff && (
                 <details style={{ fontSize: 11, marginBottom: 8 }}>
-                    <summary style={{ cursor: 'pointer', color: '#6366f1' }}>View diff</summary>
-                    <pre style={{ background: '#0f172a', color: '#e2e8f0', padding: 10, borderRadius: 6, overflow: 'auto', maxHeight: 300, marginTop: 6, fontSize: 11 }}>
+                    <summary style={{ cursor: 'pointer', color: 'var(--accent)' }}>View diff</summary>
+                    <pre style={{ background: '#0a0a0f', color: '#e2e8f0', padding: 10, borderRadius: 6, overflow: 'auto', maxHeight: 300, marginTop: 6, fontSize: 11, border: '1px solid var(--border)' }}>
                         {r.code_diff}
                     </pre>
                 </details>
             )}
 
             {r.pr_url ? (
-                <a href={r.pr_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>
+                <a href={r.pr_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>
                     ✓ PR open: {r.pr_url}
                 </a>
             ) : (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {r.file_path && r.code_diff && (
-                        <button onClick={onCreatePr} style={{ ...smallButton, background: '#6366f1', color: '#fff', border: 'none' }}>
+                        <button onClick={onCreatePr} className="btn btn-primary" style={{ padding: '4px 12px', fontSize: 12 }}>
                             Create PR
                         </button>
                     )}
                     {r.review_status === 'pending' && (
                         <>
-                            <button onClick={() => onReview(r.id, 'approved')} style={smallButton}>Approve</button>
-                            <button onClick={() => onReview(r.id, 'rejected')} style={smallButton}>Reject</button>
+                            <button onClick={() => onReview(r.id, 'approved')} className="btn btn-ghost" style={{ padding: '4px 12px', fontSize: 12 }}>Approve</button>
+                            <button onClick={() => onReview(r.id, 'rejected')} className="btn btn-ghost" style={{ padding: '4px 12px', fontSize: 12 }}>Reject</button>
                         </>
                     )}
                 </div>

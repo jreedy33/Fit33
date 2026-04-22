@@ -267,6 +267,48 @@ AS $$
 $$;
 
 -- ============================================================================
+-- 8b. Helper: bug_intelligence_ensure_array(jsonb)
+--     Safely coerces a dev_session_logs.entries value into a jsonb array.
+--     Some older iOS clients wrote the batch as a JSON-encoded string
+--     (jsonb_typeof = 'string') instead of a proper array — the admin CMS
+--     handles this at read time with `typeof b.entries === 'string' ? JSON.parse(...)`
+--     (see admin-cms/src/app/dev-logs/page.tsx). Without this helper,
+--     `jsonb_array_elements()` raises `22023: cannot extract elements from a scalar`
+--     on those rows.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION bug_intelligence_ensure_array(v JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  unwrapped JSONB;
+BEGIN
+  IF v IS NULL THEN
+    RETURN '[]'::jsonb;
+  END IF;
+  IF jsonb_typeof(v) = 'array' THEN
+    RETURN v;
+  END IF;
+  IF jsonb_typeof(v) = 'string' THEN
+    BEGIN
+      unwrapped := (v #>> '{}')::jsonb;
+      IF jsonb_typeof(unwrapped) = 'array' THEN
+        RETURN unwrapped;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      RETURN '[]'::jsonb;
+    END;
+  END IF;
+  RETURN '[]'::jsonb;
+END;
+$$;
+
+COMMENT ON FUNCTION bug_intelligence_ensure_array(JSONB) IS
+  'Coerces a jsonb value into a jsonb array. Handles NULL, array (identity), and string-wrapped arrays (older iOS client format). Returns [] for anything else — callers never crash.';
+
+-- ============================================================================
 -- 9. Main worker: compute_daily_bug_rollup()
 --    Runs via pg_cron every hour. On each run:
 --      a) Scans dev_session_logs (type=error entries) last 5 days
@@ -332,7 +374,7 @@ BEGIN
       NULL
     )
   FROM dev_session_logs b,
-       jsonb_array_elements(COALESCE(b.entries, '[]'::jsonb)) entry
+       jsonb_array_elements(bug_intelligence_ensure_array(b.entries)) entry
   WHERE b.created_at >= now() - v_window
     AND entry->>'type' = 'error'
     AND COALESCE(entry->>'detail', '') <> '';

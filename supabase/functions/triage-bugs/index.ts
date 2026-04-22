@@ -147,27 +147,49 @@ SUPPORT_AGENT pain registry. Otherwise null.
 One line suitable for MASTER_TODO.md (owner + action + why). Null if the
 fingerprint isn't actionable (e.g. transient network errors).
 
-# USING STACK TRACES (critical — this unlocks PR-ready output)
+# USING STACK TRACES
 
-When a crash example contains \`stack_trace\`, you MUST use it to pick
-\`file_path\`:
-  - Swift symbolicated stack frames look like:
-      "Fit33/Fit33/Views/WorkoutView.swift:142 @ WorkoutView.body.getter"
-      "Fit33.WorkoutManager.startWorkout(_:) (in Fit33) + 48 (WorkoutManager.swift:87)"
-  - The FIRST Fit33-owned frame (ignore CoreFoundation / SwiftUI / UIKit
-    / libswiftCore / libobjc frames) is the correct file_path.
-  - Normalize to "Fit33/<File>.swift" form — all of Fit33's source lives
-    flat under Fit33/.
-  - If multiple Fit33 frames are present, pick the OLDEST app frame (the
-    actual call site, not the throw site) unless the throw site clearly
-    contains the bug (e.g. a force-unwrap line).
-  - Use \`breadcrumbs\` + \`session_log_snippet\` to understand what the
-    user was DOING just before the crash — this lets you scope summary
-    + diff to the real scenario.
+Stack traces come in TWO forms — you must detect which and act accordingly:
 
-When a crash is present, you should almost always produce a non-null
-file_path and code_diff. Only leave them null if the stack trace is
-completely outside Fit33 (e.g. system libraries only).
+## SYMBOLICATED (best case)
+
+Frames carry \`.swift\` file names + function signatures:
+    "Fit33/Views/WorkoutView.swift:142 @ WorkoutView.body.getter"
+    "Fit33.WorkoutManager.startWorkout(_:) (in Fit33) + 48 (WorkoutManager.swift:87)"
+Action: pick the FIRST Fit33-owned frame (ignore CoreFoundation / SwiftUI
+/ UIKit / libswiftCore / libobjc / Foundation / libsystem_*). Normalize
+to "Fit33/<File>.swift". Produce a non-null \`file_path\` AND \`code_diff\`.
+Confidence 0.80–0.95.
+
+## UNSYMBOLICATED (current reality — most crashes)
+
+Frames are just raw addresses:
+    "0   Fit33   0x0000000104d3b0d8 Fit33 + 7418072"
+    "1   Foundation   0x000000019bbbd804 F87E3667-... + 583684"
+Do NOT hallucinate file names from hex offsets. Instead fall back to:
+
+  (a) The \`error_message\` string itself. Many of our errors are tagged
+      with the source component in brackets — \`[CrashReporter] Upload
+      failed\` → \`Fit33/CrashReporter.swift\`, \`[WATCHDOG] Main thread
+      frozen\` → \`Fit33/MainThreadWatchdog.swift\`, \`HealthKit Data RLS
+      violation\` → \`Fit33/HealthDataService.swift\`. Map the bracket /
+      keyword to the most likely file in the Fit33 codebase.
+
+  (b) \`current_screen\` + \`session_log_snippet\`. If the last screen
+      shown was "Dashboard" → \`Fit33/DashboardView.swift\`; "Workout" →
+      \`Fit33/WorkoutActiveView.swift\`; "Onboarding" →
+      \`Fit33/NewOnboardingView.swift\`. Only if confident.
+
+  (c) If neither (a) nor (b) yields a plausible file, leave \`file_path\`
+      and \`code_diff\` null — don't guess.
+
+Cap confidence at 0.70 for unsymbolicated inferences, because the file
+is a candidate, not a certainty. The admin CMS surfaces these as
+"investigative leads" rather than 1-click merges.
+
+A server-side dSYM symbolication pipeline is planned (Phase 5) that
+will convert raw addresses → real file:line, at which point symbolicated
+stacks become the norm.
 
 # USING SESSION_LOG_SNIPPET
 

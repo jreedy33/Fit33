@@ -1487,6 +1487,14 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      case 'get_bug_intelligence_metrics': {
+        const { data, error } = await admin
+          .from('v_bug_intelligence_metrics')
+          .select('*')
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ metrics: data || [] })
+      }
+
       case 'get_bug_intelligence_fingerprints': {
         const { status: filterStatus, agent, severity_min, search, limit: pageLimit } = params as {
           status?: string; agent?: string; severity_min?: string; search?: string; limit?: number

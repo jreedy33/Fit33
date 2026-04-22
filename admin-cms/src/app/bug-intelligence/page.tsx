@@ -64,6 +64,23 @@ type Overview = {
     pending_reports_count: number
 }
 
+type AgentMetric = {
+    agent_owner: string
+    reports_total: number
+    unique_fingerprints: number
+    reports_pending: number
+    reports_approved: number
+    reports_rejected: number
+    reports_merged: number
+    reports_critical: number
+    reports_high: number
+    avg_confidence: number | null
+    fix_rate_pct: number | null
+    median_time_to_fix_hours: number | null
+    total_occurrences_affected: number
+    total_users_affected: number
+}
+
 const AGENTS = [
     'quality-performance', 'product-engineer', 'data-backend', 'infra-security',
     'supabase-expert', 'design-system', 'design', 'fitness-expert',
@@ -105,6 +122,7 @@ function timeAgo(iso: string): string {
 
 export default function BugIntelligencePage() {
     const [overview, setOverview] = useState<Overview | null>(null)
+    const [metrics, setMetrics] = useState<AgentMetric[]>([])
     const [fingerprints, setFingerprints] = useState<Fingerprint[]>([])
     const [selectedFp, setSelectedFp] = useState<string | null>(null)
     const [reports, setReports] = useState<Report[]>([])
@@ -119,8 +137,12 @@ export default function BugIntelligencePage() {
     })
 
     const loadOverview = useCallback(async () => {
-        const data = await adminAction('get_bug_intelligence_overview')
-        setOverview(data.overview || null)
+        const [ovRes, mRes] = await Promise.all([
+            adminAction('get_bug_intelligence_overview'),
+            adminAction('get_bug_intelligence_metrics'),
+        ])
+        setOverview(ovRes.overview || null)
+        setMetrics(mRes.metrics || [])
     }, [])
 
     const loadFingerprints = useCallback(async () => {
@@ -248,9 +270,11 @@ export default function BugIntelligencePage() {
                     </button>
                 </header>
 
-                {overview && <OverviewRow overview={overview} />}
+                        {overview && <OverviewRow overview={overview} />}
 
-                <div style={{ display: 'grid', gridTemplateColumns: selectedFp ? '1fr 560px' : '1fr', gap: 24, marginTop: 24 }}>
+                        {metrics.length > 0 && <AgentLeaderboard metrics={metrics} />}
+
+                        <div style={{ display: 'grid', gridTemplateColumns: selectedFp ? '1fr 560px' : '1fr', gap: 24, marginTop: 24 }}>
                     <FingerprintList
                         fingerprints={sortedFingerprints}
                         loading={loading}
@@ -308,6 +332,49 @@ function OverviewRow({ overview }: { overview: Overview }) {
                 </div>
             ))}
         </div>
+    )
+}
+
+function AgentLeaderboard({ metrics }: { metrics: AgentMetric[] }) {
+    const sorted = [...metrics].sort((a, b) => {
+        const aFixRate = a.fix_rate_pct ?? -1
+        const bFixRate = b.fix_rate_pct ?? -1
+        if (aFixRate !== bFixRate) return bFixRate - aFixRate
+        return b.reports_merged - a.reports_merged
+    })
+    return (
+        <section style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', marginTop: 16, padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+                <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Agent leaderboard (last 30 days)</h2>
+                <span style={{ fontSize: 11, color: '#6b7280' }}>Merged PRs close the loop automatically via github-pr-webhook</span>
+            </div>
+            <div style={{ overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                        <tr style={{ background: '#f9fafb', textAlign: 'left' }}>
+                            {['Agent', 'Reports', 'Pending', 'Merged', 'Fix rate', 'Median TTF', 'Occ.', 'Users', 'Avg conf'].map(h => (
+                                <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e5e7eb' }}>{h}</th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {sorted.map(m => (
+                            <tr key={m.agent_owner} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                                <td style={{ padding: '8px 10px', fontWeight: 600 }}>{m.agent_owner}</td>
+                                <td style={{ padding: '8px 10px' }}>{m.reports_total}</td>
+                                <td style={{ padding: '8px 10px', color: m.reports_pending > 0 ? '#b45309' : '#6b7280' }}>{m.reports_pending}</td>
+                                <td style={{ padding: '8px 10px', color: '#16a34a', fontWeight: m.reports_merged > 0 ? 600 : 400 }}>{m.reports_merged}</td>
+                                <td style={{ padding: '8px 10px' }}>{m.fix_rate_pct != null ? `${m.fix_rate_pct}%` : '—'}</td>
+                                <td style={{ padding: '8px 10px' }}>{m.median_time_to_fix_hours != null ? `${m.median_time_to_fix_hours}h` : '—'}</td>
+                                <td style={{ padding: '8px 10px', color: '#6b7280' }}>{m.total_occurrences_affected.toLocaleString()}</td>
+                                <td style={{ padding: '8px 10px', color: '#6b7280' }}>{m.total_users_affected}</td>
+                                <td style={{ padding: '8px 10px', color: '#6b7280' }}>{m.avg_confidence != null ? m.avg_confidence.toFixed(2) : '—'}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </section>
     )
 }
 

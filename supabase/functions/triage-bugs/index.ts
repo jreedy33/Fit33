@@ -147,6 +147,38 @@ SUPPORT_AGENT pain registry. Otherwise null.
 One line suitable for MASTER_TODO.md (owner + action + why). Null if the
 fingerprint isn't actionable (e.g. transient network errors).
 
+# USING STACK TRACES (critical — this unlocks PR-ready output)
+
+When a crash example contains \`stack_trace\`, you MUST use it to pick
+\`file_path\`:
+  - Swift symbolicated stack frames look like:
+      "Fit33/Fit33/Views/WorkoutView.swift:142 @ WorkoutView.body.getter"
+      "Fit33.WorkoutManager.startWorkout(_:) (in Fit33) + 48 (WorkoutManager.swift:87)"
+  - The FIRST Fit33-owned frame (ignore CoreFoundation / SwiftUI / UIKit
+    / libswiftCore / libobjc frames) is the correct file_path.
+  - Normalize to "Fit33/<File>.swift" form — all of Fit33's source lives
+    flat under Fit33/.
+  - If multiple Fit33 frames are present, pick the OLDEST app frame (the
+    actual call site, not the throw site) unless the throw site clearly
+    contains the bug (e.g. a force-unwrap line).
+  - Use \`breadcrumbs\` + \`session_log_snippet\` to understand what the
+    user was DOING just before the crash — this lets you scope summary
+    + diff to the real scenario.
+
+When a crash is present, you should almost always produce a non-null
+file_path and code_diff. Only leave them null if the stack trace is
+completely outside Fit33 (e.g. system libraries only).
+
+# USING SESSION_LOG_SNIPPET
+
+The snippet is a chronological list of the user's last ~100 events:
+  [screen] DashboardView: entered
+  [tap] WorkoutCard: Chest Day
+  [api] GET /workouts/123: 200
+  [error] -: Fatal error: Index out of range
+  ...
+Cite specific screens / taps in your summary to make it actionable.
+
 # OUTPUT (JSON only — no markdown, no prose, no code fences)
 
 {
@@ -472,29 +504,58 @@ async function enrichFingerprint(
     const example_crashes: Array<Record<string, unknown>> = [];
     const example_entry_ids: string[] = [];
 
-    // Pull matching crashes. crash_reports.fingerprint is a DIFFERENT hash
-    // (computed client-side over stack frames) than the bug_intelligence
-    // fingerprint (md5 of normalized_message+source+domain). So we re-derive
-    // by filtering recent crashes whose normalized error_message matches.
+    // Crash enrichment — uses Phase 3 generated column `bi_fingerprint`
+    // (20260429_bug_intelligence_crash_enrichment.sql) for O(1) JOIN, and
+    // pulls the fields Claude actually needs to propose a real diff:
+    //   - stack_trace (top frame → file_path)
+    //   - breadcrumbs (user actions leading up to the crash)
+    //   - session_log_snippet (session timeline — auto-backfilled by trigger
+    //     fn_backfill_crash_session_snippet when iOS client didn't include it)
     if (fp.source === "crash") {
         const { data: crashes } = await supabase
             .from("crash_reports")
-            .select("id, user_id, report_type, error_message, error_domain, file, line_number, os_version, device_model, app_version, current_screen, created_at, occurred_at")
-            .gte("created_at", new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString())
+            .select(
+                "id, user_id, report_type, severity, error_message, error_domain, error_code, " +
+                "stack_trace, breadcrumbs, session_log_snippet, session_id, " +
+                "current_screen, os_version, device_model, app_version, build_number, " +
+                "memory_usage_mb, free_memory_mb, network_type, " +
+                "occurred_at, created_at",
+            )
+            .eq("bi_fingerprint", fp.fingerprint)
             .order("created_at", { ascending: false })
-            .limit(200);
+            .limit(MAX_EXAMPLE_ENTRIES);
 
-        const targetMsg = fp.normalized_message;
-        const targetDomain = fp.error_domain ?? null;
         for (const c of ((crashes ?? []) as Array<Record<string, unknown>>)) {
-            const norm = normalizeMessage(String(c.error_message ?? ""));
-            const domainMatch = targetDomain
-                ? (String(c.error_domain ?? "") === targetDomain)
-                : true;
-            if (norm === targetMsg && domainMatch) {
-                example_crashes.push(c);
+            example_crashes.push(c);
+            example_entry_ids.push(`crash:${c.id}`);
+        }
+    }
+
+    // Cross-source correlation: when the fingerprint is log-sourced, also
+    // look for crashes whose *normalized message* matches — they carry
+    // stack traces that massively improve Claude's diff accuracy. Uses the
+    // same `bi_fingerprint` index, just with source='crash' applied to
+    // this fingerprint's normalized_message.
+    if (fp.source === "log") {
+        const crashFpForThisMessage = await computeCrashFingerprint(
+            supabase,
+            fp.normalized_message,
+            null,
+        );
+        if (crashFpForThisMessage) {
+            const { data: crashes } = await supabase
+                .from("crash_reports")
+                .select(
+                    "id, error_message, error_domain, stack_trace, breadcrumbs, " +
+                    "session_log_snippet, current_screen, app_version, build_number, occurred_at",
+                )
+                .eq("bi_fingerprint", crashFpForThisMessage)
+                .order("created_at", { ascending: false })
+                .limit(3);
+
+            for (const c of ((crashes ?? []) as Array<Record<string, unknown>>)) {
+                example_crashes.push({ ...c, _cross_source: "log->crash" });
                 example_entry_ids.push(`crash:${c.id}`);
-                if (example_crashes.length >= MAX_EXAMPLE_ENTRIES) break;
             }
         }
     }
@@ -537,6 +598,29 @@ async function enrichFingerprint(
     }
 
     return { fp, example_errors, example_crashes, example_entry_ids };
+}
+
+// Computes what the bug_intelligence fingerprint would be for the given
+// (normalized_message, 'crash', domain) triple — delegates to the SQL
+// helper so there's no drift between client + server hashing. Returns
+// null if the RPC is unavailable.
+async function computeCrashFingerprint(
+    // deno-lint-ignore no-explicit-any
+    supabase: any,
+    normalizedMessage: string,
+    domain: string | null,
+): Promise<string | null> {
+    try {
+        const { data, error } = await supabase.rpc("bug_intelligence_fingerprint", {
+            p_normalized: normalizedMessage,
+            p_source: "crash",
+            p_domain: domain,
+        });
+        if (error) return null;
+        return typeof data === "string" ? data : null;
+    } catch {
+        return null;
+    }
 }
 
 // Matches the SQL bug_intelligence_normalize() EXACTLY — keep in sync.

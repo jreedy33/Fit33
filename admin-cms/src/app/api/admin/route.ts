@@ -1551,7 +1551,7 @@ export async function POST(req: NextRequest) {
         const pg = Math.max(0, Number(page) || 0)
 
         let query = admin.from('exercises')
-          .select('id, name, category, equipment, workout_type, primary_muscles, secondary_muscles, video_filename, video_code, gender, difficulty_level, is_custom, movement_pattern, force_type, equipment_category, home_gym_friendly, exercise_family, is_compound, duration_based', { count: 'exact' })
+          .select('id, name, category, equipment, workout_type, primary_muscles, secondary_muscles, video_filename, video_code, gender, difficulty_level, is_custom, movement_pattern, force_type, equipment_category, home_gym_friendly, exercise_family, is_compound, duration_based, manually_updated, manually_updated_at', { count: 'exact' })
           .eq('is_custom', false)
           .order('name', { ascending: true })
           .range(pg * lim, (pg + 1) * lim - 1)
@@ -1634,6 +1634,7 @@ export async function POST(req: NextRequest) {
           'is_equipment_primary', 'equipment_category', 'duration_based',
           'recommended_sets', 'rest_seconds', 'muscles_worked_count',
           'priority_build_muscle', 'priority_get_lean', 'priority_home', 'priority_gym',
+          'manually_updated',
         ]
 
         const sanitized: Record<string, unknown> = {}
@@ -1645,6 +1646,16 @@ export async function POST(req: NextRequest) {
 
         if (Object.keys(sanitized).length === 0) {
           return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+        }
+
+        // Auto-stamp the manual-edit marker on every admin save. The detail
+        // page can explicitly send `manually_updated: false` to clear it
+        // (in which case we also clear the timestamp).
+        if (sanitized.manually_updated === false) {
+          sanitized.manually_updated_at = null
+        } else {
+          sanitized.manually_updated = true
+          sanitized.manually_updated_at = new Date().toISOString()
         }
 
         const { data, error } = await admin.from('exercises')

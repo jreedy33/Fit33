@@ -98,7 +98,7 @@ export default function ExercisesPage() {
   const [workoutType, setWorkoutType] = useState('all')
   const [category, setCategory] = useState('all')
   const [equipmentFilter, setEquipmentFilter] = useState('all')
-  const limit = 50
+  const limit = 100
 
   const loadFilters = useCallback(async () => {
     const data = await adminAction('get_exercise_filters')

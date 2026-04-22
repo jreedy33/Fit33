@@ -161,6 +161,28 @@ export default function ExerciseDetailPage() {
   const setField = (key: string, value: unknown) => { setEditedFields(prev => ({ ...prev, [key]: value })); setSaveMsg(null) }
   const hasChanges = Object.keys(editedFields).length > 0
 
+  // "Updated" marker: any unsaved content edit auto-checks the box; the
+  // admin can still click it to explicitly clear the manual-edit flag.
+  const rawManuallyUpdated = 'manually_updated' in editedFields
+    ? Boolean(editedFields.manually_updated)
+    : Boolean(exercise?.manually_updated)
+  const contentEdits = Object.keys(editedFields).filter(k => k !== 'manually_updated').length > 0
+  const manuallyUpdatedDisplay = rawManuallyUpdated || contentEdits
+  const manuallyUpdatedAt = exercise?.manually_updated_at as string | null | undefined
+  const toggleManuallyUpdated = () => {
+    // If there are pending content edits we leave the box auto-checked —
+    // the save payload will stamp it server-side. Otherwise clicking
+    // toggles the explicit flag (letting the admin un-mark a row).
+    if (contentEdits) return
+    setField('manually_updated', !rawManuallyUpdated)
+  }
+  const formatUpdatedAt = (iso: string | null | undefined): string => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+
   const handleSave = async () => {
     if (!hasChanges) return
     setSaving(true); setSaveMsg(null)
@@ -219,6 +241,34 @@ export default function ExerciseDetailPage() {
           </div>
 
           {saveMsg && <span style={{ fontSize: 12, color: saveMsg.type === 'success' ? 'var(--success)' : 'var(--danger)' }}>{saveMsg.text}</span>}
+
+          <label
+            onClick={e => { e.preventDefault(); toggleManuallyUpdated() }}
+            title={contentEdits ? 'Will mark as manually updated when you save' : (rawManuallyUpdated ? 'Click to clear manual-edit flag' : 'Click to mark as manually updated')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '4px 10px', borderRadius: 6,
+              background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
+              cursor: contentEdits ? 'default' : 'pointer',
+              fontSize: 12, color: 'var(--text-primary)',
+              opacity: contentEdits ? 0.95 : 1,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={manuallyUpdatedDisplay}
+              onChange={() => { /* handled by parent onClick */ }}
+              readOnly
+              style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: contentEdits ? 'default' : 'pointer' }}
+            />
+            <span style={{ fontWeight: 600 }}>Updated</span>
+            {manuallyUpdatedAt && (
+              <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                {formatUpdatedAt(manuallyUpdatedAt)}
+              </span>
+            )}
+          </label>
+
           <button className="btn btn-danger" onClick={() => setShowDeleteConfirm(true)} style={{ fontSize: 12, padding: '5px 12px' }}>Delete</button>
           <button className="btn btn-primary" disabled={!hasChanges || saving} onClick={handleSave} style={{ fontSize: 12, padding: '5px 14px' }}>
             {saving ? 'Saving...' : 'Save'}

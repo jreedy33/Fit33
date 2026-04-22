@@ -3,6 +3,40 @@
 > **Rule**: All new schema changes MUST be added as a new timestamped file.
 > Never modify an already-deployed migration. If a fix is needed, create a new file.
 
+## Scope & Policy (Q2-85, Sprint 8 — 2026-04-27)
+
+This index is the **canonical release-train** for Supabase migrations. It is
+NOT a line-by-line listing of every file under `supabase/*.sql` — there are
+~175 files on disk; this document tracks ~60 release-train entries.
+
+**In scope (MUST be indexed here):**
+- Any new `YYYYMMDD_…` migration that creates tables, alters schema, creates
+  RPCs, touches RLS, or enables Realtime publications.
+- Any bug-fix / security hotfix migration that is expected to be run on prod.
+- Each entry gets a numbered row, a status emoji, and a "What it does" note
+  covering the invariants the app relies on.
+
+**Out of scope (tracked in the §Legacy / Bulk Ledger below, not inline):**
+- Pre-`YYYYMMDD_` naming era files (e.g. `challenge_rpc_functions.sql`,
+  `friend_request_system.sql`). Historic, mostly already-absorbed by later
+  hotfixes. Kept on disk for audit; do not edit.
+- Bulk data scripts — `exercise_replace_{01..15}.sql`,
+  `update_exercises_*.sql`, `exercises_update_*.sql` — one-shot exercise CSV
+  loads.
+- Read-only auditors / verifiers — `audit_before.sql`, `audit_after.sql`,
+  `verify_query_performance.sql`, `verify_*.sql`, `sim_test_helpers.sql`.
+- Private-challenge / weekly-league foundational migrations that pre-dated
+  the index (already superseded or consolidated by later `YYYYMMDD_` files).
+
+**Authoring rule for new migrations:**
+1. New file name format: `YYYYMMDD_short_description.sql`.
+2. Append a new numbered row to the dated section at the bottom (create a
+   new section for the date if needed).
+3. Never retroactively edit a deployed migration — create a new hotfix file
+   and reference the supersession in both files.
+4. If the migration is a bulk data load or a one-shot audit query, it stays
+   in the §Legacy / Bulk Ledger.
+
 ---
 
 ## Deployed Migrations (in order)
@@ -228,13 +262,123 @@ The **canonical version** is the one in the latest file listed below.
 **Paired code changes**: `admin-cms/src/app/api/admin/route.ts` — `get_exercises` select now includes both columns; `update_exercise` allowed-fields list includes `manually_updated` and the handler auto-stamps the flag + timestamp on save (clears them when the admin unchecks). `admin-cms/src/app/exercises/[id]/page.tsx` — new top-right "Updated" checkbox auto-checks on any unsaved content edit, shows the saved date next to it, and is clickable (when no pending edits) to clear the manual-edit flag.
 **Paired code changes**: `Fit33/DailyQuestService.swift` — `UserQuestContext.activeChallengeTypes` gathered from `ChallengeService.activeChallenges` + `activeGroupChallenges`, then encoded as `p_active_challenge_types` in the RPC payload. `Fit33/DailyQuestViews.swift` — `dynamicDescription` now rewrites step / active-minute / calorie / water / protein / streak quest copy with opponent deficit ("5K to catch KC" / "Lead KC by 200 cal" / "Tied with KC") via the new `firstActiveChallenge(matching:)` + `challengeDeficitCopy(...)` helpers. Every quest description string is capped at ~35 chars so the single-line card layout never truncates.
 
+## Sprint 6 Security Hardening (2026-04-25)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 61 | `20260425_secure_definer_rpc_idor_fixes.sql` | 🆕 Ready | Inserts the canonical IDOR guard (`IF auth.uid() IS NOT NULL AND <user_param> <> auth.uid() THEN RAISE 42501`) into two remaining SECURITY DEFINER RPCs that accepted a `user_id` parameter but never verified the caller: `delete_user_account(user_id_to_delete UUID)` (P0 — any signed-in user could wipe any other account) and `get_user_achievements(p_user_id UUID DEFAULT NULL)` (P1 — any signed-in user could read any other user's progress). service_role / pg_cron (where `auth.uid() IS NULL`) keep full access so admin cleanup + backfills still work. Pattern mirrors 20260417_secure_get_friend_ids.sql. |
+
+**Run order**: 61 (standalone, idempotent). Safe to re-run.
+
+## Sprint 7 Security + Realtime Hygiene (2026-04-26)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 62 | `20260426_sprint7_security_hygiene.sql` | 🆕 Ready | (Q2-72) Extends the IDOR guard from migration 61 to the last three SECURITY DEFINER RPCs that accept a user_id: `get_daily_quests(TEXT, ...)`, `get_or_join_weekly_league(UUID)`, `get_league_leaderboard(UUID, UUID)`. Each historical overload is DROPped first per supabase-rules §12, then the latest signature is recreated with the guard inserted at the top of `BEGIN`. Non-auth callers (service_role / pg_cron contexts where `auth.uid() IS NULL`) keep full access so auto-placement, cleanup, and cron-driven refreshes still work. (Q2-73) Adds `private_challenge_chat` to the `supabase_realtime` publication — the table already had `REPLICA IDENTITY FULL` from `private_challenges_migration.sql` but was missed by `fix_private_realtime_publication.sql`, so moderation UPDATE events were silently dropped at the client. Idempotent via `EXCEPTION WHEN duplicate_object`. |
+
+**Run order**: 62 (standalone, idempotent). Safe to re-run.
+**Paired file edits (no DB migration needed)**:
+- Q2-93: added `IF NOT EXISTS` to every `CREATE INDEX` in `20260328_content_moderation.sql`, `migrations/20260226_crash_reports.sql`, `20260325_version_changelogs.sql`.
+- Q2-95: header comment on `20260324_adaptive_quest_selection.sql` marks it superseded by the 2026-04-25+ `get_daily_quests` rewrites so the `ROW(0,0,0)` anti-pattern on line 246 isn't mistaken for live code.
+- Q2-96: `20260307_friend_activity_realtime.sql` replaced with a superseded-by-20260307_activity_feed_realtime.sql breadcrumb so re-running the duplicate ADD can't fail.
+
+## Sprint 8 — Bug Intelligence Pipeline (2026-04-27)
+
+| # | File | Status | What it does |
+|---|------|--------|-------------|
+| 64 | `20260428_bug_intelligence_reports.sql` | 🆕 Ready | (Q2-97 Phase 2) Claude-driven bug triage + agent-owner routing. (1) New table `bug_intelligence_reports` — one row per triage run per fingerprint (`fingerprint` FK → `bug_intelligence_fingerprints`, `trigger_trend_id` FK → `bug_intelligence_trends`, `trigger_reason` CHECK in `('new', 'regression', 'scheduled', 'manual')`); stores the Claude output fields `agent_owner` (CHECK constrained to the exact roster in `ENGINEERING_TEAM.md`: `quality-performance` / `product-engineer` / `data-backend` / `infra-security` / `supabase-expert` / `design-system` / `design` / `fitness-expert` / `device-compatibility` / `support` / `unknown`), `invariant_violated`, `severity` (`critical` / `high` / `medium` / `low`), `confidence` (NUMERIC 0-1), `title`, `summary`, `file_path`, `code_diff`, `pain_point_candidate`, `suggested_todo`, plus PR / review lifecycle (`review_status` IN `pending` / `approved` / `rejected` / `merged` / `stale`, `pr_url`, `pr_branch`, `reviewed_by` FK → `user_profiles`, `reviewed_at`), full raw Claude response in `raw_response JSONB`, and `example_entry_ids` for auditability. RLS enabled, no policies → service-role only. (2) `trigger_triage_bugs()` SECURITY DEFINER wrapper — follows the canonical `internal_config` + `x-cron-key` pattern from `20260420_challenge_opponent_wake.sql` — reads `supabase_url` / `service_role_key` / `anon_key` from `internal_config` and `PERFORM net.http_post()` to `/functions/v1/triage-bugs`. (3) `cleanup_bug_intelligence_reports()` — 90-day prune for rejected / stale / merged reports (pending reports never pruned). (4) pg_cron schedules: `triage-bugs-run` every 4h at `:17` (offset from the Phase 1 hourly rollup at `:00` to avoid connection contention), `cleanup-bug-intelligence-reports` daily at `03:45 UTC`. (5) `v_bug_intelligence_inbox` view (`security_invoker = on`) — pending reports sorted by severity then confidence — is the admin CMS triage inbox surface. Indexes on `(fingerprint, created_at DESC)`, `(agent_owner, review_status, created_at DESC)`, `(severity, confidence DESC, created_at DESC)`, and `(review_status, created_at DESC)`. |
+| 63 | `20260427_bug_intelligence.sql` | 🆕 Ready | (Q2-97 Phase 1) Foundations for the automated bug-trend / regression-detection pipeline. (1) Three new tables — `bug_intelligence_fingerprints` (deduplicated bug signatures across `dev_session_logs` errors + `crash_reports`, with admin-managed fields `status` / `assigned_agent` / `pain_point_id` / `resolution_pr_url` / `duplicate_of`), `bug_intelligence_daily_rollup` (per `fingerprint × day × screen × app_version` counts), and `bug_intelligence_trends` (append-only `'new'` / `'regression'` signals). All three are RLS-enabled, service-role-only. (2) Two immutable helpers: `bug_intelligence_normalize(msg)` masks `<id>` (long hex) and `<n>` (numbers) so `"user abc12345 failed"` and `"user def67890 failed"` fingerprint together (mirrors the JS normalizer in `admin-cms/src/app/dev-logs/page.tsx`), and `bug_intelligence_fingerprint(normalized, source, domain)` produces an `md5` hash. (3) Main worker `compute_daily_bug_rollup()` SECURITY DEFINER function — pg_cron-scheduled hourly at `0 * * * *` — scans the last 5 days of `dev_session_logs` (entries where `type='error'`) and `crash_reports`, UPSERTs fingerprints (preserving admin-managed fields), rewrites the rolling 5-day rollup, and appends trend signals (`new` when `first_seen_at >= today` AND `today_count >= 3`; `regression` when `today_count >= 3` AND `today_count > 3 × mean(days 1-4 ago)`). Skips fingerprints already marked `resolved` / `wont_fix` / `duplicate`. (4) Retention cleaner `cleanup_bug_intelligence_rollup()` — pg_cron daily at `30 3 * * *` — drops rollup rows > 30 days and trend rows > 90 days. (5) Forward-compat: adds `dev_logging_users.cohort TEXT NOT NULL DEFAULT 'beta'` column. (6) Cohort policy: one-shot INSERT enrolls **every existing `user_profiles` row** into `dev_logging_users` with `enabled = TRUE` (TestFlight-era — all current users OK to track per user confirmation 2026-04-27). (7) `auto_enroll_dev_logging()` SECURITY DEFINER trigger on `user_profiles INSERT` auto-adds future signups to cohort=beta. At GA, swap the trigger for a sampled variant or drop it. (8) Primes the pipeline with one initial call inside the migration so the rollup / trend tables aren't empty on deploy. |
+
+**Run order**: 63 → 64 (both standalone, idempotent). Safe to re-run. Preserves admin-managed fingerprint fields (`status` / `assigned_agent` / `pain_point_id` / `resolution_pr_url`) across runs.
+**Paired code changes**:
+- Phase 2 (this sprint): `supabase/functions/triage-bugs/index.ts` (scheduled Claude triage edge function) + `admin-cms/src/app/bug-intelligence/page.tsx` (triage inbox + PR button) + new admin API actions (`get_bug_intelligence_overview` / `_fingerprints` / `_reports` / `_trends`, `update_bug_fingerprint`, `update_bug_report_review`, `trigger_bug_triage`). Edge function requires `ANTHROPIC_API_KEY` secret + `internal_config` rows (`supabase_url`, `service_role_key`, `anon_key`) to be set.
+- Phase 3 (next): cross-signal enrichment (crash ↔ log fingerprint correlation, backfill `session_log_snippet` via DB trigger).
+- Phase 4: knowledge feedback loop (GitHub webhook → auto-append to `MASTER_TODO.md` / `docs/history/*_AGENT.md` on PR merge).
+
+---
+
+## Legacy / Bulk Ledger (Q2-85, Sprint 8 — 2026-04-27)
+
+This section documents `supabase/*.sql` files that are **intentionally not in
+the numbered release-train above**. They are either pre-`YYYYMMDD_` legacy
+migrations, one-shot bulk data loads, or read-only auditors. They live on
+disk for audit / history only — do NOT re-run on prod without checking
+§Process below first.
+
+### Pre-`YYYYMMDD_` era (historic)
+
+Ship order is lost; effects have been absorbed / superseded by the numbered
+release-train migrations above. Kept for historical audit.
+
+| File | Category | Notes |
+|------|----------|-------|
+| `challenge_rpc_functions.sql` | Challenges (legacy) | Canonical owners for most of these RPCs are now the `fix_*` files listed in §Duplicated Function Definitions above. |
+| `challenge_type_migration.sql` | Challenges (legacy) | Superseded by `fix_challenge_cascade_delete.sql` + `fix_challenge_participants.sql`. |
+| `challenge_reactions.sql` | Challenges (legacy) | Schema live; no further changes expected. |
+| `community_challenges_migration.sql` | Challenges (legacy) | Schema live; later hotfixes consolidated. |
+| `community_friends_gating.sql` | Friends (legacy) | Gating now enforced by RPCs in `create_friend_rpc_functions.sql` + `fix_friend_safety.sql`. |
+| `create_friend_rpc_functions.sql` | Friends (legacy) | Canonical RPC shapes live; later hotfixes add IDOR guards. |
+| `fix_friend_safety.sql` | Friends (legacy) | Layered on by `fix_comprehensive_audit.sql`. |
+| `friend_request_system.sql` | Friends (legacy) | Superseded by `friend_request_notifications.sql`. |
+| `friend_request_notifications.sql` | Friends (legacy) | Canonical owner of `send_friend_request`. |
+| `cascade_delete_incomplete_profiles.sql` | Auth / profile | Paired with `cleanup_incomplete_onboarding.sql`. |
+| `cleanup_incomplete_onboarding.sql` | Auth / profile | pg_cron-driven cleanup job; still live. |
+| `cleanup_test_accounts.sql` | Ops | Manual cleanup helper. Run ad hoc only. |
+| `complete_account_deletion.sql` | Auth / profile | Canonical owner of `delete_user_account`. |
+| `daily_quests_migration.sql` | Daily Quests | Superseded by 2026-04-xx quest migrations (#54, #57–#59). |
+| `daily_quests_v2_migration.sql` | Daily Quests | Superseded by 2026-04-xx quest migrations. |
+| `fix_account_deletion.sql` | Auth / profile | DELETED 2026-04-17 (see §Duplicated Function Definitions). |
+| `fix_ambiguous_columns.sql` | Challenges (legacy) | Canonical owner of `log_challenge_progress`. |
+| `fix_cardio_workouts_constraint.sql` | Cardio | Canonical; absorbed into release-train. |
+| `fix_challenge_cascade_delete.sql` | Challenges (legacy) | Canonical owner of cascade policies. |
+| `fix_challenge_participants.sql` | Challenges (legacy) | Canonical owner of participant constraints. |
+| `fix_comprehensive_audit.sql` | Multi | Canonical owner of several friend RPCs. |
+| `fix_contact_matching_rls.sql` | Contacts | Canonical RLS for contact discovery. |
+| `fix_create_group_challenge.sql` | Challenges (legacy) | Canonical owner of `create_group_challenge`. |
+| `fix_data_relationships.sql` | Multi | FK + orphan cleanup. |
+| `fix_group_challenge_timezone.sql` | Challenges (legacy) | Canonical owner of `get_active_group_challenges` + `log_group_challenge_progress`. |
+| `fix_leave_group_challenge.sql` | Challenges (legacy) | Canonical owner of `leave_group_challenge`. |
+| `fix_materialized_view.sql` | Multi | One-shot MV refresh. |
+| `fix_private_realtime_publication.sql` | Realtime | Private challenge realtime bootstrap (missed `private_challenge_chat` — closed by 20260426_sprint7_security_hygiene.sql). |
+| `fix_trigger_conflicts.sql` | Auth / profile | Canonical owner of `cleanup_auth_on_profile_delete`. |
+| `global_food_popularity.sql` | Nutrition | Canonical schema live. |
+| `private_challenges_migration.sql` | Private Challenges | Canonical schema; realtime bootstrap above. |
+| `program_templates_migration.sql` | Programs | Canonical schema live. |
+| `refresh_exercise_view.sql` | Exercises | Manual MV refresh helper. |
+| `verify_critical_functions.sql` | Audit | Read-only verifier. |
+| `weekly_leagues_migration.sql` | Weekly Leagues | Canonical schema; later hotfixes layered on. |
+
+### Bulk exercise data loads (one-shot)
+
+These files ship thousands of `INSERT … ON CONFLICT` statements for the
+exercise library. Already applied on prod; do not re-run unless re-seeding
+a fresh Supabase project.
+
+| Pattern | Count | Purpose |
+|---------|-------|---------|
+| `exercise_replace_{01..15}.sql` | 15 | Generational CSV re-import (15 batches). |
+| `update_exercises_{csv,batch2,batch3,final_fixed}.sql` | 4 | Incremental CSV corrections. Canonical final batch is `update_exercises_final_fixed.sql`. |
+| `exercises_update_*.sql`, `update_2_exercises_*.sql` | misc | Targeted string fixes (lever names, spaces, etc.). |
+
+### Auditors / verifiers (read-only)
+
+| File | Purpose |
+|------|---------|
+| `audit_before.sql` | Baseline snapshot; runs before `20260320_*` audit remediation. |
+| `audit_after.sql` | 7-test verification suite; runs after. |
+| `verify_query_performance.sql` | Indexes-present audit; extend when adding hot-path indexes. See DB-5 entry above. |
+| `sim_test_helpers.sql` | Fixture / simulation helpers for automated QA only. Never ship to prod. |
+| `migrations/*.sql` | Legacy CLI-style migrations (pre-SQL Editor workflow); canonical files are all in `supabase/*.sql` today. |
+
 ---
 
 ## Process for New Migrations
 
-1. Create a new file: `YYYY_MM_DD_description.sql`
+1. Create a new file: `YYYYMMDD_description.sql`
 2. Wrap DDL in `BEGIN; ... COMMIT;` for transactional safety
-3. Add the file to this index with status 🆕
-4. Test in a staging project first
-5. Deploy via Supabase SQL Editor
-6. Update status to ✅ Deployed
+3. DROP all overloads before `CREATE OR REPLACE FUNCTION` (see supabase-rules §12)
+4. Add `IF NOT EXISTS` to every `CREATE INDEX` / `CREATE TABLE` for idempotency
+5. Add the file to the numbered release-train above with status 🆕
+6. Test in a staging project first
+7. Deploy via Supabase SQL Editor
+8. Update status to ✅ Deployed

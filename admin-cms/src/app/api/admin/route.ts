@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 import { createClient } from '@supabase/supabase-js'
 import { isAdminEmail } from '@/lib/auth'
 import { getAccessToken } from '@/lib/auth-cookies'
+import { parseJson, adminEnvelopeSchema } from '@/lib/validation'
 
 // ═══════════════════════════════════════════════════
 // RATE LIMITING (per-IP, per-endpoint)
@@ -14,8 +15,14 @@ const RATE_LIMITS: Record<string, { max: number; windowMs: number }> = {
   bulk:  { max: 5,   windowMs: 60_000 },
 }
 
+// Any mutating action MUST appear in one of these sets so that:
+//   (1) it is rate-limited under the stricter `write` / `bulk` tier, and
+//   (2) `logAdminAction()` runs for it (tier !== 'read' in POST handler).
+// Missing actions get classified as `read` and silently skip the audit log —
+// a compliance + forensics gap. Per INFRA_SECURITY invariant #5 + auditor
+// findings (2026-04-22). `delete_user` has no handler and was removed.
 const WRITE_ACTIONS = new Set([
-  'update_user', 'delete_user', 'update_bug_report', 'delete_bug_report',
+  'update_user', 'update_bug_report', 'delete_bug_report',
   'update_crash_report', 'delete_crash_report',
   'create_faq_entry', 'update_faq_entry', 'delete_faq_entry', 'publish_faq_entry',
   'create_faq_category', 'update_faq_category', 'delete_faq_category',
@@ -24,11 +31,19 @@ const WRITE_ACTIONS = new Set([
   'update_report_status', 'suspend_user', 'lift_suspension',
   'review_flagged_content',
   'create_push_campaign', 'update_push_campaign',
+  // AI insights / dev-logging mutations — previously untracked.
+  'update_insight_status', 'trigger_insights_generation',
+  'save_chat_conversation', 'delete_chat_conversation',
+  'toggle_dev_logging', 'update_suggestion_status',
+  // Bug intelligence (Phase 2) mutations
+  'update_bug_fingerprint', 'update_bug_report_review', 'trigger_bug_triage',
 ])
 const BULK_ACTIONS = new Set([
   'bulk_update_bug_reports', 'bulk_update_crash_reports',
   'bulk_publish_faq_entries',
   'send_push_campaign',
+  // Bulk crash-report deletion paths — previously untracked.
+  'bulk_delete_crash_reports', 'delete_resolved_crash_reports',
 ])
 
 function getActionTier(action: string): 'read' | 'write' | 'bulk' {
@@ -141,8 +156,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json()
-    const { action, ...params } = body
+    const parsed = await parseJson(req, adminEnvelopeSchema)
+    if (!parsed.ok) return parsed.response
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { action, ...params } = parsed.data as any
 
     // Rate limit check
     const rateCheck = checkAdminRateLimit(ip, action)
@@ -1424,6 +1441,189 @@ export async function POST(req: NextRequest) {
           .eq('id', suggestion_id)
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         return NextResponse.json({ success: true })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // BUG INTELLIGENCE (Phase 2)
+      // Driven by supabase/functions/triage-bugs + bug_intelligence_* tables.
+      // All actions below are read-only except `update_bug_fingerprint`,
+      // `update_bug_report_review`, and `trigger_bug_triage` which mutate.
+      // ═══════════════════════════════════════════════════
+
+      case 'get_bug_intelligence_overview': {
+        const since24h = new Date(Date.now() - 24 * 3600_000).toISOString()
+        const since7d  = new Date(Date.now() - 7 * 24 * 3600_000).toISOString()
+
+        const [
+          { data: statusCounts },
+          { data: severityCounts },
+          { data: recentTrends },
+          { data: pendingReports },
+        ] = await Promise.all([
+          admin.from('bug_intelligence_fingerprints').select('status'),
+          admin.from('bug_intelligence_reports').select('severity').gte('created_at', since7d),
+          admin.from('bug_intelligence_trends').select('id, trend_type, detected_at, reviewed_at')
+            .gte('detected_at', since24h)
+            .order('detected_at', { ascending: false }),
+          admin.from('bug_intelligence_reports').select('id').eq('review_status', 'pending'),
+        ])
+
+        const statusMap: Record<string, number> = {}
+        for (const r of (statusCounts || []) as Array<{ status: string }>) {
+          statusMap[r.status] = (statusMap[r.status] || 0) + 1
+        }
+        const severityMap: Record<string, number> = {}
+        for (const r of (severityCounts || []) as Array<{ severity: string }>) {
+          severityMap[r.severity] = (severityMap[r.severity] || 0) + 1
+        }
+
+        return NextResponse.json({
+          overview: {
+            fingerprints_by_status: statusMap,
+            reports_last_7d_by_severity: severityMap,
+            trends_last_24h: recentTrends || [],
+            pending_reports_count: (pendingReports || []).length,
+          },
+        })
+      }
+
+      case 'get_bug_intelligence_fingerprints': {
+        const { status: filterStatus, agent, severity_min, search, limit: pageLimit } = params as {
+          status?: string; agent?: string; severity_min?: string; search?: string; limit?: number
+        }
+        let query = admin.from('bug_intelligence_fingerprints')
+          .select('*')
+          .order('last_seen_at', { ascending: false })
+          .limit(Math.min(pageLimit ?? 200, 500))
+        if (filterStatus && filterStatus !== 'all') query = query.eq('status', filterStatus)
+        if (agent && agent !== 'all') query = query.eq('assigned_agent', agent)
+        if (search) query = query.ilike('sample_message', `%${search}%`)
+
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        // Attach latest report summary per fingerprint for the list view.
+        const fingerprints = (data || []) as Array<{ fingerprint: string }>
+        if (fingerprints.length === 0) return NextResponse.json({ fingerprints: [] })
+
+        const { data: latestReports } = await admin
+          .from('bug_intelligence_reports')
+          .select('fingerprint, severity, confidence, agent_owner, title, review_status, created_at, id')
+          .in('fingerprint', fingerprints.map(f => f.fingerprint))
+          .order('created_at', { ascending: false })
+
+        const latestByFp = new Map<string, unknown>()
+        for (const r of (latestReports || []) as Array<{ fingerprint: string }>) {
+          if (!latestByFp.has(r.fingerprint)) latestByFp.set(r.fingerprint, r)
+        }
+
+        const enriched = (data || []).map((fp: Record<string, unknown>) => ({
+          ...fp,
+          latest_report: latestByFp.get(fp.fingerprint as string) ?? null,
+        }))
+
+        if (severity_min) {
+          const severityOrder: Record<string, number> = { critical: 1, high: 2, medium: 3, low: 4 }
+          const cutoff = severityOrder[severity_min] ?? 4
+          const filtered = enriched.filter(fp => {
+            const sev = (fp.latest_report as { severity?: string } | null)?.severity
+            return sev ? (severityOrder[sev] ?? 5) <= cutoff : false
+          })
+          return NextResponse.json({ fingerprints: filtered })
+        }
+
+        return NextResponse.json({ fingerprints: enriched })
+      }
+
+      case 'get_bug_intelligence_reports': {
+        const { fingerprint } = params as { fingerprint: string }
+        if (!fingerprint) return NextResponse.json({ error: 'Missing fingerprint' }, { status: 400 })
+
+        const { data, error } = await admin.from('bug_intelligence_reports')
+          .select('*')
+          .eq('fingerprint', fingerprint)
+          .order('created_at', { ascending: false })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ reports: data || [] })
+      }
+
+      case 'get_bug_intelligence_trends': {
+        const { fingerprint } = params as { fingerprint?: string }
+        let query = admin.from('bug_intelligence_trends')
+          .select('*')
+          .order('detected_at', { ascending: false })
+          .limit(200)
+        if (fingerprint) query = query.eq('fingerprint', fingerprint)
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ trends: data || [] })
+      }
+
+      case 'update_bug_fingerprint': {
+        const { fingerprint, status: newStatus, assigned_agent, resolution_pr_url, pain_point_id } = params as {
+          fingerprint: string
+          status?: string
+          assigned_agent?: string
+          resolution_pr_url?: string
+          pain_point_id?: string
+        }
+        if (!fingerprint) return NextResponse.json({ error: 'Missing fingerprint' }, { status: 400 })
+
+        const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+        if (newStatus) update.status = newStatus
+        if (assigned_agent !== undefined) update.assigned_agent = assigned_agent || null
+        if (resolution_pr_url !== undefined) update.resolution_pr_url = resolution_pr_url || null
+        if (pain_point_id !== undefined) update.pain_point_id = pain_point_id || null
+        if (newStatus === 'resolved') update.resolved_at = new Date().toISOString()
+
+        const { error } = await admin.from('bug_intelligence_fingerprints')
+          .update(update)
+          .eq('fingerprint', fingerprint)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'update_bug_report_review': {
+        const { report_id, review_status: newReview, pr_url, pr_branch } = params as {
+          report_id: string; review_status: string; pr_url?: string; pr_branch?: string
+        }
+        if (!report_id || !newReview) {
+          return NextResponse.json({ error: 'Missing report_id or review_status' }, { status: 400 })
+        }
+        const update: Record<string, unknown> = {
+          review_status: newReview,
+          reviewed_by: adminAuth.userId,
+          reviewed_at: new Date().toISOString(),
+        }
+        if (pr_url) update.pr_url = pr_url
+        if (pr_branch) update.pr_branch = pr_branch
+
+        const { error } = await admin.from('bug_intelligence_reports')
+          .update(update)
+          .eq('id', report_id)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
+      }
+
+      case 'trigger_bug_triage': {
+        const { fingerprints } = params as { fingerprints?: string[] }
+        const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+        const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+        if (!url || !key) return NextResponse.json({ error: 'Supabase config missing' }, { status: 500 })
+
+        const res = await fetch(`${url}/functions/v1/triage-bugs`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${key}`,
+            'x-cron-key': key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ source: 'manual', fingerprints: fingerprints || undefined }),
+        })
+        const text = await res.text()
+        let parsed: unknown = text
+        try { parsed = JSON.parse(text) } catch {}
+        return NextResponse.json({ ok: res.ok, status: res.status, result: parsed })
       }
 
       // ═══════════════════════════════════════════════════

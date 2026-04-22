@@ -197,9 +197,18 @@ export default function ExerciseDetailPage() {
       } else { updates[key] = value === '' ? null : value }
     }
     const result = await adminAction('update_exercise', { exercise_id: exerciseId, updates })
-    if (result.error) { setSaveMsg({ type: 'error', text: result.error }) }
-    else { setExercise(result.exercise); setEditedFields({}); setSaveMsg({ type: 'success', text: 'Saved' }) }
+    if (result.error) {
+      setSaveMsg({ type: 'error', text: result.error })
+      setSaving(false)
+      return
+    }
+    setExercise(result.exercise); setEditedFields({}); setSaveMsg({ type: 'success', text: 'Saved' })
     setSaving(false)
+    // Auto-advance to the next exercise in the session list after a
+    // successful save. If there's no next id (tail of list or no list
+    // context at all), stay on the current exercise so the admin
+    // clearly sees the save confirmation.
+    if (nextId) router.push(`/exercises/${nextId}`)
   }
 
   const handleDelete = async () => {

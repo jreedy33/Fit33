@@ -205,7 +205,18 @@ export default function ExerciseDetailPage() {
   const handleDelete = async () => {
     setDeleting(true)
     const result = await adminAction('delete_exercise', { exercise_id: exerciseId })
-    if (result.error) { setSaveMsg({ type: 'error', text: result.error }); setDeleting(false); setShowDeleteConfirm(false) }
+    if (result.error) { setSaveMsg({ type: 'error', text: result.error }); setDeleting(false); setShowDeleteConfirm(false); return }
+
+    // Prefer advancing to the next exercise (or the previous one if we just
+    // deleted the tail). Fall back to the list only when there's nothing
+    // left to navigate to. Also drop the just-deleted id from the session
+    // cache so Prev/Next on the destination page don't resurrect it.
+    const target = nextId ?? prevId
+    if (navIds.length > 0) {
+      const pruned = navIds.filter(id => id !== exerciseId)
+      try { sessionStorage.setItem('exerciseIds', JSON.stringify(pruned)) } catch { /* */ }
+    }
+    if (target) { router.replace(`/exercises/${target}`) }
     else { router.push('/exercises') }
   }
 

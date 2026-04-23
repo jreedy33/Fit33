@@ -160,7 +160,7 @@ level, total workouts, streak, verified flags, unit preferences). USE IT TO:
 
 DO NOT paste the email / user_id into \`summary\`, \`title\`, or \`code_diff\`.
 These land in MASTER_TODO.md and GitHub PRs — they must stay PII-free.
-Refer to the reporter as "the user" or "an advanced user on ${os_version}".
+Refer to the reporter as "the user" or "an advanced user on <os_version>".
 
 # PAIN_POINT_CANDIDATE
 
@@ -539,6 +539,22 @@ async function loadUserContexts(
     return result;
 }
 
+// iOS sometimes sends JPEG (smaller on the wire) and sometimes PNG. Anthropic
+// rejects the request with 400 if the declared media_type doesn't match the
+// bytes. We sniff the base64 header: JPEG base64 starts with "/9j/" (the
+// 0xFF 0xD8 0xFF... SOI marker); PNG base64 starts with "iVBOR" (the 0x89
+// 'PNG' magic). Default to PNG only if it's clearly not JPEG — safest fallback
+// since most server-rendered PNGs lack a recognizable base64 prefix beyond
+// "iVBOR".
+function sniffImageMediaType(b64: string): "image/jpeg" | "image/png" {
+    const head = b64.slice(0, 12);
+    if (head.startsWith("/9j/")) return "image/jpeg";
+    if (head.startsWith("iVBOR")) return "image/png";
+    // Unknown header → prefer jpeg since iOS default screenshot path in
+    // BugReportView uses .jpegData(compressionQuality:) for payload size.
+    return "image/jpeg";
+}
+
 function accountAgeDays(createdAt: string | null): number | null {
     if (!createdAt) return null;
     const ts = Date.parse(createdAt);
@@ -587,7 +603,7 @@ function buildUserPrompt(
                 type: "image",
                 source: {
                     type: "base64",
-                    media_type: "image/png",
+                    media_type: sniffImageMediaType(r.screenshot_base64),
                     data: r.screenshot_base64,
                 },
             });

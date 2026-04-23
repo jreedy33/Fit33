@@ -1459,6 +1459,7 @@ export async function POST(req: NextRequest) {
           { data: severityCounts },
           { data: recentTrends },
           { data: pendingReports },
+          { data: sourceCounts },
         ] = await Promise.all([
           admin.from('bug_intelligence_fingerprints').select('status'),
           admin.from('bug_intelligence_reports').select('severity').gte('created_at', since7d),
@@ -1466,6 +1467,9 @@ export async function POST(req: NextRequest) {
             .gte('detected_at', since24h)
             .order('detected_at', { ascending: false }),
           admin.from('bug_intelligence_reports').select('id').eq('review_status', 'pending'),
+          // Phase 6: split the inbox by origin so the CMS can show a
+          // tri-category breakdown (crash / log / shake).
+          admin.from('bug_intelligence_fingerprints').select('source'),
         ])
 
         const statusMap: Record<string, number> = {}
@@ -1476,10 +1480,15 @@ export async function POST(req: NextRequest) {
         for (const r of (severityCounts || []) as Array<{ severity: string }>) {
           severityMap[r.severity] = (severityMap[r.severity] || 0) + 1
         }
+        const sourceMap: Record<string, number> = {}
+        for (const r of (sourceCounts || []) as Array<{ source: string }>) {
+          sourceMap[r.source] = (sourceMap[r.source] || 0) + 1
+        }
 
         return NextResponse.json({
           overview: {
             fingerprints_by_status: statusMap,
+            fingerprints_by_source: sourceMap,
             reports_last_7d_by_severity: severityMap,
             trends_last_24h: recentTrends || [],
             pending_reports_count: (pendingReports || []).length,
@@ -1496,8 +1505,8 @@ export async function POST(req: NextRequest) {
       }
 
       case 'get_bug_intelligence_fingerprints': {
-        const { status: filterStatus, agent, severity_min, search, limit: pageLimit } = params as {
-          status?: string; agent?: string; severity_min?: string; search?: string; limit?: number
+        const { status: filterStatus, agent, severity_min, search, source, limit: pageLimit } = params as {
+          status?: string; agent?: string; severity_min?: string; search?: string; source?: string; limit?: number
         }
         let query = admin.from('bug_intelligence_fingerprints')
           .select('*')
@@ -1506,6 +1515,9 @@ export async function POST(req: NextRequest) {
         if (filterStatus && filterStatus !== 'all') query = query.eq('status', filterStatus)
         if (agent && agent !== 'all') query = query.eq('assigned_agent', agent)
         if (search) query = query.ilike('sample_message', `%${search}%`)
+        // Source filter: 'log' | 'crash' | 'shake' (new Phase 6 shake bugs).
+        // `bug_intelligence_fingerprints.source` is free-text, so we just pass through.
+        if (source && source !== 'all') query = query.eq('source', source)
 
         const { data, error } = await query
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -1765,6 +1777,76 @@ export async function POST(req: NextRequest) {
         let parsed: unknown = text
         try { parsed = JSON.parse(text) } catch {}
         return NextResponse.json({ ok: res.ok, status: res.status, result: parsed })
+      }
+
+      // Manual "Triage shake reports now" — same shape as trigger_bug_triage
+      // but calls the Phase 6 edge function for rage-shake rows.
+      // `report_ids` is optional; if omitted the edge function drains the
+      // `triage_status='pending'` queue (up to MAX_REPORTS_PER_RUN).
+      case 'trigger_shake_triage': {
+        const { report_ids } = params as { report_ids?: string[] }
+        const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+        const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+        if (!url || !key) return NextResponse.json({ error: 'Supabase config missing' }, { status: 500 })
+
+        const res = await fetch(`${url}/functions/v1/triage-shake-reports`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${key}`,
+            'x-cron-key': key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ source: 'manual', report_ids: report_ids || undefined }),
+        })
+        const text = await res.text()
+        let parsed: unknown = text
+        try { parsed = JSON.parse(text) } catch {}
+        return NextResponse.json({ ok: res.ok, status: res.status, result: parsed })
+      }
+
+      // Rage-shake inbox for the CMS. Returns all bug_reports with their
+      // linked Claude report (if any). Used by /bug-intelligence so shake
+      // submissions show up alongside fingerprinted crash/log bugs.
+      case 'get_shake_inbox': {
+        const { status } = params as { status?: string }
+        let q = admin.from('bug_reports')
+          .select(
+            'id, user_id, user_name, user_email, description, expected_behavior, ' +
+            'reproduces_every_time, additional_info, screen_name, ' +
+            'severity, bug_category, likely_source_files, ' +
+            'triage_status, triage_report_id, triaged_at, triage_error, ' +
+            'device_model, os_version, app_version, status, created_at',
+          )
+          .order('created_at', { ascending: false })
+          .limit(100)
+        if (status && status !== 'all') {
+          q = q.eq('triage_status', status)
+        }
+        const { data: shake, error: shakeErr } = await q
+        if (shakeErr) return NextResponse.json({ error: shakeErr.message }, { status: 500 })
+        const shakeRows = (shake || []) as Array<{ triage_report_id: string | null }>
+
+        // Fetch linked Claude reports in one roundtrip.
+        const reportIds = shakeRows
+          .map((s) => s.triage_report_id)
+          .filter((x): x is string => !!x)
+        const reportsById: Record<string, Record<string, unknown>> = {}
+        if (reportIds.length > 0) {
+          const { data: reps } = await admin.from('bug_intelligence_reports')
+            .select('id, agent_owner, severity, confidence, title, summary, file_path, code_diff, review_status, pr_url')
+            .in('id', reportIds)
+          for (const r of ((reps || []) as Array<Record<string, unknown>>)) {
+            reportsById[String(r.id)] = r
+          }
+        }
+        return NextResponse.json({
+          inbox: shakeRows.map((s) => ({
+            ...s,
+            linked_report: s.triage_report_id
+              ? (reportsById[s.triage_report_id] || null)
+              : null,
+          })),
+        })
       }
 
       // ═══════════════════════════════════════════════════

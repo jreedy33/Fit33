@@ -87,50 +87,73 @@ CREATE POLICY "daily_activity_summary_delete_own"
     USING (auth.uid() = user_id);
 
 -- =========================================================================
--- healthkit_sleep (bonus audit — HealthDataService writes here too)
+-- sleep_logs (bonus audit — HealthDataService writes here too)
+--
+-- NOTE 2026-04-23: original draft called this table `healthkit_sleep` but
+-- the canonical table in this project is `sleep_logs` (see
+-- HealthDataService.swift `.from("sleep_logs")`). Wrapped in a
+-- to_regclass existence check so this whole section is a no-op on
+-- environments that don't have the table yet (staging / fresh clone).
 -- =========================================================================
 
-ALTER TABLE IF EXISTS healthkit_sleep ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF to_regclass('public.sleep_logs') IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE sleep_logs ENABLE ROW LEVEL SECURITY';
 
-DROP POLICY IF EXISTS "healthkit_sleep_select_own" ON healthkit_sleep;
-DROP POLICY IF EXISTS "healthkit_sleep_insert_own" ON healthkit_sleep;
-DROP POLICY IF EXISTS "healthkit_sleep_update_own" ON healthkit_sleep;
-DROP POLICY IF EXISTS "healthkit_sleep_delete_own" ON healthkit_sleep;
+        EXECUTE 'DROP POLICY IF EXISTS "sleep_logs_select_own" ON sleep_logs';
+        EXECUTE 'DROP POLICY IF EXISTS "sleep_logs_insert_own" ON sleep_logs';
+        EXECUTE 'DROP POLICY IF EXISTS "sleep_logs_update_own" ON sleep_logs';
+        EXECUTE 'DROP POLICY IF EXISTS "sleep_logs_delete_own" ON sleep_logs';
+        EXECUTE 'DROP POLICY IF EXISTS "Users can read own sleep logs" ON sleep_logs';
+        EXECUTE 'DROP POLICY IF EXISTS "Users can insert own sleep logs" ON sleep_logs';
+        EXECUTE 'DROP POLICY IF EXISTS "Users can update own sleep logs" ON sleep_logs';
+        EXECUTE 'DROP POLICY IF EXISTS "Users can delete own sleep logs" ON sleep_logs';
 
-CREATE POLICY "healthkit_sleep_select_own"
-    ON healthkit_sleep FOR SELECT
-    USING (auth.uid() = user_id);
+        EXECUTE $p$CREATE POLICY "sleep_logs_select_own"
+            ON sleep_logs FOR SELECT
+            USING (auth.uid() = user_id)$p$;
 
-CREATE POLICY "healthkit_sleep_insert_own"
-    ON healthkit_sleep FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
+        EXECUTE $p$CREATE POLICY "sleep_logs_insert_own"
+            ON sleep_logs FOR INSERT
+            WITH CHECK (auth.uid() = user_id)$p$;
 
-CREATE POLICY "healthkit_sleep_update_own"
-    ON healthkit_sleep FOR UPDATE
-    USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
+        EXECUTE $p$CREATE POLICY "sleep_logs_update_own"
+            ON sleep_logs FOR UPDATE
+            USING (auth.uid() = user_id)
+            WITH CHECK (auth.uid() = user_id)$p$;
 
-CREATE POLICY "healthkit_sleep_delete_own"
-    ON healthkit_sleep FOR DELETE
-    USING (auth.uid() = user_id);
+        EXECUTE $p$CREATE POLICY "sleep_logs_delete_own"
+            ON sleep_logs FOR DELETE
+            USING (auth.uid() = user_id)$p$;
+
+        RAISE NOTICE '[20260511] sleep_logs RLS policies applied.';
+    ELSE
+        RAISE NOTICE '[20260511] sleep_logs table not present — skipping.';
+    END IF;
+END $$;
 
 COMMIT;
 
--- Sanity check — confirm all three tables have RLS enabled.
+-- Sanity check — confirm each present table has RLS enabled. Tables not
+-- yet provisioned in this environment are reported as "not present".
 DO $$
 DECLARE
-    missing_rls TEXT;
+    t TEXT;
+    r RECORD;
 BEGIN
-    SELECT string_agg(c.relname, ', ')
-      INTO missing_rls
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-     WHERE n.nspname = 'public'
-       AND c.relname IN ('cardio_workouts', 'daily_activity_summary', 'healthkit_sleep')
-       AND c.relrowsecurity = false;
-    IF missing_rls IS NOT NULL THEN
-        RAISE WARNING 'Tables missing RLS after migration: %', missing_rls;
-    ELSE
-        RAISE NOTICE '[20260511] RLS verified on cardio_workouts, daily_activity_summary, healthkit_sleep.';
-    END IF;
+    FOR t IN SELECT unnest(ARRAY['cardio_workouts', 'daily_activity_summary', 'sleep_logs']) LOOP
+        IF to_regclass('public.' || t) IS NULL THEN
+            RAISE NOTICE '[20260511] % not present in this env — skipped.', t;
+            CONTINUE;
+        END IF;
+        SELECT relrowsecurity INTO r
+          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public' AND c.relname = t;
+        IF NOT r.relrowsecurity THEN
+            RAISE WARNING '[20260511] Table % is missing RLS after migration.', t;
+        ELSE
+            RAISE NOTICE '[20260511] RLS verified on %.', t;
+        END IF;
+    END LOOP;
 END $$;

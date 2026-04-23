@@ -1215,7 +1215,7 @@ final class HealthDataService: ObservableObject {
             AppLogger.info(
                 "[HEALTH] Skipping saveSleepFromHealthKit — not authenticated",
                 category: .health,
-                context: DiagnosticContext(op: "healthkit.sleep_save", endpoint: "healthkit_sleep")
+                context: DiagnosticContext(op: "healthkit.sleep_save", endpoint: "sleep_logs")
             )
             return
         }

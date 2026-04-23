@@ -140,6 +140,11 @@ enum NetworkErrorClassifier {
         context: String,
         category: AppLogger.Category = .general,
         transientLevel: AppLogger.Level = .warning,
+        op: String? = nil,
+        endpoint: String? = nil,
+        startedAt: Date? = nil,
+        userId: UUID? = nil,
+        retryAttempt: Int? = nil,
         file: String = #file,
         function: String = #function,
         line: Int = #line
@@ -147,16 +152,34 @@ enum NetworkErrorClassifier {
         let classification = classify(error)
         let msg = "\(context): \(error.localizedDescription)"
 
+        // When any structured context field is supplied, build a
+        // DiagnosticContext so downstream fingerprinting can pivot by
+        // pg_code / http_status / op. Existing call sites that omit all
+        // optional args still work exactly as before (context = nil).
+        let diag: DiagnosticContext? = {
+            guard op != nil || endpoint != nil || startedAt != nil || userId != nil else {
+                return nil
+            }
+            return DiagnosticContext.from(
+                error: error,
+                op: op ?? "unknown",
+                endpoint: endpoint,
+                startedAt: startedAt,
+                userId: userId,
+                retryAttempt: retryAttempt
+            )
+        }()
+
         switch classification {
         case .transientNetwork, .expectedHealthKit:
-            AppLogger.log(msg, level: transientLevel, category: category, file: file, function: function, line: line)
+            AppLogger.log(msg, level: transientLevel, category: category, context: diag, file: file, function: function, line: line)
         case .authExpired, .rlsViolation:
             // Route auth/RLS at .warning with category `.auth` so the catch-all
             // rollup can separate "user needs to re-auth" from "network flapped"
             // without spamming crash_reports.
-            AppLogger.log(msg, level: .warning, category: .auth, file: file, function: function, line: line)
+            AppLogger.log(msg, level: .warning, category: .auth, context: diag, file: file, function: function, line: line)
         case .realError:
-            AppLogger.log(msg, level: .error, category: category, file: file, function: function, line: line)
+            AppLogger.log(msg, level: .error, category: category, context: diag, file: file, function: function, line: line)
         }
 
         return classification

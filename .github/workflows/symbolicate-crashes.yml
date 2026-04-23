@@ -1,0 +1,217 @@
+name: Symbolicate Crash Reports
+
+# Q2-97 Phase 5.5 — runs every 15 min on a macOS runner, pulls crash_reports
+# with `symbolication_status = 'pending'` from Supabase, downloads the matching
+# .dSYM from the `dsyms` storage bucket, runs Apple's `atos` to resolve each
+# hex address to `file:line @ function`, and writes the result back as
+# `symbolicated_stack_trace`. The downstream triage-bugs edge function (Phase
+# 5.6) prefers the symbolicated trace over the raw hex stack whenever present,
+# which is what lets Claude produce real unified diffs at 0.85–0.95 confidence.
+#
+# Why macOS: `atos` is Apple-only; pure-JS DWARF parsers can't handle Swift
+# name mangling. Why 15 min: triage-bugs only fires every 4h downstream, so
+# 15 min is more than fast enough — and cheaper than a per-crash webhook.
+#
+# Required repo secrets:
+#   SUPABASE_URL              — https://<project>.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY — service-role key (bypasses RLS for worker reads)
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'        # every 15 min
+  workflow_dispatch: {}           # manual trigger from Actions UI
+
+concurrency:
+  group: symbolicate-crashes      # never run two symbolicators in parallel
+  cancel-in-progress: false
+
+jobs:
+  symbolicate:
+    runs-on: macos-14             # macos-14 is the cheapest M-series runner tier
+    timeout-minutes: 12           # scheduled at 15-min intervals, so fail early
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # Batch size — how many pending crashes to handle per run. Keep small so
+      # a single bad dSYM can't stall the whole queue. Queue drains naturally
+      # at ~200 crashes/hour, well under the app's worst-case rate.
+      BATCH_SIZE: '50'
+      # Where we stash downloaded dSYMs for this run (reused within the run,
+      # discarded at runner teardown).
+      DSYM_CACHE: ${{ runner.temp }}/dsyms
+
+    steps:
+      - name: Preflight — required secrets
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
+            echo "::error::SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY repo secrets are required"
+            exit 1
+          fi
+
+      - name: Install jq (if missing)
+        run: |
+          which jq >/dev/null || brew install jq
+
+      - name: Fetch pending crashes
+        id: pending
+        run: |
+          set -euo pipefail
+          mkdir -p "$DSYM_CACHE"
+          # Pull the batch. Ordered by occurred_at ASC so the oldest pending
+          # crashes drain first. `binary_uuid IS NOT NULL` filters out anything
+          # the Phase 5.2 backfill missed; those should already be 'legacy' but
+          # we stay defensive.
+          curl -sS -o pending.json -w 'HTTP %{http_code}\n' \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            "$SUPABASE_URL/rest/v1/crash_reports?select=id,binary_uuid,binary_slide,stack_trace&symbolication_status=eq.pending&binary_uuid=not.is.null&order=occurred_at.asc&limit=$BATCH_SIZE"
+          COUNT="$(jq 'length' pending.json)"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Pending crashes to symbolicate: $COUNT"
+
+      - name: No-op when queue is empty
+        if: ${{ steps.pending.outputs.count == '0' }}
+        run: echo "Nothing pending — exiting clean."
+
+      - name: Download dSYMs by binary_uuid
+        if: ${{ steps.pending.outputs.count != '0' }}
+        run: |
+          set -euo pipefail
+          UUIDS="$(jq -r '[.[].binary_uuid | ascii_downcase] | unique | .[]' pending.json)"
+          echo "Unique binary UUIDs in batch:"
+          echo "$UUIDS"
+          for UUID in $UUIDS; do
+            DSYM_ZIP="$DSYM_CACHE/$UUID.zip"
+            DSYM_DIR="$DSYM_CACHE/$UUID"
+            [[ -d "$DSYM_DIR" ]] && continue  # already extracted earlier this run
+            # Lookup storage_path in app_dsyms
+            ROW="$(curl -sS \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              "$SUPABASE_URL/rest/v1/app_dsyms?binary_uuid=eq.$UUID&select=storage_path")"
+            STORAGE_PATH="$(echo "$ROW" | jq -r '.[0].storage_path // empty')"
+            if [[ -z "$STORAGE_PATH" ]]; then
+              echo "::warning::No app_dsyms row for UUID=$UUID (crashes from this build will get no_dsym)"
+              mkdir -p "$DSYM_DIR.missing"   # sentinel directory
+              continue
+            fi
+            echo "Downloading dsyms/$STORAGE_PATH …"
+            curl -sS -L -f \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              -o "$DSYM_ZIP" \
+              "$SUPABASE_URL/storage/v1/object/dsyms/$STORAGE_PATH"
+            mkdir -p "$DSYM_DIR"
+            unzip -q "$DSYM_ZIP" -d "$DSYM_DIR"
+            rm -f "$DSYM_ZIP"
+          done
+
+      - name: Run atos + update crash_reports
+        if: ${{ steps.pending.outputs.count != '0' }}
+        run: |
+          set -euo pipefail
+          # Helper — send a PATCH to one crash_report row.
+          patch_row() {
+            local ID="$1"; local STATUS="$2"; local SYMB="$3"; local ERR="$4"
+            local PAYLOAD
+            PAYLOAD="$(jq -n \
+              --arg status "$STATUS" \
+              --arg symb   "$SYMB" \
+              --arg err    "$ERR" \
+              'if $symb == "" then {symbolication_status:$status, symbolication_error: ($err | select(length>0)), symbolicated_at: now | strftime("%Y-%m-%dT%H:%M:%S.000Z")}
+                else {symbolication_status:$status, symbolicated_stack_trace:$symb, symbolicated_at: now | strftime("%Y-%m-%dT%H:%M:%S.000Z")}
+               end | with_entries(select(.value != null))')"
+            curl -sS -o /dev/null -w '  PATCH %{http_code}\n' \
+              -X PATCH \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "Content-Type: application/json" \
+              -H "Prefer: return=minimal" \
+              --data "$PAYLOAD" \
+              "$SUPABASE_URL/rest/v1/crash_reports?id=eq.$ID"
+          }
+
+          # Iterate the pending batch
+          N="$(jq 'length' pending.json)"
+          for i in $(seq 0 $((N-1))); do
+            ROW="$(jq -c ".[$i]" pending.json)"
+            ID="$(jq -r '.id' <<<"$ROW")"
+            UUID_UPPER="$(jq -r '.binary_uuid' <<<"$ROW")"
+            UUID="$(echo "$UUID_UPPER" | tr '[:upper:]' '[:lower:]')"
+            SLIDE="$(jq -r '.binary_slide // empty' <<<"$ROW")"
+            STACK="$(jq -r '.stack_trace // empty' <<<"$ROW")"
+
+            DSYM_DIR="$DSYM_CACHE/$UUID"
+            if [[ ! -d "$DSYM_DIR" ]]; then
+              echo "[$ID] no_dsym (missing app_dsyms row)"
+              patch_row "$ID" "no_dsym" "" "dSYM not found in bucket for binary_uuid=$UUID"
+              continue
+            fi
+
+            # Locate the DWARF binary inside the .dSYM — path is
+            # Fit33.app.dSYM/Contents/Resources/DWARF/Fit33
+            DWARF_BIN="$(find "$DSYM_DIR" -type f -path '*/Contents/Resources/DWARF/*' | head -n1)"
+            if [[ -z "$DWARF_BIN" ]]; then
+              echo "[$ID] failed — no DWARF binary in dSYM"
+              patch_row "$ID" "failed" "" "dSYM bundle missing Contents/Resources/DWARF/Fit33"
+              continue
+            fi
+
+            # Parse Fit33-owned hex addresses out of the stack trace. Frame
+            # format examples from our CrashReporter:
+            #   "0   Fit33   0x0000000104d3b0d8 Fit33 + 7418072"
+            #   "Fit33                              0x0000000104d3799c 0x1049f4000 + ..."
+            # Regex: any 0x...16hex that appears on a line containing "Fit33".
+            # We only symbolicate Fit33-owned frames — atos can't resolve
+            # UIKit/Foundation without Apple's symbol server, and Claude
+            # only needs the first Fit33 frame anyway.
+            ADDRS="$(echo "$STACK" | grep -E 'Fit33' | grep -oE '0x[0-9a-fA-F]{8,16}' | sort -u | head -n 40 || true)"
+            if [[ -z "$ADDRS" ]]; then
+              echo "[$ID] failed — no Fit33 addresses in stack_trace"
+              patch_row "$ID" "failed" "" "stack_trace contained no Fit33-owned addresses"
+              continue
+            fi
+
+            # Run atos. -arch arm64 hardcoded (we ship arm64-only).
+            # Missing -l (slide) is legal; atos assumes 0. Fall through
+            # either way.
+            ATOS_ARGS=(-arch arm64 -o "$DWARF_BIN")
+            if [[ -n "$SLIDE" ]]; then
+              ATOS_ARGS+=(-l "$SLIDE")
+            fi
+
+            # Preserve input-address order: run one invocation with all
+            # addresses on the command line; atos prints one resolved line
+            # per input address in the same order.
+            # shellcheck disable=SC2086
+            SYMB_OUT="$(atos "${ATOS_ARGS[@]}" $ADDRS 2>/dev/null || true)"
+
+            if [[ -z "$SYMB_OUT" ]]; then
+              echo "[$ID] failed — atos produced no output"
+              patch_row "$ID" "failed" "" "atos produced no output"
+              continue
+            fi
+
+            # Pair each address with its resolution, newline-joined. This is
+            # the format triage-bugs (5.6) expects.
+            SYMB_LINES=""
+            i2=0
+            while read -r SYM_LINE; do
+              ADDR="$(echo "$ADDRS" | sed -n "$((i2+1))p")"
+              SYMB_LINES+="$ADDR → $SYM_LINE"$'\n'
+              i2=$((i2+1))
+            done <<<"$SYMB_OUT"
+            # Trim trailing newline
+            SYMB_LINES="${SYMB_LINES%$'\n'}"
+
+            echo "[$ID] done (${i2} frames resolved)"
+            patch_row "$ID" "done" "$SYMB_LINES" ""
+          done
+
+      - name: Summary
+        if: ${{ steps.pending.outputs.count != '0' }}
+        run: |
+          echo "Batch complete — ${{ steps.pending.outputs.count }} crashes processed."
+          echo "Next run: in <= 15m (cron) or via workflow_dispatch."

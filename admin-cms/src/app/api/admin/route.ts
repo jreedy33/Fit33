@@ -44,6 +44,8 @@ const BULK_ACTIONS = new Set([
   'send_push_campaign',
   // Bulk crash-report deletion paths — previously untracked.
   'bulk_delete_crash_reports', 'delete_resolved_crash_reports',
+  // Bulk bug-report deletion (Admin CMS crashes → Bugs tab).
+  'bulk_delete_bug_reports',
 ])
 
 function getActionTier(action: string): 'read' | 'write' | 'bulk' {
@@ -1199,6 +1201,27 @@ export async function POST(req: NextRequest) {
         }
 
         return NextResponse.json({ success: true })
+      }
+
+      case 'bulk_delete_bug_reports': {
+        const { ids } = params as { ids?: unknown }
+        if (!Array.isArray(ids) || ids.length === 0) {
+          return NextResponse.json({ error: 'ids[] required' }, { status: 400 })
+        }
+        const cleanIds = ids.filter((v): v is string => typeof v === 'string' && v.length > 0)
+        if (cleanIds.length === 0) {
+          return NextResponse.json({ error: 'no valid ids' }, { status: 400 })
+        }
+
+        const { error } = await admin.from('bug_reports')
+          .delete()
+          .in('id', cleanIds)
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        return NextResponse.json({ success: true, deleted: cleanIds.length })
       }
 
       // ═══════════════════════════════════════════════════

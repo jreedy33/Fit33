@@ -263,6 +263,11 @@ export default function CrashesPage() {
   // Selected crashes for bulk actions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
+  // Selected user-submitted bug reports (Bugs tab) for bulk actions.
+  // Kept separate from `selectedIds` (crashes) so switching tabs doesn't
+  // bleed selection state across two different entity types.
+  const [selectedBugIds, setSelectedBugIds] = useState<Set<string>>(new Set())
+
   // Date range filter (applies to both crashes and bugs)
   const [dateRange, setDateRange] = useState('all')
 
@@ -441,10 +446,30 @@ export default function CrashesPage() {
     try {
       await adminApi('delete_bug_report', { id })
       if (selectedBug?.id === id) setSelectedBug(null)
+      setSelectedBugIds(prev => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
       await loadBugs()
       if (activeTab === 'overview') await loadOverview()
     } catch (err) {
       console.error('Failed to delete bug report:', err)
+    }
+  }
+
+  const bulkDeleteBugReports = async () => {
+    if (selectedBugIds.size === 0) return
+    try {
+      const ids = Array.from(selectedBugIds)
+      await adminApi('bulk_delete_bug_reports', { ids })
+      if (selectedBug && ids.includes(selectedBug.id)) setSelectedBug(null)
+      setSelectedBugIds(new Set())
+      await loadBugs()
+      if (activeTab === 'overview') await loadOverview()
+    } catch (err) {
+      console.error('Failed to bulk delete bug reports:', err)
     }
   }
 
@@ -1020,6 +1045,19 @@ Respond with structured analysis: prioritized issues, root causes, fix suggestio
             onDelete={(id) => setConfirmDialog({
               message: 'Delete this bug report? This cannot be undone.',
               onConfirm: () => { deleteBugReport(id); setConfirmDialog(null) }
+            })}
+            selectedIds={selectedBugIds}
+            onToggleSelect={(id) => setSelectedBugIds(prev => {
+              const next = new Set(prev)
+              if (next.has(id)) next.delete(id)
+              else next.add(id)
+              return next
+            })}
+            onSelectAll={(ids) => setSelectedBugIds(new Set(ids))}
+            onClearSelection={() => setSelectedBugIds(new Set())}
+            onBulkDelete={() => setConfirmDialog({
+              message: `Delete ${selectedBugIds.size} selected bug report${selectedBugIds.size === 1 ? '' : 's'}? This cannot be undone.`,
+              onConfirm: () => { bulkDeleteBugReports(); setConfirmDialog(null) }
             })}
           />
         ) : null}
@@ -2215,14 +2253,46 @@ function CrashListTab({
 // Bug List Tab
 // ═══════════════════════════════════════════════════
 
-function BugListTab({ bugs, onViewBug, onUpdateStatus, onDelete }: {
+function BugListTab({
+  bugs, onViewBug, onUpdateStatus, onDelete,
+  selectedIds, onToggleSelect, onSelectAll, onClearSelection, onBulkDelete,
+}: {
   bugs: BugReport[]
   onViewBug: (bug: BugReport) => void
   onUpdateStatus: (id: string, status: string) => void
   onDelete: (id: string) => void
+  selectedIds: Set<string>
+  onToggleSelect: (id: string) => void
+  onSelectAll: (ids: string[]) => void
+  onClearSelection: () => void
+  onBulkDelete: () => void
 }) {
+  const allVisibleSelected = bugs.length > 0 && bugs.every(b => selectedIds.has(b.id))
   return (
     <div className="space-y-4">
+      {/* Bulk Actions */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--accent)' + '15', border: '1px solid var(--accent)' + '33' }}>
+          <span className="text-sm font-medium" style={{ color: 'var(--accent)' }}>
+            {selectedIds.size} selected
+          </span>
+          <button
+            onClick={onBulkDelete}
+            className="text-xs px-3 py-1 rounded-md"
+            style={{ background: '#ef444422', color: '#ef4444' }}
+          >
+            🗑️ Delete
+          </button>
+          <button
+            onClick={onClearSelection}
+            className="text-xs ml-auto"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Clear Selection
+          </button>
+        </div>
+      )}
+
       {bugs.length === 0 ? (
         <div className="text-center py-12 rounded-xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
           <div className="text-3xl mb-2">🐛</div>
@@ -2230,11 +2300,30 @@ function BugListTab({ bugs, onViewBug, onUpdateStatus, onDelete }: {
         </div>
       ) : (
         <div className="space-y-1">
-          <div className="text-xs px-3 pb-2" style={{ color: 'var(--text-muted)' }}>
-            {bugs.length} bug report{bugs.length !== 1 ? 's' : ''}
+          <div className="flex items-center gap-2 px-3 pb-2">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={() => {
+                if (allVisibleSelected) onClearSelection()
+                else onSelectAll(bugs.map(b => b.id))
+              }}
+              className="rounded"
+              title={allVisibleSelected ? 'Clear selection' : 'Select all visible'}
+            />
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {bugs.length} bug report{bugs.length !== 1 ? 's' : ''}
+            </span>
           </div>
           {bugs.map(bug => (
             <div key={bug.id} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(bug.id)}
+                onChange={() => onToggleSelect(bug.id)}
+                className="ml-3 rounded"
+                aria-label="Select bug report"
+              />
               <div className="flex-1">
                 <BugRow bug={bug} onClick={() => onViewBug(bug)} />
               </div>

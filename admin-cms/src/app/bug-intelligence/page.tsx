@@ -622,9 +622,38 @@ function timeAgo(iso: string): string {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
+// Cluster I — Improvement Tracker types. Mirrors the
+// `bug_intel_improvement_tracker` view + `performance_metrics_daily` view
+// added by migration 20260514_performance_metrics.sql.
+type TrackerRow = {
+    cluster_code: string
+    latest_captured_at: string | null
+    latest_open_count: number
+    latest_occurrence_total: number
+    prev_captured_at: string | null
+    prev_open_count: number | null
+    prev_occurrence_total: number | null
+    open_delta: number
+    occurrence_delta: number
+    open_delta_pct: number | null
+}
+
+type PerfDailyRow = {
+    day: string
+    op: string
+    sample_count: number
+    p50_ms: number
+    p95_ms: number
+    p99_ms: number
+}
+
 export default function BugIntelligencePage() {
     const [overview, setOverview] = useState<Overview | null>(null)
     const [metrics, setMetrics] = useState<AgentMetric[]>([])
+    const [tracker, setTracker] = useState<TrackerRow[]>([])
+    const [perfDaily, setPerfDaily] = useState<PerfDailyRow[]>([])
+    const [trackerMigrationPending, setTrackerMigrationPending] = useState(false)
+    const [snapshotting, setSnapshotting] = useState(false)
     const [fingerprints, setFingerprints] = useState<Fingerprint[]>([])
     const [selectedFp, setSelectedFp] = useState<string | null>(null)
     const [reports, setReports] = useState<Report[]>([])
@@ -646,13 +675,27 @@ export default function BugIntelligencePage() {
     const [clearing, setClearing] = useState(false)
 
     const loadOverview = useCallback(async () => {
-        const [ovRes, mRes] = await Promise.all([
+        const [ovRes, mRes, trackRes] = await Promise.all([
             adminAction('get_bug_intelligence_overview'),
             adminAction('get_bug_intelligence_metrics'),
+            adminAction('get_bug_intel_improvement_tracker'),
         ])
         setOverview(ovRes.overview || null)
         setMetrics(mRes.metrics || [])
+        setTracker(trackRes.tracker || [])
+        setPerfDaily(trackRes.perf_daily || [])
+        setTrackerMigrationPending(Boolean(trackRes.migration_pending))
     }, [])
+
+    const captureSnapshot = useCallback(async (label: string) => {
+        setSnapshotting(true)
+        try {
+            await adminAction('snapshot_bug_intel_baseline', { label })
+            await loadOverview()
+        } finally {
+            setSnapshotting(false)
+        }
+    }, [loadOverview])
 
     const loadFingerprints = useCallback(async () => {
         setLoading(true)
@@ -986,6 +1029,14 @@ export default function BugIntelligencePage() {
 
                 {overview && <OverviewRow overview={overview} />}
 
+                <ImprovementTracker
+                    tracker={tracker}
+                    perfDaily={perfDaily}
+                    migrationPending={trackerMigrationPending}
+                    snapshotting={snapshotting}
+                    onSnapshot={captureSnapshot}
+                />
+
                 {metrics.length > 0 && <AgentLeaderboard metrics={metrics} />}
 
                 <div style={{ display: 'grid', gridTemplateColumns: selectedFp ? '1fr 560px' : '1fr', gap: 24, marginTop: 24 }}>
@@ -1057,6 +1108,203 @@ function OverviewRow({ overview }: { overview: Overview }) {
                 </div>
             ))}
         </div>
+    )
+}
+
+// Cluster I — Improvement Tracker component.
+//
+// Renders a compact tile showing per-cluster deltas between the latest
+// baseline snapshot and the previous one, plus a 14-day p50/p95 sparkline
+// for ops tied to the same cluster (heuristic prefix match).
+//
+// Empty states:
+//   * migrationPending: 20260514 SQL not applied to this env → shows hint.
+//   * No snapshots yet: shows a "Capture baseline" button.
+//   * One snapshot only: shows counts without delta (delta needs 2 snapshots).
+const CLUSTER_LABELS: Record<string, string> = {
+    A_main_thread: 'A — Main-thread blocks',
+    B_rls: 'B — RLS / 42501',
+    C_uuid: 'C — UUID 42883',
+    D_startup_timeout: 'D — Startup timeouts (401)',
+    E_crashes: 'E — Crashes (SIGSEGV / CFString)',
+    F_overloads: 'F — Function overload ambiguity',
+    G_social: 'G — Social fan-out errors',
+    uncategorized: 'Uncategorized',
+}
+
+// Map each cluster to the op names whose p50/p95 trends we show inline.
+// Bound to `PerformanceSignposts.Op.rawValue` in
+// Fit33/PerformanceSignposts.swift.
+const CLUSTER_OPS: Record<string, string[]> = {
+    A_main_thread: ['dashboard.hydrate', 'dashboard.social_fanout', 'app.foreground', 'app.launch'],
+    D_startup_timeout: ['auth.wait_for_fresh_session', 'auth.session_recovery'],
+    B_rls: ['step.save', 'cardio.save', 'daily_activity.save'],
+    C_uuid: ['weight.log', 'weight.set_goal'],
+    G_social: ['activity_feed.fetch', 'friends.fetch', 'challenges.fetch'],
+    F_overloads: ['social.post_workout_activity'],
+    E_crashes: [],
+    uncategorized: [],
+}
+
+function ImprovementTracker({
+    tracker,
+    perfDaily,
+    migrationPending,
+    snapshotting,
+    onSnapshot,
+}: {
+    tracker: TrackerRow[]
+    perfDaily: PerfDailyRow[]
+    migrationPending: boolean
+    snapshotting: boolean
+    onSnapshot: (label: string) => void
+}) {
+    if (migrationPending) {
+        return (
+            <section style={{ ...cardStyle, marginTop: 16, padding: 16 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+                    Improvement Tracker
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    Apply migration <code>20260514_performance_metrics.sql</code> to populate this view. Until then, signposts buffer in-memory on device and discard on next launch.
+                </div>
+            </section>
+        )
+    }
+
+    if (tracker.length === 0) {
+        return (
+            <section style={{ ...cardStyle, marginTop: 16, padding: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Improvement Tracker
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => onSnapshot(`baseline_${new Date().toISOString().slice(0, 10)}`)}
+                        disabled={snapshotting}
+                        style={{
+                            background: 'var(--accent)',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: 8,
+                            padding: '6px 12px',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: snapshotting ? 'wait' : 'pointer',
+                            opacity: snapshotting ? 0.6 : 1,
+                        }}
+                    >
+                        {snapshotting ? 'Capturing…' : 'Capture baseline'}
+                    </button>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    No baseline snapshots yet. Capture one now to enable before/after deltas.
+                </div>
+            </section>
+        )
+    }
+
+    // Pre-aggregate perf_daily by op → latest p50/p95.
+    const perfLatest: Record<string, PerfDailyRow> = {}
+    for (const row of perfDaily) {
+        const prev = perfLatest[row.op]
+        if (!prev || row.day > prev.day) perfLatest[row.op] = row
+    }
+
+    return (
+        <section style={{ ...cardStyle, marginTop: 16, padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Improvement Tracker
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        Compares latest baseline to the one before it. Lower is better.
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => onSnapshot(`checkpoint_${new Date().toISOString().slice(0, 10)}`)}
+                        disabled={snapshotting}
+                        style={{
+                            background: 'var(--bg-tertiary)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            padding: '4px 10px',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: snapshotting ? 'wait' : 'pointer',
+                            opacity: snapshotting ? 0.6 : 1,
+                        }}
+                    >
+                        {snapshotting ? 'Capturing…' : 'Capture checkpoint'}
+                    </button>
+                </div>
+            </div>
+
+            <div style={{ overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                        <tr style={{ background: 'var(--bg-tertiary)', textAlign: 'left' }}>
+                            <th style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-secondary)' }}>Cluster</th>
+                            <th style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'right' }}>Open fingerprints</th>
+                            <th style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'right' }}>Δ open</th>
+                            <th style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-secondary)', textAlign: 'right' }}>Δ %</th>
+                            <th style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-secondary)' }}>Perf (p50 / p95)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {tracker.map(row => {
+                            const ops = CLUSTER_OPS[row.cluster_code] ?? []
+                            const perfCells = ops
+                                .map(op => perfLatest[op])
+                                .filter((r): r is PerfDailyRow => Boolean(r))
+                                .slice(0, 2)
+                            const deltaColor = row.open_delta < 0 ? 'var(--success, #22c55e)'
+                                : row.open_delta > 0 ? 'var(--danger)'
+                                : 'var(--text-secondary)'
+                            return (
+                                <tr key={row.cluster_code} style={{ borderTop: '1px solid var(--border)' }}>
+                                    <td style={{ padding: '10px' }}>
+                                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                            {CLUSTER_LABELS[row.cluster_code] ?? row.cluster_code}
+                                        </div>
+                                        {row.latest_captured_at && (
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                                latest: {new Date(row.latest_captured_at).toLocaleDateString()}
+                                                {row.prev_captured_at && ` · prev: ${new Date(row.prev_captured_at).toLocaleDateString()}`}
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td style={{ padding: '10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                        {row.latest_open_count}
+                                        {row.prev_open_count !== null && (
+                                            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}> ← {row.prev_open_count}</span>
+                                        )}
+                                    </td>
+                                    <td style={{ padding: '10px', textAlign: 'right', color: deltaColor, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                                        {row.open_delta > 0 ? '+' : ''}{row.open_delta}
+                                    </td>
+                                    <td style={{ padding: '10px', textAlign: 'right', color: deltaColor, fontVariantNumeric: 'tabular-nums' }}>
+                                        {row.open_delta_pct !== null ? `${row.open_delta_pct > 0 ? '+' : ''}${row.open_delta_pct.toFixed(1)}%` : '—'}
+                                    </td>
+                                    <td style={{ padding: '10px', fontSize: 12, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                                        {perfCells.length === 0 ? '—' : perfCells.map(pc => (
+                                            <div key={pc.op}>
+                                                <span style={{ color: 'var(--text-muted)' }}>{pc.op}: </span>
+                                                {Math.round(pc.p50_ms)}ms / {Math.round(pc.p95_ms)}ms
+                                                <span style={{ color: 'var(--text-muted)' }}> ({pc.sample_count})</span>
+                                            </div>
+                                        ))}
+                                    </td>
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </section>
     )
 }
 

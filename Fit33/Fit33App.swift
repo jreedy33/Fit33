@@ -474,6 +474,12 @@ struct Fit33App: App {
                     let criticalMs = Int((CFAbsoluteTimeGetCurrent() - startupStart) * 1000)
                     AppLogger.info("[STARTUP] Critical path complete in \(criticalMs)ms (auth: \(authMs)ms)", category: .performance)
                     StartupCoordinator.shared.markPhaseComplete(.critical)
+
+                    // Cluster I: start the performance metrics uploader.
+                    // Drains the `PerformanceSignposts.pendingMetrics` queue
+                    // into Supabase every 30s (+ once on background). No-op
+                    // until the 20260514 migration is applied to the env.
+                    PerformanceMetricsUploader.shared.start()
                     
                     // Deferred: injury/limitation rows from Supabase — safe after critical; generator uses empty list until loaded
                     if supabaseManager.isAuthenticated {

@@ -42,6 +42,10 @@ const WRITE_ACTIONS = new Set([
   // and rate-limited at 30/min — plenty for a human clicking the button,
   // strict enough to catch runaway scripts.
   'get_bug_intelligence_export',
+  // Cluster I — capturing a bug-intel baseline writes to
+  // `bug_intel_baseline_snapshots`. Read-only tracker query is classified
+  // as read.
+  'snapshot_bug_intel_baseline',
 ])
 const BULK_ACTIONS = new Set([
   'bulk_update_bug_reports', 'bulk_update_crash_reports',
@@ -1559,6 +1563,53 @@ export async function POST(req: NextRequest) {
           .select('*')
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         return NextResponse.json({ metrics: data || [] })
+      }
+
+      // Cluster I / Improvement Tracker — reads the
+      // `bug_intel_improvement_tracker` view (migration 20260514). Returns:
+      //   * tracker[]   — one row per cluster_code with latest vs prev counts
+      //   * perf_daily[] — performance_metrics_daily for the past 14 days,
+      //     used to render p50/p95 sparklines beside each cluster.
+      // Fails soft — if the migration isn't applied yet the UI shows an
+      // "apply 20260514 to see deltas" empty state instead of an error.
+      case 'get_bug_intel_improvement_tracker': {
+        const since14d = new Date(Date.now() - 14 * 24 * 3600_000).toISOString()
+
+        const [trackerRes, perfRes] = await Promise.all([
+          admin.from('bug_intel_improvement_tracker').select('*'),
+          admin.from('performance_metrics_daily')
+            .select('*')
+            .gte('day', since14d)
+            .order('day', { ascending: true }),
+        ])
+
+        if (trackerRes.error?.message?.includes('does not exist')) {
+          return NextResponse.json({
+            tracker: [],
+            perf_daily: [],
+            migration_pending: true,
+            note: 'Migration 20260514_performance_metrics.sql not yet applied — run it to populate this view.',
+          })
+        }
+
+        return NextResponse.json({
+          tracker: trackerRes.data || [],
+          perf_daily: perfRes.data || [],
+          migration_pending: false,
+        })
+      }
+
+      // Service-role only: call `snapshot_bug_intel_baseline(label)` to
+      // capture a new "after sweep" or weekly checkpoint. The label is
+      // free-form text (e.g. `after_sweep_2026_04_24`).
+      case 'snapshot_bug_intel_baseline': {
+        const { label } = params as { label: string }
+        if (!label || typeof label !== 'string' || label.length > 128) {
+          return NextResponse.json({ error: 'label required (<=128 chars)' }, { status: 400 })
+        }
+        const { data, error } = await admin.rpc('snapshot_bug_intel_baseline', { p_label: label })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ snapshot: data || [] })
       }
 
       case 'get_bug_intelligence_fingerprints': {

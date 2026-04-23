@@ -1677,12 +1677,131 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 4. Assemble bundles in the same order the reports came back
+        // 4. For every SHAKE-sourced fingerprint, pull the original
+        // bug_reports row (user description, expected behavior, screen,
+        // likely_source_files, severity the user picked) PLUS a PII-stripped
+        // user_profile snapshot so Cursor has the same context Claude had.
+        // Triage-only fields: we deliberately DROP user_id / user_email /
+        // display_name / screenshot_base64 from the export (the .md lands in
+        // GitHub PR bodies and MASTER_TODO so it must stay PII-free).
+        const shakeFps = fps.filter(fp => {
+          const row = fpById.get(fp) as { source?: string } | undefined
+          return row?.source === 'shake'
+        })
+        const shakeExample = new Map<string, Record<string, unknown>>()
+        if (shakeFps.length > 0) {
+          const shakeReportIds = reportRows
+            .filter(r => {
+              const fp = fpById.get(r.fingerprint) as { source?: string } | undefined
+              return fp?.source === 'shake'
+            })
+            .map(r => r.id as string)
+
+          if (shakeReportIds.length > 0) {
+            const { data: shakes } = await admin
+              .from('bug_reports')
+              .select(
+                'id, user_id, triage_report_id, description, expected_behavior, ' +
+                'additional_info, reproduces_every_time, screen_name, ' +
+                'likely_source_files, severity, bug_category, screenshot_base64, ' +
+                'device_model, os_version, app_version, created_at',
+              )
+              .in('triage_report_id', shakeReportIds)
+
+            const shakeRows = (shakes ?? []) as Array<{
+              id: string
+              user_id: string | null
+              triage_report_id: string | null
+              screenshot_base64: string | null
+              description: string
+              expected_behavior: string | null
+              additional_info: string | null
+              reproduces_every_time: boolean
+              screen_name: string | null
+              likely_source_files: string[] | null
+              severity: string
+              bug_category: string | null
+              device_model: string | null
+              os_version: string | null
+              app_version: string | null
+              created_at: string
+            }>
+
+            // Re-fetch minimal, PII-stripped user_profiles for context —
+            // same fields the edge function sends to Claude, minus email/name.
+            const userIds = Array.from(new Set(
+              shakeRows.map(s => s.user_id).filter((x): x is string => !!x),
+            ))
+            const profileById = new Map<string, Record<string, unknown>>()
+            if (userIds.length > 0) {
+              const { data: profiles } = await admin
+                .from('user_profiles')
+                .select(
+                  'id, created_at, has_completed_onboarding, experience_level, ' +
+                  'strength_level, fitness_goal, available_days, equipment, ' +
+                  'total_workouts, current_streak, is_verified, is_gold_verified, ' +
+                  'weight_unit, height_unit, distance_unit',
+                )
+                .in('id', userIds)
+              for (const p of ((profiles ?? []) as Array<Record<string, unknown>>)) {
+                profileById.set(String(p.id), p)
+              }
+            }
+
+            for (const s of shakeRows) {
+              if (!s.triage_report_id) continue
+              const p = s.user_id ? profileById.get(s.user_id) ?? null : null
+              let accountAgeDays: number | null = null
+              if (p && typeof p.created_at === 'string') {
+                const ts = Date.parse(p.created_at)
+                if (!Number.isNaN(ts)) {
+                  accountAgeDays = Math.max(0, Math.floor((Date.now() - ts) / 86_400_000))
+                }
+              }
+              const userContext = p ? {
+                account_age_days: accountAgeDays,
+                has_completed_onboarding: p.has_completed_onboarding ?? null,
+                experience_level: p.experience_level ?? null,
+                strength_level: p.strength_level ?? null,
+                fitness_goal: p.fitness_goal ?? null,
+                available_days: p.available_days ?? null,
+                equipment_count: Array.isArray(p.equipment) ? p.equipment.length : null,
+                total_workouts: p.total_workouts ?? null,
+                current_streak: p.current_streak ?? null,
+                is_verified: p.is_verified ?? null,
+                is_gold_verified: p.is_gold_verified ?? null,
+                weight_unit: p.weight_unit ?? null,
+                height_unit: p.height_unit ?? null,
+                distance_unit: p.distance_unit ?? null,
+              } : null
+
+              shakeExample.set(s.triage_report_id, {
+                description: s.description,
+                expected_behavior: s.expected_behavior,
+                additional_info: s.additional_info,
+                reproduces_every_time: s.reproduces_every_time,
+                screen_name: s.screen_name,
+                likely_source_files: s.likely_source_files ?? [],
+                user_severity: s.severity,
+                bug_category: s.bug_category,
+                screenshot_attached: !!(s.screenshot_base64 && s.screenshot_base64.length > 0),
+                device_model: s.device_model,
+                os_version: s.os_version,
+                app_version: s.app_version,
+                submitted_at: s.created_at,
+                user_context: userContext,
+              })
+            }
+          }
+        }
+
+        // 5. Assemble bundles in the same order the reports came back
         // (severity asc, confidence desc, created_at desc).
         const bundles = reportRows.map((r) => ({
           fingerprint: fpById.get(r.fingerprint) || null,
           report: r,
           example_crash: crashExample.get(r.fingerprint) || null,
+          example_shake: shakeExample.get(r.id as string) || null,
         }))
 
         return NextResponse.json({

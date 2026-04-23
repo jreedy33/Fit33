@@ -7,7 +7,10 @@ import AdminShell from '@/components/AdminShell'
 
 type Fingerprint = {
     fingerprint: string
-    source: 'log' | 'crash'
+    // Phase 6: 'shake' is new — rage-shake user reports that Claude triaged
+    // through supabase/functions/triage-shake-reports. They live in the same
+    // list as log/crash so the CMS has a single inbox.
+    source: 'log' | 'crash' | 'shake'
     normalized_message: string
     sample_message: string
     error_domain: string | null
@@ -59,6 +62,7 @@ type Trend = {
 
 type Overview = {
     fingerprints_by_status: Record<string, number>
+    fingerprints_by_source?: Record<string, number>
     reports_last_7d_by_severity: Record<string, number>
     trends_last_24h: Trend[]
     pending_reports_count: number
@@ -116,10 +120,45 @@ type ExportCrash = {
     occurred_at?: string
     session_id?: string | null
 }
+// PII-stripped snapshot of bug_reports + user_profiles for shake-sourced
+// reports. Deliberately omits user_id / user_email / display_name /
+// screenshot_base64 — the .md lands in GitHub PR bodies and MASTER_TODO.md.
+type ExportShake = {
+    description: string
+    expected_behavior: string | null
+    additional_info: string | null
+    reproduces_every_time: boolean
+    screen_name: string | null
+    likely_source_files: string[]
+    user_severity: string
+    bug_category: string | null
+    screenshot_attached: boolean
+    device_model: string | null
+    os_version: string | null
+    app_version: string | null
+    submitted_at: string
+    user_context: {
+        account_age_days: number | null
+        has_completed_onboarding: boolean | null
+        experience_level: string | null
+        strength_level: string | null
+        fitness_goal: string | null
+        available_days: number | null
+        equipment_count: number | null
+        total_workouts: number | null
+        current_streak: number | null
+        is_verified: boolean | null
+        is_gold_verified: boolean | null
+        weight_unit: string | null
+        height_unit: string | null
+        distance_unit: string | null
+    } | null
+}
 type BugIntelExportBundle = {
     fingerprint: ExportFingerprint | null
     report: ExportReport
     example_crash: ExportCrash | null
+    example_shake: ExportShake | null
 }
 type BugIntelExport = {
     generated_at: string
@@ -164,6 +203,14 @@ const SEVERITY_COLORS: Record<string, string> = {
     critical: '#dc2626', high: '#f97316', medium: '#f59e0b', low: '#3b82f6',
 }
 
+// Distinct colors per fingerprint origin:
+//   crash = red  (iOS CrashReportingService / MetricKit)
+//   log   = indigo (dev_session_logs error entries)
+//   shake = emerald (user rage-shake bug_reports — Phase 6)
+const SOURCE_COLORS: Record<string, string> = {
+    crash: '#dc2626', log: '#6366f1', shake: '#059669',
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 async function adminAction(action: string, params: Record<string, unknown> = {}) {
@@ -202,12 +249,13 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
     L.push(`You are receiving ${total} bug intelligence report(s) produced by the Fit33 triage pipeline (Claude Sonnet 4 + symbolicated stack traces). Each report has a suggested \`file_path\` and \`code_diff\` — treat these as **hypotheses**, not facts:`)
     L.push('')
     L.push(`1. Read the suggested \`file_path\`. Verify the failing code actually exists there.`)
-    L.push(`2. If Claude's diff is correct → apply it with any needed refinements.`)
-    L.push(`3. If Claude's diff is wrong or off-target → explain why and write a better one.`)
-    L.push(`4. If you cannot locate the failure site → flag the report and move on.`)
-    L.push(`5. Work in priority order: **critical → high → medium → low**. Within a tier, highest confidence first.`)
-    L.push(`6. Share your plan before making changes (which reports you'll tackle, which you'll skip and why).`)
-    L.push(`7. After fixing each report, note the fingerprint so the user can mark it resolved in \`/bug-intelligence\`.`)
+    L.push(`2. For shake-sourced reports, read the \`Evidence — user-reported shake\` block carefully: the user's words + \`likely_source_files\` + reporter profile often pinpoint the bug faster than Claude's diff. Check the admin CMS /bug-intelligence page for the attached screenshot.`)
+    L.push(`3. If Claude's diff is correct → apply it with any needed refinements.`)
+    L.push(`4. If Claude's diff is wrong or off-target → explain why and write a better one.`)
+    L.push(`5. If you cannot locate the failure site → flag the report and move on.`)
+    L.push(`6. Work in priority order: **critical → high → medium → low**. Within a tier, highest confidence first.`)
+    L.push(`7. Share your plan before making changes (which reports you'll tackle, which you'll skip and why).`)
+    L.push(`8. After fixing each report, note the fingerprint so the user can mark it resolved in \`/bug-intelligence\`.`)
     L.push('')
     L.push(`Respect the repo rules in \`.cursor/rules/codingrules.mdc\` and the scoped \`swiftui-rules.mdc\` / \`supabase-rules.mdc\` / \`admin-cms-rules.mdc\`. Consult the matching \`*_AGENT.md\` file for each report's \`agent_owner\` before making changes.`)
     L.push('')
@@ -231,6 +279,7 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         const r = b.report
         const f = b.fingerprint
         const c = b.example_crash
+        const s = b.example_shake
         const idx = i + 1
 
         L.push(`## Report ${idx}: [${r.severity.toUpperCase()}] ${r.title}`)
@@ -306,6 +355,68 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
             L.push('')
             L.push(r.suggested_todo)
             L.push('')
+        }
+
+        if (s) {
+            L.push(`### Evidence — user-reported shake`)
+            L.push('')
+            L.push(`- **User severity** (floor for Claude): \`${s.user_severity}\`${s.bug_category ? ` · **Category**: \`${s.bug_category}\`` : ''}`)
+            if (s.screen_name) L.push(`- **Screen at shake**: \`${s.screen_name}\``)
+            L.push(`- **Reproduces every time**: ${s.reproduces_every_time ? 'yes' : 'no / intermittent'}`)
+            L.push(`- **Build**: \`${s.app_version ?? '?'}\` on \`${s.device_model ?? '?'}\` / \`${s.os_version ?? '?'}\``)
+            L.push(`- **Submitted**: \`${s.submitted_at}\``)
+            L.push(`- **Screenshot attached**: ${s.screenshot_attached ? 'yes (see admin CMS /bug-intelligence for the image — not embedded in .md)' : 'no'}`)
+            L.push('')
+            if (s.likely_source_files.length > 0) {
+                L.push(`**Likely source files** (pre-computed by \`ScreenCodeMap\` at shake time — start here):`)
+                for (const p of s.likely_source_files) L.push(`- \`${p}\``)
+                L.push('')
+            }
+            L.push(`**User's description:**`)
+            L.push('')
+            L.push('> ' + s.description.replace(/\n/g, '\n> '))
+            L.push('')
+            if (s.expected_behavior) {
+                L.push(`**Expected behavior:**`)
+                L.push('')
+                L.push('> ' + s.expected_behavior.replace(/\n/g, '\n> '))
+                L.push('')
+            }
+            if (s.additional_info) {
+                L.push(`**Additional info:**`)
+                L.push('')
+                L.push('> ' + s.additional_info.replace(/\n/g, '\n> '))
+                L.push('')
+            }
+            if (s.user_context) {
+                const u = s.user_context
+                const factsRaw: Array<[string, unknown]> = [
+                    ['experience_level', u.experience_level],
+                    ['strength_level', u.strength_level],
+                    ['fitness_goal', u.fitness_goal],
+                    ['has_completed_onboarding', u.has_completed_onboarding],
+                    ['account_age_days', u.account_age_days],
+                    ['total_workouts', u.total_workouts],
+                    ['current_streak', u.current_streak],
+                    ['available_days', u.available_days],
+                    ['equipment_count', u.equipment_count],
+                    ['is_verified', u.is_verified],
+                    ['is_gold_verified', u.is_gold_verified],
+                    ['weight_unit', u.weight_unit],
+                    ['height_unit', u.height_unit],
+                    ['distance_unit', u.distance_unit],
+                ]
+                const facts = factsRaw.filter(([, v]) => v !== null && v !== undefined)
+                if (facts.length > 0) {
+                    L.push(`<details>`)
+                    L.push(`<summary>Reporter profile (PII-stripped)</summary>`)
+                    L.push('')
+                    for (const [k, v] of facts) L.push(`- \`${k}\`: \`${String(v)}\``)
+                    L.push('')
+                    L.push(`</details>`)
+                    L.push('')
+                }
+            }
         }
 
         if (c) {
@@ -398,6 +509,8 @@ export default function BugIntelligencePage() {
         agent: 'all',
         severity_min: '',
         search: '',
+        // Phase 6: source splits the inbox into Crash / Log / Shake (user-reported).
+        source: 'all',
     })
 
     const loadOverview = useCallback(async () => {
@@ -416,6 +529,7 @@ export default function BugIntelligencePage() {
             agent: filters.agent,
             severity_min: filters.severity_min || undefined,
             search: filters.search || undefined,
+            source: filters.source,
             limit: 150,
         })
         setFingerprints(data.fingerprints || [])
@@ -462,6 +576,28 @@ export default function BugIntelligencePage() {
             } else {
                 const r = result.result as { reports_written?: number; candidates?: number }
                 alert(`Triage complete — ${r?.reports_written ?? 0} report(s) written across ${r?.candidates ?? 0} fingerprint(s).`)
+                await Promise.all([loadOverview(), loadFingerprints()])
+                if (selectedFp) await loadDetail(selectedFp)
+            }
+        } finally {
+            setTriggering(false)
+        }
+    }
+
+    // Phase 6 — manual kick for the rage-shake pipeline. Calls
+    // supabase/functions/triage-shake-reports which drains `bug_reports`
+    // rows with triage_status='pending' and produces
+    // bug_intelligence_reports (source=shake). Background cron runs every
+    // 10 min so this button is only for impatient users testing the flow.
+    async function triggerShakeTriage() {
+        setTriggering(true)
+        try {
+            const result = await adminAction('trigger_shake_triage', {})
+            if (!result.ok) {
+                alert(`Shake triage failed: ${JSON.stringify(result.result)}`)
+            } else {
+                const r = result.result as { reports_written?: number; candidates?: number; message?: string }
+                alert(`Shake triage — ${r?.reports_written ?? 0} written / ${r?.candidates ?? 0} candidates.\n${r?.message ?? ''}`)
                 await Promise.all([loadOverview(), loadFingerprints()])
                 if (selectedFp) await loadDetail(selectedFp)
             }
@@ -566,6 +702,15 @@ export default function BugIntelligencePage() {
                             {exporting ? 'Exporting…' : 'Export for Cursor (.md)'}
                         </button>
                         <button
+                            onClick={triggerShakeTriage}
+                            disabled={triggering}
+                            className="btn btn-ghost"
+                            title="Triage any pending rage-shake bug reports through Claude (runs automatically every 10 min)."
+                            style={{ opacity: triggering ? 0.6 : 1, cursor: triggering ? 'wait' : 'pointer' }}
+                        >
+                            Triage shakes
+                        </button>
+                        <button
                             onClick={() => triggerTriage()}
                             disabled={triggering}
                             className="btn btn-primary"
@@ -626,16 +771,21 @@ function OverviewRow({ overview }: { overview: Overview }) {
     const high = overview.reports_last_7d_by_severity.high ?? 0
     const newTrends = overview.trends_last_24h.filter(t => t.trend_type === 'new').length
     const regressions = overview.trends_last_24h.filter(t => t.trend_type === 'regression').length
+    const sources = overview.fingerprints_by_source ?? {}
+    const crashN = sources.crash ?? 0
+    const logN   = sources.log ?? 0
+    const shakeN = sources.shake ?? 0
 
     const cards = [
         { label: 'Total fingerprints', value: total, sub: `${overview.fingerprints_by_status.new ?? 0} new, ${overview.fingerprints_by_status.triaged ?? 0} triaged` },
+        { label: 'Crash / Log / Bug', value: `${crashN} / ${logN} / ${shakeN}`, sub: 'crash reports · log errors · user shakes' },
         { label: 'Critical + high (7d)', value: critical + high, sub: `${critical} crit / ${high} high`, color: 'var(--danger)' },
         { label: 'Trends (24h)', value: overview.trends_last_24h.length, sub: `${newTrends} new / ${regressions} regression`, color: 'var(--warning)' },
         { label: 'Pending review', value: overview.pending_reports_count, sub: 'Reports awaiting action', color: 'var(--accent)' },
     ]
 
     return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
             {cards.map(c => (
                 <div key={c.label} style={{ ...cardStyle, padding: 16 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{c.label}</div>
@@ -695,14 +845,38 @@ function FingerprintList({
 }: {
     fingerprints: Fingerprint[]
     loading: boolean
-    filters: { status: string; agent: string; severity_min: string; search: string }
-    setFilters: (next: { status: string; agent: string; severity_min: string; search: string }) => void
+    filters: { status: string; agent: string; severity_min: string; search: string; source: string }
+    setFilters: (next: { status: string; agent: string; severity_min: string; search: string; source: string }) => void
     selectedFp: string | null
     setSelectedFp: (fp: string | null) => void
     onTriage: (fp: string) => void
 }) {
+    // Quick-filter tabs for the three origin categories. These tab the same
+    // `source` filter the <select> below also writes to — either control
+    // picks the source, they stay in sync.
+    const sourceTabs: Array<{ key: string; label: string }> = [
+        { key: 'all', label: 'All' },
+        { key: 'crash', label: 'Crash' },
+        { key: 'log', label: 'Log' },
+        { key: 'shake', label: 'Bug (Shake)' },
+    ]
     return (
         <section style={{ ...cardStyle, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px 0', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {sourceTabs.map(t => {
+                    const active = filters.source === t.key
+                    return (
+                        <button
+                            key={t.key}
+                            onClick={() => setFilters({ ...filters, source: t.key })}
+                            className={active ? 'btn btn-primary' : 'btn btn-ghost'}
+                            style={{ padding: '4px 14px', fontSize: 12 }}
+                        >
+                            {t.label}
+                        </button>
+                    )
+                })}
+            </div>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input
                     placeholder="Search sample message…"
@@ -774,7 +948,7 @@ function FingerprintRow({ fp, selected, onSelect, onTriage }: {
         >
             <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
-                    <Pill label={fp.source} color={fp.source === 'crash' ? '#dc2626' : '#6366f1'} />
+                    <Pill label={fp.source === 'shake' ? 'bug' : fp.source} color={SOURCE_COLORS[fp.source] ?? '#6366f1'} />
                     <Pill label={fp.status} color={STATUS_COLORS[fp.status] ?? '#6b7280'} />
                     {rep && <Pill label={rep.severity} color={SEVERITY_COLORS[rep.severity] ?? '#6b7280'} />}
                     {rep && <Pill label={rep.agent_owner} color="#475569" />}

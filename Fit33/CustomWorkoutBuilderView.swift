@@ -820,26 +820,28 @@ struct CustomWorkoutBuilderView: View {
     /// header row (where it was crowding the "All Exercises" dropdown)
     /// so both elements have breathing room.
     private var selectedCountPill: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Text("\(selectedExercises.count)")
                 .font(.caption)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
             Text("selected")
                 .font(.caption)
-                .fontWeight(.medium)
+                .fontWeight(.semibold)
                 .foregroundColor(.white)
         }
-        .padding(.horizontal, Spacing.xs)
-        .padding(.vertical, Spacing.xxs)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, 5)
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.blue, Color.cyan]),
-                startPoint: .leading,
-                endPoint: .trailing
-            )
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        gradient: Gradient(colors: [Color.blue, Color.cyan]),
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
         )
-        .cornerRadius(CornerRadius.sm)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(selectedExercises.count) exercise\(selectedExercises.count == 1 ? "" : "s") selected")
     }

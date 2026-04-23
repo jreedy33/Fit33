@@ -66,6 +66,12 @@ type Overview = {
     reports_last_7d_by_severity: Record<string, number>
     trends_last_24h: Trend[]
     pending_reports_count: number
+    // Phase 8 (2026-04-23) — export watermark stats. `last_export_at` is the
+    // freshest last_exported_at across all report rows; `new_since_last_export`
+    // counts reports with last_exported_at IS NULL in open review states.
+    // Both may be absent on older server builds — the header pill handles null.
+    last_export_at?: string | null
+    new_since_last_export?: number
 }
 
 // Shape returned by the `get_bug_intelligence_export` admin action. Kept
@@ -86,6 +92,10 @@ type ExportFingerprint = {
     last_seen_app_version?: string | null
     status?: string
     assigned_agent?: string | null
+    // Phase 8 (2026-04-23) — set when any report on this fingerprint has
+    // been handed off to Cursor. Used by formatExportAsMarkdown to split
+    // bundles into "new" vs "regression" sections.
+    last_exported_at?: string | null
 }
 type ExportReport = {
     id: string
@@ -102,6 +112,10 @@ type ExportReport = {
     suggested_todo: string | null
     review_status: string
     created_at: string
+    // Phase 8 — set by mark_bug_reports_exported() after a prior export
+    // handed this report to Cursor. NULL until first export. Used to
+    // detect regressions (fingerprint.last_seen_at > last_exported_at).
+    last_exported_at?: string | null
 }
 type ExportCrash = {
     id: string
@@ -166,9 +180,17 @@ type BugIntelExportBundle = {
 }
 type BugIntelExport = {
     generated_at: string
+    // Phase 8 — which mode the server used ('new' | 'since' | 'all'); absent
+    // on older server builds. `previous_export_at` is the max last_exported_at
+    // across this export's reports BEFORE we stamped. `stamped` tells the UI
+    // whether the server updated last_exported_at on the returned reports.
+    mode?: 'new' | 'since' | 'all'
     filters: Record<string, unknown>
     bundle_count: number
     bundles: BugIntelExportBundle[]
+    previous_export_at?: string | null
+    stamped?: boolean
+    stamp_error?: string | null
 }
 
 type AgentMetric = {
@@ -242,12 +264,83 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         ownerCounts[b.report.agent_owner] = (ownerCounts[b.report.agent_owner] ?? 0) + 1
     }
 
+    // Phase 8 — split bundles into three buckets for the TL;DR:
+    //   brandNew      : never exported before (report.last_exported_at IS NULL).
+    //                   These are genuinely-new fingerprints Cursor hasn't seen.
+    //   regressed     : exported before, but fingerprint.last_seen_at has
+    //                   advanced since. A supposed fix didn't hold.
+    //   stillPending  : exported before, no new activity. Only appears when
+    //                   mode='all' (the audit escape hatch).
+    const brandNew: BugIntelExportBundle[] = []
+    const regressed: BugIntelExportBundle[] = []
+    const stillPending: BugIntelExportBundle[] = []
+    for (const b of ex.bundles) {
+        const lastExp = b.report.last_exported_at
+        if (!lastExp) {
+            brandNew.push(b)
+            continue
+        }
+        const fpLastSeen = b.fingerprint?.last_seen_at
+        if (fpLastSeen && Date.parse(fpLastSeen) > Date.parse(lastExp)) {
+            regressed.push(b)
+        } else {
+            stillPending.push(b)
+        }
+    }
+
     L.push(`# Fit33 Bug Intelligence — Cursor Handoff`)
     L.push('')
     L.push(`Generated: \`${ex.generated_at}\``)
+    if (ex.mode) L.push(`Mode: \`${ex.mode}\`${ex.mode === 'new' ? ' (only new + regressed — default)' : ex.mode === 'all' ? ' (full audit — includes already-handed-off reports)' : ''}`)
+    if (ex.previous_export_at) L.push(`Previous export: \`${ex.previous_export_at}\``)
     L.push(`Source: \`/bug-intelligence\` · Filters: \`${JSON.stringify(ex.filters)}\``)
-    L.push(`Reports: **${total}**`)
+    L.push(`Reports: **${total}** · \`${brandNew.length}\` brand-new · \`${regressed.length}\` regressed · \`${stillPending.length}\` still-pending`)
     L.push('')
+
+    // Phase 8 — prepend a scannable "what changed" TL;DR so the assistant
+    // knows which reports to read first without scrolling through 200
+    // bundle bodies. Format intentionally terse — one line per fingerprint.
+    if (brandNew.length > 0) {
+        L.push(`## New since last export (${brandNew.length})`)
+        L.push('')
+        L.push(`Fingerprints Cursor has never seen. Start here.`)
+        L.push('')
+        for (const b of brandNew) {
+            const r = b.report
+            const f = b.fingerprint
+            const occ = typeof f?.occurrence_count === 'number' ? f.occurrence_count : 0
+            const users = typeof f?.unique_user_count === 'number' ? f.unique_user_count : 0
+            L.push(`- [**${r.severity.toUpperCase()}**] \`${r.fingerprint.slice(0, 8)}\` — ${r.title} · \`${r.agent_owner}\` · ${occ} occ / ${users} user${users === 1 ? '' : 's'}${f?.last_seen_app_version ? ` · last on \`${f.last_seen_app_version}\`` : ''}`)
+        }
+        L.push('')
+    }
+
+    if (regressed.length > 0) {
+        L.push(`## Regressed since last export (${regressed.length})`)
+        L.push('')
+        L.push(`These fingerprints were handed to Cursor before, but new occurrences have arrived after the last export. A previous fix didn't hold — verify the diff really landed, or the bug has multiple root causes.`)
+        L.push('')
+        for (const b of regressed) {
+            const r = b.report
+            const f = b.fingerprint
+            const occ = typeof f?.occurrence_count === 'number' ? f.occurrence_count : 0
+            const lastExp = r.last_exported_at ? new Date(r.last_exported_at).toISOString().slice(0, 16) : '?'
+            L.push(`- [**${r.severity.toUpperCase()}**] \`${r.fingerprint.slice(0, 8)}\` — ${r.title} · \`${r.agent_owner}\` · ${occ} occ · last exported \`${lastExp}\``)
+        }
+        L.push('')
+    }
+
+    if (stillPending.length > 0 && ex.mode === 'all') {
+        L.push(`## Still pending from earlier exports (${stillPending.length})`)
+        L.push('')
+        L.push(`Already handed to Cursor in a previous export and no new activity. Included here only because this is an audit (\`mode=all\`) export. Skip unless auditing.`)
+        L.push('')
+    }
+
+    if (brandNew.length + regressed.length + stillPending.length > 0) {
+        L.push(`---`)
+        L.push('')
+    }
     L.push(`## Instructions for the Cursor assistant`)
     L.push('')
     L.push(`You are receiving ${total} bug intelligence report(s) produced by the Fit33 triage pipeline (Claude Sonnet 4 + symbolicated stack traces). Each report has a suggested \`file_path\` and \`code_diff\` — treat these as **hypotheses**, not facts:`)
@@ -664,29 +757,72 @@ export default function BugIntelligencePage() {
     // with its fingerprint context + one representative crash (stack trace +
     // breadcrumbs + session_log_snippet). Formats as a single .md file
     // designed for pasting into a Cursor chat to drive real-repo fixes.
+    //
+    // Phase 8 (2026-04-23) — `mode` controls what's in the .md:
+    //   'new' (default) — only reports Cursor has never seen, plus
+    //                     fingerprints that have regressed since their
+    //                     last export. Stamps last_exported_at server-side
+    //                     so the next 'new' export skips them. Auto-calls
+    //                     clear_resolved_bug_intelligence afterwards to
+    //                     keep the inbox tidy.
+    //   'all'           — audit mode. No watermark filter, no stamp,
+    //                     no auto-clean. Use when you want to see every
+    //                     open pending report at once (rare).
     const [exporting, setExporting] = useState(false)
-    async function exportPendingAsMarkdown() {
+    async function exportPendingAsMarkdown(mode: 'new' | 'all' = 'new') {
         setExporting(true)
         try {
             const res = await adminAction('get_bug_intelligence_export', {
                 review_status: 'pending',
+                mode,
             })
             const ex = res.export as BugIntelExport | undefined
             if (!ex || ex.bundle_count === 0) {
-                alert('Nothing pending to export.')
+                alert(mode === 'new'
+                    ? 'No new bugs since last export — inbox is clean.'
+                    : 'Nothing pending to export.')
                 return
             }
             const md = formatExportAsMarkdown(ex)
             const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
             const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+            const prefix = mode === 'all' ? 'bug-intelligence-audit' : 'bug-intelligence-new'
             const url = URL.createObjectURL(blob)
             const a = document.createElement('a')
             a.href = url
-            a.download = `bug-intelligence-${stamp}.md`
+            a.download = `${prefix}-${stamp}.md`
             document.body.appendChild(a)
             a.click()
             document.body.removeChild(a)
             URL.revokeObjectURL(url)
+
+            // Phase 8 — after a successful 'new' export the server has
+            // already stamped last_exported_at on every returned report.
+            // Silently run the terminal-item cleanup so merged/rejected/
+            // stale reports + orphaned terminal fingerprints get evicted
+            // without another button press. Non-destructive — GitHub
+            // pr_url / resolution_pr_url still archive the fix history.
+            if (mode === 'new' && ex.stamped) {
+                try {
+                    await adminAction('clear_resolved_bug_intelligence', {
+                        scope: 'all',
+                        dry_run: false,
+                    })
+                } catch {
+                    // Cleanup is best-effort. The nightly pg_cron
+                    // cleanup_stale_bug_reports() catches anything we miss.
+                }
+                await loadOverview()
+                await loadFingerprints()
+            }
+
+            // If the server couldn't stamp (RPC missing on an older deploy,
+            // or a transient 500), warn so the user knows the next export
+            // will repeat these reports.
+            if (mode === 'new' && !ex.stamped) {
+                const reason = ex.stamp_error ? `\n\nReason: ${ex.stamp_error}` : ''
+                alert(`Exported ${ex.bundle_count} report(s), but the server could not stamp them as exported. The next "Export new only" may include these same reports again.${reason}`)
+            }
         } catch (err) {
             alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`)
         } finally {
@@ -777,6 +913,14 @@ export default function BugIntelligencePage() {
                         <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0' }}>
                             Fingerprinted bugs from logs + crashes. Claude triage runs every 4 hours.
                         </p>
+                        {/* Phase 8 — "freshness pill" next to the title so the user can
+                            tell at a glance whether a new export is worth grabbing. */}
+                        {overview && (
+                            <ExportFreshnessPill
+                                lastExportAt={overview.last_export_at ?? null}
+                                newSince={overview.new_since_last_export ?? 0}
+                            />
+                        )}
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                         {/* Phase 7 — show/hide resolved fingerprints in the list */}
@@ -792,19 +936,33 @@ export default function BugIntelligencePage() {
                             onClick={clearResolvedBugIntel}
                             disabled={clearing}
                             className="btn btn-ghost"
-                            title="Delete terminal reports (merged / rejected / stale) and terminal fingerprints (resolved / wont_fix / duplicate) that have no remaining open reports. Non-destructive — GitHub PR URLs preserve the history."
+                            title="Delete terminal reports (merged / rejected / stale) and terminal fingerprints (resolved / wont_fix / duplicate) that have no remaining open reports. Non-destructive — GitHub PR URLs preserve the history. The 'Export new only' button auto-runs this, plus a nightly pg_cron (cleanup_stale_bug_reports) ages out terminal items >14 days old."
                             style={{ opacity: clearing ? 0.6 : 1, cursor: clearing ? 'wait' : 'pointer', color: '#ef4444' }}
                         >
                             {clearing ? 'Clearing…' : 'Clear resolved'}
                         </button>
+                        {/* Phase 8 — split the single export button into the default
+                            "new only" flow (stamps last_exported_at, auto-clears
+                            terminal items) and an audit escape hatch ("all pending",
+                            no stamp, no auto-clean). The .md you download in 'new' mode
+                            only contains genuinely-new + regressed reports. */}
                         <button
-                            onClick={exportPendingAsMarkdown}
+                            onClick={() => exportPendingAsMarkdown('new')}
                             disabled={exporting}
                             className="btn btn-ghost"
-                            title="Download all pending reports as a single .md file, formatted for pasting into a Cursor chat to drive real-repo fixes."
+                            title="Download only reports that Cursor has never seen (or that regressed since the last export). After download, stamps last_exported_at server-side so the next click won't include them. Also auto-cleans terminal (merged/rejected/stale) reports. This is the recommended default."
                             style={{ opacity: exporting ? 0.6 : 1, cursor: exporting ? 'wait' : 'pointer' }}
                         >
-                            {exporting ? 'Exporting…' : 'Export for Cursor (.md)'}
+                            {exporting ? 'Exporting…' : 'Export new only (.md)'}
+                        </button>
+                        <button
+                            onClick={() => exportPendingAsMarkdown('all')}
+                            disabled={exporting}
+                            className="btn btn-ghost"
+                            title="Audit export — includes every pending report, including ones already handed to Cursor. Does not update the export watermark and does not auto-clean. Use for quarterly reviews."
+                            style={{ opacity: exporting ? 0.6 : 1, cursor: exporting ? 'wait' : 'pointer', fontSize: 12 }}
+                        >
+                            {exporting ? '…' : 'Export all pending'}
                         </button>
                         <button
                             onClick={triggerShakeTriage}
@@ -1082,6 +1240,47 @@ function FingerprintRow({ fp, selected, onSelect, onTriage }: {
                     Triage
                 </button>
             </div>
+        </div>
+    )
+}
+
+// Phase 8 — freshness pill under the page title. Tells you at a glance
+// whether there's genuinely-new signal since the last Cursor handoff, so
+// you don't click "Export new only" and end up with an empty .md.
+function ExportFreshnessPill({ lastExportAt, newSince }: {
+    lastExportAt: string | null
+    newSince: number
+}) {
+    // Never exported on this install → recommend the first export.
+    if (!lastExportAt) {
+        return (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                <span style={{ display: 'inline-block', padding: '2px 10px', background: 'rgba(59,130,246,0.15)', color: '#3b82f6', borderRadius: 999, fontWeight: 600 }}>
+                    No prior export
+                </span>
+                {' '}· All open reports will be included on first "Export new only".
+            </div>
+        )
+    }
+    const ago = timeAgo(lastExportAt)
+    const hasSignal = newSince > 0
+    return (
+        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <span
+                style={{
+                    display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontWeight: 600,
+                    background: hasSignal ? 'rgba(34,197,94,0.15)' : 'rgba(107,114,128,0.15)',
+                    color: hasSignal ? '#22c55e' : '#6b7280',
+                }}
+                title={`Latest last_exported_at across all reports: ${lastExportAt}`}
+            >
+                Last export {ago}
+            </span>
+            {' '}·{' '}
+            <span style={{ color: hasSignal ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: hasSignal ? 600 : 400 }}>
+                {newSince} brand-new report{newSince === 1 ? '' : 's'} since
+            </span>
+            {!hasSignal && ' (regressions may still be included — "Export new only" will tell you)'}
         </div>
     )
 }

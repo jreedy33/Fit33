@@ -37,6 +37,11 @@ const WRITE_ACTIONS = new Set([
   'toggle_dev_logging', 'update_suggestion_status',
   // Bug intelligence (Phase 2) mutations
   'update_bug_fingerprint', 'update_bug_report_review', 'trigger_bug_triage',
+  // Export mutates last_exported_at watermark when mode='new' (default).
+  // Classified as `write` so every Cursor-handoff export is audit-logged
+  // and rate-limited at 30/min — plenty for a human clicking the button,
+  // strict enough to catch runaway scripts.
+  'get_bug_intelligence_export',
 ])
 const BULK_ACTIONS = new Set([
   'bulk_update_bug_reports', 'bulk_update_crash_reports',
@@ -1487,6 +1492,15 @@ export async function POST(req: NextRequest) {
           { data: recentTrends },
           { data: pendingReports },
           { data: sourceCounts },
+          // Phase 8 (2026-04-23) — export watermark stats.
+          //   lastExportRow: latest last_exported_at across all report rows.
+          //   newSinceExport: count of reports with last_exported_at IS NULL
+          //     in an open review state. Regression-after-fix reports (where
+          //     fingerprint.last_seen_at > last_exported_at) are counted by
+          //     the export itself, not this header pill — this count stays
+          //     a cheap conservative floor.
+          lastExportRow,
+          newSinceExport,
         ] = await Promise.all([
           admin.from('bug_intelligence_fingerprints').select('status'),
           admin.from('bug_intelligence_reports').select('severity').gte('created_at', since7d),
@@ -1497,6 +1511,15 @@ export async function POST(req: NextRequest) {
           // Phase 6: split the inbox by origin so the CMS can show a
           // tri-category breakdown (crash / log / shake).
           admin.from('bug_intelligence_fingerprints').select('source'),
+          admin.from('bug_intelligence_reports')
+            .select('last_exported_at')
+            .not('last_exported_at', 'is', null)
+            .order('last_exported_at', { ascending: false })
+            .limit(1),
+          admin.from('bug_intelligence_reports')
+            .select('id', { count: 'exact', head: true })
+            .is('last_exported_at', null)
+            .in('review_status', ['pending', 'approved']),
         ])
 
         const statusMap: Record<string, number> = {}
@@ -1512,6 +1535,10 @@ export async function POST(req: NextRequest) {
           sourceMap[r.source] = (sourceMap[r.source] || 0) + 1
         }
 
+        const lastExportAt = (lastExportRow.data as Array<{ last_exported_at: string }> | null)
+          ?.[0]?.last_exported_at ?? null
+        const newSinceCount = (newSinceExport as { count: number | null }).count ?? 0
+
         return NextResponse.json({
           overview: {
             fingerprints_by_status: statusMap,
@@ -1519,6 +1546,9 @@ export async function POST(req: NextRequest) {
             reports_last_7d_by_severity: severityMap,
             trends_last_24h: recentTrends || [],
             pending_reports_count: (pendingReports || []).length,
+            // Phase 8 — header pill data.
+            last_export_at: lastExportAt,
+            new_since_last_export: newSinceCount,
           },
         })
       }
@@ -1616,18 +1646,45 @@ export async function POST(req: NextRequest) {
       // ask the assistant to execute Claude's proposed fixes with real
       // repo context. Keep the shape stable — the client-side formatter
       // depends on it.
+      //
+      // MODE (added 2026-04-23 — migration 20260510_bug_intel_export_watermark.sql)
+      //   'new'   (default) — only reports that have never been exported,
+      //                       OR whose parent fingerprint has had new activity
+      //                       since the last export (i.e. a regression after
+      //                       a supposed fix). Keeps the .md tightly scoped to
+      //                       genuinely-new work; nightly cron ages out the
+      //                       rest of the terminal noise.
+      //   'since' — reports whose fingerprint.last_seen_at > since_iso.
+      //   'all'   — current/legacy behavior (no watermark filter). Use for
+      //             quarterly audits / backlog grooming.
+      //
+      // After a successful 'new' or 'since' export, the handler calls
+      // mark_bug_reports_exported(report_ids) to stamp last_exported_at.
+      // 'all' mode never stamps (an audit export shouldn't poison the
+      // watermark).
       case 'get_bug_intelligence_export': {
         const {
           review_status: reviewFilter,
           severity_min,
           agent,
           include_merged,
+          mode: modeRaw,
+          since_iso,
+          mark_as_exported,
         } = params as {
           review_status?: string   // default 'pending'
           severity_min?: string    // 'critical' / 'high' / 'medium' / 'low'
           agent?: string           // valid agent_owner or 'all'
           include_merged?: boolean // default false (noise after they've landed)
+          mode?: 'new' | 'since' | 'all'
+          since_iso?: string       // ISO timestamp for mode='since'
+          mark_as_exported?: boolean // default: true when mode !== 'all'
         }
+
+        const mode: 'new' | 'since' | 'all' = modeRaw === 'all' || modeRaw === 'since' || modeRaw === 'new'
+          ? modeRaw
+          : 'new'
+        const shouldStamp = mark_as_exported !== false && mode !== 'all'
 
         // 1. Fetch reports matching the filter. Default: all pending.
         let repQuery = admin.from('bug_intelligence_reports')
@@ -1675,16 +1732,92 @@ export async function POST(req: NextRequest) {
         }
 
         // 2. Pull their fingerprint context in a single IN query.
-        const fps = Array.from(new Set(reportRows.map(r => r.fingerprint)))
+        const allFps = Array.from(new Set(reportRows.map(r => r.fingerprint)))
         const { data: fpRows, error: fpErr } = await admin
           .from('bug_intelligence_fingerprints')
           .select('*')
-          .in('fingerprint', fps)
+          .in('fingerprint', allFps)
         if (fpErr) return NextResponse.json({ error: fpErr.message }, { status: 500 })
         const fpById = new Map<string, Record<string, unknown>>()
         for (const f of (fpRows || [])) {
           fpById.set((f as { fingerprint: string }).fingerprint, f as Record<string, unknown>)
         }
+
+        // 2b. Apply watermark + fingerprint-status filters (Phase 8).
+        //     - Fingerprints in terminal states (resolved / wont_fix /
+        //       duplicate) are always excluded — their reports shouldn't
+        //       resurface in handoffs even if review_status is pending.
+        //     - mode='new': report.last_exported_at IS NULL, OR the
+        //       fingerprint has had activity after last_exported_at
+        //       (regression after a fix).
+        //     - mode='since': fingerprint.last_seen_at > since_iso.
+        //     - mode='all': no watermark filter (legacy audit path).
+        const TERMINAL_FP = new Set(['resolved', 'wont_fix', 'duplicate'])
+        const sinceMs = typeof since_iso === 'string' ? Date.parse(since_iso) : NaN
+        const filteredReportRows = reportRows.filter((r) => {
+          const fp = fpById.get(r.fingerprint) as {
+            status?: string; last_seen_at?: string
+          } | undefined
+          if (!fp) return false
+          if (fp.status && TERMINAL_FP.has(fp.status)) return false
+
+          if (mode === 'all') return true
+
+          if (mode === 'since') {
+            if (Number.isNaN(sinceMs)) return true // no since_iso → treat as 'all'
+            if (typeof fp.last_seen_at !== 'string') return false
+            return Date.parse(fp.last_seen_at) > sinceMs
+          }
+
+          // mode === 'new'
+          const lastExp = (r as { last_exported_at?: string | null }).last_exported_at
+          if (!lastExp) return true
+          if (typeof fp.last_seen_at !== 'string') return false
+          return Date.parse(fp.last_seen_at) > Date.parse(lastExp)
+        }) as typeof reportRows
+
+        if (filteredReportRows.length === 0) {
+          return NextResponse.json({
+            export: {
+              generated_at: new Date().toISOString(),
+              mode,
+              filters: {
+                review_status: reviewFilter ?? 'pending',
+                severity_min: severity_min ?? null,
+                agent: agent ?? 'all',
+                include_merged: !!include_merged,
+                mode,
+                since_iso: since_iso ?? null,
+              },
+              bundle_count: 0,
+              bundles: [],
+              previous_export_at: null,
+              stamped: false,
+            },
+          })
+        }
+
+        // Compute "previous_export_at" for the summary: the freshest
+        // last_exported_at across the *filtered set's* fingerprints
+        // before this run. Null if the set contains any never-exported
+        // items (the typical case for first-run or heavy activity).
+        let previousExportAt: string | null = null
+        const exportedTimes: number[] = []
+        let hasUnexported = false
+        for (const r of filteredReportRows) {
+          const fp = fpById.get(r.fingerprint) as { last_exported_at?: string | null } | undefined
+          const t = fp?.last_exported_at
+          if (!t) { hasUnexported = true; continue }
+          const ms = Date.parse(t)
+          if (!Number.isNaN(ms)) exportedTimes.push(ms)
+        }
+        if (!hasUnexported && exportedTimes.length > 0) {
+          previousExportAt = new Date(Math.max(...exportedTimes)).toISOString()
+        }
+
+        // Narrow fps to the filtered set so the follow-up queries
+        // (crash_reports, bug_reports lookup) stay lean.
+        const fps = Array.from(new Set(filteredReportRows.map(r => r.fingerprint)))
 
         // 3. For every crash-sourced fingerprint, pull ONE representative
         // crash row so Cursor gets real stack_trace / symbolicated_stack_trace
@@ -1733,7 +1866,7 @@ export async function POST(req: NextRequest) {
         })
         const shakeExample = new Map<string, Record<string, unknown>>()
         if (shakeFps.length > 0) {
-          const shakeReportIds = reportRows
+          const shakeReportIds = filteredReportRows
             .filter(r => {
               const fp = fpById.get(r.fingerprint) as { source?: string } | undefined
               return fp?.source === 'shake'
@@ -1846,24 +1979,51 @@ export async function POST(req: NextRequest) {
 
         // 5. Assemble bundles in the same order the reports came back
         // (severity asc, confidence desc, created_at desc).
-        const bundles = reportRows.map((r) => ({
+        const bundles = filteredReportRows.map((r) => ({
           fingerprint: fpById.get(r.fingerprint) || null,
           report: r,
           example_crash: crashExample.get(r.fingerprint) || null,
           example_shake: shakeExample.get(r.id as string) || null,
         }))
 
+        // 6. Stamp last_exported_at on every report we're returning
+        //    (and on their parent fingerprints) so the next 'new'-mode
+        //    export knows these have been handed off. Skipped for
+        //    mode='all' so audit exports don't poison the watermark.
+        let stamped = false
+        let stampError: string | null = null
+        if (shouldStamp && bundles.length > 0) {
+          const ids = bundles.map(b => (b.report as { id: string }).id)
+          const { error: stampErr } = await admin.rpc('mark_bug_reports_exported', {
+            p_report_ids: ids,
+          })
+          if (stampErr) {
+            // Non-fatal — the .md still goes out. We surface the error
+            // so the client can warn the user (the next 'new' export
+            // might re-include these reports).
+            stampError = stampErr.message
+          } else {
+            stamped = true
+          }
+        }
+
         return NextResponse.json({
           export: {
             generated_at: new Date().toISOString(),
+            mode,
             filters: {
               review_status: reviewFilter ?? 'pending',
               severity_min: severity_min ?? null,
               agent: agent ?? 'all',
               include_merged: !!include_merged,
+              mode,
+              since_iso: since_iso ?? null,
             },
             bundle_count: bundles.length,
             bundles,
+            previous_export_at: previousExportAt,
+            stamped,
+            stamp_error: stampError,
           },
         })
       }

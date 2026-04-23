@@ -46,6 +46,10 @@ const BULK_ACTIONS = new Set([
   'bulk_delete_crash_reports', 'delete_resolved_crash_reports',
   // Bulk bug-report deletion (Admin CMS crashes → Bugs tab).
   'bulk_delete_bug_reports',
+  // Phase 7 — clear resolved bug intelligence items (reports + fingerprints).
+  // Keeps the /bug-intelligence inbox focused on open work; resolved
+  // items stay in GitHub history via pr_url / resolution_pr_url.
+  'clear_resolved_bug_intelligence',
 ])
 
 function getActionTier(action: string): 'read' | 'write' | 'bulk' {
@@ -1528,14 +1532,27 @@ export async function POST(req: NextRequest) {
       }
 
       case 'get_bug_intelligence_fingerprints': {
-        const { status: filterStatus, agent, severity_min, search, source, limit: pageLimit } = params as {
+        const { status: filterStatus, agent, severity_min, search, source, limit: pageLimit, include_resolved } = params as {
           status?: string; agent?: string; severity_min?: string; search?: string; source?: string; limit?: number
+          // Phase 7 — when false (default) the inbox hides fingerprints in
+          // terminal states (`resolved` / `wont_fix` / `duplicate`). The
+          // CMS UI flips this true via a "Show resolved" toggle. This is
+          // what keeps the inbox focused on open work. Explicit
+          // `status=resolved` queries still honor the status filter.
+          include_resolved?: boolean
         }
         let query = admin.from('bug_intelligence_fingerprints')
           .select('*')
           .order('last_seen_at', { ascending: false })
           .limit(Math.min(pageLimit ?? 200, 500))
-        if (filterStatus && filterStatus !== 'all') query = query.eq('status', filterStatus)
+        if (filterStatus && filterStatus !== 'all') {
+          query = query.eq('status', filterStatus)
+        } else if (!include_resolved) {
+          // Default: hide fingerprints in terminal states so the inbox
+          // isn't drowned in green-check noise. Status column is
+          // free-text but the known terminal values are well-defined.
+          query = query.not('status', 'in', '("resolved","wont_fix","duplicate")')
+        }
         if (agent && agent !== 'all') query = query.eq('assigned_agent', agent)
         if (search) query = query.ilike('sample_message', `%${search}%`)
         // Source filter: 'log' | 'crash' | 'shake' (new Phase 6 shake bugs).
@@ -1623,6 +1640,9 @@ export async function POST(req: NextRequest) {
         if (reviewFilter && reviewFilter !== 'all') {
           repQuery = repQuery.eq('review_status', reviewFilter)
         } else if (!include_merged) {
+          // Default export: open work only. Merged / rejected / stale
+          // reports stay out so repeated exports don't churn over
+          // already-landed fixes.
           repQuery = repQuery.in('review_status', ['pending', 'approved'])
         }
         if (agent && agent !== 'all') repQuery = repQuery.eq('agent_owner', agent)
@@ -1727,6 +1747,7 @@ export async function POST(req: NextRequest) {
                 'id, user_id, triage_report_id, description, expected_behavior, ' +
                 'additional_info, reproduces_every_time, screen_name, ' +
                 'likely_source_files, severity, bug_category, screenshot_base64, ' +
+                'state_snapshot, ' +
                 'device_model, os_version, app_version, created_at',
               )
               .in('triage_report_id', shakeReportIds)
@@ -1744,6 +1765,8 @@ export async function POST(req: NextRequest) {
               likely_source_files: string[] | null
               severity: string
               bug_category: string | null
+              // Phase 7 — runtime state snapshot captured at shake time.
+              state_snapshot: Record<string, unknown> | null
               device_model: string | null
               os_version: string | null
               app_version: string | null
@@ -1808,6 +1831,9 @@ export async function POST(req: NextRequest) {
                 user_severity: s.severity,
                 bug_category: s.bug_category,
                 screenshot_attached: !!(s.screenshot_base64 && s.screenshot_base64.length > 0),
+                // Phase 7 — pass the structured state snapshot through so
+                // the .md formatter can render the Cheat Code block.
+                state_snapshot: s.state_snapshot ?? null,
                 device_model: s.device_model,
                 os_version: s.os_version,
                 app_version: s.app_version,
@@ -1944,6 +1970,99 @@ export async function POST(req: NextRequest) {
         let parsed: unknown = text
         try { parsed = JSON.parse(text) } catch {}
         return NextResponse.json({ ok: res.ok, status: res.status, result: parsed })
+      }
+
+      // Phase 7 — clear "done" bug intelligence items in one shot so
+      // the /bug-intelligence inbox stays focused on open work. Deletes:
+      //   1. `bug_intelligence_reports` whose review_status IN (merged, rejected, stale)
+      //   2. `bug_intelligence_fingerprints` whose status IN (resolved, wont_fix, duplicate)
+      //      AND have no remaining non-terminal reports.
+      // Fingerprints are deleted AFTER their reports so the cascade isn't
+      // blocked by FKs. History is preserved via each report's pr_url and
+      // each fingerprint's resolution_pr_url (GitHub is source of truth).
+      //
+      // `scope` params:
+      //   - 'reports' → wipe terminal reports only
+      //   - 'fingerprints' → wipe terminal fingerprints only (their
+      //     reports in non-terminal states are preserved, so the
+      //     fingerprint will reappear on next triage if active bugs remain)
+      //   - 'all' (default) → both
+      //
+      // `dry_run: true` returns counts without mutating (safety preview).
+      case 'clear_resolved_bug_intelligence': {
+        const { scope, dry_run } = params as {
+          scope?: 'reports' | 'fingerprints' | 'all'
+          dry_run?: boolean
+        }
+        const effective = scope ?? 'all'
+
+        const TERMINAL_REPORT_STATUSES = ['merged', 'rejected', 'stale']
+        const TERMINAL_FP_STATUSES = ['resolved', 'wont_fix', 'duplicate']
+
+        // Preview mode — count only.
+        if (dry_run) {
+          const { count: reportCount } = await admin.from('bug_intelligence_reports')
+            .select('id', { count: 'exact', head: true })
+            .in('review_status', TERMINAL_REPORT_STATUSES)
+          const { count: fpCount } = await admin.from('bug_intelligence_fingerprints')
+            .select('fingerprint', { count: 'exact', head: true })
+            .in('status', TERMINAL_FP_STATUSES)
+          return NextResponse.json({
+            preview: true,
+            reports_to_delete: reportCount ?? 0,
+            fingerprints_to_delete: fpCount ?? 0,
+          })
+        }
+
+        let reportsDeleted = 0
+        let fingerprintsDeleted = 0
+
+        if (effective === 'reports' || effective === 'all') {
+          const { data: deleted, error: repErr } = await admin.from('bug_intelligence_reports')
+            .delete()
+            .in('review_status', TERMINAL_REPORT_STATUSES)
+            .select('id')
+          if (repErr) {
+            return NextResponse.json({ error: repErr.message }, { status: 500 })
+          }
+          reportsDeleted = (deleted ?? []).length
+        }
+
+        if (effective === 'fingerprints' || effective === 'all') {
+          // Only delete fingerprints that have no remaining
+          // non-terminal reports (i.e. the fingerprint is truly closed).
+          const { data: fpRows } = await admin.from('bug_intelligence_fingerprints')
+            .select('fingerprint, status')
+            .in('status', TERMINAL_FP_STATUSES)
+          const candidateFps = (fpRows ?? []).map((r: { fingerprint: string }) => r.fingerprint)
+          if (candidateFps.length > 0) {
+            const { data: remaining } = await admin.from('bug_intelligence_reports')
+              .select('fingerprint')
+              .in('fingerprint', candidateFps)
+            const stillHasReports = new Set(
+              (remaining ?? []).map((r: { fingerprint: string }) => r.fingerprint),
+            )
+            const safeToDelete = candidateFps.filter((fp: string) => !stillHasReports.has(fp))
+            if (safeToDelete.length > 0) {
+              const { data: deletedFps, error: fpErr } = await admin
+                .from('bug_intelligence_fingerprints')
+                .delete()
+                .in('fingerprint', safeToDelete)
+                .select('fingerprint')
+              if (fpErr) {
+                return NextResponse.json({ error: fpErr.message }, { status: 500 })
+              }
+              fingerprintsDeleted = (deletedFps ?? []).length
+            }
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          reports_deleted: reportsDeleted,
+          fingerprints_deleted: fingerprintsDeleted,
+          scope: effective,
+        })
       }
 
       // Rage-shake inbox for the CMS. Returns all bug_reports with their

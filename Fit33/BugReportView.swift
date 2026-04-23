@@ -19,6 +19,14 @@ struct BugReportView: View {
     @State private var severity: BugSeverity = .medium
     @State private var detectedScreen: String = ""
     @State private var detectedFiles: [String] = []
+    // Phase 7 / Cheat Code — runtime state captured at shake moment
+    // (before the user starts typing, before they navigate). This is
+    // what lets Claude diff "todayLog.weightLbs=199 vs recentLogs.first
+    // .weightLbs=190" at triage time. `snapshotServiceCount` drives the
+    // small badge in the context card so the user knows state was
+    // collected.
+    @State private var capturedSnapshot: [String: Any]? = nil
+    @State private var snapshotServiceCount: Int = 0
 
     private var inputBackground: Color {
         colorScheme == .dark ? Color(white: 0.08) : Color.gray.opacity(0.05)
@@ -107,6 +115,14 @@ struct BugReportView: View {
                 let info = SessionLogManager.shared.getCurrentScreenInfo()
                 detectedScreen = info.name
                 detectedFiles = ScreenCodeMap.filesForScreen(info.name)
+                // Phase 7: capture runtime state NOW. Filtered down to
+                // non-meta keys for the badge count (__captured_at is
+                // metadata, not a service).
+                let snap = BugReportSnapshotter.shared.buildSnapshot()
+                capturedSnapshot = snap
+                snapshotServiceCount = (snap ?? [:]).keys
+                    .filter { !$0.hasPrefix("__") }
+                    .count
             }
         }
     }
@@ -155,6 +171,26 @@ struct BugReportView: View {
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundColor(.primary)
                         }
+                    }
+                    Spacer()
+                }
+            }
+            // Phase 7 / Cheat Code — indicate runtime state was captured.
+            // Shows the user their report is backed by concrete values,
+            // not just "it broke". Drives confidence AND lets support
+            // verify the state block at triage time.
+            if snapshotServiceCount > 0 {
+                Divider()
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "waveform.path.ecg")
+                        .foregroundColor(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Runtime state captured")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(snapshotServiceCount) service\(snapshotServiceCount == 1 ? "" : "s") snapshotted — Claude will see exact values at the moment you shook.")
+                            .font(.caption)
+                            .foregroundColor(.primary)
                     }
                     Spacer()
                 }
@@ -567,7 +603,8 @@ struct BugReportView: View {
                 sessionLog: sessionLogText,
                 severity: severity,
                 bugCategory: nil,
-                likelySourceFiles: detectedFiles.isEmpty ? nil : detectedFiles
+                likelySourceFiles: detectedFiles.isEmpty ? nil : detectedFiles,
+                stateSnapshot: capturedSnapshot
             )
             
             if success {
@@ -657,6 +694,8 @@ struct ManualBugReportView: View {
     @State private var includeSessionLog = true
     @State private var showingLogPreview = false
     @State private var severity: BugSeverity = .medium
+    // Phase 7 / Cheat Code — runtime snapshot captured on appear.
+    @State private var capturedSnapshot: [String: Any]? = nil
 
     // Photo picker
     @State private var selectedImage: UIImage?
@@ -737,6 +776,11 @@ struct ManualBugReportView: View {
             }
             .sheet(isPresented: $showingLogPreview) {
                 SessionLogPreviewView()
+            }
+            .onAppear {
+                // Phase 7: snapshot runtime state the moment the sheet
+                // presents, for the same reason BugReportView does.
+                capturedSnapshot = BugReportSnapshotter.shared.buildSnapshot()
             }
         }
     }
@@ -1105,7 +1149,8 @@ struct ManualBugReportView: View {
                 sessionLog: sessionLogText,
                 severity: severity,
                 bugCategory: nil,
-                likelySourceFiles: nil
+                likelySourceFiles: nil,
+                stateSnapshot: capturedSnapshot
             )
             
             await MainActor.run {

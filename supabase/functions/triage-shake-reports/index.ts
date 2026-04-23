@@ -73,9 +73,34 @@ const SYSTEM_PROMPT = `You are the Fit33 Rage-Shake Triage Agent. You receive bu
 user filed by shaking the phone OR via Settings → Report Bug. Each report carries: \
 a user description, an expected behavior, a screenshot (image), the screen the user \
 was on when it happened, a severity the user self-assigned, a session log (~100 \
-recent events: screen transitions, taps, api calls, errors), and a PRE-COMPUTED \
-list of likely source files for that screen (see "likely_source_files"). \
+recent events: screen transitions, taps, api calls, errors), a PRE-COMPUTED \
+list of likely source files for that screen (see "likely_source_files"), AND — \
+the Phase 7 "Cheat Code" — a STRUCTURED RUNTIME STATE SNAPSHOT captured at the exact \
+moment the user shook, showing the @Published values of every major ObservableObject \
+singleton (see "state_snapshot"). \
 Your job: produce ONE actionable agent-owned report per shake report.
+
+# STATE SNAPSHOT (Phase 7 — this is the most important single input)
+
+When "state_snapshot" is present, treat it as the smoking gun for silent-logic bugs.
+Each top-level key is a singleton service (e.g. "WeightTrackingService"); the inner
+object lists published values + computed properties at the moment of shake. The
+"__captured_at" ISO timestamp sits alongside and lets you reason about the age
+of cached values (e.g. "lastLoadAgeSeconds: 45" = data is 45s stale).
+
+Typical divergences and how to read them:
+ - "todayLog.id" ≠ "recentLogs.first.id"  →  optimistic insert got wiped by a
+    stale SELECT / read-after-write race (see reports 40 / 66, fixed 3f0156d).
+ - "hasLoggedToday: true" but "todayLog: null"  →  cached flag drift.
+ - "pendingNavigationFlags: ['toWorkoutTab', 'toAutoGen']"  →  navigation flag
+    stuck true — classic cause of "tab won't dismiss" / ghost redirects.
+ - "currentWorkout.isNil: true" + "isWorkoutActive: true"  →  workout manager
+    out of sync after background resume.
+
+If the state snapshot reveals a concrete divergence, your confidence should rise
+to 0.85-0.90 and your summary should QUOTE the divergent values ("todayLog.weightLbs=199
+vs recentLogs.first.weightLbs=190"). Never reference "state_snapshot" by key name in
+the user-facing title — translate it into a human sentence.
 
 # AGENT ROSTER (pick exactly one agent_owner per report)
 
@@ -212,6 +237,12 @@ interface BugReportRow {
     severity: string;
     bug_category: string | null;
     session_log: string | null;
+    // Phase 7 Cheat Code — structured runtime state at shake time.
+    // Keyed by service name (e.g. "WeightTrackingService"); values are
+    // shallow dicts of scalar @Published fields. See
+    // Fit33/BugReportStateSnapshot.swift + Providers.swift for the
+    // producing side. Always an object; default '{}' from the DB.
+    state_snapshot: Record<string, unknown>;
     device_model: string | null;
     os_version: string | null;
     app_version: string | null;
@@ -319,7 +350,7 @@ serve(async (req) => {
                 "id, user_id, user_name, user_email, description, expected_behavior, " +
                 "reproduces_every_time, additional_info, screenshot_base64, " +
                 "screen_name, likely_source_files, severity, bug_category, " +
-                "session_log, device_model, os_version, app_version, " +
+                "session_log, state_snapshot, device_model, os_version, app_version, " +
                 "triage_status, created_at",
             )
             .eq("triage_status", "pending")
@@ -576,6 +607,10 @@ function buildUserPrompt(
     for (const r of rows) {
         const sessionLog = (r.session_log ?? "").slice(-MAX_SESSION_LOG_CHARS);
         const userCtx = userContexts.get(r.id) ?? null;
+        // Phase 7 — state snapshot lifted OUT of the giant JSON blob and
+        // formatted as its own labeled block so Claude reads it first.
+        // Empty dicts / nulls become null so the prompt stays compact.
+        const stateSnap = compactStateSnapshot(r.state_snapshot);
         const textBlock = JSON.stringify({
             bug_report_id: r.id,
             reporter: r.user_name ?? "anonymous",
@@ -594,6 +629,7 @@ function buildUserPrompt(
             additional_info: r.additional_info,
             likely_source_files: r.likely_source_files ?? [],
             user_context: userCtx,
+            state_snapshot: stateSnap,
             session_log_tail: sessionLog,
         }, null, 2);
         parts.push({ type: "text", text: `\n---\n${textBlock}` });
@@ -611,6 +647,35 @@ function buildUserPrompt(
     }
 
     return parts;
+}
+
+// Phase 7 — filter + compact the runtime state dict before embedding it
+// in the Claude prompt. Keeps the payload small and the block scannable:
+//   - Drops empty service dicts (post-registration, a service may exist
+//     but have no publishable state).
+//   - Preserves __captured_at at the top so Claude can reason about age.
+//   - Returns null rather than {} so the JSON above shows `null`, not
+//     visual noise, when no snapshot shipped (pre-Phase 7 clients).
+function compactStateSnapshot(
+    raw: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+    if (!raw || typeof raw !== "object") return null;
+    const keys = Object.keys(raw);
+    if (keys.length === 0) return null;
+    const out: Record<string, unknown> = {};
+    for (const k of keys) {
+        const v = raw[k];
+        // Preserve scalar top-level metadata (e.g. __captured_at).
+        if (v === null || typeof v !== "object") {
+            out[k] = v;
+            continue;
+        }
+        // Drop empty service blocks so the prompt stays compact.
+        if (Array.isArray(v) && v.length === 0) continue;
+        if (!Array.isArray(v) && Object.keys(v as Record<string, unknown>).length === 0) continue;
+        out[k] = v;
+    }
+    return Object.keys(out).length > 0 ? out : null;
 }
 
 function parseClaudeJson(text: string): { reports: ClaudeReport[] } | null {

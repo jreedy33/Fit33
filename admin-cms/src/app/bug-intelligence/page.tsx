@@ -133,6 +133,10 @@ type ExportShake = {
     user_severity: string
     bug_category: string | null
     screenshot_attached: boolean
+    // Phase 7 Cheat Code — runtime state snapshot at shake time. Keys are
+    // service names, values are shallow dicts of @Published fields. See
+    // Fit33/BugReportStateSnapshot.swift. Null for pre-Phase-7 shakes.
+    state_snapshot: Record<string, unknown> | null
     device_model: string | null
     os_version: string | null
     app_version: string | null
@@ -248,14 +252,15 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
     L.push('')
     L.push(`You are receiving ${total} bug intelligence report(s) produced by the Fit33 triage pipeline (Claude Sonnet 4 + symbolicated stack traces). Each report has a suggested \`file_path\` and \`code_diff\` — treat these as **hypotheses**, not facts:`)
     L.push('')
-    L.push(`1. Read the suggested \`file_path\`. Verify the failing code actually exists there.`)
-    L.push(`2. For shake-sourced reports, read the \`Evidence — user-reported shake\` block carefully: the user's words + \`likely_source_files\` + reporter profile often pinpoint the bug faster than Claude's diff. Check the admin CMS /bug-intelligence page for the attached screenshot.`)
-    L.push(`3. If Claude's diff is correct → apply it with any needed refinements.`)
-    L.push(`4. If Claude's diff is wrong or off-target → explain why and write a better one.`)
-    L.push(`5. If you cannot locate the failure site → flag the report and move on.`)
-    L.push(`6. Work in priority order: **critical → high → medium → low**. Within a tier, highest confidence first.`)
-    L.push(`7. Share your plan before making changes (which reports you'll tackle, which you'll skip and why).`)
-    L.push(`8. After fixing each report, note the fingerprint so the user can mark it resolved in \`/bug-intelligence\`.`)
+    L.push(`1. **FOR SHAKE REPORTS: read the \`Runtime state at shake\` block FIRST.** This is the Phase 7 Cheat Code — a structured dump of @Published values from every major ObservableObject singleton at the exact moment the user shook. Silent-logic bugs (widget A shows 199, widget B shows 190) show up as divergent values in the same service block. If you see a divergence there, that IS the bug; skip straight to writing the fix.`)
+    L.push(`2. Read the suggested \`file_path\`. Verify the failing code actually exists there.`)
+    L.push(`3. For shake-sourced reports, also read the \`Evidence — user-reported shake\` block: the user's words + \`likely_source_files\` + reporter profile often pinpoint the bug faster than Claude's diff. Check the admin CMS /bug-intelligence page for the attached screenshot.`)
+    L.push(`4. If Claude's diff is correct → apply it with any needed refinements.`)
+    L.push(`5. If Claude's diff is wrong or off-target → explain why and write a better one.`)
+    L.push(`6. If you cannot locate the failure site → flag the report and move on.`)
+    L.push(`7. Work in priority order: **critical → high → medium → low**. Within a tier, highest confidence first.`)
+    L.push(`8. Share your plan before making changes (which reports you'll tackle, which you'll skip and why).`)
+    L.push(`9. After fixing each report, note the fingerprint so the user can mark it resolved in \`/bug-intelligence\`. The "Clear resolved" button in the CMS header wipes terminal items from future exports.`)
     L.push('')
     L.push(`Respect the repo rules in \`.cursor/rules/codingrules.mdc\` and the scoped \`swiftui-rules.mdc\` / \`supabase-rules.mdc\` / \`admin-cms-rules.mdc\`. Consult the matching \`*_AGENT.md\` file for each report's \`agent_owner\` before making changes.`)
     L.push('')
@@ -388,6 +393,35 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
                 L.push('> ' + s.additional_info.replace(/\n/g, '\n> '))
                 L.push('')
             }
+            // Phase 7 Cheat Code — the single highest-leverage block in
+            // the export. Runtime values at the exact moment the user
+            // shook, grouped by service. If todayLog.weightLbs=199 but
+            // recentLogs.first.weightLbs=190 in the same block, the bug
+            // is a sync race (as in reports 40 / 66). Encourage Cursor
+            // to read this FIRST.
+            if (s.state_snapshot) {
+                const entries = Object.entries(s.state_snapshot)
+                    .filter(([k]) => !k.startsWith('__')) // drop __captured_at etc
+                if (entries.length > 0) {
+                    L.push(`**Runtime state at shake (CHEAT CODE — read first):**`)
+                    L.push('')
+                    const captured = (s.state_snapshot as Record<string, unknown>)['__captured_at']
+                    if (typeof captured === 'string') {
+                        L.push(`Captured at \`${captured}\`. Each block below is one ObservableObject singleton's @Published state at the moment the user shook. Scan for divergences (e.g. two fields in the same service with values that shouldn't disagree).`)
+                        L.push('')
+                    }
+                    L.push('```json')
+                    const compact: Record<string, unknown> = {}
+                    for (const [k, v] of entries) compact[k] = v
+                    try {
+                        L.push(JSON.stringify(compact, null, 2).slice(0, 6000))
+                    } catch {
+                        L.push(String(compact).slice(0, 3000))
+                    }
+                    L.push('```')
+                    L.push('')
+                }
+            }
             if (s.user_context) {
                 const u = s.user_context
                 const factsRaw: Array<[string, unknown]> = [
@@ -512,6 +546,11 @@ export default function BugIntelligencePage() {
         // Phase 6: source splits the inbox into Crash / Log / Shake (user-reported).
         source: 'all',
     })
+    // Phase 7 — hide terminal (resolved/wont_fix/duplicate) fingerprints
+    // from the list by default so the inbox shows open work only. User
+    // can flip to show them via the "Show resolved" toggle in the header.
+    const [showResolved, setShowResolved] = useState(false)
+    const [clearing, setClearing] = useState(false)
 
     const loadOverview = useCallback(async () => {
         const [ovRes, mRes] = await Promise.all([
@@ -530,11 +569,15 @@ export default function BugIntelligencePage() {
             severity_min: filters.severity_min || undefined,
             search: filters.search || undefined,
             source: filters.source,
+            // Phase 7 — hide resolved by default; the server honors an
+            // explicit status filter so showing only `resolved` still
+            // works even when `include_resolved` is false.
+            include_resolved: showResolved,
             limit: 150,
         })
         setFingerprints(data.fingerprints || [])
         setLoading(false)
-    }, [filters])
+    }, [filters, showResolved])
 
     const loadDetail = useCallback(async (fp: string) => {
         const [rRes, tRes] = await Promise.all([
@@ -651,6 +694,50 @@ export default function BugIntelligencePage() {
         }
     }
 
+    // Phase 7 — one-click cleanup of terminal (resolved/merged/rejected/
+    // stale/wont_fix/duplicate) reports + fingerprints. Always confirms
+    // first, and shows a dry-run preview of what will be deleted. GitHub
+    // history (pr_url / resolution_pr_url) remains the source of truth,
+    // so clearing the inbox is non-destructive in the engineering sense.
+    async function clearResolvedBugIntel() {
+        setClearing(true)
+        try {
+            const preview = await adminAction('clear_resolved_bug_intelligence', {
+                scope: 'all', dry_run: true,
+            })
+            const rTotal = preview.reports_to_delete ?? 0
+            const fTotal = preview.fingerprints_to_delete ?? 0
+            if (rTotal === 0 && fTotal === 0) {
+                alert('Nothing to clear — no terminal items in the inbox.')
+                return
+            }
+            const ok = window.confirm(
+                `This will delete:\n` +
+                `  • ${rTotal} terminal Claude report${rTotal === 1 ? '' : 's'} (merged / rejected / stale)\n` +
+                `  • ${fTotal} terminal fingerprint${fTotal === 1 ? '' : 's'} (resolved / wont_fix / duplicate) that have no remaining open reports\n\n` +
+                `GitHub PRs (pr_url / resolution_pr_url) remain the source of truth for fix history. Continue?`,
+            )
+            if (!ok) return
+            const result = await adminAction('clear_resolved_bug_intelligence', {
+                scope: 'all', dry_run: false,
+            })
+            if (result.error) {
+                alert(`Cleanup failed: ${result.error}`)
+                return
+            }
+            alert(
+                `Cleared: ${result.reports_deleted ?? 0} report(s), ` +
+                `${result.fingerprints_deleted ?? 0} fingerprint(s).`,
+            )
+            await Promise.all([loadOverview(), loadFingerprints()])
+            if (selectedFp) await loadDetail(selectedFp)
+        } catch (err) {
+            alert(`Cleanup error: ${err instanceof Error ? err.message : String(err)}`)
+        } finally {
+            setClearing(false)
+        }
+    }
+
     async function createPrFromReport(r: Report) {
         if (!r.file_path || !r.code_diff) {
             alert('Report is missing file_path or code_diff — cannot create PR.')
@@ -691,7 +778,25 @@ export default function BugIntelligencePage() {
                             Fingerprinted bugs from logs + crashes. Claude triage runs every 4 hours.
                         </p>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        {/* Phase 7 — show/hide resolved fingerprints in the list */}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }} title="When off (default), the inbox hides fingerprints in terminal states (resolved / wont_fix / duplicate). Toggle on to see everything — useful for audits.">
+                            <input
+                                type="checkbox"
+                                checked={showResolved}
+                                onChange={e => setShowResolved(e.target.checked)}
+                            />
+                            Show resolved
+                        </label>
+                        <button
+                            onClick={clearResolvedBugIntel}
+                            disabled={clearing}
+                            className="btn btn-ghost"
+                            title="Delete terminal reports (merged / rejected / stale) and terminal fingerprints (resolved / wont_fix / duplicate) that have no remaining open reports. Non-destructive — GitHub PR URLs preserve the history."
+                            style={{ opacity: clearing ? 0.6 : 1, cursor: clearing ? 'wait' : 'pointer', color: '#ef4444' }}
+                        >
+                            {clearing ? 'Clearing…' : 'Clear resolved'}
+                        </button>
                         <button
                             onClick={exportPendingAsMarkdown}
                             disabled={exporting}

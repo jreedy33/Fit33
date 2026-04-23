@@ -58,7 +58,7 @@ struct BugReport: Codable, Identifiable {
 /// `screenName` automatically so Claude has enough context to produce a
 /// real `bug_intelligence_report` (file_path + code_diff) via the
 /// `triage-shake-reports` edge function.
-struct BugReportInsert: Codable {
+struct BugReportInsert: Encodable {
     let id: UUID
     let userId: UUID?
     let userName: String?
@@ -79,6 +79,10 @@ struct BugReportInsert: Codable {
     let bugCategory: String?       // ui | data | performance | crash | auth | workout | nutrition | social | health | other
     let likelySourceFiles: [String]
     let triageStatus: String       // pending (client always sets pending; trigger fires)
+    // Phase 7 / Cheat Code — runtime state snapshot. Opaque JSON dict
+    // built by BugReportSnapshotter.buildSnapshot() at shake time.
+    // Encoded via encodeRawJSON(...) so PostgREST lands it as JSONB.
+    let stateSnapshot: [String: Any]?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -100,6 +104,85 @@ struct BugReportInsert: Codable {
         case bugCategory = "bug_category"
         case likelySourceFiles = "likely_source_files"
         case triageStatus = "triage_status"
+        case stateSnapshot = "state_snapshot"
+    }
+
+    // Custom encoder — all fields trivial except stateSnapshot which is
+    // `[String: Any]` (not Codable). We route it through JSONSerialization
+    // and then re-decode as an opaque AnyCodable value for the Supabase
+    // Swift client.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(userId, forKey: .userId)
+        try c.encodeIfPresent(userName, forKey: .userName)
+        try c.encodeIfPresent(userEmail, forKey: .userEmail)
+        try c.encode(description, forKey: .description)
+        try c.encode(expectedBehavior, forKey: .expectedBehavior)
+        try c.encode(reproducesEveryTime, forKey: .reproducesEveryTime)
+        try c.encodeIfPresent(screenshotBase64, forKey: .screenshotBase64)
+        try c.encode(deviceModel, forKey: .deviceModel)
+        try c.encode(osVersion, forKey: .osVersion)
+        try c.encode(appVersion, forKey: .appVersion)
+        try c.encodeIfPresent(screenName, forKey: .screenName)
+        try c.encodeIfPresent(additionalInfo, forKey: .additionalInfo)
+        try c.encodeIfPresent(sessionLog, forKey: .sessionLog)
+        try c.encode(status, forKey: .status)
+        try c.encode(severity, forKey: .severity)
+        try c.encodeIfPresent(bugCategory, forKey: .bugCategory)
+        try c.encode(likelySourceFiles, forKey: .likelySourceFiles)
+        try c.encode(triageStatus, forKey: .triageStatus)
+        if let snap = stateSnapshot, !snap.isEmpty {
+            // Serialize via Foundation → decode as AnyCodableJSON so the
+            // Supabase client encodes it as a JSONB object (not a string).
+            let data = try JSONSerialization.data(withJSONObject: snap, options: [])
+            let decoded = try JSONDecoder().decode(AnyCodableJSON.self, from: data)
+            try c.encode(decoded, forKey: .stateSnapshot)
+        }
+    }
+}
+
+/// Helper that can both decode and encode arbitrary JSON so we can round-trip
+/// `[String: Any]` through `BugReportInsert`'s Codable path without losing
+/// structure. Kept tiny and local to the bug report module — if we need an
+/// app-wide AnyCodable later, promote it then.
+private struct AnyCodableJSON: Codable {
+    let value: Any
+
+    init(_ value: Any) { self.value = value }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { value = NSNull() }
+        else if let b = try? c.decode(Bool.self) { value = b }
+        else if let i = try? c.decode(Int.self) { value = i }
+        else if let d = try? c.decode(Double.self) { value = d }
+        else if let s = try? c.decode(String.self) { value = s }
+        else if let arr = try? c.decode([AnyCodableJSON].self) { value = arr.map { $0.value } }
+        else if let obj = try? c.decode([String: AnyCodableJSON].self) {
+            var out: [String: Any] = [:]
+            for (k, v) in obj { out[k] = v.value }
+            value = out
+        } else {
+            value = NSNull()
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch value {
+        case is NSNull: try c.encodeNil()
+        case let b as Bool: try c.encode(b)
+        case let i as Int: try c.encode(i)
+        case let d as Double: try c.encode(d)
+        case let s as String: try c.encode(s)
+        case let arr as [Any]: try c.encode(arr.map { AnyCodableJSON($0) })
+        case let obj as [String: Any]:
+            var out: [String: AnyCodableJSON] = [:]
+            for (k, v) in obj { out[k] = AnyCodableJSON(v) }
+            try c.encode(out)
+        default: try c.encodeNil()
+        }
     }
 }
 
@@ -298,7 +381,13 @@ class BugReportService: ObservableObject {
         sessionLog: String? = nil,
         severity: BugSeverity = .medium,
         bugCategory: String? = nil,
-        likelySourceFiles: [String]? = nil
+        likelySourceFiles: [String]? = nil,
+        // Phase 7 / Cheat Code — pre-captured runtime state. Pass nil
+        // and the service will capture one just-in-time. Passing an
+        // explicit snapshot lets the view snapshot at `onAppear` so
+        // nav-churn during the report-writing session doesn't
+        // invalidate the state the user was complaining about.
+        stateSnapshot: [String: Any]? = nil
     ) async -> Bool {
         isSubmitting = true
         defer { isSubmitting = false }
@@ -357,6 +446,15 @@ class BugReportService: ObservableObject {
                 return ScreenCodeMap.filesForScreen(detectedScreen)
             }()
 
+            // Phase 7: capture runtime state at SUBMIT time if caller
+            // didn't snapshot earlier. View-level snapshot is preferred
+            // (caught at the moment the user shook, before they typed
+            // their description + navigated).
+            let capturedSnapshot: [String: Any]? = {
+                if let pre = stateSnapshot { return pre }
+                return BugReportSnapshotter.shared.buildSnapshot()
+            }()
+
             // Create the report using the Codable struct
             let report = BugReportInsert(
                 id: UUID(),
@@ -377,7 +475,8 @@ class BugReportService: ObservableObject {
                 severity: severity.rawValue,
                 bugCategory: bugCategory,
                 likelySourceFiles: detectedFiles,
-                triageStatus: "pending"
+                triageStatus: "pending",
+                stateSnapshot: capturedSnapshot
             )
             
             AppLogger.debug("📤 Submitting bug report to Supabase...", category: .network)

@@ -25,6 +25,7 @@
 		33333861626261352D313262652D343338302D623465642D /* StringArrayValueTransformer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61306134393365612D636432392D343930382D393365622D /* StringArrayValueTransformer.swift */; };
 		3A5A490282C7308CC0EB73ED /* SelectAllTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4042F3898D77AA0F43BE33 /* SelectAllTextField.swift */; };
 		3EAD4A5A8BA457EC2C122812 /* DashboardWorkoutCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345140F799E881D86FF1874C /* DashboardWorkoutCards.swift */; };
+		401E8A0ECC738AAEA991505A /* BugReportStateSnapshot+Providers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1D94931B46115CBE7725B3 /* BugReportStateSnapshot+Providers.swift */; };
 		433D4F3A9BF08DD88107FDCC /* USDAFoodSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A44F86A66F4E29460BC00D /* USDAFoodSearch.swift */; };
 		43BC44FFB4FBDB9918723132 /* WorkoutSetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C994AD7B49464500454F37F /* WorkoutSetViews.swift */; };
 		4A2040139B619AABA76B110C /* NewOnboardingView+Steps.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E3406881B826760E5E531D /* NewOnboardingView+Steps.swift */; };
@@ -313,6 +314,7 @@
 		7CEBB6A22F770114003415D0 /* WhoopService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEBB6A12F770114003415D0 /* WhoopService.swift */; };
 		7CEBB6CA2F78494B003415D0 /* ContentModerationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEBB6C92F78494B003415D0 /* ContentModerationService.swift */; };
 		820542DDBCA2AEB26495E63D /* ActiveWorkoutView+Init.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8354565A7AE5145685CA422 /* ActiveWorkoutView+Init.swift */; };
+		854CF577E4B436E71FF722C0 /* BugReportStateSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F79CB6A4C33FAA95E80AB9A /* BugReportStateSnapshot.swift */; };
 		85DB4E0AA64B9F9B59A2F628 /* ContentViewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7674CDC970C39B5FBA0504D /* ContentViewModels.swift */; };
 		90ED4473BD42B1A5CF08C8C5 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D2489294ADCD002B377A23 /* MainTabView.swift */; };
 		90EE428D96773A744BAA0F33 /* DashboardView+Challenges.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC454A3093A0AAF443676507 /* DashboardView+Challenges.swift */; };
@@ -428,6 +430,7 @@
 		55A24D18B40D9675B5069F12 /* DashboardWeightWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DashboardWeightWidget.swift; path = Fit33/DashboardWeightWidget.swift; sourceTree = SOURCE_ROOT; };
 		567E4D019E321EDAAE192E38 /* DashboardNavigationDestinations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DashboardNavigationDestinations.swift; path = Fit33/DashboardNavigationDestinations.swift; sourceTree = SOURCE_ROOT; };
 		5D564936A93E29AFFDB6CD55 /* WorkoutDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorkoutDataModels.swift; path = Fit33/WorkoutDataModels.swift; sourceTree = SOURCE_ROOT; };
+		5E1D94931B46115CBE7725B3 /* BugReportStateSnapshot+Providers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "BugReportStateSnapshot+Providers.swift"; sourceTree = "<group>"; };
 		60944C90B2EE8BB0F4FAB032 /* ActiveWorkoutView+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ActiveWorkoutView+Layout.swift"; path = "Fit33/ActiveWorkoutView+Layout.swift"; sourceTree = SOURCE_ROOT; };
 		61306134393365612D636432392D343930382D393365622D /* StringArrayValueTransformer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringArrayValueTransformer.swift; sourceTree = "<group>"; };
 		639347F1ADEA94D5F2F09470 /* RestTimerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RestTimerViews.swift; path = Fit33/RestTimerViews.swift; sourceTree = SOURCE_ROOT; };
@@ -728,6 +731,7 @@
 		909C4053B7415AD3E32D829A /* ActiveWorkoutView+Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ActiveWorkoutView+Persistence.swift"; path = "Fit33/ActiveWorkoutView+Persistence.swift"; sourceTree = SOURCE_ROOT; };
 		935D4A858C8C3C8A31F67156 /* OnboardingConfirmationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingConfirmationViews.swift; path = Fit33/OnboardingConfirmationViews.swift; sourceTree = SOURCE_ROOT; };
 		939742FBB40A49F30A3C3E1B /* OnboardingInfrastructure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingInfrastructure.swift; path = Fit33/OnboardingInfrastructure.swift; sourceTree = SOURCE_ROOT; };
+		9F79CB6A4C33FAA95E80AB9A /* BugReportStateSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BugReportStateSnapshot.swift; sourceTree = "<group>"; };
 		A1234567890123456789012B /* Fit33App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fit33App.swift; sourceTree = "<group>"; };
 		A1234567890123456789012F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A12345678901234567890131 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
@@ -790,8 +794,28 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		7C6DE4152F5DEB0800BCA276 /* Fit33Tests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Fit33Tests; sourceTree = "<group>"; };
-		7C8161292EF86FC7007556A7 /* RunningActivityWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = RunningActivityWidget; sourceTree = "<group>"; };
+		7C6DE4152F5DEB0800BCA276 /* Fit33Tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Fit33Tests;
+			sourceTree = "<group>";
+		};
+		7C8161292EF86FC7007556A7 /* RunningActivityWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = RunningActivityWidget;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1227,6 +1251,8 @@
 				F1E3406881B826760E5E531D /* NewOnboardingView+Steps.swift */,
 				EF7F4EB0AB2ADBE287AC1AC4 /* NewOnboardingView+Social.swift */,
 				B92C47D5937FC5C5249B2431 /* NewOnboardingView+Completion.swift */,
+				9F79CB6A4C33FAA95E80AB9A /* BugReportStateSnapshot.swift */,
+				5E1D94931B46115CBE7725B3 /* BugReportStateSnapshot+Providers.swift */,
 			);
 			path = Fit33;
 			sourceTree = "<group>";
@@ -1266,8 +1292,6 @@
 				7C6DE4152F5DEB0800BCA276 /* Fit33Tests */,
 			);
 			name = Fit33Tests;
-			packageProductDependencies = (
-			);
 			productName = Fit33Tests;
 			productReference = 7C6DE4142F5DEB0800BCA276 /* Fit33Tests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -1287,8 +1311,6 @@
 				7C8161292EF86FC7007556A7 /* RunningActivityWidget */,
 			);
 			name = RunningActivityWidgetExtension;
-			packageProductDependencies = (
-			);
 			productName = RunningActivityWidgetExtension;
 			productReference = 7C8161232EF86FC7007556A7 /* RunningActivityWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -1758,6 +1780,8 @@
 				7CAA26050001000000000042 /* CloudSyncRetryQueue.swift in Sources */,
 				97654C0E855922138D5FBA13 /* NewOnboardingView+Social.swift in Sources */,
 				95144156935EEE1587BF825F /* NewOnboardingView+Completion.swift in Sources */,
+				854CF577E4B436E71FF722C0 /* BugReportStateSnapshot.swift in Sources */,
+				401E8A0ECC738AAEA991505A /* BugReportStateSnapshot+Providers.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

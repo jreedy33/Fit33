@@ -864,6 +864,13 @@ class WeightTrackingService: ObservableObject {
         return (trend, stats.weeklyChange, isOnTrack)
     }
     
+    // MARK: - SnapshotProvider (Phase 7)
+    //
+    // Keys chosen to reveal the exact class of bug that shipped in
+    // reports 40 + 66: todayLog / recentLogs.first divergence, throttle
+    // age, hasLoggedToday drift. If a future bug touches weight sync,
+    // the snapshot should make it obvious at a glance to Claude.
+
     /// Suggests adjustments based on weight trend and goals
     func getWorkoutAdjustmentSuggestion() -> String? {
         let (trend, change, isOnTrack) = getWeightTrendForRecommendations()
@@ -896,3 +903,48 @@ class WeightTrackingService: ObservableObject {
         return nil
     }
 }
+
+// MARK: - SnapshotProvider conformance (Phase 7)
+// Weight sync was the canonical bug (reports 40 + 66) that motivated the
+// Cheat Code — expose todayLog / recentLogs.first divergence + throttle age
+// so the snapshot pins the smoking gun at triage time.
+// Lives in-file because `lastLoadTime` is `private`.
+extension WeightTrackingService: SnapshotProvider {
+    var snapshotKey: String { "WeightTrackingService" }
+
+    @MainActor
+    func contributeSnapshot() -> [String: SnapshotValue] {
+        var v: [String: SnapshotValue] = [
+            "hasLoggedToday": .bool(hasLoggedToday),
+            "isLoading": .bool(isLoading),
+            "usesLbs": .bool(usesLbs),
+            "recentLogs.count": .int(recentLogs.count),
+        ]
+        if let today = todayLog {
+            v["todayLog.id"] = .string(today.id.uuidString)
+            v["todayLog.weightLbs"] = .double(today.weightLbs)
+            v["todayLog.weightKg"] = .double(today.weightKg)
+            v["todayLog.source"] = .string(today.source)
+            v["todayLog.ageSeconds"] = .double(Date().timeIntervalSince(today.loggedAt))
+        } else {
+            v["todayLog"] = .null
+        }
+        if let latest = recentLogs.first {
+            v["recentLogs.first.id"] = .string(latest.id.uuidString)
+            v["recentLogs.first.weightLbs"] = .double(latest.weightLbs)
+            v["recentLogs.first.source"] = .string(latest.source)
+            v["recentLogs.first.ageSeconds"] = .double(Date().timeIntervalSince(latest.loggedAt))
+        }
+        if let stats = statistics {
+            v["statistics.currentWeight"] = .double(stats.currentWeight)
+            v["statistics.weeklyChange"] = .double(stats.weeklyChange)
+            v["statistics.totalEntries"] = .int(stats.totalEntries)
+        }
+        if let last = lastLoadTime {
+            v["lastLoadAgeSeconds"] = .double(Date().timeIntervalSince(last))
+        }
+        return v
+    }
+}
+
+

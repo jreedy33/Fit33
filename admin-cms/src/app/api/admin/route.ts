@@ -1943,7 +1943,7 @@ export async function POST(req: NextRequest) {
         }
         const { data: shake, error: shakeErr } = await q
         if (shakeErr) return NextResponse.json({ error: shakeErr.message }, { status: 500 })
-        const shakeRows = (shake || []) as Array<{ triage_report_id: string | null }>
+        const shakeRows = (shake ?? []) as unknown as Array<{ triage_report_id: string | null }>
 
         // Fetch linked Claude reports in one roundtrip.
         const reportIds = shakeRows

@@ -44,9 +44,12 @@ struct DashboardWeightWidget: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .weightDidUpdate)) { _ in
-            // Weight was updated elsewhere (e.g., nutrition tab) - force reload to stay in sync
+            // Weight was updated elsewhere (e.g., nutrition tab) - force reload to stay
+            // in sync. MUST pass force: true to bypass the 10s loadAllData throttle,
+            // otherwise a user-initiated weight entry from another widget is silently
+            // dropped here. Root cause of shake reports 40 / 66.
             Task {
-                await weightService.loadAllData()
+                await weightService.loadAllData(force: true)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dailyResetCompleted)) { _ in

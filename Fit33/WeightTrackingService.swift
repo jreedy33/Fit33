@@ -387,9 +387,24 @@ class WeightTrackingService: ObservableObject {
                 .value
             
             await MainActor.run {
-                self.recentLogs = logs
+                // Read-after-write race guard: if we just optimistically inserted a
+                // manual log within the last ~5s that PostgREST's immediate SELECT
+                // didn't see yet, preserve it at the front. Otherwise the Nutrition
+                // tab's WeightTrackerWidget (which reads recentLogs.first) would
+                // revert to the previous value. See shake reports 40 / 66.
+                let pending = self.recentLogs.first(where: { log in
+                    log.source == "manual" &&
+                    Date().timeIntervalSince(log.loggedAt) < 5 &&
+                    !logs.contains(where: { $0.id == log.id })
+                })
+                if let pending = pending {
+                    self.recentLogs = [pending] + logs
+                    AppLogger.info("✅ [Weight] Preserved optimistic log across reload (\(logs.count) server + 1 pending)", category: .health)
+                } else {
+                    self.recentLogs = logs
+                    AppLogger.info("✅ [Weight] Loaded \(logs.count) recent weight logs", category: .health)
+                }
             }
-            AppLogger.info("✅ [Weight] Loaded \(logs.count) recent weight logs", category: .health)
         } catch {
             AppLogger.error("❌ [Weight] Failed to load recent logs: \(error)", category: .health)
         }
@@ -576,7 +591,11 @@ class WeightTrackingService: ObservableObject {
                 // Load recent logs but skip the first one since we already have it optimistically
                 await loadRecentLogs(userId: userId)
             }
-            
+
+            // Re-post after the final reload so any widget whose first notification
+            // hit the loadAllData() throttle still gets an authoritative refresh.
+            NotificationCenter.default.post(name: .weightDidUpdate, object: nil)
+
             AppLogger.info("✅ [Weight] Save complete, todayLog retained", category: .health)
             return true
         } catch {

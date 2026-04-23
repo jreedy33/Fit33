@@ -37,7 +37,10 @@ struct WeightTrackerWidget: View {
             Task { await weightService.loadAllData() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .weightDidUpdate)) { _ in
-            Task { await weightService.loadAllData() }
+            // Must force-bypass the 10s loadAllData throttle — otherwise a weight
+            // entry from the Dashboard widget is silently dropped on the Nutrition
+            // tab's WeightTrackerWidget. Root cause of shake reports 40 / 66.
+            Task { await weightService.loadAllData(force: true) }
         }
     }
     

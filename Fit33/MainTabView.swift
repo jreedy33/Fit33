@@ -276,8 +276,10 @@ struct MainTabView: View {
                 
                 
                 
-                // ⚡️ End transition tracking (async to not block)
-                DispatchQueue.main.async { [self] in
+                // ⚡️ End transition tracking (async to not block).
+                // swiftui-rules.mdc: use structured concurrency (`Task { @MainActor }`)
+                // instead of DispatchQueue.main.asyncAfter / .async — rule §3.
+                Task { @MainActor [self] in
                     tabSwitchOptimizer.endTransition()
                     MainThreadWatchdog.shared.clearContext()
                 }

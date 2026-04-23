@@ -211,6 +211,9 @@
 		7C8CEA402F99C12D007CD766 /* HealthInsightsView+Readiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA3F2F99C12D007CD766 /* HealthInsightsView+Readiness.swift */; };
 		7C8CEA422F99C136007CD766 /* AdaptiveGoalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA412F99C136007CD766 /* AdaptiveGoalService.swift */; };
 		7C8CEA442F99C149007CD766 /* UserManager+ReadinessXP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA432F99C149007CD766 /* UserManager+ReadinessXP.swift */; };
+		7C8CEA722F9A7599007CD766 /* DiagnosticContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA712F9A7599007CD766 /* DiagnosticContext.swift */; };
+		7C8CEA742F9A75B1007CD766 /* PerformanceSignposts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */; };
+		7C8CEA762F9A75DC007CD766 /* PerformanceMetricsUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */; };
 		7C8EB1C02F26ABD4007BFA55 /* PerformanceOptimizations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */; };
 		7C8EB1C32F26B03C007BFA55 /* StravaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */; };
 		7C8EB1C42F26B03C007BFA55 /* StravaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C12F26B03C007BFA55 /* StravaService.swift */; };
@@ -624,6 +627,9 @@
 		7C8CEA3F2F99C12D007CD766 /* HealthInsightsView+Readiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HealthInsightsView+Readiness.swift"; sourceTree = "<group>"; };
 		7C8CEA412F99C136007CD766 /* AdaptiveGoalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveGoalService.swift; sourceTree = "<group>"; };
 		7C8CEA432F99C149007CD766 /* UserManager+ReadinessXP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserManager+ReadinessXP.swift"; sourceTree = "<group>"; };
+		7C8CEA712F9A7599007CD766 /* DiagnosticContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticContext.swift; sourceTree = "<group>"; };
+		7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSignposts.swift; sourceTree = "<group>"; };
+		7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceMetricsUploader.swift; sourceTree = "<group>"; };
 		7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizations.swift; sourceTree = "<group>"; };
 		7C8EB1C12F26B03C007BFA55 /* StravaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaService.swift; sourceTree = "<group>"; };
 		7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaSettingsView.swift; sourceTree = "<group>"; };
@@ -814,28 +820,8 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		7C6DE4152F5DEB0800BCA276 /* Fit33Tests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = Fit33Tests;
-			sourceTree = "<group>";
-		};
-		7C8161292EF86FC7007556A7 /* RunningActivityWidget */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = RunningActivityWidget;
-			sourceTree = "<group>";
-		};
+		7C6DE4152F5DEB0800BCA276 /* Fit33Tests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Fit33Tests; sourceTree = "<group>"; };
+		7C8161292EF86FC7007556A7 /* RunningActivityWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = RunningActivityWidget; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1178,7 +1164,10 @@
 				7CAA1FA02F4AAAA0008200B9 /* SystemMetrics.swift */,
 				7C3DF1FB2F2D772D00A9CDA7 /* TabPreloadingSystem.swift */,
 				7C8CEA372F99C109007CD766 /* ReadinessService.swift */,
+				7C8CEA712F9A7599007CD766 /* DiagnosticContext.swift */,
 				7C8CEA432F99C149007CD766 /* UserManager+ReadinessXP.swift */,
+				7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */,
+				7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */,
 				7C8CEA3B2F99C11E007CD766 /* ReadinessWorkoutAdjuster.swift */,
 				7C8CEA412F99C136007CD766 /* AdaptiveGoalService.swift */,
 				7C8CEA3F2F99C12D007CD766 /* HealthInsightsView+Readiness.swift */,
@@ -1515,6 +1504,7 @@
 				7CACB57D2F2E9722003A7C91 /* ChallengePreviewWidget.swift in Sources */,
 				7C6DE3F52F5CAD7400BCA276 /* CriticalPathTests.swift in Sources */,
 				7CACB57F2F5A000100AAAAAA /* ChallengeReactionsView.swift in Sources */,
+				7C8CEA762F9A75DC007CD766 /* PerformanceMetricsUploader.swift in Sources */,
 				7CB08C9F2EDE246D00236ECB /* ProgramCustomizationService.swift in Sources */,
 				7C53E2202F33FD7500C2F7EC /* QRCodeService.swift in Sources */,
 				7C53E2212F33FD7500C2F7EC /* QRCodeScannerView.swift in Sources */,
@@ -1725,6 +1715,7 @@
 				7C0C41E82F09A13500F02E84 /* VideoPlaybackEngine.swift in Sources */,
 				AA0000012F5A000100000001 /* VideoThumbnailService.swift in Sources */,
 				7C8EB1C62F2913AB007BFA55 /* WelcomeTutorialView.swift in Sources */,
+				7C8CEA742F9A75B1007CD766 /* PerformanceSignposts.swift in Sources */,
 				7C0C42202F09DB7200F02E84 /* LearningEngineDebugView.swift in Sources */,
 				B1234567890123456789A007 /* IntelligentWorkoutGenerator.swift in Sources */,
 				7C98FAC02EEBCD58001AE1F3 /* EquipmentHierarchyService.swift in Sources */,
@@ -1795,6 +1786,7 @@
 				D94A4475A737B2B3F4D6BF42 /* RenameExerciseView.swift in Sources */,
 				75494973A1E7BA66E430B943 /* WorkoutSettingsPanel.swift in Sources */,
 				4A3749E2940214E934C8BA1A /* NowPlayingBar.swift in Sources */,
+				7C8CEA722F9A7599007CD766 /* DiagnosticContext.swift in Sources */,
 				F0974F009CEDBF3F90FCFC58 /* ActiveWorkoutView+Layout.swift in Sources */,
 				820542DDBCA2AEB26495E63D /* ActiveWorkoutView+Init.swift in Sources */,
 				D67D4B09945CB94FBC0E5A3A /* ActiveWorkoutView+Actions.swift in Sources */,
@@ -1891,7 +1883,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 51;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1902,7 +1894,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.38;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1921,7 +1913,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 51;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1932,7 +1924,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.38;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -2075,7 +2067,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 51;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2097,7 +2089,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.38;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2113,7 +2105,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 51;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2135,7 +2127,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.38;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

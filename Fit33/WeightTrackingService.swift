@@ -496,13 +496,18 @@ class WeightTrackingService: ObservableObject {
     
     @MainActor
     func logWeight(_ weight: Double, notes: String? = nil) async -> Bool {
+        let startedAt = Date()
         guard let userId = supabase.currentUser?.id else {
             AppLogger.error("❌ [Weight] No user ID available", category: .health)
             return false
         }
-        
+
         guard SupabaseManager.shared.isAuthenticated else {
-            AppLogger.warning("[Weight] Cannot log weight — not authenticated", category: .health)
+            AppLogger.warning(
+                "[Weight] Cannot log weight — not authenticated",
+                category: .health,
+                context: DiagnosticContext(op: "weight.log", endpoint: "weight_logs")
+            )
             return false
         }
         
@@ -599,17 +604,41 @@ class WeightTrackingService: ObservableObject {
             AppLogger.info("✅ [Weight] Save complete, todayLog retained", category: .health)
             return true
         } catch {
-            NetworkErrorClassifier.log(error, context: "[Weight] Failed to log weight", category: .health)
+            // op=weight.log + endpoint=weight_logs + startedAt → DiagnosticContext
+            // captures pg_code (42883 UUID mismatch / 42501 RLS / 23505 dup) +
+            // http_status + elapsed_ms so the Bug Intelligence rollup can
+            // fingerprint by error class instead of collapsing everything
+            // into "Failed to log weight".
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[Weight] Failed to log weight",
+                category: .health,
+                op: "weight.log",
+                endpoint: "weight_logs",
+                startedAt: startedAt,
+                userId: userId
+            )
             return false
         }
     }
-    
+
     // MARK: - Update Weight Goal
-    
+
     @MainActor
     func setWeightGoal(targetWeight: Double, targetDate: Date?, goalType: WeightGoal.GoalType) async -> Bool {
-        guard let userId = supabase.currentUser?.id else { return false }
-        
+        let startedAt = Date()
+        // Data Invariant #26: auth-guard the write. Previously only
+        // `currentUser?.id` was checked — stale-JWT users hit 42501 RLS here.
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = supabase.currentUser?.id else {
+            AppLogger.info(
+                "[Weight] Skipping setWeightGoal — not authenticated",
+                category: .health,
+                context: DiagnosticContext(op: "weight.set_goal", endpoint: "weight_goals")
+            )
+            return false
+        }
+
         struct WeightGoalUpsert: Encodable {
             let user_id: UUID
             let target_weight: Double
@@ -642,7 +671,15 @@ class WeightTrackingService: ObservableObject {
             AppLogger.info("✅ [Weight] Goal updated: \(targetWeight) \(weightUnitSuffix)", category: .health)
             return true
         } catch {
-            NetworkErrorClassifier.log(error, context: "[Weight] Failed to set goal", category: .health)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[Weight] Failed to set goal",
+                category: .health,
+                op: "weight.set_goal",
+                endpoint: "weight_goals",
+                startedAt: startedAt,
+                userId: userId
+            )
             return false
         }
     }
@@ -651,29 +688,36 @@ class WeightTrackingService: ObservableObject {
     
     @MainActor
     func deleteLog(_ log: WeightLog) async -> Bool {
+        let startedAt = Date()
         do {
             try await supabase.supabaseClient
                 .from("weight_logs")
                 .delete()
                 .eq("id", value: log.id)
                 .execute()
-            
-            // Remove from local array
+
             recentLogs.removeAll { $0.id == log.id }
             if todayLog?.id == log.id {
                 todayLog = nil
                 hasLoggedToday = false
             }
-            
+
             calculateTrends()
 
-            // Keep both weight widgets (home + nutrition) in sync after deletion
             NotificationCenter.default.post(name: .weightDidUpdate, object: nil)
 
             AppLogger.info("✅ [Weight] Deleted log", category: .health)
             return true
         } catch {
-            NetworkErrorClassifier.log(error, context: "[Weight] Failed to delete log", category: .health)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[Weight] Failed to delete log",
+                category: .health,
+                op: "weight.delete",
+                endpoint: "weight_logs",
+                startedAt: startedAt,
+                userId: supabase.currentUser?.id
+            )
             return false
         }
     }

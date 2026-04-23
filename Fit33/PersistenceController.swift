@@ -247,8 +247,59 @@ struct PersistenceController {
         
         container.viewContext.automaticallyMergesChangesFromParent = true
         container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+
+        // Cluster E — SIGSEGV root-cause audit.
+        //
+        // Core Data Transformable attributes that use the default (deprecated)
+        // NSKeyedUnarchiveFromData transformer or no transformer at all can
+        // SIGSEGV on iOS 17+ when decoding. Every release we've seen with a
+        // fresh SIGSEGV in bug_intelligence_reports traced back to a
+        // Transformable attribute added without a secure transformer.
+        // Run a DEBUG-only scan so regressions are caught at dev time.
+        #if DEBUG
+        scanUnsafeTransformableAttributes()
+        #endif
     }
-    
+
+    /// DEBUG-only audit — logs `.error` for every Transformable attribute
+    /// in the Core Data model that lacks `NSSecureUnarchiveFromData` (or a
+    /// custom secure transformer) + a `customClassName`. Both are required
+    /// for iOS 17+ crash-safe decoding. Runs inside `init` so regressions
+    /// surface during the first app launch after a model change.
+    private func scanUnsafeTransformableAttributes() {
+        for (entityName, entity) in container.managedObjectModel.entitiesByName {
+            for (attrName, attr) in entity.attributesByName
+                where attr.attributeType == .transformableAttributeType {
+                let transformer = attr.valueTransformerName
+                let hasClassName = attr.userInfo?["customClassName"] != nil
+                let unsafe =
+                    transformer == nil ||
+                    transformer == "NSKeyedUnarchiveFromData" ||
+                    transformer == "NSKeyedUnarchiveFromDataTransformerName"
+
+                if unsafe {
+                    AppLogger.error(
+                        "UNSAFE transformable attribute: \(entityName).\(attrName) transformer=\(transformer ?? "nil")",
+                        category: .data,
+                        context: DiagnosticContext(
+                            op: "coredata.transformable_scan",
+                            endpoint: "\(entityName).\(attrName)"
+                        )
+                    )
+                } else if !hasClassName {
+                    AppLogger.warning(
+                        "Transformable attribute missing customClassName: \(entityName).\(attrName) transformer=\(transformer ?? "?")",
+                        category: .data,
+                        context: DiagnosticContext(
+                            op: "coredata.transformable_scan",
+                            endpoint: "\(entityName).\(attrName)"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     func save() {
         let context = container.viewContext
         

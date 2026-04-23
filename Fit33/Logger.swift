@@ -87,28 +87,36 @@ enum AppLogger {
         _ message: @autoclosure () -> String,
         level: Level = .debug,
         category: Category = .general,
+        context: DiagnosticContext? = nil,
         file: String = #file,
         function: String = #function,
         line: Int = #line
     ) {
+        // Build message (append DiagnosticContext compact summary if present)
+        let rawText = message()
+        let text = context.map { "\(rawText) \($0.compactSummary)" } ?? rawText
+
         // Forward ALL levels to advanced session logger when active (before minimum level gate)
         if AdvancedSessionLogger.isActive {
-            let text = message()
             let capturedCategory = category.rawValue
             let capturedLevel = level
+            let capturedCtx = context
             Task { @MainActor in
                 let logType = capturedLevel >= .error ? "error" : (capturedLevel >= .warning ? "warning" : "log")
                 AdvancedSessionLogger.shared.log(
                     type: logType,
                     detail: "[\(capturedCategory)] \(text)",
-                    screen: nil
+                    screen: nil,
+                    apiEndpoint: capturedCtx?.endpoint,
+                    apiStatus: capturedCtx?.httpStatus,
+                    durationMs: capturedCtx?.elapsedMs,
+                    error: capturedCtx?.pgCode,
+                    extra: capturedCtx?.asAnyDict
                 )
             }
         }
 
         guard level >= minimumLevel else { return }
-
-        let text = message()
 
         #if DEBUG
         let filename = (file as NSString).lastPathComponent
@@ -126,33 +134,35 @@ enum AppLogger {
             CrashReportingService.shared.reportError(
                 message: text,
                 domain: category.rawValue,
+                code: context?.pgCode,
                 severity: severity,
                 file: file,
                 function: function,
-                line: line
+                line: line,
+                additionalContext: context?.asStringDict
             )
         }
     }
 
     // MARK: - Convenience
 
-    static func verbose(_ msg: @autoclosure () -> String, category: Category = .general) {
-        log(msg(), level: .verbose, category: category)
+    static func verbose(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
+        log(msg(), level: .verbose, category: category, context: context)
     }
-    static func debug(_ msg: @autoclosure () -> String, category: Category = .general) {
-        log(msg(), level: .debug, category: category)
+    static func debug(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
+        log(msg(), level: .debug, category: category, context: context)
     }
-    static func info(_ msg: @autoclosure () -> String, category: Category = .general) {
-        log(msg(), level: .info, category: category)
+    static func info(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
+        log(msg(), level: .info, category: category, context: context)
     }
-    static func warning(_ msg: @autoclosure () -> String, category: Category = .general) {
-        log(msg(), level: .warning, category: category)
+    static func warning(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
+        log(msg(), level: .warning, category: category, context: context)
     }
-    static func error(_ msg: @autoclosure () -> String, category: Category = .general) {
-        log(msg(), level: .error, category: category)
+    static func error(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
+        log(msg(), level: .error, category: category, context: context)
     }
-    static func critical(_ msg: @autoclosure () -> String, category: Category = .general) {
-        log(msg(), level: .critical, category: category)
+    static func critical(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
+        log(msg(), level: .critical, category: category, context: context)
     }
 }
 

@@ -582,6 +582,7 @@ class ChallengeService: ObservableObject {
         operation: () async throws -> T
     ) async throws -> T {
         var lastError: Error?
+        var didRefresh401 = false
         for attempt in 0...maxRetries {
             do {
                 return try await operation()
@@ -591,6 +592,26 @@ class ChallengeService: ObservableObject {
                 let nsError = error as NSError
                 let isRetryable = nsError.domain == NSURLErrorDomain &&
                     (nsError.code == NSURLErrorCancelled || nsError.code == NSURLErrorTimedOut)
+
+                // Cluster D: one-shot 401 retry. PostgREST surfaces 401 in
+                // `localizedDescription` via PgErrorExtractor. A stale JWT
+                // during dashboard cold-start used to throw 401 once and
+                // give up; we now refresh the session and retry exactly
+                // once so transient JWT expiry doesn't land in
+                // bug_intelligence_fingerprints.
+                let http = PgErrorExtractor.httpStatus(from: error)
+                if !didRefresh401, http == 401, attempt < maxRetries {
+                    didRefresh401 = true
+                    AppLogger.warning(
+                        "\(label) got 401 — refreshing session + retrying",
+                        category: .social,
+                        context: DiagnosticContext(op: "challenges.retry_401", endpoint: label, httpStatus: 401, retryAttempt: attempt + 1)
+                    )
+                    await SupabaseManager.shared.recoverSessionIfNeeded()
+                    guard SupabaseManager.shared.isAuthenticated else { throw error }
+                    continue
+                }
+
                 if isRetryable && attempt < maxRetries {
                     let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
                     let reason = nsError.code == NSURLErrorTimedOut ? "timed out" : "cancelled"
@@ -663,7 +684,14 @@ class ChallengeService: ObservableObject {
             if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
             // Preserve existing cached challenges on fetch failure
             logger.log(.error, category: .challenge, message: "Failed to fetch active challenges (keeping \(activeChallenges.count) cached)", metadata: ["error": "\(error)"])
-            AppLogger.error("[CHALLENGES] Fetch failed (keeping \(activeChallenges.count) cached): \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[CHALLENGES] Fetch failed (keeping \(activeChallenges.count) cached)",
+                category: .social,
+                op: "challenges.fetch_active",
+                endpoint: "rpc/get_active_challenges",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -673,23 +701,32 @@ class ChallengeService: ObservableObject {
     private var hasLoadedTemplates = false
     
     func fetchTemplates(force: Bool = false) async {
-        // Skip if already loaded and not forcing
         if hasLoadedTemplates && !force && !challengeTemplates.isEmpty {
             AppLogger.debug("Templates already loaded (\(challengeTemplates.count)), skipping fetch", category: .social)
             return
         }
-        
+
+        // Cluster D: auth guard — template fetch was landing as 401 noise
+        // when called from the dashboard cold-path before JWT was fresh.
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug(
+                "Skipping fetchTemplates — not authenticated",
+                category: .social,
+                context: DiagnosticContext(op: "challenges.fetch_templates", endpoint: "rpc/get_challenge_templates")
+            )
+            return
+        }
+
         AppLogger.debug("Fetching templates... (force: \(force), hasLoaded: \(hasLoadedTemplates))", category: .social)
-        
+
+        let startedAt = Date()
         do {
             let result: [ChallengeTemplate] = try await SupabaseManager.shared.supabaseClient
                 .rpc("get_challenge_templates")
                 .execute()
                 .value
-            
-            // Only update on main actor to avoid threading issues
+
             await MainActor.run {
-                // Only update if actually different to avoid unnecessary UI updates
                 if self.challengeTemplates.count != result.count {
                     AppLogger.debug("Updating templates: \(self.challengeTemplates.count) → \(result.count)", category: .social)
                     self.challengeTemplates = result
@@ -700,7 +737,15 @@ class ChallengeService: ObservableObject {
             }
             AppLogger.info("Fetched \(result.count) challenge templates", category: .social)
         } catch {
-            AppLogger.error("Error fetching templates: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching templates",
+                category: .social,
+                op: "challenges.fetch_templates",
+                endpoint: "rpc/get_challenge_templates",
+                startedAt: startedAt,
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     

@@ -567,8 +567,13 @@ struct DashboardView: View {
             
         }
         .task(id: "dashboard_initial_load") {
+            // Whole hydrate path measured — p50/p95/p99 trend fed into
+            // performance_metrics.op='dashboard.hydrate' by Cluster I.
+            let hydrateState = PerformanceSignposts.begin(.dashboardHydrate)
+            defer { PerformanceSignposts.end(hydrateState, slowThresholdMs: 4_000) }
+
             let dashStart = CFAbsoluteTimeGetCurrent()
-            
+
             // Fire all independent work in parallel — nothing waits for anything else
             
             // 1. Insights (independent)
@@ -597,50 +602,30 @@ struct DashboardView: View {
             
             // 5. Social/challenge data (needs auth — wait only for these)
             let socialTask = Task {
-                if !SupabaseManager.shared.isAuthenticated {
-                    AppLogger.info("[DASHBOARD] Auth not ready — waiting via publisher (up to 10s)...", category: .performance)
-                    let authReady = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-                        let resumed = NSLock()
-                        var hasResumed = false
-                        var cancellable: AnyCancellable?
-                        
-                        let sleepTask = Task {
-                            try? await Task.sleep(for: .seconds(10))
-                            resumed.lock()
-                            guard !hasResumed else { resumed.unlock(); return }
-                            hasResumed = true
-                            resumed.unlock()
-                            cancellable?.cancel()
-                            continuation.resume(returning: false)
-                        }
-                        
-                        cancellable = SupabaseManager.shared.$isAuthenticated
-                            .first(where: { $0 })
-                            .sink { _ in
-                                resumed.lock()
-                                guard !hasResumed else { resumed.unlock(); return }
-                                hasResumed = true
-                                resumed.unlock()
-                                sleepTask.cancel()
-                                continuation.resume(returning: true)
-                            }
-                    }
-                    guard !Task.isCancelled, authReady else {
-                        if !authReady {
-                            AppLogger.warning("[DASHBOARD] Auth not available — skipping social fetch", category: .performance)
-                        }
-                        return
-                    }
-                }
-                
-                guard SupabaseManager.shared.isAuthenticated else {
-                    AppLogger.warning("[DASHBOARD] Auth not available — skipping social fetch", category: .performance)
+                // Cluster D centralized gate — replaces the inline
+                // publisher-race pattern. `waitForFreshSession` calls
+                // `recoverSessionIfNeeded` once + awaits `$isAuthenticated`
+                // with a timeout, collapsing what used to be 14 independent
+                // 401 races into one.
+                let authReady = await SupabaseManager.shared.waitForFreshSession(timeout: 10.0)
+                guard !Task.isCancelled, authReady else {
+                    AppLogger.warning(
+                        "[DASHBOARD] Auth not available — skipping social fetch",
+                        category: .performance,
+                        context: DiagnosticContext(op: "dashboard.social_fanout", endpoint: "gate_timeout")
+                    )
                     return
                 }
                 
                 let authMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
                 AppLogger.info("[DASHBOARD] Auth ready (\(authMs)ms), starting all social fetches", category: .performance)
-                
+
+                // 14-wide fan-out was the #1 main-thread stall signal in the
+                // cluster-A bug reports. Wrapped in its own signpost so
+                // Instruments shows the cost as a single interval and so
+                // performance_metrics.op='dashboard.social_fanout' gets an
+                // independent trend series from the parent hydrate.
+                let fanOutState = PerformanceSignposts.begin(.dashboardSocialFanOut)
                 // All social, challenge, quest, and contact fetches in ONE parallel group
                 async let friends: () = FriendService.shared.fetchFriends()
                 async let pending: () = FriendService.shared.loadPendingRequests()
@@ -657,6 +642,7 @@ struct DashboardView: View {
                 async let contacts: () = ContactsService.shared.refreshSuggestions()
                 async let photo: () = loadProfilePhoto()
                 _ = await (friends, pending, received, feed, ranked, activeCh, groupCh, invites, sent, priv, rt, quests, contacts, photo)
+                PerformanceSignposts.end(fanOutState, slowThresholdMs: 3_000)
             }
             
             // Wait for steps + quests to be loaded before computing the

@@ -514,6 +514,17 @@ class PrivateChallengeService: ObservableObject {
     // MARK: - Refresh All
     
     func refreshAll(force: Bool = false) async {
+        // Cluster D: top-level gate prevents 2 RPCs firing before JWT is
+        // fresh, which previously produced paired 401 fingerprints
+        // ("fetchMyChallenges failed" + "fetchPendingInvites failed").
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug(
+                "Skipping private refreshAll — not authenticated",
+                category: .social,
+                context: DiagnosticContext(op: "private_challenges.refresh_all", endpoint: "rpc/get_my_private_challenges")
+            )
+            return
+        }
         let now = Date()
         if !force, let last = lastRefreshTime, now.timeIntervalSince(last) < 10 {
             #if DEBUG
@@ -522,13 +533,13 @@ class PrivateChallengeService: ObservableObject {
             return
         }
         lastRefreshTime = now
-        
+
         async let challenges: () = fetchMyChallenges()
         async let invites: () = fetchPendingInvites()
         _ = await (challenges, invites)
-        
+
         cacheData()
-        
+
         #if DEBUG
         AppLogger.info("Successfully completed private challenge full refresh", category: .social)
         #endif

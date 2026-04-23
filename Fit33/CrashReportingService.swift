@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import CommonCrypto
+import MachO // Q2-97 Phase 5 — dyld APIs for binary_uuid + ASLR slide capture
 
 // ═══════════════════════════════════════════════════════════════
 // MARK: - Crash Report Model (Supabase DTO)
@@ -35,6 +36,12 @@ struct CrashReportInsert: Codable {
     let session_log_snippet: String?
     let status: String
     let occurred_at: String
+    // Q2-97 Phase 5 · dSYM symbolication scaffolding — captured at crash time,
+    // consumed by the symbolicate-crashes GitHub Actions runner. Both are nil
+    // on devices where dyld lookup fails (never observed in practice but we
+    // stay defensive — the runner treats nil binary_uuid as `no_dsym`).
+    let binary_uuid: String?
+    let binary_slide: String?
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -90,6 +97,13 @@ final class CrashReportingService {
     
     private var sessionStartTime: Date?
     private var isInitialized = false
+
+    // Q2-97 Phase 5 — captured once at initialize(). Both values are fixed for
+    // the process lifetime (UUID is baked into the binary by the linker, slide
+    // is picked once by ASLR at exec time) so there's no point re-reading them
+    // per crash. Matches Apple's advice in CrashReporting.pdf §Address Slides.
+    private var mainBinaryUUID: String?
+    private var mainBinarySlide: String?
     
     // Previous signal handlers (to chain)
     private var previousSIGABRT: (@convention(c) (Int32) -> Void)?
@@ -122,7 +136,15 @@ final class CrashReportingService {
         guard !isInitialized else { return }
         isInitialized = true
         sessionStartTime = Date()
-        
+
+        // Q2-97 Phase 5.1 — capture the main binary's UUID + ASLR slide once
+        // at launch. These get written into every crash_reports insert so the
+        // symbolicate-crashes GitHub Actions workflow (5.5) can pick the
+        // matching .dSYM out of the `dsyms` storage bucket and feed it +
+        // the slide to `atos`.
+        mainBinaryUUID = computeMainBinaryUUID()
+        mainBinarySlide = computeMainBinarySlide()
+
         // 1. Restore breadcrumbs from disk (in case app was killed)
         restoreBreadcrumbs()
         
@@ -134,8 +156,8 @@ final class CrashReportingService {
         
         // 4. Upload any crash reports from previous session
         uploadPendingReports()
-        
-        AppLogger.debug("🛡️ [CrashReporter] Initialized — signal handlers, exception handler, pending upload", category: .general)
+
+        AppLogger.debug("🛡️ [CrashReporter] Initialized — signal handlers, exception handler, pending upload · uuid=\(mainBinaryUUID ?? "nil") slide=\(mainBinarySlide ?? "nil")", category: .general)
     }
     
     // ═══════════════════════════════════════════════════════════════
@@ -458,8 +480,63 @@ final class CrashReportingService {
             additional_context: additionalContext,
             session_log_snippet: sessionLogSnippet,
             status: "new",
-            occurred_at: formatter.string(from: Date())
+            occurred_at: formatter.string(from: Date()),
+            // Phase 5.1 — both fields are cached from initialize(), never
+            // re-read here (dyld APIs aren't async-signal-safe and we call
+            // buildReport from the signal handler).
+            binary_uuid: mainBinaryUUID,
+            binary_slide: mainBinarySlide
         )
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // MARK: - Q2-97 Phase 5 — Binary UUID + ASLR slide capture
+    // ═══════════════════════════════════════════════════════════════
+
+    /// Reads the LC_UUID load command from the main executable's Mach-O
+    /// header. This is the same UUID that ships inside the `.dSYM` bundle
+    /// Apple produces at Archive time, so the GitHub Actions symbolicator
+    /// can use it as a primary key to locate the right dSYM in our
+    /// `dsyms` Supabase Storage bucket.
+    ///
+    /// Safe to call from any queue; returns nil only if the header / load
+    /// commands are malformed (never observed on real devices).
+    private func computeMainBinaryUUID() -> String? {
+        // Image at index 0 is always the main executable per dyld docs.
+        guard let headerPtr = _dyld_get_image_header(0) else { return nil }
+
+        // Walk load commands — start offset depends on 32 vs 64-bit header.
+        let is64 = (headerPtr.pointee.magic == MH_MAGIC_64 || headerPtr.pointee.magic == MH_CIGAM_64)
+        let headerSize = is64 ? MemoryLayout<mach_header_64>.size : MemoryLayout<mach_header>.size
+        var cmdPtr = UnsafeRawPointer(headerPtr).advanced(by: headerSize)
+        let ncmds = Int(headerPtr.pointee.ncmds)
+
+        for _ in 0..<ncmds {
+            let cmd = cmdPtr.assumingMemoryBound(to: load_command.self).pointee
+            if cmd.cmd == LC_UUID {
+                let uuidCmd = cmdPtr.assumingMemoryBound(to: uuid_command.self).pointee
+                // uuid_t is a homogeneous tuple of 16 UInt8s. Copy into a
+                // Foundation UUID for a stable uppercase string.
+                let u = uuidCmd.uuid
+                let foundationUUID = UUID(uuid: (
+                    u.0, u.1, u.2, u.3, u.4, u.5, u.6, u.7,
+                    u.8, u.9, u.10, u.11, u.12, u.13, u.14, u.15
+                ))
+                return foundationUUID.uuidString
+            }
+            // cmdsize of 0 would loop forever; defensive guard.
+            guard cmd.cmdsize > 0 else { return nil }
+            cmdPtr = cmdPtr.advanced(by: Int(cmd.cmdsize))
+        }
+        return nil
+    }
+
+    /// ASLR slide for the main image, formatted as a 0x-prefixed hex string
+    /// compatible with `atos -l <slide>`. intptr_t → UInt64 via bit pattern
+    /// so negative slides (never observed but legal) round-trip correctly.
+    private func computeMainBinarySlide() -> String? {
+        let slide = _dyld_get_image_vmaddr_slide(0)
+        return String(format: "0x%llx", UInt64(bitPattern: Int64(slide)))
     }
     
     // ═══════════════════════════════════════════════════════════════

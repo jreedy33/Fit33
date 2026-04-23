@@ -434,18 +434,26 @@ struct Fit33App: App {
                 Text("The app's local database could not be loaded. Please try restarting the app. If the problem persists, contact support via the bug report tool.")
             }
                 .task {
+                    // Wrap whole startup in signpost so Instruments + performance_metrics
+                    // can trend cold-start p50/p95/p99. slowThreshold kept generous
+                    // (5s) because first-run devices legitimately take longer.
+                    let launchState = PerformanceSignposts.begin(.appLaunch)
+                    defer { PerformanceSignposts.end(launchState, slowThresholdMs: 5_000) }
+
                     let startupStart = CFAbsoluteTimeGetCurrent()
-                    
+
                     // Check for Core Data fatal failure (notification may fire before view is ready)
                     if PersistenceController.storeLoadFailed {
                         showCoreDataFatalError = true
                     }
-                    
+
                     // FAST AUTH: Verify session only (<200ms). Dashboard renders from cached Core Data.
                     // Cloud sync is deferred so the UI is interactive immediately.
+                    let authState = PerformanceSignposts.begin(.authSessionRecovery)
                     let authStart = CFAbsoluteTimeGetCurrent()
                     await supabaseManager.checkAuthOnly()
                     let authMs = Int((CFAbsoluteTimeGetCurrent() - authStart) * 1000)
+                    PerformanceSignposts.end(authState, slowThresholdMs: 2_000)
                     AppLogger.info("[STARTUP] checkAuthOnly completed in \(authMs)ms", category: .performance)
                     
                     // UI-critical post-auth work (keep minimal — limitations RPC was ~1s+ and blocked first-frame interactivity)
@@ -685,8 +693,13 @@ struct Fit33App: App {
                         
                         // ═══ FOREGROUND TASKS (single coordinated Task) ═══
                         // Consolidate into ONE Task to prevent 7+ concurrent Tasks
-                        // competing for CPU on every foreground event
+                        // competing for CPU on every foreground event. Whole
+                        // block wrapped in signpost so Cluster A hangs can be
+                        // traced by a single `app.foreground` interval.
                         Task {
+                            let fgState = PerformanceSignposts.begin(.appForeground)
+                            defer { PerformanceSignposts.end(fgState, slowThresholdMs: 4_000) }
+
                             if !supabaseManager.isAuthenticated {
                                 await supabaseManager.recoverSessionIfNeeded()
                             }

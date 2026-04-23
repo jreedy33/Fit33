@@ -1090,7 +1090,22 @@ final class MainThreadWatchdog {
                     tabInfo = "none"
                 }
                 
-                AppLogger.warning("🚨🚨🚨 [WATCHDOG] MAIN THREAD FROZEN! (freeze #\(count))", category: .performance)
+                // Structured context so the Bug Intelligence rollup fingerprints
+                // freezes by active UI context (tab switch source, screen) and
+                // ctx duration — previously every freeze collapsed into a single
+                // fingerprint with no way to tell "dashboard cold start" apart
+                // from "workout detail tab swap".
+                let freezeCtx = DiagnosticContext(
+                    op: "ui.main_thread_freeze",
+                    endpoint: ctx,
+                    elapsedMs: Int(ctxDuration),
+                    retryAttempt: count
+                )
+                AppLogger.warning(
+                    "🚨🚨🚨 [WATCHDOG] MAIN THREAD FROZEN! (freeze #\(count)) context=\(ctx) tab=\(tabInfo) mem=\(Int(mem))MB",
+                    category: .performance,
+                    context: freezeCtx
+                )
                 AppLogger.debug("   └─ context: \(ctx) (running \(String(format: "%.0f", ctxDuration))ms)", category: .performance)
                 AppLogger.debug("   └─ last_tab_switch: \(tabInfo)", category: .performance)
                 AppLogger.debug("   └─ memory: \(Int(mem))MB", category: .performance)
@@ -1108,12 +1123,24 @@ final class MainThreadWatchdog {
                 lock.unlock()
                 if wasPaused { continue }
                 
+                let unblockCtx = DiagnosticContext(
+                    op: "ui.main_thread_freeze",
+                    endpoint: ctx,
+                    elapsedMs: Int(totalBlocked * 1000),
+                    retryAttempt: count
+                )
                 if unblockResult == .timedOut {
-                    AppLogger.warning("🧊🧊🧊 [WATCHDOG] Main thread blocked >30s! Possible DEADLOCK!", category: .performance)
-                    AppLogger.debug("   └─ context: \(ctx)", category: .performance)
+                    AppLogger.warning(
+                        "🧊🧊🧊 [WATCHDOG] Main thread blocked >30s! Possible DEADLOCK! context=\(ctx)",
+                        category: .performance,
+                        context: unblockCtx
+                    )
                 } else if totalBlocked >= criticalThreshold {
-                    AppLogger.warning("🧊🧊 [WATCHDOG] Main thread unblocked after \(String(format: "%.1f", totalBlocked))s (CRITICAL)", category: .performance)
-                    AppLogger.debug("   └─ context: \(ctx)", category: .performance)
+                    AppLogger.warning(
+                        "🧊🧊 [WATCHDOG] Main thread unblocked after \(String(format: "%.1f", totalBlocked))s (CRITICAL) context=\(ctx)",
+                        category: .performance,
+                        context: unblockCtx
+                    )
                 } else {
                     AppLogger.debug("🧊 [WATCHDOG] Main thread unblocked after \(String(format: "%.1f", totalBlocked))s", category: .performance)
                     AppLogger.debug("   └─ context: \(ctx)", category: .performance)

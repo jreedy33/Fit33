@@ -567,8 +567,13 @@ struct DashboardView: View {
             
         }
         .task(id: "dashboard_initial_load") {
+            // Whole hydrate path measured — p50/p95/p99 trend fed into
+            // performance_metrics.op='dashboard.hydrate' by Cluster I.
+            let hydrateState = PerformanceSignposts.begin(.dashboardHydrate)
+            defer { PerformanceSignposts.end(hydrateState, slowThresholdMs: 4_000) }
+
             let dashStart = CFAbsoluteTimeGetCurrent()
-            
+
             // Fire all independent work in parallel — nothing waits for anything else
             
             // 1. Insights (independent)
@@ -640,7 +645,13 @@ struct DashboardView: View {
                 
                 let authMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
                 AppLogger.info("[DASHBOARD] Auth ready (\(authMs)ms), starting all social fetches", category: .performance)
-                
+
+                // 14-wide fan-out was the #1 main-thread stall signal in the
+                // cluster-A bug reports. Wrapped in its own signpost so
+                // Instruments shows the cost as a single interval and so
+                // performance_metrics.op='dashboard.social_fanout' gets an
+                // independent trend series from the parent hydrate.
+                let fanOutState = PerformanceSignposts.begin(.dashboardSocialFanOut)
                 // All social, challenge, quest, and contact fetches in ONE parallel group
                 async let friends: () = FriendService.shared.fetchFriends()
                 async let pending: () = FriendService.shared.loadPendingRequests()
@@ -657,6 +668,7 @@ struct DashboardView: View {
                 async let contacts: () = ContactsService.shared.refreshSuggestions()
                 async let photo: () = loadProfilePhoto()
                 _ = await (friends, pending, received, feed, ranked, activeCh, groupCh, invites, sent, priv, rt, quests, contacts, photo)
+                PerformanceSignposts.end(fanOutState, slowThresholdMs: 3_000)
             }
             
             // Wait for steps + quests to be loaded before computing the

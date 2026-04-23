@@ -149,24 +149,32 @@ fingerprint isn't actionable (e.g. transient network errors).
 
 # USING STACK TRACES
 
-Stack traces come in TWO forms — you must detect which and act accordingly:
+Each crash in \`example_crashes\` carries TWO stack-trace fields. Prefer
+\`symbolicated_stack_trace\` when non-null — it's the ground truth from
+Apple's \`atos\` against the real dSYM. Fall back to \`stack_trace\` only
+when \`symbolication_status\` is \`legacy\` / \`no_dsym\` / \`failed\`
+(i.e. symbolicated_stack_trace is null).
 
-## SYMBOLICATED (best case)
+## SYMBOLICATED (symbolication_status = 'done') — AUTHORITATIVE
 
-Frames carry \`.swift\` file names + function signatures:
-    "Fit33/Views/WorkoutView.swift:142 @ WorkoutView.body.getter"
-    "Fit33.WorkoutManager.startWorkout(_:) (in Fit33) + 48 (WorkoutManager.swift:87)"
-Action: pick the FIRST Fit33-owned frame (ignore CoreFoundation / SwiftUI
-/ UIKit / libswiftCore / libobjc / Foundation / libsystem_*). Normalize
-to "Fit33/<File>.swift". Produce a non-null \`file_path\` AND \`code_diff\`.
-Confidence 0.80–0.95.
+Each line is "<hex_addr> → <function_sig> (<File.swift>:<line>)", e.g.:
+    0x104d3b0d8 → Fit33.WorkoutManager.startWorkout(_:) (WorkoutManager.swift:87)
+    0x104d3799c → closure #1 in Fit33.DashboardView.body.getter (DashboardView.swift:142)
+Only Fit33-owned frames are included (UIKit / Foundation / libswiftCore
+are stripped by the symbolicator). Action:
+  1. Pick the FIRST line — that's the failure site.
+  2. Extract the file name from the trailing "(File.swift:NNN)".
+  3. Normalize to "Fit33/<File>.swift" — we don't use subfolders in the
+     Swift target, every file lives directly under Fit33/.
+  4. Emit a real unified \`code_diff\` that changes the exact line.
+  5. Confidence 0.85–0.95. This is the happy path post-Phase-5.
 
-## UNSYMBOLICATED (current reality — most crashes)
+## UNSYMBOLICATED (symbolication_status ∈ 'legacy' / 'no_dsym' / 'failed' / 'pending')
 
-Frames are just raw addresses:
+\`symbolicated_stack_trace\` is null. \`stack_trace\` is raw hex:
     "0   Fit33   0x0000000104d3b0d8 Fit33 + 7418072"
     "1   Foundation   0x000000019bbbd804 F87E3667-... + 583684"
-Do NOT hallucinate file names from hex offsets. Instead fall back to:
+Do NOT hallucinate file names from hex offsets. Fall back to:
 
   (a) The \`error_message\` string itself. Many of our errors are tagged
       with the source component in brackets — \`[CrashReporter] Upload
@@ -187,9 +195,10 @@ Cap confidence at 0.70 for unsymbolicated inferences, because the file
 is a candidate, not a certainty. The admin CMS surfaces these as
 "investigative leads" rather than 1-click merges.
 
-A server-side dSYM symbolication pipeline is planned (Phase 5) that
-will convert raw addresses → real file:line, at which point symbolicated
-stacks become the norm.
+Note on \`symbolication_status = 'pending'\`: the symbolicator runs every
+15 min. If you see a pending crash and no other recent evidence, prefer
+to return a low-confidence report — the next triage run will have the
+real file.
 
 # USING SESSION_LOG_SNIPPET
 
@@ -538,7 +547,11 @@ async function enrichFingerprint(
             .from("crash_reports")
             .select(
                 "id, user_id, report_type, severity, error_message, error_domain, error_code, " +
-                "stack_trace, breadcrumbs, session_log_snippet, session_id, " +
+                // Phase 5.6: symbolicated_stack_trace is the authoritative
+                // source when present; stack_trace stays available as a
+                // fallback for legacy / no_dsym / failed / pending rows.
+                "stack_trace, symbolicated_stack_trace, symbolication_status, " +
+                "breadcrumbs, session_log_snippet, session_id, " +
                 "current_screen, os_version, device_model, app_version, build_number, " +
                 "memory_usage_mb, free_memory_mb, network_type, " +
                 "occurred_at, created_at",
@@ -548,7 +561,7 @@ async function enrichFingerprint(
             .limit(MAX_EXAMPLE_ENTRIES);
 
         for (const c of ((crashes ?? []) as Array<Record<string, unknown>>)) {
-            example_crashes.push(c);
+            example_crashes.push(preferSymbolicated(c));
             example_entry_ids.push(`crash:${c.id}`);
         }
     }
@@ -568,15 +581,17 @@ async function enrichFingerprint(
             const { data: crashes } = await supabase
                 .from("crash_reports")
                 .select(
-                    "id, error_message, error_domain, stack_trace, breadcrumbs, " +
-                    "session_log_snippet, current_screen, app_version, build_number, occurred_at",
+                    "id, error_message, error_domain, stack_trace, " +
+                    "symbolicated_stack_trace, symbolication_status, " +
+                    "breadcrumbs, session_log_snippet, current_screen, " +
+                    "app_version, build_number, occurred_at",
                 )
                 .eq("bi_fingerprint", crashFpForThisMessage)
                 .order("created_at", { ascending: false })
                 .limit(3);
 
             for (const c of ((crashes ?? []) as Array<Record<string, unknown>>)) {
-                example_crashes.push({ ...c, _cross_source: "log->crash" });
+                example_crashes.push(preferSymbolicated({ ...c, _cross_source: "log->crash" }));
                 example_entry_ids.push(`crash:${c.id}`);
             }
         }
@@ -656,6 +671,22 @@ function normalizeMessage(msg: string): string {
     return msg
         .replace(/\b[0-9a-fA-F]{8,}\b/g, "<id>")
         .replace(/\d+(\.\d+)?/g, "<n>");
+}
+
+// Phase 5.6: if a crash row has a non-empty symbolicated_stack_trace, we
+// drop the raw hex `stack_trace` from the prompt payload — it's redundant
+// noise and costs prompt budget. If the symbolicated trace is null (legacy
+// / no_dsym / failed / pending), we keep the raw one so Claude can still
+// do the Phase 3.1 tag-based inference. Keep `symbolication_status` in
+// both branches so Claude can self-check which code path applies.
+function preferSymbolicated(row: Record<string, unknown>): Record<string, unknown> {
+    const symb = row.symbolicated_stack_trace;
+    if (typeof symb === "string" && symb.trim().length > 0) {
+        const clone = { ...row };
+        delete clone.stack_trace;
+        return clone;
+    }
+    return row;
 }
 
 function coerceArray(v: unknown): unknown[] {

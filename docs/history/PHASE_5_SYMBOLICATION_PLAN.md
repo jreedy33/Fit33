@@ -1,5 +1,17 @@
 # Phase 5 — Server-side dSYM Symbolication Plan
-**Status**: Proposed · **Sprint**: Q2 follow-up to Q2-97 (Bug Intelligence) · **Date drafted**: 2026-04-29
+**Status**: Shipped 2026-05-01 · **Sprint**: Q2 follow-up to Q2-97 (Bug Intelligence) · **Date drafted**: 2026-04-29
+
+> **Shipped artifacts (2026-05-01)**
+> - `supabase/20260501_dsym_symbolication.sql` — MIGRATION_INDEX entry #67. `app_dsyms` table + 6 new `crash_reports` columns (`binary_uuid / binary_slide / symbolicated_stack_trace / symbolication_status / symbolicated_at / symbolication_error`) + `dsyms` private storage bucket with admin-write / service-role-read RLS. Existing ~9,500 crashes backfilled to `symbolication_status = 'legacy'` (option A, per 2026-05-01 user decision).
+> - `Fit33/CrashReportingService.swift` — captures `binary_uuid` (via `LC_UUID` load command walk on `_dyld_get_image_header(0)`) + `binary_slide` (via `_dyld_get_image_vmaddr_slide(0)` formatted hex) once at `initialize()`, writes into every `crash_reports` insert.
+> - `scripts/upload_dsym.sh` + `docs/DSYM_UPLOAD.md` — Xcode Archive post-action uploader. `~/.fit33/dsym-upload.env` holds secrets; script is idempotent (pre-checks `app_dsyms` row before re-uploading).
+> - `.github/workflows/symbolicate-crashes.yml` — macos-14 runner, cron `*/15 * * * *`, batch 50 pending crashes, parses Fit33-owned hex addrs, runs `atos -arch arm64 -o <dwarf> -l <slide>`, writes `symbolicated_stack_trace` back via REST PATCH.
+> - `supabase/functions/triage-bugs/index.ts` — selects + prefers `symbolicated_stack_trace`; system prompt reshaped so SYMBOLICATED branch is ground-truth (0.85–0.95 confidence) and UNSYMBOLICATED branch stays at the Phase 3.1 capped ≤0.70 fallback. `preferSymbolicated()` helper drops raw hex from the prompt when the real thing is present.
+>
+> Remaining operator steps (one-time, outside git):
+> 1. Add `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` repo secrets for the workflow.
+> 2. Wire `scripts/upload_dsym.sh` into the Xcode Archive scheme post-action (docs/DSYM_UPLOAD.md §3).
+> 3. Next Archive seeds `app_dsyms` — from that point forward, new crashes flip `pending → done` within 15 min.
 
 ## Why this exists
 Phase 3 of the Bug Intelligence pipeline produced Claude triage reports with

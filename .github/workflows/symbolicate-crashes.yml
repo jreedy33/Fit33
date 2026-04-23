@@ -37,9 +37,9 @@ jobs:
       # a single bad dSYM can't stall the whole queue. Queue drains naturally
       # at ~200 crashes/hour, well under the app's worst-case rate.
       BATCH_SIZE: '50'
-      # Where we stash downloaded dSYMs for this run (reused within the run,
-      # discarded at runner teardown).
-      DSYM_CACHE: ${{ runner.temp }}/dsyms
+      # DSYM_CACHE is set per-step via $RUNNER_TEMP (the `runner.*` expression
+      # context isn't available at job-level env — it only evaluates inside
+      # steps). $RUNNER_TEMP is the same underlying directory.
 
     steps:
       - name: Preflight — required secrets
@@ -58,7 +58,7 @@ jobs:
         id: pending
         run: |
           set -euo pipefail
-          mkdir -p "$DSYM_CACHE"
+          mkdir -p "$RUNNER_TEMP/dsyms"
           # Pull the batch. Ordered by occurred_at ASC so the oldest pending
           # crashes drain first. `binary_uuid IS NOT NULL` filters out anything
           # the Phase 5.2 backfill missed; those should already be 'legacy' but
@@ -83,8 +83,8 @@ jobs:
           echo "Unique binary UUIDs in batch:"
           echo "$UUIDS"
           for UUID in $UUIDS; do
-            DSYM_ZIP="$DSYM_CACHE/$UUID.zip"
-            DSYM_DIR="$DSYM_CACHE/$UUID"
+            DSYM_ZIP="$RUNNER_TEMP/dsyms/$UUID.zip"
+            DSYM_DIR="$RUNNER_TEMP/dsyms/$UUID"
             [[ -d "$DSYM_DIR" ]] && continue  # already extracted earlier this run
             # Lookup storage_path in app_dsyms
             ROW="$(curl -sS \
@@ -143,7 +143,7 @@ jobs:
             SLIDE="$(jq -r '.binary_slide // empty' <<<"$ROW")"
             STACK="$(jq -r '.stack_trace // empty' <<<"$ROW")"
 
-            DSYM_DIR="$DSYM_CACHE/$UUID"
+            DSYM_DIR="$RUNNER_TEMP/dsyms/$UUID"
             if [[ ! -d "$DSYM_DIR" ]]; then
               echo "[$ID] no_dsym (missing app_dsyms row)"
               patch_row "$ID" "no_dsym" "" "dSYM not found in bucket for binary_uuid=$UUID"

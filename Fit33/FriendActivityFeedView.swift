@@ -316,6 +316,17 @@ class ActivityFeedService: ObservableObject {
     }
 
     func fetchMyReactions() async {
+        // Cluster G: auth guard — this is called from DashboardView.onAppear
+        // which fires before auth has had a chance to refresh on cold start.
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug(
+                "Skipping fetchMyReactions — not authenticated",
+                category: .social,
+                context: DiagnosticContext(op: "activity_feed.my_reactions", endpoint: "rpc/get_my_activity_reactions")
+            )
+            return
+        }
+        let startedAt = Date()
         do {
             struct Params: Encodable {
                 let p_limit: Int
@@ -324,12 +335,20 @@ class ActivityFeedService: ObservableObject {
                 .rpc("get_my_activity_reactions", params: Params(p_limit: 10))
                 .execute()
                 .value
-            
+
             await MainActor.run {
                 self.myReactions = result
             }
         } catch {
-            AppLogger.error("❌ Failed to fetch my reactions: \(error)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Failed to fetch my reactions",
+                category: .social,
+                op: "activity_feed.my_reactions",
+                endpoint: "rpc/get_my_activity_reactions",
+                startedAt: startedAt,
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
 }

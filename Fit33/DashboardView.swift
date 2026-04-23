@@ -602,44 +602,18 @@ struct DashboardView: View {
             
             // 5. Social/challenge data (needs auth — wait only for these)
             let socialTask = Task {
-                if !SupabaseManager.shared.isAuthenticated {
-                    AppLogger.info("[DASHBOARD] Auth not ready — waiting via publisher (up to 10s)...", category: .performance)
-                    let authReady = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-                        let resumed = NSLock()
-                        var hasResumed = false
-                        var cancellable: AnyCancellable?
-                        
-                        let sleepTask = Task {
-                            try? await Task.sleep(for: .seconds(10))
-                            resumed.lock()
-                            guard !hasResumed else { resumed.unlock(); return }
-                            hasResumed = true
-                            resumed.unlock()
-                            cancellable?.cancel()
-                            continuation.resume(returning: false)
-                        }
-                        
-                        cancellable = SupabaseManager.shared.$isAuthenticated
-                            .first(where: { $0 })
-                            .sink { _ in
-                                resumed.lock()
-                                guard !hasResumed else { resumed.unlock(); return }
-                                hasResumed = true
-                                resumed.unlock()
-                                sleepTask.cancel()
-                                continuation.resume(returning: true)
-                            }
-                    }
-                    guard !Task.isCancelled, authReady else {
-                        if !authReady {
-                            AppLogger.warning("[DASHBOARD] Auth not available — skipping social fetch", category: .performance)
-                        }
-                        return
-                    }
-                }
-                
-                guard SupabaseManager.shared.isAuthenticated else {
-                    AppLogger.warning("[DASHBOARD] Auth not available — skipping social fetch", category: .performance)
+                // Cluster D centralized gate — replaces the inline
+                // publisher-race pattern. `waitForFreshSession` calls
+                // `recoverSessionIfNeeded` once + awaits `$isAuthenticated`
+                // with a timeout, collapsing what used to be 14 independent
+                // 401 races into one.
+                let authReady = await SupabaseManager.shared.waitForFreshSession(timeout: 10.0)
+                guard !Task.isCancelled, authReady else {
+                    AppLogger.warning(
+                        "[DASHBOARD] Auth not available — skipping social fetch",
+                        category: .performance,
+                        context: DiagnosticContext(op: "dashboard.social_fanout", endpoint: "gate_timeout")
+                    )
                     return
                 }
                 

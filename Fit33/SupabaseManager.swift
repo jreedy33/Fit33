@@ -3,6 +3,7 @@ import Supabase
 import SwiftUI
 import Auth
 import CoreData
+import Combine
 
 // MARK: - Supabase Manager
 // This class handles all communication with your cloud database
@@ -196,6 +197,70 @@ class SupabaseManager: ObservableObject {
         } catch {
             AppLogger.debug("[AUTH] Session recovery failed: \(error.localizedDescription)", category: .auth)
         }
+    }
+
+    /// Cluster D gate: wait until `isAuthenticated == true` or the timeout
+    /// elapses. Returns `true` if auth became ready, `false` otherwise.
+    ///
+    /// Call this from fan-out orchestrators (dashboard hydrate, foreground
+    /// refresh) BEFORE scattering 14+ parallel RPCs. Previously each RPC
+    /// independently raced the session recovery, producing waves of 401s
+    /// that landed as bug_intelligence_fingerprints. The single gate
+    /// collapses that into one recovery attempt + then serial fan-out.
+    ///
+    /// Safe to call when already authenticated — returns immediately.
+    /// Attempts an explicit `recoverSessionIfNeeded()` once at start so a
+    /// stale JWT doesn't block on a publisher that will never fire.
+    func waitForFreshSession(timeout: TimeInterval = 5.0) async -> Bool {
+        let startedAt = Date()
+        let signpostState = PerformanceSignposts.begin(.authWaitForFreshSession)
+        defer { PerformanceSignposts.end(signpostState, slowThresholdMs: Int(timeout * 1000) + 500) }
+
+        if isAuthenticated { return true }
+
+        await recoverSessionIfNeeded()
+        if isAuthenticated { return true }
+
+        // Race publisher-first vs timeout. Never leak the Combine sink:
+        // both sides cancel each other via the shared lock.
+        let ready: Bool = await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var resumed = false
+            var cancellable: AnyCancellable?
+
+            let sleepTask = Task { [timeout] in
+                try? await Task.sleep(for: .seconds(timeout))
+                lock.lock()
+                defer { lock.unlock() }
+                guard !resumed else { return }
+                resumed = true
+                cancellable?.cancel()
+                continuation.resume(returning: false)
+            }
+
+            cancellable = $isAuthenticated
+                .first(where: { $0 })
+                .sink { _ in
+                    lock.lock()
+                    defer { lock.unlock() }
+                    guard !resumed else { return }
+                    resumed = true
+                    sleepTask.cancel()
+                    continuation.resume(returning: true)
+                }
+        }
+
+        if !ready {
+            AppLogger.warning(
+                "[AUTH] waitForFreshSession timed out",
+                category: .auth,
+                context: DiagnosticContext.timing(
+                    op: "auth.wait_for_fresh_session",
+                    elapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000)
+                )
+            )
+        }
+        return ready
     }
     
     // MARK: - Authentication

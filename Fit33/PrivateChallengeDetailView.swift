@@ -166,6 +166,7 @@ struct PrivateChallengeDetailView: View {
         .task {
             await loadDetail()
             chatMessages = await privateChallengeService.fetchMessages(challengeId: challenge.challengeId)
+            privateChallengeService.markChatAsRead(challengeId: challenge.challengeId)
         }
         .task(id: "chat-realtime") {
             // Direct realtime subscription for live chat updates while on this view
@@ -185,6 +186,9 @@ struct PrivateChallengeDetailView: View {
                     chatMessages = await privateChallengeService.fetchMessages(
                         challengeId: challenge.challengeId
                     )
+                    // User is actively viewing the chat — stamp read-time so the
+                    // card dot doesn't light up for a message they just saw.
+                    privateChallengeService.markChatAsRead(challengeId: challenge.challengeId)
                 }
             }
             

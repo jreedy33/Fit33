@@ -2288,6 +2288,17 @@ struct FriendsTabView: View {
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
         .shadow(color: .purple.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        .overlay(alignment: .topTrailing) {
+            // Pulsing red indicator for unread chat messages.
+            // `hasUnreadChat` is an O(1) dict lookup; the dot itself re-evaluates
+            // automatically because `myChallenges` is @Published and re-renders cards
+            // whenever `lastChatAt` updates (existing realtime chat INSERT handler).
+            if privateChallengeService.hasUnreadChat(for: challenge) {
+                UnreadPulsingDot()
+                    .padding(8)
+                    .accessibilityLabel("New messages")
+            }
+        }
     }
     
     // MARK: - Community Challenges Widget
@@ -3473,12 +3484,17 @@ struct FriendsPrivateChallengeWrapper: View {
 struct FriendsPrivateChallengeRow: View {
     let challenge: PrivateChallenge
     @Environment(\.colorScheme) private var colorScheme
-    
+    // Observing the service here (not via @StateObject — the parent wrapper already
+    // owns one) lets SwiftUI re-evaluate `hasUnreadChat(for:)` when `myChallenges`
+    // OR `chatUnreadChangeToken` publish, without needing a second subscription.
+    @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
+
     var body: some View {
         let resolver = ChallengeProgressResolver.shared
         let liveValue = resolver.liveProgress(for: challenge)
         let progress = challenge.dailyTarget > 0 ? min(1.0, Double(liveValue) / Double(challenge.dailyTarget)) : 0
         let liveTargetHit = liveValue >= challenge.dailyTarget
+        let hasUnread = privateChallengeService.hasUnreadChat(for: challenge)
         
         HStack(spacing: 12) {
             ZStack {
@@ -3579,6 +3595,61 @@ struct FriendsPrivateChallengeRow: View {
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
         .shadow(color: .purple.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+        .overlay(alignment: .topTrailing) {
+            if hasUnread {
+                UnreadPulsingDot()
+                    .padding(8)
+                    .accessibilityLabel("New messages")
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+        }
+    }
+}
+
+// MARK: - Unread Pulsing Dot
+//
+// Tiny red indicator used on private-challenge cards when there are unread chat
+// messages. The dot animates only while visible (SwiftUI auto-pauses off-screen
+// animations) and only when the user hasn't opted out via Reduce Motion or Low
+// Power Mode — per `QUALITY_PERFORMANCE_AGENT` invariant #13.
+struct UnreadPulsingDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse: Bool = false
+
+    // 9pt dot + 3pt halo = 15pt visual footprint; small enough not to overlap the
+    // rank badge / chevron, large enough to be unmistakable.
+    private let dotSize: CGFloat = 9
+
+    private var shouldAnimate: Bool {
+        !reduceMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+
+    var body: some View {
+        ZStack {
+            // Soft halo (animated when not reduce-motion).
+            Circle()
+                .fill(Color.red.opacity(0.35))
+                .frame(width: dotSize, height: dotSize)
+                .scaleEffect(pulse && shouldAnimate ? 2.1 : 1.0)
+                .opacity(pulse && shouldAnimate ? 0.0 : 0.7)
+
+            // Solid dot with a subtle white border so it reads against any card.
+            Circle()
+                .fill(Color.red)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.9), lineWidth: 1.2)
+                )
+                .frame(width: dotSize, height: dotSize)
+                .shadow(color: Color.red.opacity(0.6), radius: 3, x: 0, y: 0)
+        }
+        .accessibilityHidden(false)
+        .onAppear {
+            guard shouldAnimate else { return }
+            withAnimation(.easeOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                pulse = true
+            }
+        }
     }
 }
 

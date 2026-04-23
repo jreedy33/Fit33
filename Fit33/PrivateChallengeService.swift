@@ -452,9 +452,23 @@ class PrivateChallengeService: ObservableObject {
     private let myChallengesCacheKey = "private_challenges_cache"
     private let invitesCacheKey = "private_challenge_invites_cache"
     private let cacheDateKey = "private_challenges_cache_date"
-    
+    private let chatLastReadKey = "private_challenge_chat_last_read_v1"
+
+    // MARK: - Chat Unread Tracking
+    // Derived purely from `PrivateChallenge.lastChatAt` (already on the model) vs a
+    // per-challenge "last read" timestamp persisted in UserDefaults. No new DB query,
+    // no new realtime subscription — the existing `chatInserts` sub already refetches
+    // `myChallenges` on every message, which updates `lastChatAt` and triggers SwiftUI
+    // to re-evaluate `hasUnreadChat(for:)` on any card observing this service.
+    private var chatLastReadAt: [String: Date] = [:]
+
+    /// Incremented when a chat is marked read so cards not bound to `myChallenges`
+    /// changes (e.g. ones using stored `let` copies) can still refresh.
+    @Published var chatUnreadChangeToken = UUID()
+
     private init() {
         loadFromCache()
+        loadChatLastReadTimes()
     }
     
     // MARK: - Cache
@@ -507,8 +521,44 @@ class PrivateChallengeService: ObservableObject {
         UserDefaults.standard.removeObject(forKey: myChallengesCacheKey)
         UserDefaults.standard.removeObject(forKey: invitesCacheKey)
         UserDefaults.standard.removeObject(forKey: cacheDateKey)
+        UserDefaults.standard.removeObject(forKey: chatLastReadKey)
         myChallenges = []
         pendingInvites = []
+        chatLastReadAt = [:]
+    }
+
+    // MARK: - Chat Unread Tracking
+
+    /// Returns true when the challenge has a `lastChatAt` newer than the last time
+    /// the user opened its detail view. O(1) dict lookup — safe to call from card
+    /// `body` on every redraw.
+    func hasUnreadChat(for challenge: PrivateChallenge) -> Bool {
+        guard let lastChat = challenge.lastChatAt else { return false }
+        let lastRead = chatLastReadAt[challenge.challengeId.uuidString] ?? .distantPast
+        return lastChat > lastRead
+    }
+
+    /// Called by `PrivateChallengeDetailView` on appear (and after sending a message)
+    /// to clear the unread indicator. Persists immediately so the dot doesn't flash
+    /// back on the next cold launch.
+    func markChatAsRead(challengeId: UUID) {
+        let key = challengeId.uuidString
+        chatLastReadAt[key] = Date()
+        saveChatLastReadTimes()
+        chatUnreadChangeToken = UUID()
+    }
+
+    private func loadChatLastReadTimes() {
+        guard let data = UserDefaults.standard.data(forKey: chatLastReadKey) else { return }
+        if let decoded = try? JSONDecoder().decode([String: Date].self, from: data) {
+            chatLastReadAt = decoded
+        }
+    }
+
+    private func saveChatLastReadTimes() {
+        if let data = try? JSONEncoder().encode(chatLastReadAt) {
+            UserDefaults.standard.set(data, forKey: chatLastReadKey)
+        }
     }
     
     // MARK: - Refresh All

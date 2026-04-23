@@ -1027,8 +1027,20 @@ final class HealthDataService: ObservableObject {
     }
     
     private func saveHealthKitWorkout(_ workout: HealthKitWorkout) async {
-        guard let userId = SupabaseManager.shared.currentUser?.id else { return }
-        
+        // Data Invariant #26: every Supabase write guarded by isAuthenticated.
+        // Previously only guarded by `currentUser?.id` — that survives into a
+        // stale-JWT state and fires 42501 RLS errors that land in
+        // bug_intelligence_fingerprints.
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id else {
+            AppLogger.info(
+                "[HEALTH] Skipping saveHealthKitWorkout — not authenticated",
+                category: .health,
+                context: DiagnosticContext(op: "cardio.save", endpoint: "cardio_workouts")
+            )
+            return
+        }
+
         let workoutType: String
         switch workout.workoutType {
         case .running: workoutType = "Run"
@@ -1198,8 +1210,16 @@ final class HealthDataService: ObservableObject {
     }
     
     private func saveSleepFromHealthKit(hours: Double) async {
-        guard let userId = SupabaseManager.shared.currentUser?.id else { return }
-        
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id else {
+            AppLogger.info(
+                "[HEALTH] Skipping saveSleepFromHealthKit — not authenticated",
+                category: .health,
+                context: DiagnosticContext(op: "healthkit.sleep_save", endpoint: "healthkit_sleep")
+            )
+            return
+        }
+
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
         let dateStr = Self.iso8601.string(from: yesterday)
         
@@ -1224,8 +1244,16 @@ final class HealthDataService: ObservableObject {
     // MARK: - Database Operations
     
     private func saveDailyActivity(from fitbitSummary: FitbitDailySummary, source: String) async {
-        guard let userId = SupabaseManager.shared.currentUser?.id else { return }
-        
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id else {
+            AppLogger.info(
+                "[HEALTH] Skipping saveDailyActivity(fitbit) — not authenticated",
+                category: .health,
+                context: DiagnosticContext(op: "daily_activity.save", endpoint: "daily_activity_summary")
+            )
+            return
+        }
+
         let insert = DailyActivityInsert(
             userId: userId.uuidString,
             date: Self.iso8601.string(from: Date()),

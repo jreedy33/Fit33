@@ -3326,8 +3326,18 @@ class SupabaseManager: ObservableObject {
     
     /// Save daily step data to cloud
     func saveStepData(date: Date, steps: Int, goal: Int) async throws {
-        guard let userId = currentUser?.id else { return }
-        
+        // Data Invariant #26 — auth-guarded write.
+        // Previously this upsert would throw 42501 RLS if JWT was stale,
+        // which landed in bug_intelligence_fingerprints as noise.
+        guard isAuthenticated, let userId = currentUser?.id else {
+            AppLogger.info(
+                "[STEPS] Skipping saveStepData — not authenticated",
+                category: .health,
+                context: DiagnosticContext(op: "step.save", endpoint: "step_tracking")
+            )
+            return
+        }
+
         struct StepDataUpsert: Encodable {
             let user_id: String
             let date: String
@@ -3357,7 +3367,14 @@ class SupabaseManager: ObservableObject {
     /// Batch save multiple days of step data in a single database call
     /// ⚡️ PERFORMANCE: Reduces 100 individual queries to 1 batch query
     func batchSaveStepData(_ dailySteps: [HealthKitManager.DailySteps], goal: Int) async throws {
-        guard let userId = currentUser?.id else { return }
+        guard isAuthenticated, let userId = currentUser?.id else {
+            AppLogger.info(
+                "[STEPS] Skipping batchSaveStepData — not authenticated",
+                category: .health,
+                context: DiagnosticContext(op: "step.save", endpoint: "step_tracking")
+            )
+            return
+        }
         guard !dailySteps.isEmpty else { return }
         
         struct StepDataUpsert: Encodable {

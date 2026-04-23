@@ -823,10 +823,14 @@ class DailyQuestService: ObservableObject {
                 // 502/503/504 / -999 cancellations don't create a fingerprint.
                 // Real failures (RLS violations, unexpected PostgREST codes) still
                 // surface at .error and get triaged by Bug Intelligence.
+                // Cluster E (fingerprint 71748b6e): Dashboard `.task`
+                // cancellations are the dominant transient here — downgrade
+                // to .debug so tab-switches stop generating warnings.
                 let classification = NetworkErrorClassifier.log(
                     error,
                     context: "[QUESTS] Failed to fetch",
-                    category: .general
+                    category: .general,
+                    transientLevel: .debug
                 )
                 if case .realError = classification {
                     AppLogger.log("[QUESTS] Error details (raw): \(errorString)", level: .error, category: .general)

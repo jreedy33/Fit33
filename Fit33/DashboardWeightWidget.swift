@@ -454,21 +454,26 @@ struct WeightInputSheet: View {
     
     private func saveWeight() {
         guard let weight = Double(weightInput) else {
-            AppLogger.error("[Widget] Invalid weight input: '\(weightInput)'", category: .ui)
+            // Invalid user input is a UX event, not a bug. Invariant 25.
+            AppLogger.warning("[Widget] Invalid weight input: '\(weightInput)'", category: .ui)
             return
         }
-        
+
         AppLogger.debug("[Widget] Saving weight: \(weight) \(weightService.usesLbs ? "lbs" : "kg")", category: .ui)
         HapticManager.success()
-        
+
         Task {
             let success = await weightService.logWeight(weight)
             if success {
                 AppLogger.info("[Widget] Weight saved successfully, todayLog: \(weightService.todayLog != nil ? "SET" : "NIL"), hasLoggedToday: \(weightService.hasLoggedToday)", category: .ui)
-                // Small delay to ensure UI updates propagate
-                try? await Task.sleep(nanoseconds: 200_000_000) // 0.2 seconds
+                try? await Task.sleep(nanoseconds: 200_000_000)
             } else {
-                AppLogger.error("[Widget] Failed to save weight to cloud", category: .ui)
+                // WeightTrackingService.logWeight already routed the real error
+                // through NetworkErrorClassifier with op/endpoint/startedAt/userId/pg_code
+                // (fingerprints like 95b0b27b / 51cc11dc). Re-logging here at .error
+                // manufactured a second fingerprint (0559291e) per invariant 25a.
+                // Keep the breadcrumb but at .warning so it doesn't fingerprint.
+                AppLogger.warning("[Widget] logWeight returned false — surface already reported by WeightTrackingService", category: .ui)
             }
             await MainActor.run {
                 AppLogger.debug("[Widget] Dismissing sheet, todayLog still: \(weightService.todayLog != nil ? "SET" : "NIL")", category: .ui)

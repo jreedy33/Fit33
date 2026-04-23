@@ -1056,6 +1056,9 @@ class PrivateChallengeService: ObservableObject {
         }
 
         let maxRetries = 3
+        var didAttemptJwtRefresh = false
+        let startedAt = Date()
+        let userId = SupabaseManager.shared.currentUser?.id
         for attempt in 1...maxRetries {
             do {
                 let _: Bool = try await SupabaseManager.shared.supabaseClient
@@ -1076,12 +1079,58 @@ class PrivateChallengeService: ObservableObject {
                 guard !Task.isCancelled else { return false }
                 let nsError = error as NSError
                 let isTimeout = nsError.domain == NSURLErrorDomain && (nsError.code == NSURLErrorTimedOut || nsError.code == NSURLErrorCancelled)
+                let isJwtExpired = error.localizedDescription.localizedCaseInsensitiveContains("jwt expired")
+                    || error.localizedDescription.localizedCaseInsensitiveContains("invalid jwt")
+
+                // Cluster G (fingerprint 9a4b5b9e, infra-security HIGH):
+                // long-lived sessions that stay open overnight lose the
+                // access token while the refresh token is still valid. When
+                // the user taps "Mark complete" on a challenge, the RPC
+                // returns "JWT expired" and the catch-all `.error` both
+                // fingerprinted and dropped the user's progress on the floor.
+                // Refresh the session ONCE and retry — mirrors the startup
+                // recovery path in `restoreSessionIfAvailable`. If refresh
+                // fails, the user genuinely needs to re-auth; surface via
+                // NetworkErrorClassifier (classified as `.authExpired`
+                // → `.warning` on category `.auth`, so it no longer
+                // manufactures a crash fingerprint on normal logout/re-auth).
+                if isJwtExpired && !didAttemptJwtRefresh {
+                    didAttemptJwtRefresh = true
+                    AppLogger.warning("log_private_challenge_progress JWT expired — attempting session refresh before retry", category: .auth)
+                    do {
+                        _ = try await SupabaseManager.shared.supabaseClient.auth.refreshSession()
+                        AppLogger.info("Session refreshed — retrying challenge progress log", category: .auth)
+                        continue
+                    } catch {
+                        AppLogger.warning("Session refresh failed during challenge progress log: \(error.localizedDescription)", category: .auth)
+                        _ = NetworkErrorClassifier.log(
+                            error,
+                            context: "Error logging private challenge progress (session refresh failed)",
+                            category: .social,
+                            op: "challenges.log_private_progress",
+                            endpoint: "rpc/log_private_challenge_progress",
+                            startedAt: startedAt,
+                            userId: userId
+                        )
+                        return false
+                    }
+                }
+
                 if isTimeout && attempt < maxRetries {
                     let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
                     AppLogger.warning("log_private_challenge_progress timeout (attempt \(attempt)/\(maxRetries)), retrying...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                 } else {
-                    AppLogger.error("Error logging private challenge progress: \(error.localizedDescription)", category: .social)
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "Error logging private challenge progress",
+                        category: .social,
+                        op: "challenges.log_private_progress",
+                        endpoint: "rpc/log_private_challenge_progress",
+                        startedAt: startedAt,
+                        userId: userId,
+                        retryAttempt: attempt
+                    )
                     return false
                 }
             }

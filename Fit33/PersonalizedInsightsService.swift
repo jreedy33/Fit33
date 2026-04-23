@@ -294,7 +294,8 @@ class PersonalizedInsightsService: ObservableObject {
     /// Fetch all streak data for the current user
     func fetchStreaks() async {
         guard let userId = supabase.currentUser?.id else { return }
-        
+        let startedAt = Date()
+
         struct FetchStreaksParams: Encodable {
             let p_user_id: String
         }
@@ -309,7 +310,19 @@ class PersonalizedInsightsService: ObservableObject {
             self.streaks = streakData
             AppLogger.debug("🧠 [INSIGHTS] Fetched \(streakData.count) streak types", category: .general)
         } catch {
-            AppLogger.error("❌ [INSIGHTS] Failed to fetch streaks: \(error)", category: .general)
+            // Cluster F (fingerprint 18a4b0fc): dashboard insights fetch
+            // while offline was logging at `.error` even for -1009 /
+            // -1005 transient network loss. Route through classifier so
+            // offline lands at `.warning` and real RPC errors stay at `.error`.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[INSIGHTS] Failed to fetch streaks",
+                category: .general,
+                op: "insights.fetch_streaks",
+                endpoint: "rpc/get_streak_summary",
+                startedAt: startedAt,
+                userId: userId
+            )
         }
     }
     

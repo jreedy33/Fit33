@@ -303,7 +303,13 @@ class HydrationService: ObservableObject {
                 self.todaySummary = summaries.first
             }
         } catch {
-            NetworkErrorClassifier.log(error, context: "[Water] Failed to load today's summary", category: .nutrition)
+            // Cluster E: these loads fire from Dashboard `.task` /
+            // `onAppear`; rapid tab switches cancel them (NSURLError -999).
+            // Transient/cancelled go to `.debug` so the bug-intel rollup
+            // stops fingerprinting them (fingerprints 8e0bcf4f / 619557be
+            // / 68da0300 / f117f896 / a884bcff were all -999). Real errors
+            // (5xx, auth, RLS) still log at .warning / .error.
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load today's summary", category: .nutrition, transientLevel: .debug)
         }
     }
     
@@ -327,7 +333,7 @@ class HydrationService: ObservableObject {
                 self.todayLogs = logs
             }
         } catch {
-            NetworkErrorClassifier.log(error, context: "[Water] Failed to load today's logs", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load today's logs", category: .nutrition, transientLevel: .debug)
         }
     }
     
@@ -349,7 +355,7 @@ class HydrationService: ObservableObject {
                 await createDefaultSettings(userId: userId)
             }
         } catch {
-            NetworkErrorClassifier.log(error, context: "[Water] Failed to load settings", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load settings", category: .nutrition, transientLevel: .debug)
         }
     }
     
@@ -366,7 +372,7 @@ class HydrationService: ObservableObject {
                 self.streaks = streaks.first
             }
         } catch {
-            NetworkErrorClassifier.log(error, context: "[Water] Failed to load streaks", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load streaks", category: .nutrition, transientLevel: .debug)
         }
     }
     
@@ -389,7 +395,7 @@ class HydrationService: ObservableObject {
                 self.weeklyData = summaries
             }
         } catch {
-            NetworkErrorClassifier.log(error, context: "[Water] Failed to load weekly data", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load weekly data", category: .nutrition, transientLevel: .debug)
         }
     }
     

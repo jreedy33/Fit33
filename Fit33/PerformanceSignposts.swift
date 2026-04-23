@@ -62,6 +62,10 @@ enum PerformanceSignposts {
         case activityFeedFetch       = "activity_feed.fetch"
         case challengesFetch         = "challenges.fetch"
         case postWorkoutActivity     = "social.post_workout_activity"
+        case postCardioActivity      = "social.post_cardio_activity"
+
+        // Integrations (Cluster D)
+        case stravaSync              = "strava.sync"
     }
 
     // MARK: Thresholds

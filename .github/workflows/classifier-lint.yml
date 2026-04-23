@@ -1,0 +1,78 @@
+name: Classifier Lint
+
+# Enforces QUALITY_PERFORMANCE_AGENT.md invariant 25a:
+#   Every Supabase-touching `catch` block MUST route through
+#   NetworkErrorClassifier.log(...). Violations surface as PR annotations.
+#
+# Current mode: WARN (exit 0 on violation). We start in warn-only until the
+# existing backlog is cleared, then flip to --strict to block PRs that
+# introduce new violations. Track the count in scripts/classifier_lint.py
+# `--json | .count` and aim for monotonic improvement.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Fit33/**/*.swift'
+      - 'scripts/classifier_lint.py'
+      - '.github/workflows/classifier-lint.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Fit33/**/*.swift'
+      - 'scripts/classifier_lint.py'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run classifier lint (warn-only)
+        id: lint
+        run: |
+          python3 scripts/classifier_lint.py --json > /tmp/classifier_lint.json || true
+          TOTAL=$(python3 -c "import json; print(json.load(open('/tmp/classifier_lint.json'))['count'])")
+          echo "violation_count=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "total=$TOTAL" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Classifier Lint" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Total violations:** $TOTAL" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Violations by file (top 20):" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python3 -c "
+          import json
+          from collections import Counter
+          data = json.load(open('/tmp/classifier_lint.json'))
+          files = Counter(v['file'] for v in data['violations'])
+          for f, n in files.most_common(20):
+              print(f'{n:>4} {f}')
+          " >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Suppress in specific catch blocks with \`// classifier_lint:allow\` when the classifier is provably unavailable." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Emit PR annotations
+        if: steps.lint.outputs.violation_count != '0'
+        run: |
+          python3 scripts/classifier_lint.py | while IFS= read -r line; do
+            # Convert clang-style `file:line: warning: msg` to GitHub's ::warning format.
+            if echo "$line" | grep -qE '^[^:]+:[0-9]+: warning:'; then
+              file=$(echo "$line" | cut -d: -f1)
+              lineno=$(echo "$line" | cut -d: -f2)
+              msg=$(echo "$line" | sed -E 's/^[^:]+:[0-9]+: warning: //')
+              echo "::warning file=$file,line=$lineno,title=Classifier Lint::$msg"
+            fi
+          done
+
+      # Intentionally no fail-on-violation step. Flip this to --strict when
+      # the backlog reaches 0. See Fit33/QUALITY_PERFORMANCE_AGENT.md §Classifier Lint Rollout.

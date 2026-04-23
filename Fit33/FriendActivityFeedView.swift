@@ -313,6 +313,18 @@ class ActivityFeedService: ObservableObject {
         averageHeartRate: Int?,
         xpEarned: Int
     ) async {
+        // Cluster G auth guard — called from workout-completion flow which
+        // can fire before session refresh on cold-start networks.
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug(
+                "Skipping postCardioActivity — not authenticated",
+                category: .social,
+                context: DiagnosticContext(op: "social.post_cardio_activity", endpoint: "rpc/post_cardio_activity")
+            )
+            return
+        }
+        let startedAt = Date()
+        let userId = SupabaseManager.shared.currentUser?.id
         do {
             struct Params: Encodable {
                 let p_workout_id: String
@@ -335,7 +347,23 @@ class ActivityFeedService: ObservableObject {
                 ))
                 .execute()
         } catch {
-            AppLogger.error("❌ Failed to post cardio activity: \(error)", category: .social)
+            // Route through NetworkErrorClassifier so a residual 23514 CHECK
+            // violation (fingerprint b66f6c07 pre-20260515) lands with
+            // pg_code + http_status + elapsed_ms in the bug_intelligence
+            // payload instead of collapsing into "Failed to post cardio
+            // activity". Migration 20260515 widened the check constraint
+            // to include 'cardio_completed', so we expect this catch to be
+            // quiet going forward; if a new invalid value appears, it
+            // fingerprints by pg_code.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Failed to post cardio activity",
+                category: .social,
+                op: "social.post_cardio_activity",
+                endpoint: "rpc/post_cardio_activity",
+                startedAt: startedAt,
+                userId: userId
+            )
         }
     }
 

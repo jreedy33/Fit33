@@ -447,7 +447,18 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Fetched \(result.count) pending challenge invites", category: .social)
         } catch {
             if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
-            AppLogger.error("Error fetching pending invites: \(error.localizedDescription)", category: .social)
+            // Cluster F (fingerprint 3b62d367): offline / -1005 / -1009
+            // during dashboard pending-invite fetch. Classifier routes
+            // transient network to `.warning` and leaves the cached list
+            // intact for the retry queue.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching pending invites",
+                category: .social,
+                op: "challenges.fetch_pending_invites",
+                endpoint: "rpc/get_pending_challenge_invites",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -682,8 +693,15 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Fetched \(result.count) active challenges", category: .social)
         } catch {
             if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
-            // Preserve existing cached challenges on fetch failure
-            logger.log(.error, category: .challenge, message: "Failed to fetch active challenges (keeping \(activeChallenges.count) cached)", metadata: ["error": "\(error)"])
+            // Preserve existing cached challenges on fetch failure.
+            //
+            // Cluster F (fingerprint 11c8a6f3, 12 occurrences / 4 users,
+            // MEDIUM): the prior `logger.log(.error, …)` line double-logged
+            // alongside NetworkErrorClassifier, so every offline tab-switch
+            // produced TWO distinct bug-intel fingerprints. Classifier owns
+            // leveling here (-1005 / -1009 → .warning; real errors → .error)
+            // so the logger call is redundant. Keep only the classifier path
+            // and hand it pg_code/http_status/elapsed context.
             _ = NetworkErrorClassifier.log(
                 error,
                 context: "[CHALLENGES] Fetch failed (keeping \(activeChallenges.count) cached)",
@@ -2592,6 +2610,8 @@ class ChallengeService: ObservableObject {
     // MARK: - Get Challenge Details
     
     func getChallengeDetails(challengeId: UUID) async -> ChallengeDetails? {
+        let startedAt = Date()
+        let userId = SupabaseManager.shared.currentUser?.id
         do {
             struct DetailsParams: Encodable {
                 let p_challenge_id: String
@@ -2604,7 +2624,22 @@ class ChallengeService: ObservableObject {
             
             return result.first
         } catch {
-            AppLogger.error("Error fetching challenge details: \(error.localizedDescription)", category: .social)
+            // Cluster E noise-suppression (fingerprint 6f90ec9a): this RPC is
+            // fired from the challenge detail sheet's `.task`; dismissing the
+            // sheet before it resolves surfaces `NSURLError -999 (cancelled)`.
+            // Logging at `.error` fingerprinted every dismiss. Route through
+            // NetworkErrorClassifier so cancelled/transient land at `.warning`
+            // and only genuine RPC failures stay at `.error` (QP invariants 25 + 25a).
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[Social] Error fetching challenge details",
+                category: .social,
+                transientLevel: .debug,
+                op: "social.get_challenge_details",
+                endpoint: "rpc/get_challenge_details",
+                startedAt: startedAt,
+                userId: userId
+            )
             return nil
         }
     }

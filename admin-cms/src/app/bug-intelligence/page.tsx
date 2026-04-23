@@ -26,6 +26,21 @@ type Fingerprint = {
     resolution_pr_url: string | null
     pain_point_id: string | null
     latest_report: Report | null
+    // Phase 9 (2026-04-23) — structural fingerprinting added by
+    // supabase/20260516_bug_intel_structural_fingerprint.sql. Any of these
+    // may be null on legacy (pre-classifier) fingerprints.
+    op?: string | null
+    error_class?: string | null
+    pg_code?: string | null
+    http_status?: number | null
+    nsurl_code?: number | null
+    endpoint?: string | null
+    is_classified?: boolean | null
+    structural_fingerprint?: string | null
+    fixed_in_build?: string | null
+    regressed_after_fix?: boolean | null
+    auto_resolved_at?: string | null
+    last_seen_build?: string | null
 }
 
 type Report = {
@@ -96,6 +111,24 @@ type ExportFingerprint = {
     // been handed off to Cursor. Used by formatExportAsMarkdown to split
     // bundles into "new" vs "regression" sections.
     last_exported_at?: string | null
+    // Phase 9 (2026-04-23) — structural fingerprinting. Populated by the
+    // supabase/20260516_bug_intel_structural_fingerprint.sql rollup rewrite.
+    // Any of these may be null on legacy (pre-classifier) events.
+    op?: string | null
+    error_class?: string | null
+    pg_code?: string | null
+    http_status?: number | null
+    nsurl_code?: number | null
+    endpoint?: string | null
+    is_classified?: boolean | null
+    structural_fingerprint?: string | null
+    // Phase 9 regression alert: `fixed_in_build` is stamped by admin triage
+    // when a PR ships; `regressed_after_fix` is auto-flipped by the rollup
+    // when new activity shows up on a build > fixed_in_build.
+    fixed_in_build?: string | null
+    regressed_after_fix?: boolean | null
+    auto_resolved_at?: string | null
+    last_seen_build?: string | null
 }
 type ExportReport = {
     id: string
@@ -310,7 +343,12 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
             const f = b.fingerprint
             const occ = typeof f?.occurrence_count === 'number' ? f.occurrence_count : 0
             const users = typeof f?.unique_user_count === 'number' ? f.unique_user_count : 0
-            L.push(`- [**${r.severity.toUpperCase()}**] \`${r.fingerprint.slice(0, 8)}\` — ${r.title} · \`${r.agent_owner}\` · ${occ} occ / ${users} user${users === 1 ? '' : 's'}${f?.last_seen_app_version ? ` · last on \`${f.last_seen_app_version}\`` : ''}`)
+            // Phase 9 — append op / error_class so the TL;DR line carries
+            // the root-cause signature, not just a title. A reviewer can
+            // scan 20 lines and spot the duplicates before opening each.
+            const struct = [f?.op ? `op=${f.op}` : null, f?.error_class ? `class=${f.error_class}` : null].filter(Boolean).join(' ')
+            const structSuffix = struct ? ` · ${struct}` : ''
+            L.push(`- [**${r.severity.toUpperCase()}**] \`${r.fingerprint.slice(0, 8)}\` — ${r.title} · \`${r.agent_owner}\` · ${occ} occ / ${users} user${users === 1 ? '' : 's'}${f?.last_seen_app_version ? ` · last on \`${f.last_seen_app_version}\`` : ''}${structSuffix}`)
         }
         L.push('')
     }
@@ -325,7 +363,10 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
             const f = b.fingerprint
             const occ = typeof f?.occurrence_count === 'number' ? f.occurrence_count : 0
             const lastExp = r.last_exported_at ? new Date(r.last_exported_at).toISOString().slice(0, 16) : '?'
-            L.push(`- [**${r.severity.toUpperCase()}**] \`${r.fingerprint.slice(0, 8)}\` — ${r.title} · \`${r.agent_owner}\` · ${occ} occ · last exported \`${lastExp}\``)
+            const struct = [f?.op ? `op=${f.op}` : null, f?.error_class ? `class=${f.error_class}` : null].filter(Boolean).join(' ')
+            const structSuffix = struct ? ` · ${struct}` : ''
+            const fixedBadge = f?.fixed_in_build ? ` · fix was \`${f.fixed_in_build}\`, now on \`${f.last_seen_build ?? '?'}\`` : ''
+            L.push(`- [**${r.severity.toUpperCase()}**] \`${r.fingerprint.slice(0, 8)}\` — ${r.title} · \`${r.agent_owner}\` · ${occ} occ · last exported \`${lastExp}\`${fixedBadge}${structSuffix}`)
         }
         L.push('')
     }
@@ -388,6 +429,44 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         if (r.file_path) L.push(`- **Suggested file**: \`${r.file_path}\``)
         if (f?.status) L.push(`- **Fingerprint status**: \`${f.status}\``)
         L.push(`- **Report created**: \`${r.created_at}\``)
+        L.push('')
+
+        // Phase 9 — structural fingerprint block. Put the classified root
+        // cause at the top of each report so Cursor can pattern-match
+        // (same op + error_class = same root cause) without scrolling.
+        // Every field is optional — old unstructured errors show a compact
+        // "classifier_bypass: yes" line instead of an empty block.
+        const structBits: string[] = []
+        if (f?.op) structBits.push(`op=\`${f.op}\``)
+        if (f?.error_class) structBits.push(`class=\`${f.error_class}\``)
+        if (f?.pg_code) structBits.push(`pg_code=\`${f.pg_code}\``)
+        if (typeof f?.http_status === 'number') structBits.push(`http=\`${f.http_status}\``)
+        if (typeof f?.nsurl_code === 'number') structBits.push(`nsurl=\`${f.nsurl_code}\``)
+        if (f?.endpoint) structBits.push(`endpoint=\`${f.endpoint}\``)
+        if (f?.structural_fingerprint) structBits.push(`struct=\`${f.structural_fingerprint.slice(0, 8)}\``)
+        if (structBits.length > 0) {
+            L.push(`- **Root cause fields**: ${structBits.join(' · ')}`)
+        }
+        // Classifier gate: invariant 25a (QUALITY_PERFORMANCE_AGENT.md) says
+        // every Supabase-touching catch MUST route through NetworkErrorClassifier.
+        // When is_classified=false, the event bypassed the classifier and
+        // probably violates the invariant. Flag it prominently so the
+        // assistant can suggest the right fix before investigating the error.
+        if (f && f.is_classified === false) {
+            L.push(`- **Classifier bypass**: yes — this event was logged with \`AppLogger.error\` directly instead of routed through \`NetworkErrorClassifier.log(...)\`. Before investigating the symptom, check whether the call site violates QUALITY_PERFORMANCE_AGENT invariant 25a and needs to move to the classifier. A non-classified fingerprint often *is* the bug.`)
+        } else if (f && f.is_classified === true) {
+            L.push(`- **Classifier bypass**: no (routed through \`NetworkErrorClassifier\`)`)
+        }
+        // Regression alert: if the fix shipped but activity came back on a
+        // newer build, say so loudly at the top of the report. This is the
+        // "we thought we fixed it, we didn't" signal.
+        if (f?.fixed_in_build) {
+            if (f.regressed_after_fix) {
+                L.push(`- ⚠️ **REGRESSED**: fix shipped in \`${f.fixed_in_build}\` but new activity is arriving on \`${f.last_seen_build ?? '?'}\`. The diff didn't hold — verify the fix actually landed or the bug has a second root cause.`)
+            } else {
+                L.push(`- **Fixed in**: \`${f.fixed_in_build}\`${f.auto_resolved_at ? ` · auto-resolved at \`${f.auto_resolved_at}\`` : ''}`)
+            }
+        }
         L.push('')
 
         if (f) {
@@ -1464,6 +1543,13 @@ function FingerprintRow({ fp, selected, onSelect, onTriage }: {
                     {rep && <Pill label={rep.severity} color={SEVERITY_COLORS[rep.severity] ?? '#6b7280'} />}
                     {rep && <Pill label={rep.agent_owner} color="#475569" />}
                     {fp.resolution_pr_url && <Pill label="PR" color="#22c55e" />}
+                    {/* Phase 9 — structural fingerprint pills. Makes root cause
+                        scannable at the list level: an op=weight.log + class=pg:42883
+                        cluster is visually identical across rows, so duplicates
+                        collapse visually before you open any of them. */}
+                    {fp.regressed_after_fix && <Pill label="REGRESSED" color="#dc2626" />}
+                    {fp.is_classified === false && <Pill label="unclassified" color="#f59e0b" />}
+                    {fp.error_class && <Pill label={fp.error_class} color="#0f766e" />}
                 </div>
                 <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {fp.sample_message || fp.normalized_message}
@@ -1583,6 +1669,63 @@ function DetailPanel({
                 <MetaItem label="First app ver" value={fp.first_seen_app_version ?? '—'} />
                 <MetaItem label="Last app ver" value={fp.last_seen_app_version ?? '—'} />
             </div>
+
+            {/* Phase 9 — structural fingerprint panel. Only renders when at
+                least one field is present (pre-classifier fingerprints stay
+                clean). Explicit "Classifier bypass: yes" signals an invariant
+                25a violation — shown in amber so triagers immediately know
+                the real fix may be "move this call to NetworkErrorClassifier",
+                not "investigate the error". */}
+            {(fp.op || fp.error_class || fp.pg_code || fp.endpoint || fp.structural_fingerprint || fp.is_classified === false) && (
+                <div style={{
+                    marginBottom: 12,
+                    padding: 10,
+                    borderRadius: 6,
+                    border: '1px solid var(--border)',
+                    background: 'var(--bg-tertiary)',
+                }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                        Root cause
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
+                        {fp.op && <MetaItem label="Op" value={fp.op} />}
+                        {fp.error_class && <MetaItem label="Class" value={fp.error_class} />}
+                        {fp.pg_code && <MetaItem label="pg_code" value={fp.pg_code} />}
+                        {typeof fp.http_status === 'number' && <MetaItem label="HTTP" value={String(fp.http_status)} />}
+                        {typeof fp.nsurl_code === 'number' && <MetaItem label="NSURL" value={String(fp.nsurl_code)} />}
+                        {fp.endpoint && <MetaItem label="Endpoint" value={fp.endpoint} />}
+                        {fp.structural_fingerprint && <MetaItem label="Struct fingerprint" value={fp.structural_fingerprint.slice(0, 12)} />}
+                        {fp.fixed_in_build && <MetaItem label="Fixed in build" value={fp.fixed_in_build} />}
+                        {fp.last_seen_build && <MetaItem label="Last seen build" value={fp.last_seen_build} />}
+                    </div>
+                    {fp.is_classified === false && (
+                        <div style={{
+                            marginTop: 8,
+                            padding: '6px 8px',
+                            borderRadius: 4,
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#f59e0b',
+                            fontSize: 11,
+                            fontWeight: 600,
+                        }}>
+                            Classifier bypass — this event logged through AppLogger.error directly instead of NetworkErrorClassifier.log. See QUALITY_PERFORMANCE_AGENT invariant 25a. The real fix is often to move the call site to the classifier.
+                        </div>
+                    )}
+                    {fp.regressed_after_fix && (
+                        <div style={{
+                            marginTop: 8,
+                            padding: '6px 8px',
+                            borderRadius: 4,
+                            background: 'rgba(220, 38, 38, 0.15)',
+                            color: '#dc2626',
+                            fontSize: 11,
+                            fontWeight: 600,
+                        }}>
+                            Regressed after fix — a PR shipped in {fp.fixed_in_build ?? 'an earlier build'} but new activity is arriving on {fp.last_seen_build ?? 'a newer build'}. Verify the diff landed or open a follow-up.
+                        </div>
+                    )}
+                </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>

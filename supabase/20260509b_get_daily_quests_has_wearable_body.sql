@@ -389,7 +389,16 @@ BEGIN
             qt.difficulty
         FROM quest_templates qt
         WHERE qt.quest_key = ANY(v_quest_keys)
-        ORDER BY array_position(v_quest_keys, qt.quest_key);
+        ORDER BY array_position(v_quest_keys, qt.quest_key)
+        -- Race guard: two concurrent RPC calls (e.g. Dashboard .task +
+        -- tab-switch refetch within the same second) can both observe
+        -- v_quest_count = 0 and race to the INSERT, producing a
+        -- `duplicate key value violates unique constraint
+        -- user_daily_quests_user_id_quest_date_quest_key_key` (23505,
+        -- bug_intelligence fingerprint bb8db6c1). DO NOTHING here is
+        -- the correct semantic — whichever racer lost is happy with
+        -- the winner's rows (they'll read them right after).
+        ON CONFLICT (user_id, quest_date, quest_key) DO NOTHING;
     END IF;
 
     SELECT

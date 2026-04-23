@@ -669,7 +669,18 @@ class FriendService: ObservableObject {
                 if isRetryable {
                     AppLogger.warning("Received workouts fetch timed out after \(maxRetries) attempts", category: .social)
                 } else {
-                    AppLogger.error("Error fetching received workouts: \(error.localizedDescription)", category: .social)
+                    // Cluster F (fingerprint 7297489e): offline -1005/-1009
+                    // on dashboard notification carousel. Classifier downgrades
+                    // transient to `.warning`; real RPC failures stay `.error`
+                    // with pg_code.
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "Error fetching received workouts",
+                        category: .social,
+                        op: "social.fetch_received_workouts",
+                        endpoint: "rpc/get_received_workouts",
+                        userId: SupabaseManager.shared.currentUser?.id
+                    )
                 }
             }
         }

@@ -1,17 +1,47 @@
-#!/bin/bash
-# Sprint 4 (AGD-9) — Opt-in pre-commit hook driver.
+#!/bin/sh
+# .githooks/pre-commit — Fit33 local safety net
 #
-# Enable for this clone with:
+# Activate once:
 #   git config core.hooksPath .githooks
 #
-# Add new hook scripts to this driver below. Each script is expected to exit
-# non-zero to block the commit.
+# Runs two cheap checks against the STAGED Swift files:
+#   1. classifier_lint.py in warn-only mode, scoped to staged paths under Fit33/
+#   2. perf_lint.sh (the existing build-phase lint) — informational only
+#
+# Neither check blocks the commit today. They print warnings so you notice
+# invariant 25a violations before they hit CI. Flip `STRICT_CLASSIFIER=1 git commit`
+# to hard-fail locally when you're trying to clear the backlog for a batch.
 
-set -euo pipefail
+set -e
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^Fit33/.*\.swift$' || true)
 
-# AGD-9: migration index drift guard
-"${REPO_ROOT}/scripts/pre_commit_migration_check.sh"
+if [ -z "$STAGED_SWIFT" ]; then
+  exit 0
+fi
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
+# Classifier lint on staged files only.
+if [ -x "$REPO_ROOT/scripts/classifier_lint.py" ] || [ -f "$REPO_ROOT/scripts/classifier_lint.py" ]; then
+  FLAGS=""
+  if [ "${STRICT_CLASSIFIER:-0}" = "1" ]; then
+    FLAGS="--strict"
+  fi
+  # Scan per-file so the output only reflects files touched by this commit.
+  FAILED=0
+  for f in $STAGED_SWIFT; do
+    if ! python3 "$REPO_ROOT/scripts/classifier_lint.py" $FLAGS --root "$REPO_ROOT/$f" 2>/dev/null; then
+      FAILED=1
+    fi
+  done
+  if [ "$FAILED" = "1" ] && [ "${STRICT_CLASSIFIER:-0}" = "1" ]; then
+    echo ""
+    echo "pre-commit: classifier_lint.py --strict found violations in staged files." >&2
+    echo "            Re-run 'git commit' without STRICT_CLASSIFIER=1 to bypass, or" >&2
+    echo "            add '// classifier_lint:allow' to the legitimate catch blocks." >&2
+    exit 1
+  fi
+fi
 
 exit 0

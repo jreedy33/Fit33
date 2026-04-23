@@ -264,7 +264,10 @@ final class StravaService: ObservableObject {
         errorMessage = nil
         
         AppLogger.debug("🔄 [STRAVA] Starting sync (daysBack: \(daysBack), token expires: \(tokenExpiresAt?.description ?? "nil"))", category: .health)
-        
+
+        let startedAt = Date()
+        let userId = SupabaseManager.shared.currentUser?.id
+
         do {
             let token = try await ensureValidToken()
             AppLogger.debug("🔑 [STRAVA] Token valid, fetching activities...", category: .health)
@@ -298,7 +301,11 @@ final class StravaService: ObservableObject {
             
             guard httpResponse.statusCode == 200 else {
                 let body = String(data: data, encoding: .utf8) ?? "no body"
-                AppLogger.error("❌ [STRAVA] API error body: \(body.prefix(500))", category: .network)
+                // Cluster D: keep the body as a breadcrumb but don't fingerprint
+                // here — the outer catch will route through NetworkErrorClassifier
+                // with full op/endpoint/http_status context once we throw.
+                // 401 from Strava is a revoked token (expected), 5xx are transient.
+                AppLogger.warning("⚠️ [STRAVA] HTTP \(httpResponse.statusCode) body: \(body.prefix(500))", category: .network)
                 throw StravaError.apiError("HTTP \(httpResponse.statusCode): \(body.prefix(200))")
             }
             
@@ -328,7 +335,60 @@ final class StravaService: ObservableObject {
             
         } catch {
             errorMessage = error.localizedDescription
-            AppLogger.error("❌ [STRAVA] Sync error: \(error)", category: .health)
+            // Cluster D noise-suppression (fingerprint 9c11d1a9, 16 occurrences
+            // on a single user across Dashboard tab-switches): `.notConnected`
+            // and `.tokenRefreshFailed` are expected operational states
+            // (Strava-side token revoke, first install, or a `disconnect()`
+            // racing the sync), not bugs. Routing them through
+            // `AppLogger.error` fingerprinted every Dashboard refresh. Per
+            // QUALITY_PERFORMANCE_AGENT invariants 25 + 25a: drop these to
+            // `.debug` and flip `isConnected = false` so future `syncActivities`
+            // calls short-circuit at the guard above instead of re-throwing
+            // the same error on every tab focus.
+            //
+            // Real network / HTTP / decoding failures still go through
+            // NetworkErrorClassifier so transient NSURLError / 5xx land at
+            // `.warning` with op/endpoint/pg_code context and genuine
+            // malfunctions stay at `.error`.
+            if let stravaError = error as? StravaError {
+                switch stravaError {
+                case .notConnected, .tokenRefreshFailed:
+                    AppLogger.debug(
+                        "⏭️ [STRAVA] Sync skipped — \(stravaError) (tokens cleared or revoked)",
+                        category: .health,
+                        context: DiagnosticContext(
+                            op: PerformanceSignposts.Op.stravaSync.rawValue,
+                            endpoint: "GET /athlete/activities"
+                        )
+                    )
+                    if isConnected {
+                        isConnected = false
+                        Task {
+                            await SupabaseManager.shared.updateIntegrationStatus(integration: "strava", isConnected: false)
+                        }
+                    }
+                default:
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "[STRAVA] Sync error",
+                        category: .health,
+                        op: PerformanceSignposts.Op.stravaSync.rawValue,
+                        endpoint: "GET /athlete/activities",
+                        startedAt: startedAt,
+                        userId: userId
+                    )
+                }
+            } else {
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "[STRAVA] Sync error",
+                    category: .health,
+                    op: PerformanceSignposts.Op.stravaSync.rawValue,
+                    endpoint: "GET /athlete/activities",
+                    startedAt: startedAt,
+                    userId: userId
+                )
+            }
         }
         
         isLoading = false

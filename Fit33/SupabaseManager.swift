@@ -4147,7 +4147,19 @@ class SupabaseManager: ObservableObject {
             AppLogger.info("Comprehensive data sync completed!", category: .network)
         } catch {
             wf.end("CloudSync (total)")
-            AppLogger.error("Error during comprehensive sync: \(error)", category: .network)
+            // Cluster F (fingerprint c8898dbd): comprehensive sync runs on
+            // foreground/login — if the device is briefly offline the sync
+            // throws -1005 / -1009 and the catch-all `.error` fingerprinted
+            // every recovery. Classify so transient network lands at
+            // `.warning` (retry queue owns recovery) and only genuine sync
+            // bugs surface at `.error`.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error during comprehensive sync",
+                category: .network,
+                op: "cloud_sync.comprehensive",
+                userId: currentUser?.id
+            )
         }
     }
     

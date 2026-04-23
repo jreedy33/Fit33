@@ -1,15 +1,29 @@
 import SwiftUI
 import CoreData
 
+// Q2-78 (Sprint 8): Hoisted day-header formatter shared across the three day
+// section variants below — avoids allocating a `DateFormatter` on every row.
+private let workoutHistoryDayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "EEEE, MMMM d"
+    return f
+}()
+
 // MARK: - Workout History Full View (Full Page Navigation)
 struct WorkoutHistoryFullView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
     
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        predicate: NSPredicate(format: "isCompleted == true"),
-        animation: .none)
+    // Full history page already paginates via scrolling UI; cap the Core Data
+    // fetch at 500 rows so a long-time user doesn't page in their entire
+    // lifetime on first render. Per QP invariant #3.
+    @FetchRequest(fetchRequest: {
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+        request.predicate = NSPredicate(format: "isCompleted == true")
+        request.fetchLimit = 500
+        return request
+    }(), animation: .none)
     private var allWorkouts: FetchedResults<Workout>
     
     @StateObject private var adManager = AdManager.shared
@@ -250,9 +264,7 @@ struct WorkoutHistoryDaySectionWithAds: View {
         } else if Calendar.current.isDateInYesterday(date) {
             return "Yesterday"
         } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE, MMMM d"
-            return formatter.string(from: date)
+            return workoutHistoryDayFormatter.string(from: date)
         }
     }
     
@@ -330,9 +342,7 @@ struct WorkoutHistoryDaySectionCombined: View {
         } else if Calendar.current.isDateInYesterday(date) {
             return "Yesterday"
         } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE, MMMM d"
-            return formatter.string(from: date)
+            return workoutHistoryDayFormatter.string(from: date)
         }
     }
     
@@ -389,9 +399,7 @@ struct WorkoutHistoryDaySection: View {
         } else if Calendar.current.isDateInYesterday(date) {
             return "Yesterday"
         } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE, MMMM d"
-            return formatter.string(from: date)
+            return workoutHistoryDayFormatter.string(from: date)
         }
     }
     

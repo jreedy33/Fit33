@@ -643,19 +643,13 @@ struct FriendsListView: View {
     }
     
     private var emptyRequestsState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "bell.slash")
-                .font(.system(size: 50))
-                .foregroundColor(.gray.opacity(0.5))
-            
-            Text("No Pending Requests")
-                .font(.headline)
-            
-            Text("Friend requests you send or receive\nwill appear here")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
+        // Q2-91 (Sprint 9 2026-04-28): migrated to EmptyStateView for
+        // consistent empty-surface typography.
+        EmptyStateView(
+            icon: "bell.slash",
+            title: "No Pending Requests",
+            subtitle: "Friend requests you send or receive will appear here"
+        )
     }
     
     // MARK: - Search Content

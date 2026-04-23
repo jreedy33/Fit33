@@ -15,8 +15,12 @@ struct RenameExerciseView: View {
     
     @FocusState private var isTextFieldFocused: Bool
     
+    /// The canonical stored exercise name. Used as the identity key for
+    /// `ExerciseNicknameService` (both lookup and save), so nicknames persist
+    /// against the full name even when the UI strips redundant equipment
+    /// suffixes via `presentationName(for:)`.
     private var officialName: String {
-        exercise.displayName
+        exercise.name ?? exercise.displayName
     }
     
     private var hasExistingNickname: Bool {

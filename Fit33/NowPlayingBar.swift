@@ -13,6 +13,7 @@ struct NowPlayingBar: View {
     @State private var hasLoaded: Bool = false
     @State private var pollTimer: Timer?
     @State private var albumArtwork: UIImage?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: 0) {
@@ -96,6 +97,19 @@ struct NowPlayingBar: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             updateFromNowPlaying()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            // Pause the 2s poll while backgrounded or inactive — MPMusicPlayer
+            // notifications (already observed above) are sufficient to keep UI fresh
+            // when we return, and we refresh once on willEnterForeground.
+            switch newPhase {
+            case .active:
+                startPolling()
+            case .background, .inactive:
+                stopPolling()
+            @unknown default:
+                stopPolling()
+            }
         }
     }
     

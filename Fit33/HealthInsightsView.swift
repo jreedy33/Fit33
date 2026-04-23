@@ -332,7 +332,7 @@ struct HealthInsightsView: View {
                                 y: .value("HR", hr)
                             )
                             .foregroundStyle(.red)
-                            .interpolationMethod(.catmullRom)
+                            .interpolationMethod(.monotone)
                             
                             PointMark(
                                 x: .value("Day", formatDate(day.date)),
@@ -849,20 +849,30 @@ struct HealthInsightsView: View {
         .padding(.vertical, 30)
     }
     
+    // Q2-78 (Sprint 8): hoisted formatters.
+    private static let decimalFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f
+    }()
+    private static let ymdDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    private static let shortDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "E"
+        return f
+    }()
+    
     private func formatNumber(_ number: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
+        return Self.decimalFormatter.string(from: NSNumber(value: number)) ?? "\(number)"
     }
     
     private func formatDate(_ dateString: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        
-        if let date = formatter.date(from: dateString) {
-            let dayFormatter = DateFormatter()
-            dayFormatter.dateFormat = "E"
-            return dayFormatter.string(from: date)
+        if let date = Self.ymdDateFormatter.date(from: dateString) {
+            return Self.shortDayFormatter.string(from: date)
         }
         return dateString
     }

@@ -479,23 +479,25 @@ final class SmartExerciseSearchService: ObservableObject {
                     }
                 }
                 
-                if !matched {
-                    let nickname = ExerciseNicknameService.shared.displayName(for: exercise).lowercased()
-                    if nickname != name {
-                        for variation in singleWordVariations {
-                            if nickname == variation {
-                                exactMatches.append((exercise, personalScore + 50))
-                                matched = true
-                                break
-                            } else if nickname.hasPrefix(variation) {
-                                startsWithMatches.append((exercise, personalScore + 25))
-                                matched = true
-                                break
-                            } else if nickname.contains(variation) {
-                                containsMatches.append((exercise, personalScore + 10))
-                                matched = true
-                                break
-                            }
+                if !matched,
+                   let rawNickname = ExerciseNicknameService.shared.nicknames[name] {
+                    // Only fall through to nickname-boosted matching when the user has
+                    // explicitly set a nickname — do NOT infer from `displayName != name`,
+                    // since the smart-suffix stripper also produces that divergence.
+                    let nickname = rawNickname.lowercased()
+                    for variation in singleWordVariations {
+                        if nickname == variation {
+                            exactMatches.append((exercise, personalScore + 50))
+                            matched = true
+                            break
+                        } else if nickname.hasPrefix(variation) {
+                            startsWithMatches.append((exercise, personalScore + 25))
+                            matched = true
+                            break
+                        } else if nickname.contains(variation) {
+                            containsMatches.append((exercise, personalScore + 10))
+                            matched = true
+                            break
                         }
                     }
                 }
@@ -850,9 +852,13 @@ final class SmartExerciseSearchService: ObservableObject {
         let equipment = exercise.equipment?.lowercased() ?? ""
         let muscles = (exercise.muscleGroups as? [String])?.map { $0.lowercased() }.joined(separator: " ") ?? ""
         
-        // Also check user's custom nickname for this exercise
-        let nickname = ExerciseNicknameService.shared.displayName(for: exercise).lowercased()
-        let hasNickname = nickname != name
+        // Also check user's custom nickname for this exercise. Read the raw
+        // nickname directly — `displayName(for:)` now also strips redundant
+        // equipment suffixes, so "displayName != name" no longer implies a
+        // user-set nickname.
+        let rawNickname = ExerciseNicknameService.shared.nicknames[name]
+        let nickname = rawNickname?.lowercased() ?? ""
+        let hasNickname = rawNickname != nil
         
         // 🎯 SMART KEYWORD MATCHING: Get variations of search terms
         // e.g., "fly" also matches "flye", "flies", etc.

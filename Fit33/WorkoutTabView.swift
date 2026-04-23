@@ -293,10 +293,15 @@ struct WorkoutHomeView: View {
     @EnvironmentObject var userManager: UserManager
     @Binding var navigationPath: NavigationPath
     @Binding var showingStretchModeOverlay: Bool
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        predicate: NSPredicate(format: "isCompleted == YES"),
-        animation: .none)
+    // Workout Home shows recent stats; 200 is well beyond any UI surface that
+    // reads this (carousel, counters). Per QP invariant #3.
+    @FetchRequest(fetchRequest: {
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+        request.predicate = NSPredicate(format: "isCompleted == YES")
+        request.fetchLimit = 200
+        return request
+    }(), animation: .none)
     private var workouts: FetchedResults<Workout>
     @State private var forceRenderID = UUID()
     @State private var isNavigating = false  // 🔧 Debounce protection
@@ -1255,9 +1260,7 @@ struct WorkoutHomeView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )

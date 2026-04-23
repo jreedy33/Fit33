@@ -1,6 +1,35 @@
 import SwiftUI
 import CoreData
 
+// Q2-78 (Sprint 8): file-level hoisted formatters shared by `RecentWorkoutCard`
+// + `RecentCardioWorkoutCard`. Avoids allocating a new `DateFormatter` for
+// every row render on the dashboard history list.
+private let dashboardCardDayOfWeekFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "EEEE"
+    return f
+}()
+private let dashboardCardMonthDayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMM d"
+    return f
+}()
+private let dashboardCardTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "h:mm a"
+    return f
+}()
+private let dashboardCardFullMonthFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMMM"
+    return f
+}()
+private let dashboardCardOrdinalNumberFormatter: NumberFormatter = {
+    let f = NumberFormatter()
+    f.numberStyle = .ordinal
+    return f
+}()
+
 struct RecentWorkoutCard: View {
     let workout: Workout
     var isMostRecent: Bool = false // Whether this is the most recent workout (gets special outline)
@@ -354,26 +383,18 @@ struct RecentWorkoutCard: View {
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday · \(formatTime(date))"
         } else if let daysAgo = calendar.dateComponents([.day], from: date, to: now).day, daysAgo < 7 {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE" // Day name
-            return "\(formatter.string(from: date)) · \(formatTime(date))"
+            return "\(dashboardCardDayOfWeekFormatter.string(from: date)) · \(formatTime(date))"
         } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return "\(formatter.string(from: date)) · \(formatTime(date))"
+            return "\(dashboardCardMonthDayFormatter.string(from: date)) · \(formatTime(date))"
         }
     }
     
     private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: date)
+        return dashboardCardTimeFormatter.string(from: date)
     }
     
     private func getDayName(for date: Date) -> String {
-        let dayFormatter = DateFormatter()
-        dayFormatter.dateFormat = "EEEE" // Full day name
-        return dayFormatter.string(from: date)
+        return dashboardCardDayOfWeekFormatter.string(from: date)
     }
     
     private func getWorkoutType(for date: Date) -> String {
@@ -397,10 +418,7 @@ struct RecentWorkoutCard: View {
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: date)
         
-        // Get day name
-        let dayFormatter = DateFormatter()
-        dayFormatter.dateFormat = "EEEE" // Full day name
-        let dayName = dayFormatter.string(from: date)
+        let dayName = dashboardCardDayOfWeekFormatter.string(from: date)
         
         // Determine time of day
         let timeOfDay: String
@@ -417,9 +435,7 @@ struct RecentWorkoutCard: View {
     }
     
     private func formatCompactDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
+        return dashboardCardMonthDayFormatter.string(from: date)
     }
     
     private func cleanWorkoutName(_ name: String) -> String {
@@ -444,16 +460,9 @@ struct RecentWorkoutCard: View {
     }
     
     private func formatFullDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        
-        // Add ordinal suffix
         let day = Calendar.current.component(.day, from: date)
-        let ordinalFormatter = NumberFormatter()
-        ordinalFormatter.numberStyle = .ordinal
-        let ordinalDay = ordinalFormatter.string(from: NSNumber(value: day)) ?? "\(day)"
-        
-        formatter.dateFormat = "MMMM"
-        let month = formatter.string(from: date)
+        let ordinalDay = dashboardCardOrdinalNumberFormatter.string(from: NSNumber(value: day)) ?? "\(day)"
+        let month = dashboardCardFullMonthFormatter.string(from: date)
         let year = Calendar.current.component(.year, from: date)
         
         return "\(month) \(ordinalDay), \(year)"

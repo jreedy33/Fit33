@@ -4,7 +4,7 @@
 >
 > Dated sprint migration logs, violation counts, and per-file audit notes live in [`docs/history/DESIGN_SYSTEM_AGENT.md`](docs/history/DESIGN_SYSTEM_AGENT.md).
 
-Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`. Token definitions live in `DESIGN_AGENT.md`.
+Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal) and `.cursor/rules/swiftui-rules.mdc` (auto-loads when editing `Fit33/**/*.swift` — enforces the `.ds_*` / `Spacing.*` / `CornerRadius.*` tokens). Token definitions live in `DESIGN_AGENT.md`.
 
 ---
 
@@ -141,17 +141,24 @@ HStack(spacing: 3) {
 
 ---
 
-## Adoption Snapshot (Mar 2026 baseline)
+## Adoption Snapshot (2026-04-26 refresh)
 
-| Token | Usages | Violations | Adoption |
+> Measured via `scripts/perf_lint.sh`-style greps (see Progress Tracking section below for the exact commands). Gains since Mar 2026 baseline are mostly from Phase 3 typography and Phase 4 spacing sweeps.
+
+| Token | Token usages | Inline violations | Adoption |
 |---|---|---|---|
-| `.ds_*` typography | 8 | 787+ | ~0% |
-| `Spacing.*` | 4 | 2,919+ | ~0% |
-| `CornerRadius.*` | 1 | 1,213+ | ~0% |
-| `Color.cardBackground` | some | 97 / 30 files | ~50% |
+| `.ds_*` typography | 1,811 | 561 | **76%** |
+| `Spacing.*` | 2,274 | 164 | **93%** |
+| `CornerRadius.*` | 940 | 96 | **91%** |
+| `Color.cardBackground` | 331 | 3 | **~99%** |
 | `UniversalScaleButtonStyle` | partial | 6 duplicates | ~70% |
 | `AnimatedOrbBackground` | all pages | 0 | 100% |
 | `.sleekCard()` | good | some inline | ~80% |
+
+### Remaining priorities
+1. **Typography (~561 inline `.font(.system(size:))` left)** — biggest outstanding backlog. `ds_bodyRegular` (16pt) and `ds_caption` (10pt) are added; continue file-by-file migration per Phase 3 priority list.
+2. **Spacing + corner radius** — the long tail is decision-needed values (20 / 14 / 10) where Design Agent must pick the rounding target before mechanical migration can finish. Raise blockers as a batch.
+3. **Cleanup duplicate `ScaleButtonStyle` variants** — still 6 in-file copies (Phase 2 list below).
 
 ---
 
@@ -176,6 +183,7 @@ HStack(spacing: 3) {
 ## See Also
 - `DESIGN_AGENT.md` — token tables, card system, navigation, motion rules
 - `.cursor/rules/codingrules.mdc` — cross-cutting rules
+- `.cursor/rules/swiftui-rules.mdc` — Swift/SwiftUI token-enforcement rules (auto-loads for `Fit33/**/*.swift`)
 - `docs/history/DESIGN_SYSTEM_AGENT.md` — dated sprint migration logs
 
 *You are the construction crew. The architect (Design Agent) drew the blueprints. The project manager (Product Engineer) approved them. You install every beam, every bolt, every wire according to spec.*

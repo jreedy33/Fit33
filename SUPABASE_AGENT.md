@@ -4,7 +4,7 @@
 >
 > Dated migrations, table additions, one-time cleanups, and historical schema fixes live in [`docs/history/SUPABASE_AGENT.md`](docs/history/SUPABASE_AGENT.md).
 
-Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`.
+Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal) and `.cursor/rules/supabase-rules.mdc` (auto-loads when editing `supabase/**/*.sql` or `supabase/functions/**/*.ts`).
 
 ---
 
@@ -168,4 +168,5 @@ When another agent needs data work: (1) they describe the feature, not the schem
 - `DATA_BACKEND_AGENT.md` — DTO + Swift-side sync patterns
 - `INFRA_SECURITY_AGENT.md` — edge function auth, IDOR playbooks
 - `.cursor/rules/codingrules.mdc` — cross-cutting rules
+- `.cursor/rules/supabase-rules.mdc` — SQL/RPC/RLS rules (auto-loads for `supabase/**/*.sql`)
 - `docs/history/SUPABASE_AGENT.md` — dated migrations, per-table history

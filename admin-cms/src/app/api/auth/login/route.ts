@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isAdminEmail } from '@/lib/auth'
-import { setAuthCookies } from '@/lib/auth-cookies'
+import { parseJson, loginSchema } from '@/lib/validation'
 
 const loginAttempts = new Map<string, { count: number; firstAttempt: number; lockedUntil: number }>()
 const MAX_ATTEMPTS = 5
@@ -68,11 +68,9 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { email, password } = await req.json()
-
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
-    }
+    const parsed = await parseJson(req, loginSchema)
+    if (!parsed.ok) return parsed.response
+    const { email, password } = parsed.data
 
     if (!isAdminEmail(email)) {
       recordFailedAttempt(ip)
@@ -99,35 +97,44 @@ export async function POST(req: NextRequest) {
       { global: { headers: { Authorization: `Bearer ${data.session.access_token}` } } },
     )
 
-    const { data: aal } = await authedClient.auth.mfa.getAuthenticatorAssuranceLevel()
-    if (aal && aal.nextLevel === 'aal2' && aal.currentLevel === 'aal1') {
-      const { data: factors } = await authedClient.auth.mfa.listFactors()
-      const totpFactor = factors?.totp?.[0]
-      if (totpFactor) {
-        return NextResponse.json({
-          mfa_required: true,
-          factor_id: totpFactor.id,
-          temp_token: data.session.access_token,
-          temp_refresh: data.session.refresh_token,
-          temp_expires: data.session.expires_at ?? 0,
-        })
-      }
+    // Q2-87 (Sprint 9 2026-04-28): Enforce MFA for all admins.
+    //
+    // Pre-Sprint-9 behavior:
+    //   - If the account had a verified TOTP factor, we prompted for it.
+    //   - If the account had NO factor, we authenticated the admin directly.
+    //
+    // The second branch meant any admin who never enrolled MFA could sign in
+    // with just email + password — a hole the phishing / credential-stuffing
+    // bar trivially clears. We now require every admin to either verify an
+    // existing factor OR enroll a new one before we set auth cookies.
+    const { data: factors } = await authedClient.auth.mfa.listFactors()
+    const verifiedTotp = factors?.totp?.find(f => f.status === 'verified')
+    const pendingTotp = factors?.totp?.find(f => f.status !== 'verified')
+
+    if (verifiedTotp) {
+      return NextResponse.json({
+        mfa_required: true,
+        factor_id: verifiedTotp.id,
+        temp_token: data.session.access_token,
+        temp_refresh: data.session.refresh_token,
+        temp_expires: data.session.expires_at ?? 0,
+      })
     }
 
-    const response = NextResponse.json({
-      user: {
-        id: data.user?.id,
-        email: data.user?.email,
-      },
+    // No verified factor → force enrollment. We intentionally do NOT set auth
+    // cookies here; the client has to round-trip through /api/auth/enroll-mfa
+    // and /api/auth/verify-mfa before the session becomes usable.
+    //
+    // If a half-enrolled factor exists (status === 'unverified'), reuse it so
+    // we don't pile up dangling TOTP factors on every retry.
+    return NextResponse.json({
+      mfa_enrollment_required: true,
+      pending_factor_id: pendingTotp?.id ?? null,
+      temp_token: data.session.access_token,
+      temp_refresh: data.session.refresh_token,
+      temp_expires: data.session.expires_at ?? 0,
+      email: data.user?.email,
     })
-
-    setAuthCookies(response, {
-      accessToken: data.session.access_token,
-      refreshToken: data.session.refresh_token,
-      expiresAt: data.session.expires_at ?? 0,
-    })
-
-    return response
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

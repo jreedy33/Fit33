@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdmin } from '@/lib/verify-admin'
+import { parseJson, githubPrSchema } from '@/lib/validation'
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || ''
 const GITHUB_OWNER = process.env.GITHUB_REPO_OWNER || ''
@@ -121,17 +122,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const body = await req.json()
+    const parsed = await parseJson(req, githubPrSchema)
+    if (!parsed.ok) return parsed.response
 
-    if (body.batch && Array.isArray(body.suggestions)) {
-      return handleBatchPR(body.suggestions, body.session_id)
+    if ('batch' in parsed.data) {
+      return handleBatchPR(parsed.data.suggestions, parsed.data.session_id ?? '')
     }
 
-    const { suggestion_id, title, description, file_path, code_diff, session_id } = body
-
-    if (!file_path || !code_diff) {
-      return NextResponse.json({ error: 'Missing file_path or code_diff' }, { status: 400 })
-    }
+    const { suggestion_id, title, description, file_path, code_diff, session_id } = parsed.data
 
     const branchName = `fix/dev-log-${(session_id || 'unknown').slice(0, 8)}-${Date.now()}`
 
@@ -194,7 +192,7 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleBatchPR(
-  suggestions: Array<{ suggestion_id: string; title: string; description: string; file_path: string; code_diff: string }>,
+  suggestions: Array<{ suggestion_id?: string; title: string; description: string; file_path: string; code_diff: string }>,
   sessionId: string
 ) {
   const branchName = `fix/dev-log-batch-${(sessionId || 'unknown').slice(0, 8)}-${Date.now()}`

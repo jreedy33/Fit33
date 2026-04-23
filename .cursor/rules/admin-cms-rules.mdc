@@ -8,7 +8,9 @@ alwaysApply: false
 These rules only load when editing files under `admin-cms/`. Cross-cutting rules live in `codingrules.mdc`.
 
 ## Content Security Policy
-- **CSP lives in TWO places**: `admin-cms/next.config.ts` AND `admin-cms/src/middleware.ts`. BOTH must be updated when adding new external domains — the middleware CSP overrides the config one for authenticated routes.
+- **Single source of truth: `admin-cms/src/middleware.ts`.** Sprint 5 (Q2-20) moved to a per-request nonce + `strict-dynamic` pattern that cannot be expressed as a static header, so `next.config.ts` intentionally does NOT set `Content-Security-Policy`. Add new external domains (e.g. a new R2 bucket in `media-src`) ONLY in `middleware.ts`.
+- **Do NOT re-introduce a static CSP in `next.config.ts`** — two sources would fight each other, and you'd silently regress to `'unsafe-inline'`.
+- **`next.config.ts` may still set non-CSP security headers** (HSTS, `X-Frame-Options`, etc.) — those are fine to split.
 - **After changing CSP**, test by reloading a protected page and verifying no `Refused to connect to` errors in DevTools.
 
 ## Auth Cookies

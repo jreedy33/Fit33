@@ -170,28 +170,18 @@ struct LocationEquipmentSelectionView: View {
     }
     
     private func equipmentIcon(for equipment: String) -> String {
+        // Q2-89 (Sprint 8): route UI icon lookup through the shared helper so
+        // every surface agrees on the "barbell → figure.strengthtraining"
+        // mapping. Keep a couple of home-gym-specific fall-throughs that the
+        // canonical category list doesn't model (power rack, battle ropes,
+        // chair, wall).
         switch equipment.lowercased() {
-        case "barbell": return "figure.strengthtraining.traditional"
-        case "dumbbells": return "dumbbell.fill"
-        case "cables": return "cable.connector"
-        case "machines": return "gearshape.2.fill"
-        case "bench": return "rectangle.fill"
-        case "smith machine": return "square.stack.3d.up.fill"
         case "power rack": return "square.grid.3x3.fill"
-        case "pull-up bar": return "figure.gymnastics"
-        case "bodyweight": return "figure.stand"
-        case "resistance bands": return "waveform.path"
-        case "kettlebell": return "scalemass.fill"
-        case "stability ball": return "circle.fill"
-        case "trx/rings": return "link"
-        case "medicine ball": return "basketball.fill"
-        case "landmine": return "arrow.up.forward"
-        case "sled": return "arrow.forward.square"
-        case "foam roller": return "cylinder.fill"
         case "battle ropes": return "waveform"
         case "chair": return "chair.fill"
         case "wall": return "rectangle.portrait.fill"
-        default: return "questionmark.circle"
+        default:
+            return EquipmentNormalizer.icon(for: equipment)
         }
     }
 }

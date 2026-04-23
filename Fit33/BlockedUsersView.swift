@@ -100,21 +100,14 @@ struct BlockedUsersView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: Spacing.sm) {
-            Image(systemName: "person.2.slash")
-                .font(.largeTitle)
-                .foregroundColor(.secondary.opacity(0.6))
-                .padding(.top, Spacing.xl)
-            Text("No one blocked")
-                .font(.ds_bodyMedium)
-            Text("Users you block will appear here. Long-press a message or open a profile to block someone.")
-                .font(.ds_caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Spacing.lg)
-        }
+        // Q2-91 (Sprint 9 2026-04-28): migrated to shared EmptyStateView so
+        // all empty surfaces share typography + spacing.
+        EmptyStateView(
+            icon: "person.2.slash",
+            title: "No one blocked",
+            subtitle: "Users you block will appear here. Long-press a message or open a profile to block someone."
+        )
         .frame(maxWidth: .infinity)
-        .padding(.vertical, Spacing.xl)
     }
 
     private var blockedList: some View {

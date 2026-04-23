@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 import { isAdminEmail } from '@/lib/auth'
 import { getAccessToken } from '@/lib/auth-cookies'
 import Anthropic from '@anthropic-ai/sdk'
+import { parseJson, aiChatSchema } from '@/lib/validation'
 
 const SYSTEM_PROMPT = `You are Fit33's AI Product Analyst. You help the admin team understand user behavior, identify trends, and make data-driven decisions for the Fit33 iOS fitness app.
 
@@ -284,19 +285,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json()
-    const { messages, conversationId, fetchData } = body as {
-      messages: Array<{ role: 'user' | 'assistant'; content: string }>
-      conversationId?: string
-      fetchData?: boolean
-    }
-
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return new Response(JSON.stringify({ error: 'Messages array required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    }
+    const parsed = await parseJson(req, aiChatSchema)
+    if (!parsed.ok) return parsed.response
+    const { messages, conversationId, fetchData } = parsed.data
 
     let dataContext = ''
     if (fetchData !== false) {

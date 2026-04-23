@@ -36,6 +36,32 @@ extension Color {
                 : UIColor(red: 0.98, green: 0.98, blue: 0.98, alpha: 1)
         })
     }
+
+    // MARK: - Card Gradient Tokens (Q2-92, Sprint 9 2026-04-28)
+    //
+    // Replaces the hard-coded `[Color(white: 0.15), Color(white: 0.10)]` pair
+    // that appeared ~100 times across the codebase (WorkoutProgressView 30,
+    // FriendsTabView 24, DashboardView+Programs 20, DashboardView+Challenges
+    // 19, MealPlanView 16). In light mode, callers previously branched on
+    // `colorScheme` and used white; so these two tokens expose the dark +
+    // light versions explicitly. Use `Color.cardGradientStops(for:)` when the
+    // branch is on `@Environment(\.colorScheme)`.
+
+    /// Dark-mode card gradient top stop (`Color(white: 0.15)`).
+    static let cardGradientTopDark = Color(white: 0.15)
+
+    /// Dark-mode card gradient bottom stop (`Color(white: 0.10)`).
+    static let cardGradientBottomDark = Color(white: 0.10)
+
+    /// Returns the canonical 2-stop card gradient for the given color scheme.
+    /// Dark: `[cardGradientTopDark, cardGradientBottomDark]`.
+    /// Light: `[.white, .white.opacity(0.95)]` — matches the pre-Sprint-9
+    /// light-mode branch in WorkoutProgressView / FriendsTabView / Dashboard.
+    static func cardGradientStops(for scheme: ColorScheme) -> [Color] {
+        scheme == .dark
+            ? [cardGradientTopDark, cardGradientBottomDark]
+            : [.white, .white.opacity(0.95)]
+    }
     
     /// App background for gradients - adapts to dark mode
     static var appBackgroundTop: Color {

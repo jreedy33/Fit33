@@ -237,6 +237,7 @@ struct HeightInputField: View {
     @Binding var heightDigits: String
     var focusedField: FocusState<NewOnboardingView.FocusedField?>.Binding
     @State private var showCursor = true
+    @State private var cursorTimer: Timer? = nil
     
     private var isFocused: Bool {
         focusedField.wrappedValue == .height
@@ -345,9 +346,14 @@ struct HeightInputField: View {
             focusedField.wrappedValue = .height
         }
         .onAppear {
-            Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            cursorTimer?.invalidate()
+            cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
                 showCursor.toggle()
             }
+        }
+        .onDisappear {
+            cursorTimer?.invalidate()
+            cursorTimer = nil
         }
         .onChange(of: heightDigits) { _, newValue in
             // Only keep digits, max 3 (1 for feet, 2 for inches)

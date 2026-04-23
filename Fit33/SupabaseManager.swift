@@ -21,12 +21,26 @@ class SupabaseManager: ObservableObject {
     // preconditionFailure in init rather than let every call site crash later.
     internal let client: SupabaseClient
     
-    // MARK: - Cached Date Formatter (Performance Optimization)
-    /// ISO8601DateFormatter is expensive to create - reuse this instance
+    // MARK: - Cached Date Formatters (Performance Optimization)
+    /// ISO8601DateFormatter is expensive to create - reuse these instances.
+    /// `iso8601Formatter` = withInternetDateTime (no fractional seconds).
+    /// `iso8601Fractional` = withInternetDateTime + fractional seconds (for Postgres
+    ///   `timestamptz` values serialized with microsecond precision).
+    /// `ymdFormatter` = `yyyy-MM-dd` local day formatter.
     private let iso8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
+    }()
+    private let iso8601Fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private let ymdFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
     }()
     
     /// Convert Date to ISO8601 string for database storage
@@ -103,6 +117,12 @@ class SupabaseManager: ObservableObject {
         return client
     }
     
+    // Q2-82 invariant (Sprint 8): These `@Published` properties are written
+    // from many async contexts (auth listener, sign-in/out, session recovery).
+    // EVERY assignment MUST be wrapped in `await MainActor.run { … }`. The class
+    // is intentionally NOT `@MainActor`-annotated because it performs heavy
+    // network work that should NOT serialize onto the main thread. Audit this
+    // invariant before adding any new `@Published` vars.
     @Published var currentUser: Auth.User?
     @Published var isAuthenticated = false
     @Published var isLoading = false
@@ -1409,7 +1429,7 @@ class SupabaseManager: ObservableObject {
                     let last_login_at: String
                 }
                 
-                let update = LastLoginUpdate(last_login_at: ISO8601DateFormatter().string(from: Date()))
+                let update = LastLoginUpdate(last_login_at: iso8601Formatter.string(from: Date()))
                 
                 try await client
                     .from("user_profiles")
@@ -2155,13 +2175,8 @@ class SupabaseManager: ObservableObject {
             }
 
             if let cloudUpdatedStr = cloudProfile.updatedAt {
-                // Parse the cloud updated_at timestamp
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                let fallbackFormatter = ISO8601DateFormatter()
-                fallbackFormatter.formatOptions = [.withInternetDateTime]
-
-                if let cloudUpdated = formatter.date(from: cloudUpdatedStr) ?? fallbackFormatter.date(from: cloudUpdatedStr) {
+                // Parse the cloud updated_at timestamp (try fractional seconds first, fall back to plain)
+                if let cloudUpdated = iso8601Fractional.date(from: cloudUpdatedStr) ?? iso8601Formatter.date(from: cloudUpdatedStr) {
                     if cloudUpdated > lastPushTime {
                         AppLogger.debug("[SYNC] Cloud profile is newer than last push (\(cloudUpdatedStr) > \(lastPushTime))", category: .network)
                         AppLogger.debug("[SYNC] Likely updated by admin CMS — pulling from cloud instead of pushing", category: .network)
@@ -3353,14 +3368,13 @@ class SupabaseManager: ObservableObject {
             let synced_at: String
         }
         
-        let formatter = ISO8601DateFormatter()
-        let syncTime = formatter.string(from: Date())
+        let syncTime = iso8601Formatter.string(from: Date())
         
         // Convert all daily steps to upsert records
-        let stepDataBatch = dailySteps.map { dailyStep in
+        let stepDataBatch = dailySteps.map { [iso8601Formatter] dailyStep in
             StepDataUpsert(
                 user_id: userId.uuidString,
-                date: formatter.string(from: dailyStep.date),
+                date: iso8601Formatter.string(from: dailyStep.date),
                 steps: dailyStep.steps,
                 goal: goal,
                 synced_at: syncTime
@@ -3508,7 +3522,7 @@ class SupabaseManager: ObservableObject {
             let completed_at: String
         }
         
-        let formatter = ISO8601DateFormatter()
+        let formatter = iso8601Formatter
         
         let insert = CardioWorkoutInsert(
             user_id: userId.uuidString,
@@ -3770,9 +3784,8 @@ class SupabaseManager: ObservableObject {
             return CardioStatsDTO(totalWorkouts: 0, totalDuration: 0, totalDistance: 0, totalCalories: 0, workoutsByType: [:])
         }
         
-        let formatter = ISO8601DateFormatter()
-        let startString = formatter.string(from: startDate)
-        let endString = formatter.string(from: endDate)
+        let startString = iso8601Formatter.string(from: startDate)
+        let endString = iso8601Formatter.string(from: endDate)
         
         let workouts: [CardioWorkoutDTO] = try await client
             .from("cardio_workouts")
@@ -3869,8 +3882,7 @@ class SupabaseManager: ObservableObject {
             let period_end: String
         }
         
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateFormatter = ymdFormatter
         
         let insert = CardioGoalInsert(
             user_id: userId.uuidString,
@@ -4061,6 +4073,7 @@ class SupabaseManager: ObservableObject {
     private func syncUserProfileToCoreData(profile: UserProfileDTO) async {
         let bgContext = PersistenceController.shared.container.newBackgroundContext()
         bgContext.automaticallyMergesChangesFromParent = true
+        let isoFormatter = iso8601Formatter
         
         await bgContext.perform {
             let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
@@ -4073,8 +4086,12 @@ class SupabaseManager: ObservableObject {
                     user = existingUser
                     AppLogger.debug("Updating existing user from cloud profile", category: .network)
                 } else {
+                    guard let profileUUID = UUID(uuidString: profile.id) else {
+                        AppLogger.error("Cloud profile has malformed UUID '\(profile.id)' — skipping sync to avoid orphaned Core Data row", category: .network)
+                        return
+                    }
                     user = User(context: bgContext)
-                    user.id = UUID(uuidString: profile.id) ?? UUID()
+                    user.id = profileUUID
                     user.createdAt = Date()
                     AppLogger.debug("Creating new user from cloud profile", category: .network)
                 }
@@ -4121,7 +4138,7 @@ class SupabaseManager: ObservableObject {
                 }
                 
                 // Sync progress data - merge strategy: keep the more recent/higher values
-                let cloudLastWorkoutDate = profile.lastWorkoutDate.flatMap { ISO8601DateFormatter().date(from: $0) }
+                let cloudLastWorkoutDate = profile.lastWorkoutDate.flatMap { isoFormatter.date(from: $0) }
                 let localLastWorkoutDate = user.lastWorkoutDate
 
                 // For streak data, use whichever source has the more recent lastWorkoutDate
@@ -4293,6 +4310,7 @@ class SupabaseManager: ObservableObject {
         let bgContext = PersistenceController.shared.container.newBackgroundContext()
         bgContext.automaticallyMergesChangesFromParent = true
         bgContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        let isoFormatter = iso8601Formatter
         
         await bgContext.perform {
             let userRequest: NSFetchRequest<User> = User.fetchRequest()
@@ -4304,9 +4322,15 @@ class SupabaseManager: ObservableObject {
             }
             
             for workoutDTO in workouts {
+                // Skip workouts with malformed UUIDs instead of inserting orphan rows
+                // that could never merge with the server copy.
+                guard let workoutUUID = UUID(uuidString: workoutDTO.id) else {
+                    AppLogger.error("Cloud workout has malformed UUID '\(workoutDTO.id)' — skipping", category: .network)
+                    continue
+                }
                 // Check if workout already exists
                 let fetchRequest: NSFetchRequest<Workout> = Workout.fetchRequest()
-                fetchRequest.predicate = NSPredicate(format: "id == %@", UUID(uuidString: workoutDTO.id) as CVarArg? ?? UUID() as CVarArg)
+                fetchRequest.predicate = NSPredicate(format: "id == %@", workoutUUID as CVarArg)
                 
                 do {
                     let existing = try bgContext.fetch(fetchRequest)
@@ -4325,13 +4349,16 @@ class SupabaseManager: ObservableObject {
                             }
                             
                             for exerciseDTO in workoutDTO.exercises {
+                                guard let workoutExerciseId = UUID(uuidString: exerciseDTO.id) else {
+                                    AppLogger.error("Cloud workout exercise has malformed UUID '\(exerciseDTO.id)' — skipping", category: .network)
+                                    continue
+                                }
                                 let exerciseRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                                 exerciseRequest.predicate = NSPredicate(format: "name == %@", exerciseDTO.exerciseName)
                                 exerciseRequest.fetchLimit = 1
                                 let exercise = try? bgContext.fetch(exerciseRequest).first
                                 
                                 let workoutExercise = WorkoutExercise(context: bgContext)
-                                let workoutExerciseId = UUID(uuidString: exerciseDTO.id) ?? UUID()
                                 workoutExercise.id = workoutExerciseId
                                 workoutExercise.order = Int16(exerciseDTO.order)
                                 workoutExercise.notes = exerciseDTO.notes
@@ -4347,8 +4374,12 @@ class SupabaseManager: ObservableObject {
                                 )
                                 
                                 for setDTO in exerciseDTO.sets {
+                                    guard let setUUID = UUID(uuidString: setDTO.id) else {
+                                        AppLogger.error("Cloud workout set has malformed UUID '\(setDTO.id)' — skipping", category: .network)
+                                        continue
+                                    }
                                     let workoutSet = WorkoutSet(context: bgContext)
-                                    workoutSet.id = UUID(uuidString: setDTO.id) ?? UUID()
+                                    workoutSet.id = setUUID
                                     workoutSet.setNumber = Int16(setDTO.setNumber)
                                     workoutSet.reps = Int16(setDTO.reps)
                                     workoutSet.weight = setDTO.weight
@@ -4360,9 +4391,9 @@ class SupabaseManager: ObservableObject {
                         }
                     } else {
                         workout = Workout(context: bgContext)
-                        workout.id = UUID(uuidString: workoutDTO.id) ?? UUID()
+                        workout.id = workoutUUID
                         workout.name = workoutDTO.name
-                        workout.date = ISO8601DateFormatter().date(from: workoutDTO.date)
+                        workout.date = isoFormatter.date(from: workoutDTO.date)
                         workout.duration = Int32(workoutDTO.duration)
                         workout.isCompleted = workoutDTO.isCompleted
                         workout.xpEarned = Int32(workoutDTO.xpEarned)
@@ -4370,13 +4401,16 @@ class SupabaseManager: ObservableObject {
                         workout.user = user
                         
                         for exerciseDTO in workoutDTO.exercises {
+                            guard let workoutExerciseId = UUID(uuidString: exerciseDTO.id) else {
+                                AppLogger.error("Cloud workout exercise has malformed UUID '\(exerciseDTO.id)' — skipping", category: .network)
+                                continue
+                            }
                             let exerciseRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                             exerciseRequest.predicate = NSPredicate(format: "name == %@", exerciseDTO.exerciseName)
                             exerciseRequest.fetchLimit = 1
                             let exercise = try? bgContext.fetch(exerciseRequest).first
                             
                             let workoutExercise = WorkoutExercise(context: bgContext)
-                            let workoutExerciseId = UUID(uuidString: exerciseDTO.id) ?? UUID()
                             workoutExercise.id = workoutExerciseId
                             workoutExercise.order = Int16(exerciseDTO.order)
                             workoutExercise.notes = exerciseDTO.notes
@@ -4392,8 +4426,12 @@ class SupabaseManager: ObservableObject {
                             )
                             
                             for setDTO in exerciseDTO.sets {
+                                guard let setUUID = UUID(uuidString: setDTO.id) else {
+                                    AppLogger.error("Cloud workout set has malformed UUID '\(setDTO.id)' — skipping", category: .network)
+                                    continue
+                                }
                                 let workoutSet = WorkoutSet(context: bgContext)
-                                workoutSet.id = UUID(uuidString: setDTO.id) ?? UUID()
+                                workoutSet.id = setUUID
                                 workoutSet.setNumber = Int16(setDTO.setNumber)
                                 workoutSet.reps = Int16(setDTO.reps)
                                 workoutSet.weight = setDTO.weight
@@ -4485,6 +4523,7 @@ class SupabaseManager: ObservableObject {
     private func syncMealLogsToCoreData(meals: [MealLogDTO]) async {
         let bgContext = PersistenceController.shared.container.newBackgroundContext()
         bgContext.automaticallyMergesChangesFromParent = true
+        let isoFormatter = iso8601Formatter
         
         await bgContext.perform {
             let userRequest: NSFetchRequest<User> = User.fetchRequest()
@@ -4496,15 +4535,19 @@ class SupabaseManager: ObservableObject {
             }
             
             for mealDTO in meals {
+                guard let mealUUID = UUID(uuidString: mealDTO.id) else {
+                    AppLogger.error("Cloud meal has malformed UUID '\(mealDTO.id)' — skipping", category: .network)
+                    continue
+                }
                 let fetchRequest: NSFetchRequest<MealEntry> = MealEntry.fetchRequest()
-                fetchRequest.predicate = NSPredicate(format: "id == %@", UUID(uuidString: mealDTO.id) as CVarArg? ?? UUID() as CVarArg)
+                fetchRequest.predicate = NSPredicate(format: "id == %@", mealUUID as CVarArg)
                 
                 do {
                     let existing = try bgContext.fetch(fetchRequest)
                     if existing.isEmpty {
                         let meal = MealEntry(context: bgContext)
-                        meal.id = UUID(uuidString: mealDTO.id) ?? UUID()
-                        meal.date = ISO8601DateFormatter().date(from: mealDTO.date)
+                        meal.id = mealUUID
+                        meal.date = isoFormatter.date(from: mealDTO.date)
                         meal.mealType = mealDTO.mealType
                         meal.foodName = mealDTO.foodName
                         meal.quantity = mealDTO.quantity
@@ -4569,6 +4612,10 @@ class SupabaseManager: ObservableObject {
         
         await bgContext.perform {
             for customExercise in customExercises {
+                guard let customExerciseUUID = UUID(uuidString: customExercise.id) else {
+                    AppLogger.error("Cloud custom exercise has malformed UUID '\(customExercise.id)' — skipping", category: .network)
+                    continue
+                }
                 let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                 fetchRequest.predicate = NSPredicate(format: "name == %@", customExercise.name)
                 
@@ -4576,7 +4623,7 @@ class SupabaseManager: ObservableObject {
                     let existing = try bgContext.fetch(fetchRequest)
                     if existing.isEmpty {
                         let exercise = Exercise(context: bgContext)
-                        exercise.id = UUID(uuidString: customExercise.id) ?? UUID()
+                        exercise.id = customExerciseUUID
                         exercise.name = customExercise.name
                         exercise.category = customExercise.category
                         

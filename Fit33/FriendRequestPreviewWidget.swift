@@ -223,6 +223,19 @@ struct FriendRequestPreviewWidget: View {
     
     // MARK: - Helpers
     
+    // Q2-78 (Sprint 8): hoist per-call formatters to `static let` so the smart
+    // date label doesn't allocate a `DateFormatter` on every render pass.
+    private static let dayOfWeekFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        return f
+    }()
+    private static let monthDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
+    
     private func formatSmartDate(_ date: Date) -> String {
         let calendar = Calendar.current
         let now = Date()
@@ -231,13 +244,9 @@ struct FriendRequestPreviewWidget: View {
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday"
         } else if let daysAgo = calendar.dateComponents([.day], from: date, to: now).day, daysAgo < 7 {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE"
-            return formatter.string(from: date)
+            return Self.dayOfWeekFormatter.string(from: date)
         } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return formatter.string(from: date)
+            return Self.monthDayFormatter.string(from: date)
         }
     }
 }

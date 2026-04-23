@@ -4,7 +4,12 @@ import CoreData
 import UIKit
 
 struct ExerciseDetailView: View {
-    let exercise: Exercise
+    // @ObservedObject so CMS realtime edits (ExerciseLibraryService
+    // .upsertExerciseFromCloud → ctx.save()) re-render this view
+    // instantly instead of only on next navigation. NSManagedObject
+    // conforms to ObservableObject via KVO; a plain `let` capture
+    // swallows the change notification.
+    @ObservedObject var exercise: Exercise
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
@@ -314,17 +319,22 @@ struct ExerciseDetailView: View {
             isFavorite.toggle()
             HapticManager.impact(.medium)
             
-            // Update Core Data
-            let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
-            if let exerciseId = exercise.id {
-                fetchRequest.predicate = NSPredicate(format: "id == %@", exerciseId as CVarArg)
-            } else if let exerciseName = exercise.name {
-                fetchRequest.predicate = NSPredicate(format: "name == %@", exerciseName)
-            }
-            fetchRequest.fetchLimit = 1
-            
+            // Q2-84 (Sprint 9 2026-04-28): Route through ExerciseLibraryService
+            // so name/id normalization lives in one place. The service is
+            // viewContext-backed so the returned object is mutable + save-able
+            // against `viewContext` without cross-context plumbing.
+            let resolved: Exercise? = {
+                if let exerciseId = exercise.id {
+                    return ExerciseLibraryService.shared.getExercise(byId: exerciseId)
+                }
+                if let exerciseName = exercise.name {
+                    return ExerciseLibraryService.shared.getExercise(byName: exerciseName)
+                }
+                return nil
+            }()
+
             do {
-                if let freshExercise = try viewContext.fetch(fetchRequest).first {
+                if let freshExercise = resolved {
                     freshExercise.isFavorite = isFavorite
                     try viewContext.save()
                     AppLogger.debug("⭐ Exercise '\(freshExercise.name ?? "")' favorite status: \(isFavorite)", category: .workout)
@@ -1195,24 +1205,33 @@ class VideoPlayerManager: ObservableObject {
     
     private var queuePlayer: AVQueuePlayer?
     private var playerLooper: AVPlayerLooper?  // ⚡️ CRITICAL: Must store looper reference or it gets deallocated
-    
+
+    // Q2-76 (Sprint 9 2026-04-28): AVURLAsset + AVPlayerItem construction is
+    // synchronous I/O (header parse); doing it on main stalls scroll + tap.
+    // Move the heavy work to a detached userInitiated Task and hop back to
+    // @MainActor only to create the AVQueuePlayer / AVPlayerLooper (cheap)
+    // and assign `@Published player`.
     func setupPlayer(with url: URL) {
-        let asset = AVURLAsset(url: url, options: [
-            AVURLAssetPreferPreciseDurationAndTimingKey: false
-        ])
-        
-        let playerItem = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: ["playable"])
-        playerItem.preferredForwardBufferDuration = 3
-        
-        // Use AVQueuePlayer + AVPlayerLooper for seamless looping
-        let qp = AVQueuePlayer(playerItem: playerItem)
-        self.playerLooper = AVPlayerLooper(player: qp, templateItem: playerItem)
-        
-        qp.automaticallyWaitsToMinimizeStalling = false
-        qp.play()
-        
-        self.queuePlayer = qp
-        self.player = qp
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let asset = AVURLAsset(url: url, options: [
+                AVURLAssetPreferPreciseDurationAndTimingKey: false
+            ])
+
+            let playerItem = AVPlayerItem(asset: asset, automaticallyLoadedAssetKeys: ["playable"])
+            playerItem.preferredForwardBufferDuration = 3
+
+            await MainActor.run {
+                guard let self = self else { return }
+                let qp = AVQueuePlayer(playerItem: playerItem)
+                self.playerLooper = AVPlayerLooper(player: qp, templateItem: playerItem)
+
+                qp.automaticallyWaitsToMinimizeStalling = false
+                qp.play()
+
+                self.queuePlayer = qp
+                self.player = qp
+            }
+        }
     }
     
     func pause() {

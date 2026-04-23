@@ -4,7 +4,7 @@
 >
 > Dated audit logs, per-screen compatibility fixes, and extended Apple Watch planning notes live in [`docs/history/DEVICE_COMPATIBILITY_AGENT.md`](docs/history/DEVICE_COMPATIBILITY_AGENT.md).
 
-Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`. Token definitions live in `DESIGN_AGENT.md`.
+Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal) and `.cursor/rules/swiftui-rules.mdc` (auto-loads when editing `Fit33/**/*.swift`). Token definitions live in `DESIGN_AGENT.md`.
 
 ---
 
@@ -221,6 +221,7 @@ extension Spacing {
 - `DESIGN_AGENT.md` — token tables, card system
 - `DESIGN_SYSTEM_AGENT.md` — token migration playbook
 - `.cursor/rules/codingrules.mdc` — cross-cutting rules
+- `.cursor/rules/swiftui-rules.mdc` — Swift/SwiftUI rules (auto-loads for `Fit33/**/*.swift`)
 - `docs/history/DEVICE_COMPATIBILITY_AGENT.md` — dated per-screen audits, extended Watch planning
 
 *No screen left behind — iPhone SE through iPad Pro 13".*

@@ -101,12 +101,22 @@ struct ExerciseCardRow: View {
     // MARK: - Exercise Details
 
     private var exerciseDetails: some View {
-        VStack(alignment: .leading, spacing: Spacing.xxxs) {
-            Text(exercise.displayName)
+        let split = ExerciseNicknameService.splitPresentation(exercise.displayName)
+        return VStack(alignment: .leading, spacing: Spacing.xxxs) {
+            Text(split.main)
                 .font(.ds_bodyLarge)
                 .fontWeight(.medium)
                 .foregroundColor(.primary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            if let variant = split.variant {
+                Text(variant)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
 
             HStack(spacing: Spacing.xs) {
                 if let category = exercise.category {

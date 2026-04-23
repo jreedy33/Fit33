@@ -630,12 +630,19 @@ class RealtimeService: ObservableObject {
         guard let status = jsonString(record["status"]),
               status == "pending" else { return }
         
+        guard let friendshipId = UUID(uuidString: jsonString(record["id"]) ?? ""),
+              let requesterId = UUID(uuidString: jsonString(record["requester_id"]) ?? ""),
+              let addresseeId = UUID(uuidString: jsonString(record["addressee_id"]) ?? "") else {
+            AppLogger.warning("handleFriendshipInsert: malformed UUID in payload — dropping event", category: .network)
+            return
+        }
+        
         AppLogger.debug("New friend request received!", category: .network)
         
         let payload = FriendRequestPayload(
-            friendshipId: UUID(uuidString: jsonString(record["id"]) ?? "") ?? UUID(),
-            requesterId: UUID(uuidString: jsonString(record["requester_id"]) ?? "") ?? UUID(),
-            addresseeId: UUID(uuidString: jsonString(record["addressee_id"]) ?? "") ?? UUID(),
+            friendshipId: friendshipId,
+            requesterId: requesterId,
+            addresseeId: addresseeId,
             status: status,
             createdAt: Date()
         )
@@ -655,12 +662,18 @@ class RealtimeService: ObservableObject {
         guard let status = jsonString(record["status"]) else { return }
         
         if status == "accepted" {
+            guard let friendshipId = UUID(uuidString: jsonString(record["id"]) ?? ""),
+                  let requesterId = UUID(uuidString: jsonString(record["requester_id"]) ?? ""),
+                  let addresseeId = UUID(uuidString: jsonString(record["addressee_id"]) ?? "") else {
+                AppLogger.warning("handleFriendshipUpdate: malformed UUID in accepted payload — dropping event", category: .network)
+                return
+            }
             AppLogger.info("Friend request accepted!", category: .network)
             
             let payload = FriendRequestPayload(
-                friendshipId: UUID(uuidString: jsonString(record["id"]) ?? "") ?? UUID(),
-                requesterId: UUID(uuidString: jsonString(record["requester_id"]) ?? "") ?? UUID(),
-                addresseeId: UUID(uuidString: jsonString(record["addressee_id"]) ?? "") ?? UUID(),
+                friendshipId: friendshipId,
+                requesterId: requesterId,
+                addresseeId: addresseeId,
                 status: status,
                 createdAt: Date()
             )
@@ -708,12 +721,19 @@ class RealtimeService: ObservableObject {
     private func handleSharedWorkoutInsert(_ action: InsertAction) async {
         let record = action.record
         
+        guard let workoutId = UUID(uuidString: jsonString(record["id"]) ?? ""),
+              let senderId = UUID(uuidString: jsonString(record["sender_id"]) ?? ""),
+              let recipientId = UUID(uuidString: jsonString(record["recipient_id"]) ?? "") else {
+            AppLogger.warning("handleSharedWorkoutInsert: malformed UUID in payload — dropping event", category: .network)
+            return
+        }
+        
         AppLogger.debug("New workout shared!", category: .network)
         
         let payload = SharedWorkoutPayload(
-            workoutId: UUID(uuidString: jsonString(record["id"]) ?? "") ?? UUID(),
-            senderId: UUID(uuidString: jsonString(record["sender_id"]) ?? "") ?? UUID(),
-            recipientId: UUID(uuidString: jsonString(record["recipient_id"]) ?? "") ?? UUID(),
+            workoutId: workoutId,
+            senderId: senderId,
+            recipientId: recipientId,
             workoutName: jsonString(record["workout_name"]) ?? "Workout",
             status: jsonString(record["status"]) ?? "pending",
             createdAt: Date()
@@ -805,12 +825,19 @@ class RealtimeService: ObservableObject {
         guard let status = jsonString(record["status"]),
               status == "pending" else { return }
         
+        guard let challengeId = UUID(uuidString: jsonString(record["challenge_id"]) ?? ""),
+              let participantId = UUID(uuidString: jsonString(record["user_id"]) ?? "") else {
+            AppLogger.warning("handleChallengeInvite: malformed UUID in payload — dropping event", category: .network)
+            logRealtimeEvent(type: "CHALLENGE_INVITE", source: "challenge_participants", details: "❌ Malformed UUID", isError: true)
+            return
+        }
+        
         AppLogger.debug("New challenge invite!", category: .network)
         logRealtimeEvent(type: "CHALLENGE_INVITE", source: "challenge_participants", details: "New challenge invite received")
         
         let payload = ChallengePayload(
-            challengeId: UUID(uuidString: jsonString(record["challenge_id"]) ?? "") ?? UUID(),
-            participantId: UUID(uuidString: jsonString(record["user_id"]) ?? "") ?? UUID(),
+            challengeId: challengeId,
+            participantId: participantId,
             status: status,
             totalProgress: jsonInt(record["total_progress"]) ?? 0
         )
@@ -924,9 +951,15 @@ class RealtimeService: ObservableObject {
             return
         }
         
+        guard let challengeUUID = UUID(uuidString: challengeId),
+              let participantUUID = UUID(uuidString: participantUserId) else {
+            AppLogger.warning("handleChallengeProgress: malformed UUID (challenge='\(challengeId)', user='\(participantUserId)') — dropping event", category: .network)
+            return
+        }
+        
         let payload = ChallengePayload(
-            challengeId: UUID(uuidString: challengeId) ?? UUID(),
-            participantId: UUID(uuidString: participantUserId) ?? UUID(),
+            challengeId: challengeUUID,
+            participantId: participantUUID,
             status: status,
             totalProgress: totalProgress
         )
@@ -1060,9 +1093,14 @@ class RealtimeService: ObservableObject {
         logRealtimeEvent(type: "🔥 OPPONENT_DAILY_PROGRESS", source: "challenge_daily_progress",
                         details: "⚡️ Opponent \(recordUserId.prefix(8)) → \(progressValue) (hit: \(targetHit)) challenge: \(challengeIdString.prefix(8))")
         
+        guard let opponentId = UUID(uuidString: recordUserId) else {
+            AppLogger.warning("handleDailyProgressChange: malformed opponent user_id '\(recordUserId)' — dropping event", category: .network)
+            return
+        }
+        
         let payload = DailyProgressPayload(
             challengeId: challengeId,
-            opponentId: UUID(uuidString: recordUserId) ?? UUID(),
+            opponentId: opponentId,
             progressDate: progressDate,
             progressValue: progressValue,
             targetHit: targetHit

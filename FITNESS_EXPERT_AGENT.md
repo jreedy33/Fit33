@@ -4,7 +4,7 @@
 >
 > Deep references, research citations, knowledge-update logs, and dated engine-threading/XP notes live in [`docs/history/FITNESS_EXPERT_AGENT.md`](docs/history/FITNESS_EXPERT_AGENT.md).
 
-Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`.
+Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal) and `.cursor/rules/swiftui-rules.mdc` (auto-loads when editing `Fit33/**/*.swift`).
 
 ---
 
@@ -169,4 +169,5 @@ Front delt overload (press + press + front raise = 3× front, 0× rear). Push/pu
 - `PRODUCT_ENGINEER_AGENT.md` — engine wiring, UI integration
 - `DATA_BACKEND_AGENT.md` — exercise DTO contracts, repeat-exercise placeholder rule
 - `.cursor/rules/codingrules.mdc` — cross-cutting rules
+- `.cursor/rules/swiftui-rules.mdc` — Swift/SwiftUI rules (auto-loads for `Fit33/**/*.swift`)
 - `docs/history/FITNESS_EXPERT_AGENT.md` — research citations, dated threading fixes, XP notes

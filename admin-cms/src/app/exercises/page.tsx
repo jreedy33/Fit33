@@ -94,6 +94,7 @@ export default function ExercisesPage() {
   const [filters, setFilters] = useState<Filters>({ categories: [], equipment: [], workout_types: [] })
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
+  const [pageInput, setPageInput] = useState('')
   const [search, setSearch] = useState('')
   const [workoutType, setWorkoutType] = useState('all')
   const [category, setCategory] = useState('all')
@@ -124,6 +125,17 @@ export default function ExercisesPage() {
   useEffect(() => { loadExercises() }, [loadExercises])
 
   const totalPages = Math.ceil(total / limit)
+
+  // Jump to a specific page. Accepts "6" or "6/69" (the second part is ignored
+  // so users can retype what they see in the label). Clamps to [1, totalPages].
+  const handleGotoPage = () => {
+    const raw = pageInput.trim().split('/')[0]
+    const n = parseInt(raw, 10)
+    if (!Number.isFinite(n) || n < 1) return
+    const clamped = Math.min(Math.max(n, 1), Math.max(totalPages, 1))
+    setPage(clamped - 1)
+    setPageInput('')
+  }
 
   return (
     <AdminShell>
@@ -259,7 +271,44 @@ export default function ExercisesPage() {
                 <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                   Page {page + 1} of {totalPages} ({total.toLocaleString()} exercises)
                 </span>
-                <div className="flex gap-2">
+                <div className="flex gap-2" style={{ alignItems: 'center' }}>
+                  <div className="flex gap-1" style={{ alignItems: 'center', marginRight: 4 }}>
+                    <label htmlFor="goto-page" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                      Go to
+                    </label>
+                    <input
+                      id="goto-page"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder={`1–${totalPages}`}
+                      value={pageInput}
+                      onChange={(e) => setPageInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          handleGotoPage()
+                        }
+                      }}
+                      aria-label={`Jump to page, 1 through ${totalPages}`}
+                      style={{
+                        width: 84,
+                        fontSize: 13,
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: '1px solid var(--border)',
+                        background: 'var(--input-bg, transparent)',
+                        color: 'var(--text-primary)',
+                      }}
+                    />
+                    <button
+                      className="btn btn-ghost"
+                      disabled={!pageInput.trim()}
+                      onClick={handleGotoPage}
+                      style={{ fontSize: 13 }}
+                    >
+                      Go
+                    </button>
+                  </div>
                   <button
                     className="btn btn-ghost"
                     disabled={page === 0}

@@ -22,9 +22,13 @@ class ExerciseNicknameService: ObservableObject {
     
     // MARK: - Public API
     
-    /// Get the display name for an exercise (nickname if exists, otherwise official name)
+    /// Get the display name for an exercise (nickname if exists, otherwise the
+    /// smart-suffix presentation form of the official name).
     func displayName(for officialName: String) -> String {
-        return nicknames[officialName.lowercased()] ?? officialName
+        if let nickname = nicknames[officialName.lowercased()] {
+            return nickname
+        }
+        return presentationName(for: officialName)
     }
     
     /// Get the display name for an Exercise object
@@ -35,6 +39,73 @@ class ExerciseNicknameService: ObservableObject {
         // they reach the card renderer (see ExerciseLibraryView.body).
         guard let name = exercise.name, !name.isEmpty else { return "" }
         return displayName(for: name)
+    }
+
+    /// Presentation-layer rewrite of the canonical exercise name. Currently
+    /// only swaps the whole word "And" for "&" ("Clean And Press" → "Clean &
+    /// Press"); the trailing-parenthetical equipment suffix is preserved
+    /// everywhere so "(Dumbbell)" / "(EZ Bar)" / etc. remain visible.
+    ///
+    /// Smart-suffix stripping based on `ExerciseLibraryService.isBaseNameAmbiguous`
+    /// is intentionally disabled while the product direction is being reviewed.
+    /// The index is still maintained by `ExerciseLibraryService` so it can be
+    /// re-enabled by restoring the stem-substitution branch.
+    func presentationName(for officialName: String) -> String {
+        let trimmed = officialName.trimmingCharacters(in: .whitespaces)
+        return Self.replaceAndWithAmpersand(in: trimmed)
+    }
+
+    /// Whole-word "And" → "&" rewrite used by the display layer. Case-sensitive
+    /// on purpose (Title Case "And" only) so we never chop "and" inside words
+    /// like "Handstand" or "Random". Precompiled once at load time.
+    private static let andWordRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: "\\bAnd\\b", options: [])
+    }()
+
+    static func replaceAndWithAmpersand(in text: String) -> String {
+        guard let regex = andWordRegex, !text.isEmpty else { return text }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "&")
+    }
+
+    /// Split a presentation name into a main line + optional variant line.
+    ///
+    /// Names shaped like `"<base> - <descriptor> (<equipment>)"` — e.g.
+    /// `"Bench Press - Close Grip (Barbell)"` — become:
+    ///   main:    `"Bench Press (Barbell)"`
+    ///   variant: `"Close Grip"`
+    ///
+    /// The equipment suffix travels with the base so the main line stays
+    /// "what movement / what tool" and the variant line is the qualifier the
+    /// UI can render smaller. Names without `" - "` in the stem return
+    /// `(name, nil)` — the card falls back to the single-line layout.
+    ///
+    /// Splits on the FIRST `" - "`, so chained descriptors (e.g. `"Curl -
+    /// Alternating - Single Arm"`) collapse into one variant line.
+    static func splitPresentation(_ name: String) -> (main: String, variant: String?) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return (trimmed, nil) }
+
+        // Peel a trailing " (...)" segment off the end, if present.
+        var stem = trimmed
+        var suffix = ""
+        if trimmed.hasSuffix(")"),
+           let openRange = trimmed.range(of: " (", options: .backwards) {
+            suffix = String(trimmed[openRange.lowerBound...])
+            stem = String(trimmed[..<openRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+        }
+
+        // Require space-bounded " - " so hyphenated words ("Push-Up", "Side-Raise")
+        // are not split.
+        guard let dashRange = stem.range(of: " - ") else {
+            return (trimmed, nil)
+        }
+
+        let base = String(stem[..<dashRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let variant = String(stem[dashRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+        guard !base.isEmpty, !variant.isEmpty else { return (trimmed, nil) }
+
+        return (base + suffix, variant)
     }
     
     /// Check if an exercise has a nickname

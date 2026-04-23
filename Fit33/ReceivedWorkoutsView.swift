@@ -1,6 +1,29 @@
 import SwiftUI
 import CoreData
 
+// Q2-78 (Sprint 8): hoist smart-date formatters shared by the timeline cards so
+// each row renders without allocating a new `DateFormatter`.
+private let receivedWorkoutsDayOfWeekFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "EEEE"
+    return f
+}()
+private let receivedWorkoutsMonthDayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMM d"
+    return f
+}()
+private let receivedWorkoutsMonthDayYearFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMM d, yyyy"
+    return f
+}()
+private let receivedWorkoutsShortTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "h:mm a"
+    return f
+}()
+
 // MARK: - Received Workouts View
 /// View and manage workouts received from friends
 
@@ -152,27 +175,15 @@ struct ReceivedWorkoutsView: View {
     // MARK: - Empty State
     
     private var emptyState: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "tray")
-                .font(.system(size: 60))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Color.gray.opacity(0.5), Color.gray.opacity(0.3)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            
-            Text("No Workouts Yet")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            Text("Workouts sent to you by friends\nwill appear here")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(40)
+        // Q2-91 (Sprint 9 2026-04-28): migrated to EmptyStateView. The
+        // pre-migration gradient-masked icon is dropped in favor of the
+        // standard secondary-colored symbol to unify empty surfaces.
+        EmptyStateView(
+            icon: "tray",
+            title: "No Workouts Yet",
+            subtitle: "Workouts sent to you by friends will appear here"
+        )
+        .padding(.vertical, Spacing.lg)
     }
 }
 
@@ -432,13 +443,9 @@ struct ReceivedWorkoutCard: View {
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday"
         } else if let daysAgo = calendar.dateComponents([.day], from: date, to: now).day, daysAgo < 7 {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE"
-            return formatter.string(from: date)
+            return receivedWorkoutsDayOfWeekFormatter.string(from: date)
         } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return formatter.string(from: date)
+            return receivedWorkoutsMonthDayFormatter.string(from: date)
         }
     }
 }
@@ -852,19 +859,13 @@ struct ReceivedWorkoutDetailView: View {
         let now = Date()
         
         if calendar.isDateInToday(date) {
-        let formatter = DateFormatter()
-            formatter.dateFormat = "h:mm a"
-            return "Today at \(formatter.string(from: date))"
+            return "Today at \(receivedWorkoutsShortTimeFormatter.string(from: date))"
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday"
         } else if let daysAgo = calendar.dateComponents([.day], from: date, to: now).day, daysAgo < 7 {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE"
-            return formatter.string(from: date)
+            return receivedWorkoutsDayOfWeekFormatter.string(from: date)
         } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d, yyyy"
-        return formatter.string(from: date)
+            return receivedWorkoutsMonthDayYearFormatter.string(from: date)
         }
     }
 }

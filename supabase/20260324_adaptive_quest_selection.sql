@@ -1,3 +1,19 @@
+-- =============================================================================
+-- SUPERSEDED 2026-04-26 — Q2-95
+-- =============================================================================
+-- The `get_daily_quests` body in this file (including the `ROW(0,0,0)` RECORD
+-- init anti-pattern on line 246) has been superseded multiple times:
+--   - 20260325_fix_quest_streak_record.sql (RECORD init fixed to SELECT..INTO)
+--   - 20260420_daily_quests_actionable_fixes.sql (requires_context, pools)
+--   - 20260421_daily_quests_program_and_focus_aware.sql (program/focus aware)
+--   - 20260422_daily_quest_workout_slot_flexibility.sql (slot-1 flexibility)
+--   - 20260423_daily_quest_smart_hierarchy.sql (redundancy / challenge / diversity)
+--   - 20260426_sprint7_security_hygiene.sql (IDOR guard)
+-- The canonical body is whatever the LATEST migration defines. This file is
+-- retained only so historical MIGRATION_INDEX references still resolve.
+-- Do NOT copy patterns from this file into new migrations.
+-- =============================================================================
+
 -- Adaptive quest selection: progressive unlock, anti-repetition, streak/time-of-day personalization
 -- Replaces get_daily_quests with expanded parameters from client context
 

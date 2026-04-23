@@ -128,11 +128,16 @@ struct CardioLandingView: View {
     // ⚡️ SNAPPY SEARCH: Focus state for instant keyboard dismiss
     @FocusState private var isSearchFocused: Bool
     
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)],
-        predicate: NSPredicate(format: "category CONTAINS[cd] %@ OR workoutType CONTAINS[cd] %@", "cardio", "cardio"),
-        animation: .default
-    )
+    // Cardio exercise library is naturally small (<100 in prod), but cap so we
+    // don't load the entire exercises table if the predicate matches nothing.
+    // Per QP invariant #3.
+    @FetchRequest(fetchRequest: {
+        let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
+        request.predicate = NSPredicate(format: "category CONTAINS[cd] %@ OR workoutType CONTAINS[cd] %@", "cardio", "cardio")
+        request.fetchLimit = 200
+        return request
+    }(), animation: .default)
     private var cardioExercises: FetchedResults<Exercise>
     
     enum CardioFilter: String, CaseIterable {

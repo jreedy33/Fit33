@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreData
 
 // MARK: - Training Hub View
 // A dedicated page for the new sleek training insights widget
@@ -7,10 +8,15 @@ struct TrainingHubView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var cloudProgramService = CloudProgramService.shared
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        predicate: NSPredicate(format: "isCompleted == YES"),
-        animation: .default)
+    // Training insights chart needs ~1 year of history; cap to avoid loading
+    // the entire Workout table on users with years of data. Per QP invariant #3.
+    @FetchRequest(fetchRequest: {
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+        request.predicate = NSPredicate(format: "isCompleted == YES")
+        request.fetchLimit = 365
+        return request
+    }(), animation: .default)
     private var workouts: FetchedResults<Workout>
     
     var body: some View {

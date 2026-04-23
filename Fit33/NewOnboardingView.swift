@@ -48,6 +48,7 @@ struct NewOnboardingView: View {
     @State var isVerifyingCode = false
     @State var canResendCode = false
     @State var resendCountdown = 0
+    @State var resendCountdownTimer: Timer? = nil
     @State var sendCodeCountdown = 0  // Countdown before user can send again
     @State var sendCodeTimer: Timer? = nil
     @State var phoneVerificationAttempts = 0  // Track send code attempts
@@ -438,6 +439,8 @@ struct NewOnboardingView: View {
             // Clean up timers to prevent leaks
             sendCodeTimer?.invalidate()
             sendCodeTimer = nil
+            resendCountdownTimer?.invalidate()
+            resendCountdownTimer = nil
         }
     }
 

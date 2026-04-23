@@ -154,6 +154,19 @@ struct StreakData: Codable {
         case totalDaysAchieved = "total_days_achieved"
         case lastAchievedDate = "last_achieved_date"
     }
+
+    // Hoisted formatters — every decode previously allocated both (hot path in dashboards).
+    private static let plainFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
     
     // BUG FIX: Server returns "2026-02-14" (yyyy-MM-dd) which isn't valid ISO8601.
     // Default Date decoding fails with "Invalid date format: 2026-02-14".
@@ -167,18 +180,10 @@ struct StreakData: Codable {
         
         // Try decoding as string first, then parse flexibly
         if let dateString = try container.decodeIfPresent(String.self, forKey: .lastAchievedDate) {
-            // Try yyyy-MM-dd first (what the server actually sends)
-            let plainFormatter = DateFormatter()
-            plainFormatter.dateFormat = "yyyy-MM-dd"
-            plainFormatter.locale = Locale(identifier: "en_US_POSIX")
-            
-            if let date = plainFormatter.date(from: dateString) {
+            if let date = Self.plainFormatter.date(from: dateString) {
                 lastAchievedDate = date
             } else {
-                // Fallback: try ISO8601
-                let isoFormatter = ISO8601DateFormatter()
-                isoFormatter.formatOptions = [.withInternetDateTime]
-                lastAchievedDate = isoFormatter.date(from: dateString)
+                lastAchievedDate = Self.isoFormatter.date(from: dateString)
             }
         } else {
             lastAchievedDate = nil
@@ -238,15 +243,20 @@ class PersonalizedInsightsService: ObservableObject {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
+
+    /// `yyyy-MM-dd` local day formatter — hoisted; `DateFormatter()` alloc is expensive.
+    private let ymdFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
     
     @inline(__always) private func dateToISO(_ date: Date) -> String {
         iso8601.string(from: date)
     }
     
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        ymdFormatter.string(from: date)
     }
     
     private init() {
@@ -1356,8 +1366,7 @@ class PersonalizedInsightsService: ObservableObject {
                 .execute()
                 .value
             
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
+            let formatter = ymdFormatter
             
             return results.compactMap { dto in
                 guard let date = formatter.date(from: dto.date) else { return nil }

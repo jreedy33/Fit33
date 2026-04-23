@@ -52,6 +52,12 @@ struct BugReport: Codable, Identifiable {
     var hasSessionLog: Bool { !(sessionLog ?? "").isEmpty }
 }
 
+/// `BugReportInsert` writes to the `bug_reports` Supabase table. See
+/// `supabase/20260502_rage_shake_v2.sql` for the column list. The shake
+/// flow populates `severity`, `bugCategory`, `likelySourceFiles`,
+/// `screenName` automatically so Claude has enough context to produce a
+/// real `bug_intelligence_report` (file_path + code_diff) via the
+/// `triage-shake-reports` edge function.
 struct BugReportInsert: Codable {
     let id: UUID
     let userId: UUID?
@@ -68,6 +74,11 @@ struct BugReportInsert: Codable {
     let additionalInfo: String?
     let sessionLog: String?
     let status: String
+    // v2 fields — rage shake
+    let severity: String           // low | medium | high | critical
+    let bugCategory: String?       // ui | data | performance | crash | auth | workout | nutrition | social | health | other
+    let likelySourceFiles: [String]
+    let triageStatus: String       // pending (client always sets pending; trigger fires)
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -85,6 +96,33 @@ struct BugReportInsert: Codable {
         case screenName = "screen_name"
         case additionalInfo = "additional_info"
         case status
+        case severity
+        case bugCategory = "bug_category"
+        case likelySourceFiles = "likely_source_files"
+        case triageStatus = "triage_status"
+    }
+}
+
+/// User-chosen severity for rage-shake reports. Maps 1:1 to the
+/// `bug_reports.severity` CHECK constraint.
+enum BugSeverity: String, CaseIterable, Identifiable {
+    case low, medium, high, critical
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        case .critical: return "Critical"
+        }
+    }
+    var detail: String {
+        switch self {
+        case .low: return "Minor inconvenience"
+        case .medium: return "Feature doesn’t work as expected"
+        case .high: return "Blocks me from using a core feature"
+        case .critical: return "Crashes / data loss / can’t continue"
+        }
     }
 }
 
@@ -199,13 +237,14 @@ class BugReportService: ObservableObject {
         
         AppLogger.debug("🔄 Fetching all bug reports...", category: .general)
         
-        // Check authentication first
+        // Check authentication first — NOT an error if the user is signed
+        // out; the admin UI handles the empty state.
         let isAuthenticated = SupabaseManager.shared.currentUser != nil
-        AppLogger.error("🔐 Authentication status: \(isAuthenticated ? "✅ Authenticated" : "❌ Not authenticated")", category: .general)
-        
+        AppLogger.debug("🔐 Authentication status: \(isAuthenticated ? "authenticated" : "not authenticated")", category: .general)
+
         if !isAuthenticated {
             let errorMessage = "Not authenticated. Please sign in to view bug reports."
-            AppLogger.error("❌ \(errorMessage)", category: .general)
+            AppLogger.info(errorMessage, category: .general)
             await MainActor.run {
                 lastError = errorMessage
             }
@@ -234,9 +273,7 @@ class BugReportService: ObservableObject {
             }
         } catch {
             let errorMessage = "Error fetching bug reports: \(error.localizedDescription)"
-            AppLogger.error("❌ \(errorMessage)", category: .general)
-            AppLogger.error("❌ Error details: \(String(describing: error))", category: .general)
-            
+            NetworkErrorClassifier.log(error, context: "Fetching bug reports", category: .general)
             await MainActor.run {
                 lastError = errorMessage
             }
@@ -244,6 +281,13 @@ class BugReportService: ObservableObject {
     }
     
     // MARK: - Submit Bug Report
+    //
+    // When `screenName` is nil the service auto-detects the current screen
+    // via `SessionLogManager.shared.getCurrentScreenInfo()`. It also
+    // computes `likelySourceFiles` via `ScreenCodeMap.filesForScreen(...)`
+    // so the CMS triage edge function has a real file path to hand Claude.
+    // Rage shake passes a non-nil `screenName`; the manual `ManualBugReportView`
+    // relies on the auto-detect.
     func submitBugReport(
         description: String,
         expectedBehavior: String,
@@ -251,7 +295,10 @@ class BugReportService: ObservableObject {
         screenshot: UIImage?,
         screenName: String? = nil,
         additionalInfo: String? = nil,
-        sessionLog: String? = nil
+        sessionLog: String? = nil,
+        severity: BugSeverity = .medium,
+        bugCategory: String? = nil,
+        likelySourceFiles: [String]? = nil
     ) async -> Bool {
         isSubmitting = true
         defer { isSubmitting = false }
@@ -295,6 +342,21 @@ class BugReportService: ObservableObject {
                 userEmail = nil
             }
             
+            // Auto-detect screen + likely source files if caller didn't
+            // provide them. SessionLogManager.getCurrentScreenInfo() returns
+            // ("S100", "Dashboard")-style; we pass the human name to
+            // ScreenCodeMap so Claude gets file paths like
+            // ["Fit33/DashboardView.swift", ...].
+            let detectedScreen: String? = {
+                if let s = screenName, !s.isEmpty { return s }
+                let info = SessionLogManager.shared.getCurrentScreenInfo()
+                return info.name.isEmpty ? nil : info.name
+            }()
+            let detectedFiles: [String] = {
+                if let f = likelySourceFiles, !f.isEmpty { return f }
+                return ScreenCodeMap.filesForScreen(detectedScreen)
+            }()
+
             // Create the report using the Codable struct
             let report = BugReportInsert(
                 id: UUID(),
@@ -308,10 +370,14 @@ class BugReportService: ObservableObject {
                 deviceModel: deviceModel,
                 osVersion: osVersion,
                 appVersion: appVersion,
-                screenName: screenName,
+                screenName: detectedScreen,
                 additionalInfo: additionalInfo,
                 sessionLog: sessionLog,
-                status: "new"
+                status: "new",
+                severity: severity.rawValue,
+                bugCategory: bugCategory,
+                likelySourceFiles: detectedFiles,
+                triageStatus: "pending"
             )
             
             AppLogger.debug("📤 Submitting bug report to Supabase...", category: .network)
@@ -336,12 +402,7 @@ class BugReportService: ObservableObject {
             
             return true
         } catch {
-            AppLogger.error("❌ Error submitting bug report: \(error)", category: .general)
-            AppLogger.error("❌ Error type: \(type(of: error))", category: .general)
-            if let localizedError = error as? LocalizedError {
-                AppLogger.error("❌ Error description: \(localizedError.errorDescription ?? "none")", category: .general)
-                AppLogger.error("❌ Failure reason: \(localizedError.failureReason ?? "none")", category: .general)
-            }
+            NetworkErrorClassifier.log(error, context: "Submitting bug report", category: .general)
             return false
         }
     }
@@ -360,7 +421,7 @@ class BugReportService: ObservableObject {
             AppLogger.debug("🗑️ Bug report deleted: \(id)", category: .general)
             return true
         } catch {
-            AppLogger.error("❌ Error deleting bug report: \(error)", category: .general)
+            NetworkErrorClassifier.log(error, context: "Deleting bug report", category: .general)
             return false
         }
     }
@@ -381,7 +442,7 @@ class BugReportService: ObservableObject {
             AppLogger.info("✅ Bug status updated to: \(status)", category: .general)
             return true
         } catch {
-            AppLogger.error("❌ Error updating bug status: \(error)", category: .general)
+            NetworkErrorClassifier.log(error, context: "Updating bug status", category: .general)
             return false
         }
     }

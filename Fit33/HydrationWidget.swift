@@ -1,6 +1,40 @@
 import SwiftUI
 import CoreData
 
+// Q2-78 (Sprint 8): hoist `DateFormatter` / `ISO8601DateFormatter` instances so
+// day-picker, streak, and history card renders don't re-allocate formatters on
+// every body evaluation.
+private let hydrationDayOfWeekShortFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "E"
+    return f
+}()
+private let hydrationDayOfWeekFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "EEE"
+    return f
+}()
+private let hydrationYMDFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    return f
+}()
+private let hydrationMonthDayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMM d"
+    return f
+}()
+private let hydrationShortTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.timeStyle = .short
+    return f
+}()
+private let hydrationISO8601Formatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
+
 // MARK: - Water Intake Widget
 struct HydrationWidget: View {
     @StateObject private var hydrationService = HydrationService.shared
@@ -298,16 +332,12 @@ struct HydrationWidget: View {
         let calendar = Calendar.current
         let today = Date()
         let targetDate = calendar.date(byAdding: .day, value: index - 6, to: today)!
-        
-        let formatter = DateFormatter()
-        formatter.dateFormat = "E"
-        return String(formatter.string(from: targetDate).prefix(1))
+
+        return String(hydrationDayOfWeekShortFormatter.string(from: targetDate).prefix(1))
     }
     
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        return hydrationYMDFormatter.string(from: date)
     }
     
     private func formatMl(_ ml: Int) -> String {
@@ -983,11 +1013,8 @@ struct WaterIntakeDetailView: View {
 
     private var bestDayLabel: String {
         guard let dateStr = hydrationService.streaks?.bestDailyDate else { return "Best Day" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        guard let date = formatter.date(from: dateStr) else { return "Best Day" }
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
+        guard let date = hydrationYMDFormatter.date(from: dateStr) else { return "Best Day" }
+        return hydrationMonthDayFormatter.string(from: date)
     }
 
     // MARK: - Weekly Chart
@@ -1160,15 +1187,11 @@ struct WaterIntakeDetailView: View {
         guard let targetDate = calendar.date(byAdding: .day, value: index - 6, to: today) else {
             return ""
         }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE"
-        return formatter.string(from: targetDate)
+        return hydrationDayOfWeekFormatter.string(from: targetDate)
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        return hydrationYMDFormatter.string(from: date)
     }
 
     private func formatMl(_ ml: Int) -> String {
@@ -1186,18 +1209,12 @@ struct WaterIntakeDetailView: View {
     }
 
     private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return hydrationShortTimeFormatter.string(from: date)
     }
 
     private func formatISOTime(_ isoString: String) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime]
-        guard let date = isoFormatter.date(from: isoString) else { return isoString }
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        guard let date = hydrationISO8601Formatter.date(from: isoString) else { return isoString }
+        return hydrationShortTimeFormatter.string(from: date)
     }
 }
 

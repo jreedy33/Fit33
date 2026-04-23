@@ -8,11 +8,15 @@ struct FavoriteRoutinesView: View {
     @EnvironmentObject var userManager: UserManager
     @EnvironmentObject var workoutManager: WorkoutManager
     
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        predicate: NSPredicate(format: "isFavorite == YES AND isCompleted == YES"),
-        animation: .none  // Disable animation for faster list
-    )
+    // Favorites are deduped by name downstream, so 200 completed+favorited
+    // rows is well beyond realistic use. Per QP invariant #3.
+    @FetchRequest(fetchRequest: {
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+        request.predicate = NSPredicate(format: "isFavorite == YES AND isCompleted == YES")
+        request.fetchLimit = 200
+        return request
+    }(), animation: .none)
     private var favoriteWorkouts: FetchedResults<Workout>
     
     // Filter to show only unique workout names (most recent of each)
@@ -538,6 +542,24 @@ struct FavoriteWorkoutCard: View {
         .frame(maxWidth: .infinity)
     }
     
+    // Q2-78 (Sprint 8): hoist the three date/time formatters to `static let`
+    // so the routine list doesn't allocate fresh formatters for every row.
+    private static let dayOfWeekFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        return f
+    }()
+    private static let monthDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
+    private static let shortTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        return f
+    }()
+    
     private func formatSmartDate(_ date: Date) -> String {
         let calendar = Calendar.current
         let now = Date()
@@ -547,20 +569,14 @@ struct FavoriteWorkoutCard: View {
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday · \(formatTime(date))"
         } else if let daysAgo = calendar.dateComponents([.day], from: date, to: now).day, daysAgo < 7 {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "EEEE"
-            return "\(formatter.string(from: date)) · \(formatTime(date))"
+            return "\(Self.dayOfWeekFormatter.string(from: date)) · \(formatTime(date))"
         } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return "\(formatter.string(from: date)) · \(formatTime(date))"
+            return "\(Self.monthDayFormatter.string(from: date)) · \(formatTime(date))"
         }
     }
     
     private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return Self.shortTimeFormatter.string(from: date)
     }
     
     private func formatDuration(_ seconds: Int) -> String {

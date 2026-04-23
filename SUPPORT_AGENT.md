@@ -4,7 +4,7 @@
 >
 > Full feature inventory, dated FAQ entries, integration copy (WHOOP/Oura/Fitbit/Strava), and historical pain-point registry live in [`docs/history/SUPPORT_AGENT.md`](docs/history/SUPPORT_AGENT.md).
 
-Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`.
+Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal). Scoped rules auto-load when editing matching files: `.cursor/rules/swiftui-rules.mdc` (`Fit33/**/*.swift`), `.cursor/rules/supabase-rules.mdc` (`supabase/**/*.sql`), `.cursor/rules/admin-cms-rules.mdc` (`admin-cms/**`).
 
 This agent does NOT build features — it ensures users can successfully USE features.
 

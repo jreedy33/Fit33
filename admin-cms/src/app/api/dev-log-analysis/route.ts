@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 import { verifyAdmin } from '@/lib/verify-admin'
+import { parseJson, devLogAnalysisSchema } from '@/lib/validation'
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,10 +11,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { session_id } = await req.json()
-    if (!session_id) {
-      return NextResponse.json({ error: 'Missing session_id' }, { status: 400 })
-    }
+    const parsed = await parseJson(req, devLogAnalysisSchema)
+    if (!parsed.ok) return parsed.response
+    const { session_id } = parsed.data
 
     const admin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

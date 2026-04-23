@@ -535,6 +535,17 @@ struct ExerciseLibraryView: View {
                     }
                 }
             }
+            // 🔄 Reload when the CMS realtime pipeline bumps the library
+            // revision (admin edited / added / deleted an exercise).
+            .onChange(of: exerciseLibrary.libraryRevision) { _, _ in
+                AppLogger.info("🔄 [LIBRARY] libraryRevision bumped - reloading list from realtime", category: .workout)
+                viewContext.refreshAllObjects()
+                loadExercises()
+                lastFilterKey = ""
+                searchResultsCache.removeAll()
+                updateFilteredExercises()
+                forceRenderID = UUID()
+            }
             // 🔄 Reload when exercises become ready after cloud sync
             .onChange(of: exerciseLibrary.isExercisesReady) { _, isReady in
                 if isReady {
@@ -800,9 +811,7 @@ struct ExerciseLibraryView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )

@@ -204,9 +204,7 @@ struct StepTrackerCard: View {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color(white: 0.15), Color(white: 0.10)]
-                                    : [Color.white, Color.white.opacity(0.95)],
+                                colors: Color.cardGradientStops(for: colorScheme),
                                 startPoint: .top,
                                 endPoint: .bottom
                             )

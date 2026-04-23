@@ -703,18 +703,14 @@ struct RestaurantSearchSheet: View {
     }
     
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "fork.knife.circle")
-                .font(.system(size: 50))
-                .foregroundColor(.orange.opacity(0.5))
-            
-            Text("No results found")
-                .font(.headline)
-            
-            Text("Try searching for a restaurant or menu item")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
+        // Q2-91 (Sprint 9 2026-04-28): migrated to EmptyStateView. The
+        // orange-tinted icon is dropped in favor of the standard secondary
+        // color to keep empty surfaces consistent.
+        EmptyStateView(
+            icon: "fork.knife.circle",
+            title: "No results found",
+            subtitle: "Try searching for a restaurant or menu item"
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     

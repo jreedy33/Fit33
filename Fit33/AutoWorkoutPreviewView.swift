@@ -322,10 +322,12 @@ struct AutoWorkoutPreviewView: View {
             // Was prefetching all exercises at once, creating multiple AVPlayers.
             
             // ⚡️ WARMUP: Pre-load all data for ActiveWorkoutView while user browses preview
-            // This ensures instant "Go!" transitions with no lag
+            // This ensures instant "Go!" transitions with no lag.
+            // Q2-83 (Sprint 8): route through the injected environment MOC so tests / previews
+            // can supply an in-memory store instead of hard-coupling to the singleton.
             warmupService.warmUp(
                 exercises: exercises,
-                context: PersistenceController.shared.container.viewContext
+                context: viewContext
             )
         }
         .onDisappear {
@@ -530,7 +532,8 @@ struct AutoWorkoutPreviewView: View {
             AppLogger.debug("   🔧 Attempting to create missing exercises in Core Data...", category: .workout)
             #endif
             
-            let context = PersistenceController.shared.container.viewContext
+            // Q2-83 (Sprint 8): use injected MOC so previews / tests stay isolated.
+            let context = viewContext
             var createdExercises: [Exercise] = []
             
             for generatedExercise in exercises {
@@ -636,7 +639,8 @@ struct AutoWorkoutPreviewView: View {
         }
         
         // Create Workout entity
-        let context = PersistenceController.shared.container.viewContext
+        // Q2-83 (Sprint 8): use injected MOC so previews / tests stay isolated.
+        let context = viewContext
         let workout = Workout(context: context)
         workout.id = UUID()
         workout.name = title

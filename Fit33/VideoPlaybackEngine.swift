@@ -1080,19 +1080,26 @@ class InstantVideoPlayerState: ObservableObject {
     @Published var isLoading = false
     @Published var hasError = false
     
+    // Q2-76 (Sprint 9 2026-04-28): `VideoPlaybackEngine.getPlayer(for:)` is a
+    // sync API that can synthesize a fresh AVURLAsset + AVPlayerItem +
+    // AVQueuePlayer + AVPlayerLooper on miss — too heavy for the main thread.
+    // Route resolution through a detached userInitiated Task and hop back to
+    // @MainActor only to assign `@Published` state.
     func loadVideo(exerciseName: String, videoFilename: String?) {
         isLoading = true
-        
-        // Get player from engine (instant if cached)
-        if let queuePlayer = VideoPlaybackEngine.shared.getPlayer(for: exerciseName, videoFilename: videoFilename) {
-            DispatchQueue.main.async { [weak self] in
-                self?.player = queuePlayer
-                self?.isLoading = false
-            }
-        } else {
-            DispatchQueue.main.async { [weak self] in
-                self?.isLoading = false
-                self?.hasError = true
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let queuePlayer = VideoPlaybackEngine.shared.getPlayer(for: exerciseName, videoFilename: videoFilename)
+
+            await MainActor.run {
+                guard let self = self else { return }
+                if let queuePlayer = queuePlayer {
+                    self.player = queuePlayer
+                    self.isLoading = false
+                } else {
+                    self.isLoading = false
+                    self.hasError = true
+                }
             }
         }
     }

@@ -618,8 +618,13 @@ class WorkoutManager: ObservableObject {
         
         if resolvedWorkout == nil {
             AppLogger.warning("⚠️ [WORKOUT] Could not find saved workout in Core Data — creating placeholder...", category: .data)
+            guard let placeholderId = UUID(uuidString: state.workoutId) else {
+                AppLogger.error("❌ [WORKOUT] Active workout state has malformed UUID '\(state.workoutId)' — cannot create placeholder", category: .data)
+                clearActiveWorkoutStorage()
+                return
+            }
             let newWorkout = Workout(context: context)
-            newWorkout.id = UUID(uuidString: state.workoutId) ?? UUID()
+            newWorkout.id = placeholderId
             newWorkout.name = "Workout"
             newWorkout.date = state.startTime
             newWorkout.isCompleted = false

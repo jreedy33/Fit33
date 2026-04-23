@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+// Admin cookies are scoped tightly: httpOnly (no JS read), Secure in prod,
+// SameSite=Strict so the session is never sent on cross-site navigations
+// (anti-CSRF). Per INFRA_SECURITY invariant #22 + admin-cms-rules.
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  sameSite: 'strict' as const,
   path: '/',
 }
 
@@ -37,7 +40,7 @@ export function setAuthCookies(
   response.cookies.set('admin_logged_in', '1', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'strict',
     path: '/',
     maxAge: REFRESH_TOKEN_MAX_AGE,
   })

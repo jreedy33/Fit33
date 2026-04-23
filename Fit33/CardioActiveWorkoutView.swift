@@ -968,7 +968,11 @@ struct CardioCompletionView: View {
         var routeJSON: String? = nil
         if let coords = routeCoordinates, !coords.isEmpty {
             let coordsArray = coords.map { ["lat": $0.latitude, "lng": $0.longitude] }
-            if let jsonData = try? JSONSerialization.data(withJSONObject: coordsArray),
+            // `try?` does NOT catch Objective-C `NSInvalidArgumentException` thrown when
+            // the payload is not a valid JSON object — guard with `isValidJSONObject` to
+            // avoid SIGABRT on unexpected route data. Per QP invariant #7.
+            if JSONSerialization.isValidJSONObject(coordsArray),
+               let jsonData = try? JSONSerialization.data(withJSONObject: coordsArray),
                let jsonString = String(data: jsonData, encoding: .utf8) {
                 routeJSON = jsonString
             }

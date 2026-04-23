@@ -68,28 +68,28 @@ CREATE TABLE IF NOT EXISTS crash_reports (
 -- ═══════════════════════════════════════════════════════════════
 
 -- Most common query: recent reports
-CREATE INDEX idx_crash_reports_created_at ON crash_reports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_created_at ON crash_reports(created_at DESC);
 
 -- Filter by status (admin workflow)
-CREATE INDEX idx_crash_reports_status ON crash_reports(status);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_status ON crash_reports(status);
 
 -- Filter by severity (triage)
-CREATE INDEX idx_crash_reports_severity ON crash_reports(severity);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_severity ON crash_reports(severity);
 
 -- Filter by user
-CREATE INDEX idx_crash_reports_user_id ON crash_reports(user_id);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_user_id ON crash_reports(user_id);
 
 -- Group by fingerprint (dedup/aggregate)
-CREATE INDEX idx_crash_reports_fingerprint ON crash_reports(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_fingerprint ON crash_reports(fingerprint);
 
 -- Filter by report type
-CREATE INDEX idx_crash_reports_type ON crash_reports(report_type);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_type ON crash_reports(report_type);
 
 -- Combined for common admin queries
-CREATE INDEX idx_crash_reports_status_severity ON crash_reports(status, severity, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_status_severity ON crash_reports(status, severity, created_at DESC);
 
 -- App version tracking
-CREATE INDEX idx_crash_reports_app_version ON crash_reports(app_version);
+CREATE INDEX IF NOT EXISTS idx_crash_reports_app_version ON crash_reports(app_version);
 
 -- ═══════════════════════════════════════════════════════════════
 -- RLS POLICIES

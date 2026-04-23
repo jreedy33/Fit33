@@ -781,12 +781,14 @@ extension NewOnboardingView {
     
     // Start countdown for resend
     func startResendCountdown() {
+        resendCountdownTimer?.invalidate()
         resendCountdown = 30
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
+        resendCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
             if resendCountdown > 0 {
                 resendCountdown -= 1
             } else {
                 timer.invalidate()
+                resendCountdownTimer = nil
             }
         }
     }

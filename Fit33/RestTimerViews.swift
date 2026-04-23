@@ -105,6 +105,11 @@ struct TimerBorderShape: InsettableShape {
     }
 }
 
+// Q2-82 (Sprint 8): @MainActor isolation. All writes already happen on main
+// (CADisplayLink fires on `.main`, foreground-observer is `queue: .main`, and
+// every caller is a SwiftUI view). The annotation codifies that contract so
+// Swift 6 strict concurrency doesn't regress us.
+@MainActor
 class RestTimer: ObservableObject {
     @Published var timeRemaining: TimeInterval = 0
     @Published var isActive: Bool = false

@@ -7,6 +7,10 @@ import SwiftUI
 class FriendService: ObservableObject {
     static let shared = FriendService()
     private let logger = SessionLogManager.shared
+
+    /// Hoisted ISO8601 formatter — was being reallocated on every shared-workout
+    /// state transition (accept/decline/view/start/complete).
+    private static let iso8601: ISO8601DateFormatter = ISO8601DateFormatter()
     
     // MARK: - Published Properties
     @Published var friends: [Friend] = []
@@ -745,7 +749,7 @@ class FriendService: ObservableObject {
                 .from("shared_workouts")
                 .update([
                     "status": "accepted",
-                    "responded_at": ISO8601DateFormatter().string(from: Date())
+                    "responded_at": Self.iso8601.string(from: Date())
                 ])
                 .eq("id", value: workoutId.uuidString)
                 .execute()
@@ -765,7 +769,7 @@ class FriendService: ObservableObject {
                 .from("shared_workouts")
                 .update([
                     "status": "declined",
-                    "responded_at": ISO8601DateFormatter().string(from: Date())
+                    "responded_at": Self.iso8601.string(from: Date())
                 ])
                 .eq("id", value: workoutId.uuidString)
                 .execute()
@@ -800,7 +804,7 @@ class FriendService: ObservableObject {
         do {
             try await SupabaseManager.shared.supabaseClient
                 .from("shared_workouts")
-                .update(["viewed_at": ISO8601DateFormatter().string(from: Date())])
+                .update(["viewed_at": Self.iso8601.string(from: Date())])
                 .eq("id", value: workoutId.uuidString)
                 .execute()
             
@@ -824,7 +828,7 @@ class FriendService: ObservableObject {
                 .from("shared_workouts")
                 .update([
                     "status": "started",
-                    "started_at": ISO8601DateFormatter().string(from: Date())
+                    "started_at": Self.iso8601.string(from: Date())
                 ])
                 .eq("id", value: workoutId.uuidString)
                 .execute()
@@ -844,7 +848,7 @@ class FriendService: ObservableObject {
                 .from("shared_workouts")
                 .update([
                     "status": "completed",
-                    "completed_at": ISO8601DateFormatter().string(from: Date())
+                    "completed_at": Self.iso8601.string(from: Date())
                 ])
                 .eq("id", value: workoutId.uuidString)
                 .execute()

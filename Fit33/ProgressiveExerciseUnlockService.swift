@@ -18,21 +18,54 @@ import Foundation
 import CoreData
 
 // MARK: - Thread-safe cache for synchronous access from non-MainActor contexts
+//
+// The `@unchecked Sendable` opt-out disables the compiler's concurrency
+// checks, so we MUST guard every read and write with a lock to avoid data
+// races when the workout generator (off-main) reads while the MainActor-side
+// `ProgressiveExerciseUnlockService` writes. Per QP invariant #21.
 final class ProgressiveUnlockCache: @unchecked Sendable {
     static let shared = ProgressiveUnlockCache()
-    
-    var workoutCount: Int = 0
-    var currentTier: FoundationTier = .essential
-    var shouldRestrictToFoundational: Bool = true
-    var varietyPercentage: Double = 0.0
-    
+
+    private let lock = NSLock()
+    private var _workoutCount: Int = 0
+    private var _currentTier: FoundationTier = .essential
+    private var _shouldRestrictToFoundational: Bool = true
+    private var _varietyPercentage: Double = 0.0
+
     private init() {}
-    
+
+    var workoutCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return _workoutCount
+    }
+
+    var currentTier: FoundationTier {
+        lock.lock(); defer { lock.unlock() }
+        return _currentTier
+    }
+
+    var shouldRestrictToFoundational: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return _shouldRestrictToFoundational
+    }
+
+    var varietyPercentage: Double {
+        lock.lock(); defer { lock.unlock() }
+        return _varietyPercentage
+    }
+
     func update(from profile: UserExerciseMaturityProfile?) {
-        workoutCount = profile?.totalWorkoutsCompleted ?? 0
-        currentTier = profile?.currentUnlockTier ?? .essential
-        shouldRestrictToFoundational = profile?.shouldRestrictToFoundational ?? true
-        varietyPercentage = profile?.varietyPercentage ?? 0.0
+        let nextWorkoutCount = profile?.totalWorkoutsCompleted ?? 0
+        let nextTier = profile?.currentUnlockTier ?? .essential
+        let nextRestrict = profile?.shouldRestrictToFoundational ?? true
+        let nextVariety = profile?.varietyPercentage ?? 0.0
+
+        lock.lock()
+        _workoutCount = nextWorkoutCount
+        _currentTier = nextTier
+        _shouldRestrictToFoundational = nextRestrict
+        _varietyPercentage = nextVariety
+        lock.unlock()
     }
 }
 

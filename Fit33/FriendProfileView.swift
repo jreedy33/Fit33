@@ -1782,6 +1782,7 @@ struct ExercisePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var exerciseLibrary = ExerciseLibraryService.shared
     
     @Binding var selectedExercises: [Exercise]
     
@@ -1789,16 +1790,21 @@ struct ExercisePickerView: View {
     @State private var selectedCategory = "All"
     @State private var localSelection: Set<NSManagedObjectID> = []
     
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)],
-        animation: .default)
-    private var allExercises: FetchedResults<Exercise>
+    // Q2-94 (Sprint 8): previously this picker fed off a raw `@FetchRequest` over
+    // the whole `Exercise` entity, holding 5000+ `NSManagedObject` handles for the
+    // duration of the picker. We now read from `ExerciseLibraryService.shared`'s
+    // cached `[Exercise]` (single fetch, shared across the app) and do all
+    // category/search filtering in-memory. The `libraryRevision` observation via
+    // `@ObservedObject` forces the picker to refresh when the library reloads.
+    private var allExercises: [Exercise] {
+        exerciseLibrary.getAllExercises()
+    }
     
     private let categories = ["All", "Chest", "Back", "Legs", "Shoulders", "Arms", "Core"]
     
     
     private var filteredExercises: [Exercise] {
-        var exercises = Array(allExercises)
+        var exercises = allExercises
         
         if selectedCategory != "All" {
             exercises = exercises.filter { $0.category == selectedCategory }
@@ -1908,6 +1914,8 @@ struct ExercisePickerView: View {
     }
     
     private func addSelectedExercises() {
+        // Q2-94 (Sprint 8): filter the cached library instead of the removed
+        // `@FetchRequest` results.
         let newExercises = allExercises.filter { localSelection.contains($0.objectID) }
         selectedExercises = newExercises.sorted { ($0.name ?? "") < ($1.name ?? "") }
         dismiss()

@@ -78,21 +78,13 @@ struct WorkoutReplayView: View {
     // MARK: - Empty State
     
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "chart.bar.doc.horizontal")
-                .font(.system(size: 40))
-                .foregroundColor(.secondary)
-            
-            Text("No Insights Yet")
-                .font(.headline)
-                .foregroundColor(.primary)
-            
-            Text("Complete a few more workouts and we'll have coaching insights for you.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.vertical, 40)
+        // Q2-91 (Sprint 9 2026-04-28): migrated to EmptyStateView for
+        // consistent empty-surface typography across the app.
+        EmptyStateView(
+            icon: "chart.bar.doc.horizontal",
+            title: "No Insights Yet",
+            subtitle: "Complete a few more workouts and we'll have coaching insights for you."
+        )
     }
     
     // MARK: - Insight Card

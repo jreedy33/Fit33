@@ -283,7 +283,7 @@ struct NutritionTrendsChartWidget: View {
                         LineMark(x: .value("Date", point.date), y: .value("Value", point.value))
                             .foregroundStyle(by: .value("Metric", point.macro))
                             .lineStyle(StrokeStyle(lineWidth: point.macro == "Calories" ? 2.5 : 2))
-                            .interpolationMethod(.catmullRom)
+                            .interpolationMethod(.monotone)
                             .symbol(by: .value("Metric", point.macro))
                     }
                     .chartForegroundStyleScale(["Calories": Color.orange, "Protein": Color.blue, "Carbs": Color.green, "Fat": Color.purple])
@@ -380,13 +380,13 @@ struct CalorieBalanceChartWidget: View {
                             if selectedLines.contains("Intake") {
                                 AreaMark(x: .value("Date", point.date), y: .value("Intake", point.intake))
                                     .foregroundStyle(LinearGradient(colors: [Color.orange.opacity(0.2), Color.orange.opacity(0.02)], startPoint: .top, endPoint: .bottom))
-                                    .interpolationMethod(.catmullRom)
+                                    .interpolationMethod(.monotone)
                                 LineMark(x: .value("Date", point.date), y: .value("Intake", point.intake))
-                                    .foregroundStyle(Color.orange).lineStyle(StrokeStyle(lineWidth: 2.5)).interpolationMethod(.catmullRom)
+                                    .foregroundStyle(Color.orange).lineStyle(StrokeStyle(lineWidth: 2.5)).interpolationMethod(.monotone)
                             }
                             if selectedLines.contains("Burned") {
                                 LineMark(x: .value("Date", point.date), y: .value("Burned", point.burned))
-                                    .foregroundStyle(Color.red).lineStyle(StrokeStyle(lineWidth: 2, dash: [4, 3])).interpolationMethod(.catmullRom)
+                                    .foregroundStyle(Color.red).lineStyle(StrokeStyle(lineWidth: 2, dash: [4, 3])).interpolationMethod(.monotone)
                             }
                         }
                     }
@@ -564,14 +564,14 @@ struct WorkoutVolumeChartWidget: View {
                         ForEach(dataPoints) { point in
                             AreaMark(x: .value("Date", point.date), y: .value("Volume", point.volume))
                                 .foregroundStyle(LinearGradient(colors: [Color.blue.opacity(0.3), Color.blue.opacity(0.05)], startPoint: .top, endPoint: .bottom))
-                                .interpolationMethod(.catmullRom)
+                                .interpolationMethod(.monotone)
                             LineMark(x: .value("Date", point.date), y: .value("Volume", point.volume))
-                                .foregroundStyle(Color.blue).lineStyle(StrokeStyle(lineWidth: 2.5)).interpolationMethod(.catmullRom)
+                                .foregroundStyle(Color.blue).lineStyle(StrokeStyle(lineWidth: 2.5)).interpolationMethod(.monotone)
                         }
                         if showComparison {
                             ForEach(previousPeriodPoints) { point in
                                 LineMark(x: .value("Date", point.date), y: .value("Volume", point.volume))
-                                    .foregroundStyle(Color.gray.opacity(0.5)).lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 3])).interpolationMethod(.catmullRom)
+                                    .foregroundStyle(Color.gray.opacity(0.5)).lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 3])).interpolationMethod(.monotone)
                             }
                         }
                     }
@@ -824,7 +824,7 @@ struct StrengthProgressChartWidget: View {
                             LineMark(x: .value("Date", point.date), y: .value("Weight", point.maxWeight))
                                 .foregroundStyle(by: .value("Exercise", point.exerciseName))
                                 .lineStyle(StrokeStyle(lineWidth: 2.5))
-                                .interpolationMethod(.catmullRom)
+                                .interpolationMethod(.monotone)
                                 .symbol(by: .value("Exercise", point.exerciseName))
                         }
                     }
@@ -1050,7 +1050,7 @@ struct BodyWeightTrendWidget: View {
                     let trendData = weightService.monthlyTrend.isEmpty ? weightService.recentLogs.map { WeightTrendPoint(date: $0.loggedAt, weight: $0.weightLbs) } : weightService.monthlyTrend
                     Chart {
                         ForEach(trendData) { point in
-                            LineMark(x: .value("Date", point.date), y: .value("Weight", point.weight)).foregroundStyle(Color.green).lineStyle(StrokeStyle(lineWidth: 2.5)).interpolationMethod(.catmullRom)
+                            LineMark(x: .value("Date", point.date), y: .value("Weight", point.weight)).foregroundStyle(Color.green).lineStyle(StrokeStyle(lineWidth: 2.5)).interpolationMethod(.monotone)
                             PointMark(x: .value("Date", point.date), y: .value("Weight", point.weight)).foregroundStyle(point.isProjected ? Color.green.opacity(0.4) : Color.green).symbolSize(point.isProjected ? 20 : 30)
                         }
                         if let goal = weightService.weightGoal {

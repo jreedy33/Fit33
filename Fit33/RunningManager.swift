@@ -219,7 +219,23 @@ class RunningManager: NSObject, ObservableObject {
         super.init()
         setupLocationManager()
     }
-    
+
+    // Q2-80 residual (Sprint 9 2026-04-28): the repeating `timer` is tied to
+    // a live run UI and is invalidated on `stopRun()` / `pauseRun()`, so
+    // iOS's normal background-location lifecycle keeps it honest. The only
+    // remaining leak vector is the singleton being deallocated mid-run —
+    // which shouldn't happen in production but is cheap to guard against.
+    // `BluetoothFitnessManager` got the scan-timer fix in Sprint 7; here we
+    // just clean up state if the manager is ever torn down.
+    deinit {
+        timer?.invalidate()
+        timer = nil
+        autoPauseTimer?.invalidate()
+        autoPauseTimer = nil
+        locationManager.stopUpdatingLocation()
+        locationManager.stopUpdatingHeading()
+    }
+
     private func setupLocationManager() {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyBest

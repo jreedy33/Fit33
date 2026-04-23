@@ -2,19 +2,35 @@ import Foundation
 import CoreData
 import SwiftUI
 
+/// App-wide user state singleton.
+///
+/// **Q2-82 invariant (Sprint 8):** All `@Published` writes MUST happen on the
+/// main actor. Call sites that come from async contexts (Supabase callbacks,
+/// Core Data `perform` blocks, URLSession completion) must wrap the assignment
+/// in `await MainActor.run { … }`. The class is intentionally NOT marked
+/// `@MainActor` as a whole, because it is called from many non-isolated async
+/// contexts (workout flows, cloud sync) that don't need to block on main.
+/// Audit this contract before adding new `@Published` vars.
 class UserManager: ObservableObject {
     @Published var currentUser: User?
-    @Published var hasCompletedOnboarding: Bool = false
     @Published var showLevelUpCelebration: Bool = false
     @Published var newLevelReached: Int = 0
 
-    // Verified badge state is cached in UserDefaults so cold start shows the
-    // correct badge (none / blue / gold) instantly, without waiting for the
-    // Supabase profile fetch. The cloud sync still writes to these properties
-    // in the background and will update the UI if the tier changes.
+    // Verified badge + onboarding state are cached in UserDefaults so cold start
+    // shows the correct UI (tabs vs onboarding, verified badge tier) instantly,
+    // without waiting for the Supabase profile fetch or the Core Data load.
+    // Q2-75 (Sprint 8): Onboarding flag is now cache-backed so the async init
+    // load doesn't flash the onboarding view for 1 frame on cold start.
     private static let cachedIsVerifiedKey = "fit33_cached_is_verified"
     private static let cachedIsGoldVerifiedKey = "fit33_cached_is_gold_verified"
+    private static let cachedHasCompletedOnboardingKey = "fit33_cached_has_completed_onboarding"
 
+    @Published var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: UserManager.cachedHasCompletedOnboardingKey) {
+        didSet {
+            guard oldValue != hasCompletedOnboarding else { return }
+            UserDefaults.standard.set(hasCompletedOnboarding, forKey: UserManager.cachedHasCompletedOnboardingKey)
+        }
+    }
     @Published var isVerified: Bool = UserDefaults.standard.bool(forKey: UserManager.cachedIsVerifiedKey) {
         didSet {
             guard oldValue != isVerified else { return }
@@ -39,13 +55,68 @@ class UserManager: ObservableObject {
     static let shared = UserManager()
     
     init() {
-        loadCurrentUser()
+        // Q2-75 (Sprint 8): Defer Core Data fetch off the main thread so the
+        // first-access-blocks-on-init footgun is gone. `hasCompletedOnboarding`
+        // is seeded from UserDefaults above so the UI still routes correctly
+        // before the fetch resolves.
+        Task { @MainActor [weak self] in
+            await self?.loadCurrentUserAsync()
+        }
     }
     
     /// Reloads user state from Core Data - call after cloud sync
     func reloadCurrentUser() {
         loadCurrentUser()
         AppLogger.debug("UserManager reloaded - hasCompletedOnboarding: \(hasCompletedOnboarding)", category: .auth)
+    }
+    
+    /// Async variant used by `init()` so cold start never blocks the main
+    /// thread on a Core Data fetch. Heavy fetch runs on a background context;
+    /// the realized `User` is re-materialized via `viewContext.object(with:)`
+    /// so subsequent reads/writes still go through the view context.
+    @MainActor
+    private func loadCurrentUserAsync() async {
+        #if DEBUG
+        let shouldSkipOnboarding = ProcessInfo.processInfo.environment["SKIP_ONBOARDING"] == "YES"
+        if shouldSkipOnboarding {
+            AppLogger.debug("DEBUG: Skipping onboarding, creating test user", category: .auth)
+            createDebugUserIfNeeded()
+            return
+        }
+        AppLogger.debug("[DEBUG] UserManager: loading user from Core Data (SKIP_ONBOARDING not set)", category: .auth)
+        #endif
+        
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        let result: Result<NSManagedObjectID?, Error> = await withCheckedContinuation { continuation in
+            bgContext.perform {
+                let request: NSFetchRequest<User> = User.fetchRequest()
+                request.fetchLimit = 1
+                do {
+                    let users = try bgContext.fetch(request)
+                    continuation.resume(returning: .success(users.first?.objectID))
+                } catch {
+                    continuation.resume(returning: .failure(error))
+                }
+            }
+        }
+        
+        switch result {
+        case .success(let maybeID):
+            guard let objectID = maybeID,
+                  let user = viewContext.object(with: objectID) as? User else {
+                // No stored user yet — leave cached onboarding flag alone so
+                // sign-in-restore flows keep working. First-run users have
+                // the cached flag = false by default.
+                return
+            }
+            _ = user.getEquipment()
+            self.currentUser = user
+            self.hasCompletedOnboarding = user.hasCompletedOnboarding
+        case .failure(let error):
+            AppLogger.error("Error fetching user: \(error.localizedDescription)", category: .general)
+            AppLogger.warning("Core Data fetch failed, attempting cleanup...", category: .general)
+            PersistenceController.shared.deleteAll()
+        }
     }
     
     private func loadCurrentUser() {
@@ -338,12 +409,13 @@ class UserManager: ObservableObject {
         AppLogger.info("UserManager: Resetting state for sign-out...", category: .auth)
         currentUser = nil
         hasCompletedOnboarding = false
-        // Clear cached verified badge so the next account on this device does
-        // not inherit the previous user's verification status.
+        // Clear cached verified badge + onboarding flag so the next account on
+        // this device does not inherit the previous user's state on cold start.
         isVerified = false
         isGoldVerified = false
         UserDefaults.standard.removeObject(forKey: UserManager.cachedIsVerifiedKey)
         UserDefaults.standard.removeObject(forKey: UserManager.cachedIsGoldVerifiedKey)
+        UserDefaults.standard.removeObject(forKey: UserManager.cachedHasCompletedOnboardingKey)
         AppLogger.info("UserManager: State reset complete", category: .auth)
     }
     

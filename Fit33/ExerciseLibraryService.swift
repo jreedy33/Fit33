@@ -20,6 +20,14 @@ struct ExerciseData: Codable {
     }
 }
 
+/// Q2-82 invariant (Sprint 8): `@Published` writes MUST be main-isolated. All
+/// current writers either run inside `@MainActor`-annotated methods
+/// (`upsertExerciseFromCloud`, `deleteExerciseById`, `loadCurrentUserAsync`) or
+/// are wrapped in `await MainActor.run { … }` (`preWarmCache`, `performSync`).
+/// The class is intentionally NOT `@MainActor` because `performSync` and the
+/// bulk ingest paths do heavy Core Data writes on a background context — moving
+/// the whole class onto main would serialize 6500-row syncs onto the main
+/// thread. Audit this contract before adding new `@Published` vars.
 class ExerciseLibraryService: ObservableObject {
     static let shared = ExerciseLibraryService()
     
@@ -31,12 +39,23 @@ class ExerciseLibraryService: ObservableObject {
     
     // MARK: - Loading State (for UI to know when exercises are ready)
     @Published var isExercisesReady: Bool = false
+
+    /// Bumped on every realtime upsert/delete so list views watching
+    /// `ExerciseLibraryService.shared` can re-read the refreshed library
+    /// (their local `@State var exercises: [Exercise]` won't notice a
+    /// managed-object mutation on its own). UUID change is the trigger.
+    @Published var libraryRevision: UUID = UUID()
     
     // MARK: - Caching
     private var cachedExercises: [Exercise]?
     private var cachedExercisesByName: [String: Exercise]? // For O(1) name lookups
     private var cachedExercisesById: [UUID: Exercise]?     // For O(1) ID lookups (shared workouts)
     private var fuzzyNameCache: [String: Exercise]?        // Alternate name forms → Exercise
+    /// Lowercased base-name stems that appear in 2+ distinct exercises (e.g. "21s bicep curl"
+    /// when both "21s Bicep Curl (Dumbbell)" and "21s Bicep Curl (EZ Bar)" exist).
+    /// Powers `ExerciseNicknameService.presentationName(for:)` so the trailing equipment
+    /// parenthetical is only kept when it actually disambiguates.
+    private var cachedDuplicateBaseNames: Set<String>?
     private var cacheTimestamp: Date?
     
     // MARK: - Sync Protection
@@ -170,6 +189,7 @@ class ExerciseLibraryService: ObservableObject {
             )
             cachedExercisesById = nil
             fuzzyNameCache = nil
+            cachedDuplicateBaseNames = nil
         }
         
         let lower = name.lowercased().trimmingCharacters(in: .whitespaces)
@@ -360,6 +380,62 @@ class ExerciseLibraryService: ObservableObject {
     func getExercises(byNames names: [String]) -> [Exercise] {
         return names.compactMap { getExercise(byName: $0) }
     }
+
+    // MARK: - Display-name ambiguity (powers smart suffix stripping)
+
+    /// Returns `true` when the given base stem (name with the trailing " (...)" removed)
+    /// is shared by 2+ distinct exercises — i.e. the parenthetical carries real
+    /// disambiguating information ("(Dumbbell)" vs "(EZ Bar)") and must stay.
+    ///
+    /// Safe default: if the primary name cache isn't built yet (cold start during
+    /// `preWarmCache`), returns `true` so callers keep the full name. The display
+    /// layer re-renders once `isExercisesReady` flips and the cache warms up.
+    func isBaseNameAmbiguous(_ baseStem: String) -> Bool {
+        let key = baseStem.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty else { return false }
+
+        if cachedDuplicateBaseNames == nil {
+            guard let primary = cachedExercisesByName else { return true }
+            cachedDuplicateBaseNames = Self.buildDuplicateBaseNames(fromLowercasedNames: primary.keys)
+        }
+        return cachedDuplicateBaseNames?.contains(key) ?? true
+    }
+
+    /// Strip exactly one trailing " (...)" segment. Earlier parentheticals (e.g.
+    /// "seated military press (inside squat cage)") are preserved because they
+    /// are descriptive, not equipment-disambiguators.
+    static func baseNameStem(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasSuffix(")"),
+              let openRange = trimmed.range(of: "(", options: .backwards) else {
+            return trimmed
+        }
+        // Require whitespace immediately before "(" so we don't chop mid-token names
+        // like "f(x)" (defensive — shouldn't appear in the library, but cheap).
+        let beforeOpen = trimmed[..<openRange.lowerBound]
+        guard beforeOpen.last?.isWhitespace == true else { return trimmed }
+        return String(beforeOpen).trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func buildDuplicateBaseNames<S: Sequence>(fromLowercasedNames names: S) -> Set<String> where S.Element == String {
+        // Group every name by its "collision key": for parenthesized names that's
+        // the stripped stem; for bare names it's the name itself. A stem is
+        // ambiguous whenever ≥2 distinct exercises map to the same key — which
+        // covers both "Curl (Dumbbell)" + "Curl (EZ Bar)" AND "Push-Up" + "Push-Up (Wide Grip)".
+        var counts: [String: Int] = [:]
+        var seenParenthesized: [String: Bool] = [:]
+        for name in names {
+            let stem = baseNameStem(name)
+            counts[stem, default: 0] += 1
+            if stem != name { seenParenthesized[stem] = true }
+        }
+        // Only add stems that had at least one parenthesized contributor —
+        // two bare names can't collide with themselves (they're the same name).
+        return Set(counts.compactMap { key, count in
+            guard count >= 2, seenParenthesized[key] == true else { return nil }
+            return key
+        })
+    }
     
     /// Invalidate the exercise cache (call after sync or modifications)
     func invalidateCache() {
@@ -367,6 +443,7 @@ class ExerciseLibraryService: ObservableObject {
         cachedExercisesByName = nil
         cachedExercisesById = nil
         fuzzyNameCache = nil
+        cachedDuplicateBaseNames = nil
         cacheTimestamp = nil
         #if DEBUG
         AppLogger.debug("📦 Exercise cache invalidated", category: .data)
@@ -475,20 +552,49 @@ class ExerciseLibraryService: ObservableObject {
     }
     
     /// Force sync exercises - clears old data and pulls fresh from cloud
+    ///
+    /// M-7 (Sprint 9 2026-04-28): Races fixed. Holds `syncLock` across the
+    /// full pre-clear + fetch + `performSync` cycle so a concurrent
+    /// `syncExercisesFromCloud()` call cannot interleave between the batch
+    /// delete and the fresh insert (which would leave Core Data in a half-
+    /// populated state) and a second concurrent `forceSyncExercises()` call
+    /// returns immediately instead of double-clearing.
     func forceSyncExercises() async {
+        // 🛡️ Never force-sync during an active workout.
+        if WorkoutManager.shared.isWorkoutActive {
+            AppLogger.warning("⚠️ [SYNC] Skipping force sync - workout is active", category: .network)
+            return
+        }
+
+        // 🔒 Acquire the sync gate for the full clear+fetch+insert window.
+        syncLock.lock()
+        if isSyncing {
+            syncLock.unlock()
+            AppLogger.warning("⚠️ [FORCE SYNC] Skipping - sync already in progress", category: .network)
+            return
+        }
+        isSyncing = true
+        syncLock.unlock()
+
+        defer {
+            syncLock.lock()
+            isSyncing = false
+            syncLock.unlock()
+        }
+
         AppLogger.debug("🔄 FORCE SYNC: Clearing old exercise data...", category: .network)
-        
+
         // ⚠️ Mark as not ready FIRST so UI shows loading state
         // and onChange(isExercisesReady) fires when sync completes
         await MainActor.run {
             isExercisesReady = false
         }
-        
+
         await MainActor.run {
             let viewContext = PersistenceController.shared.container.viewContext
             let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Exercise.fetchRequest()
             let deleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
-            
+
             do {
                 try viewContext.execute(deleteRequest)
                 try viewContext.save()
@@ -498,13 +604,50 @@ class ExerciseLibraryService: ObservableObject {
                 AppLogger.error("❌ Error clearing exercises: \(error)", category: .data)
             }
         }
-        
-        // Now sync fresh data
-        await syncExercisesFromCloud()
-        
-        // Mark as synced with latest data
+
+        // Now sync fresh data — we already hold `isSyncing`, so call the
+        // private locked helper directly instead of re-acquiring via
+        // `syncExercisesFromCloud()` (which would be a no-op since `isSyncing`
+        // is true).
+        await fetchAndPerformSyncLocked()
+
         UserDefaults.standard.set(Date(), forKey: "lastExerciseDataUpdate")
         AppLogger.debug("✅ FORCE SYNC complete - fresh data loaded!", category: .network)
+    }
+
+    /// Internal sync-impl that assumes `isSyncing` is already true.
+    /// Callers must hold the sync gate. (M-7, Sprint 9.)
+    private func fetchAndPerformSyncLocked() async {
+        AppLogger.debug("🔄 Starting exercise sync from cloud...", category: .network)
+        do {
+            var cloudExercises: [ExerciseDTO]?
+            var lastError: Error?
+            for attempt in 0...2 {
+                do {
+                    cloudExercises = try await SupabaseManager.shared.fetchAllExercises()
+                    break
+                } catch {
+                    lastError = error
+                    let nsError = error as NSError
+                    if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut && attempt < 2 {
+                        let delay = UInt64(pow(2.0, Double(attempt))) * 2_000_000_000
+                        AppLogger.warning("Exercise cloud sync timed out (attempt \(attempt + 1)/3) — retrying in \(delay / 1_000_000_000)s...", category: .network)
+                        try? await Task.sleep(nanoseconds: delay)
+                        continue
+                    }
+                    throw error
+                }
+            }
+            guard let exercises = cloudExercises else {
+                throw lastError ?? NSError(domain: "ExerciseLibraryService", code: -1)
+            }
+            AppLogger.debug("✅ Fetched \(exercises.count) exercises from cloud", category: .network)
+            await performSync(with: exercises)
+
+            UserDefaults.standard.set(Date(), forKey: "lastExerciseCloudSync")
+        } catch {
+            AppLogger.error("❌ Failed to fetch exercises from cloud: \(error)", category: .network)
+        }
     }
     
     /// How often exercises should be fully re-synced from cloud.
@@ -557,79 +700,65 @@ class ExerciseLibraryService: ObservableObject {
             isSyncing = false
             syncLock.unlock()
         }
-        
-        // Fetch exercises from Supabase with retry on timeout, then sync to Core Data
-        AppLogger.debug("🔄 Starting exercise sync from cloud...", category: .network)
-        do {
-            var cloudExercises: [ExerciseDTO]?
-            var lastError: Error?
-            for attempt in 0...2 {
-                do {
-                    cloudExercises = try await SupabaseManager.shared.fetchAllExercises()
-                    break
-                } catch {
-                    lastError = error
-                    let nsError = error as NSError
-                    if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut && attempt < 2 {
-                        let delay = UInt64(pow(2.0, Double(attempt))) * 2_000_000_000
-                        AppLogger.warning("Exercise cloud sync timed out (attempt \(attempt + 1)/3) — retrying in \(delay / 1_000_000_000)s...", category: .network)
-                        try? await Task.sleep(nanoseconds: delay)
-                        continue
-                    }
-                    throw error
-                }
-            }
-            guard let exercises = cloudExercises else {
-                throw lastError ?? NSError(domain: "ExerciseLibraryService", code: -1)
-            }
-            AppLogger.debug("✅ Fetched \(exercises.count) exercises from cloud", category: .network)
-            await performSync(with: exercises)
-            
-            UserDefaults.standard.set(Date(), forKey: "lastExerciseCloudSync")
-        } catch {
-            AppLogger.error("❌ Failed to fetch exercises from cloud: \(error)", category: .network)
-        }
+
+        // M-7 (Sprint 9): fetch+insert moved into `fetchAndPerformSyncLocked()`
+        // so `forceSyncExercises()` can reuse the same inner flow while
+        // already holding the gate.
+        await fetchAndPerformSyncLocked()
     }
-    
+
     private func performSync(with cloudExercises: [ExerciseDTO]) async {
         AppLogger.debug("✅ Processing \(cloudExercises.count) exercises for sync", category: .network)
         
         // ⚠️ Mark exercises as not ready during sync (UI will show loading)
         await MainActor.run {
             isExercisesReady = false
-        }
-        
-        await MainActor.run {
             ExerciseIntelligenceService.shared.resetProfiles()
         }
-        var intelligenceProfiles: [ExerciseIntelligenceProfile] = []
         
-        // Use batch delete for safety and performance
-        await MainActor.run {
-            let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Exercise.fetchRequest()
-            let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
-            batchDeleteRequest.resultType = .resultTypeObjectIDs
-            
-            do {
-                // Execute batch delete
-                let result = try viewContext.execute(batchDeleteRequest) as? NSBatchDeleteResult
-                let objectIDArray = result?.result as? [NSManagedObjectID]
-                let changes = [NSDeletedObjectsKey: objectIDArray ?? []]
-                NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [viewContext])
-                AppLogger.debug("🗑️ Cleared existing exercises from Core Data", category: .data)
-            } catch {
-                AppLogger.error("⚠️ Error clearing exercises: \(error)", category: .data)
-            }
+        // Q2-79 (Sprint 8): Move the 6500-row delete + reinsert OFF the main
+        // thread. Writes happen on a bg context with chunked save/reset to keep
+        // memory flat; the container's viewContext has
+        // `automaticallyMergesChangesFromParent = true` so the view sees the
+        // new rows as soon as the bg save commits. We only hop back to main
+        // for the `@Published isExercisesReady` bump, the cache rebuild
+        // (`invalidateCache()` touches viewContext), and the intelligence
+        // profile update (ObservableObject on main).
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        bgContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        
+        struct SyncOutcome {
+            let syncedCount: Int
+            let profiles: [ExerciseIntelligenceProfile]
         }
         
-        // Add cloud exercises to Core Data (deduplicate by name)
-        // The database may have multiple entries per exercise (one per gender for videos)
-        // We only need one exercise entry - video service handles gender-specific videos
-        var syncedCount = 0
-        var seenExerciseNames = Set<String>()
-        
-        await MainActor.run {
-            for cloudExercise in cloudExercises {
+        let outcome: SyncOutcome = await withCheckedContinuation { continuation in
+            bgContext.perform {
+                // Batch delete existing exercises on the bg context so the
+                // main thread never walks the full Exercise table.
+                let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Exercise.fetchRequest()
+                let batchDeleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
+                batchDeleteRequest.resultType = .resultTypeObjectIDs
+                do {
+                    let result = try bgContext.execute(batchDeleteRequest) as? NSBatchDeleteResult
+                    let objectIDArray = result?.result as? [NSManagedObjectID]
+                    let changes = [NSDeletedObjectsKey: objectIDArray ?? []]
+                    NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [bgContext])
+                    try bgContext.save()
+                    AppLogger.debug("🗑️ Cleared existing exercises from Core Data (bg)", category: .data)
+                } catch {
+                    AppLogger.error("⚠️ Error clearing exercises: \(error)", category: .data)
+                }
+                
+                // Insert loop with chunked save + reset to cap memory. The
+                // database may have multiple entries per exercise (one per
+                // gender for videos) — we dedupe by normalized name.
+                var syncedCount = 0
+                var intelligenceProfiles: [ExerciseIntelligenceProfile] = []
+                var seenExerciseNames = Set<String>()
+                let chunkSize = 500
+                
+                for cloudExercise in cloudExercises {
                 // Skip exercises with empty names
                 guard !cloudExercise.name.isEmpty else {
                     continue
@@ -642,7 +771,7 @@ class ExerciseLibraryService: ObservableObject {
                 }
                 seenExerciseNames.insert(normalizedName)
                 
-                let exercise = Exercise(context: viewContext)
+                let exercise = Exercise(context: bgContext)
                 if let cloudId = cloudExercise.id, let uuid = UUID(uuidString: cloudId) {
                     exercise.id = uuid
                 } else {
@@ -766,33 +895,50 @@ class ExerciseLibraryService: ObservableObject {
                     homeGymFriendly: cloudExercise.homeGymFriendly ?? true
                 )
                 intelligenceProfiles.append(profile)
+                
+                // Chunked save + reset so memory stays flat across the ~6500
+                // inserts. `reset()` discards in-memory instances (already
+                // committed to the store); the viewContext picks them up via
+                // `automaticallyMergesChangesFromParent`.
+                if syncedCount % chunkSize == 0 {
+                    do {
+                        try bgContext.save()
+                        bgContext.reset()
+                    } catch {
+                        AppLogger.error("❌ Error saving exercise chunk at \(syncedCount): \(error)", category: .data)
+                    }
+                }
             }
             
+            // Final save for any remaining <chunkSize entities.
             do {
-                try viewContext.save()
-                AppLogger.debug("✅ Synced \(syncedCount) exercises to Core Data", category: .network)
-                
-                // CRITICAL: Invalidate cache AFTER save completes
-                // This will synchronously rebuild the cache
-                invalidateCache()
-                
-                // Verify exercises are accessible
-                let verifyCount = getAllExercises().count
-                AppLogger.debug("✅ [VERIFY] Cache now has \(verifyCount) exercises", category: .data)
-                
-                // ✅ Mark exercises as ready now that sync is complete
-                if verifyCount > 100 {
-                    isExercisesReady = true
-                    AppLogger.debug("✅ [SYNC] Exercises ready: \(verifyCount) exercises available", category: .network)
-                }
+                try bgContext.save()
+                AppLogger.debug("✅ Synced \(syncedCount) exercises to Core Data (bg)", category: .network)
             } catch {
-                AppLogger.error("❌ Error saving exercises to Core Data: \(error)", category: .data)
+                AppLogger.error("❌ Error saving final exercises chunk: \(error)", category: .data)
             }
-        }
+            
+            continuation.resume(returning: SyncOutcome(
+                syncedCount: syncedCount,
+                profiles: intelligenceProfiles
+            ))
+            } // end bgContext.perform
+        } // end withCheckedContinuation
         
+        // Hop to main for the `@Published` updates + cache rebuild. The cache
+        // reads through the viewContext, which now sees the bg-saved rows via
+        // automatic merging on the container.
         await MainActor.run {
-            ExerciseIntelligenceService.shared.updateProfiles(intelligenceProfiles)
+            invalidateCache()
+            let verifyCount = getAllExercises().count
+            AppLogger.debug("✅ [VERIFY] Cache now has \(verifyCount) exercises", category: .data)
+            if verifyCount > 100 {
+                isExercisesReady = true
+                AppLogger.debug("✅ [SYNC] Exercises ready: \(verifyCount) exercises available", category: .network)
+            }
+            ExerciseIntelligenceService.shared.updateProfiles(outcome.profiles)
         }
+        _ = outcome.syncedCount  // Silences unused-warning; already logged above.
         
         // Don't block on supplemental data - do it in background
         Task.detached(priority: .background) {
@@ -927,6 +1073,7 @@ class ExerciseLibraryService: ObservableObject {
         do {
             try ctx.save()
             invalidateCache()
+            libraryRevision = UUID()
             AppLogger.info("✅ [ExerciseLibrary] Upserted '\(dto.name)' from realtime (\(existing == nil ? "INSERT" : "UPDATE"))", category: .data)
         } catch {
             AppLogger.error("❌ [ExerciseLibrary] Realtime upsert save failed for '\(dto.name)': \(error.localizedDescription)", category: .data)
@@ -954,6 +1101,7 @@ class ExerciseLibraryService: ObservableObject {
         do {
             try ctx.save()
             invalidateCache()
+            libraryRevision = UUID()
             AppLogger.info("🗑️ [ExerciseLibrary] Deleted '\(name)' from realtime", category: .data)
         } catch {
             AppLogger.error("❌ [ExerciseLibrary] Realtime delete save failed for '\(name)': \(error.localizedDescription)", category: .data)
@@ -1059,6 +1207,7 @@ class ExerciseLibraryService: ObservableObject {
                 },
                 uniquingKeysWith: { first, _ in first }
             )
+            cachedDuplicateBaseNames = nil
             
             #if DEBUG
             AppLogger.debug("📦 [ExerciseLibrary] Built name cache with \(cachedExercisesByName?.count ?? 0) entries", category: .data)

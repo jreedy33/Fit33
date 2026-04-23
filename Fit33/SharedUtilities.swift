@@ -186,13 +186,31 @@ enum DateFormatUtils {
     }
 }
 
-// MARK: - Equipment Normalization
-// Consolidates equipment string normalization across the app
+// MARK: - Equipment Normalization (Q2-89 consolidation)
+//
+// Single source of truth for equipment normalization + UI lookups. The raw
+// `contains("barbell") / contains("dumbbell") / …` pattern was previously
+// duplicated across ~30 files (engines + views). This helper delegates the
+// actual category classification to `ExerciseFilterService.normalizeEquipment`
+// (the canonical resolver — used by every generator + selection engine) and
+// adds:
+//   - `icon(for:)` for UI chips (previously duplicated in
+//     `LocationEquipmentSelectionView`).
+//   - `matches(_:category:)` for simple "is this a {barbell,dumbbell,…} row"
+//     tests so call sites don't keep re-implementing substring checks.
+//   - `isGymEquipment` / `isFreeWeight` predicates.
+//
+// NOTE: engines (`SmartExerciseSelectionEngine`, `SmartExercisePairingEngine`,
+// `ProgressiveExerciseUnlockService`, `UserBehaviorLearningEngine`) already
+// wrap `ExerciseFilterService.normalizeEquipment` in thin private helpers — no
+// further change needed there.
 
 enum EquipmentNormalizer {
     
-    /// Standard equipment categories used throughout the app
-    enum EquipmentType: String, CaseIterable {
+    /// Canonical equipment category returned by `normalize(_:)`. Kept here as
+    /// an enum so call sites can pattern-match instead of doing string
+    /// comparisons.
+    enum Category: String, CaseIterable {
         case dumbbells = "Dumbbells"
         case barbell = "Barbell"
         case cables = "Cables"
@@ -202,69 +220,78 @@ enum EquipmentNormalizer {
         case resistanceBands = "Resistance Bands"
         case bodyweight = "Bodyweight"
         case trxRings = "TRX/Rings"
-        case ezBar = "EZ Bar"
         case medicineBall = "Medicine Ball"
         case stabilityBall = "Stability Ball"
+        case landmine = "Landmine"
+        case sled = "Sled"
+        case foamRoller = "Foam Roller"
         case bench = "Bench"
         case pullUpBar = "Pull-Up Bar"
-        
-        var lowercased: String {
-            rawValue.lowercased()
-        }
     }
     
-    /// Normalizes raw equipment string to standard format (Title Case)
+    /// Normalizes a raw equipment string to a canonical category title. Routes
+    /// through `ExerciseFilterService.normalizeEquipment` so every call site in
+    /// the app agrees on the mapping (e.g. "ez bar" → "Barbell", "lever row"
+    /// → "Machines").
     static func normalize(_ rawEquipment: String?) -> String {
-        guard let equipment = rawEquipment?.lowercased(), !equipment.isEmpty else {
-            return EquipmentType.bodyweight.rawValue
-        }
-        
-        // Check for specific equipment types
-        if equipment.contains("dumbbell") { return EquipmentType.dumbbells.rawValue }
-        if equipment.contains("ez bar") || equipment.contains("ez-bar") { return EquipmentType.ezBar.rawValue }
-        if equipment.contains("barbell") { return EquipmentType.barbell.rawValue }
-        if equipment.contains("cable") { return EquipmentType.cables.rawValue }
-        if equipment.contains("smith") { return EquipmentType.smithMachine.rawValue }
-        if equipment.contains("machine") || equipment.contains("lever") { return EquipmentType.machines.rawValue }
-        if equipment.contains("kettlebell") { return EquipmentType.kettlebell.rawValue }
-        if equipment.contains("band") || equipment.contains("resistance") { return EquipmentType.resistanceBands.rawValue }
-        if equipment.contains("trx") || equipment.contains("suspension") || equipment.contains("ring") { return EquipmentType.trxRings.rawValue }
-        if equipment.contains("medicine ball") { return EquipmentType.medicineBall.rawValue }
-        if equipment.contains("stability ball") || equipment.contains("swiss ball") { return EquipmentType.stabilityBall.rawValue }
-        if equipment.contains("bench") { return EquipmentType.bench.rawValue }
-        if equipment.contains("pull") && equipment.contains("bar") { return EquipmentType.pullUpBar.rawValue }
-        if equipment.contains("body") || equipment == "none" { return EquipmentType.bodyweight.rawValue }
-        
-        return equipment.isEmpty ? EquipmentType.bodyweight.rawValue : rawEquipment ?? EquipmentType.bodyweight.rawValue
+        return ExerciseFilterService.normalizeEquipment(rawEquipment)
     }
     
-    /// Normalizes to lowercase for comparison/storage
+    /// Normalized as a `Category` when possible. Falls back to `.bodyweight`
+    /// for unknown values (mirroring the string API).
+    static func category(for rawEquipment: String?) -> Category {
+        return Category(rawValue: normalize(rawEquipment)) ?? .bodyweight
+    }
+    
+    /// Normalizes to lowercase for comparison/storage.
     static func normalizeLowercased(_ rawEquipment: String?) -> String {
         return normalize(rawEquipment).lowercased()
     }
     
-    /// Check if equipment is gym equipment (not bodyweight/home)
-    static func isGymEquipment(_ equipment: String) -> Bool {
-        let normalized = normalize(equipment)
-        let gymTypes: Set<String> = [
-            EquipmentType.barbell.rawValue,
-            EquipmentType.cables.rawValue,
-            EquipmentType.machines.rawValue,
-            EquipmentType.smithMachine.rawValue
-        ]
-        return gymTypes.contains(normalized)
+    /// SF Symbol for a given equipment category. Replaces the duplicated icon
+    /// switch statements in views.
+    static func icon(for rawEquipment: String) -> String {
+        switch category(for: rawEquipment) {
+        case .barbell:          return "figure.strengthtraining.traditional"
+        case .dumbbells:        return "dumbbell.fill"
+        case .cables:           return "cable.connector"
+        case .machines:         return "gearshape.2.fill"
+        case .smithMachine:     return "square.stack.3d.up.fill"
+        case .kettlebell:       return "scalemass.fill"
+        case .resistanceBands:  return "waveform.path"
+        case .bodyweight:       return "figure.stand"
+        case .trxRings:         return "link"
+        case .medicineBall:     return "basketball.fill"
+        case .stabilityBall:    return "circle.fill"
+        case .landmine:         return "arrow.up.forward"
+        case .sled:             return "arrow.forward.square"
+        case .foamRoller:       return "cylinder.fill"
+        case .bench:            return "rectangle.fill"
+        case .pullUpBar:        return "figure.gymnastics"
+        }
     }
     
-    /// Check if equipment is free weights
+    /// Returns `true` if the raw equipment string matches the supplied
+    /// category. Prefer this over bespoke `equipment.lowercased().contains(…)`
+    /// checks throughout the codebase.
+    static func matches(_ rawEquipment: String?, category: Category) -> Bool {
+        return self.category(for: rawEquipment) == category
+    }
+    
+    /// Check if equipment is gym equipment (not bodyweight/home).
+    static func isGymEquipment(_ equipment: String) -> Bool {
+        switch category(for: equipment) {
+        case .barbell, .cables, .machines, .smithMachine: return true
+        default: return false
+        }
+    }
+    
+    /// Check if equipment is free weights.
     static func isFreeWeight(_ equipment: String) -> Bool {
-        let normalized = normalize(equipment)
-        let freeWeightTypes: Set<String> = [
-            EquipmentType.dumbbells.rawValue,
-            EquipmentType.barbell.rawValue,
-            EquipmentType.kettlebell.rawValue,
-            EquipmentType.ezBar.rawValue
-        ]
-        return freeWeightTypes.contains(normalized)
+        switch category(for: equipment) {
+        case .dumbbells, .barbell, .kettlebell: return true
+        default: return false
+        }
     }
 }
 

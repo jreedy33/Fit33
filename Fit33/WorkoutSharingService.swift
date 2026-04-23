@@ -221,9 +221,13 @@ class WorkoutSharingService: ObservableObject {
                 .value
             
             if let dto = response.first, let exercisesJson = dto.exercises_data {
+                guard let workoutUUID = UUID(uuidString: workoutId) else {
+                    AppLogger.error("❌ [SHARE] Cloud shared workout has malformed UUID '\(workoutId)'", category: .workout)
+                    return nil
+                }
                 // Create a temporary workout in Core Data for display
                 let workout = Workout(context: context)
-                workout.id = UUID(uuidString: workoutId) ?? UUID()
+                workout.id = workoutUUID
                 workout.name = dto.workout_name ?? "Shared Workout"
                 workout.date = Date()
                 workout.isCompleted = false

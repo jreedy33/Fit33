@@ -71,6 +71,20 @@ final class FitbitService: ObservableObject {
         }
     }
     
+    // MARK: - Cached Date Formatters (hoisted — ISO8601DateFormatter/DateFormatter
+    // are expensive; each call site was allocating a new one per request).
+    private static let ymdFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    private static let iso8601: ISO8601DateFormatter = ISO8601DateFormatter()
+    private static let iso8601Fractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
     private var userId: String? {
         get { KeychainHelper.load(key: "fitbit_user_id") }
         set {
@@ -401,14 +415,12 @@ final class FitbitService: ObservableObject {
         do {
             let token = try await ensureValidToken()
             
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let dateFormatter = Self.ymdFormatter
             
             guard let afterDate = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date()) else {
                 throw FitbitError.apiError("Failed to compute date range")
             }
             let afterDateStr = dateFormatter.string(from: afterDate)
-            let todayStr = dateFormatter.string(from: Date())
             
             // Fetch activity logs
             guard let url = URL(string: "\(Config.apiBaseUrl)/1/user/-/activities/list.json?afterDate=\(afterDateStr)&sort=desc&limit=100&offset=0") else {
@@ -443,9 +455,7 @@ final class FitbitService: ObservableObject {
         do {
             let token = try await ensureValidToken()
             
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
-            let todayStr = dateFormatter.string(from: Date())
+            let todayStr = Self.ymdFormatter.string(from: Date())
             
             guard let url = URL(string: "\(Config.apiBaseUrl)/1/user/-/activities/date/\(todayStr).json") else {
                 throw FitbitError.apiError("Invalid daily summary URL")
@@ -475,8 +485,7 @@ final class FitbitService: ObservableObject {
         do {
             let token = try await ensureValidToken()
             
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
+            let dateFormatter = Self.ymdFormatter
             
             guard let afterDate = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date()) else {
                 throw FitbitError.apiError("Failed to compute date range")
@@ -512,9 +521,7 @@ final class FitbitService: ObservableObject {
         do {
             let token = try await ensureValidToken()
             
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
-            let dateStr = dateFormatter.string(from: date)
+            let dateStr = Self.ymdFormatter.string(from: date)
             
             guard let url = URL(string: "\(Config.apiBaseUrl)/1/user/-/activities/heart/date/\(dateStr)/1d.json") else {
                 return nil
@@ -551,11 +558,8 @@ final class FitbitService: ObservableObject {
             // Map Fitbit activity type to app's activity type
             let activityType = mapFitbitActivityType(activity.activityName)
             
-            // Parse dates
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            
-            let startDate = dateFormatter.date(from: activity.startTime) ?? Date()
+            // Parse dates (Fitbit emits fractional seconds)
+            let startDate = Self.iso8601Fractional.date(from: activity.startTime) ?? Date()
             let completedAt = startDate.addingTimeInterval(Double(activity.activeDuration / 1000))
             
             // Create the cardio workout insert record
@@ -573,8 +577,8 @@ final class FitbitService: ObservableObject {
                 averageHeartRate: activity.averageHeartRate,
                 maxHeartRate: nil,
                 totalElevationGain: activity.elevationGain,
-                startedAt: ISO8601DateFormatter().string(from: startDate),
-                completedAt: ISO8601DateFormatter().string(from: completedAt),
+                startedAt: Self.iso8601.string(from: startDate),
+                completedAt: Self.iso8601.string(from: completedAt),
                 source: "fitbit",
                 externalId: String(activity.logId),
                 externalUrl: nil
@@ -616,9 +620,8 @@ final class FitbitService: ObservableObject {
         
         // Update streak if we synced activities from today
         let calendar = Calendar.current
-        let dateFormatter = ISO8601DateFormatter()
         let todayActivities = activities.filter { activity in
-            if let date = dateFormatter.date(from: activity.startTime) {
+            if let date = Self.iso8601.date(from: activity.startTime) {
                 return calendar.isDateInToday(date)
             }
             return false
@@ -639,7 +642,7 @@ final class FitbitService: ObservableObject {
     private func syncActivitiesToChallenges(_ activities: [FitbitActivity]) async {
         let calendar = Calendar.current
         let todayActivities = activities.filter { activity in
-            if let date = ISO8601DateFormatter().date(from: activity.startTime) {
+            if let date = Self.iso8601.date(from: activity.startTime) {
                 return calendar.isDateInToday(date)
             }
             return false

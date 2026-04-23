@@ -2,6 +2,35 @@ import SwiftUI
 import CoreData
 import Charts
 
+// Q2-78 (Sprint 8): hoisted formatters shared across the view's long list of
+// helper properties. Avoids allocating a fresh `DateFormatter` / `NumberFormatter`
+// on every render of the stats / calendar / activity panels.
+private let workoutProgressDecimalFormatter: NumberFormatter = {
+    let f = NumberFormatter()
+    f.numberStyle = .decimal
+    return f
+}()
+private let workoutProgressDayMonthFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "EEEE, MMM d"
+    return f
+}()
+private let workoutProgressMonthYearFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMMM yyyy"
+    return f
+}()
+private let workoutProgressShortMonthFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMM"
+    return f
+}()
+private let workoutProgressMonthYearShortFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMM yyyy"
+    return f
+}()
+
 // MARK: - Achievement Service
 class AchievementService: ObservableObject {
     static let shared = AchievementService()
@@ -480,10 +509,16 @@ struct WorkoutProgressView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var userManager: UserManager
     @StateObject private var cloudProgramService = CloudProgramService.shared
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        predicate: NSPredicate(format: "isCompleted == YES"),
-        animation: .none)
+    // Progress charts need a wide window but not unbounded; 365 completed
+    // workouts covers the deepest timeframe the picker supports. Per QP
+    // invariant #3.
+    @FetchRequest(fetchRequest: {
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+        request.predicate = NSPredicate(format: "isCompleted == YES")
+        request.fetchLimit = 365
+        return request
+    }(), animation: .none)
     private var workouts: FetchedResults<Workout>
     
     @State private var selectedTimeFrame: TimeFrame = .month
@@ -877,9 +912,7 @@ struct WorkoutProgressView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -998,9 +1031,7 @@ struct WorkoutProgressView: View {
     }
     
     private func formatSteps(_ steps: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: steps)) ?? "\(steps)"
+        return workoutProgressDecimalFormatter.string(from: NSNumber(value: steps)) ?? "\(steps)"
     }
     
     // MARK: - Streak Section
@@ -1079,9 +1110,7 @@ struct WorkoutProgressView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -1314,9 +1343,7 @@ struct WorkoutProgressView: View {
     }
     
     private var formattedToday: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMM d"
-        return formatter.string(from: Date())
+        return workoutProgressDayMonthFormatter.string(from: Date())
     }
     
     // MARK: - Activity Calendar Section (Swipeable Cards)
@@ -1432,9 +1459,7 @@ struct WorkoutProgressView: View {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -1646,9 +1671,7 @@ struct WorkoutProgressView: View {
     
     // MARK: - Ring Calendar Helpers
     private var currentMonthYear: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: Date())
+        return workoutProgressMonthYearFormatter.string(from: Date())
     }
     
     private var firstDayOfMonthOffset: Int {
@@ -1774,9 +1797,7 @@ struct WorkoutProgressView: View {
         // Show month abbreviation for first week of each month
         let day = calendar.component(.day, from: date)
         if day <= 7 {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM"
-            return formatter.string(from: date)
+            return workoutProgressShortMonthFormatter.string(from: date)
         }
         return ""
     }
@@ -1877,9 +1898,7 @@ struct WorkoutProgressView: View {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color(white: 0.15), Color(white: 0.10)]
-                                    : [Color.white, Color.white.opacity(0.95)],
+                                colors: Color.cardGradientStops(for: colorScheme),
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -1946,9 +1965,7 @@ struct WorkoutProgressView: View {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color(white: 0.15), Color(white: 0.10)]
-                                    : [Color.white, Color.white.opacity(0.95)],
+                                colors: Color.cardGradientStops(for: colorScheme),
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -2061,9 +2078,7 @@ struct WorkoutProgressView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -2153,9 +2168,7 @@ struct WorkoutProgressView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -2285,9 +2298,7 @@ struct WorkoutProgressView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -2355,9 +2366,7 @@ struct WorkoutProgressView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -2418,9 +2427,7 @@ struct WorkoutProgressView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -2711,9 +2718,7 @@ struct WorkoutProgressView: View {
             }
         }
         
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM yyyy"
-        return formatter.string(from: bestMonth)
+        return workoutProgressMonthYearShortFormatter.string(from: bestMonth)
     }
     
     private var totalSets: Int {
@@ -3145,9 +3150,7 @@ struct EnhancedStatCard: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -3221,9 +3224,7 @@ struct PRCard: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -3301,9 +3302,7 @@ struct AchievementBadge: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -3490,9 +3489,7 @@ struct AllAchievementsView: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -3644,9 +3641,7 @@ struct EnhancedAchievementCard: View {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.15), Color(white: 0.10)]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            colors: Color.cardGradientStops(for: colorScheme),
                             startPoint: .top,
                             endPoint: .bottom
                         )

@@ -6,17 +6,26 @@
 
 ## Doc Architecture (read this first)
 
-We follow a two-layer pattern:
+We follow a **three-layer** pattern (rules → current-agent → history):
 
-1. **`.cursor/rules/codingrules.mdc`** — universal rules that apply to EVERY agent (logging, force-unwraps, design tokens, structured concurrency, accessibility, RLS, SECURITY DEFINER views, Core Data threading, widget isolation, UserDefaults, video player threading, startup perf). Loaded automatically every turn. Don't duplicate these rules in agent docs.
-2. **`*_AGENT.md`** (this directory) — short, rule-shaped "Invariants + Map" per agent. Each file opens with numbered invariants ("what will cause bugs if violated"), then canonical tokens / map / files, then a "See Also" footer. Typical length: 150–250 lines.
+1. **`.cursor/rules/*.mdc`** — auto-loaded rules.
+   - `codingrules.mdc` (`alwaysApply: true`) — universal, cross-cutting rules that apply to every agent (logging, force-unwraps, design tokens, structured concurrency, accessibility, migration layout, etc.).
+   - `swiftui-rules.mdc` (globs `Fit33/**/*.swift`) — Swift / SwiftUI invariants.
+   - `supabase-rules.mdc` (globs `supabase/**/*.sql`, `supabase/functions/**/*.ts`) — RLS / RPC / migration invariants.
+   - `admin-cms-rules.mdc` (globs `admin-cms/**`) — CSP / cookie / deploy invariants.
+   - When you edit a file in a matching glob, that scoped rule file loads automatically. Don't duplicate these rules in agent docs.
+2. **`*_AGENT.md`** (this directory) — short, rule-shaped "Invariants + Map" per agent. Each file opens with numbered invariants ("what will cause bugs if violated"), then canonical tokens / map / files, then a "See Also" footer. Typical length: 100–250 lines.
 3. **`docs/history/*_AGENT.md`** — original long-form history (sprint changelogs, dated decisions, migration notes, audit logs). Referenced by each current agent doc. Read these ONLY when you need dated context — they are not loaded into every turn.
 
 **Consult-the-agents workflow:**
 1. Before making a change in an agent's domain, read their `*_AGENT.md` (fast — it's short).
-2. Apply the invariants in that file PLUS the universal rules in `codingrules.mdc`.
+2. Apply the invariants in that file PLUS whichever scoped rule auto-loaded for the file type you're editing PLUS the universal rules in `codingrules.mdc`.
 3. If you need historical context (why was this decision made? what migration shipped when?), open `docs/history/`.
-4. After shipping a change, update the relevant `*_AGENT.md` ONLY if the change introduces a new need-to-know fact. Append dated changelog entries to `docs/history/` instead.
+4. After shipping a change, update docs at the right layer:
+   - New rule-shaped invariant for ONE file type (Swift / SQL / CMS) → the matching scoped rule file.
+   - Cross-cutting invariant → `codingrules.mdc`.
+   - Agent-specific need-to-know (new canonical model / service ownership) → the current `*_AGENT.md`.
+   - Dated narrative / audit / migration notes → append to `docs/history/*_AGENT.md`.
 
 ---
 
@@ -173,18 +182,24 @@ We follow a two-layer pattern:
 
 ---
 
-## Top-Level Invariants (reminder — all covered in `codingrules.mdc`)
+## Top-Level Invariants (reminder — all covered in `.cursor/rules/*.mdc`)
 
-1. `AppLogger` only — never `print()`.
-2. No force unwraps in production.
-3. Design tokens only — no `.system(size:)` inline, no hardcoded padding/radius, no local `cardBackground`.
-4. Structured concurrency — `Task { }` with `Task.sleep(for:)`, never `DispatchQueue.main.asyncAfter`.
-5. Accessibility on every interactive element.
-6. RLS on every user-data table. Views use `security_invoker = on`. SECURITY DEFINER RPCs use `auth.uid()`, never `user_id` parameter.
-7. Widget isolation in ScrollViews with 5+ siblings.
-8. No sync Core Data in `init()` or `.task`.
-9. JSONSerialization safety — always `isValidJSONObject` first.
-10. AVFoundation + GenderFilterService off the main thread.
+> These duplicate-by-reference only. The rule files are the source of truth.
+> `codingrules.mdc` is universal; `swiftui-rules.mdc`, `supabase-rules.mdc`,
+> and `admin-cms-rules.mdc` auto-load when matching globs are edited.
+
+1. `AppLogger` only — never `print()`. *(swiftui-rules.mdc)*
+2. No force unwraps in production. *(swiftui-rules.mdc)*
+3. Design tokens only — no `.system(size:)` inline, no hardcoded padding/radius. Local `cardBackground` view-builders are fine as long as they use `Color.cardBackground` as their underlying fill. *(swiftui-rules.mdc)*
+4. Structured concurrency — `Task { }` with `Task.sleep(for:)`, never `DispatchQueue.main.asyncAfter`. *(swiftui-rules.mdc)*
+5. Accessibility on every interactive element. *(swiftui-rules.mdc)*
+6. RLS on every user-data table. Views use `security_invoker = on`. SECURITY DEFINER RPCs derive the acting user from `auth.uid()` and IDOR-guard any `user_id` parameter (see Sprint 6 / Sprint 7 migrations). *(supabase-rules.mdc)*
+7. Widget isolation in ScrollViews with 5+ siblings. *(swiftui-rules.mdc)*
+8. No sync Core Data in `init()` or `.task`. *(swiftui-rules.mdc)*
+9. JSONSerialization safety — always `isValidJSONObject` first. *(swiftui-rules.mdc)*
+10. AVFoundation + GenderFilterService off the main thread. *(swiftui-rules.mdc)*
+11. Realtime tables must have `REPLICA IDENTITY FULL` AND be registered in the `supabase_realtime` publication. *(supabase-rules.mdc)*
+12. Admin CMS: CSP in BOTH `next.config.ts` AND `middleware.ts`; httpOnly Secure SameSite=Strict cookies. *(admin-cms-rules.mdc)*
 
 ---
 

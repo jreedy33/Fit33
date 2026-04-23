@@ -15,8 +15,11 @@ struct BugReportView: View {
     @State private var submitSuccess = false
     @State private var includeSessionLog = true
     @State private var showingLogPreview = false
-    
-    
+    // Rage-shake v2 fields
+    @State private var severity: BugSeverity = .medium
+    @State private var detectedScreen: String = ""
+    @State private var detectedFiles: [String] = []
+
     private var inputBackground: Color {
         colorScheme == .dark ? Color(white: 0.08) : Color.gray.opacity(0.05)
     }
@@ -32,7 +35,13 @@ struct BugReportView: View {
                     VStack(spacing: 24) {
                         // Header with icon
                         headerSection
-                        
+
+                        // Context Claude will receive: current screen + files
+                        contextSection
+
+                        // Severity picker (user tells Claude how bad it is)
+                        severitySection
+
                         // Screenshot preview
                         screenshotSection
                         
@@ -92,9 +101,104 @@ struct BugReportView: View {
             } message: {
                 Text("Could not submit bug report. Please check your internet connection and try again.")
             }
+            .onAppear {
+                // Snapshot screen + files at the moment the user shook — if
+                // we wait until submit, they may have navigated.
+                let info = SessionLogManager.shared.getCurrentScreenInfo()
+                detectedScreen = info.name
+                detectedFiles = ScreenCodeMap.filesForScreen(info.name)
+            }
         }
     }
-    
+
+    // MARK: - Context Section (screen + likely files)
+    //
+    // Shows the user which screen was detected and which source files Claude
+    // will focus on. `ScreenCodeMap` returns up to 4 file candidates; we
+    // display relative paths (e.g. `Fit33/DashboardView.swift`) so the
+    // chosen scope is transparent to the user.
+    private var contextSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "location.viewfinder")
+                    .foregroundColor(.cyan)
+                Text("Captured Context")
+                    .font(.headline)
+                Spacer()
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "rectangle.on.rectangle")
+                    .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Screen")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(detectedScreen.isEmpty ? "Unknown" : detectedScreen)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                Spacer()
+            }
+
+            if !detectedFiles.isEmpty {
+                Divider()
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "swift")
+                        .foregroundColor(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Files Claude will review")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        ForEach(detectedFiles, id: \.self) { f in
+                            Text(f)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.primary)
+                        }
+                    }
+                    Spacer()
+                }
+            }
+        }
+        .padding()
+        .background(Color.cardBackground)
+        .cornerRadius(CornerRadius.lg)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
+    }
+
+    // MARK: - Severity
+    //
+    // User picks how bad this is; Claude uses `severity` to set the
+    // resulting `bug_intelligence_reports.severity` (and our daily rollup
+    // regression detector uses it). Default is `.medium`.
+    private var severitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.red)
+                Text("How bad is it?")
+                    .font(.headline)
+                Spacer()
+            }
+
+            Picker("Severity", selection: $severity) {
+                ForEach(BugSeverity.allCases) { level in
+                    Text(level.displayName).tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text(severity.detail)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding()
+        .background(Color.cardBackground)
+        .cornerRadius(CornerRadius.lg)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
+    }
+
     // MARK: - Header
     private var headerSection: some View {
         VStack(spacing: 12) {
@@ -458,9 +562,12 @@ struct BugReportView: View {
                 expectedBehavior: expectedBehavior,
                 reproducesEveryTime: reproducesEveryTime,
                 screenshot: shakeManager.capturedScreenshot,
-                screenName: nil,
+                screenName: detectedScreen.isEmpty ? nil : detectedScreen,
                 additionalInfo: additionalNotes.isEmpty ? nil : additionalNotes,
-                sessionLog: sessionLogText
+                sessionLog: sessionLogText,
+                severity: severity,
+                bugCategory: nil,
+                likelySourceFiles: detectedFiles.isEmpty ? nil : detectedFiles
             )
             
             if success {
@@ -549,7 +656,8 @@ struct ManualBugReportView: View {
     @State private var isSubmitting = false
     @State private var includeSessionLog = true
     @State private var showingLogPreview = false
-    
+    @State private var severity: BugSeverity = .medium
+
     // Photo picker
     @State private var selectedImage: UIImage?
     @State private var showingPhotoPicker = false
@@ -576,7 +684,10 @@ struct ManualBugReportView: View {
                         
                         // Privacy warning
                         privacyWarning
-                        
+
+                        // Severity (same component shape as rage shake)
+                        manualSeveritySection
+
                         // Bug description
                         descriptionSection
                         
@@ -868,6 +979,33 @@ struct ManualBugReportView: View {
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
     }
     
+    // MARK: - Severity (Manual)
+    private var manualSeveritySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.red)
+                Text("How bad is it?")
+                    .font(.headline)
+                Spacer()
+            }
+            Picker("Severity", selection: $severity) {
+                ForEach(BugSeverity.allCases) { level in
+                    Text(level.displayName).tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
+            Text(severity.detail)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding()
+        .background(Color.cardBackground)
+        .cornerRadius(CornerRadius.lg)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.05), radius: 8, x: 0, y: 4)
+    }
+
     // MARK: - Session Log Section
     private var manualSessionLogSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -964,7 +1102,10 @@ struct ManualBugReportView: View {
                 reproducesEveryTime: reproducesEveryTime,
                 screenshot: selectedImage,
                 additionalInfo: additionalNotes.isEmpty ? nil : additionalNotes,
-                sessionLog: sessionLogText
+                sessionLog: sessionLogText,
+                severity: severity,
+                bugCategory: nil,
+                likelySourceFiles: nil
             )
             
             await MainActor.run {

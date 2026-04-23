@@ -23,10 +23,10 @@ CREATE TABLE IF NOT EXISTS content_moderation_log (
 
 ALTER TABLE content_moderation_log ENABLE ROW LEVEL SECURITY;
 
-CREATE INDEX idx_moderation_log_user ON content_moderation_log (user_id, created_at DESC);
-CREATE INDEX idx_moderation_log_unreviewed ON content_moderation_log (admin_reviewed, created_at DESC)
+CREATE INDEX IF NOT EXISTS idx_moderation_log_user ON content_moderation_log (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_moderation_log_unreviewed ON content_moderation_log (admin_reviewed, created_at DESC)
     WHERE admin_reviewed = FALSE;
-CREATE INDEX idx_moderation_log_table ON content_moderation_log (table_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_moderation_log_table ON content_moderation_log (table_name, created_at DESC);
 
 -- No user-facing RLS policies — admin CMS reads via service role
 

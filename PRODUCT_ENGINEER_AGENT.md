@@ -4,7 +4,7 @@
 >
 > Deep history, sprint changelogs, and feature-by-feature notes (AI insights, WHOOP, Oura, push reliability, etc.) live in [`docs/history/PRODUCT_ENGINEER_AGENT.md`](docs/history/PRODUCT_ENGINEER_AGENT.md). This file is **rules-shaped**.
 
-Cross-cutting rules (logging, force unwraps, design tokens, structured concurrency, accessibility, RLS, security-definer views, Core Data threading, widget isolation, etc.) live once in `.cursor/rules/codingrules.mdc` — auto-loaded every turn. Don't duplicate them here.
+Cross-cutting rules (logging, force unwraps, design tokens, structured concurrency, accessibility, RLS, security-definer views, Core Data threading, widget isolation, etc.) live in `.cursor/rules/codingrules.mdc` (universal) and `.cursor/rules/swiftui-rules.mdc` (auto-loads when editing `Fit33/**/*.swift`). Don't duplicate them here.
 
 ---
 
@@ -129,4 +129,5 @@ Known duplicates to collapse (not urgent refactors — do opportunistically):
 - `QUALITY_PERFORMANCE_AGENT.md` — performance invariants, widget isolation details, tab-transition budgets
 - `DATA_BACKEND_AGENT.md` — DTOs, RPC contracts, repeat-exercise placeholder contract
 - `.cursor/rules/codingrules.mdc` — cross-cutting MUST/NEVER rules for all agents
+- `.cursor/rules/swiftui-rules.mdc` — Swift/SwiftUI-specific rules (auto-loads for `Fit33/**/*.swift`)
 - `docs/history/PRODUCT_ENGINEER_AGENT.md` — dated decisions, feature integration deep-dives

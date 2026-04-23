@@ -396,27 +396,30 @@ final class VideoPreloadManager: ObservableObject {
                 return
             }
             
-            DispatchQueue.main.async {
-                let player = self.createOptimizedPlayer(url: url)
-                
-                // Start buffering
-                player.currentItem?.preferredForwardBufferDuration = Config.bufferDuration
-                
-                self.addToCache(exerciseName: request.exerciseName, player: player)
-                
-                self.fetchLock.lock()
-                self.activeFetches.remove(normalizedName)
-                self.fetchLock.unlock()
-                
-                // Process next in queue
-                self.processPrefetchQueue()
-                
-                #if DEBUG
-                if request.priority == .visible {
-                    AppLogger.debug("📥 Prefetched (visible): \(request.exerciseName)", category: .general)
-                }
-                #endif
+            // Q2-76 (Sprint 9 2026-04-28): Was hopping to main to construct
+            // AVURLAsset + AVPlayerItem + AVPlayer, which is synchronous I/O
+            // for header parsing. The enclosing `prefetchQueue_serial.async`
+            // is already off-main; keep construction there and only hop to
+            // main if we need to touch @Published state.
+            let player = self.createOptimizedPlayer(url: url)
+
+            // Start buffering
+            player.currentItem?.preferredForwardBufferDuration = Config.bufferDuration
+
+            self.addToCache(exerciseName: request.exerciseName, player: player)
+
+            self.fetchLock.lock()
+            self.activeFetches.remove(normalizedName)
+            self.fetchLock.unlock()
+
+            // Process next in queue
+            self.processPrefetchQueue()
+
+            #if DEBUG
+            if request.priority == .visible {
+                AppLogger.debug("📥 Prefetched (visible): \(request.exerciseName)", category: .general)
             }
+            #endif
         }
     }
     

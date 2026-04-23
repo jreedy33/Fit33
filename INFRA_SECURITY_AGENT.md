@@ -4,7 +4,7 @@
 >
 > Dated audits, sprint fix lists, deploy notes, and per-integration security reviews live in [`docs/history/INFRA_SECURITY_AGENT.md`](docs/history/INFRA_SECURITY_AGENT.md).
 
-Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`.
+Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal), plus scoped rules that auto-load when editing matching files: `.cursor/rules/admin-cms-rules.mdc` (CSP, cookies, R2, Vercel deploys under `admin-cms/**`) and `.cursor/rules/supabase-rules.mdc` (RLS, SECURITY DEFINER, IDOR under `supabase/**/*.sql`).
 
 ---
 
@@ -34,7 +34,7 @@ Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`.
 17. **New silent-push types get their own case in `SilentPushHandler`.** Don't overload `challenge_wake`.
 
 ### Background services
-18. **`BackgroundChallengeSyncService`**: exponential backoff 30s→60s→120s→240s, min 15-minute interval between cycles. Every BGTask expiration handler MUST call `setTaskCompleted(success: false)` AND schedule the next cycle — leaving it dead stops BG wakes until next launch.
+18. **`BackgroundChallengeSyncService` throttling model**: per-source last-sync throttle (`perSourceThrottleInterval = 600s` / 10 min, stored under `bg_challenge_last_sync_<source>` in UserDefaults) prevents a single noisy HK source (steps) from starving the others. Workouts flagged high-priority bypass the throttle. BGAppRefreshTask is scheduled with `earliestBeginDate = +15 min`; BGProcessingTask with `+2h`. Concurrent callers coalesce on a single `@MainActor var inFlightSyncTask: Task<Void, Never>?` per QP invariant #24c. Every BGTask expiration handler MUST call `setTaskCompleted(success: false)` AND schedule the next cycle — leaving it dead stops BG wakes until next launch.
 19. **`DailyResetService`**: runs at user's local midnight (not UTC). Must be idempotent.
 
 ### Info.plist required modes
@@ -42,8 +42,8 @@ Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`.
 21. `BGTaskSchedulerPermittedIdentifiers` MUST include every BGTask identifier the app schedules (current: BGAppRefresh id + `com.gofit.app.challengeSyncProcessing`).
 
 ### Admin CMS
-22. **Admin session tokens are httpOnly Secure SameSite=Strict cookies.** Never write a client-readable cookie for auth state. The one path middleware skips (`/`) is a server component that reads cookies via `next/headers` + `cookies()` + `redirect()`. Never add `document.cookie.includes(...)` back.
-23. **CSP headers live in BOTH `admin-cms/next.config.ts` AND `admin-cms/src/middleware.ts`.** Middleware overrides config for authenticated routes. When adding a new external media domain, update BOTH — in particular `media-src` must include the R2 bucket.
+22. **Admin session tokens are httpOnly Secure SameSite=Strict cookies.** Never write a client-readable cookie for auth state. The one path middleware skips (`/`) is a server component that reads cookies via `next/headers` + `cookies()` + `redirect()`. Never add `document.cookie.includes(...)` back. Canonical implementation: `admin-cms/src/lib/auth-cookies.ts` (`COOKIE_OPTIONS`).
+23. **CSP is set ONLY in `admin-cms/src/middleware.ts`.** Sprint 5 (Q2-20) moved to per-request nonce + `strict-dynamic`; `next.config.ts` intentionally omits `Content-Security-Policy`. When adding a new external media domain (e.g. an R2 bucket in `media-src`) update middleware only. Never re-introduce a static CSP header in `next.config.ts` — two sources fight and silently regress to `'unsafe-inline'`.
 24. **R2 video URLs are raw filenames.** Never `encodeURIComponent` on filenames — they contain parentheses `(male)` / `(Dumbbell)` that break.
 
 ### App Store compliance (social apps)
@@ -133,6 +133,8 @@ Cross-cutting rules live once in `.cursor/rules/codingrules.mdc`.
 - `SUPABASE_AGENT.md` — RPC contracts, RLS patterns
 - `DATA_BACKEND_AGENT.md` — DTOs, migration index
 - `.cursor/rules/codingrules.mdc` — cross-cutting rules
+- `.cursor/rules/admin-cms-rules.mdc` — Admin CMS security rules (auto-loads for `admin-cms/**`)
+- `.cursor/rules/supabase-rules.mdc` — SQL/RLS/IDOR rules (auto-loads for `supabase/**/*.sql`)
 - `docs/history/INFRA_SECURITY_AGENT.md` — dated audits, per-integration security reviews
 
 *No credential ships in source code. No API goes unprotected. No admin action goes unlogged. When in doubt, lock it down and ask questions later.*

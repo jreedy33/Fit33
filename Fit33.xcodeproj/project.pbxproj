@@ -267,6 +267,7 @@
 		7CAFD56C2EE2109500920F0D /* ExercisePopularityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD56B2EE2109500920F0D /* ExercisePopularityService.swift */; };
 		7CAFD56E2EE231C600920F0D /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD56D2EE231C600920F0D /* Logger.swift */; };
 		7CAFD5712EE232C600920F0D /* NetworkErrorClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD5702EE232C600920F0D /* NetworkErrorClassifier.swift */; };
+		7CAFD5732EE233A000920F0D /* ScreenCodeMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD5722EE233A000920F0D /* ScreenCodeMap.swift */; };
 		7CB08C5F2ED644E700236ECB /* NutritionScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C5E2ED644E700236ECB /* NutritionScannerView.swift */; };
 		7CB08C612ED69E4D00236ECB /* WorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C602ED69E4D00236ECB /* WorkoutManager.swift */; };
 		7CB08C632ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C622ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift */; };
@@ -668,6 +669,7 @@
 		7CAFD56B2EE2109500920F0D /* ExercisePopularityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExercisePopularityService.swift; sourceTree = "<group>"; };
 		7CAFD56D2EE231C600920F0D /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
 		7CAFD5702EE232C600920F0D /* NetworkErrorClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkErrorClassifier.swift; sourceTree = "<group>"; };
+		7CAFD5722EE233A000920F0D /* ScreenCodeMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCodeMap.swift; sourceTree = "<group>"; };
 		7CB08C5C2ED6432900236ECB /* FoodSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodSearchView.swift; sourceTree = "<group>"; };
 		7CB08C5E2ED644E700236ECB /* NutritionScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionScannerView.swift; sourceTree = "<group>"; };
 		7CB08C602ED69E4D00236ECB /* WorkoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutManager.swift; sourceTree = "<group>"; };
@@ -1007,6 +1009,7 @@
 				7C8405E92EE9D9690009ED0F /* LocationEquipmentSelectionView.swift */,
 				7CAFD56D2EE231C600920F0D /* Logger.swift */,
 				7CAFD5702EE232C600920F0D /* NetworkErrorClassifier.swift */,
+				7CAFD5722EE233A000920F0D /* ScreenCodeMap.swift */,
 				7C558B262ED63C7400A01E1F /* MealService.swift */,
 				7CB08C9A2EDBC32900236ECB /* MealService.swift */,
 				7C558B222ED63C2C00A01E1F /* MealService.swift */,
@@ -1407,6 +1410,7 @@
 				7C6DE40F2F5DEAA700BCA276 /* ServiceProtocols.swift in Sources */,
 				7CAFD56E2EE231C600920F0D /* Logger.swift in Sources */,
 				7CAFD5712EE232C600920F0D /* NetworkErrorClassifier.swift in Sources */,
+				7CAFD5732EE233A000920F0D /* ScreenCodeMap.swift in Sources */,
 				7CAFD5562EDEA71200920F0D /* SocialAuthService.swift in Sources */,
 				7C792AFA2F2B9F5A0048A97E /* ShoppingListView.swift in Sources */,
 				7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */,
@@ -1823,7 +1827,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 48;
+				CURRENT_PROJECT_VERSION = 49;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -1853,7 +1857,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 48;
+				CURRENT_PROJECT_VERSION = 49;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RunningActivityWidget;
@@ -2007,7 +2011,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 48;
+				CURRENT_PROJECT_VERSION = 49;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2045,7 +2049,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 48;
+				CURRENT_PROJECT_VERSION = 49;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

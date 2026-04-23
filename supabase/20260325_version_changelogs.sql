@@ -38,5 +38,5 @@ CREATE POLICY "authenticated_select_changelogs"
   TO authenticated
   USING (true);
 
-CREATE INDEX idx_version_changelogs_version ON version_changelogs (version);
-CREATE INDEX idx_version_changelogs_created ON version_changelogs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_version_changelogs_version ON version_changelogs (version);
+CREATE INDEX IF NOT EXISTS idx_version_changelogs_created ON version_changelogs (created_at DESC);

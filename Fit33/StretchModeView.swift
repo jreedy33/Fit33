@@ -768,36 +768,44 @@ struct StretchModeView: View {
         setupPlayer(with: url)
     }
     
+    // Q2-76 (Sprint 9 2026-04-28): AVPlayerItem(url:) triggers synchronous
+    // asset/header parsing. Move it to a detached userInitiated Task and hop
+    // back to @MainActor only to wire the queue player + assign @State.
     private func setupPlayer(with url: URL) {
-        let playerItem = AVPlayerItem(url: url)
-        let newQueuePlayer = AVQueuePlayer(playerItem: playerItem)
-        newQueuePlayer.isMuted = true
-        
-        playerLooper = AVPlayerLooper(player: newQueuePlayer, templateItem: playerItem)
-        queuePlayer = newQueuePlayer
-        player = newQueuePlayer
-        newQueuePlayer.play()
-        
-        videoStatusObserver = playerItem.observe(\.status, options: [.new]) { [weak playerItem] item, _ in
-            Task { @MainActor in
-                guard item === playerItem else { return }
-                switch item.status {
-                case .readyToPlay:
-                    self.isLoadingVideo = false
-                case .failed:
-                    AppLogger.error("Video failed to load: \(item.error?.localizedDescription ?? "unknown")", category: .workout)
-                    self.isLoadingVideo = false
-                default:
-                    break
+        Task.detached(priority: .userInitiated) {
+            let playerItem = AVPlayerItem(url: url)
+
+            await MainActor.run {
+                let newQueuePlayer = AVQueuePlayer(playerItem: playerItem)
+                newQueuePlayer.isMuted = true
+
+                playerLooper = AVPlayerLooper(player: newQueuePlayer, templateItem: playerItem)
+                queuePlayer = newQueuePlayer
+                player = newQueuePlayer
+                newQueuePlayer.play()
+
+                videoStatusObserver = playerItem.observe(\.status, options: [.new]) { [weak playerItem] item, _ in
+                    Task { @MainActor in
+                        guard item === playerItem else { return }
+                        switch item.status {
+                        case .readyToPlay:
+                            self.isLoadingVideo = false
+                        case .failed:
+                            AppLogger.error("Video failed to load: \(item.error?.localizedDescription ?? "unknown")", category: .workout)
+                            self.isLoadingVideo = false
+                        default:
+                            break
+                        }
+                    }
                 }
-            }
-        }
-        
-        // Timeout fallback so the spinner doesn't hang indefinitely
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(5))
-            if self.isLoadingVideo {
-                self.isLoadingVideo = false
+
+                // Timeout fallback so the spinner doesn't hang indefinitely
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(5))
+                    if self.isLoadingVideo {
+                        self.isLoadingVideo = false
+                    }
+                }
             }
         }
     }

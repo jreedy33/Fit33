@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isAdminEmail } from '@/lib/auth'
 import { setAuthCookies } from '@/lib/auth-cookies'
+import { parseJson, verifyMfaSchema } from '@/lib/validation'
 
 export async function POST(req: NextRequest) {
   try {
-    const { factor_id, code, temp_token, temp_refresh, temp_expires } = await req.json()
-
-    if (!factor_id || !code || !temp_token) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
-    }
+    const parsed = await parseJson(req, verifyMfaSchema)
+    if (!parsed.ok) return parsed.response
+    const { factor_id, code, temp_token, temp_refresh, temp_expires } = parsed.data
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,7 +43,7 @@ export async function POST(req: NextRequest) {
     setAuthCookies(response, {
       accessToken: verify.access_token ?? temp_token,
       refreshToken: verify.refresh_token ?? temp_refresh,
-      expiresAt: temp_expires,
+      expiresAt: temp_expires ?? 0,
     })
 
     return response

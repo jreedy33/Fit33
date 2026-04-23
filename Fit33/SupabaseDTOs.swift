@@ -8,6 +8,23 @@
 
 import Foundation
 
+// MARK: - DTO Null-Safety Policy (M-13 / DB-2, Sprint 9 2026-04-28)
+//
+//  Row DTOs (UserProfileDTO, WorkoutDTO, MealLogDTO, CardioWorkoutDTO, etc.)
+//  mirror actual `public.<table>` columns. NOT NULL server columns stay
+//  non-optional here; nullable server columns are declared Optional so a
+//  missing value decodes cleanly instead of throwing.
+//
+//  Aggregation DTOs (PopularExerciseDTO, WorkoutAnalyticsDTO, TopWorkoutDTO,
+//  UserStatisticsDTO, StepAnalyticsDTO, StepStatisticsDTO) are products of
+//  `SELECT SUM(…)/AVG(…)/COUNT(…)` RPCs. Postgres returns NULL for these
+//  aggregations when the source set is empty. Rather than pollute every
+//  caller with `?? 0`, the DTOs accept NULL via custom `init(from:)` and
+//  substitute `0` / `0.0` / `""`. This keeps consumers simple and avoids a
+//  hard decode failure on a fresh user with no analytics rows yet.
+//
+//  See DATA_BACKEND_AGENT.md §"DTO decoding guardrails" for the full rules.
+
 // MARK: - Data Transfer Objects (DTOs)
 
 struct UserProfileDTO: Codable {
@@ -432,7 +449,7 @@ struct PopularExerciseDTO: Codable {
     let usesLast7Days: Int
     let usesLast30Days: Int
     let favoriteCount: Int
-    
+
     enum CodingKeys: String, CodingKey {
         case exerciseId = "exercise_id"
         case exerciseName = "exercise_name"
@@ -445,6 +462,26 @@ struct PopularExerciseDTO: Codable {
         case usesLast7Days = "uses_last_7_days"
         case usesLast30Days = "uses_last_30_days"
         case favoriteCount = "favorite_count"
+    }
+}
+
+// M-13 (Sprint 9): aggregation DTO — tolerate NULL → 0. Defined in an
+// extension so Swift still synthesizes the memberwise initializer for code
+// that constructs these DTOs directly from aggregated data.
+extension PopularExerciseDTO {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.exerciseId = try c.decodeIfPresent(String.self, forKey: .exerciseId) ?? ""
+        self.exerciseName = try c.decodeIfPresent(String.self, forKey: .exerciseName) ?? ""
+        self.totalUses = try c.decodeIfPresent(Int.self, forKey: .totalUses) ?? 0
+        self.uniqueUsers = try c.decodeIfPresent(Int.self, forKey: .uniqueUsers) ?? 0
+        self.popularityScore = try c.decodeIfPresent(Double.self, forKey: .popularityScore) ?? 0
+        self.trendingScore = try c.decodeIfPresent(Double.self, forKey: .trendingScore) ?? 0
+        self.avgSetsPerUse = try c.decodeIfPresent(Double.self, forKey: .avgSetsPerUse) ?? 0
+        self.completionRate = try c.decodeIfPresent(Double.self, forKey: .completionRate) ?? 0
+        self.usesLast7Days = try c.decodeIfPresent(Int.self, forKey: .usesLast7Days) ?? 0
+        self.usesLast30Days = try c.decodeIfPresent(Int.self, forKey: .usesLast30Days) ?? 0
+        self.favoriteCount = try c.decodeIfPresent(Int.self, forKey: .favoriteCount) ?? 0
     }
 }
 
@@ -475,6 +512,24 @@ struct StepStatisticsDTO: Codable {
     let daysTracked: Int
     let daysGoalMet: Int
     let goalCompletionRate: Double
+
+    enum CodingKeys: String, CodingKey {
+        case totalSteps, averageSteps, maxSteps, daysTracked, daysGoalMet, goalCompletionRate
+    }
+}
+
+extension StepStatisticsDTO {
+    // M-13 (Sprint 9): aggregation DTO — tolerate NULL → 0. Defined on an
+    // extension so the synthesized memberwise init stays available.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.totalSteps = try c.decodeIfPresent(Int.self, forKey: .totalSteps) ?? 0
+        self.averageSteps = try c.decodeIfPresent(Int.self, forKey: .averageSteps) ?? 0
+        self.maxSteps = try c.decodeIfPresent(Int.self, forKey: .maxSteps) ?? 0
+        self.daysTracked = try c.decodeIfPresent(Int.self, forKey: .daysTracked) ?? 0
+        self.daysGoalMet = try c.decodeIfPresent(Int.self, forKey: .daysGoalMet) ?? 0
+        self.goalCompletionRate = try c.decodeIfPresent(Double.self, forKey: .goalCompletionRate) ?? 0
+    }
 }
 
 // MARK: - Admin Analytics DTOs
@@ -484,11 +539,37 @@ struct WorkoutAnalyticsDTO: Codable {
     let uniqueUsers: Int
     let workoutsLast7Days: Int
     let avgWorkoutsPerUser: Double
+
+    enum CodingKeys: String, CodingKey {
+        case totalWorkouts, uniqueUsers, workoutsLast7Days, avgWorkoutsPerUser
+    }
+}
+
+extension WorkoutAnalyticsDTO {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.totalWorkouts = try c.decodeIfPresent(Int.self, forKey: .totalWorkouts) ?? 0
+        self.uniqueUsers = try c.decodeIfPresent(Int.self, forKey: .uniqueUsers) ?? 0
+        self.workoutsLast7Days = try c.decodeIfPresent(Int.self, forKey: .workoutsLast7Days) ?? 0
+        self.avgWorkoutsPerUser = try c.decodeIfPresent(Double.self, forKey: .avgWorkoutsPerUser) ?? 0
+    }
 }
 
 struct TopWorkoutDTO: Codable {
     let workoutName: String
     let completionCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case workoutName, completionCount
+    }
+}
+
+extension TopWorkoutDTO {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.workoutName = try c.decodeIfPresent(String.self, forKey: .workoutName) ?? ""
+        self.completionCount = try c.decodeIfPresent(Int.self, forKey: .completionCount) ?? 0
+    }
 }
 
 struct UserStatisticsDTO: Codable {
@@ -496,6 +577,20 @@ struct UserStatisticsDTO: Codable {
     let activeUsersLast30Days: Int
     let avgStreakLength: Int
     let avgTotalWorkouts: Int
+
+    enum CodingKeys: String, CodingKey {
+        case totalUsers, activeUsersLast30Days, avgStreakLength, avgTotalWorkouts
+    }
+}
+
+extension UserStatisticsDTO {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.totalUsers = try c.decodeIfPresent(Int.self, forKey: .totalUsers) ?? 0
+        self.activeUsersLast30Days = try c.decodeIfPresent(Int.self, forKey: .activeUsersLast30Days) ?? 0
+        self.avgStreakLength = try c.decodeIfPresent(Int.self, forKey: .avgStreakLength) ?? 0
+        self.avgTotalWorkouts = try c.decodeIfPresent(Int.self, forKey: .avgTotalWorkouts) ?? 0
+    }
 }
 
 struct StepAnalyticsDTO: Codable {
@@ -504,6 +599,21 @@ struct StepAnalyticsDTO: Codable {
     let usersTrackingSteps: Int
     let goalCompletionRate: Double
     let daysTracked: Int
+
+    enum CodingKeys: String, CodingKey {
+        case totalStepsAllUsers, avgStepsPerDay, usersTrackingSteps, goalCompletionRate, daysTracked
+    }
+}
+
+extension StepAnalyticsDTO {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.totalStepsAllUsers = try c.decodeIfPresent(Int.self, forKey: .totalStepsAllUsers) ?? 0
+        self.avgStepsPerDay = try c.decodeIfPresent(Int.self, forKey: .avgStepsPerDay) ?? 0
+        self.usersTrackingSteps = try c.decodeIfPresent(Int.self, forKey: .usersTrackingSteps) ?? 0
+        self.goalCompletionRate = try c.decodeIfPresent(Double.self, forKey: .goalCompletionRate) ?? 0
+        self.daysTracked = try c.decodeIfPresent(Int.self, forKey: .daysTracked) ?? 0
+    }
 }
 
 struct WorkoutCountDTO: Codable {

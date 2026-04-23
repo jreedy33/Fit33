@@ -1,6 +1,7 @@
 import Foundation
 import CoreBluetooth
 import Combine
+import UIKit
 
 // MARK: - FTMS UUIDs (Fitness Machine Service Standard)
 struct FTMSUUIDs {
@@ -179,6 +180,46 @@ class BluetoothFitnessManager: NSObject, ObservableObject {
     override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: .main)
+        observeAppLifecycle()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    /// Pause the 30s auto-stop + 5s cleanup timers while the app is backgrounded.
+    /// iOS suspends BLE scans for apps without `bluetooth-central` background mode,
+    /// so the timers wake the main thread for no observable work. When we come back,
+    /// if scanning is still active we restart them so the 30s auto-stop budget is honored.
+    private func observeAppLifecycle() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleDidEnterBackground() {
+        scanTimer?.invalidate()
+        cleanupTimer?.invalidate()
+    }
+
+    @objc private func handleWillEnterForeground() {
+        guard isScanning else { return }
+        // Relight the cleanup cadence only; we intentionally drop the 30s auto-stop
+        // once we've been backgrounded — foregrounding is a clear signal the user
+        // is still interacting, and they'll stop scanning manually or start fresh.
+        cleanupTimer?.invalidate()
+        cleanupTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.cleanupStaleDevices()
+        }
     }
     
     // MARK: - Public Methods

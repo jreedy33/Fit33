@@ -154,131 +154,43 @@ struct ExerciseDetailView: View {
         }
     }
     
-    // Background color to match video area - pure white to match video content
-    private var videoBackgroundColor: Color {
-        .white
-    }
-    
-    // Gradient background colors
-    private var backgroundGradient: LinearGradient {
-        LinearGradient(
-            colors: colorScheme == .dark
-                ? [Color(red: 0.06, green: 0.08, blue: 0.12), Color(red: 0.04, green: 0.05, blue: 0.08)]
-                : [Color(red: 0.95, green: 0.97, blue: 1.0), Color.white],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-    
     var body: some View {
         ZStack(alignment: .top) {
-            // Animated blue/cyan orb background (consistent with other tabs)
+            // Animated orb background consistent with Exercises tab
             AnimatedOrbBackground.exercises(colorScheme: colorScheme)
                 .ignoresSafeArea()
             
-            // Main content
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Spacer for navigation buttons (back + favorite)
-                    Color.clear.frame(height: 56)
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    // Reserve space for floating toolbar (back + favorite)
+                    Color.clear.frame(height: 52)
                     
-                    // Video Section (with stable ID to prevent recreation)
                     videoSection
                     
-                    // Content Section
-                    VStack(alignment: .leading, spacing: 20) {
-                        // Exercise Name & Badges
-                        headerSection
-                        
-                        // User's Personal Stats (if they have history)
-                        if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
-                            userStatsSection
-                        }
-                        
-                        // Exercise Description
-                        if let description = exerciseDescriptionText {
-                            descriptionSection(description)
-                        }
-                        
-                        // How To Section
-                        if !howToSteps.isEmpty {
-                            howToSection
-                        }
-                        
-                        // Target Muscles & Equipment in 2-column grid
-                        HStack(alignment: .top, spacing: 12) {
-                            muscleSection
-                            equipmentSection
-                        }
-                        
-                        // Add to Workout button
-                        addToWorkoutButton
-                        
-                        // Bottom padding for tab bar
-                        Spacer(minLength: 100)
+                    headerSection
+                        .padding(.top, Spacing.xxs)
+                    
+                    addToWorkoutButton
+                    
+                    if hasLoadedHistory && (personalRecord != nil || lastPerformance != nil) {
+                        userStatsSection
                     }
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.top, 20)
+                    
+                    if let description = exerciseDescriptionText {
+                        descriptionSection(description)
+                    }
+                    
+                    if !howToSteps.isEmpty {
+                        howToSection
+                    }
+                    
+                    Spacer(minLength: 100)
                 }
+                .padding(.horizontal, Spacing.md)
             }
             .scrollIndicators(.hidden)
             
-            // Navigation buttons row (back + favorite)
-            HStack {
-                // Custom back button in safe area with glass effect
-                Button(action: {
-                    HapticManager.tap()
-                    dismiss()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.ds_labelLarge)
-                        .foregroundColor(.black)
-                        .frame(width: 40, height: 40)
-                        .background(
-                            ZStack {
-                                Circle()
-                                    .fill(.ultraThinMaterial)
-                                Circle()
-                                    .fill(Color.white.opacity(0.9))
-                                Circle()
-                                    .stroke(Color.white.opacity(0.5), lineWidth: 0.5)
-                            }
-                        )
-                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 2)
-                }
-                
-                Spacer()
-                
-                // Favorite star button
-                Button(action: toggleFavorite) {
-                    ZStack {
-                        // Black outline behind the filled star for visibility
-                        if isFavorite {
-                            Image(systemName: "star.fill")
-                                .font(.ds_heading3)
-                                .foregroundColor(.black.opacity(0.5))
-                                .offset(x: 0.3, y: 0.3) // Slight offset for shadow-like outline
-                        }
-                        Image(systemName: isFavorite ? "star.fill" : "star")
-                            .font(.ds_labelLarge)
-                            .foregroundColor(isFavorite ? .yellow : .black)
-                    }
-                    .frame(width: 40, height: 40)
-                    .background(
-                        ZStack {
-                            Circle()
-                                .fill(.ultraThinMaterial)
-                            Circle()
-                                .fill(Color.white.opacity(0.9))
-                            Circle()
-                                .stroke(isFavorite ? Color.yellow.opacity(0.4) : Color.white.opacity(0.5), lineWidth: 0.5)
-                        }
-                    )
-                    .shadow(color: isFavorite ? .yellow.opacity(0.3) : .black.opacity(0.15), radius: 8, x: 0, y: 2)
-                }
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.top, 8)
+            floatingToolbar
         }
         .ignoresSafeArea(edges: .bottom)
         .navigationBarHidden(true)
@@ -381,53 +293,90 @@ struct ExerciseDetailView: View {
         }
     }
     
+    // MARK: - Floating Toolbar (back + favorite)
+    
+    private var floatingToolbar: some View {
+        HStack {
+            Button {
+                HapticManager.tap()
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.ds_labelLarge)
+                    .foregroundColor(colorScheme == .dark ? .white : .primary)
+                    .frame(width: 38, height: 38)
+                    .background(
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                            )
+                    )
+                    .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
+            }
+            .accessibilityLabel("Back")
+            
+            Spacer()
+            
+            Button(action: toggleFavorite) {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .font(.ds_labelLarge)
+                    .foregroundColor(isFavorite ? .yellow : (colorScheme == .dark ? .white : .primary))
+                    .frame(width: 38, height: 38)
+                    .background(
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        isFavorite ? Color.yellow.opacity(0.4) : Color.primary.opacity(0.1),
+                                        lineWidth: 0.5
+                                    )
+                            )
+                    )
+                    .shadow(
+                        color: isFavorite ? .yellow.opacity(0.28) : .black.opacity(0.12),
+                        radius: 6, x: 0, y: 2
+                    )
+            }
+            .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.top, Spacing.xs)
+    }
+    
     // MARK: - Add to Workout Button
     
     private var addToWorkoutButton: some View {
         Button(action: addToWorkout) {
-            HStack(spacing: 12) {
+            HStack(spacing: Spacing.sm) {
                 Image(systemName: "plus.circle.fill")
-                    .font(.ds_heading3).fontWeight(.semibold)
-                
+                    .font(.ds_heading3)
                 Text("Add to Workout")
                     .font(.ds_labelLarge)
-                
                 Spacer()
-                
                 Image(systemName: "chevron.right")
                     .font(.ds_labelMedium)
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(.white.opacity(0.75))
             }
             .foregroundColor(.white)
-            .padding(.horizontal, 20)
-            .padding(.vertical, Spacing.md)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
             .background(
-                ZStack {
-                    // Gradient background
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [categoryColor, categoryColor.opacity(0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+                RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [categoryColor, categoryColor.opacity(0.82)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
-                    
-                    // Subtle shine overlay
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.2), Color.clear],
-                                startPoint: .top,
-                                endPoint: .center
-                            )
-                        )
-                }
+                    )
             )
-            .shadow(color: categoryColor.opacity(0.4), radius: 12, x: 0, y: 6)
+            .shadow(color: categoryColor.opacity(0.35), radius: 10, x: 0, y: 5)
         }
-        .buttonStyle(PlainButtonStyle())
-        .padding(.top, 8)
+        .scaleButtonStyle(.standard, withHaptic: false)
+        .accessibilityLabel("Add \(exercise.displayName) to workout")
     }
     
     private func addToWorkout() {
@@ -450,7 +399,6 @@ struct ExerciseDetailView: View {
     // MARK: - Video Section
     
     private var videoSection: some View {
-        // Video inside a 3D floating card — matches app widget/card style
         RemoteVideoPlayerView(
             exerciseName: exercise.name ?? "",
             categoryColor: categoryColor,
@@ -458,171 +406,125 @@ struct ExerciseDetailView: View {
         )
         .id(exercise.id) // Stable ID prevents video from being recreated
         .aspectRatio(16/9, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color.blue.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 10)
-                    .blur(radius: 6)
-                
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.25 : 0.05))
-                    .offset(y: 5)
-                
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.18), Color.cardBackground]
-                                : [Color.white, Color.white.opacity(0.95)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
-                    )
-                
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.blue.opacity(colorScheme == .dark ? 0.4 : 0.25),
-                                Color.blue.opacity(colorScheme == .dark ? 0.2 : 0.1)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
+        .frame(maxWidth: .infinity)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.blue.opacity(colorScheme == .dark ? 0.35 : 0.2), lineWidth: 1.5)
-                .blur(radius: 4)
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(categoryColor.opacity(colorScheme == .dark ? 0.35 : 0.18), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.1), radius: 16, x: 0, y: 8)
-        .shadow(color: Color.blue.opacity(colorScheme == .dark ? 0.35 : 0.2), radius: 20, x: 0, y: 4)
-        .shadow(color: Color.blue.opacity(colorScheme == .dark ? 0.25 : 0.15), radius: 30, x: 0, y: 0)
-        .padding(.horizontal, Spacing.md)
-        .padding(.top, 8)
+        .shadow(
+            color: categoryColor.opacity(colorScheme == .dark ? 0.30 : 0.18),
+            radius: 18, x: 0, y: 8
+        )
+        .shadow(
+            color: .black.opacity(colorScheme == .dark ? 0.35 : 0.08),
+            radius: 10, x: 0, y: 4
+        )
     }
     
     // MARK: - Header Section
     
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Exercise Name with gradient text - auto-sized to fit without truncation
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Text(exercise.displayName)
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-                .minimumScaleFactor(0.6)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.primary, .primary.opacity(0.8)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .font(.ds_heading1)
+                .foregroundColor(.primary)
+                .minimumScaleFactor(0.7)
                 .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             
-            // Badges Row
-            HStack(spacing: 10) {
-                // Category Badge with glow
-                categoryBadge
-                
-                // Equipment Badge
+            // Primary meta pills: muscle target + equipment + optional history
+            HStack(spacing: Spacing.xs) {
+                muscleBadge
                 equipmentBadge
-                
-                // Times Performed Badge (if any)
                 if totalTimesPerformed > 0 {
                     performedBadge
                 }
-                
-                Spacer()
+                Spacer(minLength: 0)
+            }
+            
+            // Secondary muscles inline (only if present) — compact "also targets" line
+            if !secondaryMuscles.isEmpty {
+                HStack(spacing: Spacing.xxs) {
+                    Image(systemName: "figure.strengthtraining.traditional")
+                        .font(.ds_labelSmall)
+                        .foregroundColor(.secondary)
+                    Text("also ")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary) +
+                    Text(secondaryMuscles.prefix(3).joined(separator: ", "))
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary.opacity(0.85))
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
             }
         }
-        .padding(.vertical, Spacing.xxs)
     }
     
-    private var categoryBadge: some View {
-        HStack(spacing: 6) {
+    /// Primary muscle badge — replaces the redundant category pill.
+    /// Category (e.g. "Legs") was duplicating what the muscle name already
+    /// conveys ("Calves" → obviously legs). Collapsing into one targeted pill.
+    private var muscleBadge: some View {
+        HStack(spacing: Spacing.xxs) {
             Image(systemName: categoryIcon)
-                .font(.ds_labelMedium)
-            Text(exercise.category ?? "General")
+                .font(.ds_labelSmall)
+            Text(primaryMuscle)
                 .font(.ds_labelMedium)
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 14)
-        .padding(.vertical, Spacing.xs)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xxs)
         .background(
-            ZStack {
-                // Glow layer
-                Capsule()
-                    .fill(categoryColor)
-                    .blur(radius: 8)
-                    .opacity(0.5)
-                
-                // Main gradient
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [categoryColor, categoryColor.opacity(0.8)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [categoryColor, categoryColor.opacity(0.85)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
-            }
+                )
         )
-        .shadow(color: categoryColor.opacity(0.5), radius: 10, x: 0, y: 4)
+        .shadow(color: categoryColor.opacity(0.35), radius: 6, x: 0, y: 3)
     }
     
     private var equipmentBadge: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "dumbbell.fill")
-                .font(.ds_bodySmall)
+        HStack(spacing: Spacing.xxs) {
+            Image(systemName: equipmentIcon)
+                .font(.ds_labelSmall)
             Text(exercise.equipment ?? "Bodyweight")
-                .font(.ds_bodySmall)
+                .font(.ds_labelMedium)
         }
         .foregroundColor(colorScheme == .dark ? .white : .primary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, Spacing.xs)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xxs)
         .background(
             Capsule()
                 .fill(Color.cardBackground)
                 .overlay(
                     Capsule()
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.08), lineWidth: 1)
+                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
                 )
         )
     }
     
     private var performedBadge: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Spacing.xxs) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.ds_bodySmall)
+                .font(.ds_labelSmall)
             Text("\(totalTimesPerformed)×")
                 .font(.ds_labelMedium)
         }
         .foregroundColor(.green)
-        .padding(.horizontal, 14)
-        .padding(.vertical, Spacing.xs)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xxs)
         .background(
             Capsule()
-                .fill(Color.green.opacity(0.15))
+                .fill(Color.green.opacity(0.12))
                 .overlay(
                     Capsule()
-                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                        .stroke(Color.green.opacity(0.25), lineWidth: 1)
                 )
         )
     }
@@ -630,178 +532,91 @@ struct ExerciseDetailView: View {
     // MARK: - User Stats Section
     
     private var userStatsSection: some View {
-        VStack(spacing: 14) {
-            // Section Header
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [categoryColor, categoryColor.opacity(0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 32, height: 32)
-                        .shadow(color: categoryColor.opacity(0.4), radius: 6, x: 0, y: 3)
-                    
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.ds_labelMedium)
-                        .foregroundColor(.white)
-                }
-                
-                Text("Your Progress")
-                    .font(.ds_heading3)
-                    .foregroundColor(.primary)
-                Spacer()
-            }
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            SectionHeader(
+                title: "Your Progress",
+                icon: "chart.line.uptrend.xyaxis",
+                iconColor: categoryColor
+            )
             
-            HStack(spacing: 12) {
-                // Personal Record Card
+            HStack(spacing: Spacing.sm) {
                 if let pr = personalRecord {
                     prCard(weight: pr.weight, reps: pr.reps, date: pr.date)
                 }
-                
-                // Last Performance Card
                 if let last = lastPerformance {
                     lastPerformanceCard(weight: last.weight, reps: last.reps, sets: last.sets, date: last.date)
                 }
             }
         }
-        .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(
-                    LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [Color(white: 0.14), Color(white: 0.10)]
-                            : [Color.white, Color.white.opacity(0.95)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(
-                            LinearGradient(
-                                colors: [categoryColor.opacity(0.35), categoryColor.opacity(0.1), Color.clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1.5
-                        )
-                )
-                .shadow(color: categoryColor.opacity(0.2), radius: 20, x: 0, y: 10)
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 5)
-        )
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: categoryColor)
     }
     
     private func prCard(weight: Double, reps: Int, date: Date) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // PR Label with flame
-            HStack(spacing: 4) {
-                Image(systemName: "flame.fill")
-                    .font(.ds_bodySmall)
-                    .foregroundColor(.orange)
-                Text("PR")
-                    .font(.ds_bodySmall).fontWeight(.bold)
-                    .foregroundColor(.orange)
-            }
-            .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, Spacing.xxs)
-            .background(
-                Capsule()
-                    .fill(Color.orange.opacity(0.15))
-            )
-            
-            // Weight & Reps (preserve decimals like 180.5)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(formatWeight(weight))
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                Text("lbs")
-                    .font(.ds_bodySmall).fontWeight(.medium)
-                    .foregroundColor(.secondary)
-            }
-            
-            Text("× \(reps) reps")
-                .font(.ds_bodySmall).fontWeight(.medium)
-                .foregroundColor(.secondary)
-            
-            // Date
-            Text(formatRelativeDate(date))
-                .font(.ds_labelSmall)
-                .foregroundColor(.secondary.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.orange.opacity(0.1), Color.orange.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-                )
+        statBlock(
+            tintColor: .orange,
+            tintIcon: "flame.fill",
+            tintLabel: "PR",
+            weight: weight,
+            subtitle: "× \(reps) reps",
+            date: date
         )
     }
     
     private func lastPerformanceCard(weight: Double, reps: Int, sets: Int, date: Date) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Recent Label
-            HStack(spacing: 4) {
-                Image(systemName: "clock.fill")
-                    .font(.ds_bodySmall)
-                    .foregroundColor(categoryColor)
-                Text("Recent")
-                    .font(.ds_bodySmall).fontWeight(.bold)
-                    .foregroundColor(categoryColor)
+        statBlock(
+            tintColor: categoryColor,
+            tintIcon: "clock.fill",
+            tintLabel: "Recent",
+            weight: weight,
+            subtitle: "\(sets) sets × \(reps) reps",
+            date: date
+        )
+    }
+    
+    private func statBlock(
+        tintColor: Color,
+        tintIcon: String,
+        tintLabel: String,
+        weight: Double,
+        subtitle: String,
+        date: Date
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xxs) {
+                Image(systemName: tintIcon)
+                    .font(.ds_labelSmall)
+                Text(tintLabel)
+                    .font(.ds_labelSmall)
             }
-            .padding(.horizontal, Spacing.xs)
-            .padding(.vertical, Spacing.xxs)
-            .background(
-                Capsule()
-                    .fill(categoryColor.opacity(0.15))
-            )
+            .foregroundColor(tintColor)
             
-            // Weight & Reps (preserve decimals like 180.5)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(formatWeight(weight))
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.ds_stat)
                     .foregroundColor(.primary)
                 Text("lbs")
-                    .font(.ds_bodySmall).fontWeight(.medium)
+                    .font(.ds_labelSmall)
                     .foregroundColor(.secondary)
             }
             
-            Text("\(sets) sets × \(reps) reps")
-                .font(.ds_bodySmall).fontWeight(.medium)
+            Text(subtitle)
+                .font(.ds_bodySmall)
                 .foregroundColor(.secondary)
             
-            // Date
             Text(formatRelativeDate(date))
                 .font(.ds_labelSmall)
                 .foregroundColor(.secondary.opacity(0.7))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(
-                    LinearGradient(
-                        colors: [categoryColor.opacity(0.1), categoryColor.opacity(0.05)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                .fill(tintColor.opacity(0.08))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(categoryColor.opacity(0.2), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                        .stroke(tintColor.opacity(0.18), lineWidth: 1)
                 )
         )
     }
@@ -809,259 +624,59 @@ struct ExerciseDetailView: View {
     // MARK: - Description Section
     
     private func descriptionSection(_ description: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(categoryColor.opacity(0.15))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: "text.alignleft")
-                        .font(.ds_labelMedium)
-                        .foregroundColor(categoryColor)
-                }
-                Text("About")
-                    .font(.ds_heading3)
-                    .foregroundColor(.primary)
-                Spacer()
-            }
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            SectionHeader(
+                title: "About",
+                icon: "text.alignleft",
+                iconColor: categoryColor
+            )
             
             Text(description)
                 .font(.ds_bodyMedium)
                 .foregroundColor(.secondary)
-                .lineSpacing(6)
+                .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(18)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(
-                    LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [Color(white: 0.14), Color(white: 0.10)]
-                            : [Color.white, Color.white.opacity(0.95)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(
-                            LinearGradient(
-                                colors: [categoryColor.opacity(0.3), categoryColor.opacity(0.1), Color.clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: categoryColor.opacity(0.15), radius: 15, x: 0, y: 8)
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 5)
-        )
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: categoryColor)
     }
     
     // MARK: - How To Section
     
     private var howToSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Section Header
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(categoryColor.opacity(0.15))
-                        .frame(width: 32, height: 32)
-                    Image(systemName: "list.number")
-                        .font(.ds_labelMedium)
-                        .foregroundColor(categoryColor)
-                }
-                Text("How To Perform")
-                    .font(.ds_heading3)
-                    .foregroundColor(.primary)
-                Spacer()
-            }
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            SectionHeader(
+                title: "How To Perform",
+                icon: "list.number",
+                iconColor: categoryColor
+            )
             
-            // Steps List with gradient connector
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 ForEach(Array(howToSteps.enumerated()), id: \.offset) { index, step in
-                    HStack(alignment: .top, spacing: 14) {
-                        // Step Number with gradient
-                        VStack(spacing: 0) {
-                            ZStack {
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [categoryColor, categoryColor.opacity(0.7)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .frame(width: 30, height: 30)
-                                    .shadow(color: categoryColor.opacity(0.4), radius: 6, x: 0, y: 3)
-                                
-                                Text("\(index + 1)")
-                                    .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                                    .foregroundColor(.white)
-                            }
-                            
-                            // Connector line (except for last item)
-                            if index < howToSteps.count - 1 {
-                                Rectangle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [categoryColor.opacity(0.3), categoryColor.opacity(0.1)],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    )
-                                    .frame(width: 2)
-                                    .frame(maxHeight: .infinity)
-                            }
+                    HStack(alignment: .top, spacing: Spacing.sm) {
+                        ZStack {
+                            Circle()
+                                .fill(categoryColor.opacity(0.18))
+                                .frame(width: 26, height: 26)
+                            Text("\(index + 1)")
+                                .font(.ds_labelMedium)
+                                .foregroundColor(categoryColor)
                         }
                         
-                        // Step Text
                         Text(step)
                             .font(.ds_bodyMedium)
-                            .foregroundColor(.primary.opacity(0.9))
-                            .lineSpacing(5)
+                            .foregroundColor(.primary)
+                            .lineSpacing(4)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.bottom, index < howToSteps.count - 1 ? 16 : 0)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
         }
-        .padding(18)
+        .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(
-                    LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [Color(white: 0.14), Color(white: 0.10)]
-                            : [Color.white, Color.white.opacity(0.95)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(
-                            LinearGradient(
-                                colors: [categoryColor.opacity(0.25), categoryColor.opacity(0.08), Color.clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: categoryColor.opacity(0.12), radius: 15, x: 0, y: 8)
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 10, x: 0, y: 5)
-        )
-    }
-    
-    // MARK: - Muscle Section
-    
-    private var muscleSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack(spacing: 6) {
-                Image(systemName: "figure.strengthtraining.traditional")
-                    .font(.ds_labelMedium)
-                    .foregroundColor(categoryColor)
-                Text("Muscles")
-                    .font(.ds_bodySmall).fontWeight(.bold)
-                    .foregroundColor(.primary)
-            }
-            
-            // Primary
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(categoryColor)
-                    .frame(width: 8, height: 8)
-                Text(primaryMuscle)
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.primary)
-            }
-            
-            // Secondary (compact)
-            if !secondaryMuscles.isEmpty {
-                Text(secondaryMuscles.prefix(2).joined(separator: ", "))
-                    .font(.ds_bodySmall)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                .fill(
-                    LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [Color(white: 0.14), Color(white: 0.10)]
-                            : [Color.white, Color.white.opacity(0.95)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .stroke(categoryColor.opacity(0.2), lineWidth: 1)
-                )
-                .shadow(color: categoryColor.opacity(0.1), radius: 8, x: 0, y: 4)
-        )
-    }
-    
-    // MARK: - Equipment Section
-    
-    private var equipmentSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack(spacing: 6) {
-                Image(systemName: "dumbbell.fill")
-                    .font(.ds_labelMedium)
-                    .foregroundColor(categoryColor)
-                Text("Equipment")
-                    .font(.ds_bodySmall).fontWeight(.bold)
-                    .foregroundColor(.primary)
-            }
-            
-            // Icon & Name
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(categoryColor.opacity(0.15))
-                        .frame(width: 36, height: 36)
-                    
-                    Image(systemName: equipmentIcon)
-                        .font(.ds_bodyRegular)
-                        .foregroundColor(categoryColor)
-                }
-                
-                Text(exercise.equipment ?? "Bodyweight")
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                .fill(
-                    LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [Color(white: 0.14), Color(white: 0.10)]
-                            : [Color.white, Color.white.opacity(0.95)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .stroke(categoryColor.opacity(0.2), lineWidth: 1)
-                )
-                .shadow(color: categoryColor.opacity(0.1), radius: 8, x: 0, y: 4)
-        )
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: categoryColor)
     }
     
     private var equipmentIcon: String {

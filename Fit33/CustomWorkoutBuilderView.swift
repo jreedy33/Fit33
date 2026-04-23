@@ -67,6 +67,11 @@ struct CustomWorkoutBuilderView: View {
     // so shuffling is instant and doesn't re-query `ExerciseSwapService` on every tap.
     @State private var complementaryPages: [[SwapSuggestion]] = []
     @State private var complementaryPageIndex: Int = 0
+    /// Pending scroll target — set when the user lands on this screen after
+    /// tapping "Add to Workout" on an ExerciseDetailView. Consumed by a
+    /// `ScrollViewReader` once the list has rendered so the user lands on
+    /// the newly-added exercise instead of the top of the alphabetical list.
+    @State private var scrollToExerciseID: NSManagedObjectID?
     
     private var replacingExercise: Exercise? {
         if case .replace(let exercise, _) = mode { return exercise }
@@ -550,61 +555,94 @@ struct CustomWorkoutBuilderView: View {
                     
                     compactFiltersView
                     
-                    // Scrollable exercise list
-                    ScrollView {
-                        GeometryReader { geometry in
-                            Color.clear.preference(key: CustomWorkoutScrollOffsetKey.self, value: geometry.frame(in: .named("scroll")).minY)
+                    // "X selected" counter — relocated out of the filter header row
+                    // (which was cramping the "All Exercises" dropdown) onto its
+                    // own right-aligned row just above the scrolling list.
+                    if !mode.isSingleSelect && !selectedExercises.isEmpty {
+                        HStack {
+                            Spacer()
+                            selectedCountPill
                         }
-                        .frame(height: 0)
-                        
-                        // Hide the "Complements Your Workout" block while the user is
-                        // actively searching — the keyboard + dropdown was covering the
-                        // intentional search results. Replace-mode suggestions stay
-                        // visible because they ARE the primary UI in that flow.
-                        if !suggestedSwaps.isEmpty && !shouldHideComplementsForSearch {
-                            suggestedReplacementsSection
-                        }
-                        
-                        if isLoadingExercises || !exerciseLibrary.isExercisesReady {
-                            VStack(spacing: 20) {
-                                ProgressView()
-                                    .scaleEffect(1.5)
-                                    .tint(.white)
-                                Text("Loading exercises...")
-                                    .font(.headline)
-                                    .foregroundColor(.white.opacity(0.8))
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.top, Spacing.xs)
+                    }
+                    
+                    // Scrollable exercise list — wrapped in ScrollViewReader so the
+                    // "Add to Workout" path on ExerciseDetailView can land the user
+                    // on the newly-added exercise instead of the top of the list.
+                    ScrollViewReader { scrollProxy in
+                        ScrollView {
+                            GeometryReader { geometry in
+                                Color.clear.preference(key: CustomWorkoutScrollOffsetKey.self, value: geometry.frame(in: .named("scroll")).minY)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 100)
-                        } else {
-                            LazyVStack(spacing: 8) {
-                                ForEach(Array(cachedFilteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
-                                    CustomWorkoutExerciseRowWithNav(
-                                        exercise: exercise,
-                                        isSelected: selectedExercises.contains { $0.id == exercise.id },
-                                        onToggle: {
-                                            toggleExerciseSelection(exercise)
+                            .frame(height: 0)
+                            
+                            // Hide the "Complements Your Workout" block while the user is
+                            // actively searching — the keyboard + dropdown was covering the
+                            // intentional search results. Replace-mode suggestions stay
+                            // visible because they ARE the primary UI in that flow.
+                            if !suggestedSwaps.isEmpty && !shouldHideComplementsForSearch {
+                                suggestedReplacementsSection
+                            }
+                            
+                            if isLoadingExercises || !exerciseLibrary.isExercisesReady {
+                                VStack(spacing: 20) {
+                                    ProgressView()
+                                        .scaleEffect(1.5)
+                                        .tint(.white)
+                                    Text("Loading exercises...")
+                                        .font(.headline)
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 100)
+                            } else {
+                                LazyVStack(spacing: 8) {
+                                    ForEach(Array(cachedFilteredExercises.enumerated()), id: \.element.objectID) { index, exercise in
+                                        CustomWorkoutExerciseRowWithNav(
+                                            exercise: exercise,
+                                            isSelected: selectedExercises.contains { $0.id == exercise.id },
+                                            onToggle: {
+                                                toggleExerciseSelection(exercise)
+                                            }
+                                        )
+                                        .padding(.horizontal, Spacing.md)
+                                        .id(exercise.objectID)
+                                        .onAppear {
+                                            prefetchVisibleExercise(exercise: exercise, index: index)
                                         }
-                                    )
-                                    .padding(.horizontal, Spacing.md)
-                                    .onAppear {
-                                        prefetchVisibleExercise(exercise: exercise, index: index)
                                     }
                                 }
+                                .padding(.top, 8)
+                                .padding(.bottom, 100)
+                                .id(forceRenderID)
                             }
-                            .padding(.top, 8)
-                            .padding(.bottom, 100)
-                            .id(forceRenderID)
+                        }
+                        .coordinateSpace(name: "scroll")
+                        .scrollDismissesKeyboard(.immediately)
+                        // ⚡️ SNAPPY SEARCH: Dismiss keyboard instantly when scrolling
+                        .simultaneousGesture(
+                            DragGesture().onChanged { _ in
+                                isSearchFocused = false
+                            }
+                        )
+                        .onChange(of: scrollToExerciseID) { _, newID in
+                            guard let newID else { return }
+                            // Wait one tick so the LazyVStack renders the target row
+                            // before asking the proxy to scroll to it; without this
+                            // the target ID often hasn't been realized yet and the
+                            // scroll silently no-ops.
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(80))
+                                guard !Task.isCancelled else { return }
+                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                    scrollProxy.scrollTo(newID, anchor: .top)
+                                }
+                                // Clear so the same ID can re-trigger on a future add
+                                scrollToExerciseID = nil
+                            }
                         }
                     }
-                    .coordinateSpace(name: "scroll")
-                    .scrollDismissesKeyboard(.immediately)
-                    // ⚡️ SNAPPY SEARCH: Dismiss keyboard instantly when scrolling
-                    .simultaneousGesture(
-                        DragGesture().onChanged { _ in
-                            isSearchFocused = false
-                        }
-                    )
                 }
                 .onPreferenceChange(CustomWorkoutScrollOffsetKey.self) { value in
                     scrollOffset = value
@@ -653,6 +691,10 @@ struct CustomWorkoutBuilderView: View {
                                 VideoPlaybackEngine.shared.priorityPrefetch(exerciseName: name)
                             }
                         }
+                        // Mark the added exercise as the scroll target so the
+                        // user lands on it in the alphabetical list instead of
+                        // at the top. The ScrollViewReader below consumes this.
+                        scrollToExerciseID = exerciseToAdd.objectID
                         // Clear the pre-selected exercise
                         workoutManager.exerciseToAddToCustomWorkout = nil
                     }
@@ -773,6 +815,35 @@ struct CustomWorkoutBuilderView: View {
     
     
     
+    /// Small "N selected" pill shown on its own right-aligned row between
+    /// the filter card and the exercise list. Extracted from the filter
+    /// header row (where it was crowding the "All Exercises" dropdown)
+    /// so both elements have breathing room.
+    private var selectedCountPill: some View {
+        HStack(spacing: 4) {
+            Text("\(selectedExercises.count)")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+            Text("selected")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, Spacing.xs)
+        .padding(.vertical, Spacing.xxs)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [Color.blue, Color.cyan]),
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
+        .cornerRadius(CornerRadius.sm)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(selectedExercises.count) exercise\(selectedExercises.count == 1 ? "" : "s") selected")
+    }
+    
     private var compactFiltersView: some View {
         VStack(spacing: 12) {
             // Search section with title
@@ -835,29 +906,6 @@ struct CustomWorkoutBuilderView: View {
                         )
                     }
                     
-                    // Small selected counter with blue gradient (only in build mode)
-                    if !mode.isSingleSelect && !selectedExercises.isEmpty {
-                        HStack(spacing: 4) {
-                            Text("\(selectedExercises.count)")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                            Text("selected")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.white)
-                        }
-                        .padding(.horizontal, Spacing.xs)
-                        .padding(.vertical, Spacing.xxs)
-                        .background(
-                            LinearGradient(
-                                gradient: Gradient(colors: [Color.blue, Color.cyan]),
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .cornerRadius(CornerRadius.sm)
-                    }
                 }
                 
                 // ⚡️ SNAPPY SEARCH: Instant response search bar

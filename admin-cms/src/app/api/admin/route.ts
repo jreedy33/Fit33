@@ -1473,15 +1473,15 @@ export async function POST(req: NextRequest) {
         ])
 
         const statusMap: Record<string, number> = {}
-        for (const r of (statusCounts || []) as Array<{ status: string }>) {
+        for (const r of (statusCounts ?? []) as unknown as Array<{ status: string }>) {
           statusMap[r.status] = (statusMap[r.status] || 0) + 1
         }
         const severityMap: Record<string, number> = {}
-        for (const r of (severityCounts || []) as Array<{ severity: string }>) {
+        for (const r of (severityCounts ?? []) as unknown as Array<{ severity: string }>) {
           severityMap[r.severity] = (severityMap[r.severity] || 0) + 1
         }
         const sourceMap: Record<string, number> = {}
-        for (const r of (sourceCounts || []) as Array<{ source: string }>) {
+        for (const r of (sourceCounts ?? []) as unknown as Array<{ source: string }>) {
           sourceMap[r.source] = (sourceMap[r.source] || 0) + 1
         }
 
@@ -1523,7 +1523,7 @@ export async function POST(req: NextRequest) {
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
         // Attach latest report summary per fingerprint for the list view.
-        const fingerprints = (data || []) as Array<{ fingerprint: string }>
+        const fingerprints = (data ?? []) as unknown as Array<{ fingerprint: string }>
         if (fingerprints.length === 0) return NextResponse.json({ fingerprints: [] })
 
         const { data: latestReports } = await admin
@@ -1533,7 +1533,7 @@ export async function POST(req: NextRequest) {
           .order('created_at', { ascending: false })
 
         const latestByFp = new Map<string, unknown>()
-        for (const r of (latestReports || []) as Array<{ fingerprint: string }>) {
+        for (const r of (latestReports ?? []) as unknown as Array<{ fingerprint: string }>) {
           if (!latestByFp.has(r.fingerprint)) latestByFp.set(r.fingerprint, r)
         }
 
@@ -1616,7 +1616,7 @@ export async function POST(req: NextRequest) {
 
         const { data: reports, error: repErr } = await repQuery
         if (repErr) return NextResponse.json({ error: repErr.message }, { status: 500 })
-        const reportRows = (reports || []) as Array<{
+        const reportRows = (reports ?? []) as unknown as Array<{
           fingerprint: string
           id: string
           [k: string]: unknown
@@ -1708,7 +1708,7 @@ export async function POST(req: NextRequest) {
               )
               .in('triage_report_id', shakeReportIds)
 
-            const shakeRows = (shakes ?? []) as Array<{
+            const shakeRows = (shakes ?? []) as unknown as Array<{
               id: string
               user_id: string | null
               triage_report_id: string | null
@@ -1743,7 +1743,7 @@ export async function POST(req: NextRequest) {
                   'weight_unit, height_unit, distance_unit',
                 )
                 .in('id', userIds)
-              for (const p of ((profiles ?? []) as Array<Record<string, unknown>>)) {
+              for (const p of ((profiles ?? []) as unknown as Array<Record<string, unknown>>)) {
                 profileById.set(String(p.id), p)
               }
             }
@@ -1954,7 +1954,7 @@ export async function POST(req: NextRequest) {
           const { data: reps } = await admin.from('bug_intelligence_reports')
             .select('id, agent_owner, severity, confidence, title, summary, file_path, code_diff, review_status, pr_url')
             .in('id', reportIds)
-          for (const r of ((reps || []) as Array<Record<string, unknown>>)) {
+          for (const r of ((reps ?? []) as unknown as Array<Record<string, unknown>>)) {
             reportsById[String(r.id)] = r
           }
         }

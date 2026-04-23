@@ -41,39 +41,125 @@ final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
             if let hangDiagnostics = payload.hangDiagnostics {
                 for hang in hangDiagnostics {
                     let durationMs = Int(hang.hangDuration.converted(to: .milliseconds).value)
-                    AppLogger.warning("[METRICKIT] Hang diagnostic: \(durationMs)ms hang detected", category: .performance)
-                    
+                    let callStackJSON = Self.jsonString(from: hang.callStackTree.jsonRepresentation())
+                    let metaBaseline = hang.metaData.jsonRepresentation()
+                    let metaJSON = Self.jsonString(from: metaBaseline)
+
+                    AppLogger.warning(
+                        "[METRICKIT] Hang diagnostic: \(durationMs)ms hang detected",
+                        category: .performance
+                    )
+
+                    // Persist full hang payload to dev_session_logs.extra so
+                    // the next occurrence is fingerprint-able by call stack
+                    // instead of just duration — this is the signal
+                    // previously missing from Cluster A bug reports.
                     if AdvancedSessionLogger.isActive {
+                        let capturedDuration = durationMs
+                        let capturedStack = callStackJSON
+                        let capturedMeta = metaJSON
                         Task { @MainActor in
-                            AdvancedSessionLogger.shared.logPerformance(
-                                "METRICKIT_HANG: \(durationMs)ms",
-                                durationMs: durationMs
+                            AdvancedSessionLogger.shared.log(
+                                type: "metrickit_hang",
+                                detail: "METRICKIT_HANG: \(capturedDuration)ms",
+                                screen: nil,
+                                durationMs: capturedDuration,
+                                extra: [
+                                    "mx_kind": "hang",
+                                    "duration_ms": capturedDuration,
+                                    "call_stack_tree": capturedStack ?? "unavailable",
+                                    "meta_data": capturedMeta ?? "unavailable"
+                                ]
                             )
                         }
                     }
                 }
             }
-            
+
             if let crashDiagnostics = payload.crashDiagnostics {
                 let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
                 for crash in crashDiagnostics {
                     let crashVersion = crash.applicationVersion
-                    AppLogger.warning("[METRICKIT] Crash diagnostic v\(crashVersion) (current: v\(currentVersion)), signal: \(crash.signal?.description ?? "unknown")", category: .performance)
+                    let signal = crash.signal?.intValue ?? -1
+                    let exceptionType = crash.exceptionType?.intValue ?? -1
+                    let exceptionCode = crash.exceptionCode?.intValue ?? -1
+                    let terminationReason = crash.terminationReason ?? "unknown"
+                    let callStackJSON = Self.jsonString(from: crash.callStackTree.jsonRepresentation())
+                    let metaJSON = Self.jsonString(from: crash.metaData.jsonRepresentation())
+
+                    AppLogger.error(
+                        "[METRICKIT] Crash diagnostic v\(crashVersion) (current: v\(currentVersion)), signal: \(signal) exc: \(exceptionType)/\(exceptionCode)",
+                        category: .performance
+                    )
+
+                    // Persist crash callStackTree so the crash_reports row has
+                    // a fingerprint-able stack (complements symbolicated
+                    // stack traces from CrashReportingService).
+                    if AdvancedSessionLogger.isActive {
+                        let capturedVersion = crashVersion
+                        let capturedStack = callStackJSON
+                        let capturedMeta = metaJSON
+                        let capturedSignal = signal
+                        let capturedTermination = terminationReason
+                        Task { @MainActor in
+                            AdvancedSessionLogger.shared.log(
+                                type: "metrickit_crash",
+                                detail: "METRICKIT_CRASH: signal=\(capturedSignal)",
+                                screen: nil,
+                                error: "signal=\(capturedSignal)",
+                                extra: [
+                                    "mx_kind": "crash",
+                                    "app_version": capturedVersion,
+                                    "signal": capturedSignal,
+                                    "termination_reason": capturedTermination,
+                                    "call_stack_tree": capturedStack ?? "unavailable",
+                                    "meta_data": capturedMeta ?? "unavailable"
+                                ]
+                            )
+                        }
+                    }
                 }
             }
-            
+
             if let cpuDiagnostics = payload.cpuExceptionDiagnostics {
                 for cpu in cpuDiagnostics {
                     AppLogger.warning("[METRICKIT] CPU exception: \(cpu.totalCPUTime)", category: .performance)
+                    if AdvancedSessionLogger.isActive {
+                        let stack = Self.jsonString(from: cpu.callStackTree.jsonRepresentation())
+                        Task { @MainActor in
+                            AdvancedSessionLogger.shared.log(
+                                type: "metrickit_cpu",
+                                detail: "METRICKIT_CPU",
+                                screen: nil,
+                                extra: [
+                                    "mx_kind": "cpu_exception",
+                                    "call_stack_tree": stack ?? "unavailable"
+                                ]
+                            )
+                        }
+                    }
                 }
             }
-            
+
             if let diskDiagnostics = payload.diskWriteExceptionDiagnostics {
                 for disk in diskDiagnostics {
                     AppLogger.warning("[METRICKIT] Disk write exception: \(disk.totalWritesCaused)", category: .performance)
                 }
             }
         }
+    }
+
+    /// Convert raw JSON payload Data returned by MetricKit to a UTF-8 string
+    /// suitable for dev_session_logs.extra. Large payloads are truncated to
+    /// 16 KB to avoid blowing up the session log row size (which has a JSONB
+    /// column cap of ~1 MB — defensive).
+    private static func jsonString(from data: Data) -> String? {
+        guard JSONSerialization.isValidJSONObject((try? JSONSerialization.jsonObject(with: data)) ?? [:]) ||
+              !data.isEmpty else {
+            return nil
+        }
+        guard let s = String(data: data, encoding: .utf8) else { return nil }
+        return s.count <= 16_384 ? s : String(s.prefix(16_384)) + "...[truncated]"
     }
 }
 

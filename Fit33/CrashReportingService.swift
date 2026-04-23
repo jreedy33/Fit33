@@ -720,7 +720,14 @@ final class CrashReportingService {
             
             return true
         } catch {
-            AppLogger.error("🛡️ [CrashReporter] Upload failed: \(error.localizedDescription)", category: .general)
+            // Classifier keeps transient / auth-expired / RLS rejections at .warning.
+            // Without this, every offline queue flush produced a fresh
+            // bug_intelligence fingerprint (the #1 source of noise pre-Phase 5).
+            NetworkErrorClassifier.log(
+                error,
+                context: "🛡️ [CrashReporter] Upload failed",
+                category: .general
+            )
             return false
         }
     }

@@ -95,9 +95,15 @@ final class ProductionFPSMonitor {
     }
     
     func start() {
+        // DEBUG-only: ProductionFPSMonitor samples every frame and logs at
+        // `.warning` when FPS drops — in Release/TestFlight this becomes
+        // noise in bug_intelligence_fingerprints. MetricKit provides the
+        // Release-side FPS signal via MXCPUExceptionDiagnostic.
+        #if DEBUG
         guard displayLink == nil else { return }
         displayLink = CADisplayLink(target: self, selector: #selector(tick))
         displayLink?.add(to: .main, forMode: .common)
+        #endif
     }
     
     func stop() {
@@ -865,8 +871,17 @@ final class MainThreadWatchdog {
     
     private init() {}
     
-    /// Start the watchdog — call once at app launch
+    /// Start the watchdog — call once at app launch.
+    ///
+    /// DEBUG-only. The watchdog thread samples the main thread every 100ms
+    /// and emits `.warning`/`.error` logs on freeze, which AppLogger pipes
+    /// into `dev_session_logs.entries[type=error]` and then into
+    /// `bug_intelligence_fingerprints`. In TestFlight/Release this produces
+    /// 20+ false-positive fingerprints per session (the user opening
+    /// Dashboard during a cold start = 2-3s initial load = "freeze").
+    /// Release build uses MetricKit's `MXHangDiagnostic` instead.
     func start() {
+        #if DEBUG
         guard !isRunning else { return }
         isRunning = true
         
@@ -879,6 +894,7 @@ final class MainThreadWatchdog {
         watchdogThread = thread
         
         AppLogger.debug("🐕 [WATCHDOG] Main thread freeze detector started (threshold: \(freezeThreshold)s)", category: .performance)
+        #endif
     }
     
     /// Set current context (e.g., "tab_switch_0→1") — helps correlate freezes

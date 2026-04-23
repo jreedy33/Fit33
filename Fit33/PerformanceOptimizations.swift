@@ -907,18 +907,31 @@ enum PerformanceOptimizationsInitializer {
         
         // Initialize heavy work sentinel
         _ = HeavyWorkSentinel.shared
-        
-        MainThreadWatchdog.shared.start()
-        
+
+        // MetricKit runs in Release — captures real-world hangs/crashes
         _ = MetricKitSubscriber.shared
-        
+
+        // MainThreadWatchdog + ProductionFPSMonitor are DEBUG-only.
+        // QUALITY_PERFORMANCE_AGENT invariant: these tools sample every frame
+        // and emit `.warning`/`.error` logs that the bug-intelligence rollup
+        // treats as user-facing errors. Running them in TestFlight/Release
+        // produces dozens of false-positive fingerprints per session. The
+        // canonical start call lives in Fit33App.swift inside a `#if DEBUG`
+        // block; this is a defensive second gate.
+        #if DEBUG
+        MainThreadWatchdog.shared.start()
         ProductionFPSMonitor.shared.start()
+        #endif
 
         Task { @MainActor in
             StartupCoordinator.shared.beginStartupSequence()
         }
 
+        #if DEBUG
         AppLogger.info("✅ [PERF] Performance optimizations initialized (watchdog + MetricKit + FPS monitor)", category: .general)
+        #else
+        AppLogger.info("✅ [PERF] Performance optimizations initialized (MetricKit)", category: .general)
+        #endif
     }
 }
 

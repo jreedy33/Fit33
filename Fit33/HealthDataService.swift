@@ -16,6 +16,11 @@ final class HealthDataService: ObservableObject {
     static let shared = HealthDataService()
     
     private static let iso8601 = ISO8601DateFormatter()
+    private static let iso8601Fractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
     private static let dayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -273,13 +278,10 @@ final class HealthDataService: ObservableObject {
         
         guard SupabaseManager.shared.isAuthenticated,
               let userId = SupabaseManager.shared.currentUser?.id else { return }
-        
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
-        
-        let isoFmt = ISO8601DateFormatter()
-        isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        
+
+        let dateFmt = Self.dayFormatter
+        let isoFmt = Self.iso8601Fractional
+
         // Save recovery + strain data to whoop_recovery_data
         for recovery in WhoopService.shared.recentRecoveries {
             guard recovery.scoreState == "SCORED", let score = recovery.score else { continue }
@@ -396,8 +398,8 @@ final class HealthDataService: ObservableObject {
                 averageHeartRate: workout.score?.averageHeartRate,
                 maxHeartRate: workout.score?.maxHeartRate,
                 totalElevationGain: workout.score?.altitudeGainMeter,
-                startedAt: ISO8601DateFormatter().string(from: startDate),
-                completedAt: ISO8601DateFormatter().string(from: endDate),
+                startedAt: Self.iso8601.string(from: startDate),
+                completedAt: Self.iso8601.string(from: endDate),
                 source: "whoop",
                 externalId: workout.id,
                 externalUrl: nil
@@ -428,8 +430,8 @@ final class HealthDataService: ObservableObject {
                     .from("cardio_workouts")
                     .select()
                     .eq("user_id", value: userId.uuidString)
-                    .gte("started_at", value: ISO8601DateFormatter().string(from: windowStart))
-                    .lte("started_at", value: ISO8601DateFormatter().string(from: windowEnd))
+                    .gte("started_at", value: Self.iso8601.string(from: windowStart))
+                    .lte("started_at", value: Self.iso8601.string(from: windowEnd))
                     .execute()
                     .value
 
@@ -669,8 +671,7 @@ final class HealthDataService: ObservableObject {
         guard SupabaseManager.shared.isAuthenticated,
               let userId = SupabaseManager.shared.currentUser?.id else { return }
 
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
+        let dateFmt = Self.dayFormatter
 
         // Save readiness + activity data to oura_readiness_data
         for readiness in OuraService.shared.recentReadiness {
@@ -761,13 +762,13 @@ final class HealthDataService: ObservableObject {
 
             let startDate: Date
             if let startStr = workout.startDatetime {
-                startDate = ISO8601DateFormatter().date(from: startStr) ?? Date()
+                startDate = Self.iso8601.date(from: startStr) ?? Date()
             } else {
                 startDate = Date()
             }
             let endDate: Date
             if let endStr = workout.endDatetime {
-                endDate = ISO8601DateFormatter().date(from: endStr) ?? startDate
+                endDate = Self.iso8601.date(from: endStr) ?? startDate
             } else {
                 endDate = startDate
             }
@@ -787,8 +788,8 @@ final class HealthDataService: ObservableObject {
                 averageHeartRate: nil,
                 maxHeartRate: nil,
                 totalElevationGain: nil,
-                startedAt: ISO8601DateFormatter().string(from: startDate),
-                completedAt: ISO8601DateFormatter().string(from: endDate),
+                startedAt: Self.iso8601.string(from: startDate),
+                completedAt: Self.iso8601.string(from: endDate),
                 source: "oura",
                 externalId: workoutId,
                 externalUrl: nil
@@ -1002,16 +1003,13 @@ final class HealthDataService: ObservableObject {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
-                let nsError = error as NSError
-                let isTimeout = nsError.domain == NSURLErrorDomain && (nsError.code == NSURLErrorTimedOut || nsError.code == NSURLErrorCancelled)
-                if isTimeout && attempt < maxRetries {
+                if NetworkErrorClassifier.isTransient(error) && attempt < maxRetries {
                     let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
-                    AppLogger.warning("saveDailyActivityFromHealthKit timeout (attempt \(attempt)/\(maxRetries)), retrying...", category: .health)
+                    AppLogger.warning("saveDailyActivityFromHealthKit transient failure (attempt \(attempt)/\(maxRetries)), retrying...", category: .health)
                     try? await Task.sleep(nanoseconds: delay)
-                } else if isTimeout {
-                    AppLogger.warning("Failed to save HealthKit activity: \(error.localizedDescription)", category: .health)
                 } else {
-                    AppLogger.error("Failed to save HealthKit activity: \(error.localizedDescription)", category: .health)
+                    NetworkErrorClassifier.log(error, context: "Failed to save HealthKit activity", category: .health)
+                    return
                 }
             }
         }
@@ -1134,7 +1132,11 @@ final class HealthDataService: ObservableObject {
                     continue
                 }
 
-                AppLogger.error("Failed to save HealthKit workout (\(label)): \(error.localizedDescription)", category: .health)
+                NetworkErrorClassifier.log(
+                    error,
+                    context: "Failed to save HealthKit workout (\(label))",
+                    category: .health
+                )
                 return
             }
         }
@@ -1204,7 +1206,7 @@ final class HealthDataService: ObservableObject {
                 .upsert(insert)
                 .execute()
         } catch {
-            AppLogger.error("Failed to save HealthKit sleep: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(error, context: "Failed to save HealthKit sleep", category: .health)
         }
     }
     
@@ -1236,7 +1238,7 @@ final class HealthDataService: ObservableObject {
             
             AppLogger.info("Saved daily activity from \(source)", category: .health)
         } catch {
-            AppLogger.error("Failed to save daily activity: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(error, context: "Failed to save daily activity", category: .health)
         }
     }
     
@@ -1291,7 +1293,7 @@ final class HealthDataService: ObservableObject {
             
             AppLogger.info("Updated daily activity with Strava data", category: .health)
         } catch {
-            AppLogger.error("Failed to update Strava activity: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(error, context: "Failed to update Strava activity", category: .health)
         }
     }
     
@@ -1322,7 +1324,7 @@ final class HealthDataService: ObservableObject {
             
             AppLogger.info("Saved sleep log from \(source)", category: .health)
         } catch {
-            AppLogger.error("Failed to save sleep log: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(error, context: "Failed to save sleep log", category: .health)
         }
     }
     
@@ -1390,7 +1392,7 @@ final class HealthDataService: ObservableObject {
             
             AppLogger.info("Saved heart rate data from \(source)", category: .health)
         } catch {
-            AppLogger.error("Failed to save heart rate: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(error, context: "Failed to save heart rate", category: .health)
         }
     }
     
@@ -1422,7 +1424,12 @@ final class HealthDataService: ObservableObject {
             
             AppLogger.info("Fetched \(activities.count) days of activity data", category: .health)
         } catch {
-            AppLogger.error("Failed to fetch activity data: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(
+                error,
+                context: "Failed to fetch activity data",
+                category: .health,
+                transientLevel: .debug   // startup flood = cancels; refetches next cycle
+            )
         }
         
         try? await Task.sleep(nanoseconds: 150_000_000) // 150ms throttle
@@ -1443,7 +1450,12 @@ final class HealthDataService: ObservableObject {
             
             AppLogger.info("Fetched \(sleepLogs.count) sleep logs", category: .health)
         } catch {
-            AppLogger.error("Failed to fetch sleep data: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(
+                error,
+                context: "Failed to fetch sleep data",
+                category: .health,
+                transientLevel: .debug
+            )
         }
         
         try? await Task.sleep(nanoseconds: 150_000_000) // 150ms throttle
@@ -1465,7 +1477,12 @@ final class HealthDataService: ObservableObject {
             
             AppLogger.info("Fetched \(heartRates.count) days of heart rate data", category: .health)
         } catch {
-            AppLogger.error("Failed to fetch heart rate data: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(
+                error,
+                context: "Failed to fetch heart rate data",
+                category: .health,
+                transientLevel: .debug
+            )
         }
         
         try? await Task.sleep(nanoseconds: 150_000_000) // 150ms throttle
@@ -1495,7 +1512,12 @@ final class HealthDataService: ObservableObject {
             
             AppLogger.info("Weekly workouts: \(weeklyWorkoutCount), minutes: \(weeklyCardioMinutes)", category: .health)
         } catch {
-            AppLogger.error("Failed to fetch workout aggregates: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(
+                error,
+                context: "Failed to fetch workout aggregates",
+                category: .health,
+                transientLevel: .debug
+            )
         }
     }
     

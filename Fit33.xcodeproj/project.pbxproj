@@ -266,6 +266,7 @@
 		7CAFD56A2EE2100B00920F0D /* WorkoutEnvironmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD5692EE2100B00920F0D /* WorkoutEnvironmentService.swift */; };
 		7CAFD56C2EE2109500920F0D /* ExercisePopularityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD56B2EE2109500920F0D /* ExercisePopularityService.swift */; };
 		7CAFD56E2EE231C600920F0D /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD56D2EE231C600920F0D /* Logger.swift */; };
+		7CAFD5712EE232C600920F0D /* NetworkErrorClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD5702EE232C600920F0D /* NetworkErrorClassifier.swift */; };
 		7CB08C5F2ED644E700236ECB /* NutritionScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C5E2ED644E700236ECB /* NutritionScannerView.swift */; };
 		7CB08C612ED69E4D00236ECB /* WorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C602ED69E4D00236ECB /* WorkoutManager.swift */; };
 		7CB08C632ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08C622ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift */; };
@@ -666,6 +667,7 @@
 		7CAFD5692EE2100B00920F0D /* WorkoutEnvironmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutEnvironmentService.swift; sourceTree = "<group>"; };
 		7CAFD56B2EE2109500920F0D /* ExercisePopularityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExercisePopularityService.swift; sourceTree = "<group>"; };
 		7CAFD56D2EE231C600920F0D /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
+		7CAFD5702EE232C600920F0D /* NetworkErrorClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkErrorClassifier.swift; sourceTree = "<group>"; };
 		7CB08C5C2ED6432900236ECB /* FoodSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodSearchView.swift; sourceTree = "<group>"; };
 		7CB08C5E2ED644E700236ECB /* NutritionScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutritionScannerView.swift; sourceTree = "<group>"; };
 		7CB08C602ED69E4D00236ECB /* WorkoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutManager.swift; sourceTree = "<group>"; };
@@ -1004,6 +1006,7 @@
 				7C8405DF2EE8BEE30009ED0F /* LimitationsSettingsView.swift */,
 				7C8405E92EE9D9690009ED0F /* LocationEquipmentSelectionView.swift */,
 				7CAFD56D2EE231C600920F0D /* Logger.swift */,
+				7CAFD5702EE232C600920F0D /* NetworkErrorClassifier.swift */,
 				7C558B262ED63C7400A01E1F /* MealService.swift */,
 				7CB08C9A2EDBC32900236ECB /* MealService.swift */,
 				7C558B222ED63C2C00A01E1F /* MealService.swift */,
@@ -1403,6 +1406,7 @@
 			files = (
 				7C6DE40F2F5DEAA700BCA276 /* ServiceProtocols.swift in Sources */,
 				7CAFD56E2EE231C600920F0D /* Logger.swift in Sources */,
+				7CAFD5712EE232C600920F0D /* NetworkErrorClassifier.swift in Sources */,
 				7CAFD5562EDEA71200920F0D /* SocialAuthService.swift in Sources */,
 				7C792AFA2F2B9F5A0048A97E /* ShoppingListView.swift in Sources */,
 				7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */,

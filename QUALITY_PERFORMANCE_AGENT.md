@@ -4,7 +4,7 @@
 >
 > Dated crash-analysis reports, sprint fix logs, and benchmarks live in [`docs/history/QUALITY_PERFORMANCE_AGENT.md`](docs/history/QUALITY_PERFORMANCE_AGENT.md).
 
-Cross-cutting rules (logging, force unwraps, `@Published` thread safety, RLS, Core Data context safety, `Task { }` vs `Task.detached`, etc.) live once in `.cursor/rules/codingrules.mdc`.
+Cross-cutting rules (logging, force unwraps, `@Published` thread safety, RLS, Core Data context safety, `Task { }` vs `Task.detached`, etc.) live in `.cursor/rules/codingrules.mdc` (universal) and `.cursor/rules/swiftui-rules.mdc` (auto-loads when editing `Fit33/**/*.swift`).
 
 ---
 
@@ -66,6 +66,8 @@ Cross-cutting rules (logging, force unwraps, `@Published` thread safety, RLS, Co
 
 ### Log-level discipline (beyond HK)
 25. **Normal user actions log at `.debug` or `.info`, never `.error`.** Dismissing a sheet, cancelling an operation, declining a permission prompt, empty results — all expected user choices. `.error` is reserved for actual malfunctions that need investigation.
+25a. **Supabase / URL-backed catch blocks MUST use `NetworkErrorClassifier`** (`Fit33/NetworkErrorClassifier.swift`) instead of `AppLogger.error(...)`. Any `AppLogger.error` call: (a) writes a `dev_session_logs.entries[type=error]` row, (b) invokes `CrashReportingService.reportError()` — which together create a `bug_intelligence_fingerprint` that Claude triages. Logging a transient `NSURLErrorTimedOut` or cancelled task at `.error` manufactures a "bug" per occurrence. The classifier keeps transient network (timeout/cancelled/connection-lost), expected HealthKit (protected/no-data/auth-not-determined), and auth-expired/RLS-rejection failures at `.warning` (or `.debug` via `transientLevel: .debug` on retry-covered paths like dashboard fetches and offline-queue flush). Use `.error` only for a true malfunction surfaced after retries exhaust.
+25b. **`MainThreadWatchdog.start()` and `ProductionFPSMonitor.start()` are defensive-`#if DEBUG` internally** (since 2026-05-02). Callers — `Fit33App.swift`, `PerformanceOptimizationsInitializer.initialize` — also gate. Never remove either gate: release builds rely on `MetricKitSubscriber` alone, and running the watchdog on a TestFlight cold start fires 20+ `.warning` freeze reports per user.
 
 ### Cross-references
 26. **Exercise Library never renders a loading placeholder** — see `PRODUCT_ENGINEER_AGENT.md` invariant #22. The fix is always in the data layer (bundle-JSON pre-warm), not in a view skeleton branch.
@@ -94,6 +96,7 @@ Cross-cutting rules (logging, force unwraps, `@Published` thread safety, RLS, Co
 ## Key Owned Files
 | File | Purpose |
 |---|---|
+| `NetworkErrorClassifier.swift` | Shared helper — classifies network/HK/auth errors into log levels + routes via `AppLogger`. Called from every Supabase/URLSession catch block across HealthKit/CrashReporter paths. Prevents transient-error fingerprint spam. |
 | `MetricKitSubscriber.swift` | Apple diagnostics telemetry |
 | `ProductionFPSMonitor.swift` | DEBUG FPS monitor |
 | `MainThreadWatchdog.swift` | DEBUG freeze detector |
@@ -146,6 +149,7 @@ Every user-visible failure has: (1) icon, (2) plain-language message, (3) retry 
 
 ## See Also
 - `.cursor/rules/codingrules.mdc` — cross-cutting MUST/NEVER rules
+- `.cursor/rules/swiftui-rules.mdc` — Swift/SwiftUI perf + quality rules (auto-loads for `Fit33/**/*.swift`)
 - `PRODUCT_ENGINEER_AGENT.md` — widget isolation, parallel `.task` loading
 - `DATA_BACKEND_AGENT.md` — Core Data context safety, UUID fallback rule
 - `INFRA_SECURITY_AGENT.md` — crash reporting, background service patterns

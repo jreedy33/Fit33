@@ -637,7 +637,7 @@ class HealthKitManager: ObservableObject {
                 }
             }
         } catch {
-            AppLogger.error("Error syncing steps to cloud: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(error, context: "Syncing steps to cloud", category: .health)
         }
     }
     
@@ -650,7 +650,7 @@ class HealthKitManager: ObservableObject {
             try await supabaseManager.batchSaveStepData(weeklySteps, goal: stepGoal)
             AppLogger.info("Synced \(weeklySteps.count) days of steps to cloud in single batch", category: .health)
         } catch {
-            AppLogger.error("Error batch syncing weekly steps: \(error.localizedDescription)", category: .health)
+            NetworkErrorClassifier.log(error, context: "Batch syncing weekly steps", category: .health)
         }
     }
     
@@ -685,7 +685,7 @@ class HealthKitManager: ObservableObject {
                 try await supabaseManager.updateStepGoal(newGoal)
                 AppLogger.info("Step goal updated to \(newGoal)", category: .health)
             } catch {
-                AppLogger.error("Error updating step goal: \(error.localizedDescription)", category: .health)
+                NetworkErrorClassifier.log(error, context: "Updating step goal", category: .health)
             }
         }
     }
@@ -709,12 +709,13 @@ class HealthKitManager: ObservableObject {
                     }
                     UserDefaults.standard.set(cloudGoal, forKey: "dailyStepGoal")
                 }
-            } catch is CancellationError {
-                AppLogger.debug("Step goal cloud fetch cancelled (expected)", category: .health)
-            } catch let urlError as URLError where urlError.code == .cancelled {
-                AppLogger.debug("Step goal cloud fetch cancelled (expected)", category: .health)
             } catch {
-                AppLogger.error("Error loading step goal from cloud: \(error.localizedDescription)", category: .health)
+                NetworkErrorClassifier.log(
+                    error,
+                    context: "Loading step goal from cloud",
+                    category: .health,
+                    transientLevel: .debug   // cold-start cancels are noisy; keep them silent
+                )
             }
         }
     }

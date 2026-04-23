@@ -1555,6 +1555,139 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ reports: data || [] })
       }
 
+      // Cursor handoff export — bundles every report matching the filter
+      // alongside its fingerprint context (occurrence counts, affected
+      // screens, versions, etc.) AND a single representative crash row
+      // (stack_trace / symbolicated_stack_trace / breadcrumbs /
+      // session_log_snippet) when the fingerprint is crash-sourced. The
+      // resulting markdown is meant to be pasted into a Cursor chat to
+      // ask the assistant to execute Claude's proposed fixes with real
+      // repo context. Keep the shape stable — the client-side formatter
+      // depends on it.
+      case 'get_bug_intelligence_export': {
+        const {
+          review_status: reviewFilter,
+          severity_min,
+          agent,
+          include_merged,
+        } = params as {
+          review_status?: string   // default 'pending'
+          severity_min?: string    // 'critical' / 'high' / 'medium' / 'low'
+          agent?: string           // valid agent_owner or 'all'
+          include_merged?: boolean // default false (noise after they've landed)
+        }
+
+        // 1. Fetch reports matching the filter. Default: all pending.
+        let repQuery = admin.from('bug_intelligence_reports')
+          .select('*')
+          .order('severity', { ascending: true })
+          .order('confidence', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(200)
+
+        if (reviewFilter && reviewFilter !== 'all') {
+          repQuery = repQuery.eq('review_status', reviewFilter)
+        } else if (!include_merged) {
+          repQuery = repQuery.in('review_status', ['pending', 'approved'])
+        }
+        if (agent && agent !== 'all') repQuery = repQuery.eq('agent_owner', agent)
+        if (severity_min) {
+          const ORDER: Record<string, string[]> = {
+            critical: ['critical'],
+            high: ['critical', 'high'],
+            medium: ['critical', 'high', 'medium'],
+            low: ['critical', 'high', 'medium', 'low'],
+          }
+          const allowed = ORDER[severity_min] ?? ORDER.medium
+          repQuery = repQuery.in('severity', allowed)
+        }
+
+        const { data: reports, error: repErr } = await repQuery
+        if (repErr) return NextResponse.json({ error: repErr.message }, { status: 500 })
+        const reportRows = (reports || []) as Array<{
+          fingerprint: string
+          id: string
+          [k: string]: unknown
+        }>
+        if (reportRows.length === 0) {
+          return NextResponse.json({
+            export: {
+              generated_at: new Date().toISOString(),
+              bundle_count: 0,
+              bundles: [],
+            },
+          })
+        }
+
+        // 2. Pull their fingerprint context in a single IN query.
+        const fps = Array.from(new Set(reportRows.map(r => r.fingerprint)))
+        const { data: fpRows, error: fpErr } = await admin
+          .from('bug_intelligence_fingerprints')
+          .select('*')
+          .in('fingerprint', fps)
+        if (fpErr) return NextResponse.json({ error: fpErr.message }, { status: 500 })
+        const fpById = new Map<string, Record<string, unknown>>()
+        for (const f of (fpRows || [])) {
+          fpById.set((f as { fingerprint: string }).fingerprint, f as Record<string, unknown>)
+        }
+
+        // 3. For every crash-sourced fingerprint, pull ONE representative
+        // crash row so Cursor gets real stack_trace / symbolicated_stack_trace
+        // / breadcrumbs / session_log_snippet evidence. We pick the most
+        // recent crash for each fingerprint so the snippet reflects
+        // current app state.
+        const crashFps = fps.filter(fp => {
+          const row = fpById.get(fp) as { source?: string } | undefined
+          return row?.source === 'crash'
+        })
+        const crashExample = new Map<string, Record<string, unknown>>()
+        if (crashFps.length > 0) {
+          // Single query, distinct-on-style is awkward in PostgREST — pull
+          // recent crashes ordered desc, take first per fingerprint
+          // client-side. Bounded to 5x fingerprint count which is plenty
+          // for this use — pending queues stay small.
+          const { data: crashes } = await admin
+            .from('crash_reports')
+            .select(
+              'id, bi_fingerprint, error_message, error_domain, stack_trace, ' +
+              'symbolicated_stack_trace, symbolication_status, breadcrumbs, ' +
+              'session_log_snippet, current_screen, app_version, build_number, ' +
+              'device_model, os_version, occurred_at, session_id',
+            )
+            .in('bi_fingerprint', crashFps)
+            .order('created_at', { ascending: false })
+            .limit(crashFps.length * 5)
+
+          for (const c of ((crashes ?? []) as unknown as Array<{ bi_fingerprint: string }>)) {
+            if (!crashExample.has(c.bi_fingerprint)) {
+              crashExample.set(c.bi_fingerprint, c as unknown as Record<string, unknown>)
+            }
+          }
+        }
+
+        // 4. Assemble bundles in the same order the reports came back
+        // (severity asc, confidence desc, created_at desc).
+        const bundles = reportRows.map((r) => ({
+          fingerprint: fpById.get(r.fingerprint) || null,
+          report: r,
+          example_crash: crashExample.get(r.fingerprint) || null,
+        }))
+
+        return NextResponse.json({
+          export: {
+            generated_at: new Date().toISOString(),
+            filters: {
+              review_status: reviewFilter ?? 'pending',
+              severity_min: severity_min ?? null,
+              agent: agent ?? 'all',
+              include_merged: !!include_merged,
+            },
+            bundle_count: bundles.length,
+            bundles,
+          },
+        })
+      }
+
       case 'get_bug_intelligence_trends': {
         const { fingerprint } = params as { fingerprint?: string }
         let query = admin.from('bug_intelligence_trends')

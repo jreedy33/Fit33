@@ -64,6 +64,70 @@ type Overview = {
     pending_reports_count: number
 }
 
+// Shape returned by the `get_bug_intelligence_export` admin action. Kept
+// minimal + defensive — the formatter below reads every field optionally
+// so an older server response never throws at render time.
+type ExportFingerprint = {
+    fingerprint: string
+    source: string
+    sample_message?: string
+    normalized_message?: string
+    error_domain?: string | null
+    occurrence_count?: number
+    unique_user_count?: number
+    affected_screens?: string[] | null
+    first_seen_at?: string
+    last_seen_at?: string
+    first_seen_app_version?: string | null
+    last_seen_app_version?: string | null
+    status?: string
+    assigned_agent?: string | null
+}
+type ExportReport = {
+    id: string
+    fingerprint: string
+    agent_owner: string
+    invariant_violated: string | null
+    severity: 'critical' | 'high' | 'medium' | 'low'
+    confidence: number
+    title: string
+    summary: string
+    file_path: string | null
+    code_diff: string | null
+    pain_point_candidate: string | null
+    suggested_todo: string | null
+    review_status: string
+    created_at: string
+}
+type ExportCrash = {
+    id: string
+    error_message?: string
+    error_domain?: string
+    stack_trace?: string | null
+    symbolicated_stack_trace?: string | null
+    symbolication_status?: string
+    breadcrumbs?: unknown
+    session_log_snippet?: string | null
+    current_screen?: string | null
+    app_version?: string
+    build_number?: string
+    device_model?: string
+    os_version?: string
+    occurred_at?: string
+    session_id?: string | null
+}
+type BugIntelExportBundle = {
+    fingerprint: ExportFingerprint | null
+    report: ExportReport
+    example_crash: ExportCrash | null
+}
+type BugIntelExport = {
+    generated_at: string
+    filters: Record<string, unknown>
+    bundle_count: number
+    bundles: BugIntelExportBundle[]
+}
+
 type AgentMetric = {
     agent_owner: string
     reports_total: number
@@ -109,6 +173,202 @@ async function adminAction(action: string, params: Record<string, unknown> = {})
         body: JSON.stringify({ action, ...params }),
     })
     return res.json()
+}
+
+// Builds the Cursor handoff markdown. The format is designed so an AI
+// assistant can read the file top-to-bottom and know exactly what to do
+// with each report — treat Claude's code_diff as a hypothesis, verify
+// against the real file, and apply (or replace) the fix. Keep sections
+// short + scannable; richer evidence (stack traces, session snippets)
+// lives under <details> so the file doesn't explode in chat UIs.
+function formatExportAsMarkdown(ex: BugIntelExport): string {
+    const L: string[] = []
+    const total = ex.bundle_count
+    const severityCounts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 }
+    const ownerCounts: Record<string, number> = {}
+    for (const b of ex.bundles) {
+        severityCounts[b.report.severity] = (severityCounts[b.report.severity] ?? 0) + 1
+        ownerCounts[b.report.agent_owner] = (ownerCounts[b.report.agent_owner] ?? 0) + 1
+    }
+
+    L.push(`# Fit33 Bug Intelligence — Cursor Handoff`)
+    L.push('')
+    L.push(`Generated: \`${ex.generated_at}\``)
+    L.push(`Source: \`/bug-intelligence\` · Filters: \`${JSON.stringify(ex.filters)}\``)
+    L.push(`Reports: **${total}**`)
+    L.push('')
+    L.push(`## Instructions for the Cursor assistant`)
+    L.push('')
+    L.push(`You are receiving ${total} bug intelligence report(s) produced by the Fit33 triage pipeline (Claude Sonnet 4 + symbolicated stack traces). Each report has a suggested \`file_path\` and \`code_diff\` — treat these as **hypotheses**, not facts:`)
+    L.push('')
+    L.push(`1. Read the suggested \`file_path\`. Verify the failing code actually exists there.`)
+    L.push(`2. If Claude's diff is correct → apply it with any needed refinements.`)
+    L.push(`3. If Claude's diff is wrong or off-target → explain why and write a better one.`)
+    L.push(`4. If you cannot locate the failure site → flag the report and move on.`)
+    L.push(`5. Work in priority order: **critical → high → medium → low**. Within a tier, highest confidence first.`)
+    L.push(`6. Share your plan before making changes (which reports you'll tackle, which you'll skip and why).`)
+    L.push(`7. After fixing each report, note the fingerprint so the user can mark it resolved in \`/bug-intelligence\`.`)
+    L.push('')
+    L.push(`Respect the repo rules in \`.cursor/rules/codingrules.mdc\` and the scoped \`swiftui-rules.mdc\` / \`supabase-rules.mdc\` / \`admin-cms-rules.mdc\`. Consult the matching \`*_AGENT.md\` file for each report's \`agent_owner\` before making changes.`)
+    L.push('')
+    L.push(`## Summary`)
+    L.push('')
+    L.push(`| Severity | Count |`)
+    L.push(`|---|---|`)
+    for (const s of ['critical', 'high', 'medium', 'low']) {
+        L.push(`| ${s} | ${severityCounts[s] ?? 0} |`)
+    }
+    L.push('')
+    L.push(`**By agent owner:**`)
+    for (const [owner, n] of Object.entries(ownerCounts).sort((a, b) => b[1] - a[1])) {
+        L.push(`- \`${owner}\`: ${n}`)
+    }
+    L.push('')
+    L.push(`---`)
+    L.push('')
+
+    ex.bundles.forEach((b, i) => {
+        const r = b.report
+        const f = b.fingerprint
+        const c = b.example_crash
+        const idx = i + 1
+
+        L.push(`## Report ${idx}: [${r.severity.toUpperCase()}] ${r.title}`)
+        L.push('')
+        L.push(`- **Fingerprint**: \`${r.fingerprint}\``)
+        L.push(`- **Owner**: \`${r.agent_owner}\` · **Severity**: \`${r.severity}\` · **Confidence**: \`${r.confidence.toFixed(2)}\``)
+        if (r.invariant_violated) L.push(`- **Invariant violated**: ${r.invariant_violated}`)
+        if (r.file_path) L.push(`- **Suggested file**: \`${r.file_path}\``)
+        if (f?.status) L.push(`- **Fingerprint status**: \`${f.status}\``)
+        L.push(`- **Report created**: \`${r.created_at}\``)
+        L.push('')
+
+        if (f) {
+            L.push(`### Fingerprint context`)
+            L.push('')
+            if (typeof f.occurrence_count === 'number') {
+                const users = typeof f.unique_user_count === 'number' ? ` across ${f.unique_user_count} user${f.unique_user_count === 1 ? '' : 's'}` : ''
+                L.push(`- Occurrences: ${f.occurrence_count}${users}`)
+            }
+            if (f.affected_screens && f.affected_screens.length > 0) {
+                L.push(`- Affected screens: ${f.affected_screens.map(s => `\`${s}\``).join(', ')}`)
+            }
+            if (f.first_seen_at || f.last_seen_at) {
+                const firstV = f.first_seen_app_version ? ` (${f.first_seen_app_version})` : ''
+                const lastV = f.last_seen_app_version ? ` (${f.last_seen_app_version})` : ''
+                L.push(`- First seen: \`${f.first_seen_at ?? '?'}\`${firstV} · Last seen: \`${f.last_seen_at ?? '?'}\`${lastV}`)
+            }
+            L.push(`- Source: \`${f.source}\`${f.error_domain ? ` · Domain: \`${f.error_domain}\`` : ''}`)
+            if (f.sample_message) {
+                L.push(`- Sample message:`)
+                L.push('')
+                L.push('  ```')
+                L.push(`  ${f.sample_message.slice(0, 800).replace(/\n/g, '\n  ')}`)
+                L.push('  ```')
+            }
+            L.push('')
+        }
+
+        L.push(`### Claude's summary`)
+        L.push('')
+        L.push(r.summary || '_(no summary)_')
+        L.push('')
+
+        if (r.file_path && r.code_diff) {
+            L.push(`### Claude's proposed fix`)
+            L.push('')
+            L.push(`File: \`${r.file_path}\``)
+            L.push('')
+            L.push('```diff')
+            L.push(r.code_diff)
+            L.push('```')
+            L.push('')
+        } else if (r.file_path) {
+            L.push(`### Claude's lead`)
+            L.push('')
+            L.push(`File: \`${r.file_path}\` — no diff suggested. Investigate in this file first.`)
+            L.push('')
+        } else {
+            L.push(`### Claude's lead`)
+            L.push('')
+            L.push(`_(no file_path — Claude couldn't narrow this down. Use the error message / session evidence below to locate it.)_`)
+            L.push('')
+        }
+
+        if (r.pain_point_candidate) {
+            L.push(`### Pain point candidate`)
+            L.push('')
+            L.push(r.pain_point_candidate)
+            L.push('')
+        }
+        if (r.suggested_todo) {
+            L.push(`### Suggested TODO`)
+            L.push('')
+            L.push(r.suggested_todo)
+            L.push('')
+        }
+
+        if (c) {
+            L.push(`### Evidence — representative crash`)
+            L.push('')
+            L.push(`- Build: \`${c.app_version ?? '?'}\` (\`${c.build_number ?? '?'}\`) on \`${c.device_model ?? '?'}\` / \`${c.os_version ?? '?'}\``)
+            if (c.current_screen) L.push(`- Current screen at crash: \`${c.current_screen}\``)
+            if (c.session_id) L.push(`- Session: \`${c.session_id}\``)
+            if (c.symbolication_status) L.push(`- Symbolication: \`${c.symbolication_status}\``)
+            L.push(`- Occurred: \`${c.occurred_at ?? '?'}\``)
+            L.push('')
+            const stack = (typeof c.symbolicated_stack_trace === 'string' && c.symbolicated_stack_trace.trim().length > 0)
+                ? c.symbolicated_stack_trace
+                : c.stack_trace
+            if (stack) {
+                L.push(`<details>`)
+                L.push(`<summary>Stack trace</summary>`)
+                L.push('')
+                L.push('```')
+                L.push(String(stack).slice(0, 4000))
+                L.push('```')
+                L.push('')
+                L.push(`</details>`)
+                L.push('')
+            }
+            if (c.session_log_snippet) {
+                L.push(`<details>`)
+                L.push(`<summary>Session log snippet</summary>`)
+                L.push('')
+                L.push('```')
+                L.push(String(c.session_log_snippet).slice(0, 3000))
+                L.push('```')
+                L.push('')
+                L.push(`</details>`)
+                L.push('')
+            }
+            if (c.breadcrumbs) {
+                L.push(`<details>`)
+                L.push(`<summary>Breadcrumbs</summary>`)
+                L.push('')
+                L.push('```json')
+                try {
+                    L.push(JSON.stringify(c.breadcrumbs, null, 2).slice(0, 3000))
+                } catch {
+                    L.push(String(c.breadcrumbs).slice(0, 3000))
+                }
+                L.push('```')
+                L.push('')
+                L.push(`</details>`)
+                L.push('')
+            }
+        }
+
+        L.push(`---`)
+        L.push('')
+    })
+
+    L.push(`## After fixing`)
+    L.push('')
+    L.push(`For each report you resolved, ask the user to go to \`/bug-intelligence\` in the admin CMS, click the fingerprint, and update the status to \`resolved\` (once the fix merges to main, the GitHub webhook will auto-flip it anyway — but manual marking is fine for local fixes).`)
+    L.push('')
+
+    return L.join('\n')
 }
 
 function timeAgo(iso: string): string {
@@ -221,6 +481,40 @@ export default function BugIntelligencePage() {
         if (selectedFp) await loadDetail(selectedFp)
     }
 
+    // Cursor handoff export — pulls every pending/approved report bundled
+    // with its fingerprint context + one representative crash (stack trace +
+    // breadcrumbs + session_log_snippet). Formats as a single .md file
+    // designed for pasting into a Cursor chat to drive real-repo fixes.
+    const [exporting, setExporting] = useState(false)
+    async function exportPendingAsMarkdown() {
+        setExporting(true)
+        try {
+            const res = await adminAction('get_bug_intelligence_export', {
+                review_status: 'pending',
+            })
+            const ex = res.export as BugIntelExport | undefined
+            if (!ex || ex.bundle_count === 0) {
+                alert('Nothing pending to export.')
+                return
+            }
+            const md = formatExportAsMarkdown(ex)
+            const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `bug-intelligence-${stamp}.md`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            URL.revokeObjectURL(url)
+        } catch (err) {
+            alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`)
+        } finally {
+            setExporting(false)
+        }
+    }
+
     async function createPrFromReport(r: Report) {
         if (!r.file_path || !r.code_diff) {
             alert('Report is missing file_path or code_diff — cannot create PR.')
@@ -261,14 +555,25 @@ export default function BugIntelligencePage() {
                             Fingerprinted bugs from logs + crashes. Claude triage runs every 4 hours.
                         </p>
                     </div>
-                    <button
-                        onClick={() => triggerTriage()}
-                        disabled={triggering}
-                        className="btn btn-primary"
-                        style={{ opacity: triggering ? 0.6 : 1, cursor: triggering ? 'wait' : 'pointer' }}
-                    >
-                        {triggering ? 'Triaging…' : 'Run triage now'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                            onClick={exportPendingAsMarkdown}
+                            disabled={exporting}
+                            className="btn btn-ghost"
+                            title="Download all pending reports as a single .md file, formatted for pasting into a Cursor chat to drive real-repo fixes."
+                            style={{ opacity: exporting ? 0.6 : 1, cursor: exporting ? 'wait' : 'pointer' }}
+                        >
+                            {exporting ? 'Exporting…' : 'Export for Cursor (.md)'}
+                        </button>
+                        <button
+                            onClick={() => triggerTriage()}
+                            disabled={triggering}
+                            className="btn btn-primary"
+                            style={{ opacity: triggering ? 0.6 : 1, cursor: triggering ? 'wait' : 'pointer' }}
+                        >
+                            {triggering ? 'Triaging…' : 'Run triage now'}
+                        </button>
+                    </div>
                 </header>
 
                 {overview && <OverviewRow overview={overview} />}

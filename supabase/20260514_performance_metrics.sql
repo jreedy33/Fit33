@@ -113,9 +113,18 @@ CREATE POLICY "bug_intel_baseline_service_only"
 -- into our 7 known clusters. Call once "before sweep", then again
 -- "one week after sweep". Diff is surfaced in `bug_intel_improvement_tracker`.
 --
--- Cluster bucketing rules (best-effort regex over fingerprint.title +
--- signature). New fingerprints that don't match any cluster go to
--- bucket `uncategorized`.
+-- Cluster bucketing rules (best-effort text match over fingerprint
+-- `sample_message` + `normalized_message` + `error_domain`). New
+-- fingerprints that don't match any cluster go to bucket `uncategorized`.
+--
+-- NOTE: `bug_intelligence_fingerprints` does NOT have a `title` column —
+-- that lives on `bug_intelligence_reports`. Fingerprints carry the raw
+-- `sample_message` + normalized variant + an `error_domain` string, which
+-- are what we pattern-match against here.
+--
+-- Status filter: fingerprints don't have an `open` status — the values
+-- are `new` / `triaged` / `in_progress` / `resolved` / `wont_fix` /
+-- `duplicate`. "Open" here means anything NOT in the terminal trio.
 
 DROP FUNCTION IF EXISTS snapshot_bug_intel_baseline(TEXT);
 CREATE OR REPLACE FUNCTION snapshot_bug_intel_baseline(p_label TEXT)
@@ -132,21 +141,29 @@ BEGIN
     END IF;
 
     FOR r IN
-        WITH classified AS (
+        WITH src AS (
             SELECT
-                CASE
-                    WHEN LOWER(f.title) LIKE '%main thread%' OR LOWER(f.title) LIKE '%freeze%' THEN 'A_main_thread'
-                    WHEN LOWER(f.title) LIKE '%42501%' OR LOWER(f.title) LIKE '%row-level security%' OR LOWER(f.title) LIKE '%rls%' THEN 'B_rls'
-                    WHEN LOWER(f.title) LIKE '%42883%' OR LOWER(f.title) LIKE '%uuid = text%' THEN 'C_uuid'
-                    WHEN LOWER(f.title) LIKE '%401%' OR LOWER(f.title) LIKE '%unauthorized%' OR LOWER(f.title) LIKE '%jwt%' THEN 'D_startup_timeout'
-                    WHEN LOWER(f.title) LIKE '%sigsegv%' OR LOWER(f.title) LIKE '%cfstring%' OR LOWER(f.title) LIKE '%coredata%' THEN 'E_crashes'
-                    WHEN LOWER(f.title) LIKE '%pgrst202%' OR LOWER(f.title) LIKE '%post_workout_activity%' THEN 'F_overloads'
-                    WHEN LOWER(f.title) LIKE '%friend%' OR LOWER(f.title) LIKE '%challenge%' OR LOWER(f.title) LIKE '%activity_feed%' THEN 'G_social'
-                    ELSE 'uncategorized'
-                END AS bucket,
+                LOWER(COALESCE(f.sample_message, '') || ' '
+                   || COALESCE(f.normalized_message, '') || ' '
+                   || COALESCE(f.error_domain, '')) AS hay,
                 COALESCE(f.occurrence_count, 1) AS occ
               FROM bug_intelligence_fingerprints f
-             WHERE f.status = 'open'
+             WHERE f.status NOT IN ('resolved', 'wont_fix', 'duplicate')
+        ),
+        classified AS (
+            SELECT
+                CASE
+                    WHEN hay LIKE '%main thread%' OR hay LIKE '%freeze%' OR hay LIKE '%watchdog%' THEN 'A_main_thread'
+                    WHEN hay LIKE '%42501%' OR hay LIKE '%row-level security%' OR hay LIKE '% rls %' THEN 'B_rls'
+                    WHEN hay LIKE '%42883%' OR hay LIKE '%uuid = text%' OR hay LIKE '%operator does not exist%' THEN 'C_uuid'
+                    WHEN hay LIKE '%401%' OR hay LIKE '%unauthorized%' OR hay LIKE '%jwt%' THEN 'D_startup_timeout'
+                    WHEN hay LIKE '%sigsegv%' OR hay LIKE '%cfstring%' OR hay LIKE '%coredata%' OR hay LIKE '%core data%' THEN 'E_crashes'
+                    WHEN hay LIKE '%pgrst202%' OR hay LIKE '%post_workout_activity%' OR hay LIKE '%could not choose%' THEN 'F_overloads'
+                    WHEN hay LIKE '%friend%' OR hay LIKE '%challenge%' OR hay LIKE '%activity_feed%' OR hay LIKE '%activity feed%' THEN 'G_social'
+                    ELSE 'uncategorized'
+                END AS bucket,
+                occ
+              FROM src
         )
         SELECT bucket, COUNT(*)::INT AS fp_count, SUM(occ)::INT AS occ_total
           FROM classified

@@ -439,7 +439,14 @@ class SupabaseManager: ObservableObject {
                 try await createUserProfile(userId: user.id, name: name, email: email)
                 AppLogger.info("[SUPABASE] Profile created successfully", category: .auth)
             } catch {
-                AppLogger.error("[SUPABASE] Profile creation failed (auth user exists, recoverable): \(error)", category: .auth)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "[SUPABASE] Profile creation failed (auth user exists, recoverable)",
+                    category: .auth,
+                    op: PerformanceSignposts.Op.profileWrite.rawValue,
+                    endpoint: "user_profiles(insert)",
+                    userId: user.id
+                )
                 // Don't throw — the auth user is created and authenticated.
                 // Profile can be created/repaired later via ensureProfileExists().
             }
@@ -459,7 +466,14 @@ class SupabaseManager: ObservableObject {
             if isRateLimit {
                 AppLogger.warning("[AUTH] Sign up rate limited after \(String(format: "%.2f", duration))s — user should wait before retrying", category: .auth)
             } else {
-                AppLogger.error("[AUTH] Sign up failed after \(String(format: "%.2f", duration))s: \(error.localizedDescription)", category: .auth)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "[AUTH] Sign up failed after \(String(format: "%.2f", duration))s",
+                    category: .auth,
+                    op: PerformanceSignposts.Op.authSignUp.rawValue,
+                    endpoint: "auth/sign_up",
+                    startedAt: startTime
+                )
             }
             SessionLogManager.shared.logAuthFailure(method: "email_signup", error: "\(error.localizedDescription) | Duration: \(String(format: "%.2f", duration))s")
             throw error
@@ -493,7 +507,13 @@ class SupabaseManager: ObservableObject {
         } catch {
             await MainActor.run { isLoading = false }
             SessionLogManager.shared.logAuthFailure(method: "email", error: error.localizedDescription)
-            AppLogger.error("Sign in error: \(error.localizedDescription)", category: .auth)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Sign in error",
+                category: .auth,
+                op: PerformanceSignposts.Op.authSignIn.rawValue,
+                endpoint: "auth/sign_in"
+            )
 
             // M-19 (Sprint 5): surface unverified-email as a typed error so the
             // onboarding UI can show a dedicated resend/blocked banner instead
@@ -669,7 +689,13 @@ class SupabaseManager: ObservableObject {
             return isNewUser
         } catch {
             await MainActor.run { isLoading = false }
-            AppLogger.error("Apple Sign-In error: \(error.localizedDescription)", category: .auth)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Apple Sign-In error",
+                category: .auth,
+                op: PerformanceSignposts.Op.authSignIn.rawValue,
+                endpoint: "auth/apple_sign_in"
+            )
             throw error
         }
     }
@@ -706,7 +732,7 @@ class SupabaseManager: ObservableObject {
                 
                 guard let accessToken = params["access_token"],
                       let refreshToken = params["refresh_token"] else {
-                    AppLogger.error("[OAUTH] Missing tokens in URL fragment", category: .auth)
+                    AppLogger.warning("[OAUTH] Missing tokens in URL fragment", category: .auth)
                     throw error
                 }
                 
@@ -800,8 +826,13 @@ class SupabaseManager: ObservableObject {
             return (isNewUser, socialUsername)
         } catch {
             await MainActor.run { isLoading = false }
-            AppLogger.error("OAuth callback error: \(error.localizedDescription)", category: .auth)
-            AppLogger.error("OAuth callback error: \(error)", category: .auth)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "OAuth callback error",
+                category: .auth,
+                op: PerformanceSignposts.Op.authSignIn.rawValue,
+                endpoint: "auth/oauth_callback"
+            )
             throw error
         }
     }
@@ -898,7 +929,14 @@ class SupabaseManager: ObservableObject {
             AppLogger.info("Sign out successful - all local data cleared", category: .auth)
         } catch {
             await MainActor.run { isLoading = false }
-            AppLogger.error("Sign out error: \(error.localizedDescription)", category: .auth)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Sign out error",
+                category: .auth,
+                op: PerformanceSignposts.Op.authSignOut.rawValue,
+                endpoint: "auth/sign_out",
+                userId: currentUser?.id
+            )
             throw error
         }
     }
@@ -1134,8 +1172,13 @@ class SupabaseManager: ObservableObject {
             AppLogger.info("Password reset email sent to: \(email)", category: .auth)
         } catch {
             await MainActor.run { isLoading = false }
-            AppLogger.error("Password reset error: \(error.localizedDescription)", category: .auth)
-            AppLogger.error("Password reset full error: \(error)", category: .auth)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Password reset error",
+                category: .auth,
+                op: PerformanceSignposts.Op.authPasswordReset.rawValue,
+                endpoint: "auth/reset_password_for_email"
+            )
             throw error
         }
     }
@@ -1182,7 +1225,13 @@ class SupabaseManager: ObservableObject {
             try await client.auth.resend(email: email, type: .signup)
             AppLogger.info("Resent email confirmation to \(email)", category: .auth)
         } catch {
-            AppLogger.error("Resend email confirmation failed: \(error.localizedDescription)", category: .auth)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Resend email confirmation failed",
+                category: .auth,
+                op: PerformanceSignposts.Op.authResendEmail.rawValue,
+                endpoint: "auth/resend"
+            )
             throw error
         }
     }
@@ -1411,7 +1460,14 @@ class SupabaseManager: ObservableObject {
             AppLogger.info("[VERIFY] Logged all verified field values from database", category: .network)
             
         } catch {
-            AppLogger.error("[VERIFY] Failed to verify saved profile: \(error.localizedDescription)", category: .network)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[VERIFY] Failed to verify saved profile",
+                category: .network,
+                op: PerformanceSignposts.Op.profileRead.rawValue,
+                endpoint: "user_profiles(select verify)",
+                userId: currentUser?.id
+            )
             await logOnboardingEvent(
                 eventType: "error",
                 stepName: "verify_profile",
@@ -1723,8 +1779,14 @@ class SupabaseManager: ObservableObject {
                 .execute()
             AppLogger.info("[PROFILE] Upsert to user_profiles succeeded", category: .network)
         } catch {
-            AppLogger.error("[PROFILE] Upsert FAILED: \(error)", category: .network)
-            AppLogger.error("[PROFILE] Error details: \(error.localizedDescription)", category: .network)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[PROFILE] Upsert FAILED",
+                category: .network,
+                op: PerformanceSignposts.Op.profileWrite.rawValue,
+                endpoint: "user_profiles(upsert)",
+                userId: userId
+            )
             
             // Log the error to the onboarding_logs table
             await logOnboardingEvent(
@@ -2118,7 +2180,14 @@ class SupabaseManager: ObservableObject {
                 AppLogger.info("[USERNAME] Direct update executed", category: .network)
                 
             } catch {
-                AppLogger.error("[USERNAME] Direct update also failed: \(error.localizedDescription)", category: .network)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "[USERNAME] Direct update also failed",
+                    category: .network,
+                    op: PerformanceSignposts.Op.usernameWrite.rawValue,
+                    endpoint: "user_profiles(update username)",
+                    userId: user.id
+                )
                 throw error
             }
         }
@@ -2190,7 +2259,14 @@ class SupabaseManager: ObservableObject {
                 AppLogger.error("[DEBUG] Profile NOT FOUND in user_profiles table! Searched for id = '\(user.id.uuidString)'", category: .network)
             }
         } catch {
-            AppLogger.error("[DEBUG] Failed to query profile: \(error)", category: .network)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[DEBUG] Failed to query profile",
+                category: .network,
+                op: PerformanceSignposts.Op.profileRead.rawValue,
+                endpoint: "user_profiles(select debug)",
+                userId: user.id
+            )
         }
         
         AppLogger.debug("[DEBUG] PROFILE STATE CHECK END", category: .network)
@@ -2402,9 +2478,14 @@ class SupabaseManager: ObservableObject {
             // Track when we last pushed so we can detect CMS/admin edits
             UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
         } catch {
-            AppLogger.error("[SYNC] UPSERT FAILED: \(error)", category: .network)
-            AppLogger.error("[SYNC] Error details: \(error.localizedDescription)", category: .network)
-            AppLogger.error("[SYNC] User can try Settings > Sync Profile to force retry", category: .network)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[SYNC] UPSERT FAILED — User can try Settings > Sync Profile to force retry",
+                category: .network,
+                op: PerformanceSignposts.Op.profileSync.rawValue,
+                endpoint: "user_profiles(upsert sync)",
+                userId: userId
+            )
             throw error  // Propagate error so caller knows sync failed
         }
         let ft = user.heightInches / 12
@@ -2800,7 +2881,14 @@ class SupabaseManager: ObservableObject {
             
             AppLogger.info("SUPABASE UPDATE SUCCESS! HTTP Status: \(response.status), Exercise: \(exercise.name), ID: \(exerciseId)", category: .network)
         } catch {
-            AppLogger.error("SUPABASE UPDATE FAILED! Error: \(error), ID: \(exerciseId)", category: .network)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "SUPABASE UPDATE FAILED (exercise id \(exerciseId))",
+                category: .network,
+                op: PerformanceSignposts.Op.exerciseUpdate.rawValue,
+                endpoint: "exercises(update)",
+                userId: currentUser?.id
+            )
             throw error
         }
     }
@@ -4149,7 +4237,7 @@ class SupabaseManager: ObservableObject {
             wf.end("CloudSync (total)")
             // Cluster F (fingerprint c8898dbd): comprehensive sync runs on
             // foreground/login — if the device is briefly offline the sync
-            // throws -1005 / -1009 and the catch-all `.error` fingerprinted
+            // throws -1005 / -1009 and the generic `.error` fingerprinted
             // every recovery. Classify so transient network lands at
             // `.warning` (retry queue owns recovery) and only genuine sync
             // bugs surface at `.error`.
@@ -4269,7 +4357,13 @@ class SupabaseManager: ObservableObject {
                 try bgContext.save()
                 AppLogger.info("Full user profile synced from cloud: Name=\(profile.name ?? "nil"), Age=\(profile.age ?? 0), Height=\(profile.heightCm ?? 0)cm, Weight=\(profile.weightKg ?? 0)kg, Goal=\(profile.fitnessGoal ?? "nil"), Level=\(profile.experienceLevel ?? "nil"), Equipment=\(profile.equipment ?? []), Days=\(profile.availableDays ?? 0), XP=\(profile.xp ?? 0), Streak=\(profile.currentStreak ?? 0), Workouts=\(profile.totalWorkouts ?? 0)", category: .network)
             } catch {
-                AppLogger.error("Error syncing user profile to Core Data: \(error)", category: .network)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Error syncing user profile to Core Data",
+                    category: .network,
+                    op: PerformanceSignposts.Op.cloudSyncProfile.rawValue,
+                    endpoint: "coredata/user(profile save)"
+                )
             }
         }
         
@@ -4536,7 +4630,14 @@ class SupabaseManager: ObservableObject {
                         }
                     }
                 } catch {
-                    AppLogger.error("Error checking existing workout: \(error)", category: .network)
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "Error checking existing workout during sync",
+                        category: .network,
+                        op: PerformanceSignposts.Op.cloudSyncWorkout.rawValue,
+                        endpoint: "coredata/workout_history(fetch)",
+                        userId: self.currentUser?.id
+                    )
                 }
             }
             
@@ -4544,7 +4645,14 @@ class SupabaseManager: ObservableObject {
                 try bgContext.save()
                 AppLogger.info("Synced \(workouts.count) workouts from cloud", category: .network)
             } catch {
-                AppLogger.error("Error saving workout history: \(error)", category: .network)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Error saving workout history to Core Data",
+                    category: .network,
+                    op: PerformanceSignposts.Op.cloudSyncWorkout.rawValue,
+                    endpoint: "coredata/workout_history(save)",
+                    userId: self.currentUser?.id
+                )
             }
         }
     }
@@ -4654,7 +4762,14 @@ class SupabaseManager: ObservableObject {
                         meal.user = user
                     }
                 } catch {
-                    AppLogger.error("Error checking existing meal: \(error)", category: .network)
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "Error checking existing meal during sync",
+                        category: .network,
+                        op: PerformanceSignposts.Op.cloudSyncMeal.rawValue,
+                        endpoint: "coredata/meal_entry(fetch)",
+                        userId: self.currentUser?.id
+                    )
                 }
             }
             
@@ -4662,7 +4777,14 @@ class SupabaseManager: ObservableObject {
                 try bgContext.save()
                 AppLogger.info("Synced \(meals.count) meals from cloud", category: .network)
             } catch {
-                AppLogger.error("Error saving meal logs: \(error)", category: .network)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Error saving meal logs to Core Data",
+                    category: .network,
+                    op: PerformanceSignposts.Op.cloudSyncMeal.rawValue,
+                    endpoint: "coredata/meal_entry(save)",
+                    userId: self.currentUser?.id
+                )
             }
         }
     }
@@ -4695,7 +4817,14 @@ class SupabaseManager: ObservableObject {
                 try bgContext.save()
                 AppLogger.info("Synced \(matchedCount)/\(favoriteNames.count) favorites to Core Data (matched by name)", category: .network)
             } catch {
-                AppLogger.error("Error syncing favorites to Core Data: \(error)", category: .network)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Error syncing favorites to Core Data",
+                    category: .network,
+                    op: PerformanceSignposts.Op.cloudSyncFavorite.rawValue,
+                    endpoint: "coredata/exercise(favorites save)",
+                    userId: self.currentUser?.id
+                )
             }
         }
     }
@@ -4738,7 +4867,14 @@ class SupabaseManager: ObservableObject {
                         AppLogger.info("Added custom exercise from cloud: \(customExercise.name)", category: .network)
                     }
                 } catch {
-                    AppLogger.error("Error syncing custom exercise: \(error)", category: .network)
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "Error syncing custom exercise from cloud",
+                        category: .network,
+                        op: PerformanceSignposts.Op.cloudSyncCustomExercise.rawValue,
+                        endpoint: "coredata/exercise(custom fetch)",
+                        userId: self.currentUser?.id
+                    )
                 }
             }
             
@@ -4746,7 +4882,14 @@ class SupabaseManager: ObservableObject {
                 try bgContext.save()
                 AppLogger.info("Synced \(customExercises.count) custom exercises to Core Data", category: .network)
             } catch {
-                AppLogger.error("Error saving custom exercises to Core Data: \(error)", category: .network)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Error saving custom exercises to Core Data",
+                    category: .network,
+                    op: PerformanceSignposts.Op.cloudSyncCustomExercise.rawValue,
+                    endpoint: "coredata/exercise(custom save)",
+                    userId: self.currentUser?.id
+                )
             }
         }
     }
@@ -4776,7 +4919,14 @@ class SupabaseManager: ObservableObject {
                 try bgContext.save()
                 AppLogger.info("Synced \(favoriteWorkouts.count) favorite workouts to Core Data", category: .network)
             } catch {
-                AppLogger.error("Error syncing favorite workouts to Core Data: \(error)", category: .network)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Error syncing favorite workouts to Core Data",
+                    category: .network,
+                    op: PerformanceSignposts.Op.cloudSyncFavoriteWorkout.rawValue,
+                    endpoint: "coredata/workout(favorites save)",
+                    userId: self.currentUser?.id
+                )
             }
         }
     }

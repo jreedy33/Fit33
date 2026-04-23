@@ -66,6 +66,53 @@ enum PerformanceSignposts {
 
         // Integrations (Cluster D)
         case stravaSync              = "strava.sync"
+
+        // MARK: Phase 9 classifier rollout (added 2026-04-23)
+        //
+        // Coarse grouping — the structural_fingerprint keys off `op || endpoint`,
+        // so "friends.list + rpc/get_friends" and "friends.list + rpc/get_blocked_users"
+        // still fingerprint separately. The op is for cluster-level trending, the
+        // endpoint distinguishes specific call sites.
+
+        // FriendService
+        case friendsList              = "friends.list"
+        case friendsWrite             = "friends.write"
+        case friendRequestList        = "friend_request.list"
+        case friendRequestWrite       = "friend_request.write"
+        case sharedWorkoutList        = "shared_workout.list"
+        case sharedWorkoutWrite       = "shared_workout.write"
+        case socialNotificationList   = "social_notification.list"
+        case socialNotificationWrite  = "social_notification.write"
+
+        // ChallengeService
+        case challengeCache           = "challenge.cache"
+        case challengeRead            = "challenge.read"
+        case challengeWrite           = "challenge.write"
+        case challengeGroupWrite      = "challenge.group.write"
+        case challengePreferences     = "challenge.preferences"
+        case challengeProgressSync    = "challenge.progress_sync"
+
+        // SupabaseManager — auth
+        case authSignUp               = "auth.sign_up"
+        case authSignIn               = "auth.sign_in"
+        case authSignOut              = "auth.sign_out"
+        case authPasswordReset        = "auth.password_reset"
+        case authResendEmail          = "auth.resend_email"
+
+        // SupabaseManager — profile / username / exercise
+        case profileRead              = "profile.read"
+        case profileWrite             = "profile.write"
+        case profileSync              = "profile.sync"
+        case usernameWrite            = "username.write"
+        case exerciseUpdate           = "exercise.update"
+
+        // SupabaseManager — Core Data ↔ cloud sync fan-out
+        case cloudSyncProfile         = "cloud_sync.profile"
+        case cloudSyncWorkout         = "cloud_sync.workout"
+        case cloudSyncMeal            = "cloud_sync.meal"
+        case cloudSyncFavorite        = "cloud_sync.favorite"
+        case cloudSyncCustomExercise  = "cloud_sync.custom_exercise"
+        case cloudSyncFavoriteWorkout = "cloud_sync.favorite_workout"
     }
 
     // MARK: Thresholds

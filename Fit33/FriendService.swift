@@ -257,7 +257,14 @@ class FriendService: ObservableObject {
             let photoData = result.map { (id: $0.friendId.uuidString, url: $0.profilePhotoUrl) }
             FriendPhotoCache.shared.preloadPhotos(for: photoData)
         } catch {
-            AppLogger.error("Error fetching friends: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching friends",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsList.rawValue,
+                endpoint: "rpc/get_friends",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -279,7 +286,14 @@ class FriendService: ObservableObject {
             AppLogger.info("Friend removed", category: .social)
             return true
         } catch {
-            AppLogger.error("Error removing friend: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error removing friend",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsWrite.rawValue,
+                endpoint: "rpc/unfriend",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -308,7 +322,14 @@ class FriendService: ObservableObject {
             AppLogger.info("User blocked — purged from all social surfaces", category: .social)
             return true
         } catch {
-            AppLogger.error("Error blocking user: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error blocking user",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsWrite.rawValue,
+                endpoint: "rpc/block_user",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -327,7 +348,14 @@ class FriendService: ObservableObject {
             AppLogger.info("User unblocked", category: .social)
             return true
         } catch {
-            AppLogger.error("Error unblocking user: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error unblocking user",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsWrite.rawValue,
+                endpoint: "rpc/unblock_user",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -350,7 +378,14 @@ class FriendService: ObservableObject {
             }
             return rows
         } catch {
-            AppLogger.error("Error fetching blocked users: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching blocked users",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsList.rawValue,
+                endpoint: "rpc/get_blocked_users",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return []
         }
     }
@@ -386,7 +421,14 @@ class FriendService: ObservableObject {
             AppLogger.info("Content reported (\(tableName)#\(recordId.prefix(8)))", category: .social)
             return true
         } catch {
-            AppLogger.error("Error reporting content: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error reporting content",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsWrite.rawValue,
+                endpoint: "rpc/report_content",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -414,10 +456,16 @@ class FriendService: ObservableObject {
                 if isTimeout && attempt < maxAttempts {
                     AppLogger.warning("fetchPendingRequests timeout (attempt \(attempt)/\(maxAttempts)), retrying...", category: .social)
                     try? await Task.sleep(for: .seconds(pow(2.0, Double(attempt))))
-                } else if isTimeout {
-                    AppLogger.warning("Error fetching friend requests: \(error.localizedDescription)", category: .social)
                 } else {
-                    AppLogger.error("Error fetching friend requests: \(error.localizedDescription)", category: .social)
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "Error fetching friend requests",
+                        category: .social,
+                        op: PerformanceSignposts.Op.friendRequestList.rawValue,
+                        endpoint: "rpc/get_pending_friend_requests",
+                        userId: SupabaseManager.shared.currentUser?.id,
+                        retryAttempt: attempt
+                    )
                 }
             }
         }
@@ -428,12 +476,12 @@ class FriendService: ObservableObject {
         
         // Verify we're authenticated
         guard SupabaseManager.shared.isAuthenticated else {
-            AppLogger.error("[FRIEND REQUEST] Not authenticated - cannot send request", category: .social)
+            AppLogger.warning("[FRIEND REQUEST] Not authenticated - cannot send request", category: .social)
             return false
         }
         
         guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
-            AppLogger.error("[FRIEND REQUEST] No current user ID - cannot send request", category: .social)
+            AppLogger.warning("[FRIEND REQUEST] No current user ID - cannot send request", category: .social)
             return false
         }
         
@@ -466,12 +514,18 @@ class FriendService: ObservableObject {
             
             return true
         } catch {
-            logger.log(.error, category: .social, message: "Friend request FAILED", metadata: [
+            logger.log(.warning, category: .social, message: "Friend request FAILED", metadata: [
                 "to_user_id": toUserId.uuidString.prefix(8),
                 "error": "\(error)"
             ])
-            AppLogger.error("[FRIEND REQUEST] Error sending friend request: \(error.localizedDescription)", category: .social)
-            AppLogger.error("[FRIEND REQUEST] Error details: \(String(describing: error))", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[FRIEND REQUEST] Error sending friend request",
+                category: .social,
+                op: PerformanceSignposts.Op.friendRequestWrite.rawValue,
+                endpoint: "rpc/send_friend_request",
+                userId: currentUserId
+            )
             
             // Check if error is "Friend request already exists" - treat as success
             let errorString = String(describing: error)
@@ -505,8 +559,15 @@ class FriendService: ObservableObject {
             }
             return success
         } catch {
-            logger.log(.error, category: .social, message: "Accept friend request FAILED", metadata: ["error": "\(error)"])
-            AppLogger.error("Error accepting friend request: \(error.localizedDescription)", category: .social)
+            logger.log(.warning, category: .social, message: "Accept friend request FAILED", metadata: ["error": "\(error)"])
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error accepting friend request",
+                category: .social,
+                op: PerformanceSignposts.Op.friendRequestWrite.rawValue,
+                endpoint: "rpc/accept_friend_request",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -527,8 +588,15 @@ class FriendService: ObservableObject {
             }
             return success
         } catch {
-            logger.log(.error, category: .social, message: "Decline friend request FAILED", metadata: ["error": "\(error)"])
-            AppLogger.error("Error declining friend request: \(error.localizedDescription)", category: .social)
+            logger.log(.warning, category: .social, message: "Decline friend request FAILED", metadata: ["error": "\(error)"])
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error declining friend request",
+                category: .social,
+                op: PerformanceSignposts.Op.friendRequestWrite.rawValue,
+                endpoint: "rpc/decline_friend_request",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -546,7 +614,14 @@ class FriendService: ObservableObject {
             self.sentRequests = result
             AppLogger.info("Fetched \(result.count) sent friend requests", category: .social)
         } catch {
-            AppLogger.error("Error fetching sent friend requests: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching sent friend requests",
+                category: .social,
+                op: PerformanceSignposts.Op.friendRequestList.rawValue,
+                endpoint: "rpc/get_sent_friend_requests",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -564,7 +639,14 @@ class FriendService: ObservableObject {
             }
             return success
         } catch {
-            AppLogger.error("Error cancelling friend request: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error cancelling friend request",
+                category: .social,
+                op: PerformanceSignposts.Op.friendRequestWrite.rawValue,
+                endpoint: "rpc/cancel_friend_request",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -588,7 +670,14 @@ class FriendService: ObservableObject {
                 .value
             return result
         } catch {
-            AppLogger.error("Error checking friendship: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error checking friendship",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsList.rawValue,
+                endpoint: "rpc/are_friends",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -628,7 +717,14 @@ class FriendService: ObservableObject {
             self.searchResults = result
             AppLogger.info("Username lookup: \(result.count) users matching '@\(cleaned)'", category: .social)
         } catch {
-            AppLogger.error("Error searching users: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error searching users",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsList.rawValue,
+                endpoint: "rpc/search_users",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             searchResults = []
         }
     }
@@ -696,7 +792,14 @@ class FriendService: ObservableObject {
             self.sentWorkouts = result
             AppLogger.info("Fetched \(result.count) sent workouts", category: .social)
         } catch {
-            AppLogger.error("Error fetching sent workouts: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching sent workouts",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutList.rawValue,
+                endpoint: "rpc/get_sent_workouts",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -749,7 +852,14 @@ class FriendService: ObservableObject {
             
             return true
         } catch {
-            AppLogger.error("Error sending workout: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error sending workout",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutWrite.rawValue,
+                endpoint: "rpc/send_workout_to_friend",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -769,7 +879,14 @@ class FriendService: ObservableObject {
             AppLogger.info("Workout accepted", category: .social)
             return true
         } catch {
-            AppLogger.error("Error accepting workout: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error accepting workout",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutWrite.rawValue,
+                endpoint: "shared_workouts(accept)",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -789,7 +906,14 @@ class FriendService: ObservableObject {
             AppLogger.info("Workout declined", category: .social)
             return true
         } catch {
-            AppLogger.error("Error declining workout: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error declining workout",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutWrite.rawValue,
+                endpoint: "shared_workouts(decline)",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -806,7 +930,14 @@ class FriendService: ObservableObject {
             AppLogger.info("Workout saved to favorites", category: .social)
             return true
         } catch {
-            AppLogger.error("Error saving workout to favorites: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error saving workout to favorites",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutWrite.rawValue,
+                endpoint: "shared_workouts(saved_to_favorites)",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -823,7 +954,14 @@ class FriendService: ObservableObject {
             NotificationManager.shared.updateBadgeCount()
             AppLogger.info("Workout marked as viewed", category: .social)
         } catch {
-            AppLogger.error("Error marking workout viewed: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error marking workout viewed",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutWrite.rawValue,
+                endpoint: "shared_workouts(viewed_at)",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -847,7 +985,14 @@ class FriendService: ObservableObject {
             AppLogger.info("Workout marked as started: \(workoutId)", category: .social)
             return true
         } catch {
-            AppLogger.error("Error marking workout started: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error marking workout started",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutWrite.rawValue,
+                endpoint: "shared_workouts(started)",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             // Keep it addressed locally even if server fails
             return true
         }
@@ -868,7 +1013,14 @@ class FriendService: ObservableObject {
             AppLogger.info("Workout marked as completed", category: .social)
             return true
         } catch {
-            AppLogger.error("Error marking workout completed: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error marking workout completed",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutWrite.rawValue,
+                endpoint: "shared_workouts(completed)",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -897,7 +1049,14 @@ class FriendService: ObservableObject {
             AppLogger.info("Workout deleted from server: \(workoutId)", category: .social)
             return true
         } catch {
-            AppLogger.error("Error deleting workout: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error deleting workout",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutWrite.rawValue,
+                endpoint: "shared_workouts(delete)",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             // Keep it addressed locally even if server delete fails
             AppLogger.warning("Keeping workout marked as addressed locally despite server error", category: .social)
             return true  // Return true so UI treats it as deleted
@@ -931,7 +1090,14 @@ class FriendService: ObservableObject {
             
             AppLogger.info("Workout saved: \(workoutId)", category: .social)
         } catch {
-            AppLogger.error("Error saving workout to server: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error saving workout to server",
+                category: .social,
+                op: PerformanceSignposts.Op.sharedWorkoutWrite.rawValue,
+                endpoint: "shared_workouts(saved)",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             // Keep it addressed locally even if server fails
             // Don't re-throw - the user sees it as saved
         }
@@ -990,7 +1156,14 @@ class FriendService: ObservableObject {
             self.notifications = result
             AppLogger.info("Fetched \(result.count) notifications", category: .social)
         } catch {
-            AppLogger.error("Error fetching notifications: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching notifications",
+                category: .social,
+                op: PerformanceSignposts.Op.socialNotificationList.rawValue,
+                endpoint: "app_notifications(select)",
+                userId: userId
+            )
         }
     }
     
@@ -1003,7 +1176,14 @@ class FriendService: ObservableObject {
             
             self.unreadNotificationCount = count
         } catch {
-            AppLogger.error("Error fetching unread count: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching unread count",
+                category: .social,
+                op: PerformanceSignposts.Op.socialNotificationList.rawValue,
+                endpoint: "rpc/get_unread_notification_count",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -1020,7 +1200,14 @@ class FriendService: ObservableObject {
             }
             unreadNotificationCount = max(0, unreadNotificationCount - 1)
         } catch {
-            AppLogger.error("Error marking notification read: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error marking notification read",
+                category: .social,
+                op: PerformanceSignposts.Op.socialNotificationWrite.rawValue,
+                endpoint: "rpc/mark_notification_read",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -1037,7 +1224,14 @@ class FriendService: ObservableObject {
             }
             unreadNotificationCount = 0
         } catch {
-            AppLogger.error("Error marking all notifications read: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error marking all notifications read",
+                category: .social,
+                op: PerformanceSignposts.Op.socialNotificationWrite.rawValue,
+                endpoint: "rpc/mark_all_notifications_read",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
 
@@ -1052,7 +1246,14 @@ class FriendService: ObservableObject {
                 .value
             return result
         } catch {
-            AppLogger.error("Failed to fetch mutual friends: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Failed to fetch mutual friends",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsList.rawValue,
+                endpoint: "rpc/get_mutual_friends",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return []
         }
     }

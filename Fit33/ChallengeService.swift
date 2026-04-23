@@ -240,7 +240,9 @@ class ChallengeService: ObservableObject {
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: cacheDateKey)
             AppLogger.debug("Cached \(activeChallenges.count) active challenges", category: .social)
         } catch {
-            AppLogger.error("Failed to cache active challenges: \(error.localizedDescription)", category: .social)
+            // Local JSONEncoder failure — Codable struct, basically unreachable.
+            // No network error to classify; downgrade keeps this out of bug-intel.
+            AppLogger.warning("Failed to cache active challenges: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -258,7 +260,7 @@ class ChallengeService: ObservableObject {
             UserDefaults.standard.set(data, forKey: pendingInvitesCacheKey)
             AppLogger.debug("Cached \(pendingInvites.count) pending invites", category: .social)
         } catch {
-            AppLogger.error("Failed to cache pending invites: \(error.localizedDescription)", category: .social)
+            AppLogger.warning("Failed to cache pending invites: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -277,7 +279,7 @@ class ChallengeService: ObservableObject {
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: cacheDateKey)
             AppLogger.debug("Cached \(activeGroupChallenges.count) group challenges", category: .social)
         } catch {
-            AppLogger.error("Failed to cache group challenges: \(error.localizedDescription)", category: .social)
+            AppLogger.warning("Failed to cache group challenges: \(error.localizedDescription)", category: .social)
         }
     }
 
@@ -525,8 +527,15 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Fetched \(result.count) pending sent challenges", category: .social)
         } catch {
             if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { return }
-            logger.log(.error, category: .challenge, message: "Failed to fetch pending sent challenges", metadata: ["error": "\(error)"])
-            AppLogger.error("Error fetching pending sent challenges: \(error.localizedDescription)", category: .social)
+            logger.log(.warning, category: .challenge, message: "Failed to fetch pending sent challenges", metadata: ["error": "\(error)"])
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching pending sent challenges",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeRead.rawValue,
+                endpoint: "rpc/get_pending_sent_challenges",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -542,7 +551,7 @@ class ChallengeService: ObservableObject {
             UserDefaults.standard.set(data, forKey: pendingSentCacheKey)
             AppLogger.debug("Cached \(pendingSentChallenges.count) pending sent challenges", category: .social)
         } catch {
-            AppLogger.error("Failed to cache pending sent: \(error.localizedDescription)", category: .social)
+            AppLogger.warning("Failed to cache pending sent: \(error.localizedDescription)", category: .social)
         }
     }
     
@@ -576,8 +585,14 @@ class ChallengeService: ObservableObject {
             AppLogger.debug("Remaining pending sent: \(pendingSentChallenges.count)", category: .social)
             return true
         } catch {
-            AppLogger.error("Error cancelling challenge: \(error.localizedDescription)", category: .social)
-            AppLogger.error("Error cancelling challenge details: \(String(describing: error))", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error cancelling challenge",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeWrite.rawValue,
+                endpoint: "rpc/cancel_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -788,7 +803,14 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Fetched \(result.count) templates (silent)", category: .social)
             return result
         } catch {
-            AppLogger.error("Error fetching templates silently: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error fetching templates silently",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeRead.rawValue,
+                endpoint: "rpc/get_challenge_templates",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return []
         }
     }
@@ -889,7 +911,14 @@ class ChallengeService: ObservableObject {
             AppLogger.info("RPC created challenge: \(challengeId)", category: .social)
             return challengeId
         } catch {
-            AppLogger.error("RPC create_challenge failed: \(error.localizedDescription) (type: \(String(describing: Swift.type(of: error))))", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "RPC create_challenge failed",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeWrite.rawValue,
+                endpoint: "rpc/create_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return nil
         }
     }
@@ -901,7 +930,7 @@ class ChallengeService: ObservableObject {
         startDateStr: String, durationDays: Int
     ) async -> UUID? {
         guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
-            AppLogger.error("No current user for direct insert", category: .social)
+            AppLogger.warning("No current user for direct insert", category: .social)
             return nil
         }
         
@@ -996,7 +1025,14 @@ class ChallengeService: ObservableObject {
                     .execute()
                 AppLogger.info("Both participants created", category: .social)
             } catch {
-                AppLogger.error("Participant insert failed — cleaning up orphaned challenge \(challengeId)", category: .social)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Participant insert failed — cleaning up orphaned challenge \(challengeId)",
+                    category: .social,
+                    op: PerformanceSignposts.Op.challengeWrite.rawValue,
+                    endpoint: "challenge_participants(insert)",
+                    userId: currentUserId
+                )
                 try? await SupabaseManager.shared.supabaseClient
                     .from("group_challenges")
                     .delete()
@@ -1044,7 +1080,14 @@ class ChallengeService: ObservableObject {
             return challengeId
             
         } catch {
-            AppLogger.error("Direct insert fallback failed: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Direct insert fallback failed",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeWrite.rawValue,
+                endpoint: "group_challenges(insert)",
+                userId: currentUserId
+            )
             return nil
         }
     }
@@ -1161,13 +1204,20 @@ class ChallengeService: ObservableObject {
             
             return groupId
         } catch {
-            AppLogger.error("RPC create_group_challenge failed: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "RPC create_group_challenge failed",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeGroupWrite.rawValue,
+                endpoint: "rpc/create_group_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
         
         // Fallback: Direct inserts
         AppLogger.warning("Attempting direct insert fallback for group challenge...", category: .social)
         guard let currentUserId = SupabaseManager.shared.currentUser?.id else {
-            AppLogger.error("No current user for group challenge fallback", category: .social)
+            AppLogger.warning("No current user for group challenge fallback", category: .social)
             return nil
         }
         
@@ -1243,7 +1293,14 @@ class ChallengeService: ObservableObject {
                     .insert(participants)
                     .execute()
             } catch {
-                AppLogger.error("Group participant insert failed — cleaning up orphaned challenge \(challengeId)", category: .social)
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Group participant insert failed — cleaning up orphaned challenge \(challengeId)",
+                    category: .social,
+                    op: PerformanceSignposts.Op.challengeGroupWrite.rawValue,
+                    endpoint: "challenge_participants(insert)",
+                    userId: currentUserId
+                )
                 try? await SupabaseManager.shared.supabaseClient
                     .from("group_challenges")
                     .delete()
@@ -1266,7 +1323,14 @@ class ChallengeService: ObservableObject {
             await fetchActiveGroupChallenges()
             return challengeId
         } catch {
-            AppLogger.error("Group challenge direct insert failed: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Group challenge direct insert failed",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeGroupWrite.rawValue,
+                endpoint: "group_challenges(insert)",
+                userId: currentUserId
+            )
             return nil
         }
     }
@@ -1331,7 +1395,14 @@ class ChallengeService: ObservableObject {
                 return
             }
             // Preserve existing cached challenges on fetch failure
-            AppLogger.error("[GROUP] Fetch failed (keeping \(activeGroupChallenges.count) cached): \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[GROUP] Fetch failed (keeping \(activeGroupChallenges.count) cached)",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeRead.rawValue,
+                endpoint: "rpc/get_active_group_challenges",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -1360,7 +1431,14 @@ class ChallengeService: ObservableObject {
             
             return allAccepted
         } catch {
-            AppLogger.error("Error accepting group challenge: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error accepting group challenge",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeGroupWrite.rawValue,
+                endpoint: "rpc/accept_group_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -1384,7 +1462,14 @@ class ChallengeService: ObservableObject {
             // Update app icon badge after clearing a pending invite
             await MainActor.run { NotificationManager.shared.updateBadgeCount() }
         } catch {
-            AppLogger.error("Error declining group challenge: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error declining group challenge",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeGroupWrite.rawValue,
+                endpoint: "rpc/decline_group_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -1414,7 +1499,14 @@ class ChallengeService: ObservableObject {
             
             return result
         } catch {
-            AppLogger.error("Error leaving group challenge: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error leaving group challenge",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeGroupWrite.rawValue,
+                endpoint: "rpc/leave_group_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return nil
         }
     }
@@ -1436,7 +1528,14 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Cancelled group challenge: \(challengeId)", category: .social)
             return true
         } catch {
-            AppLogger.error("Error cancelling group challenge: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error cancelling group challenge",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeGroupWrite.rawValue,
+                endpoint: "rpc/cancel_group_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -1461,7 +1560,14 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Nudged member \(recipientId) for challenge \(challengeId): \(sent ? "sent" : "already nudged")", category: .social)
             return sent
         } catch {
-            AppLogger.error("Error nudging member: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error nudging member",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeGroupWrite.rawValue,
+                endpoint: "rpc/nudge_group_challenge_member",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -1489,7 +1595,14 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Logged group progress: \(progressValue) for \(challengeId)", category: .social)
             return true
         } catch {
-            AppLogger.error("Error logging group progress: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error logging group progress",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeProgressSync.rawValue,
+                endpoint: "rpc/log_group_challenge_progress",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -1681,8 +1794,14 @@ class ChallengeService: ObservableObject {
             
             return true
         } catch {
-            AppLogger.error("Error responding to challenge: \(error.localizedDescription)", category: .social)
-            AppLogger.error("Error responding to challenge details: \(String(describing: error))", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error responding to challenge",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeWrite.rawValue,
+                endpoint: "rpc/respond_to_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -1871,7 +1990,14 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Challenge cancelled successfully", category: .social)
             return true
         } catch {
-            AppLogger.error("Error cancelling challenge: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error cancelling challenge",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeWrite.rawValue,
+                endpoint: "rpc/cancel_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -1953,7 +2079,15 @@ class ChallengeService: ObservableObject {
                     AppLogger.warning("log_challenge_progress cancelled (attempt \(attempt)/\(maxRetries)), retrying in \(Double(delay) / 1_000_000_000)s...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                 } else {
-                    AppLogger.error("[CHALLENGE] logProgress failed (attempt \(attempt)/\(maxRetries), source: \(source)): \(errorDesc)", category: .social)
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "[CHALLENGE] logProgress failed (attempt \(attempt)/\(maxRetries), source: \(source))",
+                        category: .social,
+                        op: PerformanceSignposts.Op.challengeProgressSync.rawValue,
+                        endpoint: "rpc/log_challenge_progress",
+                        userId: SupabaseManager.shared.currentUser?.id,
+                        retryAttempt: attempt
+                    )
                     return false
                 }
             }
@@ -2665,7 +2799,14 @@ class ChallengeService: ObservableObject {
             AppLogger.info("Notification preference updated: \(notify ? "ON" : "OFF")", category: .social)
             return true
         } catch {
-            AppLogger.error("Error updating notification preference: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Error updating notification preference",
+                category: .social,
+                op: PerformanceSignposts.Op.challengePreferences.rawValue,
+                endpoint: "rpc/toggle_challenge_notification_preference",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -2694,10 +2835,16 @@ class ChallengeService: ObservableObject {
                     let delay = UInt64(pow(2.0, Double(attempt))) * 1_000_000_000
                     AppLogger.warning("getChallengesWithFriend timeout (attempt \(attempt)/\(maxRetries)), retrying...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
-                } else if isTimeout {
-                    AppLogger.warning("Error fetching challenges with friend: \(error.localizedDescription)", category: .social)
                 } else {
-                    AppLogger.error("Error fetching challenges with friend: \(error.localizedDescription)", category: .social)
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "Error fetching challenges with friend",
+                        category: .social,
+                        op: PerformanceSignposts.Op.challengeRead.rawValue,
+                        endpoint: "rpc/get_challenges_with_friend",
+                        userId: SupabaseManager.shared.currentUser?.id,
+                        retryAttempt: attempt
+                    )
                 }
             }
         }

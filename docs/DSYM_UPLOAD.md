@@ -105,7 +105,7 @@ Builds archived before Phase 5 shipped don't have their dSYMs in the bucket (we 
 
 - `~/.fit33/dsym-upload.env` holds the **service-role key**. That key bypasses RLS. Keep `chmod 600` and never commit it or share the file. If it leaks, rotate in Supabase Dashboard → Project Settings → API → Reset service role key.
 - `scripts/upload_dsym.sh` is in the repo and safe to share — it only reads the env file, never writes it.
-- The `dsyms` bucket is private. Storage RLS prevents any non-admin authenticated user from writing to it; the service-role key is the only write path. Reads are service-role-only too (the GitHub Actions runner).
+- The `dsyms` bucket is private with RLS enabled and no policies — only the service-role key can read or write, which is exactly what both `scripts/upload_dsym.sh` and the symbolicate-crashes GitHub Actions runner use.
 - dSYM files contain no user data — only Swift symbol tables. Leak severity: low (they're what you'd get from reverse-engineering a public App Store binary). Still, treat the bucket as private by default.
 
 ## When to come back to this doc

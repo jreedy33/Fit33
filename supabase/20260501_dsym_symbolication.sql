@@ -120,61 +120,21 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('dsyms', 'dsyms', false)
 ON CONFLICT (id) DO NOTHING;
 
--- Storage RLS — admin-only write, service-role-only read. Matches the
--- pattern for privileged buckets elsewhere in the project.
+-- No RLS policies on storage.objects for the `dsyms` bucket. The Fit33
+-- admin CMS does NOT use a DB-side `user_profiles.role` column (no such
+-- column exists); admin auth is enforced at the /api/admin layer in
+-- Next.js via verifyAdmin() over service-role Supabase clients. Both
+-- scripts/upload_dsym.sh (Phase 5.4 — uploads) and
+-- .github/workflows/symbolicate-crashes.yml (Phase 5.5 — reads) already
+-- authenticate with the service-role key, which bypasses RLS on
+-- storage.objects the same way it does on regular tables. Result: private
+-- bucket + RLS-enabled + no policies = service-role-only access, matching
+-- the pattern used by every bug_intelligence_* table in Phases 1–4.
 --
--- Write: authenticated admin via upload_dsym.sh. Admin is identified by a
---   `user_profiles.role = 'admin'` row (same check the admin CMS uses).
--- Read: service_role only (no public read). The macOS runner authenticates
---   with the service-role key stored as a GitHub Actions secret.
-DROP POLICY IF EXISTS "dsyms_admin_write"  ON storage.objects;
-DROP POLICY IF EXISTS "dsyms_admin_update" ON storage.objects;
-DROP POLICY IF EXISTS "dsyms_admin_delete" ON storage.objects;
-
-CREATE POLICY "dsyms_admin_write"
-    ON storage.objects
-    FOR INSERT
-    TO authenticated
-    WITH CHECK (
-        bucket_id = 'dsyms'
-        AND EXISTS (
-            SELECT 1
-            FROM user_profiles
-            WHERE user_profiles.id = auth.uid()
-              AND user_profiles.role = 'admin'
-        )
-    );
-
-CREATE POLICY "dsyms_admin_update"
-    ON storage.objects
-    FOR UPDATE
-    TO authenticated
-    USING (
-        bucket_id = 'dsyms'
-        AND EXISTS (
-            SELECT 1
-            FROM user_profiles
-            WHERE user_profiles.id = auth.uid()
-              AND user_profiles.role = 'admin'
-        )
-    );
-
-CREATE POLICY "dsyms_admin_delete"
-    ON storage.objects
-    FOR DELETE
-    TO authenticated
-    USING (
-        bucket_id = 'dsyms'
-        AND EXISTS (
-            SELECT 1
-            FROM user_profiles
-            WHERE user_profiles.id = auth.uid()
-              AND user_profiles.role = 'admin'
-        )
-    );
-
--- No SELECT policy on storage.objects for 'dsyms' — only service_role can
--- read (which bypasses RLS). The macOS runner uses the service-role key.
+-- If we ever want to let non-service-role admins upload dSYMs from a
+-- browser (not today's scope), we'd add an `is_admin` column or an
+-- `admin_users` table and wire policies against it. Until then, nothing
+-- to do here.
 
 COMMIT;
 

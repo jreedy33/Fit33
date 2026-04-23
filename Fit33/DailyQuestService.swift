@@ -819,8 +819,20 @@ class DailyQuestService: ObservableObject {
             } else if isAuthError {
                 AppLogger.warning("[QUESTS] Auth expired during quest fetch — will retry on next session", category: .general)
             } else {
-                AppLogger.error("[QUESTS] Failed to fetch: \(error)", category: .general)
-                AppLogger.error("[QUESTS] Error details (raw): \(errorString)", category: .general)
+                // Route through NetworkErrorClassifier so transient Cloudflare
+                // 502/503/504 / -999 cancellations don't create a fingerprint.
+                // Real failures (RLS violations, unexpected PostgREST codes) still
+                // surface at .error and get triaged by Bug Intelligence.
+                let classification = NetworkErrorClassifier.log(
+                    error,
+                    context: "[QUESTS] Failed to fetch",
+                    category: .general
+                )
+                if case .realError = classification {
+                    AppLogger.log("[QUESTS] Error details (raw): \(errorString)", level: .error, category: .general)
+                } else {
+                    AppLogger.log("[QUESTS] Error details (raw): \(errorString)", level: .debug, category: .general)
+                }
             }
             
             if quests.isEmpty {

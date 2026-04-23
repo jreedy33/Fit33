@@ -80,6 +80,24 @@ enum NetworkErrorClassifier {
             return .transientNetwork
         }
 
+        // Cloudflare / edge gateway flaps — the proxy in front of Supabase
+        // periodically returns 502/503/504 for a few seconds during rolling
+        // restarts. The iOS retry queue recovers these automatically, so
+        // surfacing them as .error creates a bug_intelligence_fingerprint
+        // every deploy. Treat as transient. (QP invariant #25a, #25b)
+        if lower.contains("502 bad gateway")
+            || lower.contains("bad gateway")
+            || lower.contains("503 service unavailable")
+            || lower.contains("service unavailable")
+            || lower.contains("504 gateway time-out")
+            || lower.contains("gateway timeout")
+            || lower.contains("gateway time-out")
+            || lower.contains("status code: 502")
+            || lower.contains("status code: 503")
+            || lower.contains("status code: 504") {
+            return .transientNetwork
+        }
+
         if lower.contains("not authenticated")
             || lower.contains("jwt expired")
             || lower.contains("invalid jwt") {

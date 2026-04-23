@@ -257,7 +257,7 @@ class HydrationService: ObservableObject {
             }
             
         } catch {
-            AppLogger.error("❌ [Water] Failed to fetch user data: \(error)", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to fetch user data", category: .nutrition)
             recommendedGoalMl = 2500
         }
     }
@@ -303,7 +303,7 @@ class HydrationService: ObservableObject {
                 self.todaySummary = summaries.first
             }
         } catch {
-            AppLogger.error("❌ [Water] Failed to load today's summary: \(error)", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load today's summary", category: .nutrition)
         }
     }
     
@@ -327,7 +327,7 @@ class HydrationService: ObservableObject {
                 self.todayLogs = logs
             }
         } catch {
-            AppLogger.error("❌ [Water] Failed to load today's logs: \(error)", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load today's logs", category: .nutrition)
         }
     }
     
@@ -349,7 +349,7 @@ class HydrationService: ObservableObject {
                 await createDefaultSettings(userId: userId)
             }
         } catch {
-            AppLogger.error("❌ [Water] Failed to load settings: \(error)", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load settings", category: .nutrition)
         }
     }
     
@@ -366,7 +366,7 @@ class HydrationService: ObservableObject {
                 self.streaks = streaks.first
             }
         } catch {
-            AppLogger.error("❌ [Water] Failed to load streaks: \(error)", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load streaks", category: .nutrition)
         }
     }
     
@@ -389,7 +389,7 @@ class HydrationService: ObservableObject {
                 self.weeklyData = summaries
             }
         } catch {
-            AppLogger.error("❌ [Water] Failed to load weekly data: \(error)", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to load weekly data", category: .nutrition)
         }
     }
     
@@ -456,7 +456,7 @@ class HydrationService: ObservableObject {
                 // Only reload if cloud insert succeeded
                 await loadTodayData()
             } catch {
-                AppLogger.error("❌ [Water] Failed to log to cloud: \(error)", category: .nutrition)
+                NetworkErrorClassifier.log(error, context: "[Water] Failed to log to cloud", category: .nutrition)
                 // Don't reload from cloud if insert failed - keep local data
             }
             
@@ -513,7 +513,7 @@ class HydrationService: ObservableObject {
             
             return true
         } catch {
-            AppLogger.error("❌ [Water] Failed to delete log: \(error)", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to delete log", category: .nutrition)
             return false
         }
     }
@@ -554,7 +554,7 @@ class HydrationService: ObservableObject {
             AppLogger.info("✅ [Water] Settings updated", category: .nutrition)
             return true
         } catch {
-            AppLogger.error("❌ [Water] Failed to update settings: \(error)", category: .nutrition)
+            NetworkErrorClassifier.log(error, context: "[Water] Failed to update settings", category: .nutrition)
             // Update local settings anyway
             self.settings = newSettings
             return false

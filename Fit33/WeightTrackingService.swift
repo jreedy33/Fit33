@@ -406,7 +406,7 @@ class WeightTrackingService: ObservableObject {
                 }
             }
         } catch {
-            AppLogger.error("❌ [Weight] Failed to load recent logs: \(error)", category: .health)
+            NetworkErrorClassifier.log(error, context: "[Weight] Failed to load recent logs", category: .health)
         }
     }
     
@@ -449,7 +449,7 @@ class WeightTrackingService: ObservableObject {
                 }
             }
         } catch {
-            AppLogger.error("❌ [Weight] Failed to load today's log: \(error)", category: .health)
+            NetworkErrorClassifier.log(error, context: "[Weight] Failed to load today's log", category: .health)
             // On error, keep any cached data we have
         }
     }
@@ -468,7 +468,7 @@ class WeightTrackingService: ObservableObject {
                 self.statistics = stats.first
             }
         } catch {
-            AppLogger.error("❌ [Weight] Failed to load statistics: \(error)", category: .health)
+            NetworkErrorClassifier.log(error, context: "[Weight] Failed to load statistics", category: .health)
             // Calculate stats locally if view doesn't exist
             await calculateLocalStatistics()
         }
@@ -488,7 +488,7 @@ class WeightTrackingService: ObservableObject {
                 self.weightGoal = goals.first
             }
         } catch {
-            AppLogger.error("❌ [Weight] Failed to load weight goal: \(error)", category: .health)
+            NetworkErrorClassifier.log(error, context: "[Weight] Failed to load weight goal", category: .health)
         }
     }
     
@@ -599,7 +599,7 @@ class WeightTrackingService: ObservableObject {
             AppLogger.info("✅ [Weight] Save complete, todayLog retained", category: .health)
             return true
         } catch {
-            AppLogger.error("[Weight] Failed to log weight: \(error)", category: .health)
+            NetworkErrorClassifier.log(error, context: "[Weight] Failed to log weight", category: .health)
             return false
         }
     }
@@ -642,7 +642,7 @@ class WeightTrackingService: ObservableObject {
             AppLogger.info("✅ [Weight] Goal updated: \(targetWeight) \(weightUnitSuffix)", category: .health)
             return true
         } catch {
-            AppLogger.error("❌ [Weight] Failed to set goal: \(error)", category: .health)
+            NetworkErrorClassifier.log(error, context: "[Weight] Failed to set goal", category: .health)
             return false
         }
     }
@@ -673,7 +673,7 @@ class WeightTrackingService: ObservableObject {
             AppLogger.info("✅ [Weight] Deleted log", category: .health)
             return true
         } catch {
-            AppLogger.error("❌ [Weight] Failed to delete log: \(error)", category: .health)
+            NetworkErrorClassifier.log(error, context: "[Weight] Failed to delete log", category: .health)
             return false
         }
     }

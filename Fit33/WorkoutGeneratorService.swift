@@ -108,6 +108,12 @@ struct WorkoutGenerationContext: @unchecked Sendable {
     let userAge: Int
     let favorites: Set<String>
     let genderVideoCache: [String: VideoStreamingService.GenderVideoInfo]
+    /// Wearable Personalization — Phase 1. Snapshotted from
+    /// `ReadinessService.shared.todayReadiness` on main before
+    /// `Task.detached` so background generation sees a stable value
+    /// (Fitness Expert threading rules). `nil` when the feature flag
+    /// is off so existing code paths behave identically.
+    let readiness: DailyReadinessSnapshot?
 }
 
 @MainActor
@@ -153,7 +159,68 @@ class WorkoutGeneratorService: ObservableObject {
         defer {
             isGenerating = false
         }
-        
+
+        // 🧠 Wearable Personalization — Phase 1 recovery override.
+        // When the feature flag is on AND the user has a real wearable
+        // signal AND today's band is `.red`, bypass normal selection and
+        // return a mobility / stretch / yoga session (FITNESS_EXPERT_AGENT
+        // invariant #23). Yellow caps `count`; green leaves it alone
+        // (the per-exercise +10% ceiling is handled inside selection).
+        let readinessAdjustment: ReadinessAdjustment? = {
+            guard AppConfig.FeatureFlags.readinessAdaptiveAutoGen else { return nil }
+            return ReadinessWorkoutAdjuster.adjustment(
+                for: ReadinessService.shared.todayReadiness,
+                requestedCount: count
+            )
+        }()
+
+        if let adjustment = readinessAdjustment, adjustment.replaceWithRecoveryDay {
+            let recoveryExercises = ReadinessWorkoutAdjuster.buildRecoveryDayExercises(
+                count: adjustment.adjustedCount
+            )
+            // If the library is cold / no stretches exist, fall
+            // through to normal generation so we never ship a blank
+            // workout. Rare in prod (pre-warm is reliable).
+            if !recoveryExercises.isEmpty {
+                let generated = recoveryExercises.compactMap { exercise -> GeneratedExercise? in
+                    guard let name = exercise.name else { return nil }
+                    // Core Data Exercise stores muscles as
+                    // transformable `muscleGroups` array — first
+                    // entry is the primary, fall back to category.
+                    let muscles = (exercise.muscleGroups as? [String]) ?? []
+                    let primary = muscles.first ?? exercise.category ?? "General"
+                    return GeneratedExercise(
+                        id: exercise.id?.uuidString ?? UUID().uuidString,
+                        name: name,
+                        category: exercise.category ?? "Stretch",
+                        primaryBodyRegion: primary,
+                        primaryMuscle: primary,
+                        secondaryMuscles: Array(muscles.dropFirst()),
+                        equipment: exercise.equipment ?? "Bodyweight",
+                        difficulty: "Beginner",
+                        videoUrl: nil,
+                        instructions: exercise.instructions
+                    )
+                }
+                AppLogger.info(
+                    "[Readiness] Replaced requested \(count) with \(generated.count) recovery exercises (band=red)",
+                    category: .workout
+                )
+                SessionLogManager.shared.logWorkoutGenerationComplete(
+                    exerciseCount: generated.count,
+                    duration: Date().timeIntervalSince(startTime)
+                )
+                generatedExercises = generated
+                return generated
+            }
+            AppLogger.warning(
+                "[Readiness] Recovery override requested but no stretches available; falling back to normal generation",
+                category: .workout
+            )
+        }
+
+        let effectiveCount: Int = readinessAdjustment?.adjustedCount ?? count
+
         // ALL user-selected muscles are targets - combine them
         let allTargetMuscles = primaryMuscles + secondaryMuscles
         
@@ -187,7 +254,10 @@ class WorkoutGeneratorService: ObservableObject {
         let context = buildGenerationContext(exercises: allExercisesSnapshot)
         let targetMusclesCopy = allTargetMuscles
         let equipmentCopy = equipment
-        let countCopy = count
+        // Phase 1: `effectiveCount` honors the yellow-band 0.9× cap
+        // (falls through to the raw `count` when the feature flag is
+        // off or snapshot has no wearable signal).
+        let countCopy = effectiveCount
         let excludeNamesCopy = excludeNames
         
         let coreDataExercises: [GeneratedExercise] = await Task.detached(priority: .userInitiated) { [self] in
@@ -222,12 +292,12 @@ class WorkoutGeneratorService: ObservableObject {
             return coreDataExercises
         }
         
-        // Fallback to old local generation
+        // Fallback to old local generation — honour Phase 1 effective count.
         let exercises = generateLocalWorkout(
             primaryMuscles: primaryMuscles,
             secondaryMuscles: secondaryMuscles,
             equipment: equipment,
-            count: count,
+            count: effectiveCount,
             excludeExerciseIds: excludeExerciseIds
         )
         
@@ -239,13 +309,13 @@ class WorkoutGeneratorService: ObservableObject {
             return exercises
         }
         
-        // Final fallback to edge function
+        // Final fallback to edge function — cloud generation also respects effectiveCount.
         do {
             let request = WorkoutGenerationRequest(
                 primaryMuscles: primaryMuscles,
                 secondaryMuscles: secondaryMuscles,
                 equipment: equipment,
-                count: count,
+                count: effectiveCount,
                 excludeExerciseIds: excludeExerciseIds
             )
             
@@ -280,6 +350,16 @@ class WorkoutGeneratorService: ObservableObject {
         let user = UserManager.shared.currentUser
         let favorites = Set(safeExercises.filter { $0.isFavorite }.compactMap { $0.name?.lowercased() })
         
+        // Snapshot readiness on the @MainActor BEFORE the generation
+        // Task.detached so the background pipeline sees a stable
+        // value even if a wearable sync writes mid-generation. Only
+        // attached when the feature flag is on — behaviour identical
+        // to pre-Phase-1 when off.
+        let readinessSnapshot: DailyReadinessSnapshot? = {
+            guard AppConfig.FeatureFlags.readinessAdaptiveAutoGen else { return nil }
+            return ReadinessService.shared.todayReadiness
+        }()
+
         return WorkoutGenerationContext(
             safeExercises: safeExercises,
             userWorkoutCount: progressiveUnlock.workoutCount,
@@ -295,7 +375,8 @@ class WorkoutGeneratorService: ObservableObject {
             userWeight: Double(user?.weight ?? 170),
             userAge: Int(user?.age ?? 30),
             favorites: favorites,
-            genderVideoCache: VideoStreamingService.shared.genderVideoCache
+            genderVideoCache: VideoStreamingService.shared.genderVideoCache,
+            readiness: readinessSnapshot
         )
     }
     

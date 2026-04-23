@@ -97,23 +97,26 @@ final class HealthDataService: ObservableObject {
         let whoopConnected = WhoopService.shared.isConnected
         let ouraConnected = OuraService.shared.isConnected
         
-        // Run health source syncs off main thread to avoid blocking UI
+        // Run health source syncs off main thread to avoid blocking UI.
+        // `force` MUST propagate downstream — each wearable service has its own
+        // 5-min throttle, so without this, pull-to-refresh and scenePhase force
+        // syncs silently no-op for WHOOP/Oura/Fitbit.
         await Task.detached(priority: .userInitiated) { [self] in
             await withTaskGroup(of: Void.self) { group in
                 if hkAuthorized {
                     group.addTask { await self.syncHealthKitData() }
                 }
                 if fitbitConnected {
-                    group.addTask { await self.syncFitbitData() }
+                    group.addTask { await self.syncFitbitData(force: force) }
                 }
                 if stravaConnected {
                     group.addTask { await self.syncStravaData() }
                 }
                 if whoopConnected {
-                    group.addTask { await self.syncWhoopData() }
+                    group.addTask { await self.syncWhoopData(force: force) }
                 }
                 if ouraConnected {
-                    group.addTask { await self.syncOuraData() }
+                    group.addTask { await self.syncOuraData(force: force) }
                 }
                 group.addTask { await self.fetchWeeklyData() }
             }
@@ -122,7 +125,15 @@ final class HealthDataService: ObservableObject {
         // 🏆 CHALLENGES: Sync all sources to active challenges AFTER data is loaded
         // This ensures challenges get credit from HealthKit, Strava, Fitbit, etc.
         await syncAllSourcesToChallenges()
-        
+
+        // 🧠 READINESS: Recompute the unified Daily Readiness Score from the
+        // freshly-synced wearable state and upsert today's row to
+        // `daily_readiness_history`. Must run AFTER per-source syncs
+        // because it reads the `@Published` state of each wearable
+        // service. Force-propagated (Data invariant #4a) so pull-to-refresh
+        // from the Dashboard actually re-blends today's score.
+        await ReadinessService.shared.recompute(force: force)
+
         lastSyncDate = Date()
         isLoading = false
         isSyncing = false
@@ -211,11 +222,11 @@ final class HealthDataService: ObservableObject {
     
     // MARK: - Fitbit Data Sync
     
-    private func syncFitbitData() async {
+    private func syncFitbitData(force: Bool = false) async {
         guard FitbitService.shared.isConnected else { return }
         
         // Sync Fitbit's internal data first
-        await FitbitService.shared.syncAllData()
+        await FitbitService.shared.syncAllData(force: force)
         
         // Save daily summary to our database
         if let summary = FitbitService.shared.todaySummary {
@@ -271,10 +282,10 @@ final class HealthDataService: ObservableObject {
     
     // MARK: - WHOOP Data Sync
     
-    private func syncWhoopData() async {
+    private func syncWhoopData(force: Bool = false) async {
         guard WhoopService.shared.isConnected else { return }
         
-        await WhoopService.shared.syncAllData()
+        await WhoopService.shared.syncAllData(force: force)
         
         guard SupabaseManager.shared.isAuthenticated,
               let userId = SupabaseManager.shared.currentUser?.id else { return }
@@ -663,10 +674,10 @@ final class HealthDataService: ObservableObject {
     
     // MARK: - Oura Data Sync
 
-    private func syncOuraData() async {
+    private func syncOuraData(force: Bool = false) async {
         guard OuraService.shared.isConnected else { return }
 
-        await OuraService.shared.syncAllData()
+        await OuraService.shared.syncAllData(force: force)
 
         guard SupabaseManager.shared.isAuthenticated,
               let userId = SupabaseManager.shared.currentUser?.id else { return }

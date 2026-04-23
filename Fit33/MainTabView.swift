@@ -290,6 +290,33 @@ struct MainTabView: View {
                     await HealthKitManager.shared.fetchMonthlyAverage()
                 }
             }
+
+            // Wearable widget preload on return to Dashboard.
+            // WHOOP / Oura widgets can go stale while the user is on another tab
+            // for >5 min. We trigger a quiet force-sync IF last sync is older than
+            // 60s. Service-level `isSyncing` guard coalesces with any in-flight
+            // foreground sync, so this never duplicates work.
+            if newValue == 0 && oldValue != 0 {
+                Task(priority: .userInitiated) {
+                    let now = Date()
+                    let whoopStale: Bool = {
+                        guard WhoopService.shared.isConnected else { return false }
+                        guard let last = WhoopService.shared.lastSyncDate else { return true }
+                        return now.timeIntervalSince(last) > 60
+                    }()
+                    let ouraStale: Bool = {
+                        guard OuraService.shared.isConnected else { return false }
+                        guard let last = OuraService.shared.lastSyncDate else { return true }
+                        return now.timeIntervalSince(last) > 60
+                    }()
+                    if whoopStale {
+                        await WhoopService.shared.syncAllData(force: true)
+                    }
+                    if ouraStale {
+                        await OuraService.shared.syncAllData(force: true)
+                    }
+                }
+            }
         }
         .environment(\.scrollToTopTrigger, scrollToTopTrigger)
         .onChange(of: workoutManager.isWorkoutActive) { _, isActive in

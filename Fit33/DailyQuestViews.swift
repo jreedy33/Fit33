@@ -362,84 +362,101 @@ struct DailyQuestsWidget: View {
                 navigateToQuest(quest)
             }
         } label: {
-        HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                if isDone {
-                    Circle()
-                        .stroke(greenGradient, lineWidth: 3)
-                        .frame(width: 40, height: 40)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    if isDone {
+                        Circle()
+                            .stroke(greenGradient, lineWidth: 3)
+                            .frame(width: 40, height: 40)
 
-                    Image(systemName: "checkmark")
-                        .font(.ds_bodyMedium)
-                        .foregroundStyle(greenGradient)
-                } else {
-                    Circle()
-                        .stroke(Color.gray.opacity(0.15), lineWidth: 3)
-                        .frame(width: 40, height: 40)
+                        Image(systemName: "checkmark")
+                            .font(.ds_bodyMedium)
+                            .foregroundStyle(greenGradient)
+                    } else {
+                        Circle()
+                            .stroke(Color.gray.opacity(0.15), lineWidth: 3)
+                            .frame(width: 40, height: 40)
 
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(
-                            AnyShapeStyle(quest.categoryColor),
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                        )
-                        .frame(width: 40, height: 40)
-                        .rotationEffect(.degrees(-90))
-                        .animation(.spring(response: 0.5), value: progress)
+                        Circle()
+                            .trim(from: 0, to: progress)
+                            .stroke(
+                                AnyShapeStyle(quest.categoryColor),
+                                style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                            )
+                            .frame(width: 40, height: 40)
+                            .rotationEffect(.degrees(-90))
+                            .animation(.spring(response: 0.5), value: progress)
 
-                    Text(quest.categoryEmoji)
-                        .font(.ds_heading3)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(quest.title)
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-
-                if isDone {
-                    Text(completionSummary(for: quest))
-                        .font(.ds_caption)
-                        .foregroundColor(.green.opacity(0.9))
-                        .lineLimit(1)
-                } else if quest.questKey == QuestKey.watchAds.rawValue {
-                    compactAdRow(quest: quest)
-                } else {
-                    Text(dynamicDescription(for: quest))
-                        .font(.ds_caption)
-                        .foregroundColor(.secondary.opacity(0.7))
-                        .lineLimit(1)
-
-                    HStack(spacing: 8) {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 2.5)
-                                    .fill(Color.gray.opacity(0.12))
-                                    .frame(height: 4)
-
-                                RoundedRectangle(cornerRadius: 2.5)
-                                    .fill(AnyShapeStyle(quest.categoryColor))
-                                    .frame(width: max(0, geo.size.width * progress), height: 4)
-                                    .animation(.spring(response: 0.4), value: progress)
-                            }
-                        }
-                        .frame(height: 4)
-
-                        Text(liveProgressLabel(for: quest))
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .foregroundColor(.secondary)
-                            .frame(minWidth: 50, alignment: .trailing)
+                        Text(quest.categoryEmoji)
+                            .font(.ds_heading3)
                     }
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            // XP reward sits as a sibling of the ring + content VStack so it
-            // vertically centers on the row regardless of whether the card
-            // shows 1 line (completed) or 2 lines (in-progress). Previously
-            // it was nested inside the title HStack, which pinned it to the
-            // top baseline and read as misaligned on completed rows.
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(quest.title)
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        // Reserve space so long titles don't collide with the
+                        // XP pill pinned to the card's top-trailing corner.
+                        .padding(.trailing, 56)
+
+                    if isDone {
+                        Text(completionSummary(for: quest))
+                            .font(.ds_caption)
+                            .foregroundColor(.green.opacity(0.9))
+                            .lineLimit(1)
+                    } else if quest.questKey == QuestKey.watchAds.rawValue {
+                        compactAdRow(quest: quest)
+                    } else {
+                        Text(dynamicDescription(for: quest))
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // Full-width status bar — spans the entire card on every state.
+            // Completed cards render a full green bar (no trailing label);
+            // in-progress cards render categoryColor progress + live label.
+            HStack(spacing: 8) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2.5)
+                            .fill(Color.gray.opacity(0.12))
+                            .frame(height: 4)
+
+                        RoundedRectangle(cornerRadius: 2.5)
+                            .fill(isDone
+                                ? AnyShapeStyle(greenGradient)
+                                : AnyShapeStyle(quest.categoryColor))
+                            .frame(
+                                width: max(0, geo.size.width * (isDone ? 1.0 : progress)),
+                                height: 4
+                            )
+                            .animation(.spring(response: 0.4), value: progress)
+                    }
+                }
+                .frame(height: 4)
+
+                if !isDone {
+                    Text(liveProgressLabel(for: quest))
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .frame(minWidth: 50, alignment: .trailing)
+                }
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, 10)
+        .sleekCardSubtle(cornerRadius: 16)
+        .overlay(alignment: .topTrailing) {
+            // XP reward pinned to the top-right corner of every card — same
+            // position for in-progress and completed states so users can scan
+            // rewards uniformly down the list.
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text("+\(quest.xpReward)")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -447,11 +464,10 @@ struct DailyQuestsWidget: View {
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
             }
             .foregroundColor(isDone ? .green : .secondary.opacity(0.5))
+            .padding(.top, 10)
+            .padding(.trailing, Spacing.md)
             .fixedSize()
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, 10)
-        .sleekCardSubtle(cornerRadius: 16)
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(

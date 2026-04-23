@@ -2170,6 +2170,25 @@ class ChallengeService: ObservableObject {
                     targetUnit: challenge.targetUnit
                 )
                 source = "healthkit"
+
+            case .sleepHours:
+                // Phase 5 wearable challenge — read from ReadinessService.
+                // Unit label is "h" so progress is whole hours slept.
+                let hours = ReadinessService.shared.todayReadiness.sleepHours ?? 0
+                progressValue = Int(hours.rounded())
+                source = "readiness"
+
+            case .readinessAverage:
+                // Readiness score is already 0–100, matches unit "/ 100".
+                progressValue = ReadinessService.shared.todayReadiness.score
+                source = "readiness"
+
+            case .strainBudget:
+                // WHOOP strain from the previous day cycle (0–21).
+                // Non-WHOOP users don't have strain; progress stays 0.
+                let strain = ReadinessService.shared.todayReadiness.strainPrev ?? 0
+                progressValue = Int(strain.rounded())
+                source = "readiness"
             }
             
             // For re-calculable types (protein, hydration, calories) the local value
@@ -2664,6 +2683,24 @@ class ChallengeProgressResolver: ObservableObject {
             
         case .lift, .workoutStreak:
             localValue = 0
+
+        case .sleepHours:
+            // Wearable-sourced: hours slept last night from ReadinessService.
+            let readiness = ReadinessService.shared.todayReadiness
+            localValue = Int((readiness.sleepHours ?? 0).rounded())
+            localHasData = readiness.hasWearableSignal && readiness.sleepHours != nil
+
+        case .readinessAverage:
+            // Wearable-sourced: today's readiness score (0–100).
+            let readiness = ReadinessService.shared.todayReadiness
+            localValue = readiness.score
+            localHasData = readiness.hasWearableSignal
+
+        case .strainBudget:
+            // WHOOP-only: previous cycle strain. Other wearables → 0.
+            let readiness = ReadinessService.shared.todayReadiness
+            localValue = Int((readiness.strainPrev ?? 0).rounded())
+            localHasData = readiness.strainPrev != nil
         }
         
         if localHasData {
@@ -2830,7 +2867,27 @@ enum ChallengeType: String, CaseIterable, Identifiable {
     case hydrate = "hydrate"
     case calories = "calories"
     case protein = "protein"
-    
+
+    // MARK: Wearable Personalization Platform — Phase 5
+    //
+    // Three new wearable-powered challenge types. All read from
+    // `ReadinessService.shared` (wearable-agnostic) so WHOOP, Oura,
+    // Fitbit, and Apple Health users are all on the same leaderboard.
+    // Server-side `get_daily_quests` challenge-override map must be
+    // extended to route these to the matching quest keys (Data
+    // invariant #31):
+    //   sleep_hours       → `sleep_8h_wearable`
+    //   readinessAverage  → `recovery_above_67`
+    //   strainBudget      → `complete_workout` (strain implies training)
+    /// Weekly avg sleep duration (hours). Progress reads
+    /// `daily_readiness_history.sleep_hours`.
+    case sleepHours = "sleep_hours"
+    /// Avg readiness score across the window. Fair across wearables.
+    case readinessAverage = "readiness_average"
+    /// Accumulate strain without crashing recovery. Compound metric
+    /// that rewards smart volume, not grinding.
+    case strainBudget = "strain_budget"
+
     var id: String { rawValue }
     
     var displayName: String {
@@ -2844,6 +2901,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .hydrate: return "Hydration Challenge"
         case .calories: return "Calorie Challenge"
         case .protein: return "Protein Challenge"
+        case .sleepHours: return "Sleep Challenge"
+        case .readinessAverage: return "Readiness Challenge"
+        case .strainBudget: return "Strain Budget"
         }
     }
     
@@ -2858,6 +2918,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .hydrate: return "drop.fill"
         case .calories: return "flame.fill"
         case .protein: return "fork.knife"
+        case .sleepHours: return "bed.double.fill"
+        case .readinessAverage: return "heart.text.square.fill"
+        case .strainBudget: return "bolt.heart.fill"
         }
     }
     
@@ -2872,6 +2935,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .hydrate: return "💧"
         case .calories: return "🔥"
         case .protein: return "🥩"
+        case .sleepHours: return "😴"
+        case .readinessAverage: return "💚"
+        case .strainBudget: return "⚡"
         }
     }
     
@@ -2886,6 +2952,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .hydrate: return .cyan
         case .calories: return .orange
         case .protein: return .pink
+        case .sleepHours: return .indigo
+        case .readinessAverage: return .green
+        case .strainBudget: return .yellow
         }
     }
     
@@ -2900,6 +2969,9 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .hydrate: return [.cyan, .blue]
         case .calories: return [.orange, .red]
         case .protein: return [.pink, .purple]
+        case .sleepHours: return [.indigo, .purple]
+        case .readinessAverage: return [.green, .teal]
+        case .strainBudget: return [.yellow, .orange]
         }
     }
     
@@ -2915,6 +2987,23 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .hydrate: return "ml"
         case .calories: return "cal"
         case .protein: return "g"
+        case .sleepHours: return "h"
+        case .readinessAverage: return "/ 100"
+        case .strainBudget: return "strain"
+        }
+    }
+
+    /// True ⇔ progress for this challenge comes from
+    /// `daily_readiness_history` (wearable-agnostic) rather than from
+    /// HealthKit steps / Fitbit activity / manual logs. Phase 5
+    /// `BackgroundChallengeSyncService` uses this flag to route
+    /// progress through `ReadinessService.shared` instead of the
+    /// HealthKit-first paths. Feature-flagged via
+    /// `AppConfig.FeatureFlags.wearableChallenges`.
+    var isWearableSourced: Bool {
+        switch self {
+        case .sleepHours, .readinessAverage, .strainBudget: return true
+        default: return false
         }
     }
 }

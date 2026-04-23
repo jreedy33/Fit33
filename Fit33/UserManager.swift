@@ -713,7 +713,27 @@ class UserManager: ObservableObject {
         guard let user = currentUser else { return }
         
         workout.isCompleted = true
-        workout.xpEarned = calculateWorkoutXP(workout)
+        // Wearable Personalization — Phase 4 readiness XP multiplier.
+        // Green day = +20% (trained while primed). Red day +
+        // user chose a stretch/mobility session = +15% Smart Rest
+        // (reward listening to the body). Red day + heavy compound =
+        // base XP, no penalty. No-op when the flag is off.
+        //
+        // completeWorkout is only called from SwiftUI views (main
+        // actor), so the synchronous read of
+        // `ReadinessService.shared.todayReadiness` via
+        // `MainActor.assumeIsolated` is safe. Avoids marking the
+        // whole UserManager class @MainActor just for this single
+        // property access.
+        let readinessSnapshot = MainActor.assumeIsolated {
+            ReadinessService.shared.todayReadiness
+        }
+        let isRecoverySession = Self.isRecoveryStyleWorkout(workout)
+        workout.xpEarned = applyReadinessXPMultiplier(
+            baseXP: calculateWorkoutXP(workout),
+            snapshot: readinessSnapshot,
+            isRecoveryWorkout: isRecoverySession
+        )
         user.totalWorkouts += 1
         
         addXP(workout.xpEarned)

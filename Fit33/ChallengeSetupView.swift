@@ -714,6 +714,9 @@ struct ChallengeSetupView: View {
         case .hydrate: return "ml"
         case .calories: return "calories"
         case .protein: return "grams"
+        case .sleepHours: return "hours"
+        case .readinessAverage: return "score"
+        case .strainBudget: return "strain"
         }
     }
     
@@ -741,6 +744,12 @@ struct ChallengeSetupView: View {
             dailyTarget = min(5000, dailyTarget + 100)
         case .protein:
             dailyTarget = min(300, dailyTarget + 10)
+        case .sleepHours:
+            dailyTarget = min(12, dailyTarget + 1)
+        case .readinessAverage:
+            dailyTarget = min(100, dailyTarget + 5)
+        case .strainBudget:
+            dailyTarget = min(21, dailyTarget + 1)
         }
     }
     
@@ -759,6 +768,12 @@ struct ChallengeSetupView: View {
             dailyTarget = max(100, dailyTarget - 100)
         case .protein:
             dailyTarget = max(10, dailyTarget - 10)
+        case .sleepHours:
+            dailyTarget = max(5, dailyTarget - 1)
+        case .readinessAverage:
+            dailyTarget = max(50, dailyTarget - 5)
+        case .strainBudget:
+            dailyTarget = max(5, dailyTarget - 1)
         }
     }
     

@@ -1563,6 +1563,10 @@ struct FriendsTabView: View {
         case .lift: return "Hit the weights today!"
         case .activeMinutes: return "Get moving today!"
         case .workoutStreak: return "Start your streak today!"
+        // Wearable Personalization Phase 5 — new wearable-sourced types.
+        case .sleepHours: return "Rest up tonight!"
+        case .readinessAverage: return "Keep the green days coming!"
+        case .strainBudget: return "Train smart today!"
         }
     }
     

@@ -44,6 +44,11 @@ Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal) and `.cu
 
 ### WHOOP recovery override
 23. **Red recovery (0-33%) = override to recovery day.** Stretching / mobility / walking / yoga. Skip heavy compounds even if muscles are fresh — nervous-system recovery wins over muscle recovery. Yellow (34-66%) = normal programming with listen-to-body note. Green (67-100%) = encourage PRs / add volume.
+    **IMPLEMENTATION (2026-05-06, Wearable Personalization Platform Phase 0-1).** Invariant is now wearable-agnostic — band thresholds live on `ReadinessBand` (0-33/34-66/67-100, same values). `ReadinessService.shared.todayReadiness` blends WHOOP recovery → Oura readiness → Fitbit-derived → HealthKit-derived into one unified score. Auto-gen honors the band via `ReadinessWorkoutAdjuster`:
+    * `.red` → `buildRecoveryDayExercises(count:)` pulls stretches from the library (workoutType contains "stretch" OR name contains "yoga"/"mobility"/"foam roll"), bucketed by muscle region for whole-body variety (3-4 exercises).
+    * `.yellow` → `adjustedCount = max(3, ceil(requested × 0.9))`.
+    * `.green` → `allowsPrAttempt = true`; count unchanged; the +10% volume ceiling is applied per-exercise inside selection.
+    Gated by `AppConfig.FeatureFlags.readinessAdaptiveAutoGen` (dark-ship) — off until red/yellow/green fixture tests validate the generator end-to-end. `WorkoutGenerationContext.readiness: DailyReadinessSnapshot?` snapshots on @MainActor BEFORE `Task.detached` (threading rules). Call sites: `WorkoutGeneratorService.generateWorkout()` short-circuits to recovery day when `adjustment.replaceWithRecoveryDay` AND stretches are available (falls through to normal generation when library is cold). `ActiveWorkoutView` shows `ReadinessAdjustmentBanner(snapshot:adjustment:)` when a wearable is connected + flag is on.
 
 ### Beginner safety
 24. No Olympic lifts, no behind-neck press, no max-effort singles for beginners. Weight recommendations start conservative.

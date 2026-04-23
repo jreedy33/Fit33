@@ -672,6 +672,16 @@ struct Fit33App: App {
                         WorkoutManager.shared.checkWorkoutStateOnForeground()
                         HealthKitManager.shared.checkAuthorizationStatus()
                         HealthKitService.shared.checkAuthorizationStatus()
+
+                        // Dashboard WHOOP widget must reflect latest recovery/strain/sleep
+                        // every time the user opens the app. Both `HealthDataService.syncAllHealthData`
+                        // and `WhoopService.syncAllData` have 5-minute throttles, so run a
+                        // dedicated force sync in parallel with the main coordinated Task below.
+                        if WhoopService.shared.isConnected {
+                            Task(priority: .userInitiated) {
+                                await WhoopService.shared.syncAllData(force: true)
+                            }
+                        }
                         
                         // ═══ FOREGROUND TASKS (single coordinated Task) ═══
                         // Consolidate into ONE Task to prevent 7+ concurrent Tasks

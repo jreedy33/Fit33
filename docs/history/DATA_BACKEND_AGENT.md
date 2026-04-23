@@ -733,3 +733,73 @@ A Strava run pulled via Apple Health has `source='healthkit'` and `origin_app='s
 - A second, shorter server throttle window — Apple APNs will drop us.
 - A silent-push path that goes through `push_notification_queue` — that table is for user-visible alerts with retry logic; silent pushes are fire-and-forget opportunistic wakes. The two paths must stay separate.
 - Direct inserts into `silent_push_wake_log` from client code — RLS denies it; only the edge function (service role) writes there.
+
+### 2026-05-06: Wearable Personalization Platform (Phases 0-6)
+
+**Context**: Built a unified Daily Readiness Score that blends WHOOP / Oura / Fitbit / HealthKit signals into a single 0-100 score + red/yellow/green band, then pipes it through every surface that affects user outcome: auto-gen, insights, adaptive goals, XP multipliers, wearable quests, new challenge types, and bug-report enrichment.
+
+**Migrations shipped**:
+- `20260506_daily_readiness_history.sql` — Phase 0 foundation table + `v_user_readiness_30d` view (`security_invoker = on`).
+- `20260507_personalized_insights_wearable.sql` — Phase 2a: extends `user_personalized_insights` with `correlation_type/r_squared/p_value/sample_size/wearable_source`, creates `v_user_wearable_insights` (14d window + significance gate), schedules `compute-readiness-insights-nightly` pg_cron at 03:30 UTC.
+- `20260508_adaptive_goal_proposals.sql` — Phase 3: `user_adaptive_goal_proposals` table + `v_user_pending_goal_proposals` view (accepted IS NULL + current week).
+- `20260509_wearable_quests.sql` — Phase 4: 6 new quest templates tagged `requires_context = 'has_wearable'`. DROPs every `get_daily_quests` overload in prep for the body update follow-up `20260509b_*`.
+
+**Edge function shipped**: `supabase/functions/compute-readiness-insights/index.ts` — Deno runtime, service-role-only (`x-cron-key` JWT verified against `SUPABASE_PROJECT_REF`), Spearman rank correlation + Fisher-Z p-value, 60-day lookback, 500-user hard cap. Computes 5 correlations per user: `sleep_hours_vs_pr_rate`, `hrv_delta_vs_pr_success`, `readiness_band_vs_adherence`, `strain_avg_vs_rhr_trend`, `protein_x_sleep_vs_recovery`. Significance gate `n >= 10 AND p <= 0.15`. Added to Edge Function Auth Registry in `INFRA_SECURITY_AGENT.md`.
+
+**Swift shipped (feature-flagged dark-ship)**:
+- `DailyReadinessSnapshot.swift` — value type + `ReadinessBand` enum + `ReadinessSource` enum + `DailyReadinessRow` Codable boundary.
+- `ReadinessService.swift` — `@MainActor ObservableObject`, blend priority WHOOP -> Oura -> Fitbit -> HealthKit, derived formula `0.4 * sleep + 0.4 * rhr + 0.2 * active`, 60s throttle, UserDefaults cold-start cache, SnapshotProvider conformance.
+- `SupabaseManager+Readiness.swift` — `upsertReadinessSnapshot(_:)` + `fetchReadinessHistory(daysBack:)`.
+- `ReadinessWorkoutAdjuster.swift` — `adjustment(for:requestedCount:)` + `buildRecoveryDayExercises(count:)` pulling stretches from `ExerciseLibraryService`, bucketed by muscle region.
+- `ReadinessAdjustmentBanner.swift` — SwiftUI banner reading from `ReadinessService.shared.todayReadiness`.
+- `HealthInsightsView+Readiness.swift` — unified 30-day readiness chart + Oura + Fitbit mini-cards.
+- `AdaptiveGoalService.swift` + `AdaptiveGoalNudgeCard.swift` — Phase 3 weekly proposal card.
+- `UserManager+ReadinessXP.swift` — `applyReadinessXPMultiplier(baseXP:isRecoveryWorkout:)` (+20 percent green / +15 percent Smart Rest red).
+
+**Extended files**:
+- `WorkoutGeneratorService.swift` — `WorkoutGenerationContext.readiness`, readiness override at `generateWorkout()` entry (short-circuits to recovery day when red + flag on + stretches available).
+- `HealthDataService.syncAllHealthData(force:)` — calls `ReadinessService.shared.recompute(force:)` at the tail (Data invariant #4a).
+- `DailyQuestService.swift` — `p_has_connected_wearable` param added to `get_daily_quests` call.
+- `ChallengeService.swift` — `ChallengeType` enum extended with `.sleepHours` / `.readinessAverage` / `.strainBudget` (all `isWearableSourced`).
+- `BugReportStateSnapshot+Providers.swift` — registers `ReadinessService.shared`.
+- `AppConfig.FeatureFlags` — 5 new flags (`readinessAdaptiveAutoGen`, `readinessXpBonus`, `wearableQuests`, `wearableChallenges`, `adaptiveGoals`).
+- `FITNESS_EXPERT_AGENT.md` invariant #23 — implementation reference added inline.
+- `DATA_BACKEND_AGENT.md` — new invariants #33-#37 (readiness service propagation, placeholder-never-written, insights upsert key, SnapshotProvider).
+- `INFRA_SECURITY_AGENT.md` — `compute-readiness-insights` entry in Edge Function Auth Registry.
+
+**Ship-order** (dark-first, then flip flags one phase at a time):
+1. Apply migrations 71 -> 74 in order.
+2. Deploy `compute-readiness-insights` edge function.
+3. Ship Phase 0 dark (readiness service computes + persists, everything else inert).
+4. Fixture-test recovery override on red/yellow/green, then flip `readinessAdaptiveAutoGen`.
+5. Ship `20260509b_get_daily_quests_has_wearable_body.sql` (appending `p_has_connected_wearable` to canonical body from migration 62), then flip `wearableQuests`.
+6. Flip `readinessXpBonus`, `wearableChallenges`, `adaptiveGoals` as each phase is validated.
+
+**Known follow-ups**:
+- `20260509b_get_daily_quests_has_wearable_body.sql` — full RPC body with `has_wearable` eligibility.
+- Onboarding `connectWearable` step insertion into `NewOnboardingView` (gated by `adaptiveGoals` — plan calls for it between `schedule` and `profilePhoto`).
+- `BackgroundChallengeSyncService` wiring `isWearableSourced` challenge types to pull from `daily_readiness_history` instead of HealthKit.
+- Badges (`100 Green Days`, `30-Day Sleep Streak`, `HRV Warrior`, `Smart Rest Master`) — `achievements` table inserts pending design review.
+
+
+### 2026-05-06: Wearable Personalization Platform (Phases 0-6)
+
+**Context**: Built a unified Daily Readiness Score that blends WHOOP / Oura / Fitbit / HealthKit signals into a single 0-100 score + red/yellow/green band, then pipes it through every surface that affects user outcome: auto-gen, insights, adaptive goals, XP multipliers, wearable quests, new challenge types, and bug-report enrichment.
+
+**Migrations shipped**:
+- `20260506_daily_readiness_history.sql` — Phase 0 foundation table + `v_user_readiness_30d` view (`security_invoker = on`).
+- `20260507_personalized_insights_wearable.sql` — Phase 2a: extends `user_personalized_insights` with `correlation_type/r_squared/p_value/sample_size/wearable_source`, creates `v_user_wearable_insights` (14d window + significance gate), schedules `compute-readiness-insights-nightly` pg_cron at 03:30 UTC.
+- `20260508_adaptive_goal_proposals.sql` — Phase 3: `user_adaptive_goal_proposals` table + `v_user_pending_goal_proposals` view (accepted IS NULL + current week).
+- `20260509_wearable_quests.sql` — Phase 4: 6 new quest templates tagged `requires_context = has_wearable`. DROPs every `get_daily_quests` overload in prep for the body update follow-up `20260509b_*`.
+
+**Edge function shipped**: `supabase/functions/compute-readiness-insights/index.ts` — Deno runtime, service-role-only (`x-cron-key` JWT verified against `SUPABASE_PROJECT_REF`), Spearman rank correlation + Fisher-Z p-value, 60-day lookback, 500-user hard cap. Computes 5 correlations per user: `sleep_hours_vs_pr_rate`, `hrv_delta_vs_pr_success`, `readiness_band_vs_adherence`, `strain_avg_vs_rhr_trend`, `protein_x_sleep_vs_recovery`. Significance gate `n >= 10 AND p <= 0.15`. Added to Edge Function Auth Registry in `INFRA_SECURITY_AGENT.md`.
+
+**Swift shipped (feature-flagged dark-ship)**:
+- `DailyReadinessSnapshot.swift` — value type + `ReadinessBand` enum + `ReadinessSource` enum + `DailyReadinessRow` Codable boundary.
+- `ReadinessService.swift` — `@MainActor ObservableObject`, blend priority WHOOP → Oura → Fitbit → HealthKit, derived formula `0.4*sleep + 0.4*rhr + 0.2*active`, 60s throttle, UserDefaults cold-start cache, SnapshotProvider conformance.
+- `SupabaseManager+Readiness.swift` — `upsertReadinessSnapshot(_:)` + `fetchReadinessHistory(daysBack:)`.
+- `ReadinessWorkoutAdjuster.swift` — `adjustment(for:requestedCount:)` + `buildRecoveryDayExercises(count:)` pulling stretches from `ExerciseLibraryService`, bucketed by muscle region.
+- `ReadinessAdjustmentBanner.swift` — SwiftUI banner reading from `ReadinessService.shared.todayReadiness`.
+- `HealthInsightsView+Readiness.swift` — unified 30-day readiness chart + Oura + Fitbit mini-cards.
+- `AdaptiveGoalService.swift` + `AdaptiveGoalNudgeCard.swift` — Phase 3 weekly proposal card.
+- `UserManager+ReadinessXP.swift` — `applyReadinessXPMultiplier(baseXP:isRecoveryWorkout:)` (+20 0reen / +15

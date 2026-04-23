@@ -171,6 +171,51 @@ enum AppConfig {
     /// that want to exercise the UI code paths.
     enum FeatureFlags {
         static let personalizedInsightsV2: Bool = false
+
+        // MARK: - Wearable Personalization Platform
+        //
+        // Phased rollout flags (see plan: Wearable Personalization Platform).
+        // Phase 0's unified `ReadinessService` is ALWAYS on — every
+        // downstream system reads `ReadinessService.shared.todayReadiness`
+        // and gets `.placeholder()` (yellow, no-wearable) when nothing is
+        // connected. Flags below gate the BEHAVIOURAL changes that flow
+        // from that score, so Phase 0 can ship dark-first without
+        // re-routing any workouts.
+
+        /// Phase 1 — Recovery-aware auto-gen. Honors the readiness band
+        /// (red → recovery template, yellow → 0.9× volume, green → +10%
+        /// ceiling + PR flag). No-op for users without a wearable
+        /// signal — `hasWearableSignal == false` short-circuits the
+        /// adjuster so unconnected users see zero behavior change.
+        static let readinessAdaptiveAutoGen: Bool = true
+
+        /// Phase 4 — XP multipliers. Green day + completed workout →
+        /// +20% XP; red day + recovery workout → +15% Smart Rest XP.
+        /// Additive-only (never penalizes); gated on
+        /// `hasWearableSignal`.
+        static let readinessXpBonus: Bool = true
+
+        /// Phase 4 — Wearable-gated daily quests. Client passes
+        /// `p_has_connected_wearable` to `get_daily_quests`. New
+        /// templates with `requires_context = 'has_wearable'` start
+        /// appearing after the follow-up
+        /// `20260509b_get_daily_quests_has_wearable_body.sql` that
+        /// extends the RPC body's context-allowed predicate. Safe to
+        /// ship on before then — RPC serves the existing pool.
+        static let wearableQuests: Bool = true
+
+        /// Phase 5 — New `ChallengeType` cases (`sleep_hours`,
+        /// `readiness_average`, `strain_budget`). Enum is `CaseIterable`
+        /// so creation UIs pick them up. Progress-sync from
+        /// `daily_readiness_history` is a follow-up in
+        /// `BackgroundChallengeSyncService`.
+        static let wearableChallenges: Bool = true
+
+        /// Phase 3 — Adaptive goal proposals. Reads from
+        /// `v_user_pending_goal_proposals`. No-op until the server-side
+        /// job starts writing proposals; card renders nothing when the
+        /// pending list is empty, so safe to ship on.
+        static let adaptiveGoals: Bool = true
     }
 }
 

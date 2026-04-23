@@ -743,22 +743,25 @@ struct RecentCardioWorkoutCard: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        // Activity name with source badge (Strava or Cardio)
-                        HStack(spacing: 8) {
-                            Text(cardioWorkout.isFromStrava ? (cardioWorkout.workoutName ?? activityInfo.name) : (isFromHealthKit ? activityInfo.name : activityInfo.name))
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                            
-                            // Source badge
-                            sourceBadge
-                        }
-                        
+                        // Activity name — now gets the full row width so long
+                        // titles ("Strength Training") don't truncate to
+                        // "Strength T…" behind a brand chip.
+                        Text(cardioWorkout.isFromStrava ? (cardioWorkout.workoutName ?? activityInfo.name) : (isFromHealthKit ? activityInfo.name : activityInfo.name))
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
                         // Date with relative time
                         Text(DateFormatUtils.formatSmartDate(completedDate))
                             .font(.subheadline)
                             .foregroundColor(.secondary)
+
+                        // Third-party origin badge (Strava / WHOOP / Apple
+                        // Watch / Oura / Fitbit / Garmin …) — moved below the
+                        // date so the title never competes with it for width.
+                        sourceBadge
+                            .padding(.top, 2)
                     }
                     
                     Spacer()

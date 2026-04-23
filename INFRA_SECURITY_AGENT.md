@@ -68,6 +68,7 @@ Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal), plus sc
 | `notify-contacts-user-joined` | User JWT with `auth.uid() === body.new_user_id` (IDOR guard) OR service role | n/a | `SUPABASE_SERVICE_ROLE_KEY` | |
 | `send-push-notification` | Service role via `Authorization` OR `x-cron-key` header, both verified against `SUPABASE_PROJECT_REF` env | n/a | `APNS_*`, `SUPABASE_PROJECT_REF` | Also enforces quiet hours + `master_enabled` + `disabled_types` from `user_notification_preferences` |
 | `wake-challenge-opponents` | User JWT (auth.uid bound) | 15-min window per recipient via `silent_push_wake_log` | `APNS_*` | Silent push at priority 5 |
+| `compute-readiness-insights` | Service role via `Authorization` OR `x-cron-key`, both verified against `SUPABASE_PROJECT_REF` | n/a | `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PROJECT_REF` | (Wearable Personalization Phase 2a) Nightly pg_cron at 03:30 UTC via `trigger_compute_readiness_insights()`. Computes Spearman correlations per user on `daily_readiness_history` + `workouts` + `meal_logs` + `exercise_personal_records`, upserts 5 correlation types into `user_personalized_insights`. Gated by `sample_size >= 10` AND `p_value <= 0.15`. No user-facing invocation path. |
 
 ---
 

@@ -292,6 +292,16 @@ struct DashboardChallengesWrapper: View {
                                 DragGesture(minimumDistance: 25)
                                     .onEnded { _ in }
                             )
+                    } else if challengeCardCount == 0 && showDefaultInCarousel {
+                        // No challenges — show the "Challenge a Friend" entry widget.
+                        // (Previously this case fell through to an empty VStack because
+                        // totalWidgetCount is always >= 1 whenever showDefaultInCarousel
+                        // is true, making the outer `else` branch unreachable.)
+                        getStartedChallengeWidget
+                            .simultaneousGesture(
+                                DragGesture(minimumDistance: 25)
+                                    .onEnded { _ in }
+                            )
                     } else if let firstPending = pendingArray.first {
                         // Single pending (show with default widget as carousel)
                         // When single pending exists, show it + default widget
@@ -816,6 +826,10 @@ struct DashboardChallengesWrapper: View {
         case .lift: return "Hit the weights today!"
         case .activeMinutes: return "Get moving today!"
         case .workoutStreak: return "Start your streak today!"
+        // Wearable Personalization Phase 5 — new wearable-sourced types.
+        case .sleepHours: return "Rest up tonight!"
+        case .readinessAverage: return "Keep the green days coming!"
+        case .strainBudget: return "Train smart today!"
         }
     }
     

@@ -255,9 +255,11 @@ struct DashboardView: View {
                         .padding(.bottom, 16)
 
                     // Challenge Cards (1v1 active, group active, pending sent, get started)
-                    DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation)
-                        .environmentObject(userManager)
-                        .padding(.bottom, 16)
+                    if showChallengeWidget {
+                        DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation)
+                            .environmentObject(userManager)
+                            .padding(.bottom, 16)
+                    }
                     
                     // Weight/Hydration Widget Row (below challenge widget)
                     if showWeightTrackerWidget || showHydrationWidget {
@@ -334,20 +336,33 @@ struct DashboardView: View {
                 }
                 }
                 .refreshable {
-                    // STEP 1: Sync ALL connected health sources (HealthKit, Strava, Fitbit)
-                    // force: true bypasses 5-minute throttle since user explicitly pulled to refresh
-                    await HealthDataService.shared.syncAllHealthData(force: true)
-                    
-                    // STEP 2: Fetch ALL challenge types from database (parallel for speed)
+                    // Pull-to-refresh bypasses every throttle. `force: true`
+                    // now propagates through `HealthDataService` into the
+                    // per-source sync methods (WHOOP / Oura / Fitbit) — see
+                    // `HealthDataService.syncAllHealthData(force:)`.
+
+                    // STEP 1: All connected health sources (HealthKit, Strava, Fitbit, WHOOP, Oura)
+                    async let health: () = HealthDataService.shared.syncAllHealthData(force: true)
+
+                    // STEP 2: All challenge types (parallel for speed)
                     async let r1: () = ChallengeService.shared.fetchPendingInvites()
                     async let r2: () = ChallengeService.shared.fetchActiveChallenges()
                     async let r3: () = ChallengeService.shared.fetchActiveGroupChallenges()
                     async let r4: () = ChallengeService.shared.fetchPendingSentChallenges()
                     async let r5: () = CommunityChallengeService.shared.refreshAll(force: true)
                     async let r6: () = PrivateChallengeService.shared.refreshAll(force: true)
-                    _ = await (r1, r2, r3, r4, r5, r6)
-                    
-                    // STEP 3: Refresh friend data and other home screen content
+
+                    // STEP 3: Dashboard-widget-specific data (daily quests, meals, hydration)
+                    // These back the quests widget, macros widget, and hydration widget.
+                    async let quests: () = DailyQuestService.shared.fetchDailyQuests(force: true)
+                    async let hydration: () = HydrationService.shared.loadTodayData()
+
+                    _ = await (health, r1, r2, r3, r4, r5, r6, quests, hydration)
+
+                    // Meals loader is synchronous — run after the async group.
+                    MealService.shared.loadTodaysMeals()
+
+                    // STEP 4: Home-screen social content + recommendation card
                     await FriendService.shared.refreshHomeScreenData()
                     await loadRecentCardioWorkouts()
                     await loadPersonalizedRecommendation()

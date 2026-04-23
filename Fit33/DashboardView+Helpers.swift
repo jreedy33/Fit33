@@ -201,6 +201,22 @@ extension DashboardView {
                         "Time to hit the weights, \(crown)! 🏋️",
                         "One workout closer to winning – let's get it! 💪"
                     ])
+                // Wearable Personalization Phase 5 — new wearable-sourced types.
+                case .sleepHours:
+                    messages.append(contentsOf: [
+                        "Sleep debt! Wind down earlier tonight, \(crown)! 😴",
+                        "Rest is strategy – catch up on sleep to win! 🌙"
+                    ])
+                case .readinessAverage:
+                    messages.append(contentsOf: [
+                        "Stay rested to keep your readiness up, \(crown)! 💚",
+                        "Recovery wins tomorrow's battle! 🔋"
+                    ])
+                case .strainBudget:
+                    messages.append(contentsOf: [
+                        "Push the strain, but protect recovery, \(crown)! ⚡",
+                        "Smart training beats brute training! 🧠"
+                    ])
                 }
             } else if dailyTarget > 0 {
                 // Already hit daily target

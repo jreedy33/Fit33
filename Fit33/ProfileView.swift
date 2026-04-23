@@ -8,6 +8,7 @@ enum ProfileRoute: Hashable {
     case limitations
     case strava
     case fitbit
+    case whoop
     case inBody
     case healthKit
     case settings
@@ -24,6 +25,7 @@ struct ProfileView: View {
     // Connected apps (for reactive UI updates)
     @StateObject private var stravaService = StravaService.shared
     @StateObject private var fitbitService = FitbitService.shared
+    @StateObject private var whoopService = WhoopService.shared
     @StateObject private var healthKitService = HealthKitService.shared
     
     // Editing states
@@ -602,7 +604,45 @@ struct ProfileView: View {
                                 
                                 Divider()
                                     .padding(.leading, 56)
-                                
+
+                                // WHOOP
+                                NavigationLink(value: ProfileRoute.whoop) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "waveform.path.ecg")
+                                            .font(.ds_bodyRegular).fontWeight(.medium)
+                                            .foregroundColor(.purple)
+                                            .frame(width: 28)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("WHOOP")
+                                                .font(.subheadline)
+                                                .foregroundColor(.primary)
+                                            Text(whoopService.isConnected ? "Connected" : "Sync recovery, strain & sleep")
+                                                .font(.caption)
+                                                .foregroundColor(whoopService.isConnected ? .green : .secondary)
+                                        }
+
+                                        Spacer()
+
+                                        if whoopService.isConnected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                        }
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.ds_labelMedium)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, Spacing.md)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .accessibilityLabel("WHOOP")
+                                .accessibilityHint(whoopService.isConnected ? "Connected. Tap to manage WHOOP settings." : "Tap to connect your WHOOP band.")
+
+                                Divider()
+                                    .padding(.leading, 56)
+
                                 // Apple Health (Nike Run Club, Apple Watch, etc.)
                                 NavigationLink(value: ProfileRoute.healthKit) {
                                     HStack(spacing: 12) {
@@ -742,6 +782,8 @@ struct ProfileView: View {
                 StravaSettingsView()
             case .fitbit:
                 FitbitSettingsView()
+            case .whoop:
+                WhoopSettingsView()
             case .inBody:
                 InBodySettingsView()
             case .healthKit:

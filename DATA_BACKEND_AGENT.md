@@ -17,6 +17,8 @@ Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal), plus sc
 ### Pagination + duplicate fetches
 3. **All Supabase fetch queries MUST include `.limit()`.** `fetchWorkoutHistory()` caps at 200; `fetchMealLogs()` caps at 100. Unbounded fetches cause memory spikes proportional to user history.
 4. **No duplicate foreground fetches.** Centralized in `Fit33App.swift` scenePhase handler. `DashboardView` only handles dashboard-specific work (meals, hydration, quests). Never duplicate social/challenge/health fetches between App and Dashboard.
+4a. **Wearable `force` flag MUST propagate through `HealthDataService.syncAllHealthData(force:)` to per-source methods** (`syncWhoopData(force:)`, `syncOuraData(force:)`, `syncFitbitData(force:)`). Each wearable service has its own 5-min `syncThrottleInterval`, so a top-level force that stops at HDS silently no-ops downstream — pull-to-refresh and scenePhase force syncs appear to do nothing. Fixed 2026-04-22.
+4b. **Wearable widget staleness on tab return** is handled in `MainTabView.onChange(of: selectedTab)`: when returning to Dashboard (tab 0), if `WhoopService.shared.lastSyncDate` / `OuraService.shared.lastSyncDate` is >60s old, trigger a fire-and-forget force sync. Service-level `isSyncing` guard coalesces with any in-flight foreground sync. Never move this into `DashboardView.onAppear` — violates invariant #4.
 
 ### Security (RPCs + views + edge functions)
 5. **RLS on every user-data table** — `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` + CRUD policies scoped to `user_id = auth.uid()`. (Also in `codingrules.mdc`.)
@@ -90,6 +92,13 @@ Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal), plus sc
 
 ### Silent-push routing
 29. **Silent-push handler time budget is ~30s; self-cap at 25s.** `SilentPushHandler.handle(userInfo:completion:)` MUST call `completion(_:)` within ~30s or iOS penalizes our future background-delivery allocation. Implementation runs a timeout `Task` that calls `completion(.noData)` at 25s. New silent-push `type` strings add a new `case` in `SilentPushHandler.handle` — never overload `challenge_wake`.
+
+### Wearable Personalization Platform — Readiness (2026-05-06)
+33. **`ReadinessService.shared.recompute(force:)` MUST be called at the tail of `HealthDataService.syncAllHealthData(force:)`.** Wearable signals already updated, blend order deterministic (WHOOP → Oura → Fitbit → HealthKit). Calling it anywhere earlier reads stale `@Published` wearable state. `force` propagates (Data invariant #4a) — pull-to-refresh triggers a real re-blend + Supabase upsert. `recompute()` MUST NOT trigger additional wearable syncs (would recurse).
+34. **`daily_readiness_history` upserts use `onConflict: "user_id,date"`.** Client day-of writes and the nightly server rollup (edge fn `compute-readiness-insights`) converge on the same row. DTO contract: Swift `DailyReadinessRow.date` is `yyyy-MM-dd` string (local tz), `band` is `"red"/"yellow"/"green"`, `primary_source` is `"whoop"/"oura"/"fitbit"/"healthkit"/"none"`. SQL CHECK constraints match — changing either side requires the other.
+35. **Placeholder readiness snapshots are NEVER written to Supabase.** `SupabaseManager.upsertReadinessSnapshot(_:)` guards on `snapshot.hasWearableSignal`. Writing the `.placeholder()` (yellow, no-wearable) sentinel would pollute the nightly correlation pipeline with noise. Downstream consumers (auto-gen, XP multipliers, quests, challenges) check `hasWearableSignal` before applying any behaviour change — prevents yellow-placeholder from silently capping volume / rewarding XP / advancing wearable quests for users without a connected wearable.
+36. **`user_personalized_insights` upserts key on `(user_id, insight_key)`.** Unique index from migration 72 (`20260507_personalized_insights_wearable.sql`). Nightly edge-function reruns MUST upsert (never insert + hope) or users accumulate duplicate cards. `correlation_type` + `r_squared` + `p_value` + `sample_size` fill the significance gate in `v_user_wearable_insights` (p ≤ 0.15, n ≥ 10); legacy rule-based insights with `correlation_type IS NULL` pass through unchanged.
+37. **ReadinessService SnapshotProvider is registered in `registerAll()`.** Bug reports surface `todayScore/todayBand/todaySource`, `hasWearableSignal`, per-wearable `isConnected` + `lastSyncAgeSec`. When adding a new wearable vendor, extend `ReadinessService.contributeSnapshot()` with the new connection flag + sync age — "my pill is stuck on yellow" triage depends on it.
 
 ---
 

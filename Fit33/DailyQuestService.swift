@@ -678,6 +678,12 @@ class DailyQuestService: ObservableObject {
                 let p_suggested_split: String?
                 let p_fatigued_regions: [String]?
                 let p_active_challenge_types: [String]?
+                /// Wearable Personalization Phase 4 — true when the
+                /// user has any of WHOOP / Oura / Fitbit connected OR
+                /// HealthKit authorized. Gates the `has_wearable`
+                /// `requires_context` templates added by
+                /// `20260509_wearable_quests.sql`.
+                let p_has_connected_wearable: Bool
 
                 enum CodingKeys: String, CodingKey {
                     case p_user_id, p_timezone, p_has_program, p_has_friends, p_has_challenge
@@ -687,6 +693,7 @@ class DailyQuestService: ObservableObject {
                     case p_active_step_challenge_target
                     case p_suggested_split, p_fatigued_regions
                     case p_active_challenge_types
+                    case p_has_connected_wearable
                 }
                 
                 func encode(to encoder: Encoder) throws {
@@ -718,6 +725,11 @@ class DailyQuestService: ObservableObject {
                     if let types = p_active_challenge_types, !types.isEmpty {
                         try container.encode(types, forKey: .p_active_challenge_types)
                     }
+                    // Always encode `p_has_connected_wearable` — the
+                    // server default is `FALSE` so omitting would
+                    // silently drop users from the has_wearable pool
+                    // when they HAVE a wearable connected.
+                    try container.encode(p_has_connected_wearable, forKey: .p_has_connected_wearable)
                 }
             }
             
@@ -740,7 +752,18 @@ class DailyQuestService: ObservableObject {
                 p_active_step_challenge_target: ctx.activeStepChallengeTarget > 0 ? ctx.activeStepChallengeTarget : nil,
                 p_suggested_split: ctx.suggestedSplit,
                 p_fatigued_regions: ctx.fatiguedRegions.isEmpty ? nil : ctx.fatiguedRegions,
-                p_active_challenge_types: ctx.activeChallengeTypes.isEmpty ? nil : ctx.activeChallengeTypes
+                p_active_challenge_types: ctx.activeChallengeTypes.isEmpty ? nil : ctx.activeChallengeTypes,
+                // Wearable Personalization Phase 4 — pass the live
+                // wearable-connection state from the main actor. The
+                // `wearableQuests` feature flag gates *surfacing* the
+                // new quest templates; the param is sent either way so
+                // the server can return wearable-context quests as
+                // soon as the RPC body migration lands.
+                p_has_connected_wearable: AppConfig.FeatureFlags.wearableQuests
+                    && (WhoopService.shared.isConnected
+                        || OuraService.shared.isConnected
+                        || FitbitService.shared.isConnected
+                        || HealthKitService.shared.isAuthorized)
             )
             
             let response: DailyQuestsResponse = try await SupabaseManager.shared.supabaseClient

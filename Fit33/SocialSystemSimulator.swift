@@ -2781,6 +2781,16 @@ class SocialSystemSimulator: ObservableObject {
         case .calories:
             // Calories: 800-2500
             return Int.random(in: 800...2500)
+        // Wearable Personalization Phase 5 — new wearable-sourced types.
+        case .sleepHours:
+            // Sleep: 5-10 hours
+            return Int.random(in: 5...10)
+        case .readinessAverage:
+            // Readiness: 40-95 (0-100 scale)
+            return Int.random(in: 40...95)
+        case .strainBudget:
+            // Strain: 5-18 (WHOOP strain 0-21 scale)
+            return Int.random(in: 5...18)
         }
     }
     

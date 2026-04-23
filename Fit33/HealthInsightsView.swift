@@ -17,7 +17,11 @@ struct HealthInsightsView: View {
     @StateObject private var fitbit = FitbitService.shared
     @StateObject private var strava = StravaService.shared
     @StateObject private var whoop = WhoopService.shared
-    
+    @StateObject private var oura = OuraService.shared
+    /// Wearable Personalization Platform (Phase 2b) — unified readiness
+    /// score + history drives the new `readinessHistorySection`.
+    @StateObject private var readiness = ReadinessService.shared
+
     @State private var selectedTimeRange: TimeRange = .week
     
     enum TimeRange: String, CaseIterable {
@@ -37,7 +41,13 @@ struct HealthInsightsView: View {
                 
                 // Today's Summary Card
                 todaySummaryCard
-                
+
+                // Wearable Personalization — unified readiness history.
+                // Surfaces FIRST when there's history so users see the
+                // trend-line before per-wearable breakdowns (which echo
+                // the same signal in vendor-native form).
+                readinessHistorySection
+
                 // Activity Trends (Steps + Calories)
                 activityTrendsCard
                 
@@ -59,6 +69,12 @@ struct HealthInsightsView: View {
                         whoopVitalsCard
                     }
                 }
+
+                // Oura Insights (Wearable Personalization Phase 2b)
+                ouraInsightsSection
+
+                // Fitbit Insights (Wearable Personalization Phase 2b)
+                fitbitInsightsSection
                 
                 // Weekly Workout Summary
                 workoutSummaryCard
@@ -90,6 +106,12 @@ struct HealthInsightsView: View {
                     await healthService.syncAllHealthData()
                 }
             }
+        }
+        .task {
+            // Wearable Personalization Phase 2b — hydrate readiness
+            // history from Supabase so the new chart has data on first
+            // open. Idempotent (fetch is read-only + capped).
+            await readiness.loadHistoryFromServer(days: 30)
         }
     }
     

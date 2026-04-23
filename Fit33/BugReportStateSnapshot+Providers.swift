@@ -35,6 +35,10 @@ extension BugReportSnapshotter {
         register(PremiumManager.shared)
         register(DailyQuestService.shared)
         register(WorkoutManager.shared)
+        // Wearable Personalization Platform (Phase 6) — readiness +
+        // wearable-connection states in every shake report so "my
+        // dashboard pill is stuck on yellow" triage is one snapshot.
+        register(ReadinessService.shared)
     }
 }
 

@@ -7,7 +7,6 @@ struct SettingsView: View {
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var stravaService = StravaService.shared
     @StateObject private var fitbitService = FitbitService.shared
-    @StateObject private var whoopService = WhoopService.shared
     @StateObject private var ouraService = OuraService.shared
     @StateObject private var healthKitService = HealthKitService.shared
     
@@ -529,60 +528,6 @@ struct SettingsView: View {
                                     .padding(.horizontal, Spacing.md)
                                 }
                                 .buttonStyle(.plain)
-                                
-                                Divider().padding(.leading, 52)
-                                
-                                // WHOOP Integration
-                                NavigationLink(destination: WhoopSettingsView()) {
-                                    HStack(spacing: 16) {
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                                .fill(
-                                                    LinearGradient(
-                                                        colors: [Color.black.opacity(0.15), Color.gray.opacity(0.15)],
-                                                        startPoint: .topLeading,
-                                                        endPoint: .bottomTrailing
-                                                    )
-                                                )
-                                                .frame(width: 36, height: 36)
-                                            Image(systemName: "waveform.path.ecg")
-                                                .font(.ds_bodyRegular)
-                                                .foregroundStyle(
-                                                    LinearGradient(
-                                                        colors: [Color.white, Color.gray],
-                                                        startPoint: .topLeading,
-                                                        endPoint: .bottomTrailing
-                                                    )
-                                                )
-                                        }
-                                        
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("WHOOP")
-                                                .font(.body)
-                                                .foregroundColor(.primary)
-                                            Text(whoopService.isConnected ? "Connected • Recovery & strain synced" : "Sync recovery, strain & sleep")
-                                                .font(.caption)
-                                                .foregroundColor(whoopService.isConnected ? .green : .secondary)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        if whoopService.isConnected {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(.green)
-                                                .font(.ds_heading3)
-                                        } else {
-                                            Image(systemName: "chevron.right")
-                                                .font(.ds_bodySmall).fontWeight(.medium)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                    .padding(.vertical, Spacing.sm)
-                                    .padding(.horizontal, Spacing.md)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("WHOOP")
-                                .accessibilityHint(whoopService.isConnected ? "Connected. Tap to manage WHOOP settings." : "Tap to connect your WHOOP band.")
                                 
                                 Divider().padding(.leading, 52)
                                 

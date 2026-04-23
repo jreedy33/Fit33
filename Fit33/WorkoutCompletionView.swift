@@ -224,6 +224,8 @@ struct WorkoutCompletionView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var workoutManager: WorkoutManager
+    @ObservedObject private var friendService = FriendService.shared
+    @ObservedObject private var rankingService = FriendRankingService.shared
     
     let workout: Workout
     let exercises: [Exercise]
@@ -232,7 +234,6 @@ struct WorkoutCompletionView: View {
     
     @State private var completionNotes: String = ""
     @State private var showingCelebration = false
-    @State private var showingShareOptions = false
     @State private var replayInsights: [WorkoutInsightCard] = []
     @State private var showingProgressPhotoCapture = false
     @State private var isCardExpanded = false
@@ -245,8 +246,16 @@ struct WorkoutCompletionView: View {
     @State private var showStats = false
     @State private var showTags = false
     @State private var showPhotoPrompt = false
-    @State private var shouldFinishAfterShare = false
     @State private var estimatedCalories: Int = 0
+    
+    // Inline "Send to Friend" selector (replaces the old ShareWorkoutSheet
+    // intermediary page — picker + compose + success all live here now).
+    @State private var selectedFriendForSend: Friend?
+    @State private var friendMessageText: String = ""
+    @State private var isSendingToFriend = false
+    @State private var sendToFriendError: String?
+    @State private var didSendToFriend = false
+    @State private var showingFriendSearch = false
     
     var totalSets: Int {
         exerciseSets.values.reduce(0) { total, sets in
@@ -336,9 +345,17 @@ struct WorkoutCompletionView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: Spacing.lg) {
+                VStack(spacing: Spacing.md) {
                     // HERO ZONE
                     heroSection
+                    
+                    // Send to Friend — inlined here (previously lived on a
+                    // separate share page that's been removed). Always shown
+                    // in build mode; collapses to a "no friends yet" hint if
+                    // the user hasn't added anyone.
+                    sendToFriendCard
+                        .opacity(showStats ? 1 : 0)
+                        .offset(y: showStats ? 0 : 12)
                     
                     // INSIGHTS ZONE
                     if !replayInsights.isEmpty {
@@ -378,30 +395,30 @@ struct WorkoutCompletionView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         HapticManager.selectionChanged()
-                        showingShareOptions = true
+                        finishAndDismiss()
                     }) {
-                        HStack(spacing: 4) {
-                            Text("Next")
-                                .font(.ds_labelMedium)
-                            Image(systemName: "chevron.right")
-                                .font(.ds_bodySmall)
-                        }
-                        .foregroundColor(.primary)
+                        Text("Done")
+                            .font(.ds_labelMedium)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                     }
+                    .accessibilityLabel("Finish workout")
                 }
             }
             .adaptiveToolbarBackground()
         }
-        .sheet(isPresented: $showingShareOptions, onDismiss: {
-            if shouldFinishAfterShare {
-                finishAndDismiss()
+        .sheet(isPresented: $showingFriendSearch) {
+            NavigationStack {
+                FriendsListView()
             }
-        }) {
-            ShareWorkoutSheet(
-                workout: workout,
-                accentColor: workoutGradient[0],
-                onFinish: { shouldFinishAfterShare = true }
-            )
+        }
+        .alert("Error", isPresented: .init(
+            get: { sendToFriendError != nil },
+            set: { if !$0 { sendToFriendError = nil } }
+        )) {
+            Button("OK") { sendToFriendError = nil }
+        } message: {
+            Text(sendToFriendError ?? "")
         }
         .overlay(
             ConfettiView(isActive: showingCelebration)
@@ -425,6 +442,12 @@ struct WorkoutCompletionView: View {
             )
             startEntranceChoreography()
             loadCalories()
+        }
+        .task {
+            // Populate the inline friend picker — mirrors the fetch
+            // `ShareWorkoutSheet` did before it was folded in here.
+            await friendService.fetchFriends()
+            await rankingService.fetchRankedFriends()
         }
         .fullScreenCover(isPresented: $showingProgressPhotoCapture) {
             ProgressPhotoCaptureView()
@@ -480,7 +503,7 @@ struct WorkoutCompletionView: View {
                     .scaleEffect(showCheckmark ? 1 : 0)
                     .animation(.spring(response: 0.4, dampingFraction: 0.6).delay(0.3), value: showCheckmark)
             }
-            .padding(.top, Spacing.lg)
+            .padding(.top, Spacing.xxs)
             
             // Title
             VStack(spacing: Spacing.xxs) {
@@ -500,28 +523,32 @@ struct WorkoutCompletionView: View {
             unifiedStatsCard
                 .opacity(showStats ? 1 : 0)
                 .scaleEffect(showStats ? 1 : 0.95)
-            
-            // Muscle tags
-            if !topMuscles.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(Array(topMuscles.enumerated()), id: \.element) { index, muscle in
-                        Text(muscle)
-                            .font(.ds_labelSmall)
-                            .fontWeight(.medium)
-                            .foregroundColor(workoutGradient[0])
-                            .padding(.horizontal, Spacing.sm)
-                            .padding(.vertical, Spacing.xxs)
-                            .background(
-                                Capsule()
-                                    .fill(workoutGradient[0].opacity(0.12))
-                            )
-                            .opacity(showTags ? 1 : 0)
-                            .offset(x: showTags ? 0 : -20)
-                            .animation(.spring(response: 0.4, dampingFraction: 0.75).delay(Double(index) * 0.08), value: showTags)
-                    }
-                }
-            }
         }
+    }
+    
+    /// Inline muscle-tag row used inside `unifiedStatsCard` so the badges
+    /// read as part of the card instead of floating awkwardly beneath it.
+    private var muscleTagsRow: some View {
+        HStack(spacing: 6) {
+            ForEach(Array(topMuscles.enumerated()), id: \.element) { index, muscle in
+                Text(muscle)
+                    .font(.ds_labelSmall)
+                    .fontWeight(.medium)
+                    .foregroundColor(workoutGradient[0])
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.xxs)
+                    .background(
+                        Capsule()
+                            .fill(workoutGradient[0].opacity(0.12))
+                    )
+                    .opacity(showTags ? 1 : 0)
+                    .offset(x: showTags ? 0 : -12)
+                    .animation(.spring(response: 0.4, dampingFraction: 0.75).delay(Double(index) * 0.06), value: showTags)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
     }
     
     // MARK: - Unified Stats Card (stats + exercises + notes)
@@ -539,6 +566,13 @@ struct WorkoutCompletionView: View {
                 statPill(icon: "flame.fill", value: estimatedCalories > 0 ? "\(estimatedCalories)" : "--", label: "Calories")
             }
             .padding(.vertical, Spacing.sm)
+            
+            // Muscle tags — integrated inside the card instead of floating
+            // below it, so the card reads as one cohesive summary block.
+            if !topMuscles.isEmpty {
+                Divider().padding(.horizontal, Spacing.xs)
+                muscleTagsRow
+            }
             
             // Add a note row (when not expanded)
             if !isCardExpanded {
@@ -677,6 +711,289 @@ struct WorkoutCompletionView: View {
         }
         .padding(.vertical, Spacing.xs)
         .sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
+    }
+    
+    // MARK: - Send to Friend (inline)
+    
+    /// Top-N friends ranked by `FriendRankingService`, padded with remaining
+    /// friends so we always have something to show. Mirrors the logic that
+    /// used to live in `ShareWorkoutSheet` before the share page was folded
+    /// into the completion screen.
+    private var friendsForPicker: [Friend] {
+        let rankedIds = rankingService.rankedFriends.prefix(5).map { $0.friendId }
+        var result: [Friend] = []
+        for friendId in rankedIds {
+            if let friend = friendService.friends.first(where: { $0.friendId == friendId }) {
+                result.append(friend)
+            }
+        }
+        let remaining = friendService.friends.filter { f in !result.contains(where: { $0.friendId == f.friendId }) }
+        result.append(contentsOf: remaining)
+        return Array(result.prefix(5))
+    }
+    
+    private var sendToFriendCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: didSendToFriend ? "checkmark.circle.fill" : "paperplane.fill")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(didSendToFriend ? .green : workoutGradient[0])
+                Text(didSendToFriend ? "Workout Sent" : "Send Workout to Friend")
+                    .font(.ds_heading3)
+                    .foregroundColor(.primary)
+                Spacer()
+            }
+            
+            if didSendToFriend {
+                sendToFriendSuccessBody
+            } else if let friend = selectedFriendForSend {
+                sendToFriendComposeBody(friend: friend)
+            } else if friendService.friends.isEmpty {
+                sendToFriendEmptyBody
+            } else {
+                sendToFriendPickerBody
+            }
+        }
+    }
+    
+    private var sendToFriendPickerBody: some View {
+        // Extend edge-to-edge by cancelling the parent VStack's horizontal
+        // padding so the friend avatars "float" past the normal content
+        // margin and can scroll naturally to either edge of the screen.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Spacing.md) {
+                // Search/browse all friends
+                Button(action: {
+                    HapticManager.impact(.light)
+                    showingFriendSearch = true
+                }) {
+                    VStack(spacing: Spacing.xs) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.cardBackground)
+                                .frame(width: 56, height: 56)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1.5)
+                                )
+                            Image(systemName: "magnifyingglass")
+                                .font(.ds_heading3)
+                                .foregroundColor(.secondary)
+                        }
+                        Text("Search")
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(width: 64)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                ForEach(friendsForPicker) { friend in
+                    Button(action: {
+                        HapticManager.impact(.light)
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            selectedFriendForSend = friend
+                        }
+                    }) {
+                        VStack(spacing: Spacing.xs) {
+                            CachedFriendPhoto(
+                                friendId: friend.friendId.uuidString,
+                                photoUrl: friend.profilePhotoUrl,
+                                name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                                size: 56,
+                                showGradientRing: false,
+                                gradientColors: [workoutGradient[0], workoutGradient[0].opacity(0.7)]
+                            )
+                            Text(friend.displayName.components(separatedBy: " ").first ?? friend.displayName)
+                                .font(.ds_bodySmall)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                        }
+                        .frame(width: 64)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xxs)
+        }
+        .padding(.horizontal, -Spacing.md)
+    }
+    
+    private func sendToFriendComposeBody(friend: Friend) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                CachedFriendPhoto(
+                    friendId: friend.friendId.uuidString,
+                    photoUrl: friend.profilePhotoUrl,
+                    name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                    size: 44,
+                    showGradientRing: true,
+                    gradientColors: [workoutGradient[0], workoutGradient[0].opacity(0.7)]
+                )
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                    Text("Sending to")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                    Text(friend.displayName)
+                        .font(.ds_labelLarge)
+                        .foregroundColor(.primary)
+                }
+                Spacer()
+                Button(action: {
+                    HapticManager.selectionChanged()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        selectedFriendForSend = nil
+                        friendMessageText = ""
+                    }
+                }) {
+                    Text("Change")
+                        .font(.ds_labelMedium)
+                        .foregroundColor(workoutGradient[0])
+                }
+            }
+            
+            TextField("Add a message (optional)", text: $friendMessageText, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.ds_bodyMedium)
+                .padding(Spacing.sm)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                        .fill(Color.cardBackground)
+                )
+                .lineLimit(2...4)
+            
+            Button(action: sendWorkoutToSelectedFriend) {
+                HStack(spacing: Spacing.xs) {
+                    if isSendingToFriend {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "paperplane.fill")
+                            .font(.ds_labelLarge)
+                        Text("Send Workout")
+                            .font(.ds_labelLarge)
+                            .fontWeight(.bold)
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm)
+                .background(
+                    LinearGradient(
+                        colors: workoutGradient,
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .clipShape(Capsule())
+            }
+            .disabled(isSendingToFriend)
+            .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
+        }
+        .padding(.horizontal, Spacing.md)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+    
+    private var sendToFriendSuccessBody: some View {
+        HStack(spacing: Spacing.sm) {
+            if let friend = selectedFriendForSend {
+                CachedFriendPhoto(
+                    friendId: friend.friendId.uuidString,
+                    photoUrl: friend.profilePhotoUrl,
+                    name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                    size: 40,
+                    showGradientRing: true,
+                    gradientColors: [.green, .teal]
+                )
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                    Text("Sent to \(friend.displayName)")
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.primary)
+                    Text("They'll see it in their activity feed")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .transition(.opacity)
+    }
+    
+    private var sendToFriendEmptyBody: some View {
+        VStack(spacing: Spacing.xs) {
+            Image(systemName: "person.2.slash")
+                .font(.ds_heading3)
+                .foregroundColor(.secondary)
+            Text("Add friends from the Friends tab to share workouts in-app")
+                .font(.ds_bodySmall)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, Spacing.md)
+        .padding(.bottom, Spacing.sm)
+    }
+    
+    private func sendWorkoutToSelectedFriend() {
+        guard let friend = selectedFriendForSend else { return }
+        isSendingToFriend = true
+        
+        // Snapshot the completed workout's exercises/sets so we can build
+        // `SharedExercise` payloads off-main without touching the managed
+        // context later. We use the `WorkoutExercise` relation on the
+        // Core Data `workout` to recover completed set counts and best reps.
+        let workoutExercises = (workout.exercises?.allObjects as? [WorkoutExercise] ?? [])
+            .sorted { $0.order < $1.order }
+        
+        let sharedExercises: [SharedExercise] = workoutExercises.compactMap { we in
+            guard let name = we.exercise?.name ?? we.exercise?.displayName else { return nil }
+            let sets = we.sets?.allObjects as? [WorkoutSet] ?? []
+            let completedSets = sets.filter { $0.isCompleted }
+            let repsString: String
+            if let bestSet = completedSets.max(by: { $0.reps < $1.reps }) {
+                repsString = "\(bestSet.reps)"
+            } else {
+                repsString = "8-12"
+            }
+            return SharedExercise(
+                exerciseId: we.exercise?.id?.uuidString,
+                name: name,
+                sets: completedSets.count,
+                reps: repsString,
+                restSeconds: nil,
+                notes: nil
+            )
+        }
+        
+        let nameToSend = workout.name ?? "Workout"
+        let durationMinutes = Int(workoutDuration) / 60
+        let message = friendMessageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        Task {
+            let success = await friendService.sendWorkoutToFriend(
+                toUserId: friend.friendId,
+                workoutName: nameToSend,
+                exercises: sharedExercises,
+                description: "Shared from completed workout",
+                message: message.isEmpty ? nil : message,
+                duration: durationMinutes,
+                difficulty: "Custom"
+            )
+            await MainActor.run {
+                isSendingToFriend = false
+                if success {
+                    HapticManager.notification(.success)
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        didSendToFriend = true
+                    }
+                } else {
+                    HapticManager.notification(.error)
+                    sendToFriendError = "Failed to send workout. Please try again."
+                }
+            }
+        }
     }
     
     private func statPill(icon: String, value: String, label: String) -> some View {

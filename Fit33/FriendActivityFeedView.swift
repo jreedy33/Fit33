@@ -242,6 +242,19 @@ class ActivityFeedService: ObservableObject {
     }
     
     func postWorkoutActivity(workoutId: String, name: String, duration: Int, exercises: Int, sets: Int, xp: Int, muscles: [String], exerciseDetails: [[String: Any]] = []) async {
+        // Cluster F: guard against posting before auth is ready so we stop
+        // emitting 401 fingerprints on this hot path. The RPC is also
+        // SECURITY DEFINER — if auth.uid() is NULL it RAISEs, which wraps
+        // into a PGRSTxxx error without auth info.
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug(
+                "Skipping postWorkoutActivity — not authenticated",
+                category: .social,
+                context: DiagnosticContext(op: "social.post_workout_activity", endpoint: "rpc/post_workout_activity")
+            )
+            return
+        }
+        let startedAt = Date()
         do {
             struct PostParams: Encodable {
                 let p_workout_id: String
@@ -274,10 +287,21 @@ class ActivityFeedService: ObservableObject {
                 ))
                 .execute()
         } catch {
-            AppLogger.error("❌ Failed to post workout activity: \(error)", category: .social)
+            // Captures pg_code (42883 / PGRST202 overload-ambiguity / 42501 RLS)
+            // + http_status + elapsed_ms — critical for verifying the
+            // 20260513 overload-collapse migration actually fixed this class.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Failed to post workout activity",
+                category: .social,
+                op: "social.post_workout_activity",
+                endpoint: "rpc/post_workout_activity",
+                startedAt: startedAt,
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
-    
+
     /// Sprint 2 Q2-5 — post a cardio_completed row to friend_activity_feed so
     /// cardio workouts show up in friends' feeds the same way strength does.
     func postCardioActivity(

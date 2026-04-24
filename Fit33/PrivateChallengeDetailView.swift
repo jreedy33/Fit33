@@ -202,6 +202,12 @@ struct PrivateChallengeDetailView: View {
             Text("We'll hide this message, flag it for review, and block the sender. You can manage blocks in Settings → Privacy & Security → Blocked Users.")
         }
         .task {
+            // Sprint 2026-04-24 Phase 4 (N1): signal user focus so intelligence
+            // phases gated on `waitForUIIdle` pause until the user navigates
+            // back. 1.38 (55) logs observed 15079ms to render this view because
+            // buildMaps + pairing + collaborative + behaviorAnalysis + similarity
+            // map all overlapped with the user's tap. Now they yield.
+            UserFocusSentinel.shared.beginFocus("PrivateChallengeDetail")
             // Sprint 2026-04-24 perf: parallelize the two independent fetches.
             // Previously sequential (loadDetail → fetchMessages) which made the
             // visible render delay = sum of both network calls (~6.7s observed
@@ -212,6 +218,9 @@ struct PrivateChallengeDetailView: View {
             async let messagesTask = privateChallengeService.fetchMessages(challengeId: challenge.challengeId)
             let (_, messages) = await (detailTask, messagesTask)
             chatMessages = messages
+        }
+        .onDisappear {
+            UserFocusSentinel.shared.endFocus("PrivateChallengeDetail")
         }
         .task(id: "chat-realtime") {
             // Direct realtime subscription for live chat updates while on this view

@@ -618,6 +618,79 @@ extension SupabaseManager {
     }
 }
 
+// MARK: - 6b. USER FOCUS SENTINEL (Sprint 2026-04-24 Phase 4 — N1)
+//
+// Separate from HeavyWorkSentinel (which signals "app is doing heavy work")
+// because THIS one signals "user is actively looking at an expensive detail
+// view and wants full CPU + network bandwidth RIGHT NOW" — effectively the
+// inverse of heavy work. Detail views that hit the network on `.task`
+// (PrivateChallengeDetailView, ChallengeDetailView, FriendProfileView,
+// CommunityChallengeDetailView, GroupChallengeDetailView) call `beginFocus`
+// on `.task` and `endFocus` on disappear.
+//
+// `CPUProtection.waitForUIIdle` polls this. Intelligence phases gated on
+// waitForUIIdle will pause until focus ends, giving user's active gesture
+// full CPU. The flag is a stack counter, not a boolean, so pushed nav
+// chains (Friends → ChallengeDetail → FriendProfile) don't race on the
+// outer view's disappear clearing the inner view's focus.
+//
+// 1.38 (55) logs observed `[S954] Private Challenge Detail 15079ms` because
+// the user tapped a challenge while Intel: buildMaps + pairingEngine +
+// collaborative + behaviorAnalysis + similarity map were all hammering
+// the CPU concurrently. With this sentinel, tapping a detail view pauses
+// the heavy phases until the user navigates back.
+
+final class UserFocusSentinel {
+    static let shared = UserFocusSentinel()
+    
+    private let lock = NSLock()
+    private var focusCount: Int = 0
+    private var activeFocuses: Set<String> = []
+    
+    private init() {}
+    
+    /// True iff at least one detail view is currently in focus.
+    var isFocused: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return focusCount > 0
+    }
+    
+    /// For debugging / waterfall.
+    var activeFocusNames: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return Array(activeFocuses)
+    }
+    
+    /// Call from a detail view's `.task` when the view appears.
+    func beginFocus(_ name: String) {
+        lock.lock()
+        focusCount += 1
+        activeFocuses.insert(name)
+        lock.unlock()
+        #if DEBUG
+        AppLogger.debug("👁️ [FOCUS] began: \(name) (count: \(focusCount))", category: .performance)
+        #endif
+    }
+    
+    /// Call from a detail view's `.onDisappear`. Safe to call with the same
+    /// name multiple times — we track via set membership.
+    func endFocus(_ name: String) {
+        lock.lock()
+        let removed = activeFocuses.remove(name) != nil
+        if removed {
+            focusCount = max(0, focusCount - 1)
+        }
+        lock.unlock()
+        #if DEBUG
+        if removed {
+            AppLogger.debug("👁️ [FOCUS] ended: \(name) (count: \(focusCount))", category: .performance)
+        }
+        #endif
+    }
+}
+
 // MARK: - 7. HEAVY WORK SENTINEL
 /// Global flag to signal when heavy work is in progress
 /// Other subsystems (video prefetching) should back off during heavy work
@@ -923,8 +996,9 @@ final class CPUProtection {
         while Date().timeIntervalSince(startTime) < maxWait {
             let cpuHigh = isCPUTooHigh()
             let watchdogBusy = MainThreadWatchdog.shared.isTabSwitchActive
+            let userInDetail = UserFocusSentinel.shared.isFocused
             let transitioning = await MainActor.run { TabSwitchOptimizer.shared.isTransitioning }
-            if !cpuHigh && !watchdogBusy && !transitioning { return }
+            if !cpuHigh && !watchdogBusy && !userInDetail && !transitioning { return }
             try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
         }
     }

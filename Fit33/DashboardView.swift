@@ -667,8 +667,26 @@ struct DashboardView: View {
                 // Instruments shows the cost as a single interval and so
                 // performance_metrics.op='dashboard.social_fanout' gets an
                 // independent trend series from the parent hydrate.
+                //
+                // Sprint 2026-04-24 Phase 4 (N2): trimmed the awaited group
+                // from 14 → 10. The 4511ms dashboard.social_fanout in 1.38 (55)
+                // logs was dominated by the two slowest calls:
+                //   - `subscribeToRealtimeUpdates` — opens a websocket, blocks
+                //     until subscribed (2-4s on cold connection). The dashboard
+                //     body does NOT render anything that depends on THIS call
+                //     having returned; realtime updates push as they land.
+                //   - `refreshSuggestions` — PYMK RPC, populates suggested
+                //     friends card that lives on the Friends tab (not the
+                //     dashboard body).
+                // Both now fire-and-forget. Slowest-in-group now bounded by
+                // the actual dashboard-critical fetches.
                 let fanOutState = PerformanceSignposts.begin(.dashboardSocialFanOut)
-                // All social, challenge, quest, and contact fetches in ONE parallel group
+                
+                // Fire-and-forget (not dashboard-body-critical)
+                Task { await PrivateChallengeService.shared.subscribeToRealtimeUpdates() }
+                Task { await ContactsService.shared.refreshSuggestions() }
+                
+                // Dashboard-body-critical — awaited
                 async let friends: () = FriendService.shared.fetchFriends()
                 async let pending: () = FriendService.shared.loadPendingRequests()
                 async let received: () = FriendService.shared.loadReceivedWorkouts()
@@ -679,11 +697,9 @@ struct DashboardView: View {
                 async let invites: () = ChallengeService.shared.fetchPendingInvites()
                 async let sent: () = ChallengeService.shared.fetchPendingSentChallenges()
                 async let priv: () = PrivateChallengeService.shared.refreshAll()
-                async let rt: () = PrivateChallengeService.shared.subscribeToRealtimeUpdates()
                 async let quests: () = dailyQuestService.fetchDailyQuests()
-                async let contacts: () = ContactsService.shared.refreshSuggestions()
                 async let photo: () = loadProfilePhoto()
-                _ = await (friends, pending, received, feed, ranked, activeCh, groupCh, invites, sent, priv, rt, quests, contacts, photo)
+                _ = await (friends, pending, received, feed, ranked, activeCh, groupCh, invites, sent, priv, quests, photo)
                 PerformanceSignposts.end(fanOutState, slowThresholdMs: 3_000)
             }
             

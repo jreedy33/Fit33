@@ -702,6 +702,18 @@ struct Fit33App: App {
                         // competing for CPU on every foreground event. Whole
                         // block wrapped in signpost so Cluster A hangs can be
                         // traced by a single `app.foreground` interval.
+                        //
+                        // Sprint 2026-04-24 Phase 4 (N3): restructured foreground
+                        // pipeline from a 14-step sequential chain (6035ms observed
+                        // in 1.38 (55) logs) into "blocking critical path" +
+                        // "fire-and-forget housekeeping".
+                        //
+                        // BLOCKING (user-facing data freshness):
+                        //   auth recover → realtime reconnect → social fanout →
+                        //   health sync → challenge refresh
+                        // FIRE-AND-FORGET (no UI waits on any of these):
+                        //   push re-registration, daily-reset check, profile
+                        //   sync, badge count, retry-queue drain, opponent wake
                         Task {
                             let fgState = PerformanceSignposts.begin(.appForeground)
                             defer { PerformanceSignposts.end(fgState, slowThresholdMs: 4_000) }
@@ -711,7 +723,8 @@ struct Fit33App: App {
                             }
                             guard supabaseManager.isAuthenticated else { return }
 
-                            await supabaseManager.recordLastActive()
+                            // recordLastActive is a one-shot UPSERT, fire-and-forget.
+                            Task { await supabaseManager.recordLastActive() }
 
                             // Priority 1: Reconnect realtime (instant social updates)
                             if !realtimeService.isConnected {
@@ -750,23 +763,25 @@ struct Fit33App: App {
                                 await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
                             }
                             
-                            // Priority 5: Background work (lower urgency)
-                            await pushNotificationService.recheckAndRegister()
-                            pushNotificationService.performTokenHealthCheck()
-                            await DailyResetService.shared.checkAndPerformDailyResetIfNeeded()
+                            // ════ Critical blocking path ends here. Remaining work ════
+                            // ════ is all fire-and-forget: UI never waits on these.  ════
                             
-                            // Priority 6: Profile sync (only if needed)
-                            if UserManager.shared.hasCompletedOnboarding {
-                                try? await UserManager.shared.syncProfileToCloud()
+                            // Push-notification hygiene
+                            Task {
+                                await pushNotificationService.recheckAndRegister()
+                                pushNotificationService.performTokenHealthCheck()
                             }
-                            
-                            // Priority 7: Update badge with real counts now that data is fresh
-                            await NotificationManager.shared.updateBadgeCount()
-
-                            // Priority 8 (Sprint 2 Q2-34): drain any queued cloud writes
-                            // that failed while offline / during a previous finish.
-                            await MainActor.run { CloudSyncRetryQueue.shared.drainIfDue() }
-                            
+                            // Daily-reset (midnight-rollover cleanup)
+                            Task { await DailyResetService.shared.checkAndPerformDailyResetIfNeeded() }
+                            // Profile sync — no UI element waits on this
+                            if UserManager.shared.hasCompletedOnboarding {
+                                Task { try? await UserManager.shared.syncProfileToCloud() }
+                            }
+                            // Badge count — updates silently, lag tolerated
+                            Task { await NotificationManager.shared.updateBadgeCount() }
+                            // Sprint 2 Q2-34: drain any queued cloud writes that failed
+                            // while offline / during a previous finish.
+                            Task { @MainActor in CloudSyncRetryQueue.shared.drainIfDue() }
                             // Priority 9 (2026-04-20): silent-push opponent wake.
                             // Once our own data is fresh on the server, poke our
                             // opponents' devices so their HealthKit / meal /
@@ -774,7 +789,8 @@ struct Fit33App: App {
                             // up-to-date numbers on the very next refresh. The
                             // edge function applies a 15-min/recipient server
                             // throttle; this call is also device-debounced to 60s.
-                            await ChallengeOpponentWakeService.shared.requestWake(trigger: .foreground)
+                            // Observed 1856ms in 1.38 (55) logs — always defer.
+                            Task { await ChallengeOpponentWakeService.shared.requestWake(trigger: .foreground) }
                         }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")

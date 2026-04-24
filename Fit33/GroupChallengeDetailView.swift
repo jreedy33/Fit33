@@ -79,6 +79,10 @@ struct GroupChallengeDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: challenge.challengeId) {
+            // Sprint 2026-04-24 Phase 4 (N1): pause intelligence phases while
+            // user is in this detail view — see UserFocusSentinel doc.
+            UserFocusSentinel.shared.beginFocus("GroupChallengeDetail")
+            
             // Subscribe to real-time opponent progress updates for this group challenge
             RealtimeService.shared.onOpponentDailyProgressUpdated = { payload in
                 if payload.challengeId == challenge.challengeId {
@@ -96,6 +100,7 @@ struct GroupChallengeDetailView: View {
         }
         .onDisappear {
             RealtimeService.shared.onOpponentDailyProgressUpdated = nil
+            UserFocusSentinel.shared.endFocus("GroupChallengeDetail")
         }
         .alert("Leave Challenge?", isPresented: $showingLeaveConfirm) {
             Button("Leave", role: .destructive) {

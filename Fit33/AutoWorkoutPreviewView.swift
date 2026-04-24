@@ -717,6 +717,11 @@ struct AutoWorkoutPreviewView: View {
 }
 
 // MARK: - Auto Exercise Card
+// Mirrors `ExerciseCardRow` (used by the Exercises tab / CustomWorkoutBuilderView) so
+// auto-generated workout previews share the exact same visual language: 56x56 hollow
+// gradient ring with the cached video still inside, identical typography, and the
+// shared `sleekCardSubtle` background. The only contextual addition here is the
+// trailing swap button (this screen's primary per-row action).
 struct AutoExerciseCard: View {
     let number: Int
     let exercise: GeneratedExercise
@@ -724,82 +729,104 @@ struct AutoExerciseCard: View {
     let isSwapping: Bool
     let onTapCard: () -> Void
     let onTapSwap: () -> Void
-    
+
+    // MARK: Category styling (matches `ExerciseCardRow`)
+
     private var categoryColor: Color {
         switch exercise.category.lowercased() {
-        case "chest": return .red
+        case "chest": return .purple
         case "back": return .blue
         case "legs": return .green
         case "shoulders": return .orange
         case "arms": return .purple
         case "core": return .yellow
-        default: return .cyan
+        case "full body": return .pink
+        default: return .gray
         }
     }
-    
-    private var categoryIcon: String {
+
+    private var categoryGradient: [Color] {
+        switch exercise.category.lowercased() {
+        case "chest": return [Color.purple, Color.pink]
+        case "back": return [Color.blue, Color.cyan]
+        case "legs": return [Color.green, Color.teal]
+        case "shoulders": return [Color.orange, Color.yellow]
+        case "arms": return [Color.purple, Color.indigo]
+        case "core": return [Color.yellow, Color.orange]
+        case "full body": return [Color.pink, Color.red]
+        default: return [Color.gray, Color.gray.opacity(0.7)]
+        }
+    }
+
+    // Smart icon resolution matches `ExerciseCardRow.resolvedIcon` semantics so the
+    // fallback SF Symbol (shown until the video still bakes) is identical between
+    // the two cards.
+    private var resolvedIcon: String {
+        let name = exercise.name.lowercased()
+        if name.contains("dumbbell") { return "dumbbell.fill" }
+        if name.contains("barbell") { return "figure.strengthtraining.traditional" }
+        if name.contains("cable") { return "dot.radiowaves.left.and.right" }
+        if name.contains("push") && name.contains("up") { return "figure.strengthtraining.traditional" }
+        if name.contains("pull") && (name.contains("up") || name.contains("chin")) { return "figure.climbing" }
+        if name.contains("squat") { return "figure.strengthtraining.traditional" }
+        if name.contains("lunge") { return "figure.walk" }
+        if name.contains("thrust") || name.contains("bridge") { return "figure.strengthtraining.functional" }
+        if name.contains("deadlift") { return "figure.strengthtraining.functional" }
+        if name.contains("curl") { return "figure.arms.open" }
+        if name.contains("press") && !name.contains("leg") { return "arrow.up.circle.fill" }
+        if name.contains("row") { return "arrow.left.and.right.circle.fill" }
+        if name.contains("fly") || name.contains("flye") { return "arrow.up.left.and.arrow.down.right.circle.fill" }
+        if name.contains("raise") { return "arrow.up.circle" }
+        if name.contains("shrug") { return "arrow.up.and.down.circle.fill" }
+        if name.contains("plank") { return "figure.core.training" }
+        if name.contains("run") || name.contains("jog") { return "figure.run" }
+        if name.contains("jump") { return "figure.jumprope" }
+
+        switch exercise.equipment.lowercased() {
+        case "dumbbells": return "dumbbell.fill"
+        case "barbell": return "figure.strengthtraining.traditional"
+        case "cables": return "dot.radiowaves.left.and.right"
+        case "machines": return "gearshape.fill"
+        case "bodyweight": return "figure.strengthtraining.traditional"
+        default: break
+        }
+
         switch exercise.category.lowercased() {
         case "chest": return "figure.strengthtraining.traditional"
-        case "back": return "figure.rower"
-        case "legs": return "figure.run"
-        case "shoulders": return "figure.arms.open"
+        case "back": return "figure.climbing"
+        case "legs": return "figure.strengthtraining.traditional"
+        case "shoulders": return "arrow.up.circle.fill"
         case "arms": return "dumbbell.fill"
         case "core": return "figure.core.training"
+        case "full body": return "figure.mixed.cardio"
         default: return "dumbbell.fill"
         }
     }
-    
+
     var body: some View {
-        HStack(spacing: 12) {
-            // Tappable card area (opens detail sheet)
+        HStack(spacing: Spacing.sm) {
+            // Tappable card content area — opens the detail sheet, just like the
+            // Exercises tab rows push into `ExerciseDetailView`.
             Button(action: onTapCard) {
-                HStack(spacing: 12) {
-                    // Category icon (matching exercise library style)
-                    ZStack {
-                        Circle()
-                            .fill(categoryColor.opacity(0.15))
-                            .frame(width: 36, height: 36)
-                        
-                        Image(systemName: categoryIcon)
-                            .font(.ds_labelMedium)
-                            .foregroundColor(categoryColor)
-                    }
-                    
-                    // Exercise details
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(exercise.name)
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        HStack(spacing: 8) {
-                            Text(exercise.category)
-                                .font(.caption)
-                                .foregroundColor(categoryColor)
-                                .fontWeight(.medium)
-                            
-                            Text("•")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            
-                            Text(exercise.equipment)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Info icon
-                    Image(systemName: "info.circle")
-                        .font(.ds_bodyRegular).fontWeight(.medium)
-                        .foregroundColor(.secondary.opacity(0.5))
+                HStack(spacing: Spacing.sm) {
+                    ExercisePosterRingIcon(
+                        exerciseName: exercise.name,
+                        gradientColors: categoryGradient,
+                        fallbackSymbol: resolvedIcon,
+                        isCoreCategory: exercise.category.lowercased() == "core",
+                        size: 56,
+                        ringWidth: 2.5
+                    )
+
+                    exerciseDetails
+
+                    Spacer(minLength: 0)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
-            
-            // Swap button (separate action)
+
+            // Trailing swap button — the preview screen's per-row primary action.
             Button(action: onTapSwap) {
                 if isSwapping {
                     ProgressView()
@@ -816,12 +843,51 @@ struct AutoExerciseCard: View {
                         )
                 }
             }
+            .buttonStyle(PlainButtonStyle())
             .disabled(isSwapping)
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .sleekCard(cornerRadius: 20, accentColor: categoryColor)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+    }
+
+    // MARK: - Exercise Details (matches `ExerciseCardRow.exerciseDetails`)
+
+    private var exerciseDetails: some View {
+        let split = ExerciseNicknameService.splitPresentation(exercise.name)
+        return VStack(alignment: .leading, spacing: Spacing.xxxs) {
+            Text(split.main)
+                .font(.ds_bodyLarge)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            if let variant = split.variant {
+                Text(variant)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
+            HStack(spacing: Spacing.xs) {
+                Text(exercise.category)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(categoryColor)
+                    .fontWeight(.medium)
+
+                Text("•")
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+
+                Text(exercise.equipment)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
     }
 }
 

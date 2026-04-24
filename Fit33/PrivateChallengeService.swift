@@ -1478,7 +1478,16 @@ class PrivateChallengeService: ObservableObject {
     
     func syncAllTrackingToPrivateChallenges() async {
         guard !myChallenges.isEmpty else { return }
-        
+
+        // Force-refresh HealthKit first so `todaySteps` / `todayActiveMinutes`
+        // are pulled fresh for the *current* local day. Without this, a dawn
+        // sync can push yesterday's cached `@Published var todaySteps` as
+        // today's value (seen 2026-04-24: Paul logged his 15,718 EoD yesterday
+        // total against today's progress_date at 00:30 ET). HealthKitService's
+        // RequestCoalescer collapses repeat calls so the overhead is ~free
+        // when a fresh sync is already in flight (e.g. BG sync path).
+        await HealthKitService.shared.syncAllData(force: true)
+
         let progress = await gatherCurrentProgress()
         
         #if DEBUG
@@ -1488,18 +1497,25 @@ class PrivateChallengeService: ObservableObject {
         for (index, challenge) in myChallenges.enumerated() {
             let progressValue = resolveProgress(for: challenge, from: progress)
             
-            // For "recalculable" types (protein, hydration, calories) the local value
-            // is authoritative — it's freshly computed from today's meals/logs.
-            // We MUST log even when the value is 0 so that any stale yesterday row
-            // in the DB gets overwritten (e.g. 14g protein from yesterday).
+            // "Recalculable" types: the local computation is authoritative, so we
+            // MUST log even when 0 (so stale yesterday rows get overwritten) and
+            // MUST pass allowDecrease=true (so the server's GREATEST() clause
+            // doesn't pin a ghost high value across midnight).
+            //
+            // • protein / hydrate / calories — recomputed from today's meals/logs;
+            //   decreases when a meal is removed.
+            // • steps / active_minutes — cumulative HealthKit counters that start
+            //   fresh at the user's local midnight. A stale @Published cache at
+            //   the midnight boundary can push yesterday's EoD total as today's
+            //   value; without allowDecrease the next fresh read can never
+            //   correct it.
             let isRecalculable = (challenge.challengeType == "protein" ||
                                   challenge.challengeType == "hydrate" ||
-                                  challenge.challengeType == "calories")
+                                  challenge.challengeType == "calories" ||
+                                  challenge.challengeType == "steps" ||
+                                  challenge.challengeType == "active_minutes")
             
             if progressValue > 0 || isRecalculable {
-                // allowDecrease: true ensures the DB value matches the authoritative
-                // calculated value. Without this, stale data (e.g. 713g protein from
-                // before a meal removal) gets stuck forever due to the GREATEST() clause.
                 let _ = await logProgress(
                     challengeId: challenge.challengeId,
                     progressValue: max(progressValue, 0),

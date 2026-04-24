@@ -1177,7 +1177,13 @@ class CommunityChallengeService: ObservableObject {
     /// Called alongside the existing challenge sync
     func syncAllTrackingToCommunityChallenges() async {
         guard !myChallenges.isEmpty else { return }
-        
+
+        // Force-refresh HealthKit first so `todaySteps` / `todayActiveMinutes`
+        // are fresh before we push. See `PrivateChallengeService` for full
+        // rationale (2026-04-24 dawn-ghost bug). Coalescer makes repeat calls
+        // free when the BG sync path already triggered a refresh.
+        await HealthKitService.shared.syncAllData(force: true)
+
         let progress = await gatherCurrentProgress()
         
         #if DEBUG
@@ -1187,18 +1193,18 @@ class CommunityChallengeService: ObservableObject {
         for (index, challenge) in myChallenges.enumerated() {
             let progressValue = resolveProgress(for: challenge, from: progress)
             
-            // For "recalculable" types (protein, hydration, calories) the local value
-            // is authoritative — it's freshly computed from today's meals/logs.
-            // We MUST log even when the value is 0 so that any stale yesterday row
-            // in the DB gets overwritten (e.g. 14g protein from yesterday).
+            // Recalculable set: protein/hydrate/calories recompute from today's
+            // meals/logs (decreases when a meal is removed). steps/active_minutes
+            // added 2026-04-24 (dawn-ghost bug, fingerprint 6be18e3a) — HealthKit
+            // cumulative counters can cache yesterday's EoD across midnight;
+            // without allowDecrease the server's GREATEST() pins the ghost.
             let isRecalculable = (challenge.challengeType == "protein" ||
                                   challenge.challengeType == "hydrate" ||
-                                  challenge.challengeType == "calories")
+                                  challenge.challengeType == "calories" ||
+                                  challenge.challengeType == "steps" ||
+                                  challenge.challengeType == "active_minutes")
             
             if progressValue > 0 || isRecalculable {
-                // allowDecrease: true ensures the DB value matches the authoritative
-                // calculated value. Without this, stale data (e.g. 713g protein from
-                // before a meal removal) gets stuck forever due to the GREATEST() clause.
                 let _ = await logProgress(
                     challengeId: challenge.challengeId,
                     progressValue: max(progressValue, 0),

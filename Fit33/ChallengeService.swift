@@ -1640,9 +1640,14 @@ class ChallengeService: ObservableObject {
     /// Sync HealthKit data to ALL active group challenges (called alongside 1v1 sync)
     func syncHealthKitDataToGroupChallenges() async {
         guard !activeGroupChallenges.isEmpty else { return }
-        
+
+        // Force-refresh HealthKit before reading per-challenge values (same
+        // dawn-ghost guard as `syncHealthKitDataToChallenges`). Coalescer makes
+        // concurrent force-refreshes effectively free.
+        await HealthKitService.shared.syncAllData(force: true)
+
         AppLogger.debug("Syncing HealthKit data to \(activeGroupChallenges.count) active group challenges...", category: .social)
-        
+
         for challenge in activeGroupChallenges {
             // Sync if user has accepted, even if challenge is still "pending" (waiting for others)
             // This ensures early accepters get credit for progress before all members join
@@ -1652,9 +1657,20 @@ class ChallengeService: ObservableObject {
                 challengeType: challenge.challengeType,
                 targetUnit: challenge.targetUnit
             )
-            
-            if progressValue > 0 {
-                let success = await logGroupProgress(challengeId: challenge.challengeId, progressValue: progressValue)
+
+            let resolvedType = challenge.resolvedType
+            let isRecalculable = (resolvedType == .protein ||
+                                  resolvedType == .hydrate ||
+                                  resolvedType == .calories ||
+                                  resolvedType == .steps ||
+                                  resolvedType == .activeMinutes)
+
+            if progressValue > 0 || isRecalculable {
+                let success = await logGroupProgress(
+                    challengeId: challenge.challengeId,
+                    progressValue: max(progressValue, 0),
+                    allowDecrease: isRecalculable
+                )
                 if success {
                     AppLogger.info("Synced \(progressValue) \(challenge.targetUnit) to group '\(challenge.displayTitle)'", category: .social)
                 }
@@ -2138,9 +2154,16 @@ class ChallengeService: ObservableObject {
         }
         
         MealService.shared.ensureFreshForToday()
-        
+
+        // Force-refresh HealthKit so `todaySteps` / `todayActiveMinutes` /
+        // `todayCalories` reflect the current local day before we push. Dawn
+        // bug (2026-04-24): without this, the @Published cache can still hold
+        // yesterday's EoD total and the server's GREATEST() clause pins the
+        // ghost until midnight. Coalescer makes concurrent force-refreshes free.
+        await HealthKitService.shared.syncAllData(force: true)
+
         let healthKit = HealthKitService.shared
-        
+
         AppLogger.debug("Syncing HealthKit data to \(activeChallenges.count) active challenges...", category: .social)
         
         for challenge in activeChallenges {
@@ -2164,7 +2187,15 @@ class ChallengeService: ObservableObject {
             // is authoritative — we MUST log even when 0 so stale yesterday rows
             // get overwritten (e.g. 203g protein from yesterday).
             let resolvedType = challenge.resolvedType
-            let isRecalculable = (resolvedType == .protein || resolvedType == .hydrate || resolvedType == .calories)
+            // steps + activeMinutes added 2026-04-24 (dawn-ghost bug, fingerprint
+            // 6be18e3a). HealthKit cumulative counters can @Published-cache yesterday's
+            // EoD across midnight; without allowDecrease the server's GREATEST() pins
+            // the ghost until next midnight.
+            let isRecalculable = (resolvedType == .protein ||
+                                  resolvedType == .hydrate ||
+                                  resolvedType == .calories ||
+                                  resolvedType == .steps ||
+                                  resolvedType == .activeMinutes)
             
             if progressValue > 0 || isRecalculable {
                 AppLogger.debug("Logging \(progressValue) \(challenge.targetUnit) for '\(challenge.title)' (allowDecrease: \(isRecalculable))...", category: .social)
@@ -2393,7 +2424,15 @@ class ChallengeService: ObservableObject {
             // We MUST use allowDecrease so the DB accepts the correct value even
             // when it's lower than a stale value that was previously logged
             // (e.g. yesterday's protein carried over due to a timing bug).
-            let isRecalculable = (resolvedType == .protein || resolvedType == .hydrate || resolvedType == .calories)
+            // steps + activeMinutes added 2026-04-24 (dawn-ghost bug, fingerprint
+            // 6be18e3a). HealthKit cumulative counters can @Published-cache yesterday's
+            // EoD across midnight; without allowDecrease the server's GREATEST() pins
+            // the ghost until next midnight.
+            let isRecalculable = (resolvedType == .protein ||
+                                  resolvedType == .hydrate ||
+                                  resolvedType == .calories ||
+                                  resolvedType == .steps ||
+                                  resolvedType == .activeMinutes)
             
             let progressToLog: Int
             if isRecalculable {
@@ -2718,7 +2757,15 @@ class ChallengeService: ObservableObject {
             // is authoritative — we MUST log even when 0 so stale yesterday rows
             // get overwritten (e.g. 203g protein from yesterday).
             let resolvedType = challenge.resolvedType
-            let isRecalculable = (resolvedType == .protein || resolvedType == .hydrate || resolvedType == .calories)
+            // steps + activeMinutes added 2026-04-24 (dawn-ghost bug, fingerprint
+            // 6be18e3a). HealthKit cumulative counters can @Published-cache yesterday's
+            // EoD across midnight; without allowDecrease the server's GREATEST() pins
+            // the ghost until next midnight.
+            let isRecalculable = (resolvedType == .protein ||
+                                  resolvedType == .hydrate ||
+                                  resolvedType == .calories ||
+                                  resolvedType == .steps ||
+                                  resolvedType == .activeMinutes)
             
             if totalProgress > 0 || isRecalculable {
                 let _ = await logProgress(

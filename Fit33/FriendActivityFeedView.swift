@@ -392,10 +392,21 @@ class ActivityFeedService: ObservableObject {
                 self.myReactions = result
             }
         } catch {
+            // Phase 12c — `transientLevel: .debug` because this is a
+            // retry-covered, non-critical read (reactions populate a
+            // UI accent; absence = no annotations shown, no user-
+            // visible error). Without the demotion, a Cloudflare 502
+            // during a deploy window wrote a `.warning` session log
+            // that the Phase 10 noise filter eventually caught — but
+            // bumping to .debug means it never round-trips at all,
+            // saving server noise-filter regex cycles. Matches the
+            // pattern used by `CrashReportingService.uploadCrashReport`
+            // catch block (Phase 11B).
             _ = NetworkErrorClassifier.log(
                 error,
                 context: "Failed to fetch my reactions",
                 category: .social,
+                transientLevel: .debug,
                 op: "activity_feed.my_reactions",
                 endpoint: "rpc/get_my_activity_reactions",
                 startedAt: startedAt,

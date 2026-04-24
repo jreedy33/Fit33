@@ -493,7 +493,23 @@ class UserBehaviorLearningEngine: ObservableObject {
             
             AppLogger.debug("☁️ [LEARNING ENGINE] Profile saved to cloud successfully", category: .workout)
         } catch {
-            AppLogger.error("❌ [LEARNING ENGINE] Failed to save to cloud: \(error)", category: .workout)
+            // Phase 12c — classifier routing. The original
+            // `AppLogger.error` surfaced as fingerprint `5caa58a1`
+            // (timeout -1001 on user_learning_profiles upsert) in the
+            // 2026-04-24 bug-intel export. This upsert is idempotent
+            // and the next analyze cycle re-attempts, so a transient
+            // timeout / offline period should not manufacture a
+            // CRITICAL fingerprint. `transientLevel: .debug` matches
+            // the ExerciseMappingService / CrashReporter pattern.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[LEARNING ENGINE] Failed to save to cloud",
+                category: .workout,
+                transientLevel: .debug,
+                op: "learning_engine.save_profile",
+                endpoint: "rest/v1/user_learning_profiles",
+                userId: userId
+            )
         }
     }
     

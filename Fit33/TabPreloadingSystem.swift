@@ -110,8 +110,7 @@ final class TabPreloader: ObservableObject {
         // Use a background context so fetches don't block the main queue.
         // The passed-in context is often viewContext (main-queue); context.perform
         // on main-queue context runs work ON the main thread.
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         
         async let exercisesFetch = fetchExercisesForLibrary(context: bgContext)
         async let workoutsFetch = fetchRecentWorkouts(context: bgContext)

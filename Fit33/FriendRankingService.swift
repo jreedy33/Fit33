@@ -113,10 +113,27 @@ class FriendRankingService: ObservableObject {
                 if isTimeout && attempt < maxAttempts {
                     AppLogger.warning("fetchRankedFriends timeout (attempt \(attempt)/\(maxAttempts)), retrying...", category: .social)
                     try? await Task.sleep(for: .seconds(pow(2.0, Double(attempt))))
-                } else if isTimeout {
-                    AppLogger.warning("❌ [RANKING] Error fetching ranked friends: \(error)", category: .social)
                 } else {
-                    AppLogger.error("❌ [RANKING] Error fetching ranked friends: \(error)", category: .social)
+                    // Phase 12c — classifier routing. Fingerprint `965f3655`
+                    // ("Offline network error for ranked friends") came
+                    // from the previous `AppLogger.error` on the
+                    // non-timeout path — an offline error was
+                    // fingerprinted as CRITICAL instead of transient.
+                    // NetworkErrorClassifier correctly classifies
+                    // `NSURLErrorNotConnectedToInternet` as transient
+                    // and routes to `.warning` (or `.debug` via
+                    // transientLevel). This is a dashboard-load path
+                    // with its own retry + cache fallback, so
+                    // `transientLevel: .debug` keeps it completely off
+                    // the server noise filter's radar.
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "[RANKING] Error fetching ranked friends",
+                        category: .social,
+                        transientLevel: .debug,
+                        op: "friends.ranked",
+                        endpoint: "rpc/get_ranked_friends"
+                    )
                 }
             }
         }

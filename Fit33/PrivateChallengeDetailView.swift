@@ -34,6 +34,10 @@ struct PrivateChallengeDetailView: View {
     @State private var showModerationWarning = false
     // Sprint 2 Q2-7: Report-and-Block sheet (long-press a non-self message)
     @State private var reportTarget: PrivateChallengeMessage?
+    // Chat keyboard focus — drives: (a) auto-scrolling the chat widget above
+    // the keyboard, (b) dismissing the keyboard when the user taps or scrolls
+    // anywhere outside the chat widget.
+    @FocusState private var isChatInputFocused: Bool
     
     private var accentGradient: LinearGradient {
         LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing)
@@ -43,18 +47,45 @@ struct PrivateChallengeDetailView: View {
         ZStack {
             AnimatedOrbBackground.friends(colorScheme: colorScheme)
                 .ignoresSafeArea()
+                // Tap background to dismiss keyboard.
+                .onTapGesture { isChatInputFocused = false }
             
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: Spacing.md) {
-                    headerCard
-                    statBar
-                    chatPreviewSection
-                    leaderboardSection
-                    actionButtons
-                        .padding(.bottom, 60)
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: Spacing.md) {
+                        headerCard
+                            .simultaneousGesture(dismissKeyboardTapGesture)
+                        statBar
+                            .simultaneousGesture(dismissKeyboardTapGesture)
+                        chatPreviewSection
+                            .id("chatSection")
+                        leaderboardSection
+                            .simultaneousGesture(dismissKeyboardTapGesture)
+                        actionButtons
+                            .simultaneousGesture(dismissKeyboardTapGesture)
+                            .padding(.bottom, 60)
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, Spacing.sm)
                 }
-                .padding(.horizontal, Spacing.md)
-                .padding(.top, Spacing.sm)
+                // Any scroll gesture anywhere in this view dismisses the
+                // keyboard immediately (covers the "scrolls off the chat
+                // widget" case without needing a per-section gesture).
+                .scrollDismissesKeyboard(.immediately)
+                // When the chat input gains focus, pin the chat widget just
+                // above the keyboard so the user can see what they're typing
+                // along with the most recent messages.
+                .onChange(of: isChatInputFocused) { _, focused in
+                    guard focused else { return }
+                    // Small delay lets the keyboard begin animating so the
+                    // scroll lands at the final resting position.
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 150_000_000)
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            proxy.scrollTo("chatSection", anchor: .bottom)
+                        }
+                    }
+                }
             }
         }
         // Phase 12 rage-shake fix (2026-04-24) — wire SessionLogManager so
@@ -124,7 +155,7 @@ struct PrivateChallengeDetailView: View {
         .sheet(isPresented: $showMembersSheet) {
             membersSheet
         }
-        .sheet(isPresented: $showFullChat) {
+        .fullScreenCover(isPresented: $showFullChat) {
             fullChatSheet
         }
         .confirmationDialog("Leave Challenge?", isPresented: $showLeaveConfirmation) {
@@ -706,81 +737,134 @@ struct PrivateChallengeDetailView: View {
     
     // MARK: - Chat Preview Section
     
+    // Chat preview keeps a fixed maximum height so the widget never grows with
+    // message history. Older messages flow off the top (clipped); newest stay
+    // pinned to the bottom just above the input bar. Tap the expand button in
+    // the top-right to open the full-screen chat sheet.
+    // Phase 12c — rage-shake f990840d user feedback:
+    //   "when i tap into the private challenge - the chat view is so
+    //    bulking and doesn't look right"
+    //   "i need this page to flow better feel less bulky with the chat..
+    //    integrate the chat so it's more clean and seamless"
+    //
+    // Conservative pass (not a full redesign — that deserves its own
+    // design session):
+    //   - Drop the big standalone "Chat" title row (`title3 + bold`)
+    //     and inline the expand affordance into the top-right of the
+    //     card. Unread badge stays, but as a pill next to the bubble
+    //     icon so the card header feels lighter.
+    //   - Reduce chat max height 280 → 220 to shorten the widget's
+    //     visual footprint so the leaderboard + action buttons sit
+    //     closer and the page scans as one page instead of stacked
+    //     cards.
+    //   - Tighten inner padding (`Spacing.md` → `Spacing.sm`) so the
+    //     card edges hug the content.
+    //   - Keep `sleekCardSubtle` so the card still has a visual home,
+    //     but smaller corner radius (16 → 14) for consistency with
+    //     nearby stat cards.
+    //
+    // If the next shake still says "bulky", the next pass should
+    // consider removing the card chrome entirely and letting chat
+    // bubbles flow inline with the rest of the page.
+    private static let chatPreviewMaxHeight: CGFloat = 220
+
     private var chatPreviewSection: some View {
-        VStack(spacing: Spacing.sm) {
+        VStack(spacing: Spacing.xs) {
+            let visibleChatMessages = chatMessages.filter {
+                !friendService.blockedUserIds.contains($0.senderId)
+                    && !PrivateChallengeService.shared.hiddenChatMessageIds.contains($0.messageId)
+            }
+
+            // Lightweight inline header — no standalone title row.
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .foregroundStyle(accentGradient)
-                    .font(.title3)
-                Text("Chat")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
+                    .font(.ds_labelLarge)
+
                 if let unread = challenge.unreadCount, unread > 0 {
                     Text("\(unread) new")
                         .font(.ds_caption)
+                        .fontWeight(.semibold)
                         .foregroundColor(.purple)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.purple.opacity(0.12)))
                 }
-                
-                if chatMessages.count > 5 {
-                    Button {
-                        showFullChat = true
-                        HapticManager.selectionChanged()
-                    } label: {
-                        HStack(spacing: Spacing.xxxs) {
-                            Text("View All")
-                                .font(.ds_labelSmall)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .bold))
-                        }
-                        .foregroundColor(.purple)
-                    }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    showFullChat = true
+                    HapticManager.selectionChanged()
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 26, height: 26)
+                        .background(
+                            Circle().fill(Color.primary.opacity(0.06))
+                        )
                 }
+                .accessibilityLabel("Expand chat")
+                .accessibilityHint("Opens the full-screen chat view")
             }
-            
-            VStack(spacing: Spacing.sm) {
-                let visibleChatMessages = chatMessages.filter {
-                    !friendService.blockedUserIds.contains($0.senderId)
-                        && !PrivateChallengeService.shared.hiddenChatMessageIds.contains($0.messageId)
+
+            if visibleChatMessages.isEmpty {
+                VStack(spacing: Spacing.xxs) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.ds_heading3)
+                        .foregroundColor(.secondary.opacity(0.3))
+                    Text("No messages yet")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                    Text("Start the conversation!")
+                        .font(.ds_caption)
+                        .foregroundColor(.secondary.opacity(0.6))
                 }
-                if visibleChatMessages.isEmpty {
-                    VStack(spacing: Spacing.xs) {
-                        Image(systemName: "bubble.left.and.bubble.right")
-                            .font(.ds_heading2)
-                            .foregroundColor(.secondary.opacity(0.3))
-                        Text("No messages yet")
-                            .font(.ds_bodySmall)
-                            .foregroundColor(.secondary)
-                        Text("Start the conversation!")
-                            .font(.ds_caption)
-                            .foregroundColor(.secondary.opacity(0.6))
-                    }
-                    .padding(.vertical, Spacing.lg)
-                } else {
-                    let previewMessages = Array(visibleChatMessages.prefix(5).reversed())
-                    VStack(spacing: Spacing.xs) {
-                        ForEach(Array(previewMessages.enumerated()), id: \.element.id) { index, message in
-                            if shouldShowDateHeader(for: message, in: previewMessages, at: index) {
+                .padding(.vertical, Spacing.md)
+            } else {
+                // Chronological (oldest -> newest) so the newest bubble
+                // is at the bottom of the bounded scroll view. Older
+                // messages flow off the top; the user can scroll up
+                // within this area, or tap expand for full history.
+                // `.defaultScrollAnchor(.bottom)` keeps the view pinned
+                // to the latest message on open and when new messages
+                // arrive.
+                let chronological = Array(visibleChatMessages.reversed())
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: Spacing.xs) {
+                        ForEach(Array(chronological.enumerated()), id: \.element.id) { index, message in
+                            if shouldShowDateHeader(for: message, in: chronological, at: index) {
                                 chatDateHeader(for: message.createdAt ?? Date())
                             }
                             chatBubble(message: message)
                         }
                     }
+                    .padding(.vertical, Spacing.xxs)
                 }
-                
-                chatInputBar
+                .defaultScrollAnchor(.bottom)
+                .frame(maxWidth: .infinity, maxHeight: Self.chatPreviewMaxHeight)
             }
-            .padding(Spacing.md)
-            .sleekCardSubtle(cornerRadius: 16)
+
+            chatInputBar
         }
+        .padding(Spacing.sm)
+        .sleekCardSubtle(cornerRadius: 14)
     }
     
+    // Shared tap gesture for every non-chat section in the detail scroll view —
+    // tapping anywhere off the chat widget dismisses the keyboard without
+    // blocking button presses or scroll gestures inside that section.
+    private var dismissKeyboardTapGesture: some Gesture {
+        TapGesture().onEnded { isChatInputFocused = false }
+    }
+
     private var chatInputBar: some View {
         HStack(spacing: Spacing.xs) {
             TextField("Message...", text: $chatText)
+                .focused($isChatInputFocused)
+                .submitLabel(.send)
+                .onSubmit { sendMessage() }
                 .font(.ds_bodySmall)
                 .foregroundColor(.primary)
                 .padding(.horizontal, Spacing.sm)
@@ -1168,15 +1252,17 @@ struct PrivateChallengeDetailView: View {
                 
                 VStack(spacing: 0) {
                     ScrollView(showsIndicators: false) {
-                        let allMessages = chatMessages
-                            .filter {
-                                !friendService.blockedUserIds.contains($0.senderId)
-                                    && !PrivateChallengeService.shared.hiddenChatMessageIds.contains($0.messageId)
-                            }
-                            .reversed() as [PrivateChallengeMessage]
+                        let allMessages = Array(
+                            chatMessages
+                                .filter {
+                                    !friendService.blockedUserIds.contains($0.senderId)
+                                        && !PrivateChallengeService.shared.hiddenChatMessageIds.contains($0.messageId)
+                                }
+                                .reversed()
+                        )
                         LazyVStack(spacing: Spacing.xs) {
                             ForEach(Array(allMessages.enumerated()), id: \.element.id) { index, message in
-                                if shouldShowDateHeader(for: message, in: Array(allMessages), at: index) {
+                                if shouldShowDateHeader(for: message, in: allMessages, at: index) {
                                     chatDateHeader(for: message.createdAt ?? Date())
                                 }
                                 chatBubble(message: message)
@@ -1186,6 +1272,8 @@ struct PrivateChallengeDetailView: View {
                         .padding(.top, Spacing.sm)
                         .padding(.bottom, Spacing.xs)
                     }
+                    .defaultScrollAnchor(.bottom)
+                    .scrollDismissesKeyboard(.immediately)
                     
                     // Sticky input bar
                     chatInputBar
@@ -1194,14 +1282,19 @@ struct PrivateChallengeDetailView: View {
                         .background(.ultraThinMaterial)
                 }
             }
-            .navigationTitle("Chat")
+            .navigationTitle(challenge.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { showFullChat = false }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showFullChat = false
+                    } label: {
+                        Image(systemName: "chevron.backward")
+                            .font(.system(size: 17, weight: .semibold))
+                    }
+                    .accessibilityLabel("Back")
                 }
             }
         }
-        .presentationDragIndicator(.visible)
     }
 }

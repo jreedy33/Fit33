@@ -4253,8 +4253,7 @@ class SupabaseManager: ObservableObject {
     
     /// Restores user profile from cloud to Core Data
     private func syncUserProfileToCoreData(profile: UserProfileDTO) async {
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         let isoFormatter = iso8601Formatter
         
         await bgContext.perform {
@@ -4495,8 +4494,7 @@ class SupabaseManager: ObservableObject {
     
     /// Syncs workout history from cloud to Core Data
     private func syncWorkoutHistoryToCoreData(workouts: [WorkoutHistoryDTO]) async {
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         bgContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
         let isoFormatter = iso8601Formatter
         
@@ -4723,8 +4721,7 @@ class SupabaseManager: ObservableObject {
     
     /// Syncs meal logs from cloud to Core Data
     private func syncMealLogsToCoreData(meals: [MealLogDTO]) async {
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         let isoFormatter = iso8601Formatter
         
         await bgContext.perform {
@@ -4791,8 +4788,7 @@ class SupabaseManager: ObservableObject {
     
     /// Sync favorites to Core Data - matches by exercise NAME (not ID, since IDs change on sync)
     private func syncFavoritesToCoreData(favoriteNames: [String]) async {
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         
         let normalizedFavoriteNames = Set(favoriteNames.map { $0.lowercased().trimmingCharacters(in: .whitespaces) })
         
@@ -4830,8 +4826,7 @@ class SupabaseManager: ObservableObject {
     }
     
     private func syncCustomExercisesToCoreData(customExercises: [CustomExerciseDTO]) async {
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         
         await bgContext.perform {
             for customExercise in customExercises {
@@ -4895,8 +4890,7 @@ class SupabaseManager: ObservableObject {
     }
     
     private func syncFavoriteWorkoutsToCoreData(favoriteWorkouts: [FavoriteWorkoutDTO]) async {
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         
         let cloudFavoriteIds = Set(favoriteWorkouts.map { $0.originalWorkoutId })
         

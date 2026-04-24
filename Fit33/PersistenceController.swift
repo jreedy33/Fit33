@@ -8,6 +8,42 @@ extension Notification.Name {
     static let coreDataLoadFailed = Notification.Name("coreDataLoadFailed")
 }
 
+// MARK: - Configured background-context factory (Phase 12c, 2026-04-24)
+//
+// Bug-intel Cluster "Core Data merge conflict" (fingerprint `62f8f411`)
+// surfaced in the 2026-04-24T13:02 export: a user on 1.38 (51) hit
+// NSCocoaErrorDomain 133020 "Could not merge changes" while syncing
+// exercise favorites. Root cause: `SupabaseManager.syncFavoritesToCoreData`
+// (+ 11 other call sites) created a background context with
+// `automaticallyMergesChangesFromParent = true` but never set
+// `mergePolicy`. When the main viewContext saves first (e.g. user taps
+// "favorite" from Exercise Library), the background sync's unsaved
+// changes race the merge; without an explicit policy, Core Data throws
+// the conflict instead of silently taking either side.
+//
+// `newBackgroundContextSafely()` is the canonical helper every path
+// should use. It sets the parent-merge flag AND the property-object-
+// trump merge policy that `swiftui-rules.mdc` §"`bgContext.mergePolicy`
+// is MANDATORY" invariant requires. All 12 offending sites were
+// migrated in the same PR (2026-04-24) — grep for `newBackgroundContext()`
+// directly in future code only when you have a specific reason NOT to
+// merge (rare).
+extension NSPersistentContainer {
+    /// Returns a new background context with the two flags every
+    /// long-lived / sync-style path needs:
+    ///   - `automaticallyMergesChangesFromParent = true`
+    ///   - `mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy`
+    /// Use this instead of `newBackgroundContext()` unless you need the
+    /// unconfigured raw context (which is rare and should carry a
+    /// comment explaining why).
+    func newBackgroundContextSafely() -> NSManagedObjectContext {
+        let ctx = newBackgroundContext()
+        ctx.automaticallyMergesChangesFromParent = true
+        ctx.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        return ctx
+    }
+}
+
 struct PersistenceController {
     static let shared = PersistenceController()
     

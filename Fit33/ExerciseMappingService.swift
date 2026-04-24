@@ -173,7 +173,25 @@ final class ExerciseMappingService {
                 #endif
             }
         } catch {
-            AppLogger.error("❌ ExerciseMappingService: Failed to build maps: \(error)", category: .workout)
+            // Phase 12c — classifier routing. The original
+            // `AppLogger.error` surfaced as fingerprint `5c4c3e1f`
+            // (timeout -1001 on `/exercises` fetch) in the 2026-04-24
+            // bug-intel export. Exercise mapping is a retry-covered
+            // build step (we re-attempt on next foreground), so a
+            // transient timeout should not manufacture a CRITICAL
+            // fingerprint. NetworkErrorClassifier routes
+            // `NSURLErrorTimedOut` to `.warning` by default — we pass
+            // `transientLevel: .debug` for extra quiet since the
+            // parent fetch in `ExerciseLibraryService` already has
+            // retry + offline queue semantics.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[MAPPING] Failed to build maps",
+                category: .workout,
+                transientLevel: .debug,
+                op: "exercises.build_maps",
+                endpoint: "rest/v1/exercises"
+            )
         }
     }
     

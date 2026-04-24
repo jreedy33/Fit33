@@ -275,8 +275,7 @@ final class SmartExercisePairingEngine {
     }
     
     private func buildPairingDatabase() async {
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
 
         let exerciseData: [(name: String, muscles: [String], equipment: String)] = await bgContext.perform {
             let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()

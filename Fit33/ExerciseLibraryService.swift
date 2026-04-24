@@ -74,8 +74,7 @@ class ExerciseLibraryService: ObservableObject {
         guard !isPreWarming && cachedExercisesByName == nil else { return }
         isPreWarming = true
         
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         
         Task.detached(priority: .userInitiated) { [weak self] in
             await MainActor.run { StartupWaterfall.shared.mark("ExerciseLibrary.preWarmCache") }
@@ -142,8 +141,7 @@ class ExerciseLibraryService: ObservableObject {
             // Build filter cache: extract names+IDs on background, match in background,
             // only resolve the ~800 matched exercises on the main thread (not all 5501).
             if nameList.count > 100 {
-                let bgCtx = PersistenceController.shared.container.newBackgroundContext()
-                bgCtx.automaticallyMergesChangesFromParent = true
+                let bgCtx = PersistenceController.shared.container.newBackgroundContextSafely()
                 let exerciseIndex: [(name: String, objectID: NSManagedObjectID)] = await bgCtx.perform {
                     let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                     request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]

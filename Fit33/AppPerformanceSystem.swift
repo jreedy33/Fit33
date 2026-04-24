@@ -292,8 +292,7 @@ final class StartupCache: ObservableObject {
         let startTime = CACurrentMediaTime()
         AppLogger.debug("🚀 [STARTUP CACHE] Beginning warm-up (background)...", category: .performance)
         
-        let bgContext = PersistenceController.shared.container.newBackgroundContext()
-        bgContext.automaticallyMergesChangesFromParent = true
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         
         // Stage 1: User stats (fastest, most critical)
         await warmUserStats(context: bgContext)

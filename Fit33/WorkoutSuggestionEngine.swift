@@ -14,8 +14,7 @@ final class WorkoutSuggestionEngine: ObservableObject {
     static let shared = WorkoutSuggestionEngine()
 
     private let bgContext: NSManagedObjectContext = {
-        let ctx = PersistenceController.shared.container.newBackgroundContext()
-        ctx.automaticallyMergesChangesFromParent = true
+        let ctx = PersistenceController.shared.container.newBackgroundContextSafely()
         return ctx
     }()
 

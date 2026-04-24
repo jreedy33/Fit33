@@ -877,16 +877,43 @@ private func performIntelligenceInit() async {
     
     AppLogger.debug("Starting background intelligence initialization...", category: .general)
     
+    // Phase 1 — loadExerciseData is cheap (49ms observed) and consumed by the
+    // Workout tab's Recommended section. Run eagerly BEFORE the 10s defer so
+    // the Recommended strip isn't blank on first tab visit.
     await CPUProtection.shared.waitForCPUSettled(maxWait: 3.0)
-    
     await wf.measure("Intel: loadExerciseData") {
         ExerciseIntelligenceEngine.shared.loadExerciseData()
     }
     AppLogger.debug("Intelligence engine data loading started", category: .general)
     
-    await Task.yield()
-    try? await Task.sleep(for: .milliseconds(200))
+    // ═══════════════════════════════════════════════════════════════════════
+    // Sprint 2026-04-24 Phase 2: unfettered-first-10s policy
+    // ═══════════════════════════════════════════════════════════════════════
+    // 1.38 (53) logs showed intelligence running 21s of CPU work starting at
+    // t=6s, overlapping with first-time tab init (each tab's LazyTabManager
+    // render hits main thread HARD on first visit). Result: 2-3fps sustained
+    // drops and 900ms slow tab transitions because 4-5 background tasks were
+    // thrashing all cores.
+    //
+    // Policy: give the user 10 seconds of unfettered CPU after `.intelligence`
+    // phase fires and `loadExerciseData` completes. That's typically enough to
+    // visit a couple tabs and scroll before the heavy analytical work begins.
+    // Each heavy phase then:
+    //   (a) waits for CPU + UI idle (no active tab switch / transition)
+    //   (b) sleeps 1s between phases (not 500ms) so any gesture the user
+    //       started mid-phase gets a full frame budget before next phase starts
+    //
+    // Invariant: QP #17 (bulk work off main) still holds — this is just
+    // additional cooperation with the main-thread animator.
+    // ═══════════════════════════════════════════════════════════════════════
+    try? await Task.sleep(for: .seconds(10))
+    guard !Task.isCancelled else { return }
     
+    await CPUProtection.shared.waitForUIIdle(maxWait: 5.0)
+    
+    // Phase 2 — buildMaps: the biggest CPU consumer (8.2s observed). Has its
+    // own per-chunk CPU gate via CPUProtection inside `buildMaps`, plus we now
+    // gate the phase start on UI-idle so it never kicks off mid-transition.
     if !CPUProtection.shared.isCPUCritical() {
         await wf.measure("Intel: buildMaps") {
             let cachedDTOs = try? await SupabaseManager.shared.fetchAllExercisesDeduped()
@@ -895,9 +922,12 @@ private func performIntelligenceInit() async {
         AppLogger.debug("Exercise mapping service initialized", category: .general)
     }
     
-    await Task.yield()
-    try? await Task.sleep(for: .milliseconds(500))
+    await CPUProtection.shared.waitForUIIdle(maxWait: 3.0)
+    try? await Task.sleep(for: .seconds(1))
     
+    // Phase 3 — pairingEngine: analyzes 5431 exercises. Observed 2fps sustained
+    // drop in 1.38 (53). Gated strictly on CPUCritical (not the looser "too high")
+    // so we bail if other work is stealing CPU rather than piling on.
     if !CPUProtection.shared.isCPUCritical() {
         await wf.measure("Intel: pairingEngine") {
             SmartExercisePairingEngine.shared.initialize()
@@ -905,9 +935,12 @@ private func performIntelligenceInit() async {
         AppLogger.debug("Smart exercise pairing engine initialized", category: .general)
     }
     
-    await Task.yield()
-    try? await Task.sleep(for: .milliseconds(500))
+    await CPUProtection.shared.waitForUIIdle(maxWait: 3.0)
+    try? await Task.sleep(for: .seconds(1))
     
+    // Phase 4 — popularity: 3 sequential network calls (2020ms). Skip if CPU is
+    // "too high" (not just critical) since network decode happens on background
+    // but JSON deserialization of 100+ exercises still competes for CPU.
     if !CPUProtection.shared.isCPUTooHigh() {
         await wf.measure("Intel: popularity") {
             await ExercisePopularityService.shared.refreshFromServer()
@@ -915,8 +948,8 @@ private func performIntelligenceInit() async {
         AppLogger.debug("Exercise popularity data loaded", category: .general)
     }
     
-    await Task.yield()
-    try? await Task.sleep(for: .milliseconds(500))
+    await CPUProtection.shared.waitForUIIdle(maxWait: 3.0)
+    try? await Task.sleep(for: .seconds(1))
     
     if !CPUProtection.shared.isCPUTooHigh() {
         await wf.measure("Intel: collaborative") {
@@ -925,10 +958,15 @@ private func performIntelligenceInit() async {
         AppLogger.debug("Collaborative learning engine synced", category: .general)
     }
     
-    await Task.yield()
-    try? await Task.sleep(for: .seconds(1))
+    await CPUProtection.shared.waitForUIIdle(maxWait: 5.0)
+    try? await Task.sleep(for: .seconds(2))
     
-    await CPUProtection.shared.waitForCPUSettled(maxWait: 3.0)
+    // Phase 6 — behaviorAnalysis: 5810ms observed, dominated by the 4698-exercise
+    // similarity map build inside UserBehaviorLearningEngine. Hard-gated on
+    // CPUCritical — this is the LAST phase and the one we most want to defer
+    // past the user's initial session. If user is actively gesturing when we
+    // get here, bail entirely; the service reloads next session from cache.
+    await CPUProtection.shared.waitForCPUSettled(maxWait: 5.0)
     
     if !CPUProtection.shared.isCPUCritical() {
         await wf.measure("Intel: behaviorAnalysis") {
@@ -937,7 +975,7 @@ private func performIntelligenceInit() async {
         }
         AppLogger.debug("User behavior learning engine initialized", category: .general)
     } else {
-        AppLogger.warning("Skipping behavior analysis - CPU too high", category: .general)
+        AppLogger.warning("Skipping behavior analysis - CPU too high (will retry next session)", category: .general)
     }
     
     wf.end("Intelligence (total)")

@@ -336,36 +336,78 @@ struct DashboardView: View {
                 }
                 }
                 .refreshable {
-                    // Pull-to-refresh bypasses every throttle. `force: true`
-                    // now propagates through `HealthDataService` into the
-                    // per-source sync methods (WHOOP / Oura / Fitbit) — see
-                    // `HealthDataService.syncAllHealthData(force:)`.
-
-                    // STEP 1: All connected health sources (HealthKit, Strava, Fitbit, WHOOP, Oura)
-                    async let health: () = HealthDataService.shared.syncAllHealthData(force: true)
-
-                    // STEP 2: All challenge types (parallel for speed)
-                    async let r1: () = ChallengeService.shared.fetchPendingInvites()
-                    async let r2: () = ChallengeService.shared.fetchActiveChallenges()
-                    async let r3: () = ChallengeService.shared.fetchActiveGroupChallenges()
-                    async let r4: () = ChallengeService.shared.fetchPendingSentChallenges()
-                    async let r5: () = CommunityChallengeService.shared.refreshAll(force: true)
-                    async let r6: () = PrivateChallengeService.shared.refreshAll(force: true)
-
-                    // STEP 3: Dashboard-widget-specific data (daily quests, meals, hydration)
-                    // These back the quests widget, macros widget, and hydration widget.
-                    async let quests: () = DailyQuestService.shared.fetchDailyQuests(force: true)
-                    async let hydration: () = HydrationService.shared.loadTodayData()
-
-                    _ = await (health, r1, r2, r3, r4, r5, r6, quests, hydration)
-
-                    // Meals loader is synchronous — run after the async group.
+                    // Sprint 2026-04-24 Phase 3 — pull-to-refresh trimmed.
+                    //
+                    // Phase 2 kept 10 tasks in the awaited group; both 1.38 (54) pulls
+                    // still hit the 8s timeout cap, meaning "user waits 8s then sees
+                    // stale UI update in background anyway". Phase 3 trims the awaited
+                    // group to the 4 truly-visible-on-dashboard widgets, moves heavy
+                    // challenge refreshes to fire-and-forget (they publish when ready),
+                    // and tightens the cap 8s → 5s. Background work is unchanged; user
+                    // just stops waiting for it.
+                    //
+                    // AWAITED (≤5s, 4 tasks): quests, hydration, cardio list, welcome
+                    // card recommendation. These ARE the dashboard body.
+                    //
+                    // FIRE-AND-FORGET: HealthDataService (coalesced per Sprint 3 I1 —
+                    // won't stack), FriendService home refresh, community challenge
+                    // full refresh, private challenge full refresh, ChallengeService
+                    // pending invites / active / group / sent.
+                    let refreshStart = CFAbsoluteTimeGetCurrent()
+                    
+                    // Fire-and-forget heavy / non-dashboard-critical work.
+                    // Coalesced HealthDataService means stacking these is safe.
+                    Task { await HealthDataService.shared.syncAllHealthData(force: true) }
+                    Task { await FriendService.shared.refreshHomeScreenData() }
+                    Task { await CommunityChallengeService.shared.refreshAll(force: true) }
+                    Task { await PrivateChallengeService.shared.refreshAll(force: true) }
+                    Task { await ChallengeService.shared.fetchPendingInvites() }
+                    Task { await ChallengeService.shared.fetchActiveChallenges() }
+                    Task { await ChallengeService.shared.fetchActiveGroupChallenges() }
+                    Task { await ChallengeService.shared.fetchPendingSentChallenges() }
+                    
+                    // Awaited group — only the 4 widgets on the visible dashboard,
+                    // raced against a 5s hard cap. After 5s the spinner ALWAYS
+                    // clears; in-flight awaited tasks also get cancelled so their
+                    // next re-trigger is clean.
+                    let realWork = Task { @MainActor in
+                        await withTaskGroup(of: Void.self) { group in
+                            group.addTask { await DailyQuestService.shared.fetchDailyQuests(force: true) }
+                            group.addTask { await HydrationService.shared.loadTodayData() }
+                            group.addTask { await loadRecentCardioWorkouts() }
+                            group.addTask { await loadPersonalizedRecommendation() }
+                        }
+                    }
+                    let timedOut = await withTaskGroup(of: Bool.self, returning: Bool.self) { outer in
+                        outer.addTask {
+                            await realWork.value
+                            return false   // false = "didn't time out"
+                        }
+                        outer.addTask {
+                            try? await Task.sleep(nanoseconds: 5_000_000_000)
+                            return true    // true = "timed out"
+                        }
+                        let firstResult = await outer.next() ?? true
+                        outer.cancelAll()
+                        if firstResult {
+                            realWork.cancel()
+                        }
+                        return firstResult
+                    }
+                    if timedOut {
+                        AppLogger.warning("[DASHBOARD] Pull-to-refresh hit 5s timeout — clearing spinner (background work continues)", category: .ui)
+                    }
+                    
+                    // Meals loader is synchronous — run after the awaited group.
                     MealService.shared.loadTodaysMeals()
-
-                    // STEP 4: Home-screen social content + recommendation card
-                    await FriendService.shared.refreshHomeScreenData()
-                    await loadRecentCardioWorkouts()
-                    await loadPersonalizedRecommendation()
+                    
+                    // Timing log. Uses the actual wall clock from refreshStart, not
+                    // the withTaskGroup exit time (Phase 2's log was mathematically
+                    // wrong when the timeout branch won — the final elapsed was
+                    // dominated by how long `outer`'s cancel+exit took to drain,
+                    // which is tens of ms, not the full 8s the user actually waited).
+                    let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - refreshStart) * 1000)
+                    AppLogger.debug("[DASHBOARD] Pull-to-refresh visible-work completed in \(elapsedMs)ms (timed_out: \(timedOut))", category: .ui)
                 }
             }
             .navigationBarHidden(true)

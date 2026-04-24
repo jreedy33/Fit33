@@ -315,18 +315,30 @@ class UserBehaviorLearningEngine: ObservableObject {
             // Update caches
             self.updateCaches(from: profile)
             
-            // ⚡️ PERFORMANCE: Defer similarity map to background
-            // Pre-extract exercise data on main thread (Core Data objects aren't thread-safe)
-            let exerciseData: [(name: String, muscles: String, equipment: String)] = ExerciseLibraryService.shared.getAllExercises().compactMap { exercise in
-                guard let name = exercise.name?.lowercased() else { return nil }
-                let muscles = (exercise.muscleGroups as? [String])?.first?.lowercased() ?? ""
-                let equipment = exercise.equipment ?? ""
-                return (name: name, muscles: muscles, equipment: equipment)
-            }
-            
-            // Use Task.detached to truly run off @MainActor
+            // ⚡️ PERFORMANCE: Sprint 2026-04-24 Phase 2 — move the 5431-exercise
+            // Core Data iteration INTO the detached task so analyzeUserBehavior
+            // returns fast. Before: this compactMap ran on the task thread before
+            // the Task.detached fire-and-forget, adding ~4s to the `Intel:
+            // behaviorAnalysis` waterfall phase (5810ms total). Now analysis
+            // reports complete as soon as the profile-build finishes (~1s), and
+            // the similarity map rebuilds silently on `.background` priority.
+            //
+            // Core Data safety: `ExerciseLibraryService.getAllExercises()` returns
+            // viewContext-attached objects, so we MUST extract the scalar fields
+            // on `MainActor` before handing a plain-data array to `.background`.
+            // Without the hop, off-main reads of `.name`/`.muscleGroups` are UB
+            // (see DATA_BACKEND_AGENT Core Data context safety rules).
             Task.detached(priority: .background) { [weak self] in
                 guard let self = self else { return }
+                let exerciseData: [(name: String, muscles: String, equipment: String)] =
+                    await MainActor.run {
+                        ExerciseLibraryService.shared.getAllExercises().compactMap { exercise in
+                            guard let name = exercise.name?.lowercased() else { return nil }
+                            let muscles = (exercise.muscleGroups as? [String])?.first?.lowercased() ?? ""
+                            let equipment = exercise.equipment ?? ""
+                            return (name: name, muscles: muscles, equipment: equipment)
+                        }
+                    }
                 self.buildExerciseSimilarityMapBackground(exerciseData)
             }
             

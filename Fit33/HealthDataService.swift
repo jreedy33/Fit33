@@ -58,21 +58,40 @@ final class HealthDataService: ObservableObject {
     private static let syncThrottleInterval: TimeInterval = 300 // 5 minutes
     private var isSyncing = false
     
+    /// Sprint 3 (Sprint 2026-04-24 Phase 3): in-flight task for coalescing.
+    /// Per QP invariant #24c, multiple concurrent callers of `syncAllHealthData`
+    /// MUST share one underlying task instead of spawning N parallel health
+    /// source syncs. 1.38 (54) logs showed 9× `HealthKit.syncAll` in a single
+    /// startup — from BackgroundChallengeSyncService + Dashboard `.task` +
+    /// app-foreground handler + Friends `.task` + onChange triggers all firing
+    /// within the same 10-second window. The `isSyncing` flag alone was not
+    /// enough because `force: true` bypassed it (pull-to-refresh + scenePhase).
+    /// Now force-callers also coalesce into the in-flight task.
+    private var inFlightSyncTask: Task<Void, Never>?
+    
     private init() {
         updateConnectedSources()
     }
     
     // MARK: - Sync All Data
     
-    /// Sync health data from all connected sources (throttled)
+    /// Sync health data from all connected sources (throttled + coalesced).
+    /// Concurrent callers share the same underlying work.
     func syncAllHealthData(force: Bool = false) async {
-        // Throttle: Skip if already syncing or synced recently
+        // Coalesce: if a sync is already in-flight, wait for it rather than
+        // starting another. Applies even for `force: true` callers — `force`
+        // skips the 5-minute throttle, but does NOT skip the single-flight
+        // guarantee. Without this gate, pull-to-refresh (force) stacks on top
+        // of scenePhase foreground (force) stacks on top of HK observer wake
+        // (force) → 9× parallel sync in the waterfall.
+        if let existing = inFlightSyncTask {
+            AppLogger.debug("Coalescing into in-flight health sync (force: \(force))", category: .health)
+            await existing.value
+            return
+        }
+        
+        // Throttle: skip if synced recently and not forced.
         if !force {
-            if isSyncing {
-                AppLogger.debug("Skipping health sync - already in progress", category: .health)
-                return
-            }
-            
             if let lastSync = lastSyncDate,
                Date().timeIntervalSince(lastSync) < Self.syncThrottleInterval {
                 AppLogger.debug("Skipping full health sync - synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .health)
@@ -85,6 +104,21 @@ final class HealthDataService: ObservableObject {
             }
         }
         
+        // Wrap the real work in a Task so concurrent callers can `await` it.
+        // `self` is @MainActor, so the task body runs on main and hops off via
+        // `Task.detached` internally (existing pattern preserved below).
+        let task = Task { @MainActor in
+            await performSyncAllHealthData(force: force)
+        }
+        inFlightSyncTask = task
+        await task.value
+        inFlightSyncTask = nil
+    }
+    
+    /// Internal implementation — runs the actual multi-source sync. Always
+    /// called through `syncAllHealthData(force:)` which coalesces + throttles.
+    /// Split out so the public API can set up the `inFlightSyncTask` lifecycle.
+    private func performSyncAllHealthData(force: Bool) async {
         isSyncing = true
         isLoading = true
         

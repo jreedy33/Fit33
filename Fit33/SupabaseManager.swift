@@ -291,6 +291,23 @@ class SupabaseManager: ObservableObject {
     /// Profile verification always runs in a background task so slow `user_profiles`
     /// queries do not extend the hot path.
     func checkAuthOnly() async {
+        // Sprint 2026-04-24 Phase 2 L: inner-timing instrumentation. Caller
+        // (`Fit33App.task`) also wraps this in a signpost — when the two disagree
+        // it tells us whether the time is in the auth work itself or in `.task`
+        // scheduling latency (SwiftUI may delay starting the closure until main
+        // thread has capacity). 1.38 (54) logs showed `[STARTUP] checkAuthOnly
+        // completed in 1482ms` despite the fast-path log firing — most of that
+        // was scheduling latency, not auth work. Inner timing disambiguates.
+        let innerStart = CFAbsoluteTimeGetCurrent()
+        defer {
+            let innerMs = Int((CFAbsoluteTimeGetCurrent() - innerStart) * 1000)
+            if innerMs > 500 {
+                AppLogger.warning("[AUTH] checkAuthOnly inner-work took \(innerMs)ms (outer wrap may differ due to .task scheduling latency)", category: .auth)
+            } else {
+                AppLogger.debug("[AUTH] checkAuthOnly inner-work: \(innerMs)ms", category: .auth)
+            }
+        }
+        
         // Fast path 1 — cached valid session
         if let cached = client.auth.currentSession, !cached.isExpired {
             await MainActor.run {

@@ -177,15 +177,20 @@ final class MemoryPressureHandler {
     // intelligence engine, and all services. Thresholds must be ABOVE that baseline
     // or the cleanup loop fires endlessly, blocks the main thread, and causes UI freezes.
     //
-    // Sprint 2026-04-24: lowered warning 550 → 500 after 1.38 (53) session logs
-    // showed steady climb 256MB → 527MB across 6 tab switches WITHOUT ever tripping
-    // the warning threshold. Clearing warm caches at 500MB is cheap (VideoPlaybackEngine
-    // warm cache + dedup cache + preload manager reduction — ~10ms) and gives us headroom
-    // before a spike pushes us past critical. Periodic poll also bumped 30s → 15s to
-    // catch bursts between video/carousel loads.
-    private let warningThreshold: Double = 500  // Light cleanup (warm caches only)
-    private let criticalThreshold: Double = 700 // Full cache clear
-    private let emergencyThreshold: Double = 850 // Aggressive teardown
+    // Sprint history:
+    // - Originally 550MB warning.
+    // - Sprint 1 (2026-04-24 Phase 1): lowered to 500MB to catch bursts earlier.
+    //   Problem: working set after a normal session is 620+ MB (5 tabs loaded +
+    //   all services + intelligence maps), so the warning fired on EVERY session
+    //   and `clearWarmCaches` freed 0 entries because the baseline already had
+    //   no warm caches to clear. Pure log noise.
+    // - Sprint 3 (2026-04-24 Phase 3): bumped back to 650MB. Above the healthy
+    //   working-set ceiling but well under critical. Fires only when something
+    //   actually unusual (video binge, carousel thrash) pushes us over. 15s
+    //   poll interval retained — it's cheap and catches real spikes.
+    private let warningThreshold: Double = 650  // Light cleanup (warm caches only)
+    private let criticalThreshold: Double = 800 // Full cache clear
+    private let emergencyThreshold: Double = 950 // Aggressive teardown
     
     private init() {
         setupMemoryWarningObserver()
@@ -894,6 +899,33 @@ final class CPUProtection {
         let startTime = Date()
         while isCPUTooHigh() && Date().timeIntervalSince(startTime) < maxWait {
             try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+        }
+    }
+    
+    /// Wait for BOTH CPU to settle AND no tab transition / tab-switch watchdog
+    /// context to be active. Sprint 2026-04-24 Phase 2 — session logs showed
+    /// 21s of intelligence-phase CPU work competing with first-time tab inits,
+    /// producing 2-3fps drops and 900ms slow transitions. Intelligence phases
+    /// now gate on this before starting each heavy step so the user's active
+    /// gesture always wins the main thread.
+    ///
+    /// Intentionally NOT `@MainActor` — the sleep loop runs off-main so we
+    /// never hold the main thread while waiting. We hop to main only to read
+    /// `TabSwitchOptimizer.shared.isTransitioning` (it's `@MainActor`); the
+    /// hop itself also doubles as a "main is responsive" probe because it
+    /// will queue behind any active main-thread work.
+    ///
+    /// - Parameters:
+    ///   - maxWait: hard ceiling so a stuck tab-switch flag can't deadlock startup.
+    ///   - pollInterval: 200ms matches the watchdog's native granularity.
+    func waitForUIIdle(maxWait: TimeInterval = 5.0, pollInterval: TimeInterval = 0.2) async {
+        let startTime = Date()
+        while Date().timeIntervalSince(startTime) < maxWait {
+            let cpuHigh = isCPUTooHigh()
+            let watchdogBusy = MainThreadWatchdog.shared.isTabSwitchActive
+            let transitioning = await MainActor.run { TabSwitchOptimizer.shared.isTransitioning }
+            if !cpuHigh && !watchdogBusy && !transitioning { return }
+            try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
         }
     }
     

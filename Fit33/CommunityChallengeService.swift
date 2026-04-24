@@ -1176,6 +1176,13 @@ class CommunityChallengeService: ObservableObject {
     /// Syncs HealthKit/tracking data to all active community challenges
     /// Called alongside the existing challenge sync
     func syncAllTrackingToCommunityChallenges() async {
+        // Auto-populate `myChallenges` if empty so a cold HealthKit observer
+        // wake still pushes to community challenges — otherwise the sync
+        // silently no-ops while private/1v1 go through, producing cross-
+        // surface leaderboard inconsistency (the 2026-04-24 Paul bug).
+        if myChallenges.isEmpty {
+            await fetchMyChallenges()
+        }
         guard !myChallenges.isEmpty else { return }
 
         // Force-refresh HealthKit first so `todaySteps` / `todayActiveMinutes`

@@ -1477,6 +1477,15 @@ class PrivateChallengeService: ObservableObject {
     // MARK: - Auto-Sync Progress (from HealthKit)
     
     func syncAllTrackingToPrivateChallenges() async {
+        // Auto-populate `myChallenges` if the service hasn't fetched this
+        // session (e.g. cold HealthKit observer wake). Without this guard the
+        // background sync silently no-ops while other challenge services push
+        // fresh values, causing cross-surface inconsistency (private shows
+        // data, community/1v1 don't — observed 2026-04-24 Paul in private
+        // leaderboard vs Paul shown as "—" in community leaderboard same min).
+        if myChallenges.isEmpty {
+            await fetchMyChallenges()
+        }
         guard !myChallenges.isEmpty else { return }
 
         // Force-refresh HealthKit first so `todaySteps` / `todayActiveMinutes`

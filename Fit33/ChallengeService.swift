@@ -1639,6 +1639,12 @@ class ChallengeService: ObservableObject {
     
     /// Sync HealthKit data to ALL active group challenges (called alongside 1v1 sync)
     func syncHealthKitDataToGroupChallenges() async {
+        // Auto-populate the group challenge list if cold so we never skip a
+        // push while private / community push. See PrivateChallengeService
+        // for full rationale (2026-04-24 Paul cross-surface inconsistency).
+        if activeGroupChallenges.isEmpty {
+            await fetchActiveGroupChallenges()
+        }
         guard !activeGroupChallenges.isEmpty else { return }
 
         // Force-refresh HealthKit before reading per-challenge values (same
@@ -2119,6 +2125,12 @@ class ChallengeService: ObservableObject {
         guard SupabaseManager.shared.isAuthenticated else {
             AppLogger.debug("[CHALLENGE SYNC] Skipping HK sync — not authenticated", category: .social)
             return
+        }
+        // Auto-populate the 1v1 challenge list if cold so we never skip a
+        // push while private / community go through — cross-surface
+        // consistency guard (2026-04-24 Paul bug).
+        if activeChallenges.isEmpty {
+            await fetchActiveChallenges()
         }
         guard !activeChallenges.isEmpty else {
             AppLogger.debug("No active challenges to sync", category: .social)

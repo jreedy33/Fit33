@@ -202,9 +202,16 @@ struct PrivateChallengeDetailView: View {
             Text("We'll hide this message, flag it for review, and block the sender. You can manage blocks in Settings → Privacy & Security → Blocked Users.")
         }
         .task {
-            await loadDetail()
-            chatMessages = await privateChallengeService.fetchMessages(challengeId: challenge.challengeId)
+            // Sprint 2026-04-24 perf: parallelize the two independent fetches.
+            // Previously sequential (loadDetail → fetchMessages) which made the
+            // visible render delay = sum of both network calls (~6.7s observed
+            // on a slow network). `markChatAsRead` is local-only and must not
+            // depend on either fetch succeeding.
             privateChallengeService.markChatAsRead(challengeId: challenge.challengeId)
+            async let detailTask: () = loadDetail()
+            async let messagesTask = privateChallengeService.fetchMessages(challengeId: challenge.challengeId)
+            let (_, messages) = await (detailTask, messagesTask)
+            chatMessages = messages
         }
         .task(id: "chat-realtime") {
             // Direct realtime subscription for live chat updates while on this view

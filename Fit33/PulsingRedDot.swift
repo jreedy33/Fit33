@@ -6,9 +6,18 @@ import SwiftUI
 
 struct PulsingRedDot: View {
     @State private var isPulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var size: CGFloat = 12
     var color: Color = .red
+    
+    /// QP invariant #13: decorative animations gate on BOTH isLowPowerMode AND reduceMotion.
+    /// In those cases we render the dot static in its ring-expanded state — the user still
+    /// sees the red attention cue without continuous GPU work burning battery / dropping FPS
+    /// during scroll.
+    private var shouldDisableMotion: Bool {
+        reduceMotion || ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
     
     var body: some View {
         ZStack {
@@ -26,6 +35,7 @@ struct PulsingRedDot: View {
                 .shadow(color: color.opacity(0.5), radius: 3, x: 0, y: 1)
         }
         .onAppear {
+            guard !shouldDisableMotion else { return }
             withAnimation(
                 Animation.easeInOut(duration: 1.2)
                     .repeatForever(autoreverses: false)

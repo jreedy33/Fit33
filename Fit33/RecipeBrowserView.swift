@@ -868,10 +868,12 @@ struct PremiumRecipeGridCard: View {
             isPressed = pressing
         }, perform: {})
         .onAppear {
-            if isLocked {
-                withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
-                    lockGlowRotation = 360
-                }
+            // QP invariant #13: gate rotating lock glow on Low Power + Reduce Motion.
+            guard isLocked,
+                  !ProcessInfo.processInfo.isLowPowerModeEnabled,
+                  !UIAccessibility.isReduceMotionEnabled else { return }
+            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+                lockGlowRotation = 360
             }
         }
     }

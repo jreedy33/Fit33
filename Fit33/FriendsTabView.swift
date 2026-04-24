@@ -1879,6 +1879,11 @@ struct FriendsTabView: View {
         .shadow(color: Color.orange.opacity(0.15), radius: 15, x: 0, y: 0)
         .shadow(color: Color.orange.opacity(0.08), radius: 25, x: 0, y: 4)
         .onAppear {
+            // QP invariant #13: gate decorative rotating glow on Low Power + Reduce Motion.
+            // Observed 17-21fps scroll FPS drops in 1.38 (53) with Low Power on — every
+            // continuous 360° glow on-screen means a rotation update per frame during scroll.
+            guard !ProcessInfo.processInfo.isLowPowerModeEnabled,
+                  !UIAccessibility.isReduceMotionEnabled else { return }
             withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
                 challengeGlowPhase = 360
             }

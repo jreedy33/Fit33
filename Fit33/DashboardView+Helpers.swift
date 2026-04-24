@@ -39,13 +39,14 @@ extension DashboardView {
         }
         lastCardioFetchTime = Date()
         
+        // Sprint 2026-04-24: parallelize the two independent network calls.
+        // Previously sequential → dashboard cardio widget updated in sum-of-both-RTTs;
+        // now updates after the slower of the two. Saves ~1 RTT on every foreground
+        // tab-return to Home.
+        async let recentTask = SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 5)
+        async let countTask = SupabaseManager.shared.fetchCardioWorkoutCount()
         do {
-            // Fetch recent for display (limited to 5)
-            let cardioWorkouts = try await SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 5)
-            
-            // Fetch total count for "Your Progress" stats (all-time)
-            let allTimeCount = try await SupabaseManager.shared.fetchCardioWorkoutCount()
-            
+            let (cardioWorkouts, allTimeCount) = try await (recentTask, countTask)
             await MainActor.run {
                 self.recentCardioWorkouts = cardioWorkouts
                 self.totalCardioWorkoutCount = allTimeCount

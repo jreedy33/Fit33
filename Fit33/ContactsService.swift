@@ -30,6 +30,14 @@ class ContactsService: ObservableObject {
     /// Reset only by pull-to-refresh (force).
     private(set) var hasRefreshedSuggestionsThisSession = false
     
+    /// Cross-session TTL for contact-match refresh. Hashing 2000+ phone numbers
+    /// + RPC match + DB upsert is expensive (~2-3s wall clock, observed 10fps
+    /// sustained scroll drop in 1.38 (53) session logs). Contact membership
+    /// doesn't change hour-to-hour, so we only need to re-run the heavy path
+    /// every 6 hours. Pull-to-refresh still bypasses this via `refreshSuggestions(force: true)`.
+    private static let suggestionsRefreshTTL: TimeInterval = 6 * 60 * 60
+    private static let lastSuggestionsRefreshKey = "contacts.last_suggestions_refresh_v1"
+    
     private init() {
         checkAuthorizationStatus()
         loadCachedSuggestions()
@@ -62,18 +70,33 @@ class ContactsService: ObservableObject {
         }
     }
     
-    /// One-shot per app session: refresh contacts + PYMK in the background.
-    /// Ensures suggestions are fresh without re-running on every tab switch.
+    /// Refresh contacts + PYMK in the background. Gated by:
+    ///   (a) In-session flag — prevents repeat calls within the same app launch
+    ///   (b) Cross-session TTL (6h) — skips the heavy contact-hash path even on
+    ///       cold start when we refreshed recently. PYMK still runs (lightweight
+    ///       RPC) because friends-of-friends DOES change hour-to-hour.
+    ///
+    /// Pull-to-refresh bypasses both gates via `refreshSuggestions(force: true)`
+    /// elsewhere, or via the force path on Friends tab batch-3.
     func refreshSuggestionsIfNeeded() async {
         guard !hasRefreshedSuggestionsThisSession else { return }
         guard SupabaseManager.shared.isAuthenticated else { return }
         hasRefreshedSuggestionsThisSession = true
         
+        // Cross-session TTL gate for the heavy contact-hash path.
+        let lastRefresh = UserDefaults.standard.double(forKey: Self.lastSuggestionsRefreshKey)
+        let secondsSinceLastRefresh = Date().timeIntervalSince1970 - lastRefresh
+        let contactsPathFresh = lastRefresh > 0 && secondsSinceLastRefresh < Self.suggestionsRefreshTTL
+        
         async let pymk: () = fetchPeopleYouMayKnow()
-        if canAccessContacts {
+        if canAccessContacts && !contactsPathFresh {
             async let contacts: () = fetchContactsAndFindFriends()
             _ = await (pymk, contacts)
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastSuggestionsRefreshKey)
         } else {
+            if contactsPathFresh {
+                AppLogger.debug("Skipping contact refresh — last ran \(Int(secondsSinceLastRefresh))s ago (TTL 6h)", category: .social)
+            }
             _ = await pymk
         }
     }

@@ -266,45 +266,112 @@ class SupabaseManager: ObservableObject {
     // MARK: - Authentication
     
     /// Verify session and set isAuthenticated WITHOUT triggering cloud sync.
-    /// Returns quickly (<200ms) so the UI can render from cached Core Data.
+    /// Returns quickly (<200ms typical) so the UI can render from cached Core Data.
     /// Cloud sync should be scheduled separately after the UI is interactive.
     ///
-    /// **Performance:** Sets `isAuthenticated` immediately after a local session is read.
-    /// Profile verification runs in a background task so slow `user_profiles` queries
-    /// (poor network) do not block the main thread or dashboard for 10–20s.
+    /// **Fast path (Sprint 1.38.54 — auth.session_recovery 5824ms regression fix):**
+    /// The previous implementation `await`ed `client.auth.session` unconditionally,
+    /// which internally calls `refreshSession()` whenever the access token is expired
+    /// or within 30s of expiry. On a slow / congested network that refresh can take
+    /// 5-6+ seconds, blocking the whole `.task` chain before first-frame interactivity.
+    ///
+    /// New flow:
+    ///   1. `currentSession` (nonisolated, sync) — read cached session instantly.
+    ///   2. If cached && not expired → set auth immediately. No network.
+    ///   3. If cached but expired → race `refreshSession()` against a 1.5s timeout.
+    ///      On timeout, STILL set auth = true optimistically using the cached user
+    ///      and retry refresh in a detached background task. The access token may
+    ///      be stale for a second but: (a) PostgREST responds 401 if so, (b) the
+    ///      SDK auto-refreshes on 401, and (c) losing a second of UI responsiveness
+    ///      is better than 6s of main-thread blocking.
+    ///   4. If no cached session at all → try `session` once (no timeout — this is
+    ///      the truly-signed-out path; fast even on slow network because it short-
+    ///      circuits when there is nothing to refresh).
+    ///
+    /// Profile verification always runs in a background task so slow `user_profiles`
+    /// queries do not extend the hot path.
     func checkAuthOnly() async {
-        do {
-            let session = try await client.auth.session
-            
+        // Fast path 1 — cached valid session
+        if let cached = client.auth.currentSession, !cached.isExpired {
             await MainActor.run {
-                currentUser = session.user
+                currentUser = cached.user
                 isAuthenticated = true
             }
-            AppLogger.info("Session restored (UI unblocked): \(session.user.email ?? "unknown")", category: .auth)
+            AppLogger.info("Session restored from cache (UI unblocked, no network): \(cached.user.email ?? "unknown")", category: .auth)
+            Task { await self.reconcileProfileAfterSessionRestore(userId: cached.user.id) }
+            return
+        }
+        
+        // Fast path 2 — cached but expired: race refresh against 1.5s timeout
+        if let cached = client.auth.currentSession {
+            AppLogger.debug("Cached session expired — racing refresh against 1.5s timeout", category: .auth)
+            let refreshed = await withTimeout(seconds: 1.5) { [client] in
+                try? await client.auth.refreshSession()
+            }
             
-            Task { await self.reconcileProfileAfterSessionRestore(userId: session.user.id) }
-        } catch {
-            // Session getter failed — try explicit refresh before giving up.
-            // The access token may have expired while the refresh token is still valid.
-            AppLogger.warning("Session check failed, attempting explicit refresh...", category: .auth)
-            do {
-                let refreshed = try await client.auth.refreshSession()
+            if let refreshed = refreshed {
                 await MainActor.run {
                     currentUser = refreshed.user
                     isAuthenticated = true
                 }
-                AppLogger.info("Session recovered via refresh (UI unblocked): \(refreshed.user.email ?? "unknown")", category: .auth)
+                AppLogger.info("Session refreshed within budget (UI unblocked): \(refreshed.user.email ?? "unknown")", category: .auth)
                 Task { await self.reconcileProfileAfterSessionRestore(userId: refreshed.user.id) }
                 return
-            } catch {
-                AppLogger.debug("Session refresh also failed: \(error.localizedDescription)", category: .auth)
             }
             
+            // Refresh timed out or failed — set auth optimistically from cached session.
+            // PostgREST will 401 if the access token is truly stale; SDK retries auto-refresh.
+            await MainActor.run {
+                currentUser = cached.user
+                isAuthenticated = true
+            }
+            AppLogger.warning("Session refresh exceeded 1.5s budget — proceeding optimistically with cached session (SDK will refresh in background)", category: .auth)
+            
+            // Keep trying to refresh in the background so the access token becomes valid ASAP.
+            Task.detached { [client, weak self] in
+                _ = try? await client.auth.refreshSession()
+                if let self = self {
+                    await self.reconcileProfileAfterSessionRestore(userId: cached.user.id)
+                }
+            }
+            return
+        }
+        
+        // No cached session — we are truly signed out. This path should be fast
+        // on any network because there is nothing to refresh.
+        do {
+            let session = try await client.auth.session
+            await MainActor.run {
+                currentUser = session.user
+                isAuthenticated = true
+            }
+            AppLogger.info("Session restored (no cache, hit network): \(session.user.email ?? "unknown")", category: .auth)
+            Task { await self.reconcileProfileAfterSessionRestore(userId: session.user.id) }
+        } catch {
             await MainActor.run {
                 isAuthenticated = false
                 currentUser = nil
             }
             AppLogger.info("No active session", category: .auth)
+        }
+    }
+    
+    /// Race an async throwing operation against a timeout. Returns the operation's
+    /// value, or `nil` on timeout. Used by `checkAuthOnly` to bound network-bound
+    /// session refresh. Generic helper — add new call sites cautiously; cancellation
+    /// of in-flight Supabase work depends on the SDK honoring `Task.cancel()`.
+    private func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escaping @Sendable () async -> T?) async -> T? {
+        return await withTaskGroup(of: T?.self, returning: T?.self) { group in
+            group.addTask {
+                await operation()
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? nil
         }
     }
     

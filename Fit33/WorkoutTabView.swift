@@ -367,7 +367,15 @@ struct WorkoutHomeView: View {
                 forceRenderID = UUID()
             }
             .task {
-                // Load cardio workouts (includes Strava activities) for goal tracking
+                // Sprint 2026-04-24: defer non-critical fetch past the tab-transition
+                // animation frame. 1.38 (53) session logs showed `[CARDIO] Fetched 50
+                // workouts` landing mid-transition → 1352ms slow transition observed
+                // (Nutrition→Workout). The 250ms delay is past the SwiftUI tab-switch
+                // default animation curve (~200ms), so the decode + @Published publish
+                // lands after the GPU commits the new tab content. QP invariant #19
+                // "tab switch handlers are minimal".
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
                 await loadCardioWorkoutsThisWeek()
             }
             .background(

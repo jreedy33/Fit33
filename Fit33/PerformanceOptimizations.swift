@@ -176,7 +176,14 @@ final class MemoryPressureHandler {
     // The app's normal working set is ~400-550MB after loading 5500+ exercises,
     // intelligence engine, and all services. Thresholds must be ABOVE that baseline
     // or the cleanup loop fires endlessly, blocks the main thread, and causes UI freezes.
-    private let warningThreshold: Double = 550  // Light cleanup (warm caches only)
+    //
+    // Sprint 2026-04-24: lowered warning 550 → 500 after 1.38 (53) session logs
+    // showed steady climb 256MB → 527MB across 6 tab switches WITHOUT ever tripping
+    // the warning threshold. Clearing warm caches at 500MB is cheap (VideoPlaybackEngine
+    // warm cache + dedup cache + preload manager reduction — ~10ms) and gives us headroom
+    // before a spike pushes us past critical. Periodic poll also bumped 30s → 15s to
+    // catch bursts between video/carousel loads.
+    private let warningThreshold: Double = 500  // Light cleanup (warm caches only)
     private let criticalThreshold: Double = 700 // Full cache clear
     private let emergencyThreshold: Double = 850 // Aggressive teardown
     
@@ -209,7 +216,11 @@ final class MemoryPressureHandler {
 
     private func startPeriodicMonitoring() {
         monitorTimer?.invalidate()
-        let timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        // Sprint 2026-04-24: 30s → 15s. 1.38 (53) session logs showed memory
+        // climbing ~45MB per tab switch; at 30s poll the app could be 50+MB
+        // over threshold before we notice. 15s poll still has negligible cost
+        // (`task_info` is a single syscall, ~100µs) and catches bursts earlier.
+        let timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.checkMemoryPressure()
         }
         // Keep running even while the user is scrolling — the check is fast.

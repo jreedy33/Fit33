@@ -426,10 +426,12 @@ struct PremiumRecipeCard: View {
             isPressed = pressing
         }, perform: {})
         .onAppear {
-            if isLocked {
-                withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
-                    lockGlowRotation = 360
-                }
+            // QP invariant #13: gate rotating glow on Low Power + Reduce Motion.
+            guard isLocked,
+                  !ProcessInfo.processInfo.isLowPowerModeEnabled,
+                  !UIAccessibility.isReduceMotionEnabled else { return }
+            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+                lockGlowRotation = 360
             }
         }
     }
@@ -870,6 +872,9 @@ struct RecipeCardSkeleton: View {
         )
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
         .onAppear {
+            // QP invariant #13: gate shimmer on Low Power + Reduce Motion.
+            guard !ProcessInfo.processInfo.isLowPowerModeEnabled,
+                  !UIAccessibility.isReduceMotionEnabled else { return }
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
                 isAnimating = true
             }

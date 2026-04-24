@@ -462,7 +462,27 @@ class AdvancedIntelligenceService: ObservableObject {
             lastActivityTrackDate = dateString
             AppLogger.debug("[INTELLIGENCE] Tracked activity: \(steps) steps (\(activityLevel))", category: .general)
         } catch {
-            AppLogger.warning("[INTELLIGENCE] Failed to track activity: \(error)", category: .general)
+            // Sprint 2026-04-24: Pre-migration-deploy guard. The 23514 check-constraint
+            // violation fires every session until `supabase/20260523_fix_activity_recovery_check_constraint.sql`
+            // is deployed (the old CHECK doesn't include WHOOP strings "fatigued" /
+            // "moderate" / "well_rested" or newer steps tier "normal"). Route through
+            // classifier + route 23514 specifically to `.debug` so it doesn't spam logs
+            // while the migration is pending. Post-deploy this path should essentially
+            // never fire; if it does, it means a new string was added client-side
+            // without extending the DB check — classifier will still surface it.
+            let isKnownCheckConstraint: Bool = {
+                let msg = String(describing: error).lowercased()
+                return msg.contains("activity_level_check") || msg.contains("23514")
+            }()
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[INTELLIGENCE] Failed to track activity",
+                category: .general,
+                transientLevel: isKnownCheckConstraint ? .debug : .warning,
+                op: "intelligence.track_activity",
+                endpoint: "rest/v1/activity_recovery_correlation",
+                userId: userId
+            )
         }
     }
     

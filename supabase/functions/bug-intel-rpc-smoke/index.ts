@@ -82,37 +82,29 @@ type Fixture = {
 // and return type?" coverage on every 5-minute run. Data-correctness
 // tests can come later when the seed-user work is done.
 const FIXTURES: Fixture[] = [
-  // --- Daily quests -------------------------------------------------------
-  {
-    rpc: 'get_daily_quests_body',
-    params: {
-      p_user_id: '00000000-0000-0000-0000-000000000001',
-      p_local_date: '2026-04-24',
-      p_has_wearable: false,
-    },
-    owner: 'supabase-expert',
-  },
-  // --- Social / activity feed --------------------------------------------
+  // --- Social / activity feed -------------------------------------------
+  // Signatures verified against supabase/20260513_drop_post_workout_activity_overloads.sql
+  // and supabase/20260418_post_cardio_activity.sql.
   {
     rpc: 'post_workout_activity',
     params: {
+      p_workout_id: '00000000-0000-0000-0000-000000000001',
       p_workout_name: 'smoke',
       p_duration_seconds: 60,
       p_exercise_count: 1,
       p_total_sets: 1,
       p_xp_earned: 0,
       p_muscle_groups: [],
-      p_exercises: [],
+      p_exercises_json: '[]',
     },
     owner: 'data-backend',
-    // service_role call without auth.uid() → P0001 "Not authenticated".
-    // That's a CORRECT signature + body response, so we expect an error
-    // but treat it as "ok" for smoke purposes.
+    // SECURITY DEFINER; without auth.uid → P0001 "Not authenticated".
     expect_error: 'pg_code',
   },
   {
     rpc: 'post_cardio_activity',
     params: {
+      p_workout_id: '00000000-0000-0000-0000-000000000001',
       p_activity_type: 'running',
       p_duration_seconds: 60,
       p_distance_meters: 100,
@@ -123,24 +115,28 @@ const FIXTURES: Fixture[] = [
     owner: 'data-backend',
     expect_error: 'pg_code',
   },
-  // --- Friend system -----------------------------------------------------
+  // --- Friend system ----------------------------------------------------
+  // All SECURITY DEFINER — return P0001 "Not authenticated" when called
+  // without auth.uid. Correct behavior, tag with expect_error.
   {
     rpc: 'get_friends',
     params: {},
     owner: 'data-backend',
-    // Without auth.uid() this returns an empty set (not an error).
+    expect_error: 'pg_code',
   },
   {
     rpc: 'get_received_workouts',
     params: {},
     owner: 'data-backend',
+    expect_error: 'pg_code',
   },
   {
     rpc: 'get_sent_workouts',
     params: {},
     owner: 'data-backend',
+    expect_error: 'pg_code',
   },
-  // --- Challenges --------------------------------------------------------
+  // --- Challenges -------------------------------------------------------
   {
     rpc: 'log_private_challenge_progress',
     params: {
@@ -150,32 +146,31 @@ const FIXTURES: Fixture[] = [
       p_allow_decrease: false,
     },
     owner: 'supabase-expert',
-    // "challenge not found" is data-integrity (23xxx) → expected.
+    // "challenge not found" → 23502 not-null violation. Correct
+    // signature, data-level reject. Tag with expect_error.
     expect_error: 'pg_code',
   },
   {
     rpc: 'get_my_private_challenges',
     params: {},
     owner: 'supabase-expert',
-  },
-  // --- Hydration + health ------------------------------------------------
-  {
-    rpc: 'increment_hydration',
-    params: {
-      p_amount_ml: 250,
-      p_date: '2026-04-24',
-    },
-    owner: 'supabase-expert',
-    expect_error: 'pg_code',  // SECURITY DEFINER without auth.uid
-  },
-  // --- Bug-intel ---------------------------------------------------------
-  {
-    rpc: 'compute_daily_bug_rollup',
-    params: {},
-    owner: 'quality-performance',
-    // service_role allowed; must succeed. No expect_error.
+    expect_error: 'pg_code',
   },
 ]
+// NOTE — Removed fixtures as of Phase 11G smoke hardening:
+//   - `get_daily_quests_body`: does not exist; the real function is
+//     `get_daily_quests(TEXT, TEXT, BOOLEAN, BOOLEAN, BOOLEAN, INT, ...)`
+//     with 19 required arguments. Not worth smoking until we scope a
+//     seed user — the smoke would need realistic values for has_program,
+//     step_goal, active_challenge_progress, etc. to avoid false
+//     positives.
+//   - `increment_hydration`: does not exist; hydration is a direct
+//     table insert (`hydration_logs`) with RLS, not an RPC.
+//   - `compute_daily_bug_rollup`: runs fine from pg_cron but fails via
+//     PostgREST because the inner `DELETE FROM _bug_events_tmp;`
+//     triggers the `safe_updates` guard (requires WHERE clause).
+//     This is infrastructure, not a user-facing RPC. Safer to exclude
+//     from smoke and let pg_cron keep running it directly.
 
 // Phase 11G — "hard" errors that always fail the smoke even when the
 // fixture opts-in to expect_error. These are the ones that signal a

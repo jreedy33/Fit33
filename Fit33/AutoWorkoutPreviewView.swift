@@ -806,7 +806,9 @@ struct AutoExerciseCard: View {
     var body: some View {
         HStack(spacing: Spacing.sm) {
             // Tappable card content area — opens the detail sheet, just like the
-            // Exercises tab rows push into `ExerciseDetailView`.
+            // Exercises tab rows push into `ExerciseDetailView`. A trailing blue
+            // info icon inside the button area hints at the "tap for info"
+            // affordance (mirrors `ExerciseCardRow.showInfoButton`).
             Button(action: onTapCard) {
                 HStack(spacing: Spacing.sm) {
                     ExercisePosterRingIcon(
@@ -821,6 +823,11 @@ struct AutoExerciseCard: View {
                     exerciseDetails
 
                     Spacer(minLength: 0)
+
+                    Image(systemName: "info.circle")
+                        .font(.ds_bodyRegular).fontWeight(.medium)
+                        .foregroundColor(.blue)
+                        .padding(.leading, Spacing.xxs)
                 }
                 .contentShape(Rectangle())
             }

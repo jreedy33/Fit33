@@ -892,15 +892,25 @@ struct ReceivedExerciseCard: View {
     }
 
     var body: some View {
-        Button(action: onTapCard) {
-            if let exercise = coreDataExercise {
-                ExerciseCardRow(exercise: exercise)
-                    .contentShape(Rectangle())
-            } else {
+        if let exercise = coreDataExercise {
+            // Delegate to the shared row. `showInfoButton: true` renders the blue
+            // info icon used across the Exercises tab; tapping either the icon or
+            // the surrounding card opens the detail sheet.
+            Button(action: onTapCard) {
+                ExerciseCardRow(
+                    exercise: exercise,
+                    showInfoButton: true,
+                    onInfo: onTapCard
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+        } else {
+            Button(action: onTapCard) {
                 fallbackRow
             }
+            .buttonStyle(PlainButtonStyle())
         }
-        .buttonStyle(PlainButtonStyle())
     }
 
     // MARK: - Fallback (exercise not in Core Data)
@@ -938,6 +948,11 @@ struct ReceivedExerciseCard: View {
             }
 
             Spacer(minLength: 0)
+
+            Image(systemName: "info.circle")
+                .font(.ds_bodyRegular).fontWeight(.medium)
+                .foregroundColor(.blue)
+                .padding(.leading, Spacing.xxs)
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)

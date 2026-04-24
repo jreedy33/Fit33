@@ -270,6 +270,41 @@ final class CrashReportingService {
         if message.hasSuffix(": cancelled") || message.contains("NSURLErrorDomain error -999") { return }
         if message.contains("network connection was lost") || message.contains("not connected to the Internet") { return }
         if message.contains("[APPLE AUTH]") && message.contains("1000") { return }
+
+        // Phase 10 client-side denylist — paired with the server-side
+        // bug_intel_noise_filter rows seeded in
+        // `supabase/20260517_bug_intel_noise_filter_expand.sql`. Keeping both
+        // sides in sync means a watchdog signal never round-trips through
+        // the `crash_reports` table (server filter) AND never triggers
+        // real-time reporting during the session the freeze happens in
+        // (client filter below). The exact literals below MUST match the
+        // patterns used in AppPerformanceSystem.swift / NetworkErrorClassifier
+        // so a future refactor doesn't silently un-filter them.
+        if message.contains("[WATCHDOG]") { return }      // main-thread freeze instrumentation
+        if message.contains("[TAB FREEZE]") { return }    // tab-transition freeze instrumentation
+        if message.contains("UI is unresponsive") { return }
+        // Cloudflare/Supabase gateway flaps. These are already redirected
+        // to .warning by NetworkErrorClassifier, but the denylist guards
+        // any residual direct callers (legacy code paths calling
+        // `AppLogger.error("Save failed: \(err)")` without routing through
+        // the classifier).
+        if message.lowercased().contains("502 bad gateway") { return }
+        if message.lowercased().contains("503 service unavailable") { return }
+        if message.lowercased().contains("504 gateway") { return }
+        // P0001 "Not authenticated" — SECURITY DEFINER RPCs raise this
+        // transiently while auth.uid() resolves during tab-switch session
+        // propagation. The caller retries automatically within 500ms.
+        if message.contains("P0001") && message.contains("Not authenticated") { return }
+        // CrashReporter self-upload amplifier (Phase 11B) — see uploadCrashReport
+        // catch block below. Belt-and-suspenders: even if someone calls
+        // `reportError` with "[CrashReporter] Upload failed: …", we don't
+        // create a crash_report about the crash_report upload failing.
+        if message.contains("[CrashReporter] Upload failed") { return }
+        // Generic social-fetch transients the user never sees (Phase 11A/C).
+        if message.contains("[Social]") && message.contains("Fetch failed") &&
+           (message.contains("Not authenticated") || message.contains("cancelled") ||
+            message.contains("network connection was lost")) { return }
+        if message.contains("[STRAVA] Sync error: notConnected") { return }
         
         reportLock.lock()
         defer { reportLock.unlock() }
@@ -720,13 +755,32 @@ final class CrashReportingService {
             
             return true
         } catch {
-            // Classifier keeps transient / auth-expired / RLS rejections at .warning.
-            // Without this, every offline queue flush produced a fresh
-            // bug_intelligence fingerprint (the #1 source of noise pre-Phase 5).
+            // Phase 11B — 2026-04-24 self-upload loop fix.
+            //
+            // `transientLevel: .debug` (previously `.warning` via default)
+            // because the CrashReporter is literally the thing that writes
+            // `dev_session_logs` / `crash_reports`. Every `.warning` here
+            // creates a new session-log row → which itself becomes fingerprint
+            // fodder on the next rollup → which Claude triages → which
+            // writes a bug_reports row → which the user sees in the next
+            // export. That's an infinite amplifier for transient network
+            // flaps. The 2026-04-24T11:10 export showed fingerprints
+            // `ae9a0f23` (19 occurrences / 1 user / 8 seconds of burst) +
+            // `59b8ae55` (16 occ / 4 users) + `4bfd609cd` (14 occ) which
+            // were ALL this loop.
+            //
+            // `.debug` keeps the event in the local os_log buffer for
+            // on-device diagnostics but never round-trips to the server.
+            // The existing offline retry queue (`CloudSyncRetryQueue.shared`)
+            // owns actual recovery — we don't need a server-side paper
+            // trail of "we tried to upload a crash but the network was
+            // down" because the retry queue already logs its own drain
+            // attempts at .info.
             NetworkErrorClassifier.log(
                 error,
                 context: "🛡️ [CrashReporter] Upload failed",
-                category: .general
+                category: .general,
+                transientLevel: .debug
             )
             return false
         }

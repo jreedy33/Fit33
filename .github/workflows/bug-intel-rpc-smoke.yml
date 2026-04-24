@@ -1,0 +1,76 @@
+name: Bug-Intel RPC Smoke
+
+# Phase 11G — 2026-04-24.
+#
+# Invokes the `bug-intel-rpc-smoke` edge function on a schedule and on
+# every push to main that touches supabase/**. The function runs the
+# FIXTURES[] array (in supabase/functions/bug-intel-rpc-smoke/index.ts)
+# — one synthetic call per registered RPC — and fails the job if any
+# response has a SIGNATURE_ERROR code (PGRST202 / PGRST203 / PGRST100 /
+# PGRST102 / 42883 / 42P01 / 42703 / 42P18).
+#
+# This catches "Swift compiles, but the database no longer has that RPC"
+# regressions within minutes of the offending migration landing, instead
+# of waiting for a real user to hit the error in the app.
+#
+# Schedule cadence: every 15 minutes, plus every push to main under
+# supabase/. 15 minutes is the sweet spot — enough to catch a bad
+# deploy before the next sprint meeting, not so frequent it spams the
+# Actions minutes budget or the edge function rate limit.
+#
+# Required secrets (mirrors bug-intel-release-gate.yml):
+#   SUPABASE_URL
+#   SUPABASE_ANON_KEY  (anon; the function invocation endpoint accepts anon)
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # every 15 minutes
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/bug-intel-rpc-smoke.yml'
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    name: Invoke bug-intel-rpc-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call edge function
+        id: call
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "::warning::SUPABASE_URL or SUPABASE_ANON_KEY missing — skipping (warn-only)."
+            exit 0
+          fi
+          HTTP_CODE=$(curl -s -o /tmp/smoke.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Content-Type: application/json" \
+            "$SUPABASE_URL/functions/v1/bug-intel-rpc-smoke")
+          echo "Response code: $HTTP_CODE"
+          cat /tmp/smoke.json | jq . || cat /tmp/smoke.json
+          if [ "$HTTP_CODE" = "200" ]; then
+            TOTAL=$(jq '.total' /tmp/smoke.json)
+            DURATION=$(jq '.duration_ms' /tmp/smoke.json)
+            echo "## ✅ Smoke passed — $TOTAL RPCs, ${DURATION}ms" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$HTTP_CODE" = "503" ]; then
+            echo "::warning::bug-intel-rpc-smoke not deployed (503). Populate FIXTURES[] or check edge function."
+            echo "## ⚠️ Smoke not deployed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            TOTAL=$(jq '.total // 0' /tmp/smoke.json)
+            FAILED=$(jq '.failed // 0' /tmp/smoke.json)
+            echo "## 🚨 Smoke FAILED — $FAILED/$TOTAL RPCs broken" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "| RPC | Owner | pg_code | HTTP | Message |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|---|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.failures[] | "| \(.rpc) | \(.owner) | \(.pg_code // "—") | \(.http_status // "—") | \(.error_message // "—") |"' /tmp/smoke.json >> "$GITHUB_STEP_SUMMARY" || true
+            exit 1
+          fi

@@ -1,0 +1,160 @@
+name: Bug-Intel Release Gate
+
+# Phase 11I — 2026-04-24.
+#
+# Blocks a release tag push (vX.Y.Z) if there is any open CRITICAL
+# bug_intelligence_fingerprint that is either unfixed OR regressed after
+# a previous fix. Modelled after the "do not ship if Sev0 is open" gate
+# you'd expect at Meta / Apple / Google for app releases.
+#
+# How it works:
+#   1. Trigger on `push` of a tag matching `v*.*.*` or `v*.*` (release tags).
+#      Also triggers on manual `workflow_dispatch` for override rehearsals.
+#   2. Calls the existing `get_bug_intelligence_export` admin RPC (which
+#      already filters to the same columns used by the CMS dashboard)
+#      with a service-role key pulled from the repository secret
+#      `SUPABASE_SERVICE_ROLE_KEY`.
+#   3. Filters the response for
+#        severity == 'critical'  AND
+#        review_status != 'merged'  AND
+#        ( fingerprint.status NOT IN ('resolved','wont_fix','duplicate')
+#          OR fingerprint.regressed_after_fix = true )
+#   4. Fails the job if any match. Posts a GitHub Step Summary listing
+#      each offending fingerprint with its title + structural_fingerprint
+#      + last_seen_build so the release engineer sees exactly what's
+#      blocking.
+#
+# Override protocol:
+#   - Emergency releases may bypass via commit message trailer
+#       `[skip-bug-gate]` on the tagged commit, OR
+#     Via `workflow_dispatch` with `override_reason` filled in (logged
+#     to Step Summary for audit).
+#   - Both paths write an audit row to `bug_intel_release_gate_audit`
+#     via the `log_release_gate_override` RPC so there's a paper trail.
+#
+# Required secrets:
+#   SUPABASE_URL              - https://<project>.supabase.co (same as admin-cms)
+#   SUPABASE_SERVICE_ROLE_KEY - service role key (same as admin-cms env)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*'
+  workflow_dispatch:
+    inputs:
+      override_reason:
+        description: 'Override reason (required to bypass block). Leave blank to enforce normally.'
+        required: false
+        default: ''
+
+jobs:
+  gate:
+    name: Check for open CRITICAL fingerprints
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect [skip-bug-gate] commit trailer
+        id: trailer
+        run: |
+          # The tag commit message may contain `[skip-bug-gate]` to emergency-override.
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if echo "$COMMIT_MSG" | grep -qi '\[skip-bug-gate\]'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "## ⚠️ Release gate SKIPPED via [skip-bug-gate] trailer" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Commit message:" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "$COMMIT_MSG" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect workflow_dispatch override
+        id: dispatch
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.override_reason != ''
+        run: |
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo "## ⚠️ Release gate SKIPPED via workflow_dispatch override" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Override reason: ${{ github.event.inputs.override_reason }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Query bug-intel for open CRITICAL fingerprints
+        if: steps.trailer.outputs.skip != 'true' && steps.dispatch.outputs.skip != 'true'
+        id: query
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — skipping gate (warn-only)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Phase 10 introduced `get_bug_intelligence_export` with `mode=all`
+          # which returns the full set (not just since-watermark). That's
+          # what we need for a point-in-time gate. We pull the whole export
+          # and then jq-filter client-side so the gate logic is readable
+          # + auditable here rather than baked into a server-side RPC.
+          HTTP_CODE=$(curl -s -o /tmp/export.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            "$SUPABASE_URL/rest/v1/rpc/get_bug_intelligence_export" \
+            -d '{"p_mode": "all", "p_mark_exported": false}')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Failed to query bug-intel export (HTTP $HTTP_CODE). Response:"
+            cat /tmp/export.json
+            exit 1
+          fi
+
+          # Filter: severity=critical AND review_status != merged AND
+          # (fingerprint.status NOT IN ('resolved','wont_fix','duplicate')
+          #  OR fingerprint.regressed_after_fix = true).
+          BLOCKERS=$(jq '[.bundles[] | select(
+            .report.severity == "critical"
+            and (.report.review_status // "pending") != "merged"
+            and (
+              ((.fingerprint.status // "new") | . != "resolved" and . != "wont_fix" and . != "duplicate")
+              or (.fingerprint.regressed_after_fix == true)
+            )
+          )]' /tmp/export.json)
+
+          COUNT=$(echo "$BLOCKERS" | jq 'length')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "## ✅ Release gate PASSED" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No open CRITICAL bug-intel fingerprints found. Safe to ship." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "## 🚨 Release gate FAILED — $COUNT CRITICAL fingerprint(s) blocking" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Fingerprint | Title | Struct | Last build | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "$BLOCKERS" | jq -r '.[] | "| `\(.report.fingerprint)` | \(.report.title // "—") | `\(.fingerprint.structural_fingerprint // "—")` | \(.fingerprint.last_seen_app_version // "—") (\(.fingerprint.last_seen_build // "—")) | \(.fingerprint.status // "new")\(if .fingerprint.regressed_after_fix == true then " ⚠️ REGRESSED" else "" end) |"' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### How to unblock" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Options (in preference order):" >> "$GITHUB_STEP_SUMMARY"
+          echo "1. **Ship the fix** — open \`/bug-intelligence\` in admin CMS, triage + merge the PR, stamp \`fixed_in_build\`, redeploy, re-tag." >> "$GITHUB_STEP_SUMMARY"
+          echo "2. **Resolve as wont_fix** — if this is expected noise, open the fingerprint detail panel → Mark as won't fix." >> "$GITHUB_STEP_SUMMARY"
+          echo "3. **Emergency override** — amend the tag commit with \`[skip-bug-gate]\` in the message and re-push, OR run this workflow via workflow_dispatch with \`override_reason\` filled in. Both paths are audited." >> "$GITHUB_STEP_SUMMARY"
+
+          exit 1
+
+      - name: Mark skipped
+        if: steps.trailer.outputs.skip == 'true' || steps.dispatch.outputs.skip == 'true'
+        run: echo "Release gate skipped via explicit override — proceed at your own risk."

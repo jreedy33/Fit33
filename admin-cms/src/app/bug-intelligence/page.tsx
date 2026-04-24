@@ -289,10 +289,101 @@ async function adminAction(action: string, params: Record<string, unknown> = {})
 // lives under <details> so the file doesn't explode in chat UIs.
 function formatExportAsMarkdown(ex: BugIntelExport): string {
     const L: string[] = []
-    const total = ex.bundle_count
+
+    // Phase 10 (2026-04-24) — structural dedupe.
+    //
+    // Claude's triage pipeline writes ONE `bug_reports` row per raw sample,
+    // so a single structural_fingerprint like `2b8eafe6` (main-thread
+    // watchdog freeze) accumulates 6+ reports with different titles
+    // ("Main Thread Watchdog Freezes", "Main Thread Frozen During App
+    // Initialization", "UI Unresponsive - Main Thread Blocking", etc).
+    // Before this dedupe, each export inflated the same root cause into 6
+    // CRITICAL entries, drowning the real signal.
+    //
+    // Dedupe strategy:
+    //   1. Group bundles by `structural_fingerprint` when available
+    //      (Phase 9 rollup sets this for classified events), else by
+    //      the raw `fingerprint` hash (legacy pre-Phase-9).
+    //   2. Keep the highest-confidence + highest-severity report as the
+    //      canonical representative of each cluster.
+    //   3. Collapse variant titles into a single "Also triaged as:" list
+    //      rendered inside the report body so reviewers can see what
+    //      Claude called the same root cause from different angles.
+    //   4. Bundles with NO structural_fingerprint AND NO raw fingerprint
+    //      (malformed) pass through untouched — never silently drop data.
+    type Cluster = {
+        canonical: BugIntelExportBundle
+        variants: BugIntelExportBundle[]
+        key: string  // the groupBy key used (for debugging)
+    }
+    const SEVERITY_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 }
+    const clusters = new Map<string, Cluster>()
+    for (const b of ex.bundles) {
+        // Prefer structural_fingerprint (Phase 9 classified grouping).
+        // Fallback: raw fingerprint hash (pre-Phase-9 or unclassified).
+        // Last resort: synthesize a unique key from report.id so orphans
+        // don't collapse with each other.
+        const key = b.fingerprint?.structural_fingerprint
+            || b.report.fingerprint
+            || `orphan:${b.report.id}`
+        const existing = clusters.get(key)
+        if (!existing) {
+            clusters.set(key, { canonical: b, variants: [], key })
+            continue
+        }
+        // Decide which bundle should be canonical. Prefer higher severity,
+        // then higher confidence, then more occurrences, then earliest
+        // created_at (stable ordering for identical triages).
+        const challenger = b
+        const incumbent = existing.canonical
+        const chalSev = SEVERITY_RANK[challenger.report.severity] ?? 0
+        const incSev = SEVERITY_RANK[incumbent.report.severity] ?? 0
+        let promote = false
+        if (chalSev > incSev) promote = true
+        else if (chalSev === incSev) {
+            if (challenger.report.confidence > incumbent.report.confidence) promote = true
+            else if (challenger.report.confidence === incumbent.report.confidence) {
+                const chalOcc = challenger.fingerprint?.occurrence_count ?? 0
+                const incOcc = incumbent.fingerprint?.occurrence_count ?? 0
+                if (chalOcc > incOcc) promote = true
+            }
+        }
+        if (promote) {
+            existing.variants.push(incumbent)
+            existing.canonical = challenger
+        } else {
+            existing.variants.push(challenger)
+        }
+    }
+
+    // Render order: severity desc → confidence desc → fingerprint (stable).
+    const dedupedBundles: BugIntelExportBundle[] = Array.from(clusters.values())
+        .sort((a, b) => {
+            const sevDiff = (SEVERITY_RANK[b.canonical.report.severity] ?? 0) - (SEVERITY_RANK[a.canonical.report.severity] ?? 0)
+            if (sevDiff !== 0) return sevDiff
+            const confDiff = b.canonical.report.confidence - a.canonical.report.confidence
+            if (confDiff !== 0) return confDiff
+            return a.key.localeCompare(b.key)
+        })
+        .map(c => c.canonical)
+    // Index variant titles so the per-report renderer can surface them.
+    const variantTitles = new Map<string, string[]>()
+    for (const c of clusters.values()) {
+        if (c.variants.length === 0) continue
+        const canonicalTitle = c.canonical.report.title
+        const uniq = new Set<string>()
+        for (const v of c.variants) {
+            if (v.report.title && v.report.title !== canonicalTitle) uniq.add(v.report.title)
+        }
+        if (uniq.size > 0) variantTitles.set(c.canonical.report.id, Array.from(uniq))
+    }
+    const totalRaw = ex.bundle_count
+    const total = dedupedBundles.length
+    const duplicatesCollapsed = totalRaw - total
+
     const severityCounts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 }
     const ownerCounts: Record<string, number> = {}
-    for (const b of ex.bundles) {
+    for (const b of dedupedBundles) {
         severityCounts[b.report.severity] = (severityCounts[b.report.severity] ?? 0) + 1
         ownerCounts[b.report.agent_owner] = (ownerCounts[b.report.agent_owner] ?? 0) + 1
     }
@@ -307,7 +398,7 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
     const brandNew: BugIntelExportBundle[] = []
     const regressed: BugIntelExportBundle[] = []
     const stillPending: BugIntelExportBundle[] = []
-    for (const b of ex.bundles) {
+    for (const b of dedupedBundles) {
         const lastExp = b.report.last_exported_at
         if (!lastExp) {
             brandNew.push(b)
@@ -328,6 +419,15 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
     if (ex.previous_export_at) L.push(`Previous export: \`${ex.previous_export_at}\``)
     L.push(`Source: \`/bug-intelligence\` · Filters: \`${JSON.stringify(ex.filters)}\``)
     L.push(`Reports: **${total}** · \`${brandNew.length}\` brand-new · \`${regressed.length}\` regressed · \`${stillPending.length}\` still-pending`)
+    if (duplicatesCollapsed > 0) {
+        // Phase 10 — tell the reader when we collapsed variant titles so
+        // they can correlate with the CMS dashboard (which still shows
+        // every triage row). The expected delta for a healthy pipeline is
+        // 0 (every structural_fingerprint unique) — a large number means
+        // Claude is re-triaging the same root cause with different labels,
+        // which is a signal to tighten the triage prompt.
+        L.push(`Collapsed: \`${duplicatesCollapsed}\` duplicate triage rows merged into their canonical structural_fingerprint (raw count was **${totalRaw}**).`)
+    }
     L.push('')
 
     // Phase 8 — prepend a scannable "what changed" TL;DR so the assistant
@@ -414,7 +514,7 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
     L.push(`---`)
     L.push('')
 
-    ex.bundles.forEach((b, i) => {
+    dedupedBundles.forEach((b, i) => {
         const r = b.report
         const f = b.fingerprint
         const c = b.example_crash
@@ -429,6 +529,16 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         if (r.file_path) L.push(`- **Suggested file**: \`${r.file_path}\``)
         if (f?.status) L.push(`- **Fingerprint status**: \`${f.status}\``)
         L.push(`- **Report created**: \`${r.created_at}\``)
+        // Phase 10 — variant titles from sibling triage rows on the same
+        // structural_fingerprint. Reviewers see one report per root cause
+        // but still get visibility into how Claude labeled this bug across
+        // the different raw samples. If variants disagree wildly on
+        // severity/category, that's a signal the structural fingerprint is
+        // too loose and should be tightened (e.g. split by endpoint).
+        const aliases = variantTitles.get(r.id)
+        if (aliases && aliases.length > 0) {
+            L.push(`- **Also triaged as** (${aliases.length} variant${aliases.length === 1 ? '' : 's'}): ${aliases.map(t => `"${t}"`).join(' · ')}`)
+        }
         L.push('')
 
         // Phase 9 — structural fingerprint block. Put the classified root
@@ -746,6 +856,20 @@ export default function BugIntelligencePage() {
         search: '',
         // Phase 6: source splits the inbox into Crash / Log / Shake (user-reported).
         source: 'all',
+        // Phase 11H — 2026-04-24 structural filter surface. Maps to the
+        // Phase 9 columns added in `supabase/20260516_bug_intel_structural_fingerprint.sql`.
+        // error_class: 'unknown' / 'network_lost' / 'cancelled' / 'rls' /
+        //   'uuid_mismatch' / 'overload' / 'auth_flap'. 'all' = no filter.
+        // regressed: 'all' | 'yes' — filters to fingerprints where
+        //   fingerprints.regressed_after_fix = true (the dreaded "we
+        //   thought we fixed this but it came back" cluster).
+        // classifier: 'all' | 'classified' | 'unclassified'. 'unclassified'
+        //   surfaces the rows where Phase 9's structural extractor
+        //   couldn't identify an op/error_class, so you can triage them
+        //   into a known pattern.
+        error_class: 'all',
+        regressed: 'all',
+        classifier: 'all',
     })
     // Phase 7 — hide terminal (resolved/wont_fix/duplicate) fingerprints
     // from the list by default so the inbox shows open work only. User
@@ -811,7 +935,25 @@ export default function BugIntelligencePage() {
     }, [selectedFp, loadDetail])
 
     const sortedFingerprints = useMemo(() => {
-        return [...fingerprints].sort((a, b) => {
+        // Phase 11H — apply structural filter chips before sort. Doing
+        // it client-side keeps the admin action RPC stable (no new
+        // parameters to thread through) and lets us experiment with
+        // pivot views without a SQL deploy. The filtered subset still
+        // respects the primary server-side filters (status / agent /
+        // severity_min / search / source) — this is a further narrow,
+        // not a replacement.
+        const filtered = fingerprints.filter(fp => {
+            if (filters.error_class !== 'all' && fp.error_class !== filters.error_class) {
+                return false
+            }
+            if (filters.regressed === 'yes' && !fp.regressed_after_fix) {
+                return false
+            }
+            if (filters.classifier === 'classified' && !fp.is_classified) return false
+            if (filters.classifier === 'unclassified' && fp.is_classified) return false
+            return true
+        })
+        return filtered.sort((a, b) => {
             const aSev = a.latest_report?.severity
                 ? (SEVERITY_ORDER[a.latest_report.severity] ?? 5)
                 : 5
@@ -821,7 +963,7 @@ export default function BugIntelligencePage() {
             if (aSev !== bSev) return aSev - bSev
             return b.occurrence_count - a.occurrence_count
         })
-    }, [fingerprints])
+    }, [fingerprints, filters.error_class, filters.regressed, filters.classifier])
 
     const selected = fingerprints.find(f => f.fingerprint === selectedFp)
 
@@ -1435,8 +1577,8 @@ function FingerprintList({
 }: {
     fingerprints: Fingerprint[]
     loading: boolean
-    filters: { status: string; agent: string; severity_min: string; search: string; source: string }
-    setFilters: (next: { status: string; agent: string; severity_min: string; search: string; source: string }) => void
+    filters: { status: string; agent: string; severity_min: string; search: string; source: string; error_class: string; regressed: string; classifier: string }
+    setFilters: (next: { status: string; agent: string; severity_min: string; search: string; source: string; error_class: string; regressed: string; classifier: string }) => void
     selectedFp: string | null
     setSelectedFp: (fp: string | null) => void
     onTriage: (fp: string) => void
@@ -1492,6 +1634,47 @@ function FingerprintList({
                     <option value="critical">Critical only</option>
                     <option value="high">High+</option>
                     <option value="medium">Medium+</option>
+                </select>
+                {/* Phase 11H — structural filter chips. These read the
+                    Phase 9 columns on bug_intelligence_fingerprints
+                    (error_class / is_classified / regressed_after_fix)
+                    and narrow the list client-side. The filtering itself
+                    lives in the useMemo() above this component so every
+                    row is a pure derivation — no extra RPC round-trips
+                    and no server-side filter support needed. */}
+                <select
+                    value={filters.error_class}
+                    onChange={e => setFilters({ ...filters, error_class: e.target.value })}
+                    style={{ maxWidth: 180 }}
+                    title="Filter by structural error_class (Phase 9)"
+                >
+                    <option value="all">All error classes</option>
+                    <option value="unknown">unknown</option>
+                    <option value="network_lost">network_lost</option>
+                    <option value="cancelled">cancelled</option>
+                    <option value="rls">rls (42501)</option>
+                    <option value="uuid_mismatch">uuid_mismatch (42883)</option>
+                    <option value="overload">overload (PGRST202/203)</option>
+                    <option value="auth_flap">auth_flap (P0001)</option>
+                </select>
+                <select
+                    value={filters.regressed}
+                    onChange={e => setFilters({ ...filters, regressed: e.target.value })}
+                    style={{ maxWidth: 180 }}
+                    title="Filter to regressed-after-fix fingerprints"
+                >
+                    <option value="all">All regressions</option>
+                    <option value="yes">REGRESSED only</option>
+                </select>
+                <select
+                    value={filters.classifier}
+                    onChange={e => setFilters({ ...filters, classifier: e.target.value })}
+                    style={{ maxWidth: 180 }}
+                    title="Filter by Phase 9 structural-classifier coverage"
+                >
+                    <option value="all">All classification</option>
+                    <option value="classified">Classified only</option>
+                    <option value="unclassified">Unclassified only (triage candidates)</option>
                 </select>
             </div>
 

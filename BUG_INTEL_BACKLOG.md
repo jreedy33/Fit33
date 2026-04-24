@@ -100,6 +100,193 @@ This file is the running ledger for the bug-intel "cheat code" plan. It is the s
 
 ---
 
+---
+
+## Phase 10 — 2026-04-24 report-quality sweep (SHIPPED)
+
+Triggered by the 2026-04-24T11:10 Cursor export (74 reports / 6813-line .md).
+The headline signal: the SAME 6 structural fingerprints appeared 15 times at
+CRITICAL/HIGH because the main-thread watchdog instrumentation
+(`Fit33/AppPerformanceSystem.swift` lines 881 + 1105 + 1112) emits
+`AppLogger.warning("🚨🚨🚨 [WATCHDOG] MAIN THREAD FROZEN!")` on every freeze,
+and Phase 9's `compute_daily_bug_rollup()` now fingerprints `type=warning`
+`dev_session_logs` entries. A performance *signal* (we instrumented these on
+purpose to know freezes happen) became a fake "bug" every 5-minute rollup.
+Same story — at different scale — for 502 Bad Gateway Cloudflare flaps, P0001
+"Not authenticated" transients during tab-switch auth propagation, and legacy
+PGRST203 overload errors from build 1.37 users who hadn't updated to the
+already-deployed fix.
+
+### Report format fix — CMS markdown export de-dupes by structural_fingerprint
+- `admin-cms/src/app/bug-intelligence/page.tsx::formatExportAsMarkdown`
+  groups bundles by `structural_fingerprint` (fallback `fingerprint` hash,
+  last-resort `orphan:<report.id>`), picks the canonical bundle by
+  `(severity, confidence, occurrence_count, created_at)`, and inlines the
+  collapsed variant titles as `**Also triaged as** (N variants): "…"`. The
+  TL;DR header gains `Collapsed: <N> duplicate triage rows merged`. The
+  brand-new / regressed / still-pending split reads the deduped list so a
+  single root cause can't inflate the counts.
+
+### Server-side noise filter expansion — `20260517_bug_intel_noise_filter_expand.sql`
+- Adds 9 new `bug_intel_noise_filter` rows (tier=hard) for the patterns
+  above. Runs regex against `sample_message` inside
+  `compute_daily_bug_rollup()` — matching events are dropped BEFORE
+  fingerprinting.
+- Adds `bug_intelligence_fingerprints.auto_resolved_reason` enum column
+  (`silent_fix` / `noise_filter_expanded` / `legacy_build_drained` / NULL).
+  Distinguishes "fix shipped and the fingerprint went quiet" from "we
+  filtered the signal" without spelunking into `bug_intel_noise_filter`
+  joins.
+- Backfill: existing fingerprints whose `sample_message` now matches the new
+  patterns are flipped to `status='resolved'` with
+  `auto_resolved_reason='noise_filter_expanded'`, and their pending
+  `bug_intelligence_reports` are merged with a paper-trail note.
+- Hunts for residual `uuid = text` comparison triggers on `weight_logs` /
+  `weight_goals` — any trigger whose function body contains
+  `auth.jwt()->>'sub'` / `::text` / `current_setting('request.jwt.claims')`
+  emits `RAISE WARNING` with its qualified name. Respects "don't DROP
+  triggers we didn't author" rule; the operator decides.
+
+### Client-side denylist sync — `Fit33/CrashReportingService.swift::reportError`
+- Added literal `message.contains(...)` short-circuits for `[WATCHDOG]` /
+  `[TAB FREEZE]` / `"UI is unresponsive"` / `"502 bad gateway"` /
+  `"503 service unavailable"` / `"504 gateway"` / `P0001 "Not authenticated"`.
+- Paired with the server filter — keeps the realtime `crash_reports` table
+  clean AND avoids burning the `Config.maxReportsPerFingerprint` quota on
+  noise during the session a freeze happens in.
+
+### MIGRATION_INDEX Deployment Priority Queue
+- Added §"Deployment Priority Queue (2026-04-24)" at the top of
+  `supabase/MIGRATION_INDEX.md` calling out the three migrations that fix
+  CRITICAL/HIGH clusters in the export but are not yet deployed:
+  20260511 (HealthKit RLS — cluster B), 20260513 (PGRST203 overload —
+  cluster F), 20260514 (performance_metrics unlock — cluster I), plus the
+  new 20260517. Deploy order: 77 → 79 → 80 → 83.
+
+### Invariants added — QUALITY_PERFORMANCE_AGENT.md
+- 25i-bugintel: client denylist in `CrashReportingService.reportError` MUST
+  mirror server-side `bug_intel_noise_filter` tier='hard' rows.
+- 25j-bugintel: markdown export de-dupes by `structural_fingerprint` with
+  documented key-selection fallback order.
+- 25k-bugintel: `auto_resolved_reason` is the only way to tell silent_fix
+  from noise_filter_expanded from legacy_build_drained.
+- 25l-bugintel: undeployed migrations that fix bug-intel clusters go in
+  MIGRATION_INDEX §"Deployment Priority Queue" rather than being re-fixed.
+
+### Weight-logs 42883 root-cause DROP — SHIPPED (`20260518`)
+
+Phase 10's trigger hunt immediately flagged `public.sync_profile_weight()`
+(AFTER INSERT on `weight_logs`) with `WHERE id = NEW.user_id::text`. Both
+sides are `uuid`, so the cast forced `uuid = text` which PostgreSQL
+rejects as SQLSTATE 42883 — every single `INSERT INTO weight_logs` from
+the iOS client hit this after-insert and failed. `20260518_fix_sync_profile_weight_uuid_cast.sql`
+uses `CREATE OR REPLACE FUNCTION` to drop the cast (keeps the existing
+`pg_trigger` row, avoiding a mid-transaction bypass window), adds a
+plan-phase dry-run against a synthetic uuid to fail-closed if the
+predicate still mistypes, verifies the trigger is still wired to the
+fixed function, and auto-resolves the matching C_uuid fingerprints
+(`ff6ae8d5` / `222e0fc1` / `95b0b27b`) with `auto_resolved_reason='silent_fix'`.
+No Swift changes — the client has been sending uuid-typed `user_id`
+values the whole time; the bug was server-only.
+
+---
+
+## Phase 11 — 2026-04-24 "fix everything" uncategorized drain (SHIPPED)
+
+Triggered by the post-Phase-10 baseline: 163 fingerprints / 575 occurrences
+in `cluster_code='uncategorized'`. The goal of Phase 11 was to make every
+production fingerprint belong to a named cluster so we can track drain
+per domain, and to ship the long-deferred smoke-test + release-gate
+infrastructure so future regressions never reach TestFlight.
+
+### Shipped in one commit (2026-04-24)
+
+1. **`supabase/20260519_bug_intel_phase11_sweep.sql`** — 7 new
+   `bug_intel_noise_filter` rows for CrashReporter self-upload +
+   generic NSURL transients + Swift-side P0001. Auto-stale clause
+   (triaged + 7-day-silent → resolved with `auto_resolved_reason =
+   'triaged_stale'`). Classifier expanded with
+   `H_crashreporter_self` / `I_widget` / `J_wearable_sync` /
+   `K_launch_crash`. After-sweep baseline snapshot.
+2. **`Fit33/CrashReportingService.swift`** — upload-failed catch passes
+   `transientLevel: .debug` (kills new additions to the self-upload
+   loop at the source). Denylist extended with watchdog / tab-freeze /
+   UI-unresponsive / 502/503/504 / P0001 / `[CrashReporter] Upload
+   failed` / Social transient patterns.
+3. **`Fit33/AppPerformanceSystem.swift`** — watchdog freeze log at
+   line 1105 + UI-unresponsive sub-log at line 1112 + tab-freeze
+   detection at line 881 downgraded to `.debug` on release via
+   `#if DEBUG / #else`. DEBUG builds keep `.warning` / `.error` for
+   dev console visibility. `MainThreadWatchdog.start()` remains
+   `#if DEBUG` gated per QP invariant #5 — these three log sites
+   were the only stragglers shipping watchdog text to release
+   dev_session_logs.
+4. **`admin-cms/src/app/bug-intelligence/page.tsx`** — three new
+   filter chips: `error_class` (unknown / network_lost / cancelled /
+   rls / uuid_mismatch / overload / auth_flap), `regressed` (all /
+   REGRESSED-only), `classifier` (all / classified / unclassified).
+   Client-side derivation via `useMemo` — no new server RPC, no
+   schema change.
+5. **`supabase/functions/bug-intel-rpc-smoke/index.ts`** — populated
+   `FIXTURES[]` with 11 signature-smoke tests that probe every
+   user-facing RPC (get_daily_quests_body, post_workout_activity,
+   post_cardio_activity, get_friends, get_received_workouts,
+   get_sent_workouts, log_private_challenge_progress,
+   get_my_private_challenges, increment_hydration,
+   compute_daily_bug_rollup). Signature-only strategy: intentionally
+   zeroed uuids + neutral primitives; asserts against a `SIGNATURE_ERRORS`
+   set (PGRST202 / PGRST203 / PGRST100 / PGRST102 / 42883 / 42P01 /
+   42703 / 42P18) that represents real schema drift. Data-correctness
+   tests deferred until a dedicated seeded service account is
+   provisioned (Tier 2.3 exit criteria).
+6. **`.github/workflows/bug-intel-rpc-smoke.yml`** — runs the smoke
+   function every 15 minutes + on every push to main under
+   `supabase/`. Fails the job with a GitHub Step Summary table if
+   any fixture returns a `SIGNATURE_ERROR` code.
+7. **`.github/workflows/bug-intel-release-gate.yml`** — blocks release
+   tag pushes (`v*.*.*` / `v*.*`) if any open CRITICAL
+   `bug_intelligence_fingerprint` has (a) `status NOT IN ('resolved',
+   'wont_fix', 'duplicate')` OR (b) `regressed_after_fix = true`.
+   Override paths: `[skip-bug-gate]` commit-message trailer OR
+   `workflow_dispatch` with non-empty `override_reason`. Both paths
+   write an audit trail via the job Step Summary.
+
+### Invariants added — QUALITY_PERFORMANCE_AGENT.md
+- 25m-bugintel: `CrashReportingService` failure paths MUST never log at
+  `.error` / `.warning` — the reporter is self-referential, so every
+  error written here risks becoming its own fingerprint.
+- 25n-bugintel: Watchdog + tab-freeze logs in `AppPerformanceSystem.swift`
+  MUST be DEBUG-gated at the log-call level (not just at the timer
+  level). Release builds downgrade `.warning` / `.error` → `.debug`.
+- 25o-bugintel: The Phase 11 classifier LIKE pattern order in
+  `snapshot_bug_intel_baseline()` is not commutative — most-specific
+  patterns first (H/I/J/K before A/B/C/…) or fingerprints that match
+  multiple buckets get miscategorized.
+- 25p-bugintel: Every newly-added `bug_intel_noise_filter` row MUST
+  pass a 10-second eyeball review against the false-positive risk
+  list — these are regex patterns that run against every
+  `sample_message` on every rollup, and a too-loose regex will hide
+  real bugs.
+
+### Deferred to next sweep
+- **Apple Watch workout save timeouts** (soft-tier filter in 20260517):
+  device-to-phone sync latency, out of our control. Consider
+  surfacing a subtle "Apple Watch sync is slow" banner only after
+  the threshold is exceeded for N consecutive saves.
+- **SIGSEGV / CFString crashes** (cluster E, fingerprints
+  `e955904c` + 3 others): need full stack traces via MetricKit
+  `metrickit_payloads` query — see investigation SQL below.
+- **Seeded smoke-test service account** (Tier 2.3 full exit
+  criteria): unblocks data-correctness smoke tests (actual
+  write-then-read-back against a fixture). Separate sprint.
+- **Noise-filter "soft" tier tracking**: the `healthkit_apple_watch_save_timeout`
+  filter is tier='soft' (kept for admin visibility, excluded from default
+  trends). The CMS bug-intel UI currently renders soft-filtered rows the
+  same as hard-filtered. A follow-up can add a "soft" pill so operators can
+  distinguish.
+
+---
+
 ## How to work this backlog
 
 1. **Pick an item whose exit criteria you can meet in one PR.** The Tier 2.3 smoke tests, for example, should not be partially fixtured — ship all 10 or none.

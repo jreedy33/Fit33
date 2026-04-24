@@ -878,7 +878,28 @@ final class TabSwitchOptimizer: ObservableObject {
             if self.transitionSequence == seq && self.isTransitioning {
                 let elapsed = (CACurrentMediaTime() - self.transitionStartTime) * 1000
                 let mem = Self.quickMemoryMB()
+                // Phase 11J — 2026-04-24 release-level log demotion.
+                //
+                // Previously `AppLogger.error` → writes dev_session_logs row
+                // type='error' → picked up by compute_daily_bug_rollup →
+                // fingerprinted as CRITICAL bug. This was the #1 source of
+                // fake-critical reports in the 2026-04-24T11:10 Cursor
+                // export (6 structural fingerprints, 15 CRITICAL report
+                // rows). The watchdog is *instrumentation*, not a bug —
+                // we put it here on purpose to know freezes are
+                // happening. In release, use `.warning` so it still
+                // writes a dev_session_logs row (now `type='warning'`,
+                // which the rollup ignores after Phase 9), but doesn't
+                // manufacture CRITICAL bugs. In DEBUG keep `.error` for
+                // the red/bold console formatting dev expects. Also
+                // noise-filtered server-side (see
+                // `supabase/20260517_bug_intel_noise_filter_expand.sql`
+                // rule `watchdog_tab_freeze`) as a belt-and-suspenders.
+                #if DEBUG
                 AppLogger.error("🚨🚨🚨 [TAB FREEZE] FREEZE DETECTED! Tab \(from)→\(to) seq#\(seq) stuck for \(String(format: "%.0f", elapsed))ms!", category: .ui)
+                #else
+                AppLogger.warning("🚨🚨🚨 [TAB FREEZE] FREEZE DETECTED! Tab \(from)→\(to) seq#\(seq) stuck for \(String(format: "%.0f", elapsed))ms!", category: .ui)
+                #endif
                 AppLogger.debug("   └─ memory: \(Int(mem))MB", category: .performance)
                 AppLogger.debug("   └─ isTransitioning still true — endTransition() was NEVER called", category: .ui)
                 AppLogger.debug("   └─ main_thread: \(Thread.isMainThread)", category: .performance)
@@ -1101,15 +1122,35 @@ final class MainThreadWatchdog {
                     elapsedMs: Int(ctxDuration),
                     retryAttempt: count
                 )
-                AppLogger.warning(
-                    "🚨🚨🚨 [WATCHDOG] MAIN THREAD FROZEN! (freeze #\(count)) context=\(ctx) tab=\(tabInfo) mem=\(Int(mem))MB",
-                    category: .performance,
-                    context: freezeCtx
-                )
+                // Phase 11J — 2026-04-24. Watchdog is DEBUG-only
+                // instrumentation (MainThreadWatchdog.start() is gated via
+                // `#if DEBUG` per QP invariant #5), but this specific log
+                // line was surviving into TestFlight builds because the
+                // entire surrounding `detectFreeze` block was
+                // conditionally-compiled-out except for this `.warning`.
+                // Downgrade to `.debug` on release so it never round-trips
+                // to dev_session_logs. DEBUG builds keep `.warning`
+                // formatting for dev console visibility. Writing out both
+                // branches of the `#if` in full rather than splitting a
+                // single call across preprocessor directives because Swift
+                // parses function arguments as a single expression — a
+                // `#if` inside the arg list would leave an incomplete
+                // expression in the "else" branch and fail to compile.
+                let freezeMsg = "🚨🚨🚨 [WATCHDOG] MAIN THREAD FROZEN! (freeze #\(count)) context=\(ctx) tab=\(tabInfo) mem=\(Int(mem))MB"
+                #if DEBUG
+                AppLogger.warning(freezeMsg, category: .performance, context: freezeCtx)
+                #else
+                AppLogger.debug(freezeMsg, category: .performance, context: freezeCtx)
+                #endif
                 AppLogger.debug("   └─ context: \(ctx) (running \(String(format: "%.0f", ctxDuration))ms)", category: .performance)
                 AppLogger.debug("   └─ last_tab_switch: \(tabInfo)", category: .performance)
                 AppLogger.debug("   └─ memory: \(Int(mem))MB", category: .performance)
+                // Phase 11J — see comment at the parent freeze log.
+                #if DEBUG
                 AppLogger.warning("   └─ ⚠️ UI is unresponsive — user cannot interact", category: .performance)
+                #else
+                AppLogger.debug("   └─ ⚠️ UI is unresponsive — user cannot interact", category: .performance)
+                #endif
                 
                 logThreadInfo()
                 

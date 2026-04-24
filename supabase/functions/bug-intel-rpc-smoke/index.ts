@@ -54,45 +54,151 @@ type Fixture = {
     | 'quality-performance'
 }
 
-// TODO(scaffold): Fill this in from supabase/MIGRATION_INDEX.md +
-// supabase/functions/_shared/rpc_registry.ts (doesn't exist yet — create
-// when unblocking this).
+// Phase 11G — 2026-04-24 signature-smoke fixtures.
+//
+// The "original" version of this file required a dedicated seeded user
+// (smoke-test@fit33.com + owned challenge + workout + weight log) before
+// any fixture could run. That's a multi-sprint dependency. To unblock
+// the smoke test NOW without the seed-data project, this rewrites the
+// strategy to be SIGNATURE-ONLY:
+//
+//   For each RPC, call it with intentionally-zeroed uuids + neutral
+//   primitives. Assert the response is EITHER:
+//     - ok (the RPC accepted the shape + found no data), OR
+//     - a data error (pg_code starts with 23/42 that isn't 42883 schema
+//       mismatch, OR PGRST116 "no rows"), OR
+//     - expected "not authenticated" P0001 because service_role bypasses
+//       auth.uid() checks in some SECURITY DEFINER RPCs.
+//
+//   We FAIL only on:
+//     - PGRST202 ("Could not find the function") — signature missing
+//     - PGRST100 / PGRST102 — parse / invalid-argument errors
+//     - 42883 — operator does not exist (the bug we just fixed on
+//       sync_profile_weight, caught at smoke time instead of user time)
+//     - 42P01 — relation does not exist (dropped table)
+//     - 5xx HTTP — gateway down
+//
+// This gives us "is the RPC registered with the expected argument list
+// and return type?" coverage on every 5-minute run. Data-correctness
+// tests can come later when the seed-user work is done.
 const FIXTURES: Fixture[] = [
-  // Examples below — replace with the real registered set.
-  // {
-  //   rpc: 'post_cardio_activity',
-  //   params: {
-  //     p_workout_id: '00000000-0000-0000-0000-000000000000',
-  //     p_activity_type: 'running',
-  //     p_duration_seconds: 600,
-  //     p_distance_meters: 2000,
-  //     p_calories_burned: 200,
-  //     p_average_heart_rate: 140,
-  //     p_xp_earned: 10,
-  //   },
-  //   owner: 'data-backend',
-  // },
-  // {
-  //   rpc: 'log_private_challenge_progress',
-  //   params: {
-  //     p_challenge_id: '00000000-0000-0000-0000-000000000000',
-  //     p_progress: 1,
-  //     p_timezone: 'UTC',
-  //     p_allow_decrease: false,
-  //   },
-  //   owner: 'supabase-expert',
-  // },
+  // --- Daily quests -------------------------------------------------------
+  {
+    rpc: 'get_daily_quests_body',
+    params: {
+      p_user_id: '00000000-0000-0000-0000-000000000001',
+      p_local_date: '2026-04-24',
+      p_has_wearable: false,
+    },
+    owner: 'supabase-expert',
+  },
+  // --- Social / activity feed --------------------------------------------
+  {
+    rpc: 'post_workout_activity',
+    params: {
+      p_workout_name: 'smoke',
+      p_duration_seconds: 60,
+      p_exercise_count: 1,
+      p_total_sets: 1,
+      p_xp_earned: 0,
+      p_muscle_groups: [],
+      p_exercises: [],
+    },
+    owner: 'data-backend',
+    // service_role call without auth.uid() → P0001 "Not authenticated".
+    // That's a CORRECT signature + body response, so we expect an error
+    // but treat it as "ok" for smoke purposes.
+    expect_error: 'pg_code',
+  },
+  {
+    rpc: 'post_cardio_activity',
+    params: {
+      p_activity_type: 'running',
+      p_duration_seconds: 60,
+      p_distance_meters: 100,
+      p_calories_burned: 10,
+      p_average_heart_rate: 120,
+      p_xp_earned: 0,
+    },
+    owner: 'data-backend',
+    expect_error: 'pg_code',
+  },
+  // --- Friend system -----------------------------------------------------
+  {
+    rpc: 'get_friends',
+    params: {},
+    owner: 'data-backend',
+    // Without auth.uid() this returns an empty set (not an error).
+  },
+  {
+    rpc: 'get_received_workouts',
+    params: {},
+    owner: 'data-backend',
+  },
+  {
+    rpc: 'get_sent_workouts',
+    params: {},
+    owner: 'data-backend',
+  },
+  // --- Challenges --------------------------------------------------------
+  {
+    rpc: 'log_private_challenge_progress',
+    params: {
+      p_challenge_id: '00000000-0000-0000-0000-000000000001',
+      p_progress: 1,
+      p_timezone: 'UTC',
+      p_allow_decrease: false,
+    },
+    owner: 'supabase-expert',
+    // "challenge not found" is data-integrity (23xxx) → expected.
+    expect_error: 'pg_code',
+  },
+  {
+    rpc: 'get_my_private_challenges',
+    params: {},
+    owner: 'supabase-expert',
+  },
+  // --- Hydration + health ------------------------------------------------
+  {
+    rpc: 'increment_hydration',
+    params: {
+      p_amount_ml: 250,
+      p_date: '2026-04-24',
+    },
+    owner: 'supabase-expert',
+    expect_error: 'pg_code',  // SECURITY DEFINER without auth.uid
+  },
+  // --- Bug-intel ---------------------------------------------------------
+  {
+    rpc: 'compute_daily_bug_rollup',
+    params: {},
+    owner: 'quality-performance',
+    // service_role allowed; must succeed. No expect_error.
+  },
 ]
 
+// Phase 11G — "hard" errors that always fail the smoke even when the
+// fixture opts-in to expect_error. These are the ones that signal a
+// real schema drift between the Swift client's expectations and the
+// database: missing function, wrong argument type, wrong return
+// signature, operator mismatch, or dropped table.
 const SIGNATURE_ERRORS = new Set([
-  'PGRST202', // function not found
+  'PGRST202', // function not found (dropped / renamed)
+  'PGRST203', // ambiguous function (two overloads — classic bug)
   'PGRST100', // parse error
   'PGRST102', // invalid argument
+  '42883',    // operator does not exist (the uuid = text bug we just fixed)
+  '42P01',    // relation does not exist (dropped table)
+  '42703',    // column does not exist (dropped column)
+  '42P18',    // indeterminate datatype (return-type drift)
 ])
 
+// Softer data-integrity errors — these are expected when the smoke
+// caller lacks auth.uid() or references a non-existent row. A fixture
+// can opt-into this bucket via expect_error='pg_code'.
 const DATA_INTEGRITY_PREFIX = [
   '23', // integrity constraint violation (23505, 23514, 23503, etc.)
-  '42', // syntax error / access rule violation (42P01, 42883, 42703, etc.)
+  'P0001', // RAISE EXCEPTION 'Not authenticated' from SECURITY DEFINER RPCs
 ]
 
 Deno.serve(async (_req) => {
@@ -109,12 +215,15 @@ Deno.serve(async (_req) => {
 
   const url = Deno.env.get('SUPABASE_URL')
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const smokeUserId = Deno.env.get('SMOKE_USER_ID')
-  if (!url || !key || !smokeUserId) {
+  // Phase 11G — SMOKE_USER_ID no longer required for the signature-only
+  // smoke strategy (see FIXTURES[] preamble). Kept as an optional ENV
+  // hint so when the data-bearing smoke tests come online we can opt
+  // into them by setting this var.
+  if (!url || !key) {
     return new Response(
       JSON.stringify({
         status: 'config_missing',
-        required: ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SMOKE_USER_ID'],
+        required: ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'],
       }),
       { status: 500, headers: { 'Content-Type': 'application/json' } },
     )
@@ -153,16 +262,24 @@ Deno.serve(async (_req) => {
       pgCode = (error as unknown as { code?: string }).code ?? null
       if (pgCode) {
         if (SIGNATURE_ERRORS.has(pgCode)) {
-          ok = false
-        } else if (
-          DATA_INTEGRITY_PREFIX.some((p) => pgCode!.startsWith(p)) &&
-          f.expect_error !== 'pg_code'
-        ) {
+          // Phase 11G — SIGNATURE_ERRORS always fail, even if the
+          // fixture declared expect_error='pg_code'. A fixture saying
+          // "I expect a data error" should NEVER be allowed to swallow
+          // a schema drift — that's the whole point of the smoke test.
           ok = false
         } else if (f.expect_error === 'pg_code') {
+          // Fixture opts in to "a pg-coded error is normal here" — e.g.
+          // SECURITY DEFINER RPCs that RAISE 'Not authenticated' when
+          // called without auth.uid().
           ok = true
+        } else if (
+          DATA_INTEGRITY_PREFIX.some((p) => pgCode!.startsWith(p))
+        ) {
+          ok = false
         }
       } else {
+        // No pg_code and error — treat as real failure unless the
+        // fixture expected a non-pg error (currently not supported).
         ok = false
       }
     }

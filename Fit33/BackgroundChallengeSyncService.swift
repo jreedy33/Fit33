@@ -445,7 +445,37 @@ class BackgroundChallengeSyncService {
             await FitbitService.shared.syncAllData(force: true)
             AppLogger.debug("   └─ Fitbit: synced recent data", category: .social)
         }
-        
+
+        // ── Step 3b: Refresh WHOOP data (if connected) ──
+        // WHOOP does NOT write to HealthKit, so the user's recovery/strain/sleep
+        // rings go stale every few hours unless we pull here. Without this, the
+        // Dashboard WHOOP widget only refreshed when the user manually opened the
+        // app — long-closed sessions would show yesterday's numbers on launch.
+        // `syncAllData(force:)` hits the throttle-bypass path; the service's own
+        // `isSyncing` guard prevents races with any overlapping foreground sync.
+        if WhoopService.shared.isConnected {
+            await WhoopService.shared.syncAllData(force: true)
+            AppLogger.debug("   └─ WHOOP: synced recovery/strain/sleep/workouts", category: .health)
+        }
+
+        // ── Step 3c: Refresh Oura data (if connected) ──
+        // Same rationale as WHOOP — Oura is an OAuth pull, not a HealthKit writer.
+        // Kept symmetric with the foreground + tab-return refresh paths
+        // (DATA_BACKEND_AGENT.md invariant 4b).
+        if OuraService.shared.isConnected {
+            await OuraService.shared.syncAllData(force: true)
+            AppLogger.debug("   └─ Oura: synced readiness/sleep/activity", category: .health)
+        }
+
+        // ── Step 3d: Recompute the unified Daily Readiness Score ──
+        // Must run AFTER per-source wearable syncs (Steps 1, 3b, 3c) so it
+        // reads fresh `@Published` state. Force-propagated so the nightly
+        // BGProcessing run writes today's blended score to Supabase even
+        // while the app stays suspended — so the very next open shows an
+        // already-current readiness band. Rule: `recompute()` MUST NOT
+        // trigger additional wearable syncs (would recurse — invariant #33).
+        await ReadinessService.shared.recompute(force: true)
+
         // ── Step 4: Refresh active challenges ──
         await ChallengeService.shared.fetchActiveChallenges()
         await ChallengeService.shared.fetchActiveGroupChallenges()

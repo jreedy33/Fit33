@@ -687,13 +687,21 @@ struct Fit33App: App {
                         HealthKitManager.shared.checkAuthorizationStatus()
                         HealthKitService.shared.checkAuthorizationStatus()
 
-                        // Dashboard WHOOP widget must reflect latest recovery/strain/sleep
-                        // every time the user opens the app. Both `HealthDataService.syncAllHealthData`
-                        // and `WhoopService.syncAllData` have 5-minute throttles, so run a
+                        // Dashboard WHOOP / Oura widgets must reflect the latest recovery/strain/sleep
+                        // readings every time the user opens the app. Both `HealthDataService.syncAllHealthData`
+                        // and each wearable service's `syncAllData` have 5-minute throttles, so run a
                         // dedicated force sync in parallel with the main coordinated Task below.
+                        // BGTask path (`BackgroundChallengeSyncService.performSyncBody`) also refreshes
+                        // WHOOP + Oura — so if iOS woke us recently there's no network cost; the
+                        // service-level `isSyncing` guard coalesces with any in-flight sync.
                         if WhoopService.shared.isConnected {
                             Task(priority: .userInitiated) {
                                 await WhoopService.shared.syncAllData(force: true)
+                            }
+                        }
+                        if OuraService.shared.isConnected {
+                            Task(priority: .userInitiated) {
+                                await OuraService.shared.syncAllData(force: true)
                             }
                         }
                         

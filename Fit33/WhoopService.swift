@@ -211,6 +211,12 @@ final class WhoopService: ObservableObject {
 
     private func refreshAccessToken() async throws {
         guard let currentRefreshToken = refreshToken else {
+            // No stored refresh token → we can't recover silently. Mark
+            // disconnected so the UI + `isConnected` flag reflect reality
+            // and the user is prompted to reconnect (instead of the app
+            // looking "connected" while every API call silently fails).
+            AppLogger.warning("[WHOOP] refreshAccessToken called with no stored refresh token — disconnecting", category: .auth)
+            disconnect()
             throw WhoopError.notConnected
         }
 
@@ -233,6 +239,9 @@ final class WhoopService: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            if let errorBody = String(data: data, encoding: .utf8) {
+                AppLogger.error("[WHOOP] Token refresh failed (HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)): \(errorBody.prefix(300))", category: .auth)
+            }
             disconnect()
             throw WhoopError.tokenRefreshFailed
         }
@@ -240,10 +249,22 @@ final class WhoopService: ObservableObject {
         let tokenResponse = try JSONDecoder().decode(WhoopTokenResponse.self, from: data)
 
         accessToken = tokenResponse.accessToken
-        refreshToken = tokenResponse.refreshToken
+        // CRITICAL: WHOOP (and most OAuth providers) don't always return a new
+        // `refresh_token` on a successful refresh — they only rotate on their
+        // own schedule. If we unconditionally wrote `tokenResponse.refreshToken`
+        // back, a nil value would DELETE the keychain entry (setter semantics),
+        // and the very next refresh an hour later would fail with no refresh
+        // token to send. The result was a zombie "connected" state where
+        // `isConnected == true` but every API call silently no-op'd until the
+        // user disconnected + reconnected manually. Only overwrite when the
+        // server actually sent a new one. Mirrors the `exchangeCodeForTokens`
+        // defensive pattern.
+        if let rotated = tokenResponse.refreshToken, !rotated.isEmpty {
+            refreshToken = rotated
+        }
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 3600))
 
-        AppLogger.debug("[WHOOP] Token refreshed", category: .health)
+        AppLogger.debug("[WHOOP] Token refreshed (expires in \(tokenResponse.expiresIn ?? 3600)s)", category: .health)
     }
 
     private func ensureValidToken() async throws -> String {

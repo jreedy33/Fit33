@@ -211,6 +211,11 @@ final class OuraService: ObservableObject {
 
     private func refreshAccessToken() async throws {
         guard let currentRefreshToken = refreshToken else {
+            // No stored refresh token → can't recover silently. Mark the
+            // service disconnected so the UI surfaces the reconnect prompt
+            // instead of sitting in a zombie "connected but silent" state.
+            AppLogger.warning("[OURA] refreshAccessToken called with no stored refresh token — disconnecting", category: .auth)
+            disconnect()
             throw OuraError.notConnected
         }
 
@@ -233,6 +238,9 @@ final class OuraService: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            if let errorBody = String(data: data, encoding: .utf8) {
+                AppLogger.error("[OURA] Token refresh failed (HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)): \(errorBody.prefix(300))", category: .auth)
+            }
             disconnect()
             throw OuraError.tokenRefreshFailed
         }
@@ -240,10 +248,22 @@ final class OuraService: ObservableObject {
         let tokenResponse = try JSONDecoder().decode(OuraTokenResponse.self, from: data)
 
         accessToken = tokenResponse.accessToken
-        refreshToken = tokenResponse.refreshToken
+        // CRITICAL: Oura (like WHOOP and most OAuth providers) does not always
+        // return a new `refresh_token` on every successful refresh — they rotate
+        // on their own schedule. The `refreshToken` setter DELETES the keychain
+        // entry when passed nil, so unconditionally writing `tokenResponse.refreshToken`
+        // back would wipe our refresh capability any time Oura declined to
+        // rotate. The result is a zombie "connected" state where every
+        // subsequent API call silently no-op's until the user manually
+        // disconnects + reconnects. Only overwrite when the server actually
+        // sent a replacement. Mirrors the `exchangeCodeForTokens` defensive
+        // pattern already used on the initial-authorization path.
+        if let rotated = tokenResponse.refreshToken, !rotated.isEmpty {
+            refreshToken = rotated
+        }
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 86400))
 
-        AppLogger.debug("[OURA] Token refreshed", category: .health)
+        AppLogger.debug("[OURA] Token refreshed (expires in \(tokenResponse.expiresIn ?? 86400)s)", category: .health)
     }
 
     private func ensureValidToken() async throws -> String {

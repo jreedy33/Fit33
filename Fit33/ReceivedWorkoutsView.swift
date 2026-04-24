@@ -870,7 +870,13 @@ struct ReceivedWorkoutDetailView: View {
     }
 }
 
-// MARK: - Received Exercise Card (Matches AutoExerciseCard style)
+// MARK: - Received Exercise Card
+// Mirrors `ExerciseCardRow` (used by the Exercises tab / CustomWorkoutBuilderView) so
+// the received-workout preview shares the exact same visual language: 56x56 hollow
+// gradient ring with the cached video still inside, identical typography, and the
+// shared `sleekCardSubtle` background. If the exercise resolves in Core Data we
+// delegate to `ExerciseCardRow` directly; otherwise we fall back to a matching
+// inline render driven by the raw exercise name.
 
 struct ReceivedExerciseCard: View {
     let exerciseName: String
@@ -878,109 +884,64 @@ struct ReceivedExerciseCard: View {
     let reps: String
     let themeColor: Color
     let onTapCard: () -> Void
-    
+
     @Environment(\.colorScheme) private var colorScheme
-    
-    // Get category color based on exercise
-    private var categoryColor: Color {
-        // Try to get category from Core Data
-        if let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseName),
-           let category = exercise.category?.lowercased() {
-            switch category {
-            case "chest": return .red
-            case "back": return .blue
-            case "legs": return .green
-            case "shoulders": return .orange
-            case "arms": return .purple
-            case "core": return .yellow
-            default: return themeColor
-            }
-        }
-        return themeColor
+
+    private var coreDataExercise: Exercise? {
+        ExerciseLibraryService.shared.getExercise(byName: exerciseName)
     }
-    
-    private var categoryIcon: String {
-        if let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseName),
-           let category = exercise.category?.lowercased() {
-            switch category {
-            case "chest": return "figure.strengthtraining.traditional"
-            case "back": return "figure.rower"
-            case "legs": return "figure.run"
-            case "shoulders": return "figure.arms.open"
-            case "arms": return "dumbbell.fill"
-            case "core": return "figure.core.training"
-            default: return "dumbbell.fill"
-            }
-        }
-        return "dumbbell.fill"
-    }
-    
-    private var categoryName: String {
-        if let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseName),
-           let category = exercise.category {
-            return category
-        }
-        return "Exercise"
-    }
-    
-    private var equipmentName: String {
-        if let exercise = ExerciseLibraryService.shared.getExercise(byName: exerciseName),
-           let equipment = exercise.equipment {
-            return equipment
-        }
-        return "Bodyweight"
-    }
-    
+
     var body: some View {
         Button(action: onTapCard) {
-            HStack(spacing: 12) {
-                // Category icon (matching exercise library style)
-                ZStack {
-                    Circle()
-                        .fill(categoryColor.opacity(0.15))
-                        .frame(width: 36, height: 36)
-                    
-                    Image(systemName: categoryIcon)
-                        .font(.ds_labelMedium)
-                        .foregroundColor(categoryColor)
-                }
-                
-                // Exercise details
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(exerciseName)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    HStack(spacing: 8) {
-                        Text(categoryName)
-                            .font(.caption)
-                            .foregroundColor(categoryColor)
-                            .fontWeight(.medium)
-                        
-                        Text("•")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                        
-                        Text(equipmentName)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                // Info icon
-                Image(systemName: "info.circle")
-                    .font(.ds_bodyRegular).fontWeight(.medium)
-                    .foregroundColor(.secondary.opacity(0.5))
+            if let exercise = coreDataExercise {
+                ExerciseCardRow(exercise: exercise)
+                    .contentShape(Rectangle())
+            } else {
+                fallbackRow
             }
-            .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.sm)
-        .sleekCard(cornerRadius: 24, accentColor: .blue)
         }
         .buttonStyle(PlainButtonStyle())
+    }
+
+    // MARK: - Fallback (exercise not in Core Data)
+
+    private var fallbackRow: some View {
+        HStack(spacing: Spacing.sm) {
+            ExercisePosterRingIcon(
+                exerciseName: exerciseName,
+                gradientColors: [Color.gray, Color.gray.opacity(0.7)],
+                fallbackSymbol: "dumbbell.fill",
+                size: 56,
+                ringWidth: 2.5
+            )
+
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                let split = ExerciseNicknameService.splitPresentation(exerciseName)
+                Text(split.main)
+                    .font(.ds_bodyLarge)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                if let variant = split.variant {
+                    Text(variant)
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+
+                Text("\(sets) × \(reps)")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
     }
 }
 

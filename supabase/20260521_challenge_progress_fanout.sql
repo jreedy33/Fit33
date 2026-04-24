@@ -215,8 +215,15 @@ CREATE TRIGGER trg_fanout_community_challenge_progress
 -- Touch every row from the last 2 days: the trigger takes care of the rest.
 -- GREATEST() guarantees no value decreases during the sweep, so this is safe
 -- to re-run and the order of rows doesn't matter.
+--
+-- IMPORTANT: the trigger is declared `AFTER UPDATE OF progress_value`, which
+-- means Postgres only fires it when `progress_value` appears in the UPDATE's
+-- SET list. A self-assignment (`progress_value = progress_value`) is enough
+-- to satisfy that — a `SET updated_at = updated_at` bump would NOT fire it.
+-- (See 20260522_fanout_backfill_fix.sql for the post-hoc correction on
+-- environments where the original broken SET clause was already applied.)
 UPDATE challenge_daily_progress
-SET updated_at = updated_at   -- no-op value change; fires AFTER UPDATE trigger
+SET progress_value = progress_value   -- puts progress_value in SET list → trigger fires
 WHERE progress_date >= (NOW() AT TIME ZONE 'UTC')::DATE - 1
   AND challenge_id IN (
       SELECT id FROM group_challenges
@@ -224,7 +231,7 @@ WHERE progress_date >= (NOW() AT TIME ZONE 'UTC')::DATE - 1
   );
 
 UPDATE private_challenge_daily_progress
-SET updated_at = updated_at
+SET progress_value = progress_value
 WHERE progress_date >= (NOW() AT TIME ZONE 'UTC')::DATE - 1
   AND challenge_id IN (
       SELECT id FROM private_challenges
@@ -232,7 +239,7 @@ WHERE progress_date >= (NOW() AT TIME ZONE 'UTC')::DATE - 1
   );
 
 UPDATE community_challenge_daily_progress
-SET updated_at = updated_at
+SET progress_value = progress_value
 WHERE progress_date >= (NOW() AT TIME ZONE 'UTC')::DATE - 1
   AND challenge_id IN (
       SELECT id FROM community_challenges

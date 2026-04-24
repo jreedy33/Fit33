@@ -162,9 +162,6 @@ struct ExerciseDetailView: View {
             
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.md) {
-                    // Reserve space for floating toolbar (back + favorite)
-                    Color.clear.frame(height: 52)
-                    
                     videoSection
                     
                     headerSection
@@ -189,20 +186,18 @@ struct ExerciseDetailView: View {
                 .padding(.horizontal, Spacing.md)
             }
             .scrollIndicators(.hidden)
-            
-            floatingToolbar
         }
         .ignoresSafeArea(edges: .bottom)
-        .navigationBarHidden(true)
-        .gesture(
-            DragGesture(minimumDistance: 30, coordinateSpace: .local)
-                .onEnded { value in
-                    if value.startLocation.x < 50 && value.translation.width > 80 {
-                        HapticManager.tap()
-                        dismiss()
-                    }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: toggleFavorite) {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .foregroundColor(isFavorite ? .yellow : (colorScheme == .dark ? .white : .primary))
                 }
-        )
+                .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+            }
+        }
         .onAppear {
             SessionLogManager.shared.logScreen(.exerciseDetail, metadata: [
                 "exercise_name": exercise.name,
@@ -291,59 +286,6 @@ struct ExerciseDetailView: View {
                 isFavorite.toggle()
             }
         }
-    }
-    
-    // MARK: - Floating Toolbar (back + favorite)
-    
-    private var floatingToolbar: some View {
-        HStack {
-            Button {
-                HapticManager.tap()
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.ds_labelLarge)
-                    .foregroundColor(colorScheme == .dark ? .white : .primary)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
-                            )
-                    )
-                    .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
-            }
-            .accessibilityLabel("Back")
-            
-            Spacer()
-            
-            Button(action: toggleFavorite) {
-                Image(systemName: isFavorite ? "star.fill" : "star")
-                    .font(.ds_labelLarge)
-                    .foregroundColor(isFavorite ? .yellow : (colorScheme == .dark ? .white : .primary))
-                    .frame(width: 38, height: 38)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                Circle()
-                                    .stroke(
-                                        isFavorite ? Color.yellow.opacity(0.4) : Color.primary.opacity(0.1),
-                                        lineWidth: 0.5
-                                    )
-                            )
-                    )
-                    .shadow(
-                        color: isFavorite ? .yellow.opacity(0.28) : .black.opacity(0.12),
-                        radius: 6, x: 0, y: 2
-                    )
-            }
-            .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
-        }
-        .padding(.horizontal, Spacing.md)
-        .padding(.top, Spacing.xs)
     }
     
     // MARK: - Add to Workout Button

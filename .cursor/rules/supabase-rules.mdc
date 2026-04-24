@@ -40,6 +40,7 @@ These rules only load when editing files under `supabase/`. Cross-cutting rules 
 - **Naming**: `YYYYMMDD_HH_description.sql` (or `YYYYMMDD_description.sql`). Add to `supabase/MIGRATION_INDEX.md` in the same PR.
 - **Never drop a table without grepping the codebase**. `crash_reports` was dropped when empty, but `CrashReportingService.swift` still wrote to it → crashes on every error.
 - **`REFRESH MATERIALIZED VIEW CONCURRENTLY` requires a UNIQUE index** on the view. Add it before scheduling refreshes.
+- **Backfill that must re-fire an `AFTER UPDATE OF col` trigger MUST self-assign that column** (`SET col = col`). Postgres only fires `UPDATE OF col` triggers when the column appears in the SET list — a `SET updated_at = updated_at` "touch" is a silent no-op. This bit the `trg_fanout_*_challenge_progress` backfill in `20260521_challenge_progress_fanout.sql` (corrected in `20260522_fanout_backfill_fix.sql`): private and community leaderboards drifted because the sweep never actually ran. Safe because fanout triggers use `GREATEST()`, so re-firing never regresses values.
 
 ## Realtime
 - **`REPLICA IDENTITY FULL`** is mandatory for any table broadcast via realtime — so `UPDATE` events ship the entire NEW row (not just changed columns). `ALTER TABLE public.<t> REPLICA IDENTITY FULL;`

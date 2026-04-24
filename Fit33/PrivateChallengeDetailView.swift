@@ -57,6 +57,13 @@ struct PrivateChallengeDetailView: View {
                 .padding(.top, Spacing.sm)
             }
         }
+        // Phase 12 rage-shake fix (2026-04-24) — wire SessionLogManager so
+        // BugReportView's `Files Claude will review` shows the correct
+        // files when shaking here. Without this, a shake from this
+        // screen would point Claude at whatever was tracked last
+        // (historically .profile because the Profile tab is the only
+        // social-area screen with trackScreen).
+        .trackScreen(.privateChallengeDetail, metadata: ["challenge_id": challenge.id])
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

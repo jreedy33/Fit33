@@ -71,6 +71,11 @@ struct GroupChallengeDetailView: View {
                 .padding(.bottom, 60)
             }
         }
+        // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView
+        // for the invariant. `.trackScreen` reports the current screen to
+        // SessionLogManager so a shake surfaces GroupChallengeDetailView.swift
+        // as the first file for Claude to review.
+        .trackScreen(.groupChallengeDetail, metadata: ["challenge_id": challenge.challengeId])
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: challenge.challengeId) {

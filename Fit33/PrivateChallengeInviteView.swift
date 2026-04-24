@@ -114,6 +114,8 @@ struct PrivateChallengeInviteView: View {
             .onAppear {
                 Task { await friendService.fetchFriends() }
             }
+            // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
+            .trackScreen(.privateChallengeInvite)
         }
     }
     

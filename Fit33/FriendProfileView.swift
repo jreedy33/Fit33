@@ -251,6 +251,8 @@ struct FriendProfileView: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
+            .trackScreen(.friendProfile, metadata: ["friend_id": friend.friendId.uuidString])
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Close") { dismiss() }

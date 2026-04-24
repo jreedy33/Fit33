@@ -61,6 +61,8 @@ struct FriendsListView: View {
                 .transaction { $0.animation = nil }
             }
         }
+        // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
+        .trackScreen(.friendsList)
         .navigationTitle("Friends")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $showingFriendProfile) { profileUser in

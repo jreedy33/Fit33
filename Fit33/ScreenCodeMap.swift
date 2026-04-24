@@ -137,6 +137,63 @@ enum ScreenCodeMap {
         "blocked users":        ["Fit33/BlockedUsersView.swift"],
         "favorite routines":    ["Fit33/FavoriteRoutinesView.swift"],
 
+        // ── Challenges ───────────────────────────────────────────────
+        // Phase 12 rage-shake fix (2026-04-24): added these entries +
+        // matching `.trackScreen()` on each view's body so a shake from
+        // a challenge detail page routes Claude to the actual challenge
+        // file instead of whatever was tracked last (historically
+        // ProfileView.swift). Order matters — the view file comes
+        // first so Claude starts its analysis there, service files
+        // second so it can trace state changes.
+        "private challenge detail": [
+            "Fit33/PrivateChallengeDetailView.swift",
+            "Fit33/PrivateChallengeService.swift",
+            "Fit33/ChallengeReactionsView.swift",
+        ],
+        "private challenge list": [
+            "Fit33/DashboardView+Challenges.swift",
+            "Fit33/PrivateChallengeService.swift",
+        ],
+        "private challenge invite": [
+            "Fit33/PrivateChallengeInviteView.swift",
+            "Fit33/PrivateChallengeService.swift",
+            "Fit33/FriendService.swift",
+        ],
+        "private challenge admin": [
+            "Fit33/PrivateChallengeAdminSettingsView.swift",
+            "Fit33/PrivateChallengeService.swift",
+        ],
+        "private challenge creation": [
+            "Fit33/PrivateChallengeCreationFlow.swift",
+            "Fit33/PrivateChallengeService.swift",
+        ],
+        "community challenge list": [
+            "Fit33/CommunityChallengeViews.swift",
+            "Fit33/CommunityChallengeService.swift",
+        ],
+        "community challenge detail": [
+            "Fit33/CommunityChallengeViews.swift",
+            "Fit33/CommunityChallengeService.swift",
+        ],
+        "group challenge detail": [
+            "Fit33/GroupChallengeDetailView.swift",
+            "Fit33/ChallengeService.swift",
+            "Fit33/ChallengeOpponentWakeService.swift",
+        ],
+        "challenge detail": [
+            "Fit33/ChallengeDetailView.swift",
+            "Fit33/ChallengeService.swift",
+        ],
+        "challenge creation": [
+            "Fit33/ChallengeCreationFlow.swift",
+            "Fit33/ChallengeSetupView.swift",
+            "Fit33/ChallengeService.swift",
+        ],
+        "challenge flow start": [
+            "Fit33/ChallengeFlowStartView.swift",
+            "Fit33/ChallengeService.swift",
+        ],
+
         // ── Profile / settings ───────────────────────────────────────
         "profile":         ["Fit33/ProfileView.swift", "Fit33/UserManager.swift"],
         "edit profile":    ["Fit33/ProfileView.swift", "Fit33/UserManager.swift"],

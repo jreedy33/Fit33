@@ -829,6 +829,31 @@ final class SessionLogManager: ObservableObject {
         case workoutShare = "S322"
         
         // ═══════════════════════════════════════════════════════════
+        // SOCIAL / FRIENDS / CHALLENGES (S95X) — added 2026-04-24 to
+        // fix rage-shake stale-screen bug. Before this, a user on a
+        // private challenge detail page who shook the phone would see
+        // Claude pointed at ProfileView.swift + UserManager.swift
+        // because SessionLogManager.currentScreenId was stuck at the
+        // last enum-tracked screen (usually .profile). Phase 12 wires
+        // .trackScreen() on every top-level social/challenge body so
+        // getCurrentScreenInfo() returns the actual current page.
+        // ═══════════════════════════════════════════════════════════
+        case friendsList = "S950"
+        case friendProfile = "S951"
+        case receivedWorkouts = "S952"
+        case privateChallengeList = "S953"
+        case privateChallengeDetail = "S954"
+        case privateChallengeInvite = "S955"
+        case privateChallengeAdminSettings = "S956"
+        case privateChallengeCreation = "S957"
+        case communityChallengeList = "S958"
+        case communityChallengeDetail = "S959"
+        case groupChallengeDetail = "S960"
+        case challengeDetail = "S961"
+        case challengeCreation = "S962"
+        case challengeFlowStart = "S963"
+
+        // ═══════════════════════════════════════════════════════════
         // UNKNOWN / FALLBACK
         // ═══════════════════════════════════════════════════════════
         case unknown = "S000"
@@ -917,6 +942,21 @@ final class SessionLogManager: ObservableObject {
             case .workoutComplete: return "Workout Complete"
             case .workoutRating: return "Workout Rating"
             case .workoutShare: return "Workout Share"
+            // Phase 12 social / challenges (2026-04-24 rage-shake fix).
+            case .friendsList: return "Friends List"
+            case .friendProfile: return "Friend Profile"
+            case .receivedWorkouts: return "Received Workouts"
+            case .privateChallengeList: return "Private Challenge List"
+            case .privateChallengeDetail: return "Private Challenge Detail"
+            case .privateChallengeInvite: return "Private Challenge Invite"
+            case .privateChallengeAdminSettings: return "Private Challenge Admin"
+            case .privateChallengeCreation: return "Private Challenge Creation"
+            case .communityChallengeList: return "Community Challenge List"
+            case .communityChallengeDetail: return "Community Challenge Detail"
+            case .groupChallengeDetail: return "Group Challenge Detail"
+            case .challengeDetail: return "Challenge Detail"
+            case .challengeCreation: return "Challenge Creation"
+            case .challengeFlowStart: return "Challenge Flow Start"
             case .unknown: return "Unknown"
             }
         }

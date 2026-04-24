@@ -75,6 +75,8 @@ struct ChallengeDetailView: View {
                 }
             }
         }
+        // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
+        .trackScreen(.challengeDetail, metadata: ["challenge_id": challenge.id])
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

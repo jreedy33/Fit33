@@ -335,6 +335,8 @@ struct PrivateChallengeAdminSettingsView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
+            .trackScreen(.privateChallengeAdminSettings, metadata: ["challenge_id": challenge.id])
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }

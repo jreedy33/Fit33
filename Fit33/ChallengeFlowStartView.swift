@@ -253,6 +253,8 @@ struct ChallengeFlowStartView: View {
     
     var body: some View {
         mainContent
+            // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
+            .trackScreen(.challengeFlowStart)
             .navigationTitle(isInviteMode ? "" : "Create Challenge")
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(true)

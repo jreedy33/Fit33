@@ -589,8 +589,9 @@ class SupabaseManager: ObservableObject {
             ])
             AppLogger.info("Sign in successful: \(email)", category: .auth)
             
-            // Sync all data from cloud
-            await syncAllDataFromCloud()
+            // Sync all data from cloud — force=true so a stale throttle from the
+            // previous (signed-out) session can't prevent hasCompletedOnboarding refresh.
+            await syncAllDataFromCloud(force: true)
         } catch {
             await MainActor.run { isLoading = false }
             SessionLogManager.shared.logAuthFailure(method: "email", error: error.localizedDescription)
@@ -769,8 +770,12 @@ class SupabaseManager: ObservableObject {
             AppLogger.info("Apple Sign-In successful: \(session.user.email ?? "private email")", category: .auth)
             
             // Only sync data for EXISTING users (not new users who need onboarding)
+            // force=true bypasses any residual throttle from a prior session so the
+            // existing user's hasCompletedOnboarding state is refreshed in Core Data
+            // before ContentView routes them. Without this, login can bounce back to
+            // the onboarding screen.
             if !isNewUser {
-                await syncAllDataFromCloud()
+                await syncAllDataFromCloud(force: true)
             }
             
             return isNewUser
@@ -906,8 +911,10 @@ class SupabaseManager: ObservableObject {
             AppLogger.info("OAuth Sign-In successful: \(session.user.email ?? "unknown")", category: .auth)
             
             // Only sync for existing users
+            // force=true ensures hasCompletedOnboarding refreshes even if a prior
+            // signed-out session left a residual throttle window in place.
             if !isNewUser {
-                await syncAllDataFromCloud()
+                await syncAllDataFromCloud(force: true)
             }
             
             return (isNewUser, socialUsername)
@@ -1012,6 +1019,16 @@ class SupabaseManager: ObservableObject {
                 isAuthenticated = false
                 isLoading = false
             }
+
+            // 🔓 Reset cloud-sync throttle so the NEXT login (especially a fast
+            // sign-out → sign-in cycle) is not blocked by the 5-minute
+            // minSyncInterval. Without this, an existing user who logs back in
+            // within the throttle window would have syncAllDataFromCloud()
+            // skipped, leaving hasCompletedOnboarding=false in Core Data and
+            // bouncing them back to the onboarding screen.
+            SupabaseManager.isSyncInProgress = false
+            SupabaseManager.lastSyncTime = nil
+
             SessionLogManager.shared.log(.info, category: .auth, message: "🔐 Sign out complete")
             AppLogger.info("Sign out successful - all local data cleared", category: .auth)
         } catch {
@@ -1089,7 +1106,12 @@ class SupabaseManager: ObservableObject {
             isAuthenticated = false
             isLoading = false
         }
-        
+
+        // 🔓 Reset cloud-sync throttle so a brand-new account created right
+        // after a deletion is not throttled out of its first post-auth sync.
+        SupabaseManager.isSyncInProgress = false
+        SupabaseManager.lastSyncTime = nil
+
         if authUserDeleted {
             AppLogger.info("ACCOUNT FULLY DELETED - user can re-register with same email", category: .auth)
         } else {
@@ -1867,6 +1889,11 @@ class SupabaseManager: ObservableObject {
                 .update(["has_completed_onboarding": true])
                 .eq("id", value: userId.uuidString)
                 .execute()
+            // Stamp the push timestamp so the admin-CMS guard in
+            // syncCoreDataProfile() recognizes that this device just wrote
+            // the row (and won't immediately re-pull a stale read on the
+            // very next sync cycle).
+            UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
             return
         }
         
@@ -1923,6 +1950,10 @@ class SupabaseManager: ObservableObject {
                 .upsert(profile, onConflict: "id")
                 .execute()
             AppLogger.info("[PROFILE] Upsert to user_profiles succeeded", category: .network)
+            // Stamp the push timestamp so the admin-CMS guard in
+            // syncCoreDataProfile() recognizes that this device just wrote
+            // the row.
+            UserDefaults.standard.set(Date(), forKey: SupabaseManager.lastProfilePushKey)
         } catch {
             _ = NetworkErrorClassifier.log(
                 error,
@@ -2450,10 +2481,19 @@ class SupabaseManager: ObservableObject {
         // ═══════════════════════════════════════════════════════════════════
         // ADMIN CMS GUARD: Check if cloud was updated more recently by admin
         // If so, pull from cloud instead of pushing (prevents overwriting CMS edits)
+        //
+        // ⚠️ IMPORTANT: On the FIRST push for a new account (`lastPushTime ==
+        // .distantPast`), the cloud row was either just created by `signUp()`
+        // with a placeholder name="User" or by `createProfileForOAuthUser`.
+        // The CMS could not have edited it yet, so the local Core Data write
+        // (which carries the real onboarding values) MUST win. Skipping the
+        // guard on the first push prevents the email/password race where a
+        // stale cloud read overwrites the user's real name with "User".
         // ═══════════════════════════════════════════════════════════════════
         let lastPushTime = UserDefaults.standard.object(forKey: SupabaseManager.lastProfilePushKey) as? Date ?? Date.distantPast
-        
-        if let cloudProfile = try? await fetchUserProfile() {
+        let isFirstPush = lastPushTime == .distantPast
+
+        if !isFirstPush, let cloudProfile = try? await fetchUserProfile() {
             AppLogger.debug("[SYNC] Cloud profile verified=\(cloudProfile.isVerified ?? false), goldVerified=\(cloudProfile.isGoldVerified ?? false)", category: .network)
             await MainActor.run {
                 UserManager.shared.isVerified = cloudProfile.isVerified ?? false
@@ -2473,6 +2513,8 @@ class SupabaseManager: ObservableObject {
                     }
                 }
             }
+        } else if isFirstPush {
+            AppLogger.info("[SYNC] First push for this account (no prior pushes recorded) — bypassing admin-CMS guard so onboarding values win the race against signup-time placeholders", category: .network)
         }
         
         struct ProfileSync: Encodable {
@@ -4307,18 +4349,27 @@ class SupabaseManager: ObservableObject {
     
     /// Syncs all user data from cloud to Core Data
     /// ⚡️ PERFORMANCE: Now with deduplication, throttling, and heavy work signaling
-    func syncAllDataFromCloud() async {
-        // 🛡️ DEDUPLICATION: Prevent concurrent syncs
-        guard !SupabaseManager.isSyncInProgress else {
-            AppLogger.warning("[SYNC] Skipping - sync already in progress", category: .network)
-            return
-        }
-        
-        // 🛡️ THROTTLING: Prevent too-frequent syncs
-        if let lastSync = SupabaseManager.lastSyncTime,
-           Date().timeIntervalSince(lastSync) < SupabaseManager.minSyncInterval {
-            AppLogger.warning("[SYNC] Skipping - synced \(Int(Date().timeIntervalSince(lastSync)))s ago (min: \(Int(SupabaseManager.minSyncInterval))s)", category: .network)
-            return
+    /// - Parameter force: When true, bypasses both the dedup guard and the time-based throttle.
+    ///   Used after authentication (OAuth/email sign-in) where we MUST refresh `hasCompletedOnboarding`
+    ///   and other cloud state regardless of how recently a previous (signed-out) session synced.
+    func syncAllDataFromCloud(force: Bool = false) async {
+        // 🛡️ DEDUPLICATION: Prevent concurrent syncs (skipped when forced post-auth)
+        if !force {
+            guard !SupabaseManager.isSyncInProgress else {
+                AppLogger.warning("[SYNC] Skipping - sync already in progress", category: .network)
+                return
+            }
+
+            // 🛡️ THROTTLING: Prevent too-frequent syncs
+            if let lastSync = SupabaseManager.lastSyncTime,
+               Date().timeIntervalSince(lastSync) < SupabaseManager.minSyncInterval {
+                AppLogger.warning("[SYNC] Skipping - synced \(Int(Date().timeIntervalSince(lastSync)))s ago (min: \(Int(SupabaseManager.minSyncInterval))s)", category: .network)
+                return
+            }
+        } else if SupabaseManager.isSyncInProgress {
+            AppLogger.info("[SYNC] Forced sync requested while another sync is running - proceeding to ensure post-auth state is fresh", category: .network)
+        } else {
+            AppLogger.info("[SYNC] Forced sync requested - bypassing throttle (post-auth refresh)", category: .network)
         }
         
         SupabaseManager.isSyncInProgress = true
@@ -4411,6 +4462,17 @@ class SupabaseManager: ObservableObject {
                 if let existingUser = existingUsers.first {
                     user = existingUser
                     AppLogger.debug("Updating existing user from cloud profile", category: .network)
+
+                    // 🩹 SELF-HEAL: If the local User.id drifted from the cloud
+                    // profile.id (which is the Supabase auth.uid), repair it.
+                    // Otherwise every workout-intelligence write fails RLS
+                    // (`WITH CHECK (user_id = auth.uid())`). This recovers
+                    // accounts created before the createUser() fix that
+                    // assigned a random UUID instead of auth.uid.
+                    if let cloudUUID = UUID(uuidString: profile.id), user.id != cloudUUID {
+                        AppLogger.warning("[SYNC] Self-healing User.id mismatch — local=\(user.id?.uuidString ?? "nil") cloud=\(cloudUUID.uuidString). Aligning to auth.uid for RLS.", category: .network)
+                        user.id = cloudUUID
+                    }
                 } else {
                     guard let profileUUID = UUID(uuidString: profile.id) else {
                         AppLogger.error("Cloud profile has malformed UUID '\(profile.id)' — skipping sync to avoid orphaned Core Data row", category: .network)
@@ -4422,8 +4484,31 @@ class SupabaseManager: ObservableObject {
                     AppLogger.debug("Creating new user from cloud profile", category: .network)
                 }
                 
-                // Update ALL user fields from cloud
-                user.name = profile.name
+                // Update ALL user fields from cloud.
+                //
+                // ⚠️ Only overwrite `user.name` when the cloud actually has a
+                // real name. Email/password signup writes a placeholder
+                // name="User" to the cloud BEFORE the user enters their real
+                // name on the username step; if a cloud-pull races against
+                // the onboarding write the placeholder must NOT clobber the
+                // real local name. (Other fields below already use `if let`
+                // for the same reason — name was the lone unconditional
+                // assignment and the source of the "Profile shows User"
+                // bug.)
+                let cloudName = profile.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let localName = user.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let cloudIsPlaceholder = cloudName.isEmpty || cloudName == "User" || cloudName == "Apple User" || cloudName == "Google User" || cloudName == "Facebook User"
+                let localIsPlaceholder = localName.isEmpty || localName == "User" || localName == "Apple User" || localName == "Google User" || localName == "Facebook User"
+                if !cloudIsPlaceholder {
+                    // Cloud has a real name — accept it.
+                    user.name = profile.name
+                } else if localIsPlaceholder {
+                    // Both sides are placeholder — keep cloud's value to stay
+                    // consistent with the rest of the profile.
+                    user.name = profile.name
+                } else {
+                    AppLogger.debug("[SYNC] Skipping name overwrite — cloud='\(cloudName)' is placeholder, local='\(localName)' is real", category: .network)
+                }
                 user.email = profile.email
                 user.fitnessGoal = profile.fitnessGoal
                 user.experienceLevel = profile.experienceLevel

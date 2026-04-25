@@ -288,7 +288,21 @@ class UserManager: ObservableObject {
         }
 
         let newUser = User(context: viewContext)
-        newUser.id = UUID()
+        // 🔑 CRITICAL: The Core Data `User.id` MUST equal the Supabase
+        // `auth.uid()` so cloud writes pass Row Level Security. Workout
+        // intelligence tables (workout_context, equipment_proficiency,
+        // exercise_user_effectiveness, etc.) use `WITH CHECK (user_id =
+        // auth.uid())`. If we generated a random UUID here, every cloud
+        // write after onboarding would get PostgrestError 42501.
+        // Fall back to a fresh UUID only when no auth session exists
+        // (e.g. preview/test contexts) — production onboarding always has
+        // an authenticated session at this point.
+        if let authUserId = SupabaseManager.shared.currentUser?.id {
+            newUser.id = authUserId
+        } else {
+            AppLogger.warning("[ONBOARDING] Creating local User without auth session — RLS-protected cloud writes will fail until a sync with auth runs", category: .auth)
+            newUser.id = UUID()
+        }
         newUser.name = trimmedName
         newUser.age = age
         newUser.gender = gender

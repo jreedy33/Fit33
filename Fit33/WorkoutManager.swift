@@ -1001,9 +1001,16 @@ class WorkoutManager: ObservableObject {
         // This records the workout for global pattern analysis - learning what
         // exercises/combinations work well across similar users
         // ═══════════════════════════════════════════════════════════════════════
-        if let workout = currentWorkout, let user = UserManager.shared.currentUser, let userId = user.id {
+        // RLS-safety: collaborative_workout_data is pinned to auth.uid(); always
+        // emit the live Supabase session id (not the Core Data User.id) so legacy
+        // accounts whose Core Data UUID predates the UserManager auth.uid()
+        // alignment fix don't trip 42501.
+        if let workout = currentWorkout,
+           let user = UserManager.shared.currentUser,
+           SupabaseManager.shared.isAuthenticated,
+           let authUserId = SupabaseManager.shared.currentUser?.id {
             Task { @MainActor in
-                let userIdString = userId.uuidString
+                let userIdString = authUserId.uuidString
                 
                 // Build user profile snapshot
                 let userProfile = UserProfileSnapshot(from: user)
@@ -1328,28 +1335,33 @@ class WorkoutManager: ObservableObject {
     
     /// Record workout context (when workout started)
     private func recordWorkoutContext() async {
-        guard let workout = currentWorkout,
-              let userId = UserManager.shared.currentUser?.id,
+        // RLS-safety: workout_context is pinned to `auth.uid() = user_id`. Sourcing
+        // user_id from Core Data (UserManager) instead of the live Supabase session
+        // produced 42501 violations for legacy accounts whose `User.id` predates the
+        // UserManager.swift `auth.uid()` alignment fix. Always use the live session.
+        guard SupabaseManager.shared.isAuthenticated,
+              let authUserId = SupabaseManager.shared.currentUser?.id,
+              let workout = currentWorkout,
               let workoutDate = workout.date else {
             return
         }
-        
+
         let calendar = Calendar.current
         let dayOfWeek = calendar.component(.weekday, from: workoutDate)
         let dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-        
+
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "HH:mm:ss"
         let timeString = timeFormatter.string(from: workoutDate)
-        
+
         let dto: [String: AnyJSON] = [
-            "user_id": .string(userId.uuidString),
+            "user_id": .string(authUserId.uuidString),
             "workout_id": workout.id.map { .string($0.uuidString) } ?? .null,
             "workout_date": .string(ISO8601DateFormatter().string(from: workoutDate)),
             "workout_time": .string(timeString),
             "day_of_week": .string(dayNames[dayOfWeek - 1])
         ]
-        
+
         do {
             try await SupabaseManager.shared.supabaseClient
                 .from("workout_context")
@@ -1359,7 +1371,14 @@ class WorkoutManager: ObservableObject {
             AppLogger.debug("✅ Recorded context: \(dayNames[dayOfWeek - 1]) at \(timeString)", category: .data)
             #endif
         } catch {
-            AppLogger.error("❌ Error recording context: \(error)", category: .data)
+            NetworkErrorClassifier.log(
+                error,
+                context: "Recording workout_context",
+                category: .data,
+                transientLevel: .debug,
+                op: "workout_context.insert",
+                userId: authUserId
+            )
         }
     }
     
@@ -1369,8 +1388,9 @@ class WorkoutManager: ObservableObject {
             AppLogger.warning("[PERF HISTORY] Skipping — not authenticated", category: .auth)
             return
         }
-        guard let workout = currentWorkout,
-              let userId = UserManager.shared.currentUser?.id,
+        // RLS-safety: prefer auth.uid() over Core Data User.id (legacy-account safe).
+        guard let userId = SupabaseManager.shared.currentUser?.id,
+              let workout = currentWorkout,
               let exercises = workout.exercises as? Set<WorkoutExercise> else {
             return
         }
@@ -1426,15 +1446,24 @@ class WorkoutManager: ObservableObject {
                 AppLogger.debug("✅ Recorded performance: \(exerciseName) - \(bestSet.weight)lbs x \(bestSet.reps) (1RM: \(String(format: "%.1f", oneRM))lbs)", category: .data)
                 #endif
             } catch {
-                AppLogger.error("❌ Error recording performance for \(exerciseName): \(error)", category: .data)
+                NetworkErrorClassifier.log(
+                    error,
+                    context: "Recording exercise_performance_history for \(exerciseName)",
+                    category: .data,
+                    transientLevel: .debug,
+                    op: "exercise_performance_history.insert",
+                    userId: userId
+                )
             }
         }
     }
     
     /// Update equipment proficiency based on workout
     private func updateEquipmentProficiency() async {
-        guard let workout = currentWorkout,
-              let userId = UserManager.shared.currentUser?.id,
+        // RLS-safety: equipment_proficiency is pinned to auth.uid(); always source from session.
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id,
+              let workout = currentWorkout,
               let exercises = workout.exercises as? Set<WorkoutExercise> else {
             return
         }
@@ -1460,7 +1489,14 @@ class WorkoutManager: ObservableObject {
                 AppLogger.debug("✅ Updated proficiency: \(equipment)", category: .data)
                 #endif
             } catch {
-                AppLogger.error("❌ Error updating proficiency for \(equipment): \(error)", category: .data)
+                NetworkErrorClassifier.log(
+                    error,
+                    context: "Incrementing equipment_proficiency for \(equipment)",
+                    category: .data,
+                    transientLevel: .debug,
+                    op: "increment_equipment_usage",
+                    userId: userId
+                )
             }
         }
     }

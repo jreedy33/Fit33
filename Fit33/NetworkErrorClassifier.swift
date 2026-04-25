@@ -125,6 +125,18 @@ enum NetworkErrorClassifier {
             return .expectedUserState
         }
 
+        // Auth rate-limit responses (HTTP 429 / "rate limit exceeded" /
+        // "email rate limit exceeded" / "too many requests") are transient
+        // by definition — the user can retry after the window. Bucketing
+        // them at the same level as a real malfunction would surface a
+        // bug-intelligence fingerprint per signup attempt during a burst.
+        // (Bug-intel Reports 10 + 13.)
+        if lower.contains("rate limit")
+            || lower.contains("too many requests")
+            || lower.contains("status code: 429") {
+            return .transientNetwork
+        }
+
         return .realError
     }
 

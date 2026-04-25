@@ -184,12 +184,12 @@ class ProgressiveExerciseUnlockService: ObservableObject {
     @Published private(set) var isAnalyzing = false
     
     private let cacheKey = "userExerciseMaturityProfile"
-    
+
     private init() {
         loadCachedProfile()
         AppLogger.debug("📈 [PROGRESSIVE UNLOCK] Service initialized", category: .workout)
     }
-    
+
     // MARK: - Cache Management
     
     private func loadCachedProfile() {
@@ -210,6 +210,36 @@ class ProgressiveExerciseUnlockService: ObservableObject {
         if let data = try? JSONEncoder().encode(profile) {
             UserDefaults.standard.set(data, forKey: cacheKey)
         }
+    }
+
+    /// Clear the cached profile. Call on sign-out so the next signed-in user
+    /// doesn't inherit the previous account's maturity profile (which would
+    /// otherwise either over-unlock variety for a brand-new account, or — more
+    /// commonly — leave the empty/default profile which restricts the new
+    /// session to foundational/stretches until `recomputeProfile()` runs).
+    func clearCache() {
+        UserDefaults.standard.removeObject(forKey: cacheKey)
+        userProfile = nil
+        ProgressiveUnlockCache.shared.update(from: nil)
+        AppLogger.debug("📈 [PROGRESSIVE UNLOCK] Cache cleared (sign-out)", category: .workout)
+    }
+
+    /// Eagerly recompute the maturity profile from Core Data. Call after
+    /// sign-in / Core Data is ready so the autogen path doesn't briefly see
+    /// the empty default (which would gate the user to foundational stretches).
+    func recomputeProfile(context: NSManagedObjectContext) async {
+        _ = await analyzeUserMaturity(context: context)
+    }
+
+    /// Synchronous Core Data fallback for the autogen path when the cached
+    /// profile is missing (e.g. immediately after sign-in before the async
+    /// recompute lands). Counts completed Workout rows on the calling context;
+    /// callers should pass the viewContext on the MainActor.
+    private func quickWorkoutCountFromCoreData() -> Int {
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.predicate = NSPredicate(format: "isCompleted == YES")
+        let context = PersistenceController.shared.container.viewContext
+        return (try? context.count(for: request)) ?? 0
     }
     
     // MARK: - Profile Analysis
@@ -388,7 +418,7 @@ class ProgressiveExerciseUnlockService: ObservableObject {
     
     /// Check if an exercise should be included based on user's tier
     func shouldIncludeExercise(exerciseName: String) -> Bool {
-        let profile = userProfile ?? UserExerciseMaturityProfile()
+        let profile = userProfile ?? fallbackProfileFromCoreData()
         
         // If user is restricted to foundational, check if exercise is foundational
         if profile.shouldRestrictToFoundational {
@@ -431,14 +461,39 @@ class ProgressiveExerciseUnlockService: ObservableObject {
         return userProfile?.currentUnlockTier ?? .essential
     }
     
-    /// Whether user should be restricted to foundational exercises
+    /// Whether user should be restricted to foundational exercises.
+    ///
+    /// Defaults to `false` (no restriction) when the cached profile is missing
+    /// AND Core Data shows the user has completed >10 workouts. This guards
+    /// the autogen path against a sign-in race where the cache hasn't been
+    /// rebuilt yet — without this fallback, returning users were briefly
+    /// restricted to foundational/stretch exercises after sign-in until the
+    /// async `recomputeProfile()` finished. (Bug-intel Report 8.)
     var shouldRestrictToFoundational: Bool {
-        return userProfile?.shouldRestrictToFoundational ?? true
+        if let profile = userProfile {
+            return profile.shouldRestrictToFoundational
+        }
+        return fallbackProfileFromCoreData().shouldRestrictToFoundational
     }
     
     /// Get variety percentage (0.0 - 1.0)
     var varietyPercentage: Double {
-        return userProfile?.varietyPercentage ?? 0.0
+        if let profile = userProfile {
+            return profile.varietyPercentage
+        }
+        return fallbackProfileFromCoreData().varietyPercentage
+    }
+
+    /// Build a minimal maturity profile directly from Core Data without
+    /// running the full async analysis. Used as a fallback when the
+    /// UserDefaults cache is missing (e.g. fresh sign-in) so the autogen
+    /// path doesn't trap returning users in foundational-only exercises.
+    private func fallbackProfileFromCoreData() -> UserExerciseMaturityProfile {
+        var fallback = UserExerciseMaturityProfile()
+        fallback.totalWorkoutsCompleted = quickWorkoutCountFromCoreData()
+        // Heuristic: if Core Data already has 10+ completed workouts the user
+        // is past the new-user funnel, regardless of our cache state.
+        return fallback
     }
     
     // MARK: - Helper Methods

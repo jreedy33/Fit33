@@ -157,7 +157,18 @@ class CollaborativeLearningEngine: ObservableObject {
             AppLogger.debug("🌐 [COLLABORATIVE] Recorded workout with \(exercises.count) exercises", category: .workout)
             
         } catch {
-            AppLogger.error("❌ [COLLABORATIVE] Failed to record workout: \(error)", category: .workout)
+            // Route through classifier so RLS / transient / auth-expired errors don't
+            // create high-severity bug-intel fingerprints. Caller already passes the
+            // live auth.uid() (WorkoutManager fix), so 42501 here means a state edge
+            // (token expired between guard and insert) rather than an app malfunction.
+            NetworkErrorClassifier.log(
+                error,
+                context: "Recording collaborative_workout_data",
+                category: .workout,
+                transientLevel: .debug,
+                op: "collaborative_workout_data.insert",
+                userId: UUID(uuidString: userId)
+            )
         }
     }
     

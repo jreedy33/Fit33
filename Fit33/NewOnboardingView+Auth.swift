@@ -818,7 +818,13 @@ extension NewOnboardingView {
                         completeOnboarding()
                     }
                 } catch {
-                    AppLogger.error("Signup failed: \(error.localizedDescription)", category: .auth)
+                    NetworkErrorClassifier.log(
+                        error,
+                        context: "Signup completion",
+                        category: .auth,
+                        transientLevel: .debug,
+                        op: "auth.signUp"
+                    )
                     SessionLogManager.shared.logAuthFailure(method: "email_signup", error: error.localizedDescription)
                     
                     await MainActor.run {
@@ -1060,7 +1066,17 @@ extension NewOnboardingView {
                             errorMessage = authError.errorDescription ?? "Sign up failed. Please try again."
                         }
                         showError = true
-                        AppLogger.error("Account creation failed in handleAuth: \(authError.localizedDescription)", category: .auth)
+                        // Route through classifier so duplicate-signup ("User already
+                        // registered" → .expectedUserState) and rate-limit responses
+                        // (.transientNetwork) land at .debug instead of generating a
+                        // bug-intel fingerprint per attempt. (Bug-intel Reports 9/10/13.)
+                        NetworkErrorClassifier.log(
+                            authError,
+                            context: "Sign-up flow auth error in handleAuth",
+                            category: .auth,
+                            transientLevel: .debug,
+                            op: "auth.signUp"
+                        )
                     }
                 } catch {
                     await MainActor.run {
@@ -1074,7 +1090,13 @@ extension NewOnboardingView {
                             errorMessage = error.localizedDescription
                         }
                         showError = true
-                        AppLogger.error("Account creation failed in handleAuth: \(error.localizedDescription)", category: .auth)
+                        NetworkErrorClassifier.log(
+                            error,
+                            context: "Sign-up flow generic error in handleAuth",
+                            category: .auth,
+                            transientLevel: .debug,
+                            op: "auth.signUp"
+                        )
                     }
                 }
             }

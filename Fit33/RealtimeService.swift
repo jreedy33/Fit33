@@ -1074,10 +1074,19 @@ class RealtimeService: ObservableObject {
         let progressDate = jsonString(record["progress_date"]) ?? ""
         
         if isOwnUpdate {
-            // ⚡️ PERF FIX: Skip fetching for own daily progress — we already have the data locally.
-            // The DB just confirmed what we wrote. Fetching here caused redundant network calls.
+            // 2026-04-25: previous "skip own update" perf optimization broke
+            // the dashboard 1v1/group challenge widgets. The widget reads
+            // ChallengeService.activeChallenges, which only updates after a
+            // get_active_challenges RPC. When a workout cascade-writes to
+            // challenge_daily_progress, the immediate logProgress() refetch
+            // can be dropped by ChallengeService.fetchMinInterval (multiple
+            // challenges in one workout); the realtime event was the last
+            // chance to re-pull aggregates (myToday/oppToday/amWinning).
+            // Always refresh on own update — RealtimeService's 3s throttle
+            // + RequestCoalescer prevents thrash.
             logRealtimeEvent(type: "OWN_DAILY_PROGRESS", source: "challenge_daily_progress",
-                            details: "✅ Own progress confirmed: \(progressValue), challenge: \(challengeIdString.prefix(8)) — SKIPPED refresh")
+                            details: "✅ Own progress confirmed: \(progressValue), challenge: \(challengeIdString.prefix(8)) — refreshing widget")
+            await throttledChallengeFetch()
             return
         }
         

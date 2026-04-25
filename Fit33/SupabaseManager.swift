@@ -1010,6 +1010,13 @@ class SupabaseManager: ObservableObject {
                 
                 // Clear challenge cache - ensures no challenge data leaks between users
                 ChallengeService.shared.clearCache()
+
+                // Clear progressive-unlock maturity cache so the next signed-in
+                // user starts from a fresh recompute. Without this, a returning
+                // user could see the previous account's cached profile (or, more
+                // commonly, the empty-default profile that gates autogen to
+                // foundational/stretch-only exercises). Bug-intel Report 8.
+                ProgressiveExerciseUnlockService.shared.clearCache()
                 
                 // Mark that user manually signed out (for development mode)
                 UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
@@ -4429,6 +4436,17 @@ class SupabaseManager: ObservableObject {
             
             wf.end("CloudSync (total)")
             AppLogger.info("Comprehensive data sync completed!", category: .network)
+
+            // After workout history is hydrated into Core Data, eagerly recompute
+            // the progressive-unlock maturity profile so the autogen path doesn't
+            // briefly see the post-sign-in empty default and gate the user to
+            // foundational/stretch-only exercises. Bug-intel Report 8.
+            await MainActor.run {
+                let viewContext = PersistenceController.shared.container.viewContext
+                Task { @MainActor in
+                    await ProgressiveExerciseUnlockService.shared.recomputeProfile(context: viewContext)
+                }
+            }
         } catch {
             wf.end("CloudSync (total)")
             // Cluster F (fingerprint c8898dbd): comprehensive sync runs on

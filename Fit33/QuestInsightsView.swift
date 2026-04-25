@@ -347,9 +347,37 @@ struct QuestInsightsView: View {
             self.isLoading = false
             AppLogger.debug("[QuestInsights] Loaded \(response.count) rows", category: .general)
         } catch {
-            self.loadError = error.localizedDescription
+            // Defensive UX: if `v_user_quest_personalization_summary` hasn't been
+            // deployed yet (PostgREST schema cache PGRST205) or the call fails
+            // transiently, show an empty state instead of an error banner. Route
+            // logging through the classifier so a missing-view error during a
+            // staged rollout doesn't generate high-severity bug-intel fingerprints.
+            // (Bug-intel: missing-view PGRST205 should auto-resolve once the
+            // 20260607_pro_quest_monetization migration is live.)
+            let lowered = error.localizedDescription.lowercased()
+            let isSchemaCache = lowered.contains("schema cache")
+                || lowered.contains("pgrst205")
+                || lowered.contains("could not find")
+                || lowered.contains("relation") && lowered.contains("does not exist")
+            if isSchemaCache {
+                self.loadError = nil
+                self.rows = []
+                AppLogger.debug(
+                    "[QuestInsights] View not yet deployed; rendering empty state.",
+                    category: .general
+                )
+            } else {
+                self.loadError = error.localizedDescription
+            }
             self.isLoading = false
-            AppLogger.error("[QuestInsights] Load failed: \(error.localizedDescription)", category: .general)
+            NetworkErrorClassifier.log(
+                error,
+                context: "Loading v_user_quest_personalization_summary",
+                category: .general,
+                transientLevel: .debug,
+                op: "v_user_quest_personalization_summary.select",
+                userId: userId
+            )
         }
     }
 

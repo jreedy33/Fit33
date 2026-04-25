@@ -655,7 +655,14 @@ class ChallengeService: ObservableObject {
     
     private var lastActiveFetchTime: Date = .distantPast
     private var lastGroupFetchTime: Date = .distantPast
-    private let fetchMinInterval: TimeInterval = 5.0
+    // 2026-04-25: was 5.0, but a single workout writes progress to multiple
+    // challenges (steps + active_minutes + workout_streak), and each
+    // logProgress success calls fetchActiveChallenges. The 5s gate dropped
+    // every call after the first, leaving 1v1/group widgets stale. 1.0s is
+    // enough to absorb genuinely duplicate UI navigations while letting
+    // realtime + post-write refreshes through; RequestCoalescer dedupes any
+    // truly concurrent fetch.
+    private let fetchMinInterval: TimeInterval = 1.0
     
     func fetchActiveChallenges() async {
         guard SupabaseManager.shared.isAuthenticated else { return }

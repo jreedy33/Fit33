@@ -54,7 +54,42 @@ private struct MarqueeTextSizeKey: PreferenceKey {
     }
 }
 
+/// Public face of the component. Thin wrapper that forces the inner runner
+/// (and its `startDate` @State) to be recreated whenever `shouldAnimate`
+/// flips. This is the ONLY reliable way to anchor the TimelineView clock
+/// to the moment of selection — see comment in body for the race.
 struct MarqueeText: View {
+    let text: String
+    let font: Font
+    let weight: Font.Weight
+    let shouldAnimate: Bool
+
+    init(text: String, font: Font = .headline, weight: Font.Weight = .semibold, shouldAnimate: Bool = true) {
+        self.text = text
+        self.font = font
+        self.weight = weight
+        self.shouldAnimate = shouldAnimate
+    }
+
+    var body: some View {
+        // `.id(shouldAnimate)` causes SwiftUI to destroy and recreate the
+        // entire MarqueeRunner subtree (and its `@State startDate`) every
+        // time the card's selection state flips. This eliminates the
+        // "forward jolt" race: previously, when `shouldAnimate` went
+        // false→true, TimelineView un-paused and ticked its first frame
+        // BEFORE `.onChange(of: shouldAnimate)` had a chance to update
+        // `startDate`, so that frame computed offset using a stale
+        // (potentially minutes-old) start time and rendered the text at a
+        // random mid-cycle position for one frame. By recreating the view,
+        // `startDate = Date()` is captured at exactly the moment of
+        // selection, so the first TimelineView tick has elapsed ≈ 0 and
+        // the offset is 0 — clean entry into the pause-then-scroll cycle.
+        MarqueeRunner(text: text, font: font, weight: weight, shouldAnimate: shouldAnimate)
+            .id(shouldAnimate)
+    }
+}
+
+private struct MarqueeRunner: View {
     let text: String
     let font: Font
     let weight: Font.Weight
@@ -71,18 +106,12 @@ struct MarqueeText: View {
 
     @State private var textSize: CGSize = .zero
     @State private var containerWidth: CGFloat = 0
-    /// Anchor time the loop measures elapsed seconds against. Reset whenever
-    /// `text` or `shouldAnimate` changes so the new cycle starts cleanly at
-    /// offset 0 with a full pause.
+    /// Anchor time the loop measures elapsed seconds against. Initialised to
+    /// `Date()` at struct creation — and because the parent `MarqueeText`
+    /// applies `.id(shouldAnimate)`, this struct is freshly initialised the
+    /// instant the card becomes active, so this is the correct anchor.
     @State private var startDate: Date = Date()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    init(text: String, font: Font = .headline, weight: Font.Weight = .semibold, shouldAnimate: Bool = true) {
-        self.text = text
-        self.font = font
-        self.weight = weight
-        self.shouldAnimate = shouldAnimate
-    }
 
     private var disableMotion: Bool {
         ProcessInfo.processInfo.isLowPowerModeEnabled || reduceMotion
@@ -126,12 +155,15 @@ struct MarqueeText: View {
         .onPreferenceChange(MarqueeTextSizeKey.self) { newSize in
             guard newSize != textSize else { return }
             textSize = newSize
+            // Re-anchor the clock once we have a real measurement so the
+            // first cycle starts with a full pause rather than mid-scroll
+            // if measurement happened to land late.
             startDate = Date()
         }
-        .onChange(of: shouldAnimate) { _, on in
-            if on { startDate = Date() }
-        }
         .onChange(of: text) { _, _ in
+            // `.id(shouldAnimate)` doesn't change when text changes mid-
+            // selection (e.g. exercise renamed via long-press), so reset
+            // the anchor explicitly here too.
             startDate = Date()
         }
     }

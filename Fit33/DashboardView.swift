@@ -147,6 +147,7 @@ struct DashboardView: View {
     @AppStorage("showRecommendedWidget") var showRecommendedWidget = true  // Recommended For You widget (premium can hide)
     @AppStorage("showWhoopWidget") var showWhoopWidget = true  // WHOOP Recovery widget (only renders when connected)
     @AppStorage("showOuraWidget") var showOuraWidget = true  // Oura Readiness widget (only renders when connected)
+    @AppStorage("showStravaWidget") var showStravaWidget = true  // Strava latest-activity widget (only renders when connected + fresh activity)
     
     // Nutrition data for macros widget (plain let — macros widget wraps its own @ObservedObject)
     let mealService = MealService.shared
@@ -276,13 +277,19 @@ struct DashboardView: View {
                     
                     // WHOOP Recovery Widget (isolated — only renders when WHOOP connected + widget enabled)
                     if showWhoopWidget {
-                        DashboardWhoopWrapper()
+                        DashboardWhoopWrapper(navigationPath: $dashboardNavPath)
                             .padding(.bottom, 16)
                     }
 
                     // Oura Readiness Widget (isolated — only renders when Oura connected + widget enabled)
                     if showOuraWidget {
                         DashboardOuraWrapper()
+                            .padding(.bottom, 16)
+                    }
+
+                    // Strava Latest Activity Widget (isolated — only renders when Strava connected + an activity from the last 36h)
+                    if showStravaWidget {
+                        DashboardStravaWrapper(navigationPath: $dashboardNavPath)
                             .padding(.bottom, 16)
                     }
 
@@ -433,7 +440,8 @@ struct DashboardView: View {
                     showChallenge: $showChallengeWidget,
                     showRecommended: $showRecommendedWidget,
                     showWhoop: $showWhoopWidget,
-                    showOura: $showOuraWidget
+                    showOura: $showOuraWidget,
+                    showStrava: $showStravaWidget
                 )
                 .presentationDragIndicator(.visible)
             }

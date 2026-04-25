@@ -703,6 +703,7 @@ struct Fit33App: App {
                         // the dashboard widgets reliably appear on every cold start / resume.
                         WhoopService.shared.refreshConnectionState()
                         OuraService.shared.refreshConnectionState()
+                        StravaService.shared.refreshConnectionState()
                         if WhoopService.shared.isConnected {
                             Task(priority: .userInitiated) {
                                 await WhoopService.shared.syncAllData(force: true)
@@ -711,6 +712,23 @@ struct Fit33App: App {
                         if OuraService.shared.isConnected {
                             Task(priority: .userInitiated) {
                                 await OuraService.shared.syncAllData(force: true)
+                            }
+                        }
+                        // Strava parity with WHOOP / Oura — force-sync on every
+                        // foreground so the dashboard widget + cardio section
+                        // always reflect the latest activities. Internal
+                        // 5-minute throttle (`syncThrottleInterval`) coalesces
+                        // rapid scenePhase flicker. Auto-refreshes the
+                        // access token first if it expires within 5 min.
+                        if StravaService.shared.isConnected {
+                            Task(priority: .userInitiated) {
+                                await StravaService.shared.syncActivities(daysBack: 30, force: true)
+                            }
+                            // 60-day inactivity guard — if Strava revoked
+                            // tokens during a long absence, the next probe
+                            // will surface that and disconnect cleanly.
+                            Task(priority: .background) {
+                                await StravaService.shared.evaluateInactivityWindow()
                             }
                         }
                         

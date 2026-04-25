@@ -12,6 +12,8 @@ enum DashboardRoute: Hashable {
     case smartWorkoutPreview  // uses GeneratedProgramService.shared
     case smartProgramOverview(programId: String)
     case smartProgramDayPreview(programId: String, dayNumber: Int)
+    case stravaSettings
+    case whoopSettings
 }
 
 enum WorkoutCreationType {
@@ -82,10 +84,21 @@ struct DashboardNotificationCarousel: View {
     @ObservedObject private var friendService = FriendService.shared
     @ObservedObject private var challengeService = ChallengeService.shared
     @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
+    @ObservedObject private var stravaService = StravaService.shared
     @Environment(\.colorScheme) var colorScheme
     
     @State private var selectedWorkout: ReceivedWorkoutDTO?
     @State private var navigateToDetail = false
+    @State private var selectedStravaActivity: StravaActivity?
+    @State private var showingStravaRecap = false
+    /// Activities the user has already swiped away — persisted across launches
+    /// so we don't re-surface the same recap card after every dashboard refresh.
+    @AppStorage("dismissed_strava_recap_ids") private var dismissedStravaIDsCSV: String = ""
+
+    /// Window for surfacing a fresh Strava activity in the carousel.
+    /// Shorter than the dashboard widget's 36h window — once a user has had
+    /// the chance to glance at the recap card we move on.
+    private static let stravaRecapWindow: TimeInterval = 6 * 60 * 60
     
     // MARK: - Notification Item Enum
     
@@ -95,7 +108,8 @@ struct DashboardNotificationCarousel: View {
         case challengeInvite(ChallengeInvite)
         case groupChallenge(ActiveGroupChallenge)
         case privateChallenge(PrivateChallengeInvite)
-        
+        case stravaRecap(StravaActivity)
+
         var id: String {
             switch self {
             case .friendRequest(let r): return "fr-\(r.requestId)"
@@ -103,6 +117,7 @@ struct DashboardNotificationCarousel: View {
             case .challengeInvite(let i): return "ci-\(i.challengeId)"
             case .groupChallenge(let g): return "gc-\(g.challengeId)"
             case .privateChallenge(let p): return "pc-\(p.inviteId)"
+            case .stravaRecap(let a): return "sr-\(a.id)"
             }
         }
         
@@ -113,6 +128,7 @@ struct DashboardNotificationCarousel: View {
             case .challengeInvite(let i): return i.invitedAt
             case .groupChallenge(let g): return g.startDate
             case .privateChallenge(let p): return p.createdAt ?? .distantPast
+            case .stravaRecap(let a): return a.startDate
             }
         }
         
@@ -120,6 +136,29 @@ struct DashboardNotificationCarousel: View {
             if case .friendRequest = self { return true }
             return false
         }
+    }
+
+    private var dismissedStravaIDs: Set<String> {
+        Set(dismissedStravaIDsCSV.split(separator: ",").map(String.init))
+    }
+
+    private var freshStravaActivity: StravaActivity? {
+        guard stravaService.isConnected else { return nil }
+        let cutoff = Date().addingTimeInterval(-Self.stravaRecapWindow)
+        let dismissed = dismissedStravaIDs
+        return stravaService.recentActivities
+            .filter { $0.startDate >= cutoff && !dismissed.contains(String($0.id)) }
+            .sorted { $0.startDate > $1.startDate }
+            .first
+    }
+
+    private func dismissStravaRecap(activityId: Int64) {
+        var ids = dismissedStravaIDs
+        ids.insert(String(activityId))
+        // Cap the persisted set so it doesn't grow forever; we only need the
+        // last ~50 activity ids to suppress repeats.
+        let trimmed = Array(ids).suffix(50)
+        dismissedStravaIDsCSV = trimmed.joined(separator: ",")
     }
     
     // MARK: - Data
@@ -141,6 +180,9 @@ struct DashboardNotificationCarousel: View {
         }
         for p in privateChallengeService.pendingInvites {
             items.append(.privateChallenge(p))
+        }
+        if let stravaActivity = freshStravaActivity {
+            items.append(.stravaRecap(stravaActivity))
         }
         
         // Friend requests always first, then oldest-first for the rest
@@ -203,6 +245,13 @@ struct DashboardNotificationCarousel: View {
                 }
                 .hidden()
             )
+            .sheet(isPresented: $showingStravaRecap) {
+                if let selectedStravaActivity {
+                    StravaActivityRecapSheet(activity: selectedStravaActivity)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                }
+            }
         }
     }
     
@@ -244,6 +293,90 @@ struct DashboardNotificationCarousel: View {
             
         case .privateChallenge(let invite):
             PrivateChallengeInviteWidget(invite: invite)
+
+        case .stravaRecap(let activity):
+            StravaRecapNotificationCard(
+                activity: activity,
+                onTap: {
+                    HapticManager.tap()
+                    selectedStravaActivity = activity
+                    showingStravaRecap = true
+                },
+                onDismiss: {
+                    HapticManager.impact(.light)
+                    dismissStravaRecap(activityId: activity.id)
+                }
+            )
         }
+    }
+}
+
+// MARK: - Strava Recap Notification Card
+
+/// Small carousel card surfaced on the dashboard the first few hours after a
+/// Strava activity is detected. Tap → opens the full recap sheet. Dismiss →
+/// hides the card permanently for that activity id.
+struct StravaRecapNotificationCard: View {
+    let activity: StravaActivity
+    let onTap: () -> Void
+    let onDismiss: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: Spacing.sm) {
+                ZStack {
+                    Circle()
+                        .fill(Color.stravaOrange.opacity(colorScheme == .dark ? 0.22 : 0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: activity.activityIcon)
+                        .font(.title3)
+                        .foregroundColor(Color.stravaOrange)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("New Strava \(activity.type)")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Text(summaryLine)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    onDismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+                .buttonStyle(PlainButtonStyle())
+                .accessibilityLabel("Dismiss Strava recap")
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.cardBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.stravaOrange.opacity(0.35), lineWidth: 1)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .accessibilityHint("Tap to see splits and effort details")
+    }
+
+    private var summaryLine: String {
+        var parts: [String] = [activity.distanceFormatted, activity.durationFormatted]
+        if let pace = activity.paceFormatted { parts.append(pace) }
+        return parts.joined(separator: " • ")
     }
 }

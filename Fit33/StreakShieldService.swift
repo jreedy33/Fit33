@@ -172,6 +172,27 @@ class StreakShieldService: ObservableObject {
             #endif
         }
     }
+
+    /// Pre-credit a high-effort training day so the user can take an
+    /// honest rest day tomorrow without losing the streak. Triggered when
+    /// a Strava activity with `suffer_score > 150` (or equivalent
+    /// high-effort signal) lands. Crucially this does NOT consume one
+    /// of the user's monthly shields — it only shifts the "effective date"
+    /// the streak-risk detector measures against, so the next 24h of
+    /// recovery counts as protected rest, not a missed day.
+    func creditHighEffortDay(reason: String) {
+        // Honor the "one credit per day" semantics: if we've already
+        // credited today (either via a real shield use or a previous
+        // Strava high-effort detection on the same day) leave it alone.
+        if let lastUsed = lastShieldUsedDate, Calendar.current.isDateInToday(lastUsed) {
+            return
+        }
+        lastShieldUsedDate = Date()
+        isStreakAtRisk = false
+        saveShieldData()
+
+        AppLogger.debug("🛡️ Credited high-effort day (no shield consumed) — \(reason)", category: .social)
+    }
     
     // MARK: - Shield Info
     

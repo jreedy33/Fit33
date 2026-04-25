@@ -384,6 +384,11 @@ struct AnimatedOrbBackground: View {
     let baseGradient: LinearGradient
     let primaryOrbColor: Color
     let secondaryOrbColor: Color
+    /// Force orbs to render statically (no easing animation, no `animatePulse`
+    /// toggle on appear). Use this on performance-sensitive screens like the
+    /// active workout — the orbs render once at their resting position and
+    /// then sit idle, costing essentially zero ongoing CPU.
+    var staticOrbs: Bool = false
     
     @State private var animatePulse = false
     @Environment(\.colorScheme) private var colorScheme
@@ -395,11 +400,11 @@ struct AnimatedOrbBackground: View {
         ProcessInfo.processInfo.isLowPowerModeEnabled
     }
 
-    /// Sprint 3 (Q2-32): unified gate. Respect BOTH the system Low Power Mode
-    /// AND the user's Reduce Motion accessibility preference. Either one
-    /// means: render orbs statically, no easing animation.
+    /// Sprint 3 (Q2-32): unified gate. Respect Low Power Mode, Reduce Motion,
+    /// AND any caller-requested static mode. Any one means: render orbs
+    /// statically, no easing animation.
     private var shouldDisableMotion: Bool {
-        isLowPowerMode || reduceMotion
+        isLowPowerMode || reduceMotion || staticOrbs
     }
     
     // Convenience initializers for each tab
@@ -424,6 +429,19 @@ struct AnimatedOrbBackground: View {
             baseGradient: AdaptiveGradient.workout(for: colorScheme),
             primaryOrbColor: .blue,
             secondaryOrbColor: .cyan
+        )
+    }
+    
+    /// Active-workout variant: same blue/cyan orb look as `.workout`, but the
+    /// orbs render statically (no `easeInOut` animation loop). Used on the
+    /// active workout screen where every CPU cycle matters — set timers,
+    /// rest-timer borders, and audio playback share the runloop.
+    static func workoutStatic(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.workout(for: colorScheme),
+            primaryOrbColor: .blue,
+            secondaryOrbColor: .cyan,
+            staticOrbs: true
         )
     }
     

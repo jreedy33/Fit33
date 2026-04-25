@@ -41,6 +41,7 @@ enum NetworkErrorClassifier {
         case transientNetwork      // timeout, connection lost, not connected, cancelled
         case authExpired           // Supabase session invalid / no auth
         case rlsViolation          // RLS rejected the row (usually auth-expired + user_id set)
+        case expectedUserState     // duplicate signup, IDOR forbidden during onboarding race, user-driven not-bugs
         case realError             // anything else
     }
 
@@ -108,12 +109,28 @@ enum NetworkErrorClassifier {
             return .rlsViolation
         }
 
+        // Expected user-driven failures that are NOT app malfunctions:
+        //   • "User already registered" — duplicate sign-up; the onboarding
+        //     UI recovers by signing in instead, so this is a normal branch
+        //     not a bug. (Bug-intel fingerprint 00bd6a62.)
+        //   • "Forbidden: new_user_id must match caller" — IDOR guard on
+        //     notify-contacts-user-joined fires during the brief window
+        //     between auth.signUp and the new JWT propagating; the daily
+        //     `check_pending_join_notifications` job catches up. Treat as
+        //     transient + expected. (Bug-intel fingerprints b242269c, 65f3c668.)
+        if lower.contains("user already registered")
+            || lower.contains("user already exists")
+            || lower.contains("email already registered")
+            || lower.contains("forbidden: new_user_id must match caller") {
+            return .expectedUserState
+        }
+
         return .realError
     }
 
     static func isTransient(_ error: Error) -> Bool {
         switch classify(error) {
-        case .transientNetwork, .expectedHealthKit, .authExpired:
+        case .transientNetwork, .expectedHealthKit, .authExpired, .expectedUserState:
             return true
         case .rlsViolation, .realError:
             return false
@@ -178,6 +195,11 @@ enum NetworkErrorClassifier {
             // rollup can separate "user needs to re-auth" from "network flapped"
             // without spamming crash_reports.
             AppLogger.log(msg, level: .warning, category: .auth, context: diag, file: file, function: function, line: line)
+        case .expectedUserState:
+            // Expected user-driven branches (duplicate signup, IDOR onboarding
+            // race). Stay at .debug so they don't hit crash_reports or the
+            // bug-intelligence rollup.
+            AppLogger.log(msg, level: .debug, category: category, context: diag, file: file, function: function, line: line)
         case .realError:
             AppLogger.log(msg, level: .error, category: category, context: diag, file: file, function: function, line: line)
         }

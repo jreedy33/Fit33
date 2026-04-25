@@ -3,16 +3,29 @@ import CoreData
 
 extension ActiveWorkoutView {
     // MARK: - Main Content (extracted to reduce body type-check complexity)
+    /// Active workout background: blue/cyan orb look (matches the rest of the
+    /// app per DESIGN_AGENT "Every full-page screen must have AnimatedOrbBackground")
+    /// rendered STATIC (no easing animation loop). Static orbs leverage
+    /// `.drawingGroup()` to rasterize once and then sit idle — zero per-frame
+    /// CPU/GPU cost while rest timers / audio / screen-stays-on do real work.
+    ///
+    /// IMPORTANT — opaque base layer required:
+    /// `ActiveWorkoutView` is rendered as a `zIndex(10)` overlay on top of
+    /// `WorkoutTabView` (see `WorkoutTabView.swift` Layer 3), which has its
+    /// own orb background, "Workout" header, exercise list, and tab bar.
+    /// `AnimatedOrbBackground.workoutStatic` uses `AdaptiveGradient.universalDark`
+    /// in dark mode, which starts with `purple.opacity(0.2)` + `blue.opacity(0.1)`
+    /// — translucent at the top. Without an opaque base, the underlying tab
+    /// bleeds through visibly. The previous flat `LinearGradient` was fully
+    /// opaque, which is why this regression appeared after the orb migration.
     var workoutBackground: some View {
-        let darkColors = [Color(red: 0.08, green: 0.10, blue: 0.18), Color(red: 0.05, green: 0.06, blue: 0.10), Color(red: 0.04, green: 0.04, blue: 0.06)]
-        let lightColors = [Color.blue.opacity(0.15), Color.purple.opacity(0.08), Color(.systemGroupedBackground)]
-        return LinearGradient(
-            gradient: Gradient(colors: colorScheme == .dark ? darkColors : lightColors),
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
+        ZStack {
+            (colorScheme == .dark
+                ? Color(red: 0.04, green: 0.04, blue: 0.06)
+                : Color(.systemGroupedBackground))
+                .ignoresSafeArea()
+            AnimatedOrbBackground.workoutStatic(colorScheme: colorScheme)
+        }
     }
     
     var mainWorkoutContent: some View {

@@ -435,7 +435,7 @@ class BackgroundChallengeSyncService {
         // Strava workouts also write to HealthKit, but fetching from Strava API
         // gives us richer data (route, splits, elevation) for the cardio_workouts table
         if StravaService.shared.isConnected {
-            await StravaService.shared.syncActivities(daysBack: 7)
+            await StravaService.shared.syncActivities(daysBack: 7, force: true)
             AppLogger.debug("   └─ Strava: synced recent activities", category: .social)
         }
         

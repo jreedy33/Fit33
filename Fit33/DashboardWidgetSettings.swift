@@ -9,6 +9,7 @@ struct WidgetSettingsSheet: View {
     @Binding var showRecommended: Bool
     @Binding var showWhoop: Bool
     @Binding var showOura: Bool
+    @Binding var showStrava: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var premiumManager = PremiumManager.shared
@@ -91,6 +92,14 @@ struct WidgetSettingsSheet: View {
                             subtitle: "Readiness score, HRV & sleep",
                             gradientColors: [Color.teal, Color.cyan],
                             isSelected: $showOura
+                        )
+
+                        widgetOptionRow(
+                            icon: "figure.run",
+                            title: "Strava Activity",
+                            subtitle: "Latest run / ride splits & effort",
+                            gradientColors: [Color.stravaOrange, Color.orange],
+                            isSelected: $showStrava
                         )
                         
                         // Challenge widget - show for all users, but locked for free users

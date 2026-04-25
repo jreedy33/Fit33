@@ -2,7 +2,21 @@
 //  StravaSettingsView.swift
 //  Fit33
 //
-//  UI for connecting and managing Strava integration
+//  Premium Strava integration page — connection management + as much of the
+//  rich data we pull from Strava as we can surface in one place. Mirrors the
+//  visual language of `WhoopSettingsView` (sleek hero card + grouped sleek
+//  cards on `AnimatedOrbBackground`) so the wearable settings pages feel
+//  cohesive.
+//
+//  Sections (in order):
+//   1. Connection card — profile, name, last sync, sync now, disconnect.
+//   2. This Week / This Month — quick totals from the synced activity list.
+//   3. Recent (4w) / YTD / All-Time — long-form `/athletes/{id}/stats` totals
+//      per sport (run / ride / swim).
+//   4. Mileage chart — weekly km stacked by activity type.
+//   5. Pace trend chart — 4-week rolling avg run pace.
+//   6. Recent activities list — tap → `StravaActivityRecapSheet`.
+//   7. About — what syncs, automatic refresh, 60-day inactivity behavior.
 //
 
 import SwiftUI
@@ -12,104 +26,59 @@ import AuthenticationServices
 
 struct StravaSettingsView: View {
     @StateObject private var strava = StravaService.shared
+    @ObservedObject private var unitSettings = UnitSettingsManager.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingDisconnectAlert = false
     @State private var showingAuthSheet = false
-    
+    @State private var selectedActivity: StravaActivity?
+    @State private var showingRecap = false
+
     var body: some View {
         ZStack {
-            // Animated orb background (consistent with Profile/Stats screens)
             AnimatedOrbBackground.stats(colorScheme: colorScheme)
                 .ignoresSafeArea(.all, edges: .all)
-            
-            List {
-                // Connection Status Section
-                Section {
+                .accessibilityHidden(true)
+
+            ScrollView {
+                VStack(spacing: Spacing.lg) {
+                    connectionTile
+
                     if strava.isConnected {
-                        connectedView
-                    } else {
-                        disconnectedView
-                    }
-                } header: {
-                    Label("Connection", systemImage: "link")
-                }
-            
-            // Activities Section (only show if connected)
-            if strava.isConnected {
-                Section {
-                    weeklyStatsView
-                } header: {
-                    Label("This Week", systemImage: "chart.bar.fill")
-                }
-                
-                Section {
-                    if strava.isLoading {
-                        HStack {
-                            ProgressView()
-                            Text("Syncing activities...")
-                                .foregroundColor(.secondary)
+                        section(title: "This Period", icon: "calendar.badge.clock") {
+                            thisPeriodCard
                         }
-                    } else if strava.recentActivities.isEmpty {
-                        Text("No recent activities")
-                            .foregroundColor(.secondary)
-                    } else {
-                        ForEach(strava.recentActivities.prefix(10)) { activity in
-                            activityRow(activity)
+                        section(title: "Lifetime Totals", icon: "trophy.fill") {
+                            longFormStatsCard
                         }
-                    }
-                } header: {
-                    HStack {
-                        Label("Recent Activities", systemImage: "figure.run")
-                        Spacer()
-                        if let lastSync = strava.lastSyncDate {
-                            Text("Synced \(lastSync.timeAgoDisplay())")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                        chartsCard
+                        section(title: "Recent Activities", icon: "figure.run") {
+                            recentActivitiesCard
                         }
+                        syncStatusCard
                     }
-                } footer: {
-                    if !strava.recentActivities.isEmpty {
-                        Text("Showing last 10 activities from the past 30 days")
+
+                    section(title: "About", icon: "info.circle.fill", iconColor: .secondary) {
+                        aboutCard
                     }
                 }
-                
-                Section {
-                    Button(action: {
-                        Task { await strava.syncActivities() }
-                    }) {
-                        HStack {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                            Text("Sync Now")
-                        }
-                    }
-                    .disabled(strava.isLoading)
-                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, 60)
             }
-            
-            // About Strava Integration
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("What syncs from Strava?")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        integrationBullet("Runs, rides, walks, hikes, swims")
-                        integrationBullet("Distance and duration")
-                        integrationBullet("Heart rate data")
-                        integrationBullet("Calories burned")
-                        integrationBullet("Elevation gain")
-                    }
-                }
-                .padding(.vertical, Spacing.xxs)
-            } header: {
-                Label("About", systemImage: "info.circle")
-            }
+            .scrollContentBackground(.hidden)
         }
-        .scrollContentBackground(.hidden)
-        }
-        .navigationTitle("Strava")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Image("PoweredByStrava")
+                    .resizable()
+                    .renderingMode(.original)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(height: 22)
+                    .accessibilityLabel("Powered by Strava")
+            }
+        }
         .alert("Disconnect Strava?", isPresented: $showingDisconnectAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Disconnect", role: .destructive) {
@@ -121,227 +90,631 @@ struct StravaSettingsView: View {
         .sheet(isPresented: $showingAuthSheet) {
             StravaAuthSheet()
         }
+        .sheet(isPresented: $showingRecap) {
+            if let selectedActivity {
+                StravaActivityRecapSheet(activity: selectedActivity)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+        .onAppear {
+            // Refresh keychain-backed connection state on every appearance —
+            // mirrors the WHOOP / Oura settings pages.
+            strava.refreshConnectionState()
+        }
+        .task {
+            // Best-effort foreground sync on entry. Throttled internally so
+            // tab-switching back here doesn't spam the API.
+            if strava.isConnected {
+                await strava.syncActivities(daysBack: 30, force: false)
+            }
+        }
     }
-    
-    // MARK: - Connected View
-    
-    private var connectedView: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                // Profile Picture
-                if let profileUrl = strava.athleteProfile?.profile,
-                   let url = URL(string: profileUrl) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 50, height: 50)
-                                .clipShape(Circle())
-                        default:
-                            stravaPlaceholderAvatar
-                        }
-                    }
-                } else {
-                    stravaPlaceholderAvatar
-                }
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
+
+    // MARK: - 1. Connection Tile (floating, no card chrome)
+
+    /// Section wrapper that renders a `SectionHeader` above the supplied
+    /// content with tight `Spacing.sm` between them — mirrors the dashboard
+    /// pattern of "title outside the card".
+    @ViewBuilder
+    private func section<Content: View>(
+        title: String,
+        icon: String,
+        iconColor: Color = Color.stravaOrange,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            SectionHeader(title: title, icon: icon, iconColor: iconColor)
+            content()
+        }
+    }
+
+    private var connectionTile: some View {
+        VStack(spacing: Spacing.md) {
+            HStack(spacing: Spacing.md) {
+                profileAvatar
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: strava.isConnected ? "checkmark.circle.fill" : "link.badge.plus")
+                            .foregroundColor(strava.isConnected ? .green : .secondary)
                             .font(.ds_bodySmall)
-                        Text("Connected")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.green)
+                        Text(strava.isConnected ? "Connected" : "Not connected")
+                            .font(.ds_labelLarge)
+                            .foregroundColor(strava.isConnected ? .green : .secondary)
                     }
-                    
                     if let athlete = strava.athleteProfile {
                         Text(athlete.fullName)
-                            .font(.headline)
+                            .font(.ds_heading3)
+                    } else if !strava.isConnected {
+                        Text("Connect Strava")
+                            .font(.ds_heading3)
+                    }
+                    if let location = athleteLocation {
+                        Text(location)
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.secondary)
                     }
                 }
-                
                 Spacer()
-                
-                // Strava Logo
-                Image("strava-logo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 80)
-                    .opacity(0.8)
             }
-            
-            Divider()
-            
-            Button(action: { showingDisconnectAlert = true }) {
-                HStack {
-                    Image(systemName: "xmark.circle")
+
+            if strava.isConnected {
+                Button {
+                    showingDisconnectAlert = true
+                } label: {
                     Text("Disconnect")
+                        .font(.ds_labelLarge)
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.sm)
+                        .background(
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
+                                .fill(Color.red.opacity(0.12))
+                        )
                 }
-                .font(.subheadline)
-                .foregroundColor(.red)
-            }
-        }
-        .padding(.vertical, Spacing.xxs)
-    }
-    
-    private var stravaPlaceholderAvatar: some View {
-        Circle()
-            .fill(Color.orange.opacity(0.2))
-            .frame(width: 50, height: 50)
-            .overlay(
-                Image(systemName: "figure.run")
-                    .foregroundColor(.orange)
-            )
-    }
-    
-    // MARK: - Disconnected View
-    
-    private var disconnectedView: some View {
-        VStack(spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Connect Strava")
-                        .font(.headline)
-                    Text("Sync your cardio activities")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                // Strava colors: Orange #FC4C02
-                Image(systemName: "link.badge.plus")
-                    .font(.title2)
-                    .foregroundColor(Color(red: 252/255, green: 76/255, blue: 2/255))
-            }
-            
-            Button(action: { showingAuthSheet = true }) {
-                HStack {
-                    Image(systemName: "figure.run")
-                    Text("Connect with Strava")
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.sm)
-                .background(
-                    LinearGradient(
-                        colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color(red: 252/255, green: 100/255, blue: 30/255)],
-                        startPoint: .leading,
-                        endPoint: .trailing
+                .buttonStyle(UniversalScaleButtonStyle())
+                .accessibilityLabel("Disconnect Strava")
+                .accessibilityHint("Removes Strava connection and stops syncing new activities.")
+            } else {
+                Button {
+                    showingAuthSheet = true
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "link")
+                        Text("Connect with Strava")
+                    }
+                    .font(.ds_labelLarge)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.sm)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.stravaOrange, Color(red: 252/255, green: 100/255, blue: 30/255)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
                     )
-                )
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                }
+                .buttonStyle(UniversalScaleButtonStyle())
+                .accessibilityLabel("Connect Strava")
+                .accessibilityHint("Opens Strava sign-in to link your account.")
+
+                Text("Sync runs, rides, walks, hikes, swims and more. We refresh automatically — once you connect, you stay connected.")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let error = strava.errorMessage {
+                    Text(error)
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
             }
         }
-        .padding(.vertical, Spacing.xxs)
-    }
-    
-    // MARK: - Weekly Stats View
-    
-    private var weeklyStatsView: some View {
-        HStack(spacing: 16) {
-            statCard(
-                icon: "clock.fill",
-                value: "\(strava.weeklyCardioMinutes)",
-                unit: "min",
-                label: "Cardio"
-            )
-            
-            statCard(
-                icon: "figure.walk",
-                value: String(format: "%.1f", strava.weeklyDistanceKm),
-                unit: "km",
-                label: "Distance"
-            )
-            
-            statCard(
-                icon: "flame.fill",
-                value: "\(strava.weeklyCaloriesBurned)",
-                unit: "cal",
-                label: "Burned"
-            )
-        }
+        .padding(.horizontal, Spacing.xs)
         .padding(.vertical, Spacing.xs)
     }
-    
-    private func statCard(icon: String, value: String, unit: String, label: String) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .foregroundColor(.orange)
-                .font(.ds_bodyRegular)
-            
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.title3)
-                    .fontWeight(.bold)
-                Text(unit)
-                    .font(.caption)
+
+    private var profileAvatar: some View {
+        Group {
+            if let profileUrl = strava.athleteProfile?.profile,
+               let url = URL(string: profileUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        avatarPlaceholder
+                    }
+                }
+                .frame(width: 56, height: 56)
+                .clipShape(Circle())
+                .overlay(
+                    Circle().stroke(Color.stravaOrange.opacity(0.3), lineWidth: 1.5)
+                )
+            } else {
+                avatarPlaceholder
+                    .frame(width: 56, height: 56)
+            }
+        }
+    }
+
+    private var avatarPlaceholder: some View {
+        Circle()
+            .fill(Color.stravaOrange.opacity(0.18))
+            .overlay(
+                Image(systemName: "figure.run")
+                    .font(.ds_heading3)
+                    .foregroundColor(Color.stravaOrange)
+            )
+    }
+
+    private var athleteLocation: String? {
+        guard let athlete = strava.athleteProfile else { return nil }
+        let parts = [athlete.city, athlete.state, athlete.country].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    // MARK: - 2. This Week / This Month Card
+
+    private var thisPeriodCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            VStack(spacing: Spacing.sm) {
+                periodRow(
+                    title: "This Week",
+                    activityCount: weeklyActivityCount,
+                    distanceKm: strava.weeklyDistanceKm,
+                    minutes: strava.weeklyCardioMinutes,
+                    calories: strava.weeklyCaloriesBurned,
+                    elevationM: Int(strava.weeklyElevationGain)
+                )
+
+                Divider().opacity(0.35)
+
+                periodRow(
+                    title: "This Month",
+                    activityCount: strava.monthlyActivities.count,
+                    distanceKm: monthlyDistanceKm,
+                    minutes: monthlyMinutes,
+                    calories: monthlyCalories,
+                    elevationM: Int(monthlyElevation)
+                )
+
+                if let pace = strava.weeklyAveragePaceSecondsPerKm {
+                    Divider().opacity(0.35)
+                    HStack {
+                        Image(systemName: "stopwatch")
+                            .foregroundColor(.green)
+                        Text("Avg run pace this week")
+                            .font(.ds_bodyMedium)
+                        Spacer()
+                        Text(formatPace(pace))
+                            .font(.ds_statSmall)
+                            .foregroundColor(.green)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
+    }
+
+    private func periodRow(
+        title: String,
+        activityCount: Int,
+        distanceKm: Double,
+        minutes: Int,
+        calories: Int,
+        elevationM: Int
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack {
+                Text(title)
+                    .font(.ds_labelLarge)
+                    .foregroundColor(.primary)
+                Spacer()
+                Text("\(activityCount) activit\(activityCount == 1 ? "y" : "ies")")
+                    .font(.ds_labelSmall)
                     .foregroundColor(.secondary)
             }
-            
+            HStack(spacing: 0) {
+                miniMetric(
+                    value: String(format: "%.1f", unitSettings.stravaDistanceValue(meters: distanceKm * 1_000)),
+                    unit: unitSettings.stravaDistanceShortLabel,
+                    label: "Distance",
+                    color: Color.stravaOrange
+                )
+                miniMetric(value: "\(minutes)", unit: "min", label: "Time", color: .blue)
+                miniMetric(value: "\(calories)", unit: "cal", label: "Burned", color: .orange)
+                miniMetric(
+                    value: elevationDisplay(metersInt: elevationM).value,
+                    unit: elevationDisplay(metersInt: elevationM).unit,
+                    label: "Elev",
+                    color: .brown
+                )
+            }
+        }
+    }
+
+    private func miniMetric(value: String, unit: String, label: String, color: Color) -> some View {
+        VStack(spacing: Spacing.xxxs) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.ds_statSmall)
+                    .foregroundColor(value == "0" || value == "0.0" ? .primary.opacity(0.5) : color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(unit)
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+            }
             Text(label)
-                .font(.caption2)
+                .font(.ds_labelSmall)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
-    
-    // MARK: - Activity Row
-    
+
+    // MARK: - 3. Long-Form Stats (Recent / YTD / All-Time)
+
+    private var longFormStatsCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            if let stats = strava.athleteStats, hasAnyTotals(stats) {
+                VStack(spacing: Spacing.md) {
+                    if let runs = stats.recentRunTotals, (runs.count ?? 0) > 0 {
+                        sportTotalsBlock(sport: "Running", icon: "figure.run", recent: stats.recentRunTotals, ytd: stats.ytdRunTotals, allTime: stats.allRunTotals)
+                    }
+                    if let rides = stats.recentRideTotals, (rides.count ?? 0) > 0 {
+                        sportTotalsBlock(sport: "Cycling", icon: "bicycle", recent: stats.recentRideTotals, ytd: stats.ytdRideTotals, allTime: stats.allRideTotals)
+                    }
+                    if let swims = stats.recentSwimTotals, (swims.count ?? 0) > 0 {
+                        sportTotalsBlock(sport: "Swimming", icon: "figure.pool.swim", recent: stats.recentSwimTotals, ytd: stats.ytdSwimTotals, allTime: stats.allSwimTotals)
+                    }
+                }
+            } else {
+                Text("Lifetime totals will appear once Strava finishes computing your athlete stats.")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
+    }
+
+    private func hasAnyTotals(_ stats: StravaAthleteStats) -> Bool {
+        return [stats.recentRunTotals, stats.recentRideTotals, stats.recentSwimTotals]
+            .compactMap { $0?.count }
+            .contains(where: { $0 > 0 })
+    }
+
+    private func sportTotalsBlock(sport: String, icon: String, recent: StravaTotals?, ytd: StravaTotals?, allTime: StravaTotals?) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: icon)
+                    .foregroundColor(Color.stravaOrange)
+                Text(sport)
+                    .font(.ds_labelLarge)
+                    .foregroundColor(.primary)
+            }
+
+            HStack(spacing: 0) {
+                totalsCell(label: "Recent (4w)", totals: recent)
+                totalsCell(label: "Year to Date", totals: ytd)
+                totalsCell(label: "All-Time", totals: allTime)
+            }
+        }
+    }
+
+    private func totalsCell(label: String, totals: StravaTotals?) -> some View {
+        VStack(spacing: Spacing.xxxs) {
+            Text(formatDistance(totals?.distance))
+                .font(.ds_statSmall)
+                .foregroundColor(totals?.distance == nil ? .primary.opacity(0.5) : Color.stravaOrange)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text("\(totals?.count ?? 0) activit\((totals?.count ?? 0) == 1 ? "y" : "ies")")
+                .font(.ds_labelSmall)
+                .foregroundColor(.secondary)
+            Text(label)
+                .font(.ds_labelSmall)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - 4 & 5. Charts Card
+
+    private var chartsCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            // The two existing chart widgets read directly from
+            // `StravaService.shared.recentActivities` and gate their own
+            // empty states. We just stack them inside one sleek card so the
+            // section reads as "Trends".
+            StravaMileageChartWidget()
+            StravaPaceTrendChartWidget()
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
+    }
+
+    // MARK: - 6. Recent Activities
+
+    private var recentActivitiesCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            if strava.recentActivities.isEmpty {
+                if strava.isLoading {
+                    Text("Syncing activities…")
+                        .font(.ds_bodyMedium)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, Spacing.sm)
+                } else {
+                    laceUpEmptyState
+                }
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(strava.recentActivities.prefix(10).enumerated()), id: \.element.id) { index, activity in
+                        Button {
+                            HapticManager.tap()
+                            selectedActivity = activity
+                            showingRecap = true
+                        } label: {
+                            activityRow(activity)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .accessibilityHint("Tap to see splits, segments, and a recap")
+
+                        if index < min(10, strava.recentActivities.count) - 1 {
+                            Divider().opacity(0.35)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
+    }
+
+    /// Friendly nudge shown when the user is connected but has no recent
+    /// Strava activities synced yet. Encourages them to start a run; the
+    /// activity will then auto-sync on completion.
+    private var laceUpEmptyState: some View {
+        HStack(spacing: Spacing.sm) {
+            ZStack {
+                Circle()
+                    .fill(Color.stravaOrange.opacity(0.18))
+                    .frame(width: 44, height: 44)
+                Image(systemName: "figure.run.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(Color.stravaOrange)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Lace up — your next run lands here")
+                    .font(.ds_bodyMedium)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                Text("Start a run on Strava and it'll sync the moment you finish — splits, HR, segments, and your pace trends update automatically.")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                .fill(Color.stravaOrange.opacity(0.08))
+        )
+    }
+
     private func activityRow(_ activity: StravaActivity) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.sm) {
             Image(systemName: activity.activityIcon)
                 .font(.ds_heading3)
-                .foregroundColor(.orange)
+                .foregroundColor(Color.stravaOrange)
                 .frame(width: 32)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(activity.name)
-                    .font(.subheadline)
+                    .font(.ds_bodyMedium)
                     .fontWeight(.medium)
+                    .foregroundColor(.primary)
                     .lineLimit(1)
-                
-                HStack(spacing: 8) {
+
+                HStack(spacing: Spacing.xs) {
                     Text(activity.distanceFormatted)
                     Text("•")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.secondary.opacity(0.5))
                     Text(activity.durationFormatted)
                     if let pace = activity.paceFormatted {
                         Text("•")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.secondary.opacity(0.5))
                         Text(pace)
                     }
+                    if let hr = activity.averageHeartrate {
+                        Text("•")
+                            .foregroundColor(.secondary.opacity(0.5))
+                        Text("\(Int(hr)) bpm")
+                    }
                 }
-                .font(.caption)
+                .font(.ds_labelSmall)
                 .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
             }
-            
-            Spacer()
-            
-            Text(activity.startDate, style: .date)
-                .font(.caption2)
-                .foregroundColor(.secondary)
+
+            Spacer(minLength: Spacing.xs)
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(activity.startDate, format: .dateTime.month(.abbreviated).day())
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+                if let suffer = activity.sufferScore {
+                    HStack(spacing: 2) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 9))
+                        Text("\(suffer)")
+                    }
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.purple)
+                }
+            }
         }
-        .padding(.vertical, Spacing.xxs)
+        .padding(.vertical, Spacing.xs)
+        .contentShape(Rectangle())
     }
-    
-    // MARK: - Helper Views
-    
-    private func integrationBullet(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "checkmark")
-                .font(.caption)
-                .foregroundColor(.green)
+
+    // MARK: - 7. Sync Status
+
+    private var syncStatusCard: some View {
+        VStack(spacing: Spacing.sm) {
+            HStack {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundColor(.blue)
+                Text("Last Sync")
+                    .font(.ds_bodyMedium)
+                Spacer()
+                if strava.isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else if let date = strava.lastSyncDate {
+                    Text(date, style: .relative)
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Never")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Button {
+                Task { await strava.syncActivities(daysBack: 30, force: true) }
+            } label: {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text("Sync Now")
+                }
+                .font(.ds_labelMedium)
+                .foregroundColor(.blue)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
+                        .fill(Color.blue.opacity(0.1))
+                )
+            }
+            .buttonStyle(UniversalScaleButtonStyle())
+            .disabled(strava.isLoading)
+            .accessibilityLabel("Sync Strava data now")
+            .accessibilityHint("Forces an immediate refresh of activities and lifetime totals.")
+
+            if let error = strava.errorMessage {
+                Text(error)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+                    .accessibilityLabel("Strava sync error")
+                    .accessibilityValue(error)
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+    }
+
+    // MARK: - About
+
+    private var aboutCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            aboutBullet(icon: "figure.run", text: "Runs, rides, walks, hikes, swims and more")
+            aboutBullet(icon: "heart.fill", text: "Heart rate (avg + max), pace, splits, calories")
+            aboutBullet(icon: "mountain.2.fill", text: "Elevation gain and effort (suffer score)")
+            aboutBullet(icon: "map.fill", text: "Route map, segment efforts, and HR streams")
+            aboutBullet(icon: "arrow.triangle.2.circlepath", text: "Auto-syncs in the background — once connected, you stay connected")
+            aboutBullet(icon: "lock.fill", text: "Tokens refresh automatically; only disconnects if you tap Disconnect, delete your account, or stay away 60+ days")
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .secondary)
+    }
+
+    private func aboutBullet(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.xs) {
+            Image(systemName: icon)
+                .font(.ds_bodySmall)
+                .foregroundColor(Color.stravaOrange)
+                .frame(width: 18)
             Text(text)
-                .font(.caption)
+                .font(.ds_bodySmall)
                 .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    // MARK: - Computed period totals
+
+    private var weeklyActivityCount: Int {
+        let calendar = Calendar.current
+        guard let start = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) else {
+            return 0
+        }
+        return strava.recentActivities.filter { $0.startDate >= start }.count
+    }
+
+    private var monthlyDistanceKm: Double {
+        strava.monthlyActivities.reduce(0) { $0 + ($1.distance / 1000) }
+    }
+
+    private var monthlyMinutes: Int {
+        strava.monthlyActivities.reduce(0) { $0 + ($1.movingTime / 60) }
+    }
+
+    private var monthlyCalories: Int {
+        strava.monthlyActivities.reduce(0) { $0 + ($1.calories ?? 0) }
+    }
+
+    private var monthlyElevation: Double {
+        strava.monthlyActivities.reduce(0) { $0 + ($1.totalElevationGain ?? 0) }
+    }
+
+    // MARK: - Formatters
+
+    private func formatDistance(_ meters: Double?) -> String {
+        guard let m = meters, m > 0 else { return "—" }
+        return unitSettings.formatStravaDistance(meters: m)
+    }
+
+    private func formatPace(_ secondsPerKm: Double) -> String {
+        guard secondsPerKm.isFinite, secondsPerKm > 0 else { return "—" }
+        return unitSettings.formatStravaPace(secondsPerKm: secondsPerKm)
+    }
+
+    /// Format an elevation given as integer meters into the user's
+    /// preferred unit (meters or feet) for the period mini-metric strip.
+    private func elevationDisplay(metersInt: Int) -> (value: String, unit: String) {
+        switch unitSettings.distanceUnit {
+        case .imperial:
+            let feet = Int((Double(metersInt) * 3.28084).rounded())
+            return ("\(feet)", "ft")
+        case .metric:
+            return ("\(metersInt)", "m")
+        }
+    }
+
 }
 
 // MARK: - Strava Auth Sheet
@@ -358,33 +731,31 @@ struct StravaAuthSheet: View {
             VStack(spacing: 24) {
                 Spacer()
                 
-                // Strava Logo & Description
                 VStack(spacing: 16) {
                     ZStack {
                         Circle()
-                            .fill(Color(red: 252/255, green: 76/255, blue: 2/255).opacity(0.1))
+                            .fill(Color.stravaOrange.opacity(0.1))
                             .frame(width: 100, height: 100)
                         
                         Image(systemName: "figure.run")
                             .font(.system(size: 44))
-                            .foregroundColor(Color(red: 252/255, green: 76/255, blue: 2/255))
+                            .foregroundColor(Color.stravaOrange)
                     }
                     
                     Text("Connect to Strava")
-                        .font(.title2)
+                        .font(.ds_heading2)
                         .fontWeight(.bold)
                     
                     Text("Sync your runs, rides, and other cardio activities to get a complete picture of your fitness.")
-                        .font(.subheadline)
+                        .font(.ds_bodyMedium)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
                 
-                // Permissions
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
                     Text("Fit33 will be able to:")
-                        .font(.subheadline)
+                        .font(.ds_labelLarge)
                         .fontWeight(.semibold)
                     
                     permissionRow(icon: "figure.run", text: "Read your activities")
@@ -392,19 +763,18 @@ struct StravaAuthSheet: View {
                     permissionRow(icon: "flame.fill", text: "View calories burned")
                 }
                 .padding()
-                .background(RoundedRectangle(cornerRadius: CornerRadius.md).fill(Color(.systemGray6)))
+                .background(RoundedRectangle(cornerRadius: CornerRadius.md).fill(Color.cardBackground))
                 .padding(.horizontal)
                 
                 if let error = errorMessage {
                     Text(error)
-                        .font(.caption)
+                        .font(.ds_bodySmall)
                         .foregroundColor(.red)
                         .padding(.horizontal)
                 }
                 
                 Spacer()
                 
-                // Connect Button
                 Button(action: startAuth) {
                     HStack {
                         if isAuthenticating {
@@ -420,7 +790,7 @@ struct StravaAuthSheet: View {
                     .padding(.vertical, Spacing.md)
                     .background(
                         LinearGradient(
-                            colors: [Color(red: 252/255, green: 76/255, blue: 2/255), Color(red: 252/255, green: 100/255, blue: 30/255)],
+                            colors: [Color.stravaOrange, Color(red: 252/255, green: 100/255, blue: 30/255)],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -428,6 +798,7 @@ struct StravaAuthSheet: View {
                     .foregroundColor(.white)
                     .cornerRadius(CornerRadius.md)
                 }
+                .buttonStyle(UniversalScaleButtonStyle())
                 .disabled(isAuthenticating)
                 .padding(.horizontal)
                 .padding(.bottom, 16)
@@ -455,12 +826,12 @@ struct StravaAuthSheet: View {
     }
     
     private func permissionRow(icon: String, text: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.sm) {
             Image(systemName: icon)
-                .foregroundColor(.orange)
+                .foregroundColor(Color.stravaOrange)
                 .frame(width: 20)
             Text(text)
-                .font(.subheadline)
+                .font(.ds_bodyMedium)
         }
     }
     
@@ -473,14 +844,12 @@ struct StravaAuthSheet: View {
         isAuthenticating = true
         errorMessage = nil
         
-        // Use ASWebAuthenticationSession for in-app browser
         webAuthSession = ASWebAuthenticationSession(
             url: authURL,
             callbackURLScheme: "fit33"
         ) { callbackURL, error in
             Task { @MainActor in
                 if let error = error {
-                    // User cancelled or error occurred
                     if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
                         AppLogger.debug("🔐 [STRAVA] User cancelled login", category: .health)
                     } else {
@@ -496,16 +865,13 @@ struct StravaAuthSheet: View {
                     return
                 }
                 
-                // Handle the callback
                 await handleCallback(callbackURL)
             }
         }
         
-        // Configure the session
         webAuthSession?.presentationContextProvider = WebAuthContextProvider.shared
         webAuthSession?.prefersEphemeralWebBrowserSession = false
         
-        // Start the session
         webAuthSession?.start()
     }
     
@@ -521,57 +887,6 @@ struct StravaAuthSheet: View {
                 errorMessage = error.localizedDescription
                 isAuthenticating = false
             }
-        }
-    }
-}
-
-// MARK: - Compact Strava Card (for Dashboard)
-
-struct StravaCompactCard: View {
-    @StateObject private var strava = StravaService.shared
-    
-    var body: some View {
-        if strava.isConnected && !strava.recentActivities.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Image(systemName: "figure.run")
-                        .foregroundColor(.orange)
-                    Text("Strava Activity")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    Spacer()
-                    Text("\(strava.weeklyCardioMinutes) min this week")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                if let latest = strava.recentActivities.first {
-                    HStack {
-                        Image(systemName: latest.activityIcon)
-                            .foregroundColor(.orange)
-                            .frame(width: 24)
-                        
-                        VStack(alignment: .leading) {
-                            Text(latest.name)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .lineLimit(1)
-                            Text("\(latest.distanceFormatted) • \(latest.durationFormatted)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        Text(latest.startDate, style: .relative)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            .padding()
-            .background(RoundedRectangle(cornerRadius: CornerRadius.md).fill(Color(.systemBackground)))
-            .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
         }
     }
 }

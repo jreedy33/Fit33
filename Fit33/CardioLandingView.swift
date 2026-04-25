@@ -157,7 +157,12 @@ struct CardioLandingView: View {
                     VStack(spacing: 24) {
                         // Header
                         headerSection
-                        
+
+                        // Phase 4 Strava surface — week delta chip + recent
+                        // Strava activities row. Self-gates on connection
+                        // status and on having data.
+                        CardioStravaSection()
+
                         // Quick Start Activities
                         quickStartSection
                         

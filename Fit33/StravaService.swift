@@ -35,6 +35,29 @@ final class StravaService: ObservableObject {
     @Published var recentActivities: [StravaActivity] = []
     @Published var lastSyncDate: Date?
     @Published var errorMessage: String?
+    /// Recent (~4 weeks) / YTD / all-time totals from Strava's `/athletes/{id}/stats`
+    /// endpoint. Surfaced on the Strava settings page so users see the same long-form
+    /// stats they'd get on strava.com.
+    @Published var athleteStats: StravaAthleteStats?
+
+    // MARK: - Sync Throttling (mirrors WhoopService / OuraService)
+
+    /// Same 5-minute throttle window WHOOP and Oura use to coalesce repeated
+    /// foreground sync calls (Dashboard tab-switches, scenePhase flicker, etc).
+    /// Pass `force: true` to bypass — used by the explicit "Sync Now" button
+    /// and by `BackgroundChallengeSyncService` after iOS wakes us.
+    private static let syncThrottleInterval: TimeInterval = 300
+
+    /// Coalesces overlapping `syncActivities` invocations so back-to-back
+    /// foreground events don't double-fire the API call.
+    private var isSyncing = false
+
+    /// 60-day inactivity guard — when the user hasn't foregrounded the app
+    /// in this long AND token refresh fails, we treat the integration as
+    /// abandoned and clear keychain. Until then we keep retrying, so the
+    /// "I haven't opened Fit33 in two months" return user doesn't get
+    /// silently disconnected from Strava.
+    private static let inactivityDisconnectInterval: TimeInterval = 60 * 24 * 60 * 60
     
     // MARK: - Private Properties
     
@@ -73,18 +96,63 @@ final class StravaService: ObservableObject {
     
     private init() {
         migrateTokensFromUserDefaults()
-        
+
         isConnected = accessToken != nil && refreshToken != nil
-        
+
         if isConnected {
-            if let data = UserDefaults.standard.data(forKey: "strava_athlete"),
-               let athlete = try? JSONDecoder().decode(StravaAthlete.self, from: data) {
-                athleteProfile = athlete
+            loadCachedDataIfNeeded()
+        }
+    }
+
+    /// Re-reads keychain to recompute `isConnected`. Mirrors
+    /// `WhoopService.refreshConnectionState()` / `OuraService.refreshConnectionState()`
+    /// — required because the singleton may be initialized during a `BGTask`
+    /// wake while the device is locked, at which point the keychain is
+    /// unreadable and `accessToken` returns nil even though tokens exist.
+    /// Without this re-check, the dashboard Strava widget would stay hidden
+    /// on the user's next foreground launch (same process, same singleton)
+    /// until they manually reconnect. Called from
+    /// `Fit33App.onChange(scenePhase: .active)` so the widget reliably
+    /// appears on every cold start / resume when Strava is connected.
+    func refreshConnectionState() {
+        let nowConnected = accessToken != nil && refreshToken != nil
+        if nowConnected != isConnected {
+            AppLogger.info("[STRAVA] Connection state changed on foreground: \(isConnected) → \(nowConnected)", category: .auth)
+            isConnected = nowConnected
+        }
+        if isConnected {
+            loadCachedDataIfNeeded()
+        }
+    }
+
+    /// Hydrates `athleteProfile` / `recentActivities` / `lastSyncDate` /
+    /// `athleteStats` from `UserDefaults` whenever they're not yet
+    /// populated. Safe to call repeatedly — only fills in values that are
+    /// still nil so fresh API data isn't overwritten by stale cache. This
+    /// is what makes the dashboard widget appear instantly on cold start
+    /// without waiting for the network round-trip.
+    private func loadCachedDataIfNeeded() {
+        if athleteProfile == nil,
+           let data = UserDefaults.standard.data(forKey: "strava_athlete"),
+           let athlete = try? JSONDecoder().decode(StravaAthlete.self, from: data) {
+            athleteProfile = athlete
+        }
+        if recentActivities.isEmpty,
+           let data = UserDefaults.standard.data(forKey: "strava_recent_activities") {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            if let cached = try? decoder.decode([StravaActivity].self, from: data) {
+                recentActivities = cached
             }
-            
-            if let date = UserDefaults.standard.object(forKey: "strava_last_sync") as? Date {
-                lastSyncDate = date
-            }
+        }
+        if athleteStats == nil,
+           let data = UserDefaults.standard.data(forKey: "strava_athlete_stats"),
+           let stats = try? JSONDecoder().decode(StravaAthleteStats.self, from: data) {
+            athleteStats = stats
+        }
+        if lastSyncDate == nil,
+           let date = UserDefaults.standard.object(forKey: "strava_last_sync") as? Date {
+            lastSyncDate = date
         }
     }
     
@@ -187,6 +255,17 @@ final class StravaService: ObservableObject {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "strava", isConnected: true)
         }
 
+        // Phase 5 dual-write: mirror tokens to Supabase so the
+        // strava-webhook edge function can call Strava on our behalf
+        // when the iOS app is offline. Best-effort — failure here must
+        // not block the iOS sync flow.
+        await mirrorTokensToSupabase(
+            access: tokenResponse.accessToken,
+            refresh: tokenResponse.refreshToken,
+            expiresAt: tokenResponse.expiresAt,
+            athleteId: tokenResponse.athlete?.id
+        )
+
         // Remove any HealthKit-imported Strava rows so the richer OAuth
         // sync becomes the single source of truth (no duplicates).
         await HealthDataService.shared.removeHealthKitDuplicates(for: .strava)
@@ -217,20 +296,102 @@ final class StravaService: ObservableObject {
         request.httpBody = try JSONEncoder().encode(body)
         
         let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            // Refresh failed - user needs to re-authenticate
-            disconnect()
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            // No HTTP response — almost certainly a transient network issue.
+            // Don't disconnect; the next sync will retry.
             throw StravaError.tokenRefreshFailed
         }
-        
+
+        guard httpResponse.statusCode == 200 else {
+            // Strava returns 400 with `{"error":"invalid_grant"}` only when
+            // the refresh token has been revoked (user revoked the app from
+            // strava.com, or rotated the token elsewhere). For ANY other
+            // status — 5xx outage, 429 rate limit, 502 gateway, transient
+            // 401, network blip — we keep tokens in keychain and let the
+            // next sync retry. The 60-day inactivity guard takes over for
+            // truly abandoned integrations.
+            let body = String(data: data, encoding: .utf8) ?? ""
+            let isHardRevoke = (httpResponse.statusCode == 400 && body.contains("invalid_grant"))
+                || (httpResponse.statusCode == 401 && body.contains("invalid_grant"))
+
+            if isHardRevoke {
+                AppLogger.warning(
+                    "[STRAVA] Refresh token revoked (HTTP \(httpResponse.statusCode)) — disconnecting",
+                    category: .auth
+                )
+                disconnect()
+            } else {
+                AppLogger.warning(
+                    "[STRAVA] Token refresh transient failure (HTTP \(httpResponse.statusCode)) — will retry on next sync",
+                    category: .auth
+                )
+            }
+            throw StravaError.tokenRefreshFailed
+        }
+
         let tokenResponse = try JSONDecoder().decode(StravaRefreshResponse.self, from: data)
         
         accessToken = tokenResponse.accessToken
         self.refreshToken = tokenResponse.refreshToken
         tokenExpiresAt = Date(timeIntervalSince1970: Double(tokenResponse.expiresAt))
         
-        AppLogger.debug("🔄 [STRAVA] Token refreshed", category: .health)
+        AppLogger.debug("🔄 [STRAVA] Token refreshed (next expiry: \(tokenExpiresAt?.description ?? "?"))", category: .health)
+
+        // Phase 5 dual-write: mirror the rotated refresh token to Supabase
+        // so the webhook function never holds a stale value.
+        await mirrorTokensToSupabase(
+            access: tokenResponse.accessToken,
+            refresh: tokenResponse.refreshToken,
+            expiresAt: tokenResponse.expiresAt,
+            athleteId: athleteProfile?.id
+        )
+    }
+
+    /// Phase 5 helper: dual-write Strava tokens to Supabase via the
+    /// `upsert_strava_tokens` SECURITY DEFINER RPC. The RPC pins
+    /// caller user_id to `auth.uid()` (Data invariant #7) so we don't
+    /// need to (and must not) pass the user id from the client.
+    private func mirrorTokensToSupabase(
+        access: String,
+        refresh: String,
+        expiresAt: Int,
+        athleteId: Int64?
+    ) async {
+        do {
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            let expiresIso = isoFormatter.string(
+                from: Date(timeIntervalSince1970: Double(expiresAt))
+            )
+
+            struct UpsertParams: Encodable {
+                let p_access: String
+                let p_refresh: String
+                let p_expires_at: String
+                let p_athlete_id: Int64?
+            }
+
+            let params = UpsertParams(
+                p_access: access,
+                p_refresh: refresh,
+                p_expires_at: expiresIso,
+                p_athlete_id: athleteId
+            )
+
+            try await SupabaseManager.shared.client
+                .rpc("upsert_strava_tokens", params: params)
+                .execute()
+
+            AppLogger.debug("[STRAVA] Tokens mirrored to Supabase", category: .health)
+        } catch {
+            // Best-effort. Don't break the iOS flow if dual-write fails —
+            // it just means webhooks won't fire until next refresh.
+            AppLogger.warning(
+                "[STRAVA] Token mirror to Supabase failed: \(error.localizedDescription)",
+                category: .health
+            )
+        }
     }
     
     /// Ensure we have a valid access token
@@ -253,17 +414,44 @@ final class StravaService: ObservableObject {
     
     // MARK: - API Methods
     
-    /// Sync activities from Strava
-    func syncActivities(daysBack: Int = 30) async {
+    /// Sync activities from Strava.
+    /// - Parameters:
+    ///   - daysBack: How many days of history to pull. Defaults to 30; the
+    ///     foreground / `BGTask` paths use 30 to keep the activity charts
+    ///     fresh, the silent-push path uses 1.
+    ///   - force: If `true`, bypasses the 5-minute throttle. Use for explicit
+    ///     "Sync Now" taps and for `BGTask`-driven refreshes. The auto-sync
+    ///     path on `scenePhase: .active` should call with `force: false` so
+    ///     rapid foreground/background toggles don't burn API budget.
+    func syncActivities(daysBack: Int = 30, force: Bool = false) async {
         guard isConnected else {
             AppLogger.debug("⏭️ [STRAVA] Skipping sync — not connected (token: \(accessToken != nil), refresh: \(refreshToken != nil))", category: .health)
             return
         }
-        
+
+        // Coalesce overlapping calls — Dashboard tab-switches and scenePhase
+        // flicker can each trigger a sync within ~1s of each other.
+        if isSyncing {
+            AppLogger.debug("⏭️ [STRAVA] Skipping sync — already syncing", category: .health)
+            return
+        }
+
+        // Same throttle window WHOOP / Oura use. Bypassed by explicit
+        // user taps + by BGTask-driven refreshes (which already throttle
+        // themselves at the OS level).
+        if !force, let last = lastSyncDate,
+           Date().timeIntervalSince(last) < Self.syncThrottleInterval {
+            AppLogger.debug("⏭️ [STRAVA] Skipping sync — throttled (last sync \(Int(Date().timeIntervalSince(last)))s ago)", category: .health)
+            return
+        }
+
+        isSyncing = true
+        defer { isSyncing = false }
+
         isLoading = true
         errorMessage = nil
         
-        AppLogger.debug("🔄 [STRAVA] Starting sync (daysBack: \(daysBack), token expires: \(tokenExpiresAt?.description ?? "nil"))", category: .health)
+        AppLogger.debug("🔄 [STRAVA] Starting sync (daysBack: \(daysBack), force: \(force), token expires: \(tokenExpiresAt?.description ?? "nil"))", category: .health)
 
         let startedAt = Date()
         let userId = SupabaseManager.shared.currentUser?.id
@@ -319,7 +507,13 @@ final class StravaService: ObservableObject {
             recentActivities = activities
             lastSyncDate = Date()
             UserDefaults.standard.set(lastSyncDate, forKey: "strava_last_sync")
-            
+
+            // Persist the activity list so the dashboard widget + cardio
+            // section have data on cold start before the network round-trip
+            // returns. Cap to the most recent 50 to keep the cache bounded —
+            // anything older is read from `cardio_workouts` via the cardio tab.
+            persistRecentActivities(activities)
+
             AppLogger.debug("📊 [STRAVA] Decoded \(activities.count) activities", category: .health)
             for (i, activity) in activities.prefix(5).enumerated() {
                 AppLogger.debug("   \(i+1). \(activity.type) — \(activity.name) — \(activity.startDate)", category: .health)
@@ -327,10 +521,21 @@ final class StravaService: ObservableObject {
             
             // Save activities to Supabase for persistence
             await saveActivitiesToCloud(activities)
-            
+
+            // Phase 2 enrichment — fetch detail + streams for activities
+            // that haven't been enriched yet. Rate-limited internally so
+            // a backlog won't burn the daily Strava budget.
+            await StravaActivityEnricher.shared.enrichIfNeeded(activities: activities)
+
             // Check new activities against challenges
             await syncActivitiesToChallenges(activities)
-            
+
+            // Refresh long-form athlete totals (recent 4w / YTD / all-time)
+            // for the Strava settings page. Best-effort — failure here
+            // shouldn't fail the sync since the activity list is the
+            // primary product.
+            await refreshAthleteStatsIfNeeded()
+
             AppLogger.info("✅ [STRAVA] Synced \(activities.count) activities", category: .health)
             
         } catch {
@@ -392,6 +597,15 @@ final class StravaService: ObservableObject {
         }
         
         isLoading = false
+
+        // Smart Adaptive Daily Goals (20260606) — fire-and-forget tick of
+        // today's Strava-eligible quests. Detached so a slow RPC never
+        // stalls the sync return path; the call is auth-pinned server-side
+        // (`auth.uid()`) and short-circuits when there are no Strava
+        // quests assigned.
+        Task.detached(priority: .background) {
+            await DailyQuestService.shared.onStravaActivityImported()
+        }
     }
     
     /// Get detailed activity by ID
@@ -414,6 +628,69 @@ final class StravaService: ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         
         return try decoder.decode(StravaActivityDetail.self, from: data)
+    }
+
+    /// Get raw JSON activity detail by ID. Returned as a `[String: Any]` dict
+    /// because we want to forward the splits / segment_efforts / map fields
+    /// straight into Postgres JSONB columns without modeling every nested
+    /// shape on the Swift side. The typed `getActivityDetail(id:)` is used
+    /// only when callers want direct access (e.g. recap sheet test fixtures).
+    func getActivityDetailJSON(id: Int64) async throws -> [String: Any] {
+        let token = try await ensureValidToken()
+
+        guard let activityURL = URL(string: "\(Config.apiBaseUrl)/activities/\(id)?include_all_efforts=false") else {
+            throw StravaError.apiError("Invalid activity detail URL")
+        }
+        var request = URLRequest(url: activityURL)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw StravaError.apiError("Failed to fetch activity detail (HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1))")
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw StravaError.apiError("Activity detail response was not a JSON object")
+        }
+        return json
+    }
+
+    /// Fetch raw activity streams (HR / pace / cadence / power / altitude).
+    /// Returned as a dict keyed by stream type so we can pipe it directly
+    /// into `cardio_workouts.streams_json`.
+    func getActivityStreamsJSON(id: Int64) async throws -> [String: Any] {
+        let token = try await ensureValidToken()
+
+        let keys = "heartrate,cadence,watts,velocity_smooth,altitude,distance,time"
+        guard let streamsURL = URL(string: "\(Config.apiBaseUrl)/activities/\(id)/streams?keys=\(keys)&key_by_type=true") else {
+            throw StravaError.apiError("Invalid activity streams URL")
+        }
+        var request = URLRequest(url: streamsURL)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw StravaError.apiError("No HTTP response for streams")
+        }
+
+        // Strava returns 404 when the activity has no streams (e.g. manually
+        // logged with no GPS / HR data). Treat that as "no streams" rather
+        // than a hard failure so enrichment can still succeed for the detail
+        // payload.
+        if httpResponse.statusCode == 404 {
+            return [:]
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw StravaError.apiError("Failed to fetch activity streams (HTTP \(httpResponse.statusCode))")
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw StravaError.apiError("Streams response was not a JSON object")
+        }
+        return json
     }
     
     /// Get athlete stats
@@ -467,7 +744,9 @@ final class StravaService: ObservableObject {
             // Calculate completed_at from start + duration
             let completedAt = activity.startDate.addingTimeInterval(Double(activity.movingTime))
             
-            // Create the cardio workout insert record
+            // Create the cardio workout insert record. `origin_app = 'strava'`
+            // is required so cross-source dedup (HealthKit duplicate cleanup)
+            // can target the right rows — see migration 20260417.
             let insert = StravaCardioWorkoutInsert(
                 userId: userId.uuidString,
                 activityType: activityType,
@@ -486,7 +765,9 @@ final class StravaService: ObservableObject {
                 completedAt: ISO8601DateFormatter().string(from: completedAt),
                 source: "strava",
                 externalId: String(activity.id),
-                externalUrl: "https://www.strava.com/activities/\(activity.id)"
+                externalUrl: "https://www.strava.com/activities/\(activity.id)",
+                originApp: "strava",
+                sufferScore: activity.sufferScore
             )
             
             do {
@@ -542,6 +823,18 @@ final class StravaService: ObservableObject {
             await MainActor.run {
                 UserManager.shared.updateStreak()
                 AppLogger.debug("🔥 [STRAVA] Updated streak - found \(todayActivities.count) activities from today", category: .health)
+            }
+
+            // Phase 3 streak shield hint: a single very-high-effort activity
+            // (Strava suffer_score > 150 ≈ a hard tempo / race / long run)
+            // pre-credits the day so a tomorrow rest day cannot break the
+            // streak. Does not consume one of the user's monthly shields.
+            if let highEffort = todayActivities.first(where: { ($0.sufferScore ?? 0) > 150 }) {
+                await MainActor.run {
+                    StreakShieldService.shared.creditHighEffortDay(
+                        reason: "Strava \(highEffort.type) suffer=\(highEffort.sufferScore ?? 0)"
+                    )
+                }
             }
         }
     }
@@ -604,12 +897,15 @@ final class StravaService: ObservableObject {
         tokenExpiresAt = nil
         athleteProfile = nil
         recentActivities = []
+        athleteStats = nil
         lastSyncDate = nil
         isConnected = false
-        
+
         UserDefaults.standard.removeObject(forKey: "strava_athlete")
         UserDefaults.standard.removeObject(forKey: "strava_last_sync")
-        
+        UserDefaults.standard.removeObject(forKey: "strava_recent_activities")
+        UserDefaults.standard.removeObject(forKey: "strava_athlete_stats")
+
         for key in ["strava_access_token", "strava_refresh_token", "strava_token_expires_at"] {
             UserDefaults.standard.removeObject(forKey: key)
         }
@@ -620,6 +916,66 @@ final class StravaService: ObservableObject {
         }
         
         AppLogger.debug("🔌 [STRAVA] Disconnected", category: .health)
+    }
+
+    // MARK: - Cache Persistence
+
+    /// Caches the most recent activities to UserDefaults so the dashboard
+    /// widget appears instantly on cold start. Mirrors the pattern WHOOP /
+    /// Oura use for `todayRecovery` / `todayReadiness`.
+    private func persistRecentActivities(_ activities: [StravaActivity]) {
+        let trimmed = Array(
+            activities
+                .sorted { $0.startDate > $1.startDate }
+                .prefix(50)
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(trimmed) {
+            UserDefaults.standard.set(data, forKey: "strava_recent_activities")
+        }
+    }
+
+    /// Refreshes the long-form `/athletes/{id}/stats` totals (recent 4w / YTD
+    /// / all-time per sport). Throttled via the same 5-min window as the
+    /// activity sync — Strava only updates these once a day so there's no
+    /// reason to hit the endpoint more often than that.
+    private func refreshAthleteStatsIfNeeded() async {
+        guard isConnected else { return }
+        do {
+            let stats = try await getAthleteStats()
+            athleteStats = stats
+            if let data = try? JSONEncoder().encode(stats) {
+                UserDefaults.standard.set(data, forKey: "strava_athlete_stats")
+            }
+        } catch {
+            // Best-effort; the activity-list sync is the primary product
+            // and is unaffected by stats failures.
+            AppLogger.debug(
+                "[STRAVA] Athlete stats refresh failed (non-fatal): \(error.localizedDescription)",
+                category: .health
+            )
+        }
+    }
+
+    /// 60-day inactivity guard. Called from `Fit33App` startup — if the user
+    /// hasn't synced Strava in 60+ days AND the next refresh fails, we treat
+    /// the integration as abandoned. Until then we keep retrying so a return
+    /// user doesn't get silently disconnected. Safe no-op when within window.
+    func evaluateInactivityWindow() async {
+        guard isConnected else { return }
+        guard let last = lastSyncDate else { return }
+        guard Date().timeIntervalSince(last) > Self.inactivityDisconnectInterval else { return }
+
+        AppLogger.info("[STRAVA] Last sync \(Int(Date().timeIntervalSince(last) / 86400))d ago — probing token before disconnecting", category: .auth)
+        do {
+            _ = try await ensureValidToken()
+            // Token still works, just stale data — let the foreground sync handle it.
+            AppLogger.info("[STRAVA] Token still valid after inactivity window — keeping connection", category: .auth)
+        } catch {
+            AppLogger.warning("[STRAVA] Inactivity probe failed (\(error.localizedDescription)) — disconnecting", category: .auth)
+            disconnect()
+        }
     }
     
     // MARK: - Computed Properties
@@ -648,11 +1004,59 @@ final class StravaService: ObservableObject {
     /// Total calories burned this week from cardio
     var weeklyCaloriesBurned: Int {
         let calendar = Calendar.current
-        let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-        
+        guard let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) else {
+            return 0
+        }
         return recentActivities
             .filter { $0.startDate >= startOfWeek }
             .reduce(0) { $0 + ($1.calories ?? 0) }
+    }
+
+    /// Activities so far this calendar month (uses the user's local calendar).
+    var monthlyActivities: [StravaActivity] {
+        let calendar = Calendar.current
+        guard let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: Date())) else {
+            return []
+        }
+        return recentActivities.filter { $0.startDate >= startOfMonth }
+    }
+
+    /// Total elevation gained this week (in meters).
+    var weeklyElevationGain: Double {
+        let calendar = Calendar.current
+        guard let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) else {
+            return 0
+        }
+        return recentActivities
+            .filter { $0.startDate >= startOfWeek }
+            .reduce(0) { $0 + ($1.totalElevationGain ?? 0) }
+    }
+
+    /// Average pace this week across runs only (in seconds per km).
+    /// Returns nil when there are no runs in the current week.
+    var weeklyAveragePaceSecondsPerKm: Double? {
+        let calendar = Calendar.current
+        guard let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) else {
+            return nil
+        }
+        let runs = recentActivities.filter {
+            $0.startDate >= startOfWeek
+                && ($0.type == "Run" || $0.type == "VirtualRun")
+                && $0.distance > 100
+                && $0.movingTime > 0
+        }
+        guard !runs.isEmpty else { return nil }
+        let totalDistance = runs.reduce(0) { $0 + $1.distance }
+        let totalTime = runs.reduce(0) { $0 + $1.movingTime }
+        guard totalDistance > 0 else { return nil }
+        return Double(totalTime) / (totalDistance / 1000)
+    }
+
+    /// Most recent activity, regardless of age. Used by the dashboard widget
+    /// + Strava settings hero so the widget reliably appears any time the
+    /// integration is connected — not just within the 36h freshness window.
+    var mostRecentActivity: StravaActivity? {
+        recentActivities.sorted { $0.startDate > $1.startDate }.first
     }
 }
 
@@ -773,16 +1177,11 @@ struct StravaActivity: Codable, Identifiable {
         case sufferScore = "suffer_score"
     }
     
-    // Formatted properties
+    // Formatted properties — honor the user's km/mi preference via UnitSettingsManager.
     var distanceFormatted: String {
-        let km = distance / 1000
-        if km >= 1 {
-            return String(format: "%.1f km", km)
-        } else {
-            return String(format: "%.0f m", distance)
-        }
+        UnitSettingsManager.shared.formatStravaDistance(meters: distance)
     }
-    
+
     var durationFormatted: String {
         let hours = movingTime / 3600
         let minutes = (movingTime % 3600) / 60
@@ -798,9 +1197,7 @@ struct StravaActivity: Codable, Identifiable {
     var paceFormatted: String? {
         guard let speed = averageSpeed, speed > 0 else { return nil }
         let paceSecondsPerKm = 1000 / speed
-        let minutes = Int(paceSecondsPerKm) / 60
-        let seconds = Int(paceSecondsPerKm) % 60
-        return String(format: "%d:%02d /km", minutes, seconds)
+        return UnitSettingsManager.shared.formatStravaPace(secondsPerKm: paceSecondsPerKm)
     }
     
     var activityIcon: String {
@@ -940,7 +1337,9 @@ struct StravaCardioWorkoutInsert: Codable {
     let source: String
     let externalId: String
     let externalUrl: String
-    
+    let originApp: String
+    let sufferScore: Int?
+
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case activityType = "activity_type"
@@ -960,6 +1359,8 @@ struct StravaCardioWorkoutInsert: Codable {
         case source
         case externalId = "external_id"
         case externalUrl = "external_url"
+        case originApp = "origin_app"
+        case sufferScore = "suffer_score"
     }
 }
 

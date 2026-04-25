@@ -1273,3 +1273,53 @@ OTP verified → createMinimalAccountForEmailPasswordSignup()
 - `20260330_privacy_photo_all_rpcs.sql`: 1v1 challenges, group challenges, community challenges (leaderboard, detail, my challenges, friends-in), private challenges (detail, my challenges), received workouts, friend requests (pending + sent), get_friends (inner circle)
 
 **Realtime privacy propagation**: When User A toggles `hideFromWeeklyLeague` or `hideFriendActivity`, other users see the change **instantly** (no tab switch needed). Architecture: Postgres trigger on `user_profiles` inserts signal rows into `privacy_change_events` table (change_type: 'league' or 'activity'). `RealtimeService.subscribePrivacyChanges()` listens via WebSocket and routes events — league changes refresh `WeeklyLeagueService.fetchFullLeaderboard()`, activity changes refresh `ActivityFeedService.fetchFeed()`. Client-side: `WeeklyLeagueService` also observes `PrivacySettingsManager.$hideFromWeeklyLeague` directly via Combine to clear the current user's own cached league standing immediately on toggle.
+
+### 2026-04-25: Daily Quests — Actionable Today, Not Locked-In By Last Night
+
+**User feedback** (Joe, 2026-04-25 ~2:05pm): "I don't love Green Recovery — if you wake up red it might not recover in time during that day = automatically lose. These goals need to be something actionable the user has somewhat immediate control of, or can do an action during the day to accomplish."
+
+**Anti-pattern identified**: Daily quests whose pass/fail outcome is fully determined by the user's overnight wearable readings *before* they open the app. Three offenders shipped in `20260509_wearable_quests.sql`:
+- `recovery_above_67` "Green Recovery" — band ≥ 67 by wake-up
+- `hrv_above_baseline` "HRV Warrior" — overnight HRV reading
+- `rhr_in_healthy_range` "Steady Heart" — overnight RHR reading
+
+These are pre-determined automatic losses for any user whose night was off — opposite of agency. Wearable signals are inputs to the day's prescription (see Fitness Expert invariant 23 — red recovery → mobility override), not goals the user can hit.
+
+**Fix shipped**: Migration `20260610_actionable_recovery_quests.sql`.
+- Soft-disabled the three passive templates via `is_active = FALSE` (kept on disk so historical `user_daily_quests` rows still resolve to a template — never `DELETE`).
+- Added three actionable wearable-gated replacements, all auto-verified from `cardio_workouts`:
+  - `active_recovery_logged` "Active Recovery" — 15+ min walk/yoga/stretch/mobility any band (no readiness gate)
+  - `zone_2_minutes_20` "Zone 2 Cardio" — 20+ min cardio with `average_heart_rate` ∈ [110, 150] bpm (age-agnostic Z2 range)
+  - `cardio_minutes_20` "Heart Healthy" — 20+ min any logged cardio session (distinct from `active_minutes_30` HealthKit ambient minutes)
+- XP rewards (38 / 45 / 30) seeded post-`20260603` rebalance numbers so the `auto × 1.5` multiplier is not re-applied on re-run.
+- `verify_wearable_quests_for_today(p_timezone)` rebuilt via the canonical `pg_proc` overload-drop loop. Three new ELSIF branches added; the early-return-on-null-readiness gate was removed (new quests verify straight from `cardio_workouts` without a readiness row); legacy passive branches retained inside `IF v_readiness IS NOT NULL` guards for in-flight assignments.
+
+**No iOS code changes required** — `DailyQuest.questKey` is a `String`, icons / titles / descriptions come from `quest_templates`, and `DailyQuestService.onReadinessRecomputed()` already triggers the verifier on every readiness recompute. The `wearableKeys` early-exit set in `onReadinessRecomputed` does not need updating; a superset is harmless.
+
+**Open watch-list** (same anti-pattern still in codebase; flagged for next pass):
+- `sleep_8h_wearable` "Sleep 8 Hours" + `sleep_7_hours` "Sleep Champion" — last night's sleep is already locked by morning. (Joe explicitly chose to keep `sleep_8h_wearable` 2026-04-25 on the rationale that the user controls tonight's bedtime; if friction appears, replace with a "wind down by [target]" tonight-action quest.)
+- `log_readiness_am` "Morning Check-In" — open app within 2h of waking; user who wakes at 7am and opens at 10am auto-loses.
+
+**Documentation**: Captured as PE invariant 19d, FE invariant 20a, and migration index entry #109.
+
+### 2026-04-25 (later same day): Daily Quests — Watch-List Closed (Sleep + Engagement)
+
+Joe approved fixing the open watch-list from the morning's `20260610` pass with "yes fix". Three more templates retired in `20260611_retire_passive_sleep_engagement_quests.sql`:
+
+| Quest | Why retired |
+|---|---|
+| `sleep_8h_wearable` "Sleep 8 Hours" | iOS `DailyQuestService.onSleepLogged(hours:)` ticks against last-night data. Locked by the time the app opens. (Earlier kept on the rationale that "user controls tonight's bedtime" — confirmed off-by-one: the quest is dated *today* but ticks off *yesterday's* sleep, so user-facing UX is identical to Green Recovery.) |
+| `sleep_7_hours` "Sleep Champion" | Same wiring as `sleep_8h_wearable` minus the wearable gate. |
+| `log_readiness_am` "Morning Check-In" | Phantom quest — grepped `Fit33/**/*.swift` + `supabase/**/*.sql` on 2026-04-25, ZERO verification logic anywhere. The template existed since 20260509 but could never auto-complete. Bug, not just anti-pattern. |
+
+**Cleanup pass**: `DELETE FROM user_daily_quests WHERE quest_key = 'log_readiness_am' AND quest_date = current_date AND is_completed = FALSE` — phantom quests get an in-flight delete because they'd otherwise sit at 0/1 until the next daily reset, with no path to completion. This is a narrow exception to "never DELETE" — limited to templates whose verifier surface is genuinely empty across iOS + SQL.
+
+**Replacement**: One new actionable wearable-gated template: `evening_wind_down` "Evening Wind Down" — log walk/yoga/stretch/mobility/foam-rolling cardio AFTER 6pm local. Auto-tracked from `cardio_workouts` via `EXTRACT(HOUR FROM (started_at AT TIME ZONE p_timezone)) >= 18` filter on the canonical recovery activity types `('walk','hike','yoga','stretch','mobility','foam_rolling')`. XP 38 / LP 15 (post-`20260603` rebalance).
+
+**Why wearable-gated**: `verify_wearable_quests_for_today` is the only RPC iOS triggers from a non-workout-completion path (it's called from `ReadinessService.recompute()`), and that path only runs for users with a connected wearable. A non-wearable-gated `evening_wind_down` would be assigned but never verify server-side. Non-wearable users keep the existing `stretch_session` quest as their actionable recovery analogue.
+
+**iOS edit**: `Fit33/DailyQuestService.swift::onSleepLogged(hours:)` short-circuited to a no-op (kept as a future attach point so the sleep-sync call sites in `HealthDataService` / `ReadinessService` don't need to be untangled). If a future actionable sleep quest lands ("wind down by [target]" detected from tonight's bedtime), it attaches there.
+
+**Documentation**: PE invariant 19d updated to record all six retired templates + the phantom-quest cleanup exception. FE invariant 20a updated with the canonical recovery-activity-types set + time-of-day gate pattern. Migration index entry #110.
+
+The watch-list is now closed. If new sleep / readiness / HRV-style quests ship in the future, invariant 19d is the gate — they MUST be paired with a same-day user-takeable action.

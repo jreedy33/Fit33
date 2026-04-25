@@ -32,7 +32,18 @@ struct DailyQuest: Codable, Identifiable {
     let completedAt: String?
     let funLabel: String?
     let verificationType: String?  // "auto", "social", or "manual"
-    
+    /// Smart Adaptive Daily Goals (20260601): "free" or "pro". Free clients
+    /// never see "pro" rows because the RPC tier-gates them server-side.
+    let tier: String?
+    /// Smart Adaptive Daily Goals (20260607): set by `claim_double_xp_day`
+    /// (Pro 1/week). The server-side `apply_double_xp_on_complete` trigger
+    /// awards an extra `xp_reward` worth of XP on completion.
+    let doubleXp: Bool?
+    /// User-authored quest from `submit_custom_quest` (Pro 1/day, manual).
+    let isCustom: Bool?
+    /// Stamped by `reroll_daily_quest` so the UI can show "Rerolled".
+    let isReroll: Bool?
+
     enum CodingKeys: String, CodingKey {
         case id
         case questKey = "quest_key"
@@ -47,6 +58,41 @@ struct DailyQuest: Codable, Identifiable {
         case completedAt = "completed_at"
         case funLabel = "fun_label"
         case verificationType = "verification_type"
+        case tier
+        case doubleXp = "double_xp"
+        case isCustom = "is_custom"
+        case isReroll = "is_reroll"
+    }
+
+    init(
+        id: UUID, questKey: String, title: String, description: String,
+        icon: String, category: String, targetValue: Int, currentValue: Int,
+        targetUnit: String, xpReward: Int, leaguePoints: Int,
+        difficulty: String, isCompleted: Bool, completedAt: String?,
+        funLabel: String?, verificationType: String?,
+        tier: String? = nil, doubleXp: Bool? = nil,
+        isCustom: Bool? = nil, isReroll: Bool? = nil
+    ) {
+        self.id = id
+        self.questKey = questKey
+        self.title = title
+        self.description = description
+        self.icon = icon
+        self.category = category
+        self.targetValue = targetValue
+        self.currentValue = currentValue
+        self.targetUnit = targetUnit
+        self.xpReward = xpReward
+        self.leaguePoints = leaguePoints
+        self.difficulty = difficulty
+        self.isCompleted = isCompleted
+        self.completedAt = completedAt
+        self.funLabel = funLabel
+        self.verificationType = verificationType
+        self.tier = tier
+        self.doubleXp = doubleXp
+        self.isCustom = isCustom
+        self.isReroll = isReroll
     }
     
     var progress: Double {
@@ -76,6 +122,37 @@ struct DailyQuest: Codable, Identifiable {
         case "social": return "👥 In-App Action"
         default: return nil
         }
+    }
+
+    /// Smart Adaptive Daily Goals (20260603): xp_reward in `quest_templates`
+    /// is already pre-multiplied by verification_type (auto×1.5, social×1.0,
+    /// manual×0.7). Surface that as a soft sub-label on the quest card so
+    /// users understand WHY auto-tracked quests reward more — and feel the
+    /// tradeoff when they pick a manual one.
+    var verificationXpMultiplierLabel: String? {
+        switch verificationType {
+        case "auto":   return "1.5× XP — auto-tracked"
+        case "social": return "1.0× XP — social"
+        case "manual": return "0.7× XP — honor system"
+        default:       return nil
+        }
+    }
+
+    /// Smart Adaptive Daily Goals (20260607): tag used by quest cards when
+    /// the user has activated a Pro Double-XP day for this quest's date.
+    var doubleXpBadge: String? {
+        (doubleXp ?? false) ? "✨ 2× XP today" : nil
+    }
+
+    /// Custom user-authored Pro quest — can be rerolled but never
+    /// auto-completed. Allows the UI to show a "manual mark complete" CTA.
+    var isCustomPro: Bool {
+        isCustom ?? false
+    }
+
+    /// Just rerolled — UI can pulse the card or show a tag.
+    var wasRerolled: Bool {
+        isReroll ?? false
     }
     
     var difficultyColor: Color {
@@ -261,6 +338,22 @@ enum QuestKey: String, CaseIterable {
     case exerciseSets10 = "exercise_sets_10"
     case exerciseSets20 = "exercise_sets_20"
     
+    // MARK: - Smart Adaptive Daily Goals (20260604)
+    // Strava PRs / outdoor cardio (auto-verified by verify_strava_quests_for_today)
+    case beatYour5kPR = "beat_your_5k_pr"
+    case negativeSplitRun = "negative_split_run"
+    case runOutside8km = "run_outside_8km"
+    case cycleOutside30km = "cycle_outside_30km"
+    case completeStravaSegment = "complete_strava_segment"
+    // Wearable-driven (auto-verified by verify_wearable_quests_for_today)
+    case matchYesterdayStrain = "match_yesterday_strain"
+    case walkWhenRed = "walk_when_red"
+    // Friend-named social (manual + social verification)
+    case doFriendWorkout = "do_friend_workout"
+    case commentOnFriendsWorkout = "comment_on_friends_workout"
+    case start1v1WithTopFriend = "start_1v1_with_top_friend"
+    case reactTo3Workouts = "react_to_3_workouts"
+
     // MARK: - Day 1 beginner quests (hardcoded, not from server)
     case beginnerSyncContacts = "beginner_sync_contacts"
     case beginnerAddFriend = "beginner_add_friend"
@@ -373,6 +466,111 @@ class DailyQuestService: ObservableObject {
         /// hydrate, protein, workout_streak, lift. De-duped + stable order so
         /// the RPC cache stays warm across identical inputs.
         let activeChallengeTypes: [String]
+
+        // ── Smart Adaptive Daily Goals (20260605) ──────────────────────────
+        /// Per-integration connection state. Drives the new
+        /// `requires_context = 'has_strava' | 'has_whoop' | 'has_oura' |
+        /// 'has_fitbit'` predicates so the server can selectively surface
+        /// integration-specific quests (Strava PRs, WHOOP strain matching,
+        /// Oura/Fitbit walk-when-red, etc.) without firing for users who
+        /// can't action them.
+        let stravaConnected: Bool
+        let whoopConnected: Bool
+        let ouraConnected: Bool
+        let fitbitConnected: Bool
+
+        /// 28-day activity bucket distribution (strength/cardio/walk/stretch).
+        /// Encoded into the `p_activity_mix` JSONB hint
+        /// (`{ "dominant": "...", "least": "..." }`). The server falls back
+        /// to `user_activity_mix` (computed nightly) when the JSONB is empty.
+        let activityMix28d: ActivityMixSnapshot
+
+        /// Best target from the user's active step / walk / run challenges
+        /// against a friend. Powers the "Beat <Friend>: 8.4K" copy when
+        /// the server picks a step quest in slot N.
+        let friendStepTarget: Int
+        /// Friend display name for the step copy. May be `nil` even when
+        /// `friendStepTarget > 0` (group challenge, etc.) — server falls back
+        /// to "your friend" in that case.
+        let friendName: String?
+
+        /// Most recent shared workout from a top friend that we'd like to
+        /// surface as the "Do <Friend>'s <Title>" slot. The full bundle is
+        /// what the server needs for `do_friend_workout` copy + deep-linking.
+        let friendTopWorkoutId: UUID?
+        let friendTopWorkoutTitle: String?
+        let friendTopWorkoutSplit: String?
+        /// Whether the friend's workout split equals the user's
+        /// `suggestedSplit`. When TRUE the RPC writes the
+        /// recovery-aware copy "You're due for <split> — do <Friend>'s".
+        let friendTopWorkoutMatchesRecommendation: Bool
+
+        /// Pro tier flag — drives 5-slot mode + premium-tier templates.
+        let questTier: String
+    }
+
+    /// Shared snapshot of a user's 28-day session distribution. Computed
+    /// client-side from Core Data + cardio_workouts so the RPC has a fresh
+    /// hint before the nightly `compute_user_quest_personalization` job
+    /// hydrates `user_activity_mix`.
+    struct ActivityMixSnapshot {
+        let totalSessions: Int
+        let strengthShare: Double
+        let cardioShare: Double
+        let walkShare: Double
+        let stretchShare: Double
+
+        var dominant: String? {
+            guard totalSessions > 0 else { return nil }
+            let pairs: [(String, Double)] = [
+                ("strength", strengthShare),
+                ("cardio",   cardioShare),
+                ("walk",     walkShare),
+                ("stretch",  stretchShare)
+            ]
+            return pairs.max(by: { $0.1 < $1.1 })?.0
+        }
+        var least: String? {
+            guard totalSessions > 0 else { return nil }
+            let pairs: [(String, Double)] = [
+                ("strength", strengthShare),
+                ("cardio",   cardioShare),
+                ("walk",     walkShare),
+                ("stretch",  stretchShare)
+            ]
+            // Ignore zero-share buckets — they'd always "win" the least
+            // comparison and bias the exploration bump toward something
+            // the user doesn't have data for at all.
+            let nonZero = pairs.filter { $0.1 > 0.0 }
+            return nonZero.min(by: { $0.1 < $1.1 })?.0
+        }
+
+        /// JSONB payload sent as `p_activity_mix`.
+        var rpcHint: [String: String] {
+            var dict: [String: String] = [:]
+            if let d = dominant { dict["dominant"] = d }
+            if let l = least    { dict["least"]    = l }
+            return dict
+        }
+
+        static let empty = ActivityMixSnapshot(
+            totalSessions: 0,
+            strengthShare: 0,
+            cardioShare: 0,
+            walkShare: 0,
+            stretchShare: 0
+        )
+    }
+
+    /// Bundle for a "do friend's workout" candidate — passed to the RPC
+    /// so it can write split-recommendation-aware copy.
+    struct FriendWorkoutSeed {
+        let friendName: String
+        let workoutId: UUID
+        let title: String
+        /// One of "push" | "pull" | "legs" | "upper" | "full" | "core_cardio"
+        /// (matches the contract of `p_suggested_split`).
+        let split: String
     }
     
     /// Builds the per-user context used to personalize today's quest selection.
@@ -436,6 +634,33 @@ class DailyQuestService: ObservableObject {
             if lowerFatigued { fatiguedRegions.append("lower") }
         }
 
+        // ── Smart Adaptive Daily Goals (20260605) ──────────────────────────
+        // Wearable connection bools (separated for finer-grained server
+        // gating). The aggregate `p_has_connected_wearable` flag still
+        // covers the legacy `has_wearable` requires_context.
+        let stravaConn = StravaService.shared.isConnected
+        let whoopConn  = WhoopService.shared.isConnected
+        let ouraConn   = OuraService.shared.isConnected
+        let fitbitConn = FitbitService.shared.isConnected
+
+        // 28-day activity-mix hint. Computed off-main via Core Data
+        // background context — fast (single fetch) and the server
+        // already falls back to the persisted `user_activity_mix` row.
+        let activityMix = await Self.computeActivityMix28d()
+
+        // Friend step / workout seeds. Best one-on-one step challenge
+        // target gives us "Beat <Friend>: 8.4K" copy; the friend's most
+        // recent shared workout (split-matched if possible) gives us
+        // "Due for <split> — do <Friend>'s".
+        let friendStepSeed = friendStepChallengeSeed()
+        let friendWorkoutSeed = await friendWorkoutSeed(suggestedSplit: suggestedSplit)
+        let matches = friendWorkoutSeed.flatMap { seed -> Bool? in
+            guard let s = suggestedSplit, !s.isEmpty else { return false }
+            return seed.split == s
+        } ?? false
+
+        let questTier = PremiumManager.shared.isPremiumUser ? "pro" : "free"
+
         return UserQuestContext(
             hasProgram: hasProgram,
             hasFriends: hasFriends,
@@ -452,8 +677,182 @@ class DailyQuestService: ObservableObject {
             leagueRank: leagueRank,
             suggestedSplit: suggestedSplit,
             fatiguedRegions: fatiguedRegions,
-            activeChallengeTypes: activeChallengeTypes
+            activeChallengeTypes: activeChallengeTypes,
+            stravaConnected: stravaConn,
+            whoopConnected: whoopConn,
+            ouraConnected: ouraConn,
+            fitbitConnected: fitbitConn,
+            activityMix28d: activityMix,
+            friendStepTarget: friendStepSeed?.target ?? 0,
+            friendName: friendStepSeed?.name ?? friendWorkoutSeed?.friendName,
+            friendTopWorkoutId: friendWorkoutSeed?.workoutId,
+            friendTopWorkoutTitle: friendWorkoutSeed?.title,
+            friendTopWorkoutSplit: friendWorkoutSeed?.split,
+            friendTopWorkoutMatchesRecommendation: matches,
+            questTier: questTier
         )
+    }
+
+    // MARK: - Smart Adaptive Daily Goals: helpers
+    //
+    // These helpers feed the new RPC parameters introduced in migration
+    // 20260605. They're best-effort — the server has authoritative copies
+    // (`user_activity_mix`, `friend_activity_feed`, etc.) and falls back
+    // gracefully when a hint is missing.
+
+    /// Builds the per-user 28-day activity-mix snapshot. Workouts come from
+    /// Core Data (off-main background context), cardio sessions come from
+    /// the live `StravaService` cache for snappy boot-time hints. Buckets
+    /// match the server-side mapping in `compute_user_quest_personalization`:
+    ///
+    ///   workouts              → strength
+    ///   cardio activity_type IN ('walk', 'hike')  → walk
+    ///   cardio activity_type IN ('yoga','stretch','flexibility') → stretch
+    ///   any other cardio_workouts row             → cardio
+    private static func computeActivityMix28d() async -> ActivityMixSnapshot {
+        // Workout counts from Core Data — `WorkoutFetcher` already manages
+        // the bg context + threadsafe predicate evaluation.
+        let cal = Calendar.current
+        let now = Date()
+        guard let cutoff = cal.date(byAdding: .day, value: -28, to: now) else {
+            return .empty
+        }
+
+        let strengthCount: Int = await Task.detached {
+            let bg = PersistenceController.shared.container.newBackgroundContext()
+            return await bg.perform {
+                let req: NSFetchRequest<Workout> = Workout.fetchRequest()
+                req.predicate = NSPredicate(
+                    format: "isCompleted == true AND date >= %@ AND date < %@",
+                    cutoff as NSDate, now as NSDate
+                )
+                req.includesSubentities = false
+                return (try? bg.count(for: req)) ?? 0
+            }
+        }.value
+
+        // Cardio breakdown — read from local Strava cache (already a 30-day
+        // window). Intentionally lightweight; the nightly job is the
+        // source of truth.
+        let stravaActivities = await MainActor.run { StravaService.shared.recentActivities }
+        var walkCount = 0
+        var stretchCount = 0
+        var cardioCount = 0
+        for activity in stravaActivities where activity.startDate >= cutoff {
+            // Map Strava sport_type to our bucket. Mirrors the SQL
+            // mapping in `compute_user_quest_personalization`.
+            switch activity.type.lowercased() {
+            case "walk", "hike":
+                walkCount += 1
+            case "yoga":
+                stretchCount += 1
+            default:
+                cardioCount += 1
+            }
+        }
+
+        let total = strengthCount + walkCount + stretchCount + cardioCount
+        guard total > 0 else { return .empty }
+        return ActivityMixSnapshot(
+            totalSessions: total,
+            strengthShare: Double(strengthCount) / Double(total),
+            cardioShare:   Double(cardioCount)   / Double(total),
+            walkShare:     Double(walkCount)     / Double(total),
+            stretchShare:  Double(stretchCount)  / Double(total)
+        )
+    }
+
+    /// One-on-one step / walk / run challenge with the highest daily
+    /// target. We bias toward 1v1 over group challenges so the "Beat
+    /// <FriendName>" copy actually has a single named opponent.
+    private struct FriendStepSeed { let name: String; let target: Int }
+    private func friendStepChallengeSeed() -> FriendStepSeed? {
+        let stepTypes: Set<String> = ["steps", "walk", "run"]
+        let candidate = ChallengeService.shared.activeChallenges
+            .filter { stepTypes.contains($0.challengeType) }
+            .compactMap { ch -> FriendStepSeed? in
+                guard let target = ch.dailyTarget, target > 0,
+                      let opp = ch.opponentName, !opp.isEmpty else { return nil }
+                return FriendStepSeed(name: Self.firstName(opp), target: target)
+            }
+            .max(by: { $0.target < $1.target })
+        return candidate
+    }
+
+    /// Most recent shared workout from a top friend that we'd like to
+    /// surface as a `do_friend_workout` slot. We prefer the friend whose
+    /// most recent shared split MATCHES the user's `suggestedSplit`
+    /// (recovery-aware), then fall back to the most recent overall.
+    private func friendWorkoutSeed(suggestedSplit: String?) async -> FriendWorkoutSeed? {
+        // Use the in-memory feed cache — `ActivityFeedService` keeps the
+        // last 20 rows hydrated, and the only freshness sensitive piece
+        // here is the friend's split-match. Avoids an extra round trip.
+        let activities = ActivityFeedService.shared.activities
+        // Filter to "workout_completed" rows with usable metadata.
+        let workoutRows: [(activity: FriendActivity, split: String)] = activities.compactMap { act in
+            guard act.activityType == "workout_completed",
+                  let title = act.metadata.workoutName, !title.isEmpty,
+                  let workoutIdStr = act.workoutId,
+                  UUID(uuidString: workoutIdStr) != nil else {
+                return nil
+            }
+            let split = Self.inferSplit(muscleGroups: act.metadata.muscleGroups ?? [], title: title)
+            return (act, split)
+        }
+        guard !workoutRows.isEmpty else { return nil }
+
+        // Prefer a split-match when the user has a recovery suggestion.
+        let chosen: (activity: FriendActivity, split: String)? = {
+            if let suggested = suggestedSplit, !suggested.isEmpty,
+               let match = workoutRows.first(where: { $0.split == suggested }) {
+                return match
+            }
+            return workoutRows.first
+        }()
+        guard let chosen = chosen,
+              let workoutIdStr = chosen.activity.workoutId,
+              let workoutId = UUID(uuidString: workoutIdStr),
+              let title = chosen.activity.metadata.workoutName else { return nil }
+
+        return FriendWorkoutSeed(
+            friendName: Self.firstName(chosen.activity.displayName),
+            workoutId: workoutId,
+            title: title,
+            split: chosen.split
+        )
+    }
+
+    /// Heuristic split classifier based on the muscle groups + workout
+    /// title. Output is one of the strings in `encodeSplitFamily`'s
+    /// codomain so the server can compare directly with `p_suggested_split`.
+    private static func inferSplit(muscleGroups: [String], title: String) -> String {
+        let lowered = Set(muscleGroups.map { $0.lowercased() })
+        let pushHits: Set<String> = ["chest", "shoulders", "triceps"]
+        let pullHits: Set<String> = ["back", "biceps", "lats"]
+        let legHits:  Set<String> = ["legs", "quads", "hamstrings", "glutes", "calves"]
+
+        let hasPush = !lowered.intersection(pushHits).isEmpty
+        let hasPull = !lowered.intersection(pullHits).isEmpty
+        let hasLegs = !lowered.intersection(legHits).isEmpty
+
+        if hasPush && !hasPull && !hasLegs { return "push" }
+        if hasPull && !hasPush && !hasLegs { return "pull" }
+        if hasLegs && !hasPush && !hasPull { return "legs" }
+        if hasPush && hasPull && !hasLegs  { return "upper" }
+        if hasPush || hasPull || hasLegs   { return "full" }
+
+        let lowercaseTitle = title.lowercased()
+        if lowercaseTitle.contains("cardio") || lowercaseTitle.contains("core") {
+            return "core_cardio"
+        }
+        return "full"
+    }
+
+    /// Returns the first name segment of a display string ("Paul Smith" → "Paul").
+    private static func firstName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return raw }
+        return trimmed.split(separator: " ").first.map(String.init) ?? trimmed
     }
 
     /// Contract: must match the string literals accepted by `get_daily_quests`
@@ -684,6 +1083,21 @@ class DailyQuestService: ObservableObject {
                 /// `requires_context` templates added by
                 /// `20260509_wearable_quests.sql`.
                 let p_has_connected_wearable: Bool
+                // ── Smart Adaptive Daily Goals (20260605) ─────────────
+                let p_strava_connected: Bool
+                let p_whoop_connected: Bool
+                let p_oura_connected: Bool
+                let p_fitbit_connected: Bool
+                /// JSONB hint `{ "dominant": "...", "least": "..." }`.
+                /// Empty → server reads from `user_activity_mix`.
+                let p_activity_mix: [String: String]
+                let p_friend_step_target: Int
+                let p_friend_name: String?
+                let p_friend_top_workout_id: String?
+                let p_friend_top_workout_title: String?
+                let p_friend_top_workout_split: String?
+                let p_friend_top_workout_matches_recommendation: Bool
+                let p_quest_tier: String
 
                 enum CodingKeys: String, CodingKey {
                     case p_user_id, p_timezone, p_has_program, p_has_friends, p_has_challenge
@@ -694,8 +1108,15 @@ class DailyQuestService: ObservableObject {
                     case p_suggested_split, p_fatigued_regions
                     case p_active_challenge_types
                     case p_has_connected_wearable
+                    case p_strava_connected, p_whoop_connected, p_oura_connected, p_fitbit_connected
+                    case p_activity_mix
+                    case p_friend_step_target, p_friend_name
+                    case p_friend_top_workout_id, p_friend_top_workout_title
+                    case p_friend_top_workout_split
+                    case p_friend_top_workout_matches_recommendation
+                    case p_quest_tier
                 }
-                
+
                 func encode(to encoder: Encoder) throws {
                     var container = encoder.container(keyedBy: CodingKeys.self)
                     try container.encode(p_user_id, forKey: .p_user_id)
@@ -730,6 +1151,34 @@ class DailyQuestService: ObservableObject {
                     // silently drop users from the has_wearable pool
                     // when they HAVE a wearable connected.
                     try container.encode(p_has_connected_wearable, forKey: .p_has_connected_wearable)
+                    // Smart Adaptive Daily Goals (20260605). All booleans
+                    // and tier are always encoded so the server picks the
+                    // right pool. The optional friend / activity-mix
+                    // fields are only encoded when they carry signal.
+                    try container.encode(p_strava_connected, forKey: .p_strava_connected)
+                    try container.encode(p_whoop_connected,  forKey: .p_whoop_connected)
+                    try container.encode(p_oura_connected,   forKey: .p_oura_connected)
+                    try container.encode(p_fitbit_connected, forKey: .p_fitbit_connected)
+                    if !p_activity_mix.isEmpty {
+                        try container.encode(p_activity_mix, forKey: .p_activity_mix)
+                    }
+                    if p_friend_step_target > 0 {
+                        try container.encode(p_friend_step_target, forKey: .p_friend_step_target)
+                    }
+                    if let name = p_friend_name, !name.isEmpty {
+                        try container.encode(name, forKey: .p_friend_name)
+                    }
+                    if let id = p_friend_top_workout_id, !id.isEmpty {
+                        try container.encode(id, forKey: .p_friend_top_workout_id)
+                    }
+                    if let title = p_friend_top_workout_title, !title.isEmpty {
+                        try container.encode(title, forKey: .p_friend_top_workout_title)
+                    }
+                    if let split = p_friend_top_workout_split, !split.isEmpty {
+                        try container.encode(split, forKey: .p_friend_top_workout_split)
+                    }
+                    try container.encode(p_friend_top_workout_matches_recommendation, forKey: .p_friend_top_workout_matches_recommendation)
+                    try container.encode(p_quest_tier, forKey: .p_quest_tier)
                 }
             }
             
@@ -760,10 +1209,42 @@ class DailyQuestService: ObservableObject {
                 // the server can return wearable-context quests as
                 // soon as the RPC body migration lands.
                 p_has_connected_wearable: AppConfig.FeatureFlags.wearableQuests
-                    && (WhoopService.shared.isConnected
-                        || OuraService.shared.isConnected
-                        || FitbitService.shared.isConnected
-                        || HealthKitService.shared.isAuthorized)
+                    && (ctx.whoopConnected
+                        || ctx.ouraConnected
+                        || ctx.fitbitConnected
+                        || HealthKitService.shared.isAuthorized),
+                // Smart Adaptive Daily Goals (20260605) — separated
+                // wearable bools + activity-mix + friend seeds + tier.
+                // The kill-switch flag short-circuits the new layers
+                // entirely (server still returns a valid slate from
+                // the existing predicates).
+                p_strava_connected: AppConfig.FeatureFlags.smartAdaptiveQuests && ctx.stravaConnected,
+                p_whoop_connected:  AppConfig.FeatureFlags.smartAdaptiveQuests && ctx.whoopConnected,
+                p_oura_connected:   AppConfig.FeatureFlags.smartAdaptiveQuests && ctx.ouraConnected,
+                p_fitbit_connected: AppConfig.FeatureFlags.smartAdaptiveQuests && ctx.fitbitConnected,
+                p_activity_mix: AppConfig.FeatureFlags.smartAdaptiveQuests
+                    ? ctx.activityMix28d.rpcHint
+                    : [:],
+                p_friend_step_target: AppConfig.FeatureFlags.smartAdaptiveQuests
+                    ? ctx.friendStepTarget
+                    : 0,
+                p_friend_name: AppConfig.FeatureFlags.smartAdaptiveQuests
+                    ? ctx.friendName
+                    : nil,
+                p_friend_top_workout_id: AppConfig.FeatureFlags.smartAdaptiveQuests
+                    ? ctx.friendTopWorkoutId?.uuidString
+                    : nil,
+                p_friend_top_workout_title: AppConfig.FeatureFlags.smartAdaptiveQuests
+                    ? ctx.friendTopWorkoutTitle
+                    : nil,
+                p_friend_top_workout_split: AppConfig.FeatureFlags.smartAdaptiveQuests
+                    ? ctx.friendTopWorkoutSplit
+                    : nil,
+                p_friend_top_workout_matches_recommendation: AppConfig.FeatureFlags.smartAdaptiveQuests
+                    && ctx.friendTopWorkoutMatchesRecommendation,
+                p_quest_tier: AppConfig.FeatureFlags.smartAdaptiveQuests
+                    ? ctx.questTier
+                    : "free"
             )
             
             let response: DailyQuestsResponse = try await SupabaseManager.shared.supabaseClient
@@ -903,7 +1384,11 @@ class DailyQuestService: ObservableObject {
                     isCompleted: nowComplete,
                     completedAt: nowComplete ? ISO8601DateFormatter().string(from: Date()) : nil,
                     funLabel: old.funLabel,
-                    verificationType: old.verificationType
+                    verificationType: old.verificationType,
+                    tier: old.tier,
+                    doubleXp: old.doubleXp,
+                    isCustom: old.isCustom,
+                    isReroll: old.isReroll
                 )
                 
                 // Trigger celebration if quest just completed
@@ -911,9 +1396,14 @@ class DailyQuestService: ObservableObject {
                     lastCompletedQuest = quests[idx]
                     showQuestCompletionCelebration = true
                     
-                    // Award XP to user profile for quest completion
+                    // Award XP to user profile for quest completion. When
+                    // the server-side double-XP flag is set (Pro users via
+                    // `claim_double_xp_day`), apply the local 2× match so
+                    // the profile XP stays in sync with the server-side
+                    // `apply_double_xp_on_complete` trigger.
                     if old.xpReward > 0 {
-                        UserManager.shared.addXP(Int32(old.xpReward))
+                        let multiplier: Int32 = (old.doubleXp ?? false) ? 2 : 1
+                        UserManager.shared.addXP(Int32(old.xpReward) * multiplier)
                     }
                     
                     // Award league points for quest completion
@@ -1270,9 +1760,15 @@ class DailyQuestService: ObservableObject {
     }
     
     func onSleepLogged(hours: Double) async {
-        if hours >= 7.0 {
-            await reportProgress(questKey: .sleep7Hours)
-        }
+        // No-op as of migration 20260611. The `sleep_7_hours` and
+        // `sleep_8h_wearable` templates were retired (soft-disabled,
+        // is_active = FALSE) because their pass/fail outcome is locked-in
+        // by last night's sleep before the user can take any action today
+        // — see PE invariant 19d. The hook is kept (vs. deleted) so the
+        // call sites in HealthDataService / sleep-sync paths don't need
+        // to be untangled; if a future actionable sleep quest lands, this
+        // is its natural attach point.
+        _ = hours
     }
     
     func onVolumePRBeat(totalVolume: Double) async {
@@ -1302,7 +1798,294 @@ class DailyQuestService: ObservableObject {
         await reportProgress(questKey: .weeklyWeighIn)
         await reportProgress(questKey: .logWeight)
     }
-    
+
+    // MARK: - Smart Adaptive Daily Goals: New Hooks
+    //
+    // Fire-and-forget verifier hooks for the integration-driven quest
+    // families introduced in 20260604 (Strava PRs, wearable activations,
+    // friend social actions). Each hook is safe to call repeatedly — the
+    // server-side verification RPC walks today's user_daily_quests rows
+    // and only flips quests that were actually achieved.
+
+    /// Call from `StravaService.syncActivities` after activities were
+    /// imported. Triggers `verify_strava_quests_for_today` so PR / outdoor
+    /// quests flip without the user opening the daily-goals widget.
+    func onStravaActivityImported() async {
+        guard SupabaseManager.shared.currentUser?.id != nil else { return }
+        guard AppConfig.FeatureFlags.smartAdaptiveQuests else { return }
+
+        // We only need to invoke the verifier when the user has at
+        // least one Strava-context quest assigned today — otherwise
+        // the RPC walks an empty list and we waste a round-trip.
+        let stravaKeys: Set<String> = [
+            QuestKey.beatYour5kPR.rawValue,
+            QuestKey.negativeSplitRun.rawValue,
+            QuestKey.runOutside8km.rawValue,
+            QuestKey.cycleOutside30km.rawValue,
+            QuestKey.completeStravaSegment.rawValue,
+            "run_outside_3km", "run_outside_5km",
+            "cycle_outside_15km"
+        ]
+        guard quests.contains(where: { stravaKeys.contains($0.questKey) && !$0.isCompleted }) else {
+            return
+        }
+
+        do {
+            _ = try await SupabaseManager.shared.supabaseClient
+                .rpc("verify_strava_quests_for_today", params: [
+                    "p_timezone": TimeZone.current.identifier
+                ])
+                .execute()
+            await fetchDailyQuests(force: true)
+        } catch {
+            #if DEBUG
+            AppLogger.warning("⚠️ [QUESTS] verify_strava_quests_for_today failed: \(error)", category: .general)
+            #endif
+        }
+    }
+
+    /// Call from `ReadinessService.recompute` after a fresh band/score is
+    /// committed. Triggers `verify_wearable_quests_for_today` for sleep /
+    /// recovery / strain / walk-when-red quests.
+    func onReadinessRecomputed() async {
+        guard SupabaseManager.shared.currentUser?.id != nil else { return }
+        guard AppConfig.FeatureFlags.smartAdaptiveQuests else { return }
+
+        let wearableKeys: Set<String> = [
+            QuestKey.matchYesterdayStrain.rawValue,
+            QuestKey.walkWhenRed.rawValue,
+            "sleep_8h_wearable", "recovery_above_67",
+            "hrv_above_baseline", "rhr_in_healthy_range",
+            "respect_red_recovery"
+        ]
+        guard quests.contains(where: { wearableKeys.contains($0.questKey) && !$0.isCompleted }) else {
+            return
+        }
+
+        do {
+            _ = try await SupabaseManager.shared.supabaseClient
+                .rpc("verify_wearable_quests_for_today", params: [
+                    "p_timezone": TimeZone.current.identifier
+                ])
+                .execute()
+            await fetchDailyQuests(force: true)
+        } catch {
+            #if DEBUG
+            AppLogger.warning("⚠️ [QUESTS] verify_wearable_quests_for_today failed: \(error)", category: .general)
+            #endif
+        }
+    }
+
+    /// Call when the user finishes a workout that was shared by a friend.
+    /// Powers the `do_friend_workout` quest. We require a workout_id so
+    /// the server-side check (matching the friend's seed) can disambiguate
+    /// — if the user just did "any" workout, the existing `complete_workout`
+    /// quest covers it.
+    func onSharedWorkoutCompleted(originWorkoutId: UUID) async {
+        guard hasQuest(.doFriendWorkout) else { return }
+        await reportProgress(questKey: .doFriendWorkout)
+    }
+
+    /// Call when the user comments on a friend's activity-feed entry.
+    func onFriendWorkoutComment() async {
+        await reportProgress(questKey: .commentOnFriendsWorkout)
+    }
+
+    /// Call when a friend reaction is added (≥3 across the day).
+    func onFriendReactionSent() async {
+        await reportProgress(questKey: .reactTo3Workouts)
+        await reportProgress(questKey: .reactToWorkout)
+    }
+
+    /// Call when a 1v1 challenge is created with a top friend.
+    func onTopFriendChallengeStarted() async {
+        await reportProgress(questKey: .start1v1WithTopFriend)
+        await reportProgress(questKey: .start1v1Challenge)
+    }
+
+    // MARK: - Smart Adaptive Daily Goals: Pro Monetization
+
+    /// Reroll one of today's quest slots for a fresh candidate. Free users
+    /// get 1/day, Pro 5/day. Returns a structured result so the UI can
+    /// distinguish "out of rerolls" from "no eligible swap".
+    struct RerollOutcome {
+        let success: Bool
+        let reason: String?
+        let newQuestKey: String?
+        let remaining: Int
+        let isPro: Bool
+    }
+
+    func reroll(questId: UUID) async -> RerollOutcome {
+        guard SupabaseManager.shared.currentUser?.id != nil else {
+            return RerollOutcome(success: false, reason: "not_authenticated",
+                                 newQuestKey: nil, remaining: 0, isPro: false)
+        }
+
+        struct RerollResponse: Decodable {
+            let success: Bool
+            let reason: String?
+            let newQuestKey: String?
+            let remaining: Int?
+            let isPro: Bool?
+            let used: Int?
+            let limit: Int?
+            enum CodingKeys: String, CodingKey {
+                case success, reason
+                case newQuestKey = "new_quest_key"
+                case remaining
+                case isPro = "is_pro"
+                case used, limit
+            }
+        }
+        struct Params: Encodable {
+            let p_quest_id: String
+            let p_timezone: String
+            let p_is_pro: Bool
+        }
+
+        let isPro = PremiumManager.shared.isPremiumUser
+        do {
+            let result: RerollResponse = try await SupabaseManager.shared.supabaseClient
+                .rpc("reroll_daily_quest", params: Params(
+                    p_quest_id: questId.uuidString,
+                    p_timezone: TimeZone.current.identifier,
+                    p_is_pro: isPro
+                ))
+                .execute()
+                .value
+
+            // Pull the updated row back so the UI animates to the new
+            // title/description without a stale cache moment.
+            if result.success {
+                await fetchDailyQuests(force: true)
+            }
+
+            return RerollOutcome(
+                success: result.success,
+                reason: result.reason,
+                newQuestKey: result.newQuestKey,
+                remaining: result.remaining ?? 0,
+                isPro: result.isPro ?? isPro
+            )
+        } catch {
+            #if DEBUG
+            AppLogger.warning("⚠️ [QUESTS] reroll_daily_quest failed: \(error)", category: .general)
+            #endif
+            return RerollOutcome(success: false, reason: error.localizedDescription,
+                                 newQuestKey: nil, remaining: 0, isPro: isPro)
+        }
+    }
+
+    /// Stamp today's quest rows with `double_xp = TRUE` (Pro 1/week).
+    /// The `apply_double_xp_on_complete` server trigger awards the bonus
+    /// XP at completion time.
+    func claimDoubleXpDay() async -> (success: Bool, reason: String?) {
+        guard PremiumManager.shared.isPremiumUser else {
+            return (false, "pro_required")
+        }
+
+        struct Result: Decodable {
+            let success: Bool
+            let reason: String?
+        }
+        struct Params: Encodable {
+            let p_date: String?
+            let p_is_pro: Bool
+        }
+
+        do {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            formatter.timeZone = TimeZone.current
+
+            let result: Result = try await SupabaseManager.shared.supabaseClient
+                .rpc("claim_double_xp_day", params: Params(
+                    p_date: formatter.string(from: Date()),
+                    p_is_pro: true
+                ))
+                .execute()
+                .value
+
+            if result.success {
+                await fetchDailyQuests(force: true)
+            }
+            return (result.success, result.reason)
+        } catch {
+            #if DEBUG
+            AppLogger.warning("⚠️ [QUESTS] claim_double_xp_day failed: \(error)", category: .general)
+            #endif
+            return (false, error.localizedDescription)
+        }
+    }
+
+    /// Pro-only custom quest. Capped at 25 XP / 15 LP server-side; manual
+    /// verification only — the user marks it complete by calling
+    /// `reportProgress(questKey:)` with the returned key.
+    func submitCustomQuest(title: String, targetValue: Int, targetUnit: String) async -> (success: Bool, reason: String?) {
+        guard PremiumManager.shared.isPremiumUser else {
+            return (false, "pro_required")
+        }
+
+        struct Result: Decodable {
+            let success: Bool
+            let reason: String?
+        }
+        struct Params: Encodable {
+            let p_title: String
+            let p_target_value: Int
+            let p_target_unit: String
+            let p_is_pro: Bool
+            let p_timezone: String
+        }
+
+        do {
+            let result: Result = try await SupabaseManager.shared.supabaseClient
+                .rpc("submit_custom_quest", params: Params(
+                    p_title: title,
+                    p_target_value: targetValue,
+                    p_target_unit: targetUnit,
+                    p_is_pro: true,
+                    p_timezone: TimeZone.current.identifier
+                ))
+                .execute()
+                .value
+
+            if result.success {
+                await fetchDailyQuests(force: true)
+            }
+            return (result.success, result.reason)
+        } catch {
+            #if DEBUG
+            AppLogger.warning("⚠️ [QUESTS] submit_custom_quest failed: \(error)", category: .general)
+            #endif
+            return (false, error.localizedDescription)
+        }
+    }
+
+    /// Pro-only override that clears a user-level skip-streak suppression
+    /// for a category (e.g. user wants to re-engage with `nutrition`
+    /// after the system suppressed it).
+    func unsuppressCategory(_ category: String) async -> Bool {
+        guard PremiumManager.shared.isPremiumUser else { return false }
+        struct Result: Decodable { let success: Bool }
+        struct Params: Encodable { let p_category: String; let p_is_pro: Bool }
+        do {
+            let result: Result = try await SupabaseManager.shared.supabaseClient
+                .rpc("unsuppress_quest_category", params: Params(
+                    p_category: category, p_is_pro: true
+                ))
+                .execute()
+                .value
+            return result.success
+        } catch {
+            #if DEBUG
+            AppLogger.warning("⚠️ [QUESTS] unsuppress_quest_category failed: \(error)", category: .general)
+            #endif
+            return false
+        }
+    }
+
     // MARK: - Step Delta Persistence
     
     private func restoreLastReportedSteps() {

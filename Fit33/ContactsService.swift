@@ -627,15 +627,23 @@ class ContactsService: ObservableObject {
     // MARK: - Notify Existing Users When New User Joins
     
     /// Call this after a new user completes onboarding (phone verified, contacts synced, account created)
-    /// This notifies existing Fit33 users who have the new user in their contacts
+    /// This notifies existing Fit33 users who have the new user in their contacts.
+    ///
+    /// Bug-intelligence fingerprints b242269c / 65f3c668: this endpoint can return
+    /// 403 "Forbidden: new_user_id must match caller" during the brief window
+    /// between `auth.signUp` and the new JWT propagating to PostgREST. The daily
+    /// `check_pending_join_notifications` cron catches up the missed contacts, so
+    /// the failure is recoverable; we route through `NetworkErrorClassifier` and
+    /// downgrade to `.debug` instead of fingerprinting it as a bug every signup.
     func notifyExistingUsersOfNewJoin() async {
-        guard let newUserId = SupabaseManager.shared.currentUser?.id else {
-            AppLogger.error("Cannot notify - no user ID", category: .social)
+        guard SupabaseManager.shared.isAuthenticated,
+              let newUserId = SupabaseManager.shared.currentUser?.id else {
+            AppLogger.debug("[CONTACTS] Skipping join-notify — not authenticated yet (cron will catch up)", category: .social)
             return
         }
-        
+
         AppLogger.debug("Notifying existing users that \(newUserId) joined Fit33...", category: .social)
-        
+
         do {
             // Call the edge function to queue push notifications
             struct NotifyResponse: Decodable {
@@ -643,7 +651,7 @@ class ContactsService: ObservableObject {
                 let notifications_queued: Int
                 let new_user_name: String?
             }
-            
+
             let response: NotifyResponse = try await SupabaseManager.shared.supabaseClient
                 .functions
                 .invoke(
@@ -652,11 +660,18 @@ class ContactsService: ObservableObject {
                         body: ["new_user_id": newUserId.uuidString]
                     )
                 )
-            
+
             AppLogger.info("Notified \(response.notifications_queued) existing users. Message: \(response.message)", category: .social)
-            
+
         } catch {
-            AppLogger.error("Error notifying existing users: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[CONTACTS] notify-contacts-user-joined invoke",
+                category: .social,
+                transientLevel: .debug,
+                endpoint: "functions/notify-contacts-user-joined",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
 }

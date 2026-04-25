@@ -1840,7 +1840,7 @@ class ChallengeService: ObservableObject {
         // Also refresh Strava if connected
         if StravaService.shared.isConnected {
             AppLogger.debug("Refreshing Strava data...", category: .social)
-            await StravaService.shared.syncActivities()
+            await StravaService.shared.syncActivities(force: true)
         }
         
         // Find the accepted challenge in our active list

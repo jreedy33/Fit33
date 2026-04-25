@@ -74,6 +74,10 @@ struct DashboardNavigationDestinations: ViewModifier {
                 .environmentObject(workoutManager)
                 .environmentObject(userManager)
             }
+        case .stravaSettings:
+            StravaSettingsView()
+        case .whoopSettings:
+            WhoopSettingsView()
         }
     }
 }

@@ -31,9 +31,59 @@ enum SilentPushHandler {
         switch type {
         case "challenge_wake":
             handleChallengeWake(completion: completion)
+        case "strava_activity_new":
+            handleStravaActivityNew(userInfo: userInfo, completion: completion)
         default:
             AppLogger.debug("[SILENT PUSH] Ignoring unknown silent push type: '\(type)'", category: .network)
             completion(.noData)
+        }
+    }
+
+    // MARK: - strava_activity_new
+    //
+    // Pushed by the `strava-webhook` edge function when Strava reports a
+    // new activity for this user. The payload carries `activity_id`
+    // (the numeric Strava ID, as a string). We don't need to do the
+    // network round-trip the webhook already did — we just refresh the
+    // local Strava activity list so the dashboard recap card and the
+    // notification carousel pick up the new row immediately.
+    //
+    // Budget: tight (~25s self-cap). We only do a 1-day Strava sync.
+    private static func handleStravaActivityNew(
+        userInfo: [AnyHashable: Any],
+        completion: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug("[SILENT PUSH] strava_activity_new skipped — not authenticated", category: .network)
+            completion(.noData)
+            return
+        }
+
+        let activityId = (userInfo["activity_id"] as? String) ?? "?"
+        AppLogger.info("[SILENT PUSH] strava_activity_new received (activity=\(activityId))", category: .network)
+        let start = CFAbsoluteTimeGetCurrent()
+
+        let workTask = Task { @MainActor in
+            // Webhook signaled a brand-new activity — force-sync to bypass
+            // the 5-minute throttle so the dashboard widget updates instantly.
+            await StravaService.shared.syncActivities(daysBack: 1, force: true)
+            UserManager.shared.updateStreak()
+        }
+
+        let timeoutTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(25))
+            if !Task.isCancelled {
+                AppLogger.warning("[SILENT PUSH] strava_activity_new timed out at 25s — cancelling", category: .network)
+                workTask.cancel()
+            }
+        }
+
+        Task { @MainActor in
+            _ = await workTask.value
+            timeoutTask.cancel()
+            let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
+            AppLogger.info("[SILENT PUSH] strava_activity_new completed in \(elapsedMs)ms", category: .network)
+            completion(workTask.isCancelled ? .failed : .newData)
         }
     }
 

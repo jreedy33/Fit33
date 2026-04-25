@@ -144,7 +144,7 @@ final class HealthDataService: ObservableObject {
                     group.addTask { await self.syncFitbitData(force: force) }
                 }
                 if stravaConnected {
-                    group.addTask { await self.syncStravaData() }
+                    group.addTask { await self.syncStravaData(force: force) }
                 }
                 if whoopConnected {
                     group.addTask { await self.syncWhoopData(force: force) }
@@ -280,13 +280,16 @@ final class HealthDataService: ObservableObject {
     
     // MARK: - Strava Data Sync
     
-    private func syncStravaData() async {
+    private func syncStravaData(force: Bool = false) async {
         guard StravaService.shared.isConnected else { return }
         
         // 🔄 AUTO-SYNC: Fetch latest activities from Strava API
-        // This pulls any new runs/rides since last sync
-        AppLogger.debug("Auto-syncing activities from Strava", category: .health)
-        await StravaService.shared.syncActivities(daysBack: 7) // Last 7 days for efficiency
+        // This pulls any new runs/rides since last sync. The `force` flag
+        // is forwarded from `syncAllHealthData(force:)` so the explicit
+        // foreground sync (Sprint 2026-04-25 widget-not-showing fix)
+        // bypasses the 5-min throttle.
+        AppLogger.debug("Auto-syncing activities from Strava (force: \(force))", category: .health)
+        await StravaService.shared.syncActivities(daysBack: 7, force: force)
         
         // Now aggregate the synced activities for daily summary
         let calendar = Calendar.current

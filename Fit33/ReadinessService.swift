@@ -143,6 +143,14 @@ final class ReadinessService: ObservableObject {
             "[Readiness] Computed score=\(snapshot.score) band=\(snapshot.band.rawValue) source=\(snapshot.primarySource.rawValue) signals=\(snapshot.signals.count)",
             category: .health
         )
+
+        // Smart Adaptive Daily Goals (20260606) — fire-and-forget tick of
+        // wearable-eligible quests after every recompute. The verify RPC
+        // is `auth.uid()`-pinned and short-circuits if no wearable
+        // quests are assigned for today; cheap to call defensively.
+        Task.detached(priority: .background) {
+            await DailyQuestService.shared.onReadinessRecomputed()
+        }
     }
 
     /// Hydrate `readinessHistory` from Supabase. Idempotent — safe to

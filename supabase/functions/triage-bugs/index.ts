@@ -43,7 +43,11 @@ const MAX_FINGERPRINTS_PER_RUN = 12;      // hard cap — bounds Claude cost / r
 const MAX_EXAMPLE_ENTRIES = 8;            // per fingerprint, for prompt budget
 const RECENT_TREND_WINDOW_HOURS = 24;
 const RE_TRIAGE_COOLDOWN_HOURS = 24;      // don't re-triage the same fp twice a day
-const CLAUDE_MAX_TOKENS = 4096;
+// Sonnet 4 supports up to 64K output tokens. With MAX_FINGERPRINTS_PER_RUN=12
+// and per-report code_diff blocks, 4096 was too tight and truncated JSON
+// mid-string, causing "Could not parse Claude response" errors. 16384 gives
+// ~4x headroom while still bounding spend.
+const CLAUDE_MAX_TOKENS = 16384;
 
 const EXPECTED_PROJECT_REF = (() => {
     const raw = Deno.env.get("SUPABASE_URL") || "";
@@ -501,16 +505,35 @@ serve(async (req) => {
 
         const completion = await response.json() as {
             content?: Array<{ type: string; text?: string }>;
+            stop_reason?: string;
+            usage?: { input_tokens?: number; output_tokens?: number };
         };
         const block = completion.content?.find((b) => b.type === "text");
         const text = block?.text ?? "";
+        const stopReason = completion.stop_reason ?? "unknown";
+        const usage = completion.usage ?? {};
+        console.log(
+            `triage-bugs: Claude completed stop_reason=${stopReason} ` +
+            `input_tokens=${usage.input_tokens ?? "?"} ` +
+            `output_tokens=${usage.output_tokens ?? "?"} ` +
+            `text_chars=${text.length}`,
+        );
+        if (stopReason === "max_tokens") {
+            console.warn(
+                "triage-bugs: Claude hit max_tokens — response was truncated. " +
+                "Will attempt to salvage complete reports.",
+            );
+        }
         const parsed = parseClaudeJson(text);
 
-        if (!parsed) {
+        if (!parsed || parsed.reports.length === 0) {
             console.error("triage-bugs: failed to parse Claude response");
             return json({
                 error: "Could not parse Claude response",
+                stop_reason: stopReason,
+                output_tokens: usage.output_tokens ?? null,
                 raw_sample: text.slice(0, 500),
+                raw_tail: text.slice(-500),
             }, 500, corsHeaders);
         }
 
@@ -982,14 +1005,76 @@ function buildUserPrompt(items: EnrichedFingerprint[]): string {
 function parseClaudeJson(text: string): { reports: ClaudeReport[] } | null {
     // Strip possible code fences / prose
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-        const obj = JSON.parse(match[0]);
-        if (!obj || !Array.isArray(obj.reports)) return null;
-        return obj as { reports: ClaudeReport[] };
-    } catch {
-        return null;
+    if (match) {
+        try {
+            const obj = JSON.parse(match[0]);
+            if (obj && Array.isArray(obj.reports)) {
+                return obj as { reports: ClaudeReport[] };
+            }
+        } catch {
+            // fall through to salvage path
+        }
     }
+    // ── Salvage path ──────────────────────────────────────────────────────
+    // Claude truncated the JSON (usually because it hit max_tokens). Recover
+    // whatever complete report objects we can by scanning for "reports": [
+    // and parsing top-level objects until we hit an incomplete one.
+    const reports = salvageReports(text);
+    if (reports.length === 0) return null;
+    console.warn(`triage-bugs: salvaged ${reports.length} report(s) from truncated Claude output`);
+    return { reports };
+}
+
+function salvageReports(text: string): ClaudeReport[] {
+    const arrStart = text.search(/"reports"\s*:\s*\[/);
+    if (arrStart < 0) return [];
+    const bracketIdx = text.indexOf("[", arrStart);
+    if (bracketIdx < 0) return [];
+
+    const out: ClaudeReport[] = [];
+    let i = bracketIdx + 1;
+
+    while (i < text.length) {
+        // Skip whitespace and commas between objects.
+        while (i < text.length && (text[i] === "," || /\s/.test(text[i]))) i++;
+        if (i >= text.length) break;
+        if (text[i] === "]") break; // end of array (well-formed)
+        if (text[i] !== "{") break; // unexpected — give up
+
+        // Walk to the matching closing brace, respecting strings + escapes.
+        const start = i;
+        let depth = 0;
+        let inString = false;
+        let escape = false;
+        let end = -1;
+        for (let j = start; j < text.length; j++) {
+            const ch = text[j];
+            if (escape) { escape = false; continue; }
+            if (ch === "\\") { escape = true; continue; }
+            if (ch === '"') { inString = !inString; continue; }
+            if (inString) continue;
+            if (ch === "{") depth++;
+            else if (ch === "}") {
+                depth--;
+                if (depth === 0) { end = j; break; }
+            }
+        }
+        if (end < 0) break; // truncated mid-object — stop here
+
+        const objText = text.slice(start, end + 1);
+        try {
+            const obj = JSON.parse(objText);
+            if (obj && typeof obj === "object") {
+                out.push(obj as ClaudeReport);
+            }
+        } catch {
+            // Skip unparseable object and bail — likely the JSON is corrupt
+            // beyond this point.
+            break;
+        }
+        i = end + 1;
+    }
+    return out;
 }
 
 // -----------------------------------------------------------------------------

@@ -29,7 +29,14 @@ struct RenameExerciseView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
+            ZStack {
+                // Static orb background — matches the rest of the workout flow.
+                // Uses `workoutStatic` (no animation loop) since this sheet is
+                // opened from inside an active workout and we never want a
+                // background animation competing with rest timers / audio.
+                AnimatedOrbBackground.workoutStatic(colorScheme: colorScheme)
+                
+                VStack(spacing: 24) {
                 // Exercise icon
                 ZStack {
                     Circle()
@@ -125,6 +132,7 @@ struct RenameExerciseView: View {
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 20)
+                }
             }
             .navigationTitle("Rename Exercise")
             .navigationBarTitleDisplayMode(.inline)

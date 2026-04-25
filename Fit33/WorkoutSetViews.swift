@@ -117,31 +117,19 @@ struct SetRowView: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 // Set number/type indicator - tap to change set type
+                // IMPORTANT: Use the standard `Label(title, systemImage:)` form for
+                // every Menu item. SwiftUI Menu items render natively via UIMenu,
+                // which only reads `title` + `image` from a Label — custom views
+                // inside a Label are dropped (descriptions never showed in the UI)
+                // AND hit-testing collapses to a smaller area. Standard Labels give
+                // the full row tap target users expect.
                 Menu {
                     ForEach(SetType.allCases, id: \.self) { type in
-                        Button(action: {
+                        Button {
                             HapticManager.selectionChanged()
-                            // Defer the state change to the next run-loop tick so the
-                            // Menu can fully dismiss before SwiftUI re-renders the row.
-                            // Without this, updating setData.setType (an @Published on
-                            // WorkoutSetData) while the Menu is dismissing causes a
-                            // visible lag / stuck-open menu on already-completed sets,
-                            // where the row has additional in-flight state (checkmark,
-                            // text color, active rest timer, throttledSave).
-                            Task { @MainActor in
-                                setData.setType = type
-                            }
-                        }) {
-                            Label {
-                                VStack(alignment: .leading) {
-                                    Text(type.rawValue)
-                                    Text(type.description)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            } icon: {
-                                Image(systemName: type.icon)
-                            }
+                            setData.setType = type
+                        } label: {
+                            Label(type.rawValue, systemImage: type.icon)
                         }
                     }
                 } label: {
@@ -155,9 +143,13 @@ struct SetRowView: View {
                             .foregroundColor(setData.setType == .normal ? .secondary.opacity(0.4) : setData.setType.color.opacity(0.5))
                             .offset(x: 2, y: 1.5)
                     }
-                    .frame(width: 44, alignment: .leading)
+                    // Meet Apple HIG 44pt minimum tap target so the chevron trigger
+                    // responds on the first tap regardless of where the user lands.
+                    .frame(width: 44, height: 44, alignment: .leading)
                     .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Set \(setNumber) type: \(setData.setType.rawValue)")
+                .accessibilityHint("Tap to change set type")
                 
                 // Previous set info - show last workout's data or smart recommendation
                 HStack(spacing: 4) {

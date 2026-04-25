@@ -14,14 +14,50 @@
 import SwiftUI
 
 struct DashboardWhoopWrapper: View {
+    @Binding var navigationPath: NavigationPath
+
     @StateObject private var whoopService = WhoopService.shared
     @State private var showingInfoSheet = false
 
-    var body: some View {
-        if whoopService.isConnected {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                SectionHeader(title: "WHOOP Recovery", icon: "waveform.path.ecg", iconColor: whoopService.currentRecoveryLevel.color)
+    init(navigationPath: Binding<NavigationPath>) {
+        self._navigationPath = navigationPath
+    }
 
+    /// WHOOP-branded section header — official puck mark + wordmark + "Recovery"
+    /// label. The puck inherits the recovery-level color so the badge still
+    /// carries the at-a-glance recovery signal; the wordmark stays neutral
+    /// (`Color.primary`) per WHOOP brand guidelines (white on dark, black on
+    /// light, never recolored).
+    private var whoopBrandedHeader: some View {
+        HStack(spacing: 10) {
+            Image("WhoopPuck")
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 22, height: 22)
+                .foregroundColor(.primary)
+            Image("WhoopWordmark")
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: 16)
+                .foregroundColor(.primary)
+                .accessibilityHidden(true)
+            Text("Recovery")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("WHOOP Recovery")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            whoopBrandedHeader
+
+            if whoopService.isConnected {
                 Button {
                     HapticManager.tap()
                     showingInfoSheet = true
@@ -35,18 +71,118 @@ struct DashboardWhoopWrapper: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 .accessibilityHint("Tap to learn what each WHOOP metric means")
-            }
-            .sheet(isPresented: $showingInfoSheet) {
-                WhoopMetricsInfoSheet(
-                    recovery: whoopService.todayRecovery,
-                    strain: whoopService.todayStrain,
-                    sleep: whoopService.lastSleep,
-                    level: whoopService.currentRecoveryLevel
-                )
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+            } else {
+                Button {
+                    HapticManager.tap()
+                    navigationPath.append(DashboardRoute.whoopSettings)
+                } label: {
+                    DashboardWhoopSyncNowCard()
+                }
+                .buttonStyle(PlainButtonStyle())
+                .accessibilityHint("Tap to connect WHOOP and start syncing recovery, strain, and sleep")
             }
         }
+        .sheet(isPresented: $showingInfoSheet) {
+            WhoopMetricsInfoSheet(
+                recovery: whoopService.todayRecovery,
+                strain: whoopService.todayStrain,
+                sleep: whoopService.lastSleep,
+                level: whoopService.currentRecoveryLevel
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+// MARK: - Sync Now Card (not yet connected)
+
+/// Shown on the dashboard when the user has the WHOOP widget enabled
+/// but hasn't paired their WHOOP account yet. Tapping routes to
+/// `WhoopSettingsView` where the "Connect WHOOP" CTA starts the OAuth.
+struct DashboardWhoopSyncNowCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var accentColor: Color { .red }
+
+    var body: some View {
+        HStack(spacing: Spacing.md) {
+            ZStack {
+                Circle()
+                    .fill(accentColor.opacity(0.18))
+                    .frame(width: 44, height: 44)
+                Image("WhoopPuck")
+                    .renderingMode(.template)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 24, height: 24)
+                    .foregroundColor(.primary)
+                    .accessibilityHidden(true)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Sync WHOOP")
+                    .font(.ds_bodyMedium)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                Text("Connect to track recovery, strain, HRV & sleep.")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: Spacing.xs)
+
+            HStack(spacing: 4) {
+                Text("Sync now")
+                    .font(.ds_labelSmall)
+                    .fontWeight(.semibold)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xxs)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [accentColor, accentColor.opacity(0.7)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+            )
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .fill(Color.cardBackground)
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                accentColor.opacity(colorScheme == .dark ? 0.18 : 0.1),
+                                accentColor.opacity(colorScheme == .dark ? 0.04 : 0.02),
+                                Color.clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .stroke(accentColor.opacity(colorScheme == .dark ? 0.4 : 0.25), lineWidth: 1)
+        )
+        .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 12, x: 0, y: 5)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Sync WHOOP. Connect to track recovery, strain, HRV, and sleep.")
     }
 }
 

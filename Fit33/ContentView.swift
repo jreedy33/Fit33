@@ -15,11 +15,24 @@ struct ContentView: View {
     
     // Track the last known onboarding state to detect transitions
     @State private var lastKnownOnboardingState: Bool? = nil
-    
+
+    // Session-sticky latch: once we've entered the post-onboarding app this
+    // session, never bounce back to NewOnboardingView even if a transient
+    // cloud-profile pull resets `hasCompletedOnboarding` to false in Core Data
+    // (UserManager.syncProfileToCloud's "pull from cloud" branch can clobber
+    // the freshly-completed local profile with a stale row created mid-flow
+    // for contact matching). Latch flips true on the false→true transition AND
+    // when the app launches with onboarding already complete.
+    @State private var hasEnteredMainAppThisSession = false
+
+    private var shouldShowMainApp: Bool {
+        userManager.hasCompletedOnboarding || hasEnteredMainAppThisSession
+    }
+
     var body: some View {
         ZStack {
             Group {
-                if userManager.hasCompletedOnboarding {
+                if shouldShowMainApp {
                     MainTabView()
                 } else {
                     NewOnboardingView()
@@ -65,6 +78,11 @@ struct ContentView: View {
             if newValue && !oldValue {
                 AppLogger.debug("[TUTORIAL] Onboarding completed! lastKnown: \(String(describing: lastKnownOnboardingState)), shownThisSession: \(hasShownTutorialThisSession)", category: .ui)
                 
+                // Latch: stay in MainTabView for the rest of the session even if
+                // a background cloud-profile pull races and resets
+                // hasCompletedOnboarding to false in Core Data.
+                hasEnteredMainAppThisSession = true
+
                 // Show tutorial if:
                 // 1. Haven't shown it already this session, AND
                 // 2. This is a real onboarding completion (not just app loading existing user)
@@ -79,9 +97,27 @@ struct ContentView: View {
                     }
                 }
             }
+
+            if !newValue && hasEnteredMainAppThisSession {
+                AppLogger.warning("[TUTORIAL] Ignoring transient hasCompletedOnboarding=false (latched in MainTabView for this session — likely cloud-profile pull race)", category: .ui)
+            }
             
             // Update our tracking state
             lastKnownOnboardingState = newValue
+        }
+        // The latch above is "session-sticky" against a transient cloud-pull race
+        // that nulls out hasCompletedOnboarding. But sign-out is NOT transient —
+        // resetForSignOut() sets currentUser = nil + hasCompletedOnboarding = false
+        // and the user MUST be returned to the auth screen. The cloud-pull race
+        // never nulls currentUser (syncUserProfileToCoreData only updates fields
+        // on an existing row), so currentUser == nil is a reliable sign-out signal.
+        .onChange(of: userManager.currentUser == nil) { _, isSignedOut in
+            if isSignedOut && hasEnteredMainAppThisSession {
+                AppLogger.info("[TUTORIAL] currentUser cleared (sign-out) — releasing MainTabView latch so login screen can render", category: .ui)
+                hasEnteredMainAppThisSession = false
+                hasShownTutorialThisSession = false
+                lastKnownOnboardingState = false
+            }
         }
         .task {
             // Wait briefly for UserManager init (reduced from 500ms)
@@ -90,6 +126,9 @@ struct ContentView: View {
             await MainActor.run {
                 AppLogger.debug("[TUTORIAL] Initial state captured: hasCompletedOnboarding = \(userManager.hasCompletedOnboarding)", category: .ui)
                 lastKnownOnboardingState = userManager.hasCompletedOnboarding
+                if userManager.hasCompletedOnboarding {
+                    hasEnteredMainAppThisSession = true
+                }
             }
             
             // 🔄 ONE-TIME FORCE SYNC: Check if we need to refresh exercise data

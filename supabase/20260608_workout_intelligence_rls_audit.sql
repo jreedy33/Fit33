@@ -3,6 +3,12 @@
 -- Date: 2026-04-25
 -- Agent: Data & Backend (primary), Infra & Security (RLS review)
 --
+-- Resolves: 1b6e9111a71c83930852e93f1aff33e5 — collaborative_workout_data RLS (Report 2)
+-- Resolves: e810bf12eb825d4887a761ada6e0f90b — workout_context RLS (Report 3)
+-- Resolves: 1b5116cd10eb5a9c3e903bd3def97592 — CrashReporter RLS (Report 9; same UUID-mismatch root cause via UserManager.swift)
+-- Resolves: 5b97a3bcdc24d7cb1ed70d8609c8d6b2 — step_tracking RLS (Report 12; same UUID-mismatch root cause)
+-- Resolves: 7f0628508cb50b9ca5be19dde3536fc1 — Health step sync RLS (Report 13; log variant of 12)
+--
 -- Why:
 --   New users completing onboarding hit PostgrestError 42501
 --   ("new row violates row-level security policy") on EVERY workout

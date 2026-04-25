@@ -300,6 +300,7 @@ struct RestTimerView: View {
 // MARK: - Rest Timer Setup View
 struct RestTimerSetupView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     let onSetTimer: (TimeInterval) -> Void
 
     @State private var selectedMinutes: Int = 2
@@ -322,57 +323,65 @@ struct RestTimerSetupView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                Text("Set Rest Timer")
-                    .font(.title)
-                    .fontWeight(.bold)
+            ZStack {
+                // Static orb background — matches the active workout / rename
+                // sheet for visual consistency. Static (no animation loop) so
+                // the runloop stays free for the rest timer + audio playback
+                // running in the parent active workout.
+                AnimatedOrbBackground.workoutStatic(colorScheme: colorScheme)
+                
+                VStack(spacing: 24) {
+                    Text("Set Rest Timer")
+                        .font(.title)
+                        .fontWeight(.bold)
 
-                Text("Choose how long to rest between sets for this exercise")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+                    Text("Choose how long to rest between sets for this exercise")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
 
-                // Sprint 5 F-6: quick preset chips so users can one-tap a
-                // standard rest interval without scrolling two pickers.
-                presetChips
+                    // Sprint 5 F-6: quick preset chips so users can one-tap a
+                    // standard rest interval without scrolling two pickers.
+                    presetChips
 
-                // Time picker
-                HStack(spacing: 20) {
-                    VStack {
-                        Text("Minutes")
-                            .font(.headline)
-                        Picker("Minutes", selection: $selectedMinutes) {
-                            ForEach(minuteOptions, id: \.self) { minute in
-                                Text("\(minute)").tag(minute)
+                    // Time picker
+                    HStack(spacing: 20) {
+                        VStack {
+                            Text("Minutes")
+                                .font(.headline)
+                            Picker("Minutes", selection: $selectedMinutes) {
+                                ForEach(minuteOptions, id: \.self) { minute in
+                                    Text("\(minute)").tag(minute)
+                                }
                             }
+                            .pickerStyle(.wheel)
+                            .frame(width: 100, height: 150)
                         }
-                        .pickerStyle(.wheel)
-                        .frame(width: 100, height: 150)
+
+                        VStack {
+                            Text("Seconds")
+                                .font(.headline)
+                            Picker("Seconds", selection: $selectedSeconds) {
+                                ForEach(secondOptions, id: \.self) { second in
+                                    Text("\(second)").tag(second)
+                                }
+                            }
+                            .pickerStyle(.wheel)
+                            .frame(width: 100, height: 150)
+                        }
                     }
 
-                    VStack {
-                        Text("Seconds")
-                            .font(.headline)
-                        Picker("Seconds", selection: $selectedSeconds) {
-                            ForEach(secondOptions, id: \.self) { second in
-                                Text("\(second)").tag(second)
-                            }
-                        }
-                        .pickerStyle(.wheel)
-                        .frame(width: 100, height: 150)
-                    }
+                    // Preview
+                    Text("Rest Time: \(selectedMinutes):\(String(format: "%02d", selectedSeconds))")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.blue)
+
+                    Spacer()
                 }
-
-                // Preview
-                Text("Rest Time: \(selectedMinutes):\(String(format: "%02d", selectedSeconds))")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.blue)
-
-                Spacer()
+                .padding()
             }
-            .padding()
                 .navigationTitle("Rest Timer")
                 .navigationBarTitleDisplayMode(.inline)
                 .adaptiveToolbarBackground()

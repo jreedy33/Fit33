@@ -1,0 +1,28 @@
+{
+  "images" : [
+    {
+      "filename" : "api_logo_pwrdBy_strava_horiz_orange.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "filename" : "api_logo_pwrdBy_strava_horiz_white.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  },
+  "properties" : {
+    "preserves-vector-representation" : true,
+    "template-rendering-intent" : "original"
+  }
+}

@@ -173,6 +173,14 @@ extension NewOnboardingView {
                         Button(action: {
                             if isEditingFromConfirmation {
                                 returnToConfirmation()
+                            } else if isSignUp && !isOnConfirmPasswordStep && isPasswordValid {
+                                // First password step on sign-up → advance to confirm
+                                // password step instead of submitting. handleAuth() also
+                                // guards this case but bypassing here keeps the UX
+                                // animation crisp.
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                    isOnConfirmPasswordStep = true
+                                }
                             } else {
                                 handleAuth()
                             }
@@ -638,6 +646,14 @@ extension NewOnboardingView {
                         Button(action: {
                             if isEditingFromConfirmation {
                                 returnToConfirmation()
+                            } else if isSignUp && !isOnConfirmPasswordStep && isPasswordValid {
+                                // First password step on sign-up → advance to confirm
+                                // password step instead of submitting. handleAuth()
+                                // also guards this case but bypassing here keeps the
+                                // UX animation crisp.
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                    isOnConfirmPasswordStep = true
+                                }
                             } else {
                                 handleAuth()
                             }
@@ -983,6 +999,28 @@ extension NewOnboardingView {
         signInResendSuccess = false
         
         if isSignUp {
+            // Hard guard: never submit a sign-up unless the user has reached the
+            // confirm-password step, the two passwords match, AND terms are accepted.
+            // Three different buttons in this auth screen call handleAuth() directly
+            // without checking isOnConfirmPasswordStep, so this guard is the single
+            // bulletproof gate. Without it, pressing the "<" back button from the
+            // confirm-password step and then re-tapping Continue / Create Account
+            // submits the account with no password confirmation and no terms accept.
+            guard isOnConfirmPasswordStep, passwordsMatch, acceptedTerms else {
+                AppLogger.warning("[AUTH] handleAuth called for sign-up before confirm/terms — redirecting to confirm-password step instead of submitting (isOnConfirmPasswordStep=\(isOnConfirmPasswordStep), passwordsMatch=\(passwordsMatch), acceptedTerms=\(acceptedTerms))", category: .auth)
+                if isPasswordValid && !isOnConfirmPasswordStep {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        isOnConfirmPasswordStep = true
+                    }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.05))
+                        guard !Task.isCancelled else { return }
+                        focusedField = .confirmPassword
+                    }
+                }
+                return
+            }
+            
             // Create account NOW while password @State is still available.
             // Previously, account creation was deferred until after phone verification
             // (~10 steps later), but @State password was often lost by then — causing

@@ -1,6 +1,8 @@
 -- 20260509b_get_daily_quests_has_wearable_body.sql
 -- Wearable Personalization Platform — Phase 4 body patch
 --
+-- Resolves: bb8db6c13848652a253a41efbadc871d — Daily Quest dup-key 23505 (Report 28 / 04-25 audit; ON CONFLICT DO NOTHING addendum)
+--
 -- Reassembles the canonical `get_daily_quests` body (IDOR guard from
 -- migration 62, smart-hierarchy selection from migration 59) and
 -- appends ONE new parameter + ONE new eligibility branch so templates

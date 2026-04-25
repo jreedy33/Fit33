@@ -117,6 +117,10 @@ struct WorkoutStatsSection: View {
             BodyWeightTrendWidget()
             WorkoutDurationChartWidget()
             MuscleGroupDistributionWidget()
+            // Phase 3 Strava charts — render only when Strava is connected
+            // (the views internally short-circuit to EmptyView()).
+            StravaMileageChartWidget()
+            StravaPaceTrendChartWidget()
         }
     }
 }

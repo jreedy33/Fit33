@@ -216,6 +216,22 @@ enum AppConfig {
         /// job starts writing proposals; card renders nothing when the
         /// pending list is empty, so safe to ship on.
         static let adaptiveGoals: Bool = true
+
+        /// Smart Adaptive Daily Goals (20260601–20260607). Master
+        /// kill-switch for the Phase 5 personalization upgrade:
+        ///   * activity-mix bias + per-user weighting in `get_daily_quests`
+        ///   * Strava / WHOOP / Oura / Fitbit-context quest templates
+        ///   * Friend-named copy (`Beat <Friend>: 8.4K`,
+        ///     `Due for legs — do <Friend>'s`)
+        ///   * Pro tier features (5 slots, rerolls, double-XP day,
+        ///     custom quests, Insights view)
+        ///
+        /// When OFF the client sends `false` for every new RPC param
+        /// + an empty activity-mix dict; the server falls back to the
+        /// pre-20260605 selection logic and zero new quests surface.
+        /// Default ON — flip to false if the new layer needs to be
+        /// disabled in production without re-deploying SQL.
+        static let smartAdaptiveQuests: Bool = true
     }
 }
 

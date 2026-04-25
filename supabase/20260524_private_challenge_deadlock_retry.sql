@@ -2,6 +2,9 @@
 -- 20260524_private_challenge_deadlock_retry.sql
 -- Fix 40P01 deadlock in `log_private_challenge_progress` by ordering the row
 -- locks deterministically and adding an in-function deadlock retry.
+--
+-- Resolves: 3d7ac331e9011e75e363f217b5827006 — Private challenge progress deadlock (Report 8 / 04-25 audit)
+-- Resolves: 23ac878010450752bb1b1ca994edb56b — Same deadlock, log-source variant (Report 22 / 04-25 audit)
 -- ═══════════════════════════════════════════════════════════════════════════
 --
 -- Bug reports (2026-04-24 Cursor export, fingerprints 3d7ac331 + 23ac8780):

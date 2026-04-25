@@ -817,6 +817,17 @@ struct ProfileView: View {
                 await friendService.loadReceivedWorkouts()
             }
         }
+        // Refresh local @State fields whenever UserManager republishes currentUser.
+        // Fixes "all fields show 'Not set'" after email/password signup: ProfileView
+        // first appears before UserManager finishes its async Core Data load OR while
+        // a cloud-pull is rewriting the User row. With this listener, any later
+        // assignment to UserManager.currentUser (cloud-sync reload, sign-in restore)
+        // re-runs loadUserData() so the displayed Name / Age / Height / Weight /
+        // Equipment / Goal / Level fields become visible without requiring a tab
+        // switch or app restart.
+        .onReceive(userManager.$currentUser) { _ in
+            loadUserData()
+        }
         .sheet(isPresented: $showUsernameSheet) {
             UsernameSetupSheet(
                 currentUsername: username,

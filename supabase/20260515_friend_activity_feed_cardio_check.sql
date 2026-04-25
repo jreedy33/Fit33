@@ -3,6 +3,9 @@
 -- ============================================================================
 -- Q2-97 Bug-Intel Sweep Cluster B — 2026-04-23 follow-up
 --
+-- Resolves: e3388d0313f3684927989494c3c72464 — Social activity feed constraint violation (Report 18 / 04-25 audit)
+-- Resolves: b66f6c070ced888a9dc85867ec79ed1b — Social cardio activity violates constraint, log variant (Report 26 / 04-25 audit)
+--
 -- Fixes the 23514 CHECK constraint violation surfaced by Bug Intelligence
 -- report `b66f6c07` ("Social cardio activity violates constraint"):
 --

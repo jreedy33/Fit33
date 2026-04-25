@@ -376,6 +376,7 @@ struct TutorialPageView: View {
     @Binding var isPresented: Bool
 
     @State private var heroAnimation = false
+    @State private var hasBeenActive = false
 
     private var shouldDisableMotion: Bool {
         ProcessInfo.processInfo.isLowPowerModeEnabled || reduceMotion
@@ -386,25 +387,35 @@ struct TutorialPageView: View {
             VStack(spacing: 0) {
                 Spacer(minLength: Spacing.md)
 
-                // Hero
-                heroView
-                    .scaleEffect(animateContent ? 1 : 0.85)
-                    .opacity(animateContent ? 1 : 0)
-                    .frame(maxWidth: .infinity)
-                    .frame(maxHeight: heroMaxHeight(geometry))
+                Group {
+                    if hasBeenActive {
+                        heroView
+                            .scaleEffect(animateContent ? 1 : 0.85)
+                            .opacity(animateContent ? 1 : 0)
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(maxHeight: heroMaxHeight(geometry))
 
                 Spacer(minLength: Spacing.md)
 
-                // Copy
                 copyBlock
                     .padding(.horizontal, Spacing.md)
 
                 Spacer(minLength: Spacing.lg)
             }
         }
-        .onAppear { startHeroAnimation() }
+        .onAppear {
+            if isActive { hasBeenActive = true }
+            startHeroAnimation()
+        }
         .onChange(of: isActive) { _, active in
-            if active { startHeroAnimation() }
+            if active {
+                hasBeenActive = true
+                startHeroAnimation()
+            }
         }
     }
 
@@ -717,20 +728,23 @@ struct TutorialAutoWorkoutHero: View {
     let isAnimating: Bool
 
     var body: some View {
+        // Mirror the home-page Workout tab quick actions exactly:
+        // Custom Workout (blue→cyan, plus.circle.fill, "Build your own"), then
+        // Auto Workout (purple→pink, dumbbell.fill, "Auto-generated routine").
         HStack(spacing: Spacing.sm) {
             DepthQuickActionCard(
-                title: "Auto Workout",
-                subtitle: "AI-powered routine",
-                icon: "sparkles",
-                gradient: [Color.blue, Color(red: 0.5, green: 0.3, blue: 0.95)],
+                title: "Custom Workout",
+                subtitle: "Build your own",
+                icon: "plus.circle.fill",
+                gradient: [Color.blue, Color.cyan],
                 action: {}
             )
 
             DepthQuickActionCard(
-                title: "Custom Workout",
-                subtitle: "Build your own",
+                title: "Auto Workout",
+                subtitle: "Auto-generated routine",
                 icon: "dumbbell.fill",
-                gradient: [.cyan, .blue],
+                gradient: [Color.purple, Color.pink],
                 action: {}
             )
         }
@@ -836,12 +850,11 @@ struct TutorialChallengeHero: View {
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
-            ActiveChallengeWidget(
-                challenge: TutorialDemoData.demoActiveChallenge,
-                onTap: {}
-            )
-            .frame(maxWidth: 360)
-            .allowsHitTesting(false)
+            // Use the real "Challenge a Friend!" entry widget that ships on the
+            // Home dashboard and Friends tab so users see exactly what they'll
+            // tap once they're in the app.
+            ChallengeAFriendEntryWidget()
+                .frame(maxWidth: 360)
 
             HStack(spacing: Spacing.xs) {
                 badge(icon: "person.2.fill", label: "1v1")
@@ -1052,26 +1065,65 @@ private enum TutorialIntegration {
 
 private struct IntegrationRow: View {
     @Environment(\.colorScheme) private var colorScheme
-    @ObservedObject private var whoop = WhoopService.shared
-    @ObservedObject private var oura = OuraService.shared
-    @ObservedObject private var fitbit = FitbitService.shared
-    @ObservedObject private var strava = StravaService.shared
-    @ObservedObject private var healthKit = HealthKitManager.shared
 
     let integration: TutorialIntegration
 
-    @State private var isConnecting = false
-    @State private var hasLaunchedAuth = false
-
-    private var isConnected: Bool {
+    var body: some View {
+        // Only subscribe to the relevant service for this row to avoid 25 Combine
+        // subscriptions on a 5-row screen (which can hammer the main thread when
+        // a service fires objectWillChange during onboarding sync).
         switch integration {
-        case .appleHealth: return healthKit.isAuthorized
-        case .whoop:       return whoop.isConnected
-        case .oura:        return oura.isConnected
-        case .fitbit:      return fitbit.isConnected
-        case .strava:      return strava.isConnected
+        case .appleHealth:
+            AppleHealthIntegrationRowBody(integration: integration)
+        case .whoop:
+            WhoopIntegrationRowBody(integration: integration)
+        case .oura:
+            OuraIntegrationRowBody(integration: integration)
+        case .fitbit:
+            FitbitIntegrationRowBody(integration: integration)
+        case .strava:
+            StravaIntegrationRowBody(integration: integration)
         }
     }
+}
+
+private struct AppleHealthIntegrationRowBody: View {
+    @ObservedObject private var service = HealthKitManager.shared
+    let integration: TutorialIntegration
+    var body: some View { IntegrationRowBody(integration: integration, isConnected: service.isAuthorized) }
+}
+
+private struct WhoopIntegrationRowBody: View {
+    @ObservedObject private var service = WhoopService.shared
+    let integration: TutorialIntegration
+    var body: some View { IntegrationRowBody(integration: integration, isConnected: service.isConnected) }
+}
+
+private struct OuraIntegrationRowBody: View {
+    @ObservedObject private var service = OuraService.shared
+    let integration: TutorialIntegration
+    var body: some View { IntegrationRowBody(integration: integration, isConnected: service.isConnected) }
+}
+
+private struct FitbitIntegrationRowBody: View {
+    @ObservedObject private var service = FitbitService.shared
+    let integration: TutorialIntegration
+    var body: some View { IntegrationRowBody(integration: integration, isConnected: service.isConnected) }
+}
+
+private struct StravaIntegrationRowBody: View {
+    @ObservedObject private var service = StravaService.shared
+    let integration: TutorialIntegration
+    var body: some View { IntegrationRowBody(integration: integration, isConnected: service.isConnected) }
+}
+
+private struct IntegrationRowBody: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let integration: TutorialIntegration
+    let isConnected: Bool
+
+    @State private var isConnecting = false
+    @State private var hasLaunchedAuth = false
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
@@ -1308,7 +1360,7 @@ struct TutorialFuelCard: View {
 
 struct TutorialTrialCTA: View {
     @Environment(\.colorScheme) private var colorScheme
-    @StateObject private var storeKit = StoreKitManager.shared
+    @ObservedObject private var storeKit = StoreKitManager.shared
     let kind: TutorialPageKind
     let isAnimating: Bool
     @Binding var isPresented: Bool

@@ -214,6 +214,7 @@
 		7C8CEA722F9A7599007CD766 /* DiagnosticContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA712F9A7599007CD766 /* DiagnosticContext.swift */; };
 		7C8CEA742F9A75B1007CD766 /* PerformanceSignposts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */; };
 		7C8CEA762F9A75DC007CD766 /* PerformanceMetricsUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */; };
+		7C8CED142F9D1B6E007CD766 /* RecentSessionsTilesRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CED132F9D1B6E007CD766 /* RecentSessionsTilesRow.swift */; };
 		7C8EB1C02F26ABD4007BFA55 /* PerformanceOptimizations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */; };
 		7C8EB1C32F26B03C007BFA55 /* StravaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */; };
 		7C8EB1C42F26B03C007BFA55 /* StravaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C12F26B03C007BFA55 /* StravaService.swift */; };
@@ -355,6 +356,13 @@
 		A12345678901234567890280 /* WorkoutHistoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890281 /* WorkoutHistoryDetailView.swift */; };
 		A12345678901234567890290 /* WorkoutProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890291 /* WorkoutProgressView.swift */; };
 		A12345678901234567890292 /* WorkoutStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890293 /* WorkoutStatsView.swift */; };
+		A12345678901234567890302 /* DashboardStravaWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890301 /* DashboardStravaWidget.swift */; };
+		A12345678901234567890304 /* StravaActivityRecapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890303 /* StravaActivityRecapSheet.swift */; };
+		A12345678901234567890306 /* StravaActivityEnricher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890305 /* StravaActivityEnricher.swift */; };
+		A12345678901234567890308 /* StravaStatsCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890307 /* StravaStatsCharts.swift */; };
+		A12345678901234567890310 /* CardioStravaSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890309 /* CardioStravaSection.swift */; };
+		A12345678901234567890312 /* QuestInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890311 /* QuestInsightsView.swift */; };
+		A12345678901234567890402 /* ChallengeAFriendEntryWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12345678901234567890401 /* ChallengeAFriendEntryWidget.swift */; };
 		A2B3C4D5E6F7890123456700 /* WorkoutInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B3C4D5E6F7890123456701 /* WorkoutInsightsView.swift */; };
 		A46140EBA8110B0E3A64191F /* DashboardView+Header.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C02494AB7FB9A44BAD12204 /* DashboardView+Header.swift */; };
 		A4FB49D6A8F4E1BEDAB52D6D /* NewOnboardingView+Chrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D57240F78844D270AA002D0C /* NewOnboardingView+Chrome.swift */; };
@@ -630,6 +638,7 @@
 		7C8CEA712F9A7599007CD766 /* DiagnosticContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticContext.swift; sourceTree = "<group>"; };
 		7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSignposts.swift; sourceTree = "<group>"; };
 		7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceMetricsUploader.swift; sourceTree = "<group>"; };
+		7C8CED132F9D1B6E007CD766 /* RecentSessionsTilesRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentSessionsTilesRow.swift; sourceTree = "<group>"; };
 		7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizations.swift; sourceTree = "<group>"; };
 		7C8EB1C12F26B03C007BFA55 /* StravaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaService.swift; sourceTree = "<group>"; };
 		7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaSettingsView.swift; sourceTree = "<group>"; };
@@ -779,6 +788,13 @@
 		A12345678901234567890281 /* WorkoutHistoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutHistoryDetailView.swift; sourceTree = "<group>"; };
 		A12345678901234567890291 /* WorkoutProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutProgressView.swift; sourceTree = "<group>"; };
 		A12345678901234567890293 /* WorkoutStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutStatsView.swift; sourceTree = "<group>"; };
+		A12345678901234567890301 /* DashboardStravaWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardStravaWidget.swift; sourceTree = "<group>"; };
+		A12345678901234567890303 /* StravaActivityRecapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaActivityRecapSheet.swift; sourceTree = "<group>"; };
+		A12345678901234567890305 /* StravaActivityEnricher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaActivityEnricher.swift; sourceTree = "<group>"; };
+		A12345678901234567890307 /* StravaStatsCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaStatsCharts.swift; sourceTree = "<group>"; };
+		A12345678901234567890309 /* CardioStravaSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioStravaSection.swift; sourceTree = "<group>"; };
+		A12345678901234567890311 /* QuestInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestInsightsView.swift; sourceTree = "<group>"; };
+		A12345678901234567890401 /* ChallengeAFriendEntryWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeAFriendEntryWidget.swift; sourceTree = "<group>"; };
 		A2B3C4D5E6F7890123456701 /* WorkoutInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutInsightsView.swift; sourceTree = "<group>"; };
 		A51843319E2F9599DA6EBC99 /* DashboardView+Macros.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "DashboardView+Macros.swift"; path = "Fit33/DashboardView+Macros.swift"; sourceTree = SOURCE_ROOT; };
 		AA0000002F5A000100000001 /* VideoThumbnailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoThumbnailService.swift; sourceTree = "<group>"; };
@@ -885,6 +901,7 @@
 			children = (
 				7C6DE3802F5BE05F00BCA276 /* AchievementService.swift */,
 				7C6DE3822F5BE06300BCA276 /* AchievementsView.swift */,
+				7C8CED132F9D1B6E007CD766 /* RecentSessionsTilesRow.swift */,
 				A12345678901234567890221 /* ActiveWorkoutView.swift */,
 				7CB08C942EDB830200236ECB /* ActivityRingsView.swift */,
 				7CB08C942EDBA01000236ECB /* ActivityRingsView.swift */,
@@ -1198,6 +1215,13 @@
 				7C8EB1C52F2913AB007BFA55 /* WelcomeTutorialView.swift */,
 				7C6DE3BE2F5BF98500BCA276 /* WhatToEatView.swift */,
 				7CEBB69F2F7700FD003415D0 /* DashboardWhoopWidget.swift */,
+				A12345678901234567890301 /* DashboardStravaWidget.swift */,
+				A12345678901234567890303 /* StravaActivityRecapSheet.swift */,
+				A12345678901234567890305 /* StravaActivityEnricher.swift */,
+				A12345678901234567890307 /* StravaStatsCharts.swift */,
+				A12345678901234567890309 /* CardioStravaSection.swift */,
+				A12345678901234567890311 /* QuestInsightsView.swift */,
+				A12345678901234567890401 /* ChallengeAFriendEntryWidget.swift */,
 				7CAAA0102F5BF00100AAA011 /* WhatToEatView.swift */,
 				7C98FAC12EEBCDA9001AE1F3 /* WorkoutCalorieCalculator.swift */,
 				7C0C41D32F00C36D00F02E84 /* WorkoutComboRules.swift */,
@@ -1577,6 +1601,13 @@
 				7C8CEA3A2F99C116007CD766 /* SupabaseManager+Readiness.swift in Sources */,
 				A12345678901234567890186 /* CustomWorkoutBuilderView.swift in Sources */,
 				7CEBB6A02F7700FD003415D0 /* DashboardWhoopWidget.swift in Sources */,
+				A12345678901234567890302 /* DashboardStravaWidget.swift in Sources */,
+				A12345678901234567890304 /* StravaActivityRecapSheet.swift in Sources */,
+				A12345678901234567890306 /* StravaActivityEnricher.swift in Sources */,
+				A12345678901234567890308 /* StravaStatsCharts.swift in Sources */,
+				A12345678901234567890310 /* CardioStravaSection.swift in Sources */,
+				A12345678901234567890312 /* QuestInsightsView.swift in Sources */,
+				A12345678901234567890402 /* ChallengeAFriendEntryWidget.swift in Sources */,
 				7C6DE37D2F5BD02C00BCA276 /* DesignSystem.swift in Sources */,
 				7CB08C632ED6A0DF00236ECB /* WorkoutGeneratorSelectionView.swift in Sources */,
 				A12345678901234567890210 /* ExerciseDetailView.swift in Sources */,
@@ -1799,6 +1830,7 @@
 				B5544A2A92A17C5136C65DA0 /* OnboardingCardViews.swift in Sources */,
 				DEBF45769EDDBD7657D39DBF /* OnboardingConfirmationViews.swift in Sources */,
 				B73342438D839C0B690363BE /* OnboardingLimitationViews.swift in Sources */,
+				7C8CED142F9D1B6E007CD766 /* RecentSessionsTilesRow.swift in Sources */,
 				AB0C42948B3EFC1DAA689E96 /* OnboardingPhotoPickers.swift in Sources */,
 				A4FB49D6A8F4E1BEDAB52D6D /* NewOnboardingView+Chrome.swift in Sources */,
 				D86A46B6BF69C2C2065C8229 /* NewOnboardingView+Navigation.swift in Sources */,

@@ -1452,6 +1452,33 @@ struct RunCompletionView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { onRunCompletionAppeared() }
+        }
+    }
+
+    /// Phase 1 Strava match: when a GPS run finishes inside Fit33, fire a
+    /// short-window Strava sync and credit the streak immediately. The
+    /// `Fit33StreakLogic` engine returns `.sameDay` if the streak was already
+    /// credited today, so this is safe to call regardless of how the user
+    /// originated the run (Fit33 GPS, Strava-only, or both).
+    private func onRunCompletionAppeared() {
+        // Streak credit is idempotent — calling once on RunCompletionView
+        // close any prior gap where GPS-only runs skipped gamification.
+        UserManager.shared.updateStreak()
+
+        // If Strava is connected, pull the just-finished activity so the
+        // dashboard widget + recap card surface the richer Strava metrics
+        // (HR avg, suffer score, kudos in Phase 2) within seconds.
+        if StravaService.shared.isConnected {
+            Task {
+                // Small delay so Strava's pipeline has time to ingest from
+                // the watch / phone before we hit `/athlete/activities`.
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                // Force-sync after a workout completes — bypass the 5-min
+                // throttle so the recap card / dashboard widget update
+                // immediately with the new activity.
+                await StravaService.shared.syncActivities(daysBack: 1, force: true)
+            }
         }
     }
     

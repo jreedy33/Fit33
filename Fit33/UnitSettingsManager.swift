@@ -388,6 +388,91 @@ class UnitSettingsManager: ObservableObject {
     }
 }
 
+// MARK: - Strava-Specific Helpers
+//
+// Strava's API speaks meters and seconds-per-kilometer. These helpers
+// translate those raw units into the user's preferred display unit
+// (km/mi, m/ft, /km vs /mi pace) so every Strava surface — dashboard
+// widget, settings page, recap sheet, charts — stays consistent.
+
+extension UnitSettingsManager {
+
+    /// User-facing short label for the active distance unit ("mi" / "km").
+    var stravaDistanceShortLabel: String {
+        switch distanceUnit {
+        case .imperial: return "mi"
+        case .metric:   return "km"
+        }
+    }
+
+    /// Pace label suffix to pair with mm:ss values ("/mi" / "/km").
+    var stravaPaceUnitLabel: String {
+        switch distanceUnit {
+        case .imperial: return "/mi"
+        case .metric:   return "/km"
+        }
+    }
+
+    /// Format a distance given in **meters** (Strava's native unit) using the
+    /// user's preferred distance unit. Sub-unit values fall back to ft / m.
+    func formatStravaDistance(meters: Double) -> String {
+        switch distanceUnit {
+        case .imperial:
+            let miles = meters / 1_609.344
+            if miles < 0.1 {
+                let feet = meters * 3.28084
+                return "\(Int(feet)) ft"
+            }
+            return "\(String(format: "%.2f", miles)) mi"
+        case .metric:
+            let km = meters / 1_000.0
+            if km < 1 {
+                return "\(Int(meters)) m"
+            }
+            return "\(String(format: "%.2f", km)) km"
+        }
+    }
+
+    /// Distance value (without unit string) in the user's preferred unit,
+    /// from a meters input. Useful for chart axes and computations.
+    func stravaDistanceValue(meters: Double) -> Double {
+        switch distanceUnit {
+        case .imperial: return meters / 1_609.344
+        case .metric:   return meters / 1_000.0
+        }
+    }
+
+    /// Convert seconds-per-kilometer (Strava's natural pace unit) into the
+    /// user's preferred pace unit, returned as seconds.
+    func stravaPaceValue(secondsPerKm: Double) -> Double {
+        switch distanceUnit {
+        case .imperial: return secondsPerKm * 1.609_344
+        case .metric:   return secondsPerKm
+        }
+    }
+
+    /// Format pace as `mm:ss /km` or `mm:ss /mi`. Input is the canonical
+    /// seconds-per-km value Strava streams expose.
+    func formatStravaPace(secondsPerKm: Double) -> String {
+        let total = Int(stravaPaceValue(secondsPerKm: secondsPerKm).rounded())
+        let mins = total / 60
+        let secs = total % 60
+        return String(format: "%d:%02d %@", mins, secs, stravaPaceUnitLabel)
+    }
+
+    /// Format an elevation in meters using the user's preferred unit
+    /// (meters for metric, feet for imperial). Strava streams elevation
+    /// in meters regardless of athlete settings.
+    func formatStravaElevation(meters: Double) -> String {
+        switch distanceUnit {
+        case .imperial:
+            return "\(Int((meters * 3.28084).rounded())) ft"
+        case .metric:
+            return "\(Int(meters.rounded())) m"
+        }
+    }
+}
+
 // MARK: - SwiftUI Environment
 
 struct UnitSettingsKey: EnvironmentKey {

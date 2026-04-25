@@ -204,6 +204,18 @@ struct PreviousSetInfo: Codable {
     }
 }
 
+// Condensed session summary for "last N times you did this exercise" tiles.
+// Sourced from `exercise_performance_history` (one row per workout per exercise).
+struct ExerciseSessionSummary: Codable, Hashable, Identifiable {
+    let workoutDate: Date
+    let avgWeight: Double      // lbs (matches storage unit)
+    let totalSets: Int
+    let totalReps: Int
+    let maxWeight: Double      // lbs
+
+    var id: Date { workoutDate }
+}
+
 // MARK: - Service
 
 class ExerciseHistoryService: ObservableObject {
@@ -215,6 +227,12 @@ class ExerciseHistoryService: ObservableObject {
     
     @Published var previousSetsCache: [String: [PreviousSetInfo]] = [:]
     @Published var personalRecordsCache: [String: ExercisePersonalRecord] = [:]
+
+    // Cache for the "last N sessions" tile row in ExerciseCard. Keyed by exercise name,
+    // value is sorted desc by date. Empty arrays are cached too (avoid re-fetch on
+    // first-time exercises). Cleared on `clearCache()` and after `saveExercisePerformance`.
+    private var recentSessionsCache: [String: [ExerciseSessionSummary]] = [:]
+    private var inFlightSessionTasks: [String: Task<[ExerciseSessionSummary], Never>] = [:]
 
     // ⚡️ PERF: Deduplicate concurrent batch fetches (warmup + preview fire simultaneously)
     private var inFlightBatchTask: Task<[String: [PreviousSetInfo]], Never>?
@@ -521,6 +539,7 @@ class ExerciseHistoryService: ObservableObject {
         // Clear cache for this exercise so next fetch gets fresh data
         await MainActor.run {
             self.previousSetsCache.removeValue(forKey: exerciseName)
+            self.recentSessionsCache.removeValue(forKey: exerciseName)
         }
     }
     
@@ -724,11 +743,93 @@ class ExerciseHistoryService: ObservableObject {
         }
     }
     
+    // MARK: - Recent Session Summaries (last-N-sessions tile row)
+
+    /// Fetch up to `limit` most-recent session summaries for an exercise.
+    /// Used by ExerciseCard tile row. Cached by exercise name (deduplicates
+    /// concurrent calls). Returns [] for first-time exercises and caches the
+    /// empty result to avoid hammering Supabase.
+    func fetchRecentSessions(for exerciseName: String, limit: Int = 3) async -> [ExerciseSessionSummary] {
+        if let cached = recentSessionsCache[exerciseName] {
+            return Array(cached.prefix(limit))
+        }
+        if let inFlight = inFlightSessionTasks[exerciseName] {
+            return Array((await inFlight.value).prefix(limit))
+        }
+        guard let userId = SupabaseManager.shared.currentUser?.id else {
+            AppLogger.warning("⚠️ [ExerciseHistory] No authenticated user for recent sessions", category: .workout)
+            return []
+        }
+
+        let task = Task<[ExerciseSessionSummary], Never> { [weak self] in
+            guard let self = self else { return [] }
+            struct Row: Decodable {
+                let workout_date: String?
+                let avg_weight: Double?
+                let max_weight: Double?
+                let total_sets: Int?
+                let total_reps: Int?
+            }
+            do {
+                let rows: [Row] = try await self.supabase
+                    .from("exercise_performance_history")
+                    .select("workout_date, avg_weight, max_weight, total_sets, total_reps")
+                    .eq("user_id", value: userId.uuidString)
+                    .eq("exercise_name", value: exerciseName)
+                    .order("workout_date", ascending: false)
+                    .limit(limit)
+                    .execute()
+                    .value
+
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let isoFallback = ISO8601DateFormatter()
+                let dateOnly = DateFormatter()
+                dateOnly.dateFormat = "yyyy-MM-dd"
+                dateOnly.timeZone = TimeZone(identifier: "UTC")
+
+                let summaries: [ExerciseSessionSummary] = rows.compactMap { row in
+                    guard let raw = row.workout_date else { return nil }
+                    let date = iso.date(from: raw)
+                        ?? isoFallback.date(from: raw)
+                        ?? dateOnly.date(from: raw)
+                    guard let parsed = date else { return nil }
+                    let avg = row.avg_weight ?? 0
+                    let maxW = row.max_weight ?? 0
+                    return ExerciseSessionSummary(
+                        workoutDate: parsed,
+                        avgWeight: avg,
+                        totalSets: row.total_sets ?? 0,
+                        totalReps: row.total_reps ?? 0,
+                        maxWeight: maxW
+                    )
+                }
+
+                await MainActor.run {
+                    self.recentSessionsCache[exerciseName] = summaries
+                    self.inFlightSessionTasks[exerciseName] = nil
+                }
+                return summaries
+            } catch {
+                AppLogger.error("❌ [ExerciseHistory] Recent sessions fetch failed for '\(exerciseName)': \(error)", category: .workout)
+                await MainActor.run {
+                    self.inFlightSessionTasks[exerciseName] = nil
+                }
+                return []
+            }
+        }
+        await MainActor.run {
+            self.inFlightSessionTasks[exerciseName] = task
+        }
+        return Array((await task.value).prefix(limit))
+    }
+
     // MARK: - Clear Cache
     
     func clearCache() {
         previousSetsCache.removeAll()
         personalRecordsCache.removeAll()
+        recentSessionsCache.removeAll()
     }
 }
 

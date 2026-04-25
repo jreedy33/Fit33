@@ -40,6 +40,8 @@ struct ExerciseCard: View {
     @State private var isFavorite: Bool = false
     @State private var dragOffset: CGFloat = 0
     @State private var hasAppeared: Bool = false
+    @State private var recentSessions: [ExerciseSessionSummary] = []
+    @State private var didLoadRecentSessions: Bool = false
     @AppStorage("workoutPerSideMode") private var isPerSideMode: Bool = false
     @State private var showingPlateCalculator: Bool = false
     @State private var plateCalcSetIndex: Int = 0
@@ -60,6 +62,7 @@ struct ExerciseCard: View {
             // Exercise header + column headers — gray
             VStack(spacing: 0) {
                 exerciseHeader
+                RecentSessionsTilesRow(sessions: recentSessions, useKg: useKg)
                 columnHeaders
             }
             .background(Color.cardBackground)
@@ -172,11 +175,16 @@ struct ExerciseCard: View {
                 guard !Task.isCancelled else { return }
                 hasAppeared = true
             }
+            loadRecentSessionsIfNeeded()
         }
         .onChange(of: exercise.id) { _, newId in
             // Clear prefetch cache when exercise changes (after shuffle)
             // Next shuffle tap will re-fetch fresh alternatives
             prefetchedExercises = []
+            // Reload tile row for the new exercise
+            didLoadRecentSessions = false
+            recentSessions = []
+            loadRecentSessionsIfNeeded()
         }
         .onChange(of: exerciseWithActiveTimer) { _, _ in
             // Timer continues running even when user selects a different card
@@ -186,6 +194,27 @@ struct ExerciseCard: View {
     // ⚡ PERF: Cache exercise name to avoid repeated property access
     private var exerciseName: String {
         exercise.name ?? "Exercise"
+    }
+
+    /// Lazy-load the "last 3 sessions" tile row. Reads through
+    /// `ExerciseHistoryService.shared.recentSessionsCache`, so siblings sharing
+    /// the same exercise name (rare in a single workout) and replays of the
+    /// same active workout are both free.
+    private func loadRecentSessionsIfNeeded() {
+        guard !didLoadRecentSessions else { return }
+        guard !exercise.isFault else { return }
+        let name = exerciseName
+        guard !name.isEmpty, name != "Exercise" else { return }
+        didLoadRecentSessions = true
+        Task { @MainActor in
+            let summaries = await ExerciseHistoryService.shared.fetchRecentSessions(for: name, limit: 3)
+            guard !Task.isCancelled else { return }
+            // Guard against the exercise having been swapped while the fetch was in flight.
+            guard exerciseName == name else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                self.recentSessions = summaries
+            }
+        }
     }
     
     private func formatCountdownTime(_ timeInterval: TimeInterval) -> String {
@@ -264,12 +293,16 @@ struct ExerciseCard: View {
                 shouldAnimate: isActiveCard // Only animate when this card is active
             )
                 .foregroundColor(isBeingDragged ? .blue : .primary)
+                // Scope the drag-state color animation to JUST `isBeingDragged`.
+                // A blanket `.transaction { ... }` here used to clobber MarqueeText's
+                // internal linear scroll animation (forcing it into a 0.2s easeInOut
+                // every frame), which manifested as "flickery / fast / glitchy"
+                // ticker motion. Animating only the value that actually changes
+                // keeps the marquee's deterministic linear loop intact.
+                .animation(.easeInOut(duration: 0.2), value: isBeingDragged)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 8)
                 .contentShape(Rectangle())
-                .transaction { transaction in
-                    transaction.animation = .easeInOut(duration: 0.2)
-                }
                 .onTapGesture {
                     if !isBeingDragged {
                         HapticManager.impact(.light)
@@ -395,12 +428,13 @@ struct ExerciseCard: View {
                     }
                 }) {
                     Image(systemName: isFavorite ? "star.fill" : "star")
-                        .font(.caption)
+                        .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(isFavorite ? .yellow : .secondary)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PlainButtonStyle())
+                .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
                 
                 // Contextual menu for exercise actions
                 Menu {
@@ -425,6 +459,11 @@ struct ExerciseCard: View {
                         Label("Add Rest Timer", systemImage: "timer")
                     }
                 } label: {
+                    // Apple HIG: minimum 44pt tap target. The previous 36pt circle
+                    // was below this threshold and caused tapping the ellipsis to
+                    // feel unreliable. Visual circle stays 36pt; hit area expands
+                    // via outer 44pt frame + Rectangle contentShape so taps anywhere
+                    // in the icon column register on the first try.
                     Image(systemName: "ellipsis")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -433,8 +472,11 @@ struct ExerciseCard: View {
                             Circle()
                                 .fill(Color(.systemGray6))
                         )
-                        .contentShape(Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Exercise actions")
+                .accessibilityHint("Remove, replace, rename, or set rest timer")
             }
             .fixedSize() // Keep icons at their natural size
         }

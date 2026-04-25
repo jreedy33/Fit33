@@ -20,6 +20,11 @@ struct DailyQuestsWidget: View {
     @ObservedObject private var hydrationService = HydrationService.shared
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Smart Adaptive Daily Goals (20260607) — sheet binding for the
+    /// Pro Quest Insights view. Self-contained so the widget can be
+    /// embedded on any surface without a NavigationStack contract.
+    @State private var showQuestInsights: Bool = false
+
     // Today's completed workouts (most recent first). Powers the
     // personalized workout-quest completion summary, e.g.
     // "Evening Arms & Shoulders workout ✓" instead of a generic
@@ -185,6 +190,99 @@ struct DailyQuestsWidget: View {
             ForEach(Array(questService.quests.enumerated()), id: \.element.id) { _, quest in
                 compactQuestRow(quest: quest)
             }
+
+            // Smart Adaptive Daily Goals (20260607) — Pro insights link
+            // for subscribers; upsell CTA for free users. Both are
+            // dismissable / scroll-friendly and only render once the
+            // server has actually returned a quest slate.
+            if !questService.quests.isEmpty {
+                proAdaptiveFooter
+                    .padding(.top, 4)
+            }
+        }
+    }
+
+    /// Footer row beneath the daily slate. Pro: links into the Insights
+    /// view. Free: nudges toward an upgrade with the explicit benefits
+    /// (5 slots, more rerolls, custom quests, double-XP).
+    @ViewBuilder
+    private var proAdaptiveFooter: some View {
+        if PremiumManager.shared.isPremiumUser {
+            Button {
+                showQuestInsights = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.bar.xaxis")
+                        .font(.ds_caption)
+                        .foregroundColor(.purple)
+                    Text("Quest Insights")
+                        .font(.ds_caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.ds_caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.purple.opacity(0.08))
+                )
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showQuestInsights) {
+                NavigationStack {
+                    QuestInsightsView(questService: questService)
+                }
+            }
+        } else {
+            Button {
+                // No dedicated PaywallView ships in the iOS app yet; the
+                // existing developer toggle stands in until the real
+                // upgrade flow lands. PremiumManager.isPremiumUser
+                // currently defaults to TRUE in DEBUG so this branch
+                // primarily exists for the future state.
+                PremiumManager.shared.togglePremiumStatus()
+            } label: {
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: "sparkles")
+                        .font(.ds_caption)
+                        .foregroundStyle(
+                            LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pro: 5 slots · 5 rerolls/day · Custom quests")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundColor(.primary)
+                        Text("Plus 2× XP day · personal Insights")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Text("Upgrade")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(
+                                LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
+                            )
+                        )
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.orange.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
     
@@ -416,6 +514,12 @@ struct DailyQuestsWidget: View {
                         .font(.ds_caption)
                         .foregroundColor(.secondary.opacity(0.7))
                         .lineLimit(1)
+
+                    // Smart Adaptive Daily Goals (20260603) — surface
+                    // the XP multiplier so users understand WHY some
+                    // quests reward more (auto-tracked 1.5×, social 1×,
+                    // manual 0.7× since they're honor-system).
+                    questMetadataRow(quest: quest)
                 }
 
                 // Status bar — sits just below the subheader, aligned with
@@ -486,6 +590,78 @@ struct DailyQuestsWidget: View {
         )
         }
         .buttonStyle(.plain)
+        // Smart Adaptive Daily Goals (20260607) — long-press to reroll
+        // this slot. Server enforces per-day quotas (free 1, Pro 5)
+        // and returns a structured reason on rejection.
+        .contextMenu {
+            if !isDone {
+                Button {
+                    Task { await rerollQuest(quest) }
+                } label: {
+                    Label("Reroll for a new goal", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+        }
+    }
+
+    /// Sub-row beneath a quest's dynamic description showing the XP
+    /// multiplier (auto/social/manual), the double-XP marker (Pro day),
+    /// and the "rerolled" tag — surfaces just enough metadata to teach
+    /// users which quests are auto-verified vs honor system without
+    /// adding a second visual line per card.
+    @ViewBuilder
+    private func questMetadataRow(quest: DailyQuest) -> some View {
+        HStack(spacing: 6) {
+            if let mult = quest.verificationXpMultiplierLabel {
+                Text(mult)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .foregroundColor(verificationLabelColor(for: quest.verificationType))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(
+                        Capsule().fill(verificationLabelColor(for: quest.verificationType).opacity(0.10))
+                    )
+            }
+            if let bonus = quest.doubleXpBadge {
+                Text(bonus)
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.orange.opacity(0.12)))
+            }
+            if quest.wasRerolled {
+                Text("↻ rerolled")
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func verificationLabelColor(for verificationType: String?) -> Color {
+        switch verificationType {
+        case "auto":   return .cyan
+        case "social": return .purple
+        case "manual": return .orange
+        default:       return .secondary
+        }
+    }
+
+    /// Wrapper that calls the reroll RPC and surfaces user-friendly
+    /// haptics/toasts via the existing celebration overlay system.
+    private func rerollQuest(_ quest: DailyQuest) async {
+        let outcome = await questService.reroll(questId: quest.id)
+        if outcome.success {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } else if outcome.reason == "free_limit_reached" {
+            // Show a Pro upsell next time the user opens the bonus.
+            // The footer below already handles surfacing the upgrade CTA
+            // — this is just the haptic so they know the tap registered.
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        } else {
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        }
     }
     
     // MARK: - Quest Deep Link Navigation
@@ -581,6 +757,22 @@ struct DailyQuestsWidget: View {
         case .exerciseSets10, .exerciseSets20:
             dl.pendingDestination = .workout
             
+        // Smart Adaptive Daily Goals (20260604) — new templates
+        case .beatYour5kPR, .negativeSplitRun, .runOutside8km,
+             .cycleOutside30km, .completeStravaSegment:
+            // Strava-driven; deep link into the workout/cardio surface.
+            dl.pendingDestination = .workout
+        case .matchYesterdayStrain, .walkWhenRed:
+            dl.pendingDestination = .stepTracker
+        case .doFriendWorkout:
+            // Friend's workout deep-link goes through the activity feed
+            // — the row carries the workout_id needed to pre-load it.
+            dl.pendingDestination = .friends
+        case .commentOnFriendsWorkout, .reactTo3Workouts:
+            dl.pendingDestination = .friends
+        case .start1v1WithTopFriend:
+            dl.pendingDestination = .challengeCreation
+
         // Day 1 beginner quests
         case .beginnerSyncContacts, .beginnerAddFriend:
             dl.pendingDestination = .friendSearch
@@ -700,6 +892,30 @@ struct DailyQuestsWidget: View {
             return "First workout done! 💪"
         case .beginnerExploreProgram:
             return "Program explored ✓"
+
+        // Smart Adaptive Daily Goals (20260604)
+        case .beatYour5kPR:
+            return "5K PR beat! 🏆"
+        case .negativeSplitRun:
+            return "Negative split nailed ✓"
+        case .runOutside8km:
+            return "8K outdoor run done ✓"
+        case .cycleOutside30km:
+            return "30K ride logged ✓"
+        case .completeStravaSegment:
+            return "Segment crushed 🚴"
+        case .matchYesterdayStrain:
+            return "Strain matched ✓"
+        case .walkWhenRed:
+            return "Recovery walk done ✓"
+        case .doFriendWorkout:
+            return "Friend's workout completed 👯"
+        case .commentOnFriendsWorkout:
+            return "Comment posted ✓"
+        case .start1v1WithTopFriend:
+            return "1v1 challenge started ⚔️"
+        case .reactTo3Workouts:
+            return "3 friend reactions sent 🎉"
         }
     }
     
@@ -1133,6 +1349,33 @@ struct DailyQuestsWidget: View {
         case .beginnerSyncContacts, .beginnerAddFriend, .beginnerSendChallenge,
              .beginnerFirstWorkout, .beginnerExploreProgram:
             return quest.description
+
+        // Smart Adaptive Daily Goals (20260604) — server-personalized
+        // copy is the source of truth (e.g. "Due for legs — do Paul's").
+        // We trust quest.description for these unless it's empty.
+        case .beatYour5kPR:
+            return quest.description.isEmpty ? "Beat your 5K PR on Strava" : quest.description
+        case .negativeSplitRun:
+            return quest.description.isEmpty ? "Run with a negative split" : quest.description
+        case .runOutside8km:
+            return quest.description.isEmpty ? "Run 8K outside" : quest.description
+        case .cycleOutside30km:
+            return quest.description.isEmpty ? "Cycle 30K outside" : quest.description
+        case .completeStravaSegment:
+            return quest.description.isEmpty ? "Complete a Strava segment" : quest.description
+        case .matchYesterdayStrain:
+            return quest.description.isEmpty ? "Match yesterday's strain" : quest.description
+        case .walkWhenRed:
+            return quest.description.isEmpty ? "Take a 20-min recovery walk" : quest.description
+        case .doFriendWorkout:
+            // Server already builds split-aware copy; trust it.
+            return quest.description.isEmpty ? "Do a friend's workout" : quest.description
+        case .commentOnFriendsWorkout:
+            return quest.description.isEmpty ? "Comment on a friend's workout" : quest.description
+        case .start1v1WithTopFriend:
+            return quest.description.isEmpty ? "Start a 1v1 with a top friend" : quest.description
+        case .reactTo3Workouts:
+            return quest.description.isEmpty ? "React to 3 friend workouts" : quest.description
         }
     }
     

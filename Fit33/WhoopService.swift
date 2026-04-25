@@ -85,21 +85,52 @@ final class WhoopService: ObservableObject {
         isConnected = accessToken != nil
 
         if isConnected {
-            if let data = UserDefaults.standard.data(forKey: "whoop_profile"),
-               let profile = try? JSONDecoder().decode(WhoopProfile.self, from: data) {
-                userProfile = profile
-            }
-            if let data = UserDefaults.standard.data(forKey: "whoop_today_recovery"),
-               let recovery = try? JSONDecoder().decode(WhoopRecoveryScore.self, from: data) {
-                todayRecovery = recovery
-            }
-            if let data = UserDefaults.standard.data(forKey: "whoop_today_strain"),
-               let strain = try? JSONDecoder().decode(WhoopCycleScore.self, from: data) {
-                todayStrain = strain
-            }
-            if let date = UserDefaults.standard.object(forKey: "whoop_last_sync") as? Date {
-                lastSyncDate = date
-            }
+            loadCachedDataIfNeeded()
+        }
+    }
+
+    /// Re-reads keychain to recompute `isConnected`. Required because the
+    /// singleton may be initialized during a `BGTask` wake while the device is
+    /// locked — at which point the keychain is unreadable and `accessToken`
+    /// returns nil even though tokens exist. Without this re-check, the
+    /// dashboard WHOOP widget would stay hidden on the user's next foreground
+    /// launch (same process, same singleton) until they manually reconnect.
+    /// Called from `Fit33App.onChange(scenePhase: .active)` so the widget
+    /// reliably appears on every cold start / resume when WHOOP is connected.
+    func refreshConnectionState() {
+        let nowConnected = accessToken != nil
+        if nowConnected != isConnected {
+            AppLogger.info("[WHOOP] Connection state changed on foreground: \(isConnected) → \(nowConnected)", category: .auth)
+            isConnected = nowConnected
+        }
+        if isConnected {
+            loadCachedDataIfNeeded()
+        }
+    }
+
+    /// Hydrates the published `userProfile` / `todayRecovery` / `todayStrain` /
+    /// `lastSyncDate` from `UserDefaults` whenever they're not yet populated.
+    /// Safe to call repeatedly — only fills in values that are still nil so
+    /// fresh API data isn't overwritten by stale cache.
+    private func loadCachedDataIfNeeded() {
+        if userProfile == nil,
+           let data = UserDefaults.standard.data(forKey: "whoop_profile"),
+           let profile = try? JSONDecoder().decode(WhoopProfile.self, from: data) {
+            userProfile = profile
+        }
+        if todayRecovery == nil,
+           let data = UserDefaults.standard.data(forKey: "whoop_today_recovery"),
+           let recovery = try? JSONDecoder().decode(WhoopRecoveryScore.self, from: data) {
+            todayRecovery = recovery
+        }
+        if todayStrain == nil,
+           let data = UserDefaults.standard.data(forKey: "whoop_today_strain"),
+           let strain = try? JSONDecoder().decode(WhoopCycleScore.self, from: data) {
+            todayStrain = strain
+        }
+        if lastSyncDate == nil,
+           let date = UserDefaults.standard.object(forKey: "whoop_last_sync") as? Date {
+            lastSyncDate = date
         }
     }
 
@@ -211,12 +242,16 @@ final class WhoopService: ObservableObject {
 
     private func refreshAccessToken() async throws {
         guard let currentRefreshToken = refreshToken else {
-            // No stored refresh token → we can't recover silently. Mark
-            // disconnected so the UI + `isConnected` flag reflect reality
-            // and the user is prompted to reconnect (instead of the app
-            // looking "connected" while every API call silently fails).
-            AppLogger.warning("[WHOOP] refreshAccessToken called with no stored refresh token — disconnecting", category: .auth)
-            disconnect()
+            // Don't auto-disconnect here. A nil refresh token is usually
+            // transient (locked keychain on a BGTask wake) rather than an
+            // actual missing-token state. Wiping the access token plus the
+            // local cache on every transient nil read is what historically
+            // caused users to find WHOOP "magically disconnected" after
+            // routine TestFlight / App Store updates — the keychain wasn't
+            // gone, it just wasn't readable for a moment, and we treated
+            // that moment as a permanent revoke. Throw and let the caller
+            // surface the reconnect UI on its own terms.
+            AppLogger.warning("[WHOOP] refreshAccessToken: no stored refresh token (keychain locked?) — throwing, NOT disconnecting", category: .auth)
             throw WhoopError.notConnected
         }
 
@@ -239,10 +274,22 @@ final class WhoopService: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             if let errorBody = String(data: data, encoding: .utf8) {
-                AppLogger.error("[WHOOP] Token refresh failed (HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)): \(errorBody.prefix(300))", category: .auth)
+                AppLogger.error("[WHOOP] Token refresh failed (HTTP \(status)): \(errorBody.prefix(300))", category: .auth)
             }
-            disconnect()
+            // Only disconnect on PERMANENT failures (refresh token actually
+            // revoked / invalidated by the server). 5xx, 429, and other
+            // transient statuses must NOT wipe tokens — the user's grant is
+            // still valid, the WHOOP API just had a moment. Previously every
+            // 5xx blip permanently signed users out, which is the root cause
+            // behind "I haven't deleted the app, why am I disconnected again".
+            if (400...403).contains(status) {
+                AppLogger.error("[WHOOP] Refresh token rejected (HTTP \(status)) — disconnecting", category: .auth)
+                disconnect()
+            } else {
+                AppLogger.warning("[WHOOP] Token refresh transient failure (HTTP \(status)) — keeping tokens, will retry", category: .auth)
+            }
             throw WhoopError.tokenRefreshFailed
         }
 

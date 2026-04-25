@@ -37,6 +37,29 @@ USAGE
 The GitHub Actions job at .github/workflows/classifier-lint.yml runs this in
 --warn mode on PRs touching Fit33/**/*.swift and surfaces violations as PR
 comments via reviewdog or a simple `echo`-based annotation block.
+
+JSON shape (Phase 12 Tier 4 #4 — 2026-04-25)
+--------------------------------------------
+```
+{
+  "count": <int>,
+  "violations": [
+    {
+      "file": "Fit33/Foo.swift",
+      "catch_line": <int>,           # line of the `{` on `catch`
+      "applogger_line": <int>,       # line of the offending AppLogger.error
+      "error_var": "error",          # Swift binding (default `error` when implicit)
+      "applogger_call": "AppLogger.error(...)",  # offending source line
+      "suggested_fix": "NetworkErrorClassifier.log(\\n  error,\\n  op: ...)",
+      "message": "..."
+    }, ...
+  ]
+}
+```
+
+`scripts/classifier_lint_make_fix_pr.sh` consumes this JSON to draft a single
+"classifier-bypass cleanup" PR that wraps each offender in the suggested
+`NetworkErrorClassifier.log(...)` call (with TODO markers the dev fills in).
 """
 
 from __future__ import annotations
@@ -65,7 +88,12 @@ SUPABASE_MARKERS = (
 # The classifier name we require is NetworkErrorClassifier.
 VIOLATION_RE = re.compile(r"\bAppLogger\.(error|critical)\b")
 CLASSIFIER_RE = re.compile(r"\bNetworkErrorClassifier\b")
-CATCH_RE = re.compile(r"\bcatch\b[^{]*\{")
+# `catch` clause head — capture the binding name when present so the
+# auto-suggested fix can reference the right variable. Swift's `catch`
+# can be: `catch { … }` (implicit `error`), `catch let foo { … }`,
+# `catch let foo as X { … }`, or `catch foo { … }`. The named-pattern
+# match is greedy enough to skip type annotations.
+CATCH_RE = re.compile(r"\bcatch\b(?:\s+let\s+([A-Za-z_]\w*)|\s+([A-Za-z_]\w*))?[^{]*\{")
 ALLOW_MARKER = "classifier_lint:allow"
 
 
@@ -129,12 +157,32 @@ def line_of(source: str, index: int) -> int:
     return source.count("\n", 0, index) + 1
 
 
-def lint_file(path: Path) -> List[Tuple[int, str]]:
+def _suggested_wrap(error_var: str, applogger_call: str) -> str:
+    """Build the recommended `NetworkErrorClassifier.log(...)` snippet.
+
+    Designed for paste-in: the dev still has to set the `op:` / `endpoint:` /
+    `category:` from `PerformanceSignposts.Op` (the lint cannot know which op
+    applies). The snippet keeps the original `AppLogger` call commented out so
+    the diff is reviewable before merging.
+    """
+    return (
+        f"NetworkErrorClassifier.log(\n"
+        f"    {error_var},\n"
+        f"    op: PerformanceSignposts.Op.<TODO>.rawValue,   // pick from PerformanceSignposts.Op\n"
+        f"    endpoint: \"<TODO>\",                            // RPC name or URL path\n"
+        f"    category: .network,                              // .auth / .data / etc.\n"
+        f"    message: \"<short context>\"\n"
+        f")\n"
+        f"// REPLACED (classifier_lint --autofix): {applogger_call.strip()}"
+    )
+
+
+def lint_file(path: Path) -> List[dict]:
     text = path.read_text(encoding="utf-8", errors="replace")
     if not any(marker in text for marker in SUPABASE_MARKERS):
         return []
 
-    violations: List[Tuple[int, str]] = []
+    violations: List[dict] = []
     for m in CATCH_RE.finditer(text):
         brace_idx = m.end() - 1  # index of the `{`
         end_idx = find_matching_brace(text, brace_idx)
@@ -143,19 +191,38 @@ def lint_file(path: Path) -> List[Tuple[int, str]]:
         block = text[brace_idx + 1 : end_idx]
         if ALLOW_MARKER in block:
             continue
-        if VIOLATION_RE.search(block) and not CLASSIFIER_RE.search(block):
+        offender = VIOLATION_RE.search(block)
+        if offender and not CLASSIFIER_RE.search(block):
+            # Identify the bound error variable (defaults to Swift's
+            # implicit `error` when the catch clause is unbound).
+            error_var = m.group(1) or m.group(2) or "error"
+            # Capture the offending line (first AppLogger.error/critical
+            # usage in the block) for the auto-fix payload.
+            block_start = brace_idx + 1
+            offender_line_start = block.rfind("\n", 0, offender.start()) + 1
+            offender_line_end = block.find("\n", offender.end())
+            if offender_line_end == -1:
+                offender_line_end = len(block)
+            applogger_call = block[offender_line_start:offender_line_end]
+            applogger_abs_line = line_of(text, block_start + offender.start())
             violations.append(
-                (
-                    line_of(text, brace_idx),
-                    "`AppLogger.error` / `AppLogger.critical` in a Supabase-touching "
-                    "catch block without `NetworkErrorClassifier.log(...)`. "
-                    "This violates QUALITY_PERFORMANCE_AGENT invariant 25a — "
-                    "route the error through the classifier so transient "
-                    "NSURLError / cancelled / auth errors don't create bug "
-                    "intelligence fingerprints. See Fit33/NetworkErrorClassifier.swift. "
-                    "Suppress with `// classifier_lint:allow` ONLY when the classifier "
-                    "is provably unavailable (e.g. bootstrap code before auth).",
-                )
+                {
+                    "catch_line": line_of(text, brace_idx),
+                    "applogger_line": applogger_abs_line,
+                    "error_var": error_var,
+                    "applogger_call": applogger_call,
+                    "suggested_fix": _suggested_wrap(error_var, applogger_call),
+                    "message": (
+                        "`AppLogger.error` / `AppLogger.critical` in a Supabase-touching "
+                        "catch block without `NetworkErrorClassifier.log(...)`. "
+                        "This violates QUALITY_PERFORMANCE_AGENT invariant 25a — "
+                        "route the error through the classifier so transient "
+                        "NSURLError / cancelled / auth errors don't create bug "
+                        "intelligence fingerprints. See Fit33/NetworkErrorClassifier.swift. "
+                        "Suppress with `// classifier_lint:allow` ONLY when the classifier "
+                        "is provably unavailable (e.g. bootstrap code before auth)."
+                    ),
+                }
             )
     return violations
 
@@ -177,21 +244,36 @@ def main() -> int:
     args = ap.parse_args()
 
     root = Path(args.root)
+    if not root.is_absolute():
+        root = (REPO / root).resolve()
     if not root.exists():
         print(f"classifier_lint: source root not found: {root}", file=sys.stderr)
         return 0
 
     all_violations: List[dict] = []
     for f in sorted(iter_swift_files(root)):
-        for line, msg in lint_file(f):
-            all_violations.append({"file": str(f.relative_to(REPO)), "line": line, "message": msg})
+        try:
+            rel = f.relative_to(REPO)
+        except ValueError:
+            rel = f
+        for v in lint_file(f):
+            all_violations.append({"file": str(rel), **v})
 
     if args.json:
+        # Phase 12 Tier 4 #4 (PR-G, 2026-04-25) — JSON now carries the
+        # `error_var`, `applogger_call`, and a `suggested_fix` snippet for
+        # each violation so `scripts/classifier_lint_make_fix_pr.sh` can
+        # produce a paste-ready `NetworkErrorClassifier.log(...)` wrap PR
+        # without the dev opening every file by hand.
         print(json.dumps({"count": len(all_violations), "violations": all_violations}, indent=2))
     else:
         for v in all_violations:
             # Clang-style so Xcode / GH Actions problem-matchers pick it up.
-            print(f"{v['file']}:{v['line']}: warning: [CLASSIFIER LINT] {v['message']}")
+            # Use `applogger_line` (the offending call) instead of `catch_line`
+            # so reviewers jump to the AppLogger.error invocation, not the
+            # outer brace.
+            line_for_diag = v.get("applogger_line") or v.get("catch_line")
+            print(f"{v['file']}:{line_for_diag}: warning: [CLASSIFIER LINT] {v['message']}")
         print(
             f"[CLASSIFIER LINT] {len(all_violations)} violation"
             f"{'' if len(all_violations) == 1 else 's'} "

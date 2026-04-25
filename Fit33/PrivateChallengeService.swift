@@ -1131,6 +1131,12 @@ class PrivateChallengeService: ObservableObject {
                 let isTimeout = nsError.domain == NSURLErrorDomain && (nsError.code == NSURLErrorTimedOut || nsError.code == NSURLErrorCancelled)
                 let isJwtExpired = error.localizedDescription.localizedCaseInsensitiveContains("jwt expired")
                     || error.localizedDescription.localizedCaseInsensitiveContains("invalid jwt")
+                // Postgres deadlock (SQLSTATE 40P01) — bug-intel fingerprints
+                // 3d7ac331 + 23ac8780. The 2026-05-24 migration adds a
+                // server-side retry loop, but keep a client-side safety net
+                // in case the server exhausts its retries under load.
+                let desc = error.localizedDescription.lowercased()
+                let isDeadlock = desc.contains("40p01") || desc.contains("deadlock detected")
 
                 // Cluster G (fingerprint 9a4b5b9e, infra-security HIGH):
                 // long-lived sessions that stay open overnight lose the
@@ -1170,6 +1176,12 @@ class PrivateChallengeService: ObservableObject {
                     let delay = UInt64(pow(2.0, Double(attempt - 1))) * 1_000_000_000
                     AppLogger.warning("log_private_challenge_progress timeout (attempt \(attempt)/\(maxRetries)), retrying...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
+                } else if isDeadlock && attempt < maxRetries {
+                    // Short jittered backoff (150-300ms) so the competing
+                    // transaction can commit before we retry.
+                    let jitter = UInt64.random(in: 150_000_000...300_000_000)
+                    AppLogger.warning("log_private_challenge_progress deadlock (40P01) attempt \(attempt)/\(maxRetries), retrying...", category: .social)
+                    try? await Task.sleep(nanoseconds: jitter)
                 } else {
                     _ = NetworkErrorClassifier.log(
                         error,

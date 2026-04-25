@@ -171,7 +171,10 @@ class FoodDatabaseService: ObservableObject {
     /// Search foods from cloud database (cached USDA data)
     func searchFoods(query: String) async throws -> [CloudFood] {
         AppLogger.debug("Searching for: '\(query)'", category: .nutrition)
-        
+
+        let startedAt = Date()
+        let userId = SupabaseManager.shared.currentUser?.id
+
         // Check cache first for instant results
         if let cachedResults = getCachedResults(for: query) {
             return cachedResults
@@ -211,24 +214,39 @@ class FoodDatabaseService: ObservableObject {
             // First check if this is an error response from the edge function
             if let errorResponse = try? JSONDecoder().decode(EdgeFunctionErrorResponse.self, from: data),
                let errorMessage = errorResponse.error {
-                AppLogger.error("Edge function error: \(errorMessage)", category: .nutrition)
+                // The throw below is caught by the outer catch and routed
+                // through NetworkErrorClassifier — keep this line at
+                // .warning so it doesn't fingerprint twice (`479cf818`
+                // Edge function error: Unauthorized was the duplicate).
+                AppLogger.warning("Edge function error response: \(errorMessage)", category: .nutrition)
                 throw NSError(domain: "EdgeFunction", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])
             }
-            
+
             // Decode the search response
             let response = try JSONDecoder().decode(CloudFoodSearchResponse.self, from: data)
-            
+
             AppLogger.info("Successfully found \(response.foods.count) foods (source: \(response.source))", category: .nutrition)
-            
+
             // Cache the results for faster future lookups
             cacheResults(response.foods, for: query)
-            
+
             return response.foods
         } catch let DecodingError.typeMismatch(type, context) {
             AppLogger.error("Type mismatch error: expected \(type), context: \(context.debugDescription), path: \(context.codingPath)", category: .nutrition)
             throw DecodingError.typeMismatch(type, context)
         } catch {
-            AppLogger.error("Food search error (\(type(of: error))): \(error.localizedDescription)", category: .nutrition)
+            // QP invariant 25a: classify transient 401 / cancelled / timeout
+            // so they don't manufacture a fingerprint. Fingerprint target:
+            // `d0aaa6e5` Food search error (NSError): Unauthorized.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[Nutrition] Food search failed",
+                category: .nutrition,
+                op: PerformanceSignposts.Op.foodSearch.rawValue,
+                endpoint: "functions/usda-food-search",
+                startedAt: startedAt,
+                userId: userId
+            )
             throw error
         }
     }

@@ -147,6 +147,36 @@ SUPPORT_AGENT pain registry. Otherwise null.
 One line suitable for MASTER_TODO.md (owner + action + why). Null if the
 fingerprint isn't actionable (e.g. transient network errors).
 
+# USING AUTHORITATIVE CALLSITE (Phase 12 Tier 0 #1 — 2026-04-25)
+
+When the input includes \`authoritative_callsite: { file, line, function }\`,
+that is the EXACT source location where the error logged — captured by the
+iOS client's \`#file:#line:#function\` macros and threaded through
+\`dev_session_logs.entries[].x_file/x_line/x_function\` (logs) or
+\`crash_reports.additional_context.file/line/function\` (crashes). Rules:
+
+  1. \`file_path\` MUST equal \`Fit33/<file>\` (or \`supabase/...\` /
+     \`admin-cms/...\` if the captured file is in those subtrees) when
+     \`authoritative_callsite\` is non-null. Do NOT guess a different file.
+  2. Your \`code_diff\` should target a line within ±5 of \`authoritative_callsite.line\`.
+     The exact line may shift between builds; ±5 keeps the diff applicable.
+  3. Confidence ≥ 0.85 when authoritative_callsite is present + you propose a diff.
+     The callsite eliminates the largest source of triage uncertainty.
+  4. The \`function\` field tells you which function logged the error — use it
+     to disambiguate when one file has multiple methods that could have raised.
+
+When \`authoritative_callsite\` is null, fall back to stack-trace inference
+(below). The callsite will always be present for fingerprints from iOS Phase 12+
+client builds (1.39+); legacy fingerprints from older builds carry no callsite.
+
+# USING SEVERITY_SCORE
+
+\`severity_score\` is the empirical priority — occurrences × sqrt(users) ×
+visibility × build_freshness × source_severity × regression_amplifier. It's
+already computed; you don't need to recompute. Treat it as a tiebreaker when
+choosing between competing diagnoses for the same evidence: a fingerprint with
+severity_score = 250 deserves a more careful diff than one with score = 12.
+
 # USING STACK TRACES
 
 Each crash in \`example_crashes\` carries TWO stack-trace fields. Prefer
@@ -252,6 +282,39 @@ interface FingerprintRow {
     last_seen_at: string;
     status: string;
     assigned_agent: string | null;
+    // Phase 12 Tier 0 #1 (20260526_bug_intel_callsite_capture) — call-site
+    // captured from `dev_session_logs.entries[].x_file/x_line/x_function` and
+    // `crash_reports.additional_context->>file/line/function`. When present,
+    // this is the AUTHORITATIVE file path for the report — not heuristic.
+    last_seen_file: string | null;
+    last_seen_function: string | null;
+    last_seen_line: number | null;
+    // Phase 12 Tier 2 #2 (20260528_bug_intel_severity_score) — empirical
+    // priority score = occ × sqrt(users) × visibility × build_freshness × source × regression.
+    severity_score: number | null;
+    // Phase 9 / 20260516 — structural classification
+    op: string | null;
+    error_class: string | null;
+    pg_code: string | null;
+    http_status: number | null;
+    endpoint: string | null;
+    structural_fingerprint: string | null;
+}
+
+// Phase 12 Tier 2 #3 (2026-04-25) — previous unmerged Claude report for this
+// fingerprint. We feed it back so Claude can SEE what it last said and either
+// (a) iterate / refine when new evidence arrives, or (b) stop drifting on
+// re-triage rounds where nothing materially changed.
+interface PreviousReport {
+    title: string;
+    summary: string;
+    agent_owner: string;
+    severity: string;
+    confidence: number;
+    file_path: string | null;
+    review_status: string;
+    review_notes: string | null;
+    created_at: string;
 }
 
 interface ClaudeReport {
@@ -524,6 +587,9 @@ interface EnrichedFingerprint {
     example_errors: Array<Record<string, unknown>>;
     example_crashes: Array<Record<string, unknown>>;
     example_entry_ids: string[];
+    // Phase 12 Tier 2 #3 — most recent unmerged Claude report (if any).
+    // Lets Claude see what it previously concluded so it can refine vs reset.
+    previous_report: PreviousReport | null;
 }
 
 async function enrichFingerprint(
@@ -634,7 +700,29 @@ async function enrichFingerprint(
         }
     }
 
-    return { fp, example_errors, example_crashes, example_entry_ids };
+    // Phase 12 Tier 2 #3 — most recent NON-MERGED non-rejected report so
+    // Claude has continuity with its previous diagnosis. Skip merged/rejected
+    // (those are decisive prior outcomes — re-feeding them would override the
+    // human's review). Skip stale (irrelevant context). Limit to 1 row.
+    let previous_report: PreviousReport | null = null;
+    try {
+        const { data: prev } = await supabase
+            .from("bug_intelligence_reports")
+            .select(
+                "title, summary, agent_owner, severity, confidence, file_path, " +
+                "review_status, review_notes, created_at",
+            )
+            .eq("fingerprint", fp.fingerprint)
+            .in("review_status", ["pending", "approved"])
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (prev) previous_report = prev as PreviousReport;
+    } catch {
+        // best-effort — previous_report is optional context
+    }
+
+    return { fp, example_errors, example_crashes, example_entry_ids, previous_report };
 }
 
 // Computes what the bug_intelligence fingerprint would be for the given
@@ -708,26 +796,78 @@ function coerceArray(v: unknown): unknown[] {
 // -----------------------------------------------------------------------------
 
 function buildUserPrompt(items: EnrichedFingerprint[]): string {
-    const inputs = items.map((x) => ({
-        fingerprint: x.fp.fingerprint,
-        source: x.fp.source,
-        error_domain: x.fp.error_domain,
-        normalized_message: x.fp.normalized_message,
-        sample_message: x.fp.sample_message,
-        occurrence_count: x.fp.occurrence_count,
-        unique_user_count: x.fp.unique_user_count,
-        first_seen_app_version: x.fp.first_seen_app_version,
-        last_seen_app_version: x.fp.last_seen_app_version,
-        affected_screens: x.fp.affected_screens,
-        first_seen_at: x.fp.first_seen_at,
-        last_seen_at: x.fp.last_seen_at,
-        example_errors: x.example_errors.slice(0, MAX_EXAMPLE_ENTRIES),
-        example_crashes: x.example_crashes.slice(0, MAX_EXAMPLE_ENTRIES),
-    }));
+    const inputs = items.map((x) => {
+        // Phase 12 Tier 0 #1 — synthesize an `authoritative_callsite` field
+        // when the iOS client captured #file:#line. Claude's SYSTEM_PROMPT
+        // has a rule that this overrides every heuristic the prompt teaches
+        // for guessing file_path from message text or stack traces.
+        const callsite = (x.fp.last_seen_file && x.fp.last_seen_line)
+            ? {
+                file: x.fp.last_seen_file,
+                line: x.fp.last_seen_line,
+                function: x.fp.last_seen_function ?? null,
+            }
+            : null;
+
+        return {
+            fingerprint: x.fp.fingerprint,
+            source: x.fp.source,
+            error_domain: x.fp.error_domain,
+            normalized_message: x.fp.normalized_message,
+            sample_message: x.fp.sample_message,
+            occurrence_count: x.fp.occurrence_count,
+            unique_user_count: x.fp.unique_user_count,
+            severity_score: x.fp.severity_score,           // Phase 12 Tier 2 #2
+            first_seen_app_version: x.fp.first_seen_app_version,
+            last_seen_app_version: x.fp.last_seen_app_version,
+            affected_screens: x.fp.affected_screens,
+            first_seen_at: x.fp.first_seen_at,
+            last_seen_at: x.fp.last_seen_at,
+            // Phase 9 / 20260516 — structural classification
+            op: x.fp.op,
+            error_class: x.fp.error_class,
+            pg_code: x.fp.pg_code,
+            http_status: x.fp.http_status,
+            endpoint: x.fp.endpoint,
+            structural_fingerprint: x.fp.structural_fingerprint,
+            // Phase 12 Tier 0 #1 — authoritative call-site (if captured).
+            // When non-null, file_path in your output MUST be this file.
+            authoritative_callsite: callsite,
+            // Phase 12 Tier 2 #3 — diff context: what you said last time.
+            previous_triage: x.previous_report
+                ? {
+                    when: x.previous_report.created_at,
+                    last_title: x.previous_report.title,
+                    last_summary: x.previous_report.summary,
+                    last_owner: x.previous_report.agent_owner,
+                    last_severity: x.previous_report.severity,
+                    last_confidence: x.previous_report.confidence,
+                    last_file_path: x.previous_report.file_path,
+                    review_status: x.previous_report.review_status,
+                    reviewer_notes: x.previous_report.review_notes,
+                    instruction:
+                        "If the new evidence is consistent with this prior triage, " +
+                        "REFINE it (raise confidence, tighten file_path with the new " +
+                        "callsite, link the structural classification). If the evidence " +
+                        "contradicts it, REPLACE the diagnosis and explain in summary " +
+                        "why the prior was incomplete or wrong. Don't drift to a " +
+                        "completely different owner without justification — review " +
+                        "continuity matters.",
+                }
+                : null,
+            example_errors: x.example_errors.slice(0, MAX_EXAMPLE_ENTRIES),
+            example_crashes: x.example_crashes.slice(0, MAX_EXAMPLE_ENTRIES),
+        };
+    });
 
     return `Triage the following ${inputs.length} Fit33 bug fingerprint(s). ` +
         `Return a single JSON object { "reports": [...] } with exactly one report per input fingerprint. ` +
         `Fingerprints must be echoed back unchanged.\n\n` +
+        `IMPORTANT: When \`authoritative_callsite\` is non-null, the \`file_path\` in your ` +
+        `output MUST be \`Fit33/<file>\` (or \`supabase/...\` / \`admin-cms/...\` for non-iOS), ` +
+        `and your code_diff (when proposed) should reference the line within ±5 of \`authoritative_callsite.line\`. ` +
+        `Authoritative callsites are NOT heuristics — they're the exact #file:#line where the error logged. ` +
+        `Confidence MUST be ≥ 0.85 when authoritative_callsite is present and you propose a diff.\n\n` +
         JSON.stringify(inputs, null, 2);
 }
 

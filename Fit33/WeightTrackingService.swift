@@ -62,6 +62,33 @@ struct WeightStatistics: Codable {
         case streakDays = "streak_days"
         case lastLoggedDate = "last_logged_date"
     }
+
+    /// Returns a copy with all weight-valued fields converted to the user's
+    /// preferred unit. The server-side `weight_statistics` VIEW stores
+    /// kilograms in every weight column, so when the user prefers pounds we
+    /// multiply through before the widget renders the value with an "lbs"
+    /// suffix (bug-intel fingerprint 7e96608b — "Starting" and "Highest" were
+    /// showing 151.1 kg labeled as 151.1 lbs on a 332.2 lbs profile).
+    /// `totalEntries` / `streakDays` / `lastLoggedDate` are unit-agnostic and
+    /// pass through unchanged.
+    func inUnit(usesLbs: Bool) -> WeightStatistics {
+        guard usesLbs else { return self }
+        let kgToLbs = 2.20462
+        return WeightStatistics(
+            userId: userId,
+            currentWeight: currentWeight * kgToLbs,
+            startingWeight: startingWeight * kgToLbs,
+            lowestWeight: lowestWeight * kgToLbs,
+            highestWeight: highestWeight * kgToLbs,
+            totalChange: totalChange * kgToLbs,
+            weeklyChange: weeklyChange * kgToLbs,
+            monthlyChange: monthlyChange * kgToLbs,
+            averageWeight: averageWeight * kgToLbs,
+            totalEntries: totalEntries,
+            streakDays: streakDays,
+            lastLoggedDate: lastLoggedDate
+        )
+    }
 }
 
 // MARK: - Weight Trend Data Point
@@ -463,9 +490,15 @@ class WeightTrackingService: ObservableObject {
                 .limit(1)
                 .execute()
                 .value
-            
+
+            // The server view stores kilograms. Convert to the user's current
+            // unit so the dashboard widget (which renders with a bare "lbs" or
+            // "kg" suffix and no further conversion) shows the right numbers.
+            let preferImperial = self.usesLbs
+            let convertedStats = stats.first?.inUnit(usesLbs: preferImperial)
+
             await MainActor.run {
-                self.statistics = stats.first
+                self.statistics = convertedStats
             }
         } catch {
             NetworkErrorClassifier.log(error, context: "[Weight] Failed to load statistics", category: .health)

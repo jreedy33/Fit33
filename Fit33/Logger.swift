@@ -101,6 +101,26 @@ enum AppLogger {
             let capturedCategory = category.rawValue
             let capturedLevel = level
             let capturedCtx = context
+            // Bug-Intel Phase 12 (2026-04-25 — Tier 0 #1): always ship the
+            // call-site (`file:line:function`) into `dev_session_logs.entries[].x_*`
+            // so the rollup pipeline can pivot fingerprints by source location
+            // — not just by message string. Pre-Phase-12, only `crash_reports`
+            // carried this via `CrashReportingService.additionalContext`; logs
+            // dropped it entirely. Now every `AppLogger.error/.warning/.critical`
+            // line in the codebase auto-attaches its source location for free
+            // (the compiler fills `#file/#line/#function` at the call site that
+            // invoked the convenience wrapper, then this base method threads them
+            // through). Keys are prefixed `x_` by `AdvancedSessionLogger.log` →
+            // `entry->>'x_file' / 'x_line' / 'x_function'` in SQL.
+            let fileName = (file as NSString).lastPathComponent
+            var baseExtra: [String: Any] = [
+                "file": fileName,
+                "line": line,
+                "function": function
+            ]
+            if let ctxDict = capturedCtx?.asAnyDict {
+                for (k, v) in ctxDict { baseExtra[k] = v }
+            }
             Task { @MainActor in
                 let logType = capturedLevel >= .error ? "error" : (capturedLevel >= .warning ? "warning" : "log")
                 AdvancedSessionLogger.shared.log(
@@ -111,7 +131,7 @@ enum AppLogger {
                     apiStatus: capturedCtx?.httpStatus,
                     durationMs: capturedCtx?.elapsedMs,
                     error: capturedCtx?.pgCode,
-                    extra: capturedCtx?.asAnyDict
+                    extra: baseExtra
                 )
             }
         }
@@ -146,23 +166,32 @@ enum AppLogger {
 
     // MARK: - Convenience
 
-    static func verbose(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
-        log(msg(), level: .verbose, category: category, context: context)
+    // Bug-Intel Phase 12 (2026-04-25): convenience wrappers MUST forward
+    // `#file/#function/#line` so the call site (not Logger.swift) shows up in
+    // `dev_session_logs.entries[].x_file:x_line` and `crash_reports.additional_context.file:line`.
+    static func verbose(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil,
+                        file: String = #file, function: String = #function, line: Int = #line) {
+        log(msg(), level: .verbose, category: category, context: context, file: file, function: function, line: line)
     }
-    static func debug(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
-        log(msg(), level: .debug, category: category, context: context)
+    static func debug(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil,
+                      file: String = #file, function: String = #function, line: Int = #line) {
+        log(msg(), level: .debug, category: category, context: context, file: file, function: function, line: line)
     }
-    static func info(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
-        log(msg(), level: .info, category: category, context: context)
+    static func info(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil,
+                     file: String = #file, function: String = #function, line: Int = #line) {
+        log(msg(), level: .info, category: category, context: context, file: file, function: function, line: line)
     }
-    static func warning(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
-        log(msg(), level: .warning, category: category, context: context)
+    static func warning(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil,
+                        file: String = #file, function: String = #function, line: Int = #line) {
+        log(msg(), level: .warning, category: category, context: context, file: file, function: function, line: line)
     }
-    static func error(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
-        log(msg(), level: .error, category: category, context: context)
+    static func error(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil,
+                      file: String = #file, function: String = #function, line: Int = #line) {
+        log(msg(), level: .error, category: category, context: context, file: file, function: function, line: line)
     }
-    static func critical(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil) {
-        log(msg(), level: .critical, category: category, context: context)
+    static func critical(_ msg: @autoclosure () -> String, category: Category = .general, context: DiagnosticContext? = nil,
+                         file: String = #file, function: String = #function, line: Int = #line) {
+        log(msg(), level: .critical, category: category, context: context, file: file, function: function, line: line)
     }
 }
 

@@ -228,25 +228,38 @@ struct HealthyRecipesCarousel: View {
 
                 // Try to get personalized recommendations based on food history
                 let personalized = await preferenceService.getRotatedCarouselRecipes(count: targetCount)
-                
+
                 if !personalized.isEmpty {
                     displayedRecipes = personalized
                     isPersonalized = preferenceService.hasPreferencesSet
                 } else {
                     // Fall back to time-based suggestions
                     let timeBased = await preferenceService.getMealSuggestionsForCurrentTime(count: targetCount)
-                    
+
                     if !timeBased.isEmpty {
                         displayedRecipes = timeBased
                         isPersonalized = false
                     } else {
-                        // Fall back to default healthy recipes
+                        // Fall back to default healthy recipes. Bug-intel
+                        // fingerprint c4600a30: previously, if the cache was
+                        // already populated via `loadCachedRecipes`, the
+                        // service's `healthyRecipes` might already be non-empty
+                        // from a prior session even when the current fetch
+                        // fails — surface whatever we have so the user isn't
+                        // stuck in the empty state.
                         await spoonacularService.fetchHealthyRecipes()
-                        displayedRecipes = spoonacularService.healthyRecipes
+                        if !spoonacularService.healthyRecipes.isEmpty {
+                            displayedRecipes = spoonacularService.healthyRecipes
+                        } else if let err = spoonacularService.errorMessage {
+                            AppLogger.warning(
+                                "[CAROUSEL] All recipe fetch strategies returned empty: \(err)",
+                                category: .nutrition
+                            )
+                        }
                         isPersonalized = false
                     }
                 }
-                
+
                 AppLogger.debug("🍽️ [CAROUSEL] Loaded \(displayedRecipes.count) recipes for 2-row layout (personalized: \(isPersonalized))", category: .nutrition)
             }
         }
@@ -316,15 +329,21 @@ struct HealthyRecipesCarousel: View {
             Image(systemName: "fork.knife")
                 .font(.title)
                 .foregroundColor(.secondary)
-            
+
             Text("No recipes available")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-            
+
             Button {
-                Task {
-                    await spoonacularService.fetchHealthyRecipes()
-                }
+                // Bug-intel fingerprint c4600a30 — tapping "Load Recipes"
+                // previously only fetched into `spoonacularService.healthyRecipes`
+                // and never updated this view's `@State displayedRecipes`, so
+                // the empty state persisted even after a successful fetch.
+                // Route through `loadRecipes()` so `displayedRecipes` is
+                // populated, and invalidate the preference-service cache first
+                // so the user gets a genuinely fresh fetch.
+                preferenceService.invalidateRecipeCache()
+                loadRecipes()
             } label: {
                 Label("Load Recipes", systemImage: "arrow.down.circle")
                     .font(.subheadline)

@@ -548,7 +548,10 @@ class SupabaseManager: ObservableObject {
             let isRateLimit = desc.contains("rate limit") || desc.contains("rate_limit") || desc.contains("too many") || desc.contains("429")
             
             if isRateLimit {
-                AppLogger.warning("[AUTH] Sign up rate limited after \(String(format: "%.2f", duration))s — user should wait before retrying", category: .auth)
+                let retryAfter = passwordResetRateLimitRetryAfter(error) ?? 60
+                AppLogger.warning("[AUTH] Sign up rate limited after \(String(format: "%.2f", duration))s — retry in \(retryAfter)s", category: .auth)
+                SessionLogManager.shared.logAuthFailure(method: "email_signup", error: "rate_limited retry_after=\(retryAfter)s | Duration: \(String(format: "%.2f", duration))s")
+                throw SupabaseAuthError.signUpRateLimited(retryAfterSeconds: retryAfter)
             } else {
                 _ = NetworkErrorClassifier.log(
                     error,
@@ -1242,12 +1245,12 @@ class SupabaseManager: ObservableObject {
     
     func resetPassword(email: String) async throws {
         await MainActor.run { isLoading = true }
-        
+
         do {
             // Configure redirect URL for password reset
             // This URL will be used in the email link that user receives
             let redirectURL = "fit33://reset-password"  // Deep link to app
-            
+
             try await client.auth.resetPasswordForEmail(
                 email,
                 redirectTo: URL(string: redirectURL)
@@ -1256,6 +1259,20 @@ class SupabaseManager: ObservableObject {
             AppLogger.info("Password reset email sent to: \(email)", category: .auth)
         } catch {
             await MainActor.run { isLoading = false }
+
+            // Detect GoTrue `over_email_send_rate_limit` (HTTP 429) and rethrow
+            // as a typed error so the onboarding UI can render a cooldown with
+            // a live countdown instead of the generic "failed to send" message
+            // that was driving users to tap again and inflate the counter
+            // further. Bug-intel fingerprints 0080557f / 1edfaad0 / a22cd96f.
+            if let retryAfter = passwordResetRateLimitRetryAfter(error) {
+                AppLogger.warning(
+                    "Password reset rate-limited (retry after \(retryAfter)s) for \(email)",
+                    category: .auth
+                )
+                throw SupabaseAuthError.passwordResetRateLimited(retryAfterSeconds: retryAfter)
+            }
+
             _ = NetworkErrorClassifier.log(
                 error,
                 context: "Password reset error",
@@ -1281,13 +1298,57 @@ class SupabaseManager: ObservableObject {
     /// localized string.
     enum SupabaseAuthError: LocalizedError {
         case emailNotConfirmed(email: String)
+        /// Supabase rate-limited the password reset email for this address.
+        /// `retryAfterSeconds` is parsed from the `Retry-After` header when
+        /// present, else defaults to 60s per GoTrue's `over_email_send_rate_limit`
+        /// enforcement. Bug-intel fingerprints 0080557f / 1edfaad0 / a22cd96f.
+        case passwordResetRateLimited(retryAfterSeconds: Int)
+        /// Supabase rate-limited the signup confirmation email. The default
+        /// hosted SMTP allows ~2 emails/hour, so a few retries (or stale dev
+        /// attempts) trigger this. UI shows a live countdown so users stop
+        /// hammering Continue. See `[auth.rate_limit] email_sent` in
+        /// `supabase/config.toml`.
+        case signUpRateLimited(retryAfterSeconds: Int)
 
         var errorDescription: String? {
             switch self {
             case .emailNotConfirmed:
                 return "Please verify your email before signing in."
+            case .passwordResetRateLimited(let retry):
+                return "Too many reset emails — please wait \(retry)s before trying again."
+            case .signUpRateLimited(let retry):
+                let mins = max(1, Int(ceil(Double(retry) / 60.0)))
+                return "Email signup is temporarily rate-limited. Please wait \(retry < 60 ? "\(retry)s" : "~\(mins) min") and try again, or use a different email."
             }
         }
+    }
+
+    /// Heuristic for GoTrue `over_email_send_rate_limit` error shape. The SDK
+    /// surfaces rate-limited password-reset and sign-up attempts as either a
+    /// string match or an HTTP 429; we catch both. Reused for sign-up cooldown
+    /// (see `signUpRateLimited` typed error).
+    private func passwordResetRateLimitRetryAfter(_ error: Error) -> Int? {
+        let desc = error.localizedDescription.lowercased()
+        let looksRateLimited = desc.contains("over_email_send_rate_limit")
+            || desc.contains("email rate limit")
+            || desc.contains("rate limit exceeded")
+            || desc.contains("status code: 429")
+            || desc.contains("\"status\":429")
+        guard looksRateLimited else { return nil }
+
+        // Try to parse "Retry-After: NNN" out of the stringified response if
+        // the SDK happened to include response headers in the error. Otherwise
+        // fall back to 60s (GoTrue's default floor).
+        if let range = desc.range(of: #"retry-after"#, options: [.caseInsensitive, .regularExpression]) {
+            let tail = desc[range.upperBound...]
+            let digits = tail.prefix { !$0.isNumber }.isEmpty
+                ? tail.prefix { $0.isNumber }
+                : tail.drop { !$0.isNumber }.prefix { $0.isNumber }
+            if let seconds = Int(digits), seconds > 0 {
+                return seconds
+            }
+        }
+        return 60
     }
 
     /// Heuristic for Supabase/GoTrue "email not confirmed" errors. Error shape

@@ -900,10 +900,10 @@ struct WeeklyLeagueDetailView: View {
                         .padding(.top, 8)
                         .padding(.bottom, 4)
                     }
-                    
+
                     ForEach(standing.leaderboard) { entry in
                         fullLeaderboardRow(entry: entry, standing: standing)
-                        
+
                         // Zone dividers
                         if entry.rank == standing.promotionCount && standing.promotionCount > 0 {
                             zoneDivider(color: .green, text: "▲ Promotion cutoff")
@@ -912,17 +912,101 @@ struct WeeklyLeagueDetailView: View {
                             zoneDivider(color: .red, text: "▼ Relegation zone")
                         }
                     }
-                    
+
                     Spacer(minLength: 100)
                 }
             } else if leagueService.isLoading {
                 ProgressView("Loading leaderboard...")
                     .padding(.top, 40)
+            } else if leagueService.notPlaced {
+                leaderboardNotPlacedState
+            } else {
+                // Bug-intel fingerprint eb6ce765 — previously this branch was
+                // empty, so a failed or pre-placement load rendered a black
+                // ScrollView with just the header chevron. Now we always show
+                // an explanatory state with a retry button.
+                leaderboardEmptyErrorState
             }
         }
         .refreshable {
             await leagueService.fetchFullLeaderboard()
         }
+    }
+
+    /// Shown when `WeeklyLeagueService.notPlaced` is true — the user joined
+    /// mid-week and placement happens on the next Monday rollup (see the
+    /// Weekly League Monday-only placement invariant in SUPABASE_AGENT.md).
+    private var leaderboardNotPlacedState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "hourglass")
+                .font(.system(size: 44))
+                .foregroundColor(.orange)
+            Text("You're not placed yet")
+                .font(.headline)
+            if let tier = leagueService.notPlacedTierName {
+                Text("You'll start in the \(tier) tier next week.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("Placements run every Monday. Keep logging workouts — you'll see your rank once the next week starts.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            if let next = leagueService.notPlacedNextWeek {
+                Text("Next placement: \(next)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 60)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Shown when standing is nil and we're not loading and not in the
+    /// `notPlaced` state — i.e. fetch failed, user offline, or the standing
+    /// was never populated. Always offer a retry path so we never fall back
+    /// to a bare black screen.
+    private var leaderboardEmptyErrorState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 44))
+                .foregroundColor(.yellow)
+            Text("Leaderboard unavailable")
+                .font(.headline)
+            Text(leagueService.error
+                 ?? "We couldn't load the leaderboard. Check your connection and try again.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button {
+                Task {
+                    // `fetchOrJoinLeague` runs the full placement/standing
+                    // query from scratch (and joins if needed);
+                    // `fetchFullLeaderboard` needs a groupId and would
+                    // short-circuit again if standing is still nil.
+                    await leagueService.fetchOrJoinLeague(force: true)
+                    if leagueService.standing != nil {
+                        await leagueService.fetchFullLeaderboard()
+                    }
+                }
+            } label: {
+                Label("Try Again", systemImage: "arrow.clockwise")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, 10)
+                    .background(Color.orange)
+                    .cornerRadius(20)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 60)
+        .frame(maxWidth: .infinity)
     }
     
     private func fullLeaderboardRow(entry: LeagueEntry, standing: LeagueStanding) -> some View {

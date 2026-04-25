@@ -896,6 +896,8 @@ class USDAFoodService: ObservableObject {
         self.isSearching = localResults.isEmpty
         
         // STEP 2: Fetch from cloud in parallel (always - to get non-hardcoded foods)
+        let startedAt = Date()
+        let userId = SupabaseManager.shared.currentUser?.id
         Task { @MainActor in
             do {
                 let cloudResults = try await cloudService.searchFoods(query: query)
@@ -975,11 +977,25 @@ class USDAFoodService: ObservableObject {
                 
                 self.isSearching = false
             } catch {
-                AppLogger.error("Cloud search error: \(error.localizedDescription)", category: .nutrition)
-                
+                // QP invariant 25a: route through NetworkErrorClassifier so
+                // transient 401s (token-refresh-in-flight on app foreground)
+                // and `URLErrorCancelled` (user typed-and-deleted) don't
+                // manufacture a fingerprint. Fingerprint targets:
+                // `0bddbb48` (Cloud search error: Unauthorized), and the
+                // `f94ae6fe` re-log via handleSearchError below.
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "[Nutrition] Cloud search failed",
+                    category: .nutrition,
+                    op: PerformanceSignposts.Op.foodSearch.rawValue,
+                    endpoint: "functions/usda-food-search",
+                    startedAt: startedAt,
+                    userId: userId
+                )
+
                 // If cloud fails but we have local results, keep showing them
                 if !localResults.isEmpty {
-                    AppLogger.warning("Using local results only due to cloud error", category: .nutrition)
+                    AppLogger.debug("Using local results only due to cloud error", category: .nutrition)
                     self.searchResults = localResults
                     self.isSearching = false
                 } else {
@@ -1594,7 +1610,12 @@ class USDAFoodService: ObservableObject {
     private func handleSearchError(_ message: String) {
         searchError = message
         searchResults = []
-        AppLogger.error("USDA API Error: \(message)", category: .nutrition)
+        // The upstream catch at performSearch already routed the underlying
+        // error through NetworkErrorClassifier with op + endpoint + startedAt.
+        // Re-logging the wrapped string at .error manufactured a sibling
+        // fingerprint (`f94ae6fe` USDA API Error: Search failed: Unauthorized)
+        // per QP invariant 25a. Keep the breadcrumb at .warning.
+        AppLogger.warning("USDA API Error surfaced to UI: \(message)", category: .nutrition)
     }
 }
 

@@ -113,6 +113,16 @@ enum PerformanceSignposts {
         case cloudSyncFavorite        = "cloud_sync.favorite"
         case cloudSyncCustomExercise  = "cloud_sync.custom_exercise"
         case cloudSyncFavoriteWorkout = "cloud_sync.favorite_workout"
+
+        // Nutrition / food search (Cluster H — added 2026-04-25 to drain
+        // the 21:24 burst of `Cloud search error: Unauthorized` /
+        // `Edge function error: Unauthorized` / `Food search error: Unauthorized`
+        // / `USDA API Error: Search failed: Unauthorized` fingerprints
+        // [`0bddbb48` / `479cf818` / `d0aaa6e5` / `f94ae6fe`]. Top-level
+        // catches in USDAFoodService.performSearch + FoodDatabaseService.searchFoods
+        // were AppLogger.error'ing transient 401s mid-foreground refresh.)
+        case foodSearch               = "food.search"
+        case foodDetails              = "food.details"
     }
 
     // MARK: Thresholds

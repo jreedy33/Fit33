@@ -182,6 +182,9 @@ extension NewOnboardingView {
                                 ProgressView()
                                     .progressViewStyle(CircularProgressViewStyle(tint: isAuthFormValid ? .white : .gray))
                                     .scaleEffect(0.8)
+                            } else if isSignUp && signUpCooldownSeconds > 0 {
+                                Text("Try again in \(signUpCooldownSeconds)s")
+                                    .font(.ds_heading2)
                             } else {
                                 Text(isEditingFromConfirmation ? "Save" : (isSignUp ? "Continue" : "Sign In"))
                                     .font(.ds_heading2)
@@ -189,12 +192,12 @@ extension NewOnboardingView {
                                     .font(.ds_bodySmall).fontWeight(.bold)
                             }
                         }
-                        .foregroundColor(isAuthFormValid && !supabaseManager.isLoading ? .white : .gray)
+                        .foregroundColor(isAuthFormValid && !supabaseManager.isLoading && !(isSignUp && signUpCooldownSeconds > 0) ? .white : .gray)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, Spacing.md)
                     .background(
                         Group {
-                            if isAuthFormValid && !supabaseManager.isLoading {
+                            if isAuthFormValid && !supabaseManager.isLoading && !(isSignUp && signUpCooldownSeconds > 0) {
                                 // Illuminated hollow state - glowing outline
                                 Capsule()
                                     .stroke(
@@ -213,7 +216,7 @@ extension NewOnboardingView {
                         }
                     )
                     }
-                    .disabled(supabaseManager.isLoading || !isAuthFormValid)
+                    .disabled(supabaseManager.isLoading || !isAuthFormValid || (isSignUp && signUpCooldownSeconds > 0))
                     .animation(.easeInOut(duration: 0.3), value: isAuthFormValid)
                     .accessibilityHint("Proceeds to next onboarding step")
                     }
@@ -487,15 +490,18 @@ extension NewOnboardingView {
             Button(action: {
                                     sendPasswordReset()
                                 }) {
-                                    Text("Reset Password")
+                                    Text(passwordResetCooldownSeconds > 0
+                                         ? "Reset Password (\(passwordResetCooldownSeconds)s)"
+                                         : "Reset Password")
                                         .font(.caption)
                                         .fontWeight(.semibold)
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(passwordResetCooldownSeconds > 0 ? .secondary : .blue)
                                         .padding(.horizontal, Spacing.md)
                                         .padding(.vertical, Spacing.xs)
-                                        .background(Color.blue.opacity(0.1))
+                                        .background((passwordResetCooldownSeconds > 0 ? Color.gray : Color.blue).opacity(0.1))
                                         .cornerRadius(CornerRadius.sm)
                                 }
+                                .disabled(passwordResetCooldownSeconds > 0)
                             }
                         }
                         .padding(hasStartedAuth ? 10 : 12)
@@ -522,6 +528,24 @@ extension NewOnboardingView {
                         .background(
                             RoundedRectangle(cornerRadius: CornerRadius.md)
                                 .fill(Color.green.opacity(0.1))
+                        )
+                    }
+
+                    // Rate-limit cooldown banner (bug-intel 0080557f / 1edfaad0 / a22cd96f).
+                    // Shown when Supabase returned `over_email_send_rate_limit` — we keep
+                    // the user from tapping Reset again until the counter runs out.
+                    if passwordResetCooldownSeconds > 0 {
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock.fill")
+                                .foregroundColor(.orange)
+                            Text("Too many reset emails. Please wait \(passwordResetCooldownSeconds)s before trying again.")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                        .padding(hasStartedAuth ? 10 : 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: CornerRadius.md)
+                                .fill(Color.orange.opacity(0.1))
                         )
                     }
                     
@@ -598,10 +622,13 @@ extension NewOnboardingView {
                                 sendPasswordReset()
                             }
                         }) {
-                            Text("Forgot Password?")
+                            Text(passwordResetCooldownSeconds > 0
+                                 ? "Forgot Password? (\(passwordResetCooldownSeconds)s)"
+                                 : "Forgot Password?")
                                 .font(.subheadline)
-                                .foregroundColor(.blue)
+                                .foregroundColor(passwordResetCooldownSeconds > 0 ? .secondary : .blue)
                         }
+                        .disabled(passwordResetCooldownSeconds > 0)
                         .padding(.top, hasStartedAuth ? 2 : 4)
                     }
                     
@@ -620,6 +647,9 @@ extension NewOnboardingView {
                                     ProgressView()
                                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                         .scaleEffect(0.8)
+                                } else if isSignUp && signUpCooldownSeconds > 0 {
+                                    Text("Try again in \(signUpCooldownSeconds)s")
+                                        .font(.ds_heading2)
                                 } else {
                                     Text(isEditingFromConfirmation ? "Save" : (isSignUp ? "Create Account" : "Sign In"))
                                         .font(.ds_heading2)
@@ -632,7 +662,7 @@ extension NewOnboardingView {
                             .padding(.vertical, Spacing.md)
                             .background(
                                 Group {
-                                    if isAuthFormValid && !supabaseManager.isLoading {
+                                    if isAuthFormValid && !supabaseManager.isLoading && !(isSignUp && signUpCooldownSeconds > 0) {
                                         Capsule()
                                             .fill(
                                                 LinearGradient(
@@ -649,8 +679,8 @@ extension NewOnboardingView {
                                 }
                             )
                         }
-                        .disabled(supabaseManager.isLoading || !isAuthFormValid)
-                        .opacity(supabaseManager.isLoading || !isAuthFormValid ? 0.6 : 1.0)
+                        .disabled(supabaseManager.isLoading || !isAuthFormValid || (isSignUp && signUpCooldownSeconds > 0))
+                        .opacity(supabaseManager.isLoading || !isAuthFormValid || (isSignUp && signUpCooldownSeconds > 0) ? 0.6 : 1.0)
                         .animation(.easeInOut(duration: 0.2), value: isAuthFormValid)
                         .padding(.top, hasStartedAuth ? 12 : 16)
                     }
@@ -793,15 +823,22 @@ extension NewOnboardingView {
             showError = true
             return
         }
-        
+
+        // If we're already in a rate-limit cooldown, short-circuit — the UI
+        // button is also disabled while `passwordResetCooldownSeconds > 0`,
+        // but guard here too in case a caller hasn't checked.
+        guard passwordResetCooldownSeconds == 0 else {
+            return
+        }
+
         // Clear previous states
         passwordResetSent = false
         showError = false
         errorMessage = ""
         emailAlreadyExists = false
-        
+
         AppLogger.debug("Sending password reset email to: \(email)", category: .auth)
-        
+
         Task {
             do {
                 try await supabaseManager.resetPassword(email: email)
@@ -809,11 +846,24 @@ extension NewOnboardingView {
                     passwordResetSent = true
                     HapticManager.notification(.success)
                     AppLogger.info("Password reset email sent successfully", category: .auth)
-                    
+
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(10))
                         guard !Task.isCancelled else { return }
                         passwordResetSent = false
+                    }
+                }
+            } catch let authError as SupabaseManager.SupabaseAuthError {
+                switch authError {
+                case .passwordResetRateLimited(let retryAfter):
+                    await MainActor.run {
+                        startPasswordResetCooldown(seconds: retryAfter)
+                    }
+                default:
+                    await MainActor.run {
+                        errorMessage = authError.errorDescription
+                            ?? "Failed to send reset email. Please check your email address and try again."
+                        showError = true
                     }
                 }
             } catch {
@@ -825,7 +875,65 @@ extension NewOnboardingView {
             }
         }
     }
-    
+
+    /// Kicks off a 1-second-tick countdown that disables the reset button and
+    /// drives the cooldown banner. Safe to call multiple times — any existing
+    /// timer is invalidated first.
+    @MainActor
+    func startPasswordResetCooldown(seconds: Int) {
+        passwordResetCooldownTimer?.invalidate()
+        passwordResetCooldownSeconds = max(seconds, 1)
+        HapticManager.notification(.warning)
+        AppLogger.warning(
+            "Password reset cooldown started (\(passwordResetCooldownSeconds)s)",
+            category: .auth
+        )
+
+        passwordResetCooldownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+            Task { @MainActor in
+                guard passwordResetCooldownSeconds > 0 else {
+                    timer.invalidate()
+                    passwordResetCooldownTimer = nil
+                    return
+                }
+                passwordResetCooldownSeconds -= 1
+                if passwordResetCooldownSeconds <= 0 {
+                    timer.invalidate()
+                    passwordResetCooldownTimer = nil
+                }
+            }
+        }
+    }
+
+    /// Disables the Continue button on the auth screen and drives a live
+    /// countdown after Supabase returns `email rate limit exceeded`. Mirrors
+    /// `startPasswordResetCooldown` — see that doc-comment for context.
+    @MainActor
+    func startSignUpCooldown(seconds: Int) {
+        signUpCooldownTimer?.invalidate()
+        signUpCooldownSeconds = max(seconds, 1)
+        HapticManager.notification(.warning)
+        AppLogger.warning(
+            "Sign up cooldown started (\(signUpCooldownSeconds)s)",
+            category: .auth
+        )
+
+        signUpCooldownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+            Task { @MainActor in
+                guard signUpCooldownSeconds > 0 else {
+                    timer.invalidate()
+                    signUpCooldownTimer = nil
+                    return
+                }
+                signUpCooldownSeconds -= 1
+                if signUpCooldownSeconds <= 0 {
+                    timer.invalidate()
+                    signUpCooldownTimer = nil
+                }
+            }
+        }
+    }
+
     func clearAuthMessages() {
         showError = false
         errorMessage = ""
@@ -904,11 +1012,24 @@ extension NewOnboardingView {
                             focusedField = targetField
                         }
                     }
+                } catch let authError as SupabaseManager.SupabaseAuthError {
+                    await MainActor.run {
+                        if case .signUpRateLimited(let retryAfter) = authError {
+                            startSignUpCooldown(seconds: retryAfter)
+                            errorMessage = authError.errorDescription
+                                ?? "Email signup is temporarily rate-limited. Please try again later or use a different email."
+                        } else {
+                            errorMessage = authError.errorDescription ?? "Sign up failed. Please try again."
+                        }
+                        showError = true
+                        AppLogger.error("Account creation failed in handleAuth: \(authError.localizedDescription)", category: .auth)
+                    }
                 } catch {
                     await MainActor.run {
                         let desc = error.localizedDescription.lowercased()
                         if desc.contains("rate") || desc.contains("limit") || desc.contains("too many") {
-                            errorMessage = "Too many attempts. Please wait a moment and try again."
+                            startSignUpCooldown(seconds: 60)
+                            errorMessage = "Email signup is temporarily rate-limited. Please wait 60s and try again, or use a different email."
                         } else if desc.contains("password") && (desc.contains("weak") || desc.contains("strength")) {
                             errorMessage = "Password is too weak. Please choose a stronger password."
                         } else {

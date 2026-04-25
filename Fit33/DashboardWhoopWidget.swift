@@ -306,20 +306,26 @@ struct WhoopMetricsInfoSheet: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.md) {
-                    header
+            ZStack {
+                AnimatedOrbBackground.home(colorScheme: colorScheme)
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
 
-                    ForEach(metrics) { metric in
-                        WhoopMetricInfoCard(info: metric)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        header
+
+                        ForEach(metrics) { metric in
+                            WhoopMetricInfoCard(info: metric)
+                        }
+
+                        sourceFooter
                     }
-
-                    sourceFooter
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.md)
                 }
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.md)
+                .scrollContentBackground(.hidden)
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("WHOOP Metrics")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

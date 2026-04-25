@@ -36,7 +36,21 @@ struct NewOnboardingView: View {
     @State var acceptedTerms = false
     @State var showTermsSheet = false
     @State var passwordResetSent = false
-    
+    // Bug-intel fingerprints 0080557f / 1edfaad0 / a22cd96f: when Supabase
+    // returns `over_email_send_rate_limit`, we disable the "Send reset email"
+    // button for `passwordResetCooldownSeconds` and show a live countdown so
+    // users stop tapping (which only inflates the rate-limit counter further).
+    @State var passwordResetCooldownSeconds = 0
+    @State var passwordResetCooldownTimer: Timer? = nil
+    /// Cooldown applied after Supabase returns `email rate limit exceeded` on
+    /// signup. The hosted GoTrue default SMTP allows only ~2 confirmation
+    /// emails/hour, so a couple of dev attempts can lock new users out. While
+    /// the countdown is active the Continue button is disabled and shows the
+    /// remaining seconds so users stop tapping (which would just inflate the
+    /// counter further).
+    @State var signUpCooldownSeconds = 0
+    @State var signUpCooldownTimer: Timer? = nil
+
     // Phone number (for 2FA / account security)
     @State var phoneNumber = ""
     @State var phoneNumberError = ""

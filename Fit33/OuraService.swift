@@ -85,21 +85,47 @@ final class OuraService: ObservableObject {
         isConnected = accessToken != nil
 
         if isConnected {
-            if let data = UserDefaults.standard.data(forKey: "oura_profile"),
-               let profile = try? JSONDecoder().decode(OuraPersonalInfo.self, from: data) {
-                personalInfo = profile
-            }
-            if let data = UserDefaults.standard.data(forKey: "oura_today_readiness"),
-               let readiness = try? JSONDecoder().decode(OuraReadinessRecord.self, from: data) {
-                todayReadiness = readiness
-            }
-            if let data = UserDefaults.standard.data(forKey: "oura_today_activity"),
-               let activity = try? JSONDecoder().decode(OuraActivityRecord.self, from: data) {
-                todayActivity = activity
-            }
-            if let date = UserDefaults.standard.object(forKey: "oura_last_sync") as? Date {
-                lastSyncDate = date
-            }
+            loadCachedDataIfNeeded()
+        }
+    }
+
+    /// Re-reads keychain to recompute `isConnected`. Mirrors
+    /// `WhoopService.refreshConnectionState()` — see that doc comment for the
+    /// `BGTask`-wake / locked-device race this guards against. Called from
+    /// `Fit33App.onChange(scenePhase: .active)` so the dashboard Oura widget
+    /// reliably appears on every cold start / resume when Oura is connected.
+    func refreshConnectionState() {
+        let nowConnected = accessToken != nil
+        if nowConnected != isConnected {
+            AppLogger.info("[OURA] Connection state changed on foreground: \(isConnected) → \(nowConnected)", category: .auth)
+            isConnected = nowConnected
+        }
+        if isConnected {
+            loadCachedDataIfNeeded()
+        }
+    }
+
+    /// Hydrates published cache properties from `UserDefaults` — only fills in
+    /// values that are still nil so fresh API data isn't overwritten.
+    private func loadCachedDataIfNeeded() {
+        if personalInfo == nil,
+           let data = UserDefaults.standard.data(forKey: "oura_profile"),
+           let profile = try? JSONDecoder().decode(OuraPersonalInfo.self, from: data) {
+            personalInfo = profile
+        }
+        if todayReadiness == nil,
+           let data = UserDefaults.standard.data(forKey: "oura_today_readiness"),
+           let readiness = try? JSONDecoder().decode(OuraReadinessRecord.self, from: data) {
+            todayReadiness = readiness
+        }
+        if todayActivity == nil,
+           let data = UserDefaults.standard.data(forKey: "oura_today_activity"),
+           let activity = try? JSONDecoder().decode(OuraActivityRecord.self, from: data) {
+            todayActivity = activity
+        }
+        if lastSyncDate == nil,
+           let date = UserDefaults.standard.object(forKey: "oura_last_sync") as? Date {
+            lastSyncDate = date
         }
     }
 
@@ -211,11 +237,14 @@ final class OuraService: ObservableObject {
 
     private func refreshAccessToken() async throws {
         guard let currentRefreshToken = refreshToken else {
-            // No stored refresh token → can't recover silently. Mark the
-            // service disconnected so the UI surfaces the reconnect prompt
-            // instead of sitting in a zombie "connected but silent" state.
-            AppLogger.warning("[OURA] refreshAccessToken called with no stored refresh token — disconnecting", category: .auth)
-            disconnect()
+            // Don't auto-disconnect on a nil refresh token. See the matching
+            // doc comment in `WhoopService.refreshAccessToken` — the typical
+            // cause is a locked keychain during a BGTask wake, not an actual
+            // missing token. Wiping cached state on every transient nil read
+            // is what made users find Oura "spontaneously disconnected" after
+            // routine TestFlight / App Store updates. Throw and let the
+            // caller decide whether to surface the reconnect prompt.
+            AppLogger.warning("[OURA] refreshAccessToken: no stored refresh token (keychain locked?) — throwing, NOT disconnecting", category: .auth)
             throw OuraError.notConnected
         }
 
@@ -238,10 +267,22 @@ final class OuraService: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             if let errorBody = String(data: data, encoding: .utf8) {
-                AppLogger.error("[OURA] Token refresh failed (HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)): \(errorBody.prefix(300))", category: .auth)
+                AppLogger.error("[OURA] Token refresh failed (HTTP \(status)): \(errorBody.prefix(300))", category: .auth)
             }
-            disconnect()
+            // Only disconnect on PERMANENT failures (refresh token actually
+            // revoked / invalidated). 5xx, 429, and other transient statuses
+            // must NOT wipe tokens — the grant is still valid, the API just
+            // hiccupped. Previously every 5xx permanently signed users out,
+            // which is the root cause behind "I haven't deleted the app,
+            // why is Oura disconnected again". Mirror of WhoopService.
+            if (400...403).contains(status) {
+                AppLogger.error("[OURA] Refresh token rejected (HTTP \(status)) — disconnecting", category: .auth)
+                disconnect()
+            } else {
+                AppLogger.warning("[OURA] Token refresh transient failure (HTTP \(status)) — keeping tokens, will retry", category: .auth)
+            }
             throw OuraError.tokenRefreshFailed
         }
 

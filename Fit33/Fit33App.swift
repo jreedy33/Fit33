@@ -694,6 +694,15 @@ struct Fit33App: App {
                         // BGTask path (`BackgroundChallengeSyncService.performSyncBody`) also refreshes
                         // WHOOP + Oura — so if iOS woke us recently there's no network cost; the
                         // service-level `isSyncing` guard coalesces with any in-flight sync.
+                        //
+                        // CRITICAL: call `refreshConnectionState()` BEFORE reading `isConnected`.
+                        // If iOS woke the app via BGTask while the device was locked, the
+                        // wearable singleton was constructed with an unreadable keychain →
+                        // `isConnected` got stuck at `false`. Re-reading the keychain on
+                        // foreground (now that the device is unlocked) repairs that state so
+                        // the dashboard widgets reliably appear on every cold start / resume.
+                        WhoopService.shared.refreshConnectionState()
+                        OuraService.shared.refreshConnectionState()
                         if WhoopService.shared.isConnected {
                             Task(priority: .userInitiated) {
                                 await WhoopService.shared.syncAllData(force: true)

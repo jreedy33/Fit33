@@ -434,11 +434,21 @@ class WeeklyLeagueService: ObservableObject {
             self.hasJoined = false
             return
         }
-        guard let userId = SupabaseManager.shared.currentUser?.id,
-              let groupId = standing?.groupId else { return }
-        
+        guard let userId = SupabaseManager.shared.currentUser?.id else {
+            // Bug-intel fingerprint eb6ce765: previously this early-return was
+            // silent and the detail view rendered a black empty ScrollView.
+            // Surface the reason so the UI can show a real error state.
+            self.error = "Sign in to view the full leaderboard."
+            return
+        }
+        guard let groupId = standing?.groupId else {
+            self.error = "No league assignment yet — check back when this week's placements finish."
+            return
+        }
+
         isLoading = true
-        
+        self.error = nil
+
         do {
             let result: LeagueStanding = try await SupabaseManager.shared.supabaseClient
                 .rpc("get_league_leaderboard", params: [
@@ -447,20 +457,22 @@ class WeeklyLeagueService: ObservableObject {
                 ])
                 .execute()
                 .value
-            
+
             self.standing = result
+            self.error = nil
             cacheStanding(result)
-            
+
         } catch is CancellationError {
             AppLogger.debug("🔕 [LEAGUE] Leaderboard fetch cancelled (tab switch)", category: .social)
         } catch let urlError as URLError where urlError.code == .cancelled {
             AppLogger.debug("🔕 [LEAGUE] Leaderboard fetch cancelled (tab switch)", category: .social)
         } catch {
+            self.error = "Couldn't load the leaderboard. Check your connection and try again."
             #if DEBUG
             AppLogger.error("❌ [LEAGUE] Failed to fetch leaderboard: \(error)", category: .social)
             #endif
         }
-        
+
         isLoading = false
     }
     

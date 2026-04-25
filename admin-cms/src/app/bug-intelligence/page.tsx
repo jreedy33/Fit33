@@ -41,6 +41,16 @@ type Fingerprint = {
     regressed_after_fix?: boolean | null
     auto_resolved_at?: string | null
     last_seen_build?: string | null
+    // Phase 12 (2026-04-25) — auto-resolution provenance.
+    auto_resolved_reason?: string | null
+    // Phase 12 Tier 0 #1 — call-site captured from iOS #file/#line/#function.
+    last_seen_file?: string | null
+    last_seen_function?: string | null
+    last_seen_line?: number | null
+    callsite_first_seen_at?: string | null
+    // Phase 12 Tier 2 #2 — empirical weighted severity score.
+    severity_score?: number | null
+    severity_score_updated_at?: string | null
 }
 
 type Report = {
@@ -129,6 +139,14 @@ type ExportFingerprint = {
     regressed_after_fix?: boolean | null
     auto_resolved_at?: string | null
     last_seen_build?: string | null
+    // Phase 12 (2026-04-25) — auto-resolution provenance + call-site + severity.
+    auto_resolved_reason?: string | null
+    last_seen_file?: string | null
+    last_seen_function?: string | null
+    last_seen_line?: number | null
+    callsite_first_seen_at?: string | null
+    severity_score?: number | null
+    severity_score_updated_at?: string | null
 }
 type ExportReport = {
     id: string
@@ -356,9 +374,19 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         }
     }
 
-    // Render order: severity desc → confidence desc → fingerprint (stable).
+    // Render order (Phase 12 Tier 2 #2): severity_score desc when both
+    // canonicals have one, else legacy severity → confidence → fingerprint.
+    // Severity_score is empirically weighted (occ × √users × visibility ×
+    // build_freshness × source × regression) so it produces a more useful
+    // ordering than raw severity buckets, but we keep the fallback so older
+    // exports (pre-20260528) still render in a stable order.
     const dedupedBundles: BugIntelExportBundle[] = Array.from(clusters.values())
         .sort((a, b) => {
+            const aScore = a.canonical.fingerprint?.severity_score
+            const bScore = b.canonical.fingerprint?.severity_score
+            if (typeof aScore === 'number' && typeof bScore === 'number' && aScore !== bScore) {
+                return bScore - aScore
+            }
             const sevDiff = (SEVERITY_RANK[b.canonical.report.severity] ?? 0) - (SEVERITY_RANK[a.canonical.report.severity] ?? 0)
             if (sevDiff !== 0) return sevDiff
             const confDiff = b.canonical.report.confidence - a.canonical.report.confidence
@@ -448,7 +476,11 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
             // scan 20 lines and spot the duplicates before opening each.
             const struct = [f?.op ? `op=${f.op}` : null, f?.error_class ? `class=${f.error_class}` : null].filter(Boolean).join(' ')
             const structSuffix = struct ? ` · ${struct}` : ''
-            L.push(`- [**${r.severity.toUpperCase()}**] \`${r.fingerprint.slice(0, 8)}\` — ${r.title} · \`${r.agent_owner}\` · ${occ} occ / ${users} user${users === 1 ? '' : 's'}${f?.last_seen_app_version ? ` · last on \`${f.last_seen_app_version}\`` : ''}${structSuffix}`)
+            // Phase 12 — surface severity_score + call-site in the TL;DR
+            // so a reviewer can rank candidates without opening each report.
+            const scoreSuffix = typeof f?.severity_score === 'number' ? ` · score=\`${f.severity_score.toFixed(0)}\`` : ''
+            const callsiteSuffix = f?.last_seen_file ? ` · 📍\`${f.last_seen_file}${f.last_seen_line ? `:${f.last_seen_line}` : ''}\`` : ''
+            L.push(`- [**${r.severity.toUpperCase()}**] \`${r.fingerprint.slice(0, 8)}\` — ${r.title} · \`${r.agent_owner}\` · ${occ} occ / ${users} user${users === 1 ? '' : 's'}${f?.last_seen_app_version ? ` · last on \`${f.last_seen_app_version}\`` : ''}${structSuffix}${scoreSuffix}${callsiteSuffix}`)
         }
         L.push('')
     }
@@ -557,6 +589,21 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         if (structBits.length > 0) {
             L.push(`- **Root cause fields**: ${structBits.join(' · ')}`)
         }
+        // Phase 12 Tier 0 #1 (2026-04-25) — exact source location captured
+        // by the iOS client's #file/#line/#function macros. When present,
+        // this is the AUTHORITATIVE file path, not Claude's heuristic.
+        if (f?.last_seen_file) {
+            const callsite = f.last_seen_line
+                ? `\`${f.last_seen_file}:${f.last_seen_line}\``
+                : `\`${f.last_seen_file}\``
+            const fnSuffix = f.last_seen_function ? ` · function \`${f.last_seen_function}\`` : ''
+            L.push(`- 📍 **Call-site (authoritative)**: ${callsite}${fnSuffix} — captured from iOS \`#file:#line:#function\`. Apply the fix HERE; ignore any \`Suggested file\` heuristic above that contradicts it.`)
+        }
+        // Phase 12 Tier 2 #2 (2026-04-25) — empirical severity score.
+        // Surfaces the rank without re-explaining the formula every report.
+        if (typeof f?.severity_score === 'number') {
+            L.push(`- 📊 **Severity score**: \`${f.severity_score.toFixed(1)}\` (occ × √users × visibility × build_freshness × source × regression)`)
+        }
         // Classifier gate: invariant 25a (QUALITY_PERFORMANCE_AGENT.md) says
         // every Supabase-touching catch MUST route through NetworkErrorClassifier.
         // When is_classified=false, the event bypassed the classifier and
@@ -576,6 +623,15 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
             } else {
                 L.push(`- **Fixed in**: \`${f.fixed_in_build}\`${f.auto_resolved_at ? ` · auto-resolved at \`${f.auto_resolved_at}\`` : ''}`)
             }
+        }
+        // Phase 12 (2026-04-25) — auto-resolution provenance. Tells the
+        // reviewer WHY this fingerprint was closed without human review:
+        //   transient_single_incident   → bug_intel_resolve_single_incident_transients
+        //   migration_resolved:<id>     → mark_fingerprints_resolved_by_migration
+        //   silent_fix                  → compute_daily_bug_rollup (no activity in 14d)
+        //   noise_filter_expanded       → Phase 10 noise-filter backfill
+        if (f?.auto_resolved_reason) {
+            L.push(`- 🤖 **Auto-resolved**: \`${f.auto_resolved_reason}\`${f.auto_resolved_at ? ` at \`${f.auto_resolved_at}\`` : ''}`)
         }
         L.push('')
 
@@ -954,6 +1010,15 @@ export default function BugIntelligencePage() {
             return true
         })
         return filtered.sort((a, b) => {
+            // Phase 12 Tier 2 #2 (2026-04-25) — when both rows have a
+            // computed severity_score, use it as the primary sort key.
+            // Otherwise fall back to the legacy severity-bucket ordering
+            // so pre-Phase-12 fingerprints still sort sensibly.
+            const aScore = typeof a.severity_score === 'number' ? a.severity_score : null
+            const bScore = typeof b.severity_score === 'number' ? b.severity_score : null
+            if (aScore !== null && bScore !== null && aScore !== bScore) {
+                return bScore - aScore
+            }
             const aSev = a.latest_report?.severity
                 ? (SEVERITY_ORDER[a.latest_report.severity] ?? 5)
                 : 5
@@ -1733,6 +1798,25 @@ function FingerprintRow({ fp, selected, onSelect, onTriage }: {
                     {fp.regressed_after_fix && <Pill label="REGRESSED" color="#dc2626" />}
                     {fp.is_classified === false && <Pill label="unclassified" color="#f59e0b" />}
                     {fp.error_class && <Pill label={fp.error_class} color="#0f766e" />}
+                    {/* Phase 12 Tier 2 #2 — empirical severity score. Renders
+                        as a compact numeric pill so reviewers can spot the
+                        truly-bad rows independent of severity bucket. */}
+                    {typeof fp.severity_score === 'number' && (
+                        <Pill label={`score ${fp.severity_score.toFixed(0)}`} color="#1e40af" />
+                    )}
+                    {/* Phase 12 — auto-resolution provenance. Tells the reviewer
+                        WHY a fingerprint closed without manual triage. */}
+                    {fp.auto_resolved_reason && (
+                        <Pill
+                            label={
+                                fp.auto_resolved_reason === 'transient_single_incident' ? 'auto: transient'
+                                    : fp.auto_resolved_reason.startsWith('migration_resolved') ? 'auto: migration'
+                                        : fp.auto_resolved_reason === 'silent_fix' ? 'auto: silent'
+                                            : `auto: ${fp.auto_resolved_reason.slice(0, 12)}`
+                            }
+                            color="#15803d"
+                        />
+                    )}
                 </div>
                 <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {fp.sample_message || fp.normalized_message}
@@ -1746,6 +1830,15 @@ function FingerprintRow({ fp, selected, onSelect, onTriage }: {
                     {fp.occurrence_count} occurrences · {fp.unique_user_count} user{fp.unique_user_count === 1 ? '' : 's'} · last seen {timeAgo(fp.last_seen_at)}
                     {fp.affected_screens && fp.affected_screens.length > 0 && ` · ${fp.affected_screens.slice(0, 3).join(', ')}${fp.affected_screens.length > 3 ? '…' : ''}`}
                 </div>
+                {/* Phase 12 Tier 0 #1 — call-site row. When the iOS client
+                    captured #file:#line, surface it on the inbox so reviewers
+                    can mentally jump to the file before opening the detail. */}
+                {fp.last_seen_file && (
+                    <div style={{ fontSize: 11, color: '#3b82f6', fontFamily: 'ui-monospace, monospace', marginTop: 4 }}>
+                        📍 {fp.last_seen_file}{fp.last_seen_line ? `:${fp.last_seen_line}` : ''}
+                        {fp.last_seen_function ? ` · ${fp.last_seen_function}` : ''}
+                    </div>
+                )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <button
@@ -1859,7 +1952,7 @@ function DetailPanel({
                 25a violation — shown in amber so triagers immediately know
                 the real fix may be "move this call to NetworkErrorClassifier",
                 not "investigate the error". */}
-            {(fp.op || fp.error_class || fp.pg_code || fp.endpoint || fp.structural_fingerprint || fp.is_classified === false) && (
+            {(fp.op || fp.error_class || fp.pg_code || fp.endpoint || fp.structural_fingerprint || fp.is_classified === false || fp.last_seen_file || typeof fp.severity_score === 'number' || fp.auto_resolved_reason) && (
                 <div style={{
                     marginBottom: 12,
                     padding: 10,
@@ -1880,6 +1973,22 @@ function DetailPanel({
                         {fp.structural_fingerprint && <MetaItem label="Struct fingerprint" value={fp.structural_fingerprint.slice(0, 12)} />}
                         {fp.fixed_in_build && <MetaItem label="Fixed in build" value={fp.fixed_in_build} />}
                         {fp.last_seen_build && <MetaItem label="Last seen build" value={fp.last_seen_build} />}
+                        {/* Phase 12 Tier 0 #1 — authoritative call-site. */}
+                        {fp.last_seen_file && (
+                            <MetaItem
+                                label="Call-site"
+                                value={`${fp.last_seen_file}${fp.last_seen_line ? `:${fp.last_seen_line}` : ''}`}
+                            />
+                        )}
+                        {fp.last_seen_function && <MetaItem label="Function" value={fp.last_seen_function} />}
+                        {/* Phase 12 Tier 2 #2 — empirical severity score. */}
+                        {typeof fp.severity_score === 'number' && (
+                            <MetaItem label="Severity score" value={fp.severity_score.toFixed(1)} />
+                        )}
+                        {/* Phase 12 — auto-resolution provenance. */}
+                        {fp.auto_resolved_reason && (
+                            <MetaItem label="Auto-resolved" value={fp.auto_resolved_reason} />
+                        )}
                     </div>
                     {fp.is_classified === false && (
                         <div style={{

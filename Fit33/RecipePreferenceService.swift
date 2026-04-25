@@ -595,16 +595,20 @@ class RecipePreferenceService: ObservableObject {
             shownRecipeIds.removeAll()
             saveCarouselState()
         }
-        
-        // Mark refresh time
-        lastCarouselRefresh = Date()
-        
+
         // Get personalized recommendations
         let recipes = await getPersonalizedRecipes(count: count)
-        
-        // Save state
-        saveCarouselState()
-        
+
+        // Only mark refresh time on a successful fetch. Bug-intel fingerprint
+        // c4600a30 — previously we stamped `lastCarouselRefresh` before the
+        // fetch so an API failure locked the user out of another attempt for
+        // the full `carouselRefreshInterval` (1 hour), leaving them stuck on
+        // the "No recipes available" empty state.
+        if !recipes.isEmpty {
+            lastCarouselRefresh = Date()
+            saveCarouselState()
+        }
+
         return recipes
     }
     

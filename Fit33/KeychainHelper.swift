@@ -21,6 +21,17 @@ struct KeychainHelper {
         
         var addQuery = query
         addQuery[kSecValueData as String] = data
+        // `kSecAttrAccessibleAfterFirstUnlock` (vs. the default `WhenUnlocked`)
+        // lets `BGTask` paths — `BackgroundChallengeSyncService`, silent-push
+        // wakes — read OAuth tokens (WHOOP, Oura, Strava, Fitbit, Supabase
+        // session) while the screen is locked. Without it, the wearable
+        // singletons (`WhoopService`, `OuraService`) initialize during a
+        // locked-device wake with `accessToken == nil` → `isConnected = false`,
+        // and that stuck state persists for the whole process. Result:
+        // dashboard widgets silently disappear on the next user-visible
+        // launch even though tokens are valid. Tokens still require device
+        // unlock at least once per boot, which matches our threat model.
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         SecItemAdd(addQuery as CFDictionary, nil)
     }
     

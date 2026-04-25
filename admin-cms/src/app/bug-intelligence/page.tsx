@@ -51,6 +51,10 @@ type Fingerprint = {
     // Phase 12 Tier 2 #2 — empirical weighted severity score.
     severity_score?: number | null
     severity_score_updated_at?: string | null
+    // Phase 13 (2026-06-14) — stale-fix deploy watermark. See ExportFingerprint
+    // for full docs.
+    latest_resolving_migration_at?: string | null
+    latest_resolving_migration_id?: string | null
 }
 
 type Report = {
@@ -147,6 +151,15 @@ type ExportFingerprint = {
     callsite_first_seen_at?: string | null
     severity_score?: number | null
     severity_score_updated_at?: string | null
+    // Phase 13 (2026-06-14) — `last_seen_after_fix_deployed` filter inputs.
+    // Stamped by `bug_intel_register_migration_deploy()` (see migration #114
+    // 20260614_bug_intel_stale_fix_filter.sql) when a `Resolves: <fp>`
+    // migration deploys. The export filter hides the fingerprint when
+    // last_seen_at <= latest_resolving_migration_at + 48h grace AND
+    // regressed_after_fix is not TRUE. Both fields may be null on legacy
+    // fingerprints we never registered a deploy for.
+    latest_resolving_migration_at?: string | null
+    latest_resolving_migration_id?: string | null
 }
 type ExportReport = {
     id: string
@@ -264,6 +277,13 @@ type BugIntelExport = {
     previous_export_at?: string | null
     stamped?: boolean
     stamp_error?: string | null
+    // Phase 13 (2026-06-14) — count of reports the server hid via the
+    // `last_seen_after_fix_deployed` stale-fix filter (last_seen_at <=
+    // latest_resolving_migration_at + 48h grace). Surfaced in the markdown
+    // TL;DR so reviewers know the pipeline is filtering — not silently
+    // dropping. Older server builds omit this field; treat undefined/0 the
+    // same.
+    stale_fix_excluded?: number
 }
 
 type AgentMetric = {
@@ -469,6 +489,15 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
     if (ex.previous_export_at) L.push(`Previous export: \`${ex.previous_export_at}\``)
     L.push(`Source: \`/bug-intelligence\` · Filters: \`${JSON.stringify(ex.filters)}\``)
     L.push(`Reports: **${total}** · \`${brandNew.length}\` brand-new · \`${regressed.length}\` regressed · \`${stillPending.length}\` still-pending`)
+    // Phase 13 — surface the stale-fix exclusion count so reviewers see the
+    // filter is working and don't think the export is silently incomplete.
+    // The number reflects fingerprints whose `Resolves:` migration deployed
+    // ≥48h before any post-deploy activity (i.e. fix already shipped, only
+    // stale-client + schema-cache reload tail remained). Genuine regressions
+    // (regressed_after_fix=true) bypass the filter and DO appear above.
+    if (typeof ex.stale_fix_excluded === 'number' && ex.stale_fix_excluded > 0) {
+        L.push(`Stale-fix excluded: \`${ex.stale_fix_excluded}\` fingerprint${ex.stale_fix_excluded === 1 ? '' : 's'} hidden — fix-bearing migration deployed ≥48h before last_seen_at, no regression flag set. Set \`mode=all\` to include them.`)
+    }
     if (duplicatesCollapsed > 0) {
         // Phase 10 — tell the reader when we collapsed variant titles so
         // they can correlate with the CMS dashboard (which still shows
@@ -654,6 +683,25 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         //   noise_filter_expanded       → Phase 10 noise-filter backfill
         if (f?.auto_resolved_reason) {
             L.push(`- 🤖 **Auto-resolved**: \`${f.auto_resolved_reason}\`${f.auto_resolved_at ? ` at \`${f.auto_resolved_at}\`` : ''}`)
+        }
+        // Phase 13 — when a fingerprint has a registered Resolves: migration
+        // but still appears in the export, we know the post-deploy activity
+        // crossed the 48h grace window OR `regressed_after_fix=true`. Either
+        // way, surface the deploy moment so the reviewer can compare it
+        // against `last_seen_at` and decide if this is "stale clients on old
+        // build" vs "the migration didn't actually fix anything".
+        if (f?.latest_resolving_migration_at && f?.latest_resolving_migration_id) {
+            const sinceDeploy = f.last_seen_at
+                ? (() => {
+                    const deltaMs = Date.parse(f.last_seen_at!) - Date.parse(f.latest_resolving_migration_at!)
+                    if (Number.isNaN(deltaMs)) return ''
+                    const hours = Math.round(deltaMs / 3_600_000)
+                    return ` · last_seen \`${hours >= 0 ? '+' : ''}${hours}h\` after deploy`
+                })()
+                : ''
+            L.push(`- 🚀 **Fix deployed**: \`${f.latest_resolving_migration_id}\` at \`${f.latest_resolving_migration_at}\`${sinceDeploy}. Activity since deploy crossed the 48h stale-client grace window — treat as genuine regression, not noise.`)
+        } else if (f?.latest_resolving_migration_id && !f?.latest_resolving_migration_at) {
+            L.push(`- 📌 **Fix migration tagged but not deployed**: \`${f.latest_resolving_migration_id}\`. Run the migration to clear this fingerprint.`)
         }
         L.push('')
 

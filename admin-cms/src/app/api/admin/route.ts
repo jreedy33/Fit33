@@ -1798,6 +1798,16 @@ export async function POST(req: NextRequest) {
         //     - Fingerprints in terminal states (resolved / wont_fix /
         //       duplicate) are always excluded — their reports shouldn't
         //       resurface in handoffs even if review_status is pending.
+        //     - Phase 13 (2026-06-14) `last_seen_after_fix_deployed` filter:
+        //       hide fingerprints whose `latest_resolving_migration_at`
+        //       (stamped by `bug_intel_register_migration_deploy` or
+        //       `mark_fingerprints_resolved_by_migration` when a `Resolves:`
+        //       migration deploys) is set AND the only post-deploy activity
+        //       falls inside a 48h grace window — that's the stale-client +
+        //       PostgREST schema-cache reload tail, not a real regression.
+        //       Genuine regressions (`regressed_after_fix=true` OR last
+        //       activity >48h after deploy) still surface. `mode='all'` is
+        //       always exempt — full audit path bypasses every watermark.
         //     - mode='new': report.last_exported_at IS NULL, OR the
         //       fingerprint has had activity after last_exported_at
         //       (regression after a fix).
@@ -1805,12 +1815,39 @@ export async function POST(req: NextRequest) {
         //     - mode='all': no watermark filter (legacy audit path).
         const TERMINAL_FP = new Set(['resolved', 'wont_fix', 'duplicate'])
         const sinceMs = typeof since_iso === 'string' ? Date.parse(since_iso) : NaN
+        // Phase 13 — grace window for stale-fix exclusion. 48h covers the
+        // tail of stale-client cohorts + PostgREST schema-cache reload after
+        // a server migration ships. Tunable; if you raise this, also
+        // re-think the `regressed_after_fix` rollup window in
+        // 20260516_bug_intel_structural_fingerprint.sql so a migration
+        // doesn't hide a genuine regression that happens to fire at hour 47.
+        const STALE_FIX_GRACE_MS = 48 * 60 * 60 * 1000
+        let staleFixExcludedCount = 0
         const filteredReportRows = reportRows.filter((r) => {
           const fp = fpById.get(r.fingerprint) as {
-            status?: string; last_seen_at?: string
+            status?: string
+            last_seen_at?: string
+            latest_resolving_migration_at?: string | null
+            regressed_after_fix?: boolean | null
           } | undefined
           if (!fp) return false
           if (fp.status && TERMINAL_FP.has(fp.status)) return false
+
+          if (mode !== 'all'
+              && fp.latest_resolving_migration_at
+              && fp.regressed_after_fix !== true) {
+            const fixDeployedMs = Date.parse(fp.latest_resolving_migration_at)
+            if (!Number.isNaN(fixDeployedMs)) {
+              const lastSeenMs = typeof fp.last_seen_at === 'string'
+                ? Date.parse(fp.last_seen_at)
+                : NaN
+              const cutoff = fixDeployedMs + STALE_FIX_GRACE_MS
+              if (Number.isNaN(lastSeenMs) || lastSeenMs <= cutoff) {
+                staleFixExcludedCount += 1
+                return false
+              }
+            }
+          }
 
           if (mode === 'all') return true
 
@@ -1844,6 +1881,10 @@ export async function POST(req: NextRequest) {
               bundles: [],
               previous_export_at: null,
               stamped: false,
+              // Phase 13 — surface even when no reports remain, so the CMS
+              // can show "all 4 reports excluded by stale-fix filter" in
+              // the empty-state pill instead of pretending nothing matched.
+              stale_fix_excluded: staleFixExcludedCount,
             },
           })
         }
@@ -2113,6 +2154,11 @@ export async function POST(req: NextRequest) {
             previous_export_at: previousExportAt,
             stamped,
             stamp_error: stampError,
+            // Phase 13 — count of reports hidden by the stale-fix filter
+            // (`last_seen_at <= latest_resolving_migration_at + 48h grace`).
+            // Surfaced in the export markdown TL;DR so reviewers know the
+            // pipeline is filtering, not silently dropping.
+            stale_fix_excluded: staleFixExcludedCount,
           },
         })
       }

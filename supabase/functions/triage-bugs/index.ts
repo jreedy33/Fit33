@@ -169,6 +169,44 @@ When \`authoritative_callsite\` is null, fall back to stack-trace inference
 (below). The callsite will always be present for fingerprints from iOS Phase 12+
 client builds (1.39+); legacy fingerprints from older builds carry no callsite.
 
+# USING SIMILAR_PAST_FIXES (Phase 12 Tier 5 #1 — 2026-04-25)
+
+When the input includes \`similar_past_fixes: [...]\`, those are real past
+resolutions that pattern-match this fingerprint by:
+
+  - \`match_strength: 3\` → SAME structural_fingerprint (op + error_class +
+    pg_code/http_status). This is the *same root cause* shipping again.
+  - \`match_strength: 2\` → same (op, error_class) pair. Same kind of bug
+    in the same operation — strong family resemblance.
+  - \`match_strength: 1\` → same op alone, OR same error_class alone.
+    Weaker but still informative.
+
+Rules:
+
+  1. If a match_strength=3 fix exists and the new fingerprint's evidence is
+     consistent with it, REUSE its diagnosis: same \`agent_owner\`, same
+     \`file_path\` (unless authoritative_callsite contradicts it), same
+     \`invariant_violated\`, similar \`severity\`. Bump confidence to ≥ 0.9.
+     This is a regression of a known issue — your job is to recognize it,
+     not re-derive the fix from scratch.
+  2. For match_strength=2 fixes, treat them as *strong priors*. Default to
+     the same owner unless the new evidence clearly points elsewhere. The
+     \`fix_file\` field hints at where the bug pattern lives — use it as a
+     candidate when authoritative_callsite is null.
+  3. For match_strength=1 fixes, treat them as *informative context* —
+     don't blindly copy the owner, but they're useful for picking
+     \`invariant_violated\` and \`pain_point_candidate\`.
+  4. ALWAYS mention the similar past fix in your \`summary\` when match_strength
+     ≥ 2 — e.g. "Same root cause as PR-1234 (resolved 2026-03-12)". This
+     shows your reasoning to the human reviewer and tells Cursor "the
+     fix recipe already exists, apply it again".
+  5. NEVER copy the past fix's diff verbatim. Write a fresh \`code_diff\`
+     against the current authoritative_callsite — past diffs are stale
+     references; the file may have moved.
+
+If no similar_past_fixes are returned, this is genuinely novel territory —
+proceed with normal triage and don't pretend a precedent exists.
+
 # USING SEVERITY_SCORE
 
 \`severity_score\` is the empirical priority — occurrences × sqrt(users) ×
@@ -315,6 +353,26 @@ interface PreviousReport {
     review_status: string;
     review_notes: string | null;
     created_at: string;
+}
+
+// Phase 12 Tier 5 #1 (2026-04-25) — past resolution that pattern-matches the
+// current fingerprint. Surfaced via the bug_intel_find_similar_resolutions
+// RPC (see 20260530_bug_intel_resolved_history.sql). Lets Claude reuse a
+// known-good diagnosis instead of cold-starting on every similar bug.
+interface SimilarPastFix {
+    match_strength: number;          // 3 = exact structural · 2 = op+class · 1 = op or class
+    fingerprint: string;
+    structural_fingerprint: string | null;
+    op: string | null;
+    error_class: string | null;
+    title: string | null;
+    summary: string | null;
+    agent_owner: string | null;
+    last_seen_file: string | null;
+    last_seen_line: number | null;
+    resolution_pr_url: string | null;
+    auto_resolved_reason: string | null;
+    resolved_at: string;
 }
 
 interface ClaudeReport {
@@ -590,6 +648,9 @@ interface EnrichedFingerprint {
     // Phase 12 Tier 2 #3 — most recent unmerged Claude report (if any).
     // Lets Claude see what it previously concluded so it can refine vs reset.
     previous_report: PreviousReport | null;
+    // Phase 12 Tier 5 #1 — top 3 past fixes that pattern-match this fingerprint.
+    // Drives cross-fingerprint learning: similar bugs reuse known-good answers.
+    similar_past_fixes: SimilarPastFix[];
 }
 
 async function enrichFingerprint(
@@ -722,7 +783,38 @@ async function enrichFingerprint(
         // best-effort — previous_report is optional context
     }
 
-    return { fp, example_errors, example_crashes, example_entry_ids, previous_report };
+    // Phase 12 Tier 5 #1 — pattern-match against past resolutions. Top 3
+    // most similar fixes by (structural_fingerprint, op, error_class).
+    // Drives the SYSTEM_PROMPT "USING SIMILAR_PAST_FIXES" rules — when a
+    // strong match exists, Claude reuses the known-good owner / file_path
+    // instead of cold-starting.
+    let similar_past_fixes: SimilarPastFix[] = [];
+    try {
+        const { data: similar } = await supabase.rpc(
+            "bug_intel_find_similar_resolutions",
+            {
+                p_structural_fingerprint: fp.structural_fingerprint,
+                p_op: fp.op,
+                p_error_class: fp.error_class,
+                p_exclude_fingerprint: fp.fingerprint,
+                p_limit: 3,
+            },
+        );
+        if (Array.isArray(similar)) {
+            similar_past_fixes = similar as SimilarPastFix[];
+        }
+    } catch {
+        // best-effort — RPC missing on older deploys is non-fatal
+    }
+
+    return {
+        fp,
+        example_errors,
+        example_crashes,
+        example_entry_ids,
+        previous_report,
+        similar_past_fixes,
+    };
 }
 
 // Computes what the bug_intelligence fingerprint would be for the given
@@ -855,6 +947,22 @@ function buildUserPrompt(items: EnrichedFingerprint[]): string {
                         "continuity matters.",
                 }
                 : null,
+            // Phase 12 Tier 5 #1 — cross-fingerprint memory. Top 3 past fixes
+            // that pattern-match this fingerprint, ranked by match_strength
+            // (3 = exact structural · 2 = op+class · 1 = op or class).
+            similar_past_fixes: x.similar_past_fixes.map((s) => ({
+                match_strength: s.match_strength,
+                fingerprint: s.fingerprint,
+                op: s.op,
+                error_class: s.error_class,
+                title: s.title,
+                summary: s.summary,
+                agent_owner: s.agent_owner,
+                fix_file: s.last_seen_file,
+                fix_line: s.last_seen_line,
+                resolution_pr_url: s.resolution_pr_url,
+                resolved_at: s.resolved_at,
+            })),
             example_errors: x.example_errors.slice(0, MAX_EXAMPLE_ENTRIES),
             example_crashes: x.example_crashes.slice(0, MAX_EXAMPLE_ENTRIES),
         };

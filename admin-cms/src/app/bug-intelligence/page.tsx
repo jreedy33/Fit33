@@ -223,11 +223,33 @@ type ExportShake = {
         distance_unit: string | null
     } | null
 }
+// Phase 12 Tier 5 #1 (2026-04-25) — past resolution that pattern-matches a
+// new fingerprint. Sourced from the bug_intel_find_similar_resolutions RPC
+// (see supabase/20260530_bug_intel_resolved_history.sql). Surfaced as a
+// "Similar past fixes" block in the Cursor markdown handoff so the AI walks
+// in pre-pattern-matched instead of cold-starting on every similar bug.
+type ExportSimilarPastFix = {
+    match_strength: number          // 3 = exact structural · 2 = op+class · 1 = op or class
+    fingerprint: string
+    structural_fingerprint?: string | null
+    op?: string | null
+    error_class?: string | null
+    title?: string | null
+    summary?: string | null
+    agent_owner?: string | null
+    last_seen_file?: string | null
+    last_seen_line?: number | null
+    resolution_pr_url?: string | null
+    auto_resolved_reason?: string | null
+    resolved_at?: string | null
+}
 type BugIntelExportBundle = {
     fingerprint: ExportFingerprint | null
     report: ExportReport
     example_crash: ExportCrash | null
     example_shake: ExportShake | null
+    // Phase 12 Tier 5 #1 — top 3 past fixes that pattern-match this fingerprint.
+    similar_past_fixes?: ExportSimilarPastFix[]
 }
 type BugIntelExport = {
     generated_at: string
@@ -687,6 +709,53 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
             L.push('')
         }
 
+        // Phase 12 Tier 5 #1 (2026-04-25) — pattern-matched past resolutions.
+        // Surfaced from bug_intel_resolved_history via the
+        // bug_intel_find_similar_resolutions RPC. The whole point: Cursor
+        // walks in already pattern-matched. If match_strength=3, the same
+        // root cause has shipped before and the answer recipe is right here.
+        const similar = b.similar_past_fixes ?? []
+        if (similar.length > 0) {
+            L.push(`### 🧠 Similar past fixes (${similar.length})`)
+            L.push('')
+            L.push(`These resolutions already shipped for closely-related bugs. **Read them first** — if any match_strength ≥ 2, the fix recipe likely applies here too.`)
+            L.push('')
+            const matchLabel = (n: number): string =>
+                n >= 3 ? '★★★ EXACT structural match — same root cause shipping again'
+                    : n === 2 ? '★★ op + class match — same kind of bug in same operation'
+                        : '★ op-only or class-only match — informative context'
+            for (const s of similar) {
+                L.push(`#### ${matchLabel(s.match_strength)}`)
+                L.push('')
+                if (s.title) L.push(`- **Title**: ${s.title}`)
+                if (s.agent_owner) L.push(`- **Owner**: \`${s.agent_owner}\``)
+                if (s.op || s.error_class) {
+                    const bits: string[] = []
+                    if (s.op) bits.push(`op=\`${s.op}\``)
+                    if (s.error_class) bits.push(`class=\`${s.error_class}\``)
+                    L.push(`- **Fields**: ${bits.join(' · ')}`)
+                }
+                if (s.last_seen_file) {
+                    const loc = s.last_seen_line ? `\`${s.last_seen_file}:${s.last_seen_line}\`` : `\`${s.last_seen_file}\``
+                    L.push(`- **Fix landed in**: ${loc}`)
+                }
+                if (s.resolution_pr_url) {
+                    L.push(`- **PR**: ${s.resolution_pr_url}`)
+                }
+                if (s.auto_resolved_reason) {
+                    L.push(`- **Auto-resolved**: \`${s.auto_resolved_reason}\``)
+                }
+                if (s.resolved_at) {
+                    L.push(`- **Resolved at**: \`${s.resolved_at}\``)
+                }
+                if (s.summary) {
+                    L.push('')
+                    L.push(`> ${s.summary.slice(0, 600).replace(/\n/g, '\n> ')}`)
+                }
+                L.push('')
+            }
+        }
+
         if (r.pain_point_candidate) {
             L.push(`### Pain point candidate`)
             L.push('')
@@ -932,18 +1001,42 @@ export default function BugIntelligencePage() {
     // can flip to show them via the "Show resolved" toggle in the header.
     const [showResolved, setShowResolved] = useState(false)
     const [clearing, setClearing] = useState(false)
+    // Phase 12 Tier 5 #2 (2026-04-25) — latest severity calibration report.
+    // Tiny header pill so reviewers can see "weights last calibrated 2d ago,
+    // 27 real fixes / 4 rejected" without leaving the page. See
+    // supabase/20260531_bug_intel_severity_weights.sql.
+    const [calibration, setCalibration] = useState<{
+        weights: Array<{ key: string; value: number; source: string; updated_at: string }>
+        latest_report: {
+            run_at: string
+            window_days: number
+            total_real_fixes: number
+            total_auto_drained: number
+            total_rejected: number
+            findings: string | null
+        } | null
+    } | null>(null)
 
     const loadOverview = useCallback(async () => {
-        const [ovRes, mRes, trackRes] = await Promise.all([
+        const [ovRes, mRes, trackRes, calRes] = await Promise.all([
             adminAction('get_bug_intelligence_overview'),
             adminAction('get_bug_intelligence_metrics'),
             adminAction('get_bug_intel_improvement_tracker'),
+            // Phase 12 Tier 5 #2 — best-effort fetch. Failure (older deploy
+            // without the calibration table) leaves the pill hidden.
+            adminAction('get_bug_intel_severity_calibration').catch(() => null),
         ])
         setOverview(ovRes.overview || null)
         setMetrics(mRes.metrics || [])
         setTracker(trackRes.tracker || [])
         setPerfDaily(trackRes.perf_daily || [])
         setTrackerMigrationPending(Boolean(trackRes.migration_pending))
+        if (calRes && Array.isArray(calRes.weights)) {
+            setCalibration({
+                weights: calRes.weights,
+                latest_report: calRes.latest_report ?? null,
+            })
+        }
     }, [])
 
     const captureSnapshot = useCallback(async (label: string) => {
@@ -1248,6 +1341,13 @@ export default function BugIntelligencePage() {
                             <ExportFreshnessPill
                                 lastExportAt={overview.last_export_at ?? null}
                                 newSince={overview.new_since_last_export ?? 0}
+                            />
+                        )}
+                        {/* Phase 12 Tier 5 #2 — severity calibration pill */}
+                        {calibration && (
+                            <SeverityCalibrationPill
+                                weights={calibration.weights}
+                                latestReport={calibration.latest_report}
                             />
                         )}
                     </div>
@@ -1891,6 +1991,82 @@ function ExportFreshnessPill({ lastExportAt, newSince }: {
                 {newSince} brand-new report{newSince === 1 ? '' : 's'} since
             </span>
             {!hasSignal && ' (regressions may still be included — "Export new only" will tell you)'}
+        </div>
+    )
+}
+
+// Phase 12 Tier 5 #2 (2026-04-25) — header pill that shows whether severity
+// weights have been calibrated recently and how the last calibration window
+// played out. Click the pill to see the current weights table. Driven by
+// supabase/20260531_bug_intel_severity_weights.sql + the
+// `get_bug_intel_severity_calibration` admin action.
+function SeverityCalibrationPill({ weights, latestReport }: {
+    weights: Array<{ key: string; value: number; source: string; updated_at: string }>
+    latestReport: {
+        run_at: string
+        window_days: number
+        total_real_fixes: number
+        total_auto_drained: number
+        total_rejected: number
+        findings: string | null
+    } | null
+}) {
+    const [open, setOpen] = useState(false)
+    if (!weights || weights.length === 0) return null
+
+    const calibrated = weights.some(w => w.source === 'calibrated' || w.source === 'manual')
+    const ago = latestReport ? timeAgo(latestReport.run_at) : 'never'
+    const tooltip = latestReport
+        ? `Calibration ${ago} · ${latestReport.findings ?? ''}`
+        : 'No calibration runs yet — nightly cron will populate after midnight UTC.'
+
+    return (
+        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+            <button
+                onClick={() => setOpen(o => !o)}
+                title={tooltip}
+                style={{
+                    display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontWeight: 600,
+                    background: calibrated ? 'rgba(168,85,247,0.15)' : 'rgba(107,114,128,0.15)',
+                    color: calibrated ? '#a855f7' : '#6b7280',
+                    border: 'none', cursor: 'pointer',
+                }}
+            >
+                Weights {calibrated ? 'tuned' : 'seeded'} · cal. {ago}
+            </button>
+            {latestReport && (
+                <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
+                    {latestReport.total_real_fixes} fixed · {latestReport.total_auto_drained} drained · {latestReport.total_rejected} rejected (last {latestReport.window_days}d)
+                </span>
+            )}
+            {open && (
+                <div style={{ marginTop: 6, padding: 10, border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg-tertiary)', maxWidth: 720 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>Current severity-score weights</div>
+                    <table style={{ width: '100%', fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>
+                        <thead>
+                            <tr>
+                                <th style={{ textAlign: 'left', padding: '2px 6px', color: 'var(--text-secondary)' }}>key</th>
+                                <th style={{ textAlign: 'right', padding: '2px 6px', color: 'var(--text-secondary)' }}>value</th>
+                                <th style={{ textAlign: 'left', padding: '2px 6px', color: 'var(--text-secondary)' }}>source</th>
+                                <th style={{ textAlign: 'left', padding: '2px 6px', color: 'var(--text-secondary)' }}>updated</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {weights.map(w => (
+                                <tr key={w.key}>
+                                    <td style={{ padding: '2px 6px', color: 'var(--text-primary)' }}>{w.key}</td>
+                                    <td style={{ padding: '2px 6px', textAlign: 'right', color: 'var(--text-primary)' }}>{Number(w.value).toFixed(2)}</td>
+                                    <td style={{ padding: '2px 6px', color: 'var(--text-muted)' }}>{w.source}</td>
+                                    <td style={{ padding: '2px 6px', color: 'var(--text-muted)' }}>{timeAgo(w.updated_at)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <div style={{ marginTop: 6, color: 'var(--text-muted)', fontSize: 11 }}>
+                        Edit via SQL: <code>UPDATE bug_intel_severity_weights SET value = N WHERE key = &apos;...&apos;;</code> Calibration runs nightly at 00:30 UTC.
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

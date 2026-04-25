@@ -2028,6 +2028,40 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // 4b. Phase 12 Tier 5 #1 — for every fingerprint, fetch top 3
+        // similar past fixes via the bug_intel_find_similar_resolutions RPC
+        // (see supabase/20260530_bug_intel_resolved_history.sql). Drives the
+        // "Similar past fixes" block in the markdown export so Cursor walks in
+        // already pattern-matched. Best-effort — RPC missing on older deploys
+        // is non-fatal (similar_past_fixes is just an empty array on the bundle).
+        const similarFixesByFp = new Map<string, Array<Record<string, unknown>>>()
+        for (const fp of fps) {
+          const ctx = fpById.get(fp) as {
+            structural_fingerprint?: string | null
+            op?: string | null
+            error_class?: string | null
+          } | undefined
+          if (!ctx) continue
+          if (!ctx.structural_fingerprint && !ctx.op && !ctx.error_class) continue
+          try {
+            const { data: similar, error: simErr } = await admin.rpc(
+              'bug_intel_find_similar_resolutions',
+              {
+                p_structural_fingerprint: ctx.structural_fingerprint ?? null,
+                p_op: ctx.op ?? null,
+                p_error_class: ctx.error_class ?? null,
+                p_exclude_fingerprint: fp,
+                p_limit: 3,
+              },
+            )
+            if (!simErr && Array.isArray(similar) && similar.length > 0) {
+              similarFixesByFp.set(fp, similar as Array<Record<string, unknown>>)
+            }
+          } catch {
+            // best-effort — skip on RPC error
+          }
+        }
+
         // 5. Assemble bundles in the same order the reports came back
         // (severity asc, confidence desc, created_at desc).
         const bundles = filteredReportRows.map((r) => ({
@@ -2035,6 +2069,10 @@ export async function POST(req: NextRequest) {
           report: r,
           example_crash: crashExample.get(r.fingerprint) || null,
           example_shake: shakeExample.get(r.id as string) || null,
+          // Phase 12 Tier 5 #1 — top 3 past fixes that pattern-match this
+          // fingerprint. Empty array when the RPC isn't deployed or has no
+          // matches (Day-1 of new fingerprint families).
+          similar_past_fixes: similarFixesByFp.get(r.fingerprint) || [],
         }))
 
         // 6. Stamp last_exported_at on every report we're returning
@@ -2089,6 +2127,35 @@ export async function POST(req: NextRequest) {
         const { data, error } = await query
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         return NextResponse.json({ trends: data || [] })
+      }
+
+      // Phase 12 Tier 5 #2 (2026-04-25) — surface current severity weights +
+      // latest calibration report. Read-only; for the Admin CMS observability
+      // pill in /bug-intelligence header. See
+      // supabase/20260531_bug_intel_severity_weights.sql for mechanics.
+      case 'get_bug_intel_severity_calibration': {
+        const { data: weights, error: weightsErr } = await admin
+          .from('bug_intel_severity_weights')
+          .select('key, value, source, fitted_from, notes, updated_at')
+          .order('key', { ascending: true })
+        if (weightsErr) return NextResponse.json({ error: weightsErr.message }, { status: 500 })
+
+        const { data: latest, error: latestErr } = await admin
+          .from('bug_intel_calibration_report')
+          .select('*')
+          .order('run_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        // 'maybeSingle' returns null+no error if the table is empty; only
+        // bubble up real errors (table missing, etc.).
+        if (latestErr && latestErr.code !== 'PGRST116') {
+          return NextResponse.json({ error: latestErr.message }, { status: 500 })
+        }
+
+        return NextResponse.json({
+          weights: weights || [],
+          latest_report: latest || null,
+        })
       }
 
       case 'update_bug_fingerprint': {

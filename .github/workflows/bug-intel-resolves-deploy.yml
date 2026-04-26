@@ -92,25 +92,50 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Parse Resolves directives + invoke RPC
+        # WARN-ONLY workflow. This is a convenience automation, NOT a
+        # release gate. The companion auto-revive cron in
+        # `supabase/20260623_bug_intel_auto_revive_on_regression.sql`
+        # is the safety net: even if this hook fails to call the RPC,
+        # the cron will catch any regression-after-fix within an hour.
+        # Don't `set -e` — let the loop keep going on per-file errors
+        # so one bad row doesn't tank the whole job.
         if: steps.changed.outputs.files != ''
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FILES: ${{ steps.changed.outputs.files }}
+        # `continue-on-error: true` mirrors the warn-only intent at the
+        # workflow level — even if the script below `exit 1`s for any
+        # reason, the run is marked passed. The Step Summary still
+        # records what happened so the diff is auditable.
+        continue-on-error: true
         run: |
-          set -euo pipefail
+          set -uo pipefail   # NOT -e — we want to keep iterating on errors
+
           if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
             echo "::warning::SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — skipping RPC (warn-only)."
+            echo "## ℹ️ Bug-Intel Resolves Deploy skipped (missing secrets)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          ANY_RESOLVED=0
+          # Normalize SUPABASE_URL: strip trailing slash to avoid
+          # `https://…co//rest/v1/rpc/…` double-slash that some HTTP
+          # routers reject.
+          SUPABASE_URL="${SUPABASE_URL%/}"
+
+          TOTAL_FILES=0
+          FILES_WITH_DIRECTIVES=0
+          TOTAL_RESOLVED=0
+          TOTAL_SKIPPED_UNKNOWN=0
+          ERRORS=0
+
           # Iterate the changed migrations one at a time so each
           # RPC call binds to a single migration_id (the canonical
           # `auto_resolved_reason` shape: `migration_resolved:<id>`).
           while IFS= read -r FILE; do
             [ -z "$FILE" ] && continue
             [ ! -f "$FILE" ] && continue
+            TOTAL_FILES=$((TOTAL_FILES + 1))
 
             # Strip the directory + `.sql` suffix to get the canonical
             # migration_id (e.g. `20260622_mark_audit_2026_04_26_23_01_resolved`).
@@ -118,13 +143,16 @@ jobs:
 
             # Extract `-- Resolves: <md5>` lines. Case-insensitive on
             # the keyword, exact 32-char md5 on the fingerprint.
-            FPS=$(grep -Eio '^\s*--\s*Resolves\s*:\s*[0-9a-f]{32}' "$FILE" \
+            # `|| true` swallows grep's exit 1 when there are no matches
+            # so the assignment doesn't fail under set -uo pipefail.
+            FPS=$(grep -Eio '^\s*--\s*Resolves\s*:\s*[0-9a-f]{32}' "$FILE" 2>/dev/null \
                   | grep -Eo '[0-9a-f]{32}' \
                   | sort -u || true)
             if [ -z "$FPS" ]; then
               echo "  · $BASENAME → no Resolves: directives, skipping"
               continue
             fi
+            FILES_WITH_DIRECTIVES=$((FILES_WITH_DIRECTIVES + 1))
 
             # Build a JSON array literal: ["fp1","fp2",...]
             FP_ARRAY=$(echo "$FPS" | jq -R . | jq -s -c .)
@@ -133,9 +161,12 @@ jobs:
             echo "  · $BASENAME → $COUNT fingerprint(s)"
 
             # Call `mark_fingerprints_resolved_by_migration(p_migration_id, p_fingerprints, p_resolution_note)`.
-            # The RPC is service-role-only (it RAISEs 42501 otherwise) and
+            # The RPC is service-role-only (RAISEs 42501 otherwise) and
             # idempotent (skips already-terminal rows).
-            REQ=$(jq -nc --arg mid "$BASENAME" --arg note "Auto-applied by bug-intel-resolves-deploy GitHub Action" --argjson fps "$FP_ARRAY" \
+            REQ=$(jq -nc \
+                  --arg mid "$BASENAME" \
+                  --arg note "Auto-applied by bug-intel-resolves-deploy GitHub Action" \
+                  --argjson fps "$FP_ARRAY" \
                   '{p_migration_id:$mid, p_fingerprints:$fps, p_resolution_note:$note}')
 
             HTTP_CODE=$(curl -s -o /tmp/resolve.json -w "%{http_code}" \
@@ -144,27 +175,46 @@ jobs:
               -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
               -H "Content-Type: application/json" \
               "$SUPABASE_URL/rest/v1/rpc/mark_fingerprints_resolved_by_migration" \
-              -d "$REQ")
+              -d "$REQ" || echo "curl_failed")
 
             if [ "$HTTP_CODE" != "200" ]; then
-              echo "::error::RPC returned HTTP $HTTP_CODE for $BASENAME"
-              cat /tmp/resolve.json
-              # Don't exit — keep applying the rest, then fail at the end.
-              ANY_RESOLVED=2
+              echo "::warning::RPC returned HTTP $HTTP_CODE for $BASENAME (warn-only — auto-revive cron is the safety net)"
+              echo "  ⚠️  request body: $REQ"
+              echo "  ⚠️  response body:"
+              cat /tmp/resolve.json 2>/dev/null || echo "  (no response body — curl failed)"
+              echo ""
+              ERRORS=$((ERRORS + 1))
               continue
             fi
 
-            RESOLVED=$(jq -r '.resolved_count // 0' /tmp/resolve.json)
-            SKIPPED=$(jq -r '.skipped_unknown | length' /tmp/resolve.json)
+            RESOLVED=$(jq -r '.resolved_count // 0' /tmp/resolve.json 2>/dev/null || echo 0)
+            SKIPPED=$(jq -r '.skipped_unknown | length' /tmp/resolve.json 2>/dev/null || echo 0)
             echo "    → resolved=$RESOLVED, skipped_unknown=$SKIPPED"
-            ANY_RESOLVED=1
+            TOTAL_RESOLVED=$((TOTAL_RESOLVED + RESOLVED))
+            TOTAL_SKIPPED_UNKNOWN=$((TOTAL_SKIPPED_UNKNOWN + SKIPPED))
           done <<< "$FILES"
 
-          if [ "$ANY_RESOLVED" = "2" ]; then
-            echo "## ⚠️ Bug-Intel Resolves Deploy completed with errors" >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          elif [ "$ANY_RESOLVED" = "1" ]; then
-            echo "## ✅ Bug-Intel Resolves Deploy applied" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "## ℹ️ Bug-Intel Resolves Deploy: no directives found" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          {
+            if [ "$ERRORS" -gt 0 ]; then
+              echo "## ⚠️ Bug-Intel Resolves Deploy completed with $ERRORS error(s)"
+              echo ""
+              echo "Auto-revive cron will catch any genuine regressions within the hour."
+            elif [ "$FILES_WITH_DIRECTIVES" -gt 0 ]; then
+              echo "## ✅ Bug-Intel Resolves Deploy applied"
+            else
+              echo "## ℹ️ Bug-Intel Resolves Deploy: no directives found"
+            fi
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Files scanned | $TOTAL_FILES |"
+            echo "| Files with directives | $FILES_WITH_DIRECTIVES |"
+            echo "| Fingerprints resolved (this run) | $TOTAL_RESOLVED |"
+            echo "| Fingerprints skipped (already terminal or unknown) | $TOTAL_SKIPPED_UNKNOWN |"
+            echo "| RPC errors | $ERRORS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Always exit 0 — workflow is warn-only. continue-on-error at
+          # the step level mirrors this so the run is green even if a
+          # downstream step inadvertently fails.
+          exit 0

@@ -2228,7 +2228,13 @@ class ChallengeService: ObservableObject {
                 if success {
                     AppLogger.info("Synced \(progressValue) \(challenge.targetUnit) to '\(challenge.title)' from HealthKit", category: .social)
                 } else {
-                    AppLogger.error("Failed to sync progress for '\(challenge.title)'", category: .social)
+                    // 2026-04-26 (bug-intel bb8962ac / 0d1100de): the underlying
+                    // `logProgress` already routes the real failure through
+                    // `NetworkErrorClassifier.log(...)` with op + endpoint + pg_code,
+                    // so a top-level `.error` here is double-reporting and creates
+                    // cascade fingerprints whose root cause (e.g. 40P01 deadlock)
+                    // is already captured below. Keep the breadcrumb at `.warning`.
+                    AppLogger.warning("Failed to sync progress for '\(challenge.title)' (see classifier log for cause)", category: .social)
                 }
             } else {
                 AppLogger.verbose("Skipping '\(challenge.title)' - progressValue is 0", category: .social)

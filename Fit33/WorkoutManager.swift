@@ -1178,8 +1178,15 @@ class WorkoutManager: ObservableObject {
     }
     
     func cancelWorkout() {
+        // 2026-04-26 (bug-intel 50e7a9a7 / cf3a4a8b): cancellation is expected
+        // user/auto behavior, not an error. Logging at `.error` here both
+        // (a) double-reports to CrashReportingService via Logger.swift's
+        //     `level >= .error` branch (classifier bypass — QUALITY_PERFORMANCE
+        //     invariant 25a) and (b) opens a fingerprint per cancel. Keep the
+        // breadcrumb, drop the severity to `.warning` so it stays in dev/TF
+        // session logs without uploading a crash row.
         #if DEBUG
-        AppLogger.error("❌ WorkoutManager: Cancelling current workout", category: .data)
+        AppLogger.warning("WorkoutManager: cancelling current workout", category: .data)
         #endif
         
         isWorkoutActive = false

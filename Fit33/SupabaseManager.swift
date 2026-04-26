@@ -129,6 +129,15 @@ class SupabaseManager: ObservableObject {
     @Published var isLoading = false
     
     private var authListenerTask: Task<Void, Never>?
+
+    /// Single-flight guard for `checkAuthOnly`. Fit33App now fires the auth
+    /// check from `init()` so it begins before SwiftUI commits the first
+    /// frame, AND the existing `WindowGroup.task` still calls `checkAuthOnly`
+    /// for backwards compat. Without this gate the two callers would each
+    /// race their own `client.auth.currentSession` + `MainActor.run` chain,
+    /// double-publishing `isAuthenticated`. Pattern mirrors QP invariant
+    /// #24c-foreground (`HealthDataService.inFlightSyncTask`).
+    private var inFlightAuthCheckTask: Task<Void, Never>?
     
     private init() {
         guard let url = URL(string: supabaseURL) else {
@@ -136,12 +145,28 @@ class SupabaseManager: ObservableObject {
         }
         precondition(!supabaseKey.isEmpty, "Missing Supabase anon key in AppConfig — check Secrets.swift")
 
+        // Realtime Widget Server Pull (Phase 1, 2026-04-26):
+        // The Supabase session JWT lives in an App Group-shared UserDefaults
+        // suite (`group.com.fit33.app`) so the widget extension AND the
+        // watchOS companion can construct their own SupabaseClient and
+        // pull challenge progress directly from Postgres — independent of
+        // the iPhone foreground app's state. The custom storage performs
+        // a one-time migration from the previous default Keychain at
+        // service `supabase.gotrue.swift` (where supabase-swift's
+        // `KeychainLocalStorage()` parked the session) so existing users
+        // don't get logged out on upgrade. See INFRA_SECURITY_AGENT.md
+        // invariant 17b for the security trade-off rationale.
+        let sharedStorage = SupabaseAppGroupStorage.shared
+        sharedStorage.migrateFromKeychainIfNeeded()
+
         self.client = SupabaseClient(
             supabaseURL: url,
             supabaseKey: supabaseKey,
             options: .init(
                 auth: .init(
+                    storage: sharedStorage,
                     redirectToURL: URL(string: "fit33://"),
+                    storageKey: SupabaseAppGroupStorage.sharedStorageKey,
                     emitLocalSessionAsInitialSession: true
                 )
             )
@@ -218,6 +243,33 @@ class SupabaseManager: ObservableObject {
 
         if isAuthenticated { return true }
 
+        // ⚡️ Cold-start speedup Phase 2.8 (2026-04-25, revised):
+        // BEFORE awaiting the in-flight `checkAuthOnly` task, fast-path off
+        // the SDK's cached session. The cached session is updated
+        // synchronously by `client.auth.currentSession` and lives outside
+        // the @Published publish path — so even when MainActor is jammed
+        // by 3s of synchronous singleton inits during cold start, we can
+        // unblock the dashboard's 14-call social fan-out instantly.
+        // PostgREST will 401 on a truly-stale token; the SDK auto-refreshes.
+        // The @Published `isAuthenticated = true` will land later (when
+        // main settles), backfilling SwiftUI bindings.
+        if let cached = client.auth.currentSession, !cached.isExpired {
+            // Schedule a low-priority main publish so view bindings catch up
+            // when main is free, but don't wait for it here.
+            Task { @MainActor [weak self] in
+                guard let self, !self.isAuthenticated else { return }
+                self.currentUser = cached.user
+                self.isAuthenticated = true
+            }
+            return true
+        }
+
+        // No cached session — fall back to coalescing on the in-flight check.
+        if let inFlight = inFlightAuthCheckTask {
+            await inFlight.value
+            if isAuthenticated { return true }
+        }
+
         await recoverSessionIfNeeded()
         if isAuthenticated { return true }
 
@@ -290,7 +342,29 @@ class SupabaseManager: ObservableObject {
     ///
     /// Profile verification always runs in a background task so slow `user_profiles`
     /// queries do not extend the hot path.
+    ///
+    /// Sprint 2026-04-25 (cold-start speedup Phase 1.1): single-flight wrapper.
+    /// `Fit33App.init()` now fires `checkAuthOnly` BEFORE SwiftUI evaluates
+    /// `WindowGroup.body` so auth completes while the view tree is still being
+    /// constructed (no main-actor contention from singleton inits). The
+    /// existing `WindowGroup.task` also calls `checkAuthOnly` — both callers
+    /// now await the same in-flight task instead of racing two parallel
+    /// `client.auth.currentSession` + `MainActor.run` chains.
     func checkAuthOnly() async {
+        if let existing = inFlightAuthCheckTask {
+            await existing.value
+            return
+        }
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?._performAuthCheck()
+            return ()
+        }
+        inFlightAuthCheckTask = task
+        await task.value
+        inFlightAuthCheckTask = nil
+    }
+
+    private func _performAuthCheck() async {
         // Sprint 2026-04-24 Phase 2 L: inner-timing instrumentation. Caller
         // (`Fit33App.task`) also wraps this in a signpost — when the two disagree
         // it tells us whether the time is in the auth work itself or in `.task`
@@ -319,36 +393,47 @@ class SupabaseManager: ObservableObject {
             return
         }
         
-        // Fast path 2 — cached but expired: race refresh against 1.5s timeout
+        // Fast path 2 — cached but expired:
+        // ⚡️ Cold-start speedup Phase 5.3 (2026-04-25):
+        // PREVIOUSLY: this branch awaited `refreshSession()` against a 1.5s
+        // timeout BEFORE flipping `isAuthenticated = true`. On a typical
+        // cold start, that's a 1.5s gate before the dashboard's social
+        // fan-out can begin (observed: `[DASHBOARD] Auth ready (2399ms)…`
+        // in 2026-04-25T19:23 logs). Worse, while the inner `await` runs,
+        // every `MainActor.run` hop the path eventually performs queues
+        // behind SwiftUI's body-evaluation chain on main, dragging
+        // `app.first_frame` from ~2.7s (fast-path 1) up to ~4.9s.
+        //
+        // NEW BEHAVIOR: flip `isAuthenticated = true` IMMEDIATELY using
+        // the cached user, then race the refresh in a detached
+        // background Task that doesn't gate first frame. If the access
+        // token is truly stale, PostgREST will 401 and the Supabase SDK
+        // auto-refreshes on retry — same recovery as before, just no
+        // foreground wait. The dashboard renders cached state instantly
+        // and replaces it with fresh data when the bg refresh + first
+        // network calls land. No new flicker — cached data already
+        // shows the same user.
         if let cached = client.auth.currentSession {
-            AppLogger.debug("Cached session expired — racing refresh against 1.5s timeout", category: .auth)
-            let refreshed = await withTimeout(seconds: 1.5) { [client] in
-                try? await client.auth.refreshSession()
-            }
-            
-            if let refreshed = refreshed {
-                await MainActor.run {
-                    currentUser = refreshed.user
-                    isAuthenticated = true
-                }
-                AppLogger.info("Session refreshed within budget (UI unblocked): \(refreshed.user.email ?? "unknown")", category: .auth)
-                Task { await self.reconcileProfileAfterSessionRestore(userId: refreshed.user.id) }
-                return
-            }
-            
-            // Refresh timed out or failed — set auth optimistically from cached session.
-            // PostgREST will 401 if the access token is truly stale; SDK retries auto-refresh.
             await MainActor.run {
                 currentUser = cached.user
                 isAuthenticated = true
             }
-            AppLogger.warning("Session refresh exceeded 1.5s budget — proceeding optimistically with cached session (SDK will refresh in background)", category: .auth)
-            
-            // Keep trying to refresh in the background so the access token becomes valid ASAP.
+            AppLogger.info("Cached session expired — UI unblocked optimistically; racing refresh in background", category: .auth)
+
             Task.detached { [client, weak self] in
-                _ = try? await client.auth.refreshSession()
-                if let self = self {
-                    await self.reconcileProfileAfterSessionRestore(userId: cached.user.id)
+                if let refreshed = try? await client.auth.refreshSession() {
+                    await MainActor.run {
+                        self?.currentUser = refreshed.user
+                    }
+                    AppLogger.info("Background refresh succeeded post-first-frame: \(refreshed.user.email ?? "unknown")", category: .auth)
+                    if let self = self {
+                        await self.reconcileProfileAfterSessionRestore(userId: refreshed.user.id)
+                    }
+                } else {
+                    AppLogger.warning("Background refresh failed; PostgREST will retry-on-401 if token is truly stale", category: .auth)
+                    if let self = self {
+                        await self.reconcileProfileAfterSessionRestore(userId: cached.user.id)
+                    }
                 }
             }
             return
@@ -4560,7 +4645,7 @@ class SupabaseManager: ObservableObject {
                     user.weightLbs = weightLbs
                 }
                 if let equipment = profile.equipment {
-                    user.equipment = equipment as NSObject
+                    user.equipment = equipment as NSArray
                 }
                 if let availableDays = profile.availableDays {
                     user.availableDays = Int16(availableDays)
@@ -5097,7 +5182,7 @@ class SupabaseManager: ObservableObject {
                         if let secondaryMuscles = customExercise.secondaryMuscles {
                             allMuscles.append(contentsOf: secondaryMuscles)
                         }
-                        exercise.muscleGroups = allMuscles as NSObject
+                        exercise.muscleGroups = allMuscles as NSArray
                         
                         exercise.equipment = customExercise.equipment
                         let customMarker = "[CUSTOM_EXERCISE|ICON:\(customExercise.iconName ?? "figure.walk")]"

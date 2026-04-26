@@ -248,93 +248,122 @@ final class ProductionFPSMonitor {
 // MARK: - 1. STARTUP CACHE (Pre-warm on app launch)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// Pre-warms critical data on app startup to eliminate first-load delays
-@MainActor
+/// Pre-warms critical data on app startup to eliminate first-load delays.
+///
+/// Sprint 2026-04-25 (cold-start speedup Phase 1.2): the class was previously
+/// `@MainActor`. Even though every Core Data fetch was scoped to
+/// `bgContext.perform`, the surrounding async function lived on the main actor
+/// — so each stage's return-to-main hop joined the queue behind ContentView /
+/// MainTabView body evaluations during cold start. Wall-clock for the 5-stage
+/// warm-up was 3019ms in 1.38(55) logs despite < 200ms of real bg work.
+///
+/// New shape: the class is no longer `@MainActor`. All bg-context fetches run
+/// off main as before, results are accumulated into local snapshots, and ONE
+/// `MainActor.run` block publishes the full snapshot at the end. `@Published`
+/// (`isWarmed`, `warmupProgress`) is only mutated from main; private(set)
+/// caches are written from main to keep readers (SwiftUI views) thread-safe.
 final class StartupCache: ObservableObject {
     static let shared = StartupCache()
-    
+
     // MARK: - Cached Data
     @Published private(set) var isWarmed = false
     @Published private(set) var warmupProgress: Double = 0
-    
-    // Pre-loaded data
+
+    // Pre-loaded data — written via `MainActor.run` at the end of `warmUp` so
+    // SwiftUI readers always see a fully-coherent snapshot.
     private(set) var cachedExerciseCount: Int = 0
     private(set) var cachedRecentWorkouts: [NSManagedObjectID] = []
     private(set) var cachedUserStats: CachedUserStats?
     private(set) var cachedCategories: [String] = []
     private(set) var cachedEquipment: [String] = []
     private(set) var cachedMuscleGroups: [String] = []
-    
+
     // Cache timestamps for staleness detection
     private var lastWarmTime: Date?
     private var cacheValidityDuration: TimeInterval = 300 // 5 minutes
-    
+
     struct CachedUserStats {
         let totalWorkouts: Int
         let currentStreak: Int
         let longestStreak: Int
         let xp: Int
         let lastWorkoutDate: Date?
-        
+
         // Level is computed from XP
         var userLevel: Int { (xp / 100) + 1 }
     }
-    
+
     private init() {}
-    
+
     // MARK: - Warm Up (Call from Fit33App.swift)
-    
+
     /// Call this early in app lifecycle to pre-warm caches.
     /// All Core Data fetches run on a background context to avoid blocking the main thread.
+    /// Single `MainActor.run` at the end publishes all results coherently.
     func warmUp(context: NSManagedObjectContext) async {
-        guard !isWarmed || isCacheStale else { return }
-        
+        if isWarmed && !isCacheStale { return }
+
         let startTime = CACurrentMediaTime()
         AppLogger.debug("🚀 [STARTUP CACHE] Beginning warm-up (background)...", category: .performance)
-        
+
+        // ⚡️ Cold-start sprint 2026-04-26 (async Core Data store load):
+        // With `shouldAddStoreAsynchronously = true`, the persistent store
+        // attaches a few hundred ms AFTER `PersistenceController.init`
+        // returns. Fetches against an unattached store silently return
+        // empty arrays — without this gate, `warmUp` would cache "0
+        // workouts / 0 stats" on cold start and the dashboard would render
+        // those zeros until a later refresh trigger. Suspending here
+        // costs us the wait time only IF the store hasn't loaded yet;
+        // typically returns immediately because the iOS framework gap
+        // already gave the bg-thread store-load enough time to finish.
+        await PersistenceController.waitUntilStoreLoaded()
+
         let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
-        
-        // Stage 1: User stats (fastest, most critical)
-        await warmUserStats(context: bgContext)
-        warmupProgress = 0.25
-        
-        // Stage 2: Exercise metadata (categories, equipment)
-        await warmExerciseMetadata(context: bgContext)
-        warmupProgress = 0.50
-        
-        // Stage 3: Recent workouts (IDs only, not full objects)
-        await warmRecentWorkouts(context: bgContext)
-        warmupProgress = 0.75
-        
-        // Stage 4: Exercise count
-        await warmExerciseCount(context: bgContext)
-        warmupProgress = 0.90
-        
-        // Stage 5: Pre-warm exercise library so Exercise tab has data immediately
+
+        let userStats = await fetchUserStats(context: bgContext)
+        let (categories, equipment) = await fetchExerciseMetadata(context: bgContext)
+        let workoutIDs = await fetchRecentWorkouts(context: bgContext)
+        let exerciseCount = await fetchExerciseCount(context: bgContext)
+
+        let muscleGroups = ["All", "Biceps", "Triceps", "Forearms", "Quads", "Hamstrings",
+                            "Glutes", "Calves", "Lats", "Upper Back", "Traps", "Lower Back",
+                            "Front Delts", "Side Delts", "Rear Delts", "Abs", "Obliques"]
+
+        // Single coherent publish — no inter-stage main-actor hops.
+        await MainActor.run {
+            self.cachedUserStats = userStats
+            self.cachedCategories = categories
+            self.cachedEquipment = equipment
+            self.cachedMuscleGroups = muscleGroups
+            self.cachedRecentWorkouts = workoutIDs
+            self.cachedExerciseCount = exerciseCount
+            self.lastWarmTime = Date()
+            self.warmupProgress = 1.0
+            self.isWarmed = true
+        }
+
+        // Pre-warm exercise library so Exercise tab has data immediately.
+        // Self-dispatches a Task.detached internally — no main-actor cost here.
         ExerciseLibraryService.shared.preWarmCache()
-        warmupProgress = 1.0
-        
-        lastWarmTime = Date()
-        isWarmed = true
-        
+
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
         AppLogger.debug("🚀 [STARTUP CACHE] Warm-up complete in \(String(format: "%.1f", elapsed))ms", category: .performance)
     }
-    
+
     private var isCacheStale: Bool {
         guard let lastTime = lastWarmTime else { return true }
         return Date().timeIntervalSince(lastTime) > cacheValidityDuration
     }
-    
-    // MARK: - Individual Warm Functions
+
+    // MARK: - Individual Fetch Functions
     // All fetches use bgContext.perform to run off the main thread.
-    
-    private func warmUserStats(context: NSManagedObjectContext) async {
+    // Pure functions — return their result; the caller publishes in one batch.
+
+    private func fetchUserStats(context: NSManagedObjectContext) async -> CachedUserStats? {
         let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
         fetchRequest.fetchLimit = 1
-        
         do {
-            let stats: CachedUserStats? = try await context.perform {
+            return try await context.perform {
                 guard let user = try context.fetch(fetchRequest).first else { return nil }
                 return CachedUserStats(
                     totalWorkouts: Int(user.totalWorkouts),
@@ -344,45 +373,40 @@ final class StartupCache: ObservableObject {
                     lastWorkoutDate: user.lastWorkoutDate
                 )
             }
-            self.cachedUserStats = stats
         } catch {
             AppLogger.error("⚠️ [STARTUP CACHE] User stats warm failed: \(error)", category: .performance)
+            return nil
         }
     }
-    
-    private func warmExerciseMetadata(context: NSManagedObjectContext) async {
+
+    private func fetchExerciseMetadata(context: NSManagedObjectContext) async -> (categories: [String], equipment: [String]) {
         do {
-            let (categories, equipment) = try await context.perform {
+            return try await context.perform {
                 let categoryRequest: NSFetchRequest<NSDictionary> = NSFetchRequest(entityName: "Exercise")
                 categoryRequest.resultType = .dictionaryResultType
                 categoryRequest.propertiesToFetch = ["category"]
                 categoryRequest.returnsDistinctResults = true
                 let catResults = try context.fetch(categoryRequest)
                 let cats = catResults.compactMap { $0["category"] as? String }.sorted()
-                
+
                 let equipmentRequest: NSFetchRequest<NSDictionary> = NSFetchRequest(entityName: "Exercise")
                 equipmentRequest.resultType = .dictionaryResultType
                 equipmentRequest.propertiesToFetch = ["equipment"]
                 equipmentRequest.returnsDistinctResults = true
                 let eqResults = try context.fetch(equipmentRequest)
                 let eqs = eqResults.compactMap { $0["equipment"] as? String }.sorted()
-                
+
                 return (cats, eqs)
             }
-            self.cachedCategories = categories
-            self.cachedEquipment = equipment
         } catch {
             AppLogger.error("⚠️ [STARTUP CACHE] Metadata warm failed: \(error)", category: .performance)
+            return ([], [])
         }
-        
-        self.cachedMuscleGroups = ["All", "Biceps", "Triceps", "Forearms", "Quads", "Hamstrings", 
-                                   "Glutes", "Calves", "Lats", "Upper Back", "Traps", "Lower Back", 
-                                   "Front Delts", "Side Delts", "Rear Delts", "Abs", "Obliques"]
     }
-    
-    private func warmRecentWorkouts(context: NSManagedObjectContext) async {
+
+    private func fetchRecentWorkouts(context: NSManagedObjectContext) async -> [NSManagedObjectID] {
         do {
-            let ids: [NSManagedObjectID] = try await context.perform {
+            return try await context.perform {
                 let fetchRequest: NSFetchRequest<Workout> = Workout.fetchRequest()
                 fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
                 fetchRequest.fetchLimit = 20
@@ -390,37 +414,43 @@ final class StartupCache: ObservableObject {
                 let workouts = try context.fetch(fetchRequest)
                 return workouts.map { $0.objectID }
             }
-            self.cachedRecentWorkouts = ids
         } catch {
             AppLogger.error("⚠️ [STARTUP CACHE] Workouts warm failed: \(error)", category: .performance)
+            return []
         }
     }
-    
-    private func warmExerciseCount(context: NSManagedObjectContext) async {
+
+    private func fetchExerciseCount(context: NSManagedObjectContext) async -> Int {
         do {
-            let count: Int = try await context.perform {
+            return try await context.perform {
                 let fetchRequest: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                 return try context.count(for: fetchRequest)
             }
-            self.cachedExerciseCount = count
         } catch {
             AppLogger.error("⚠️ [STARTUP CACHE] Exercise count warm failed: \(error)", category: .performance)
+            return 0
         }
     }
-    
+
     // MARK: - Invalidation
-    
+
     func invalidate() {
-        lastWarmTime = nil
-        isWarmed = false
+        Task { @MainActor in
+            lastWarmTime = nil
+            isWarmed = false
+        }
     }
-    
+
     func invalidateWorkouts() {
-        cachedRecentWorkouts = []
+        Task { @MainActor in
+            cachedRecentWorkouts = []
+        }
     }
-    
+
     func invalidateUserStats() {
-        cachedUserStats = nil
+        Task { @MainActor in
+            cachedUserStats = nil
+        }
     }
 }
 

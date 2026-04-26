@@ -204,7 +204,8 @@ struct DailyQuestsWidget: View {
 
     /// Footer row beneath the daily slate. Pro: links into the Insights
     /// view. Free: nudges toward an upgrade with the explicit benefits
-    /// (5 slots, more rerolls, custom quests, double-XP).
+    /// (more rerolls, custom quests, double-XP). 20260619: slot count
+    /// is now locked at 3 for all tiers per product decision.
     @ViewBuilder
     private var proAdaptiveFooter: some View {
         if PremiumManager.shared.isPremiumUser {
@@ -253,7 +254,7 @@ struct DailyQuestsWidget: View {
                             LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
                         )
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Pro: 5 slots · 5 rerolls/day · Custom quests")
+                        Text("Pro: 5 rerolls/day · Custom quests · Insights")
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundColor(.primary)
                         Text("Plus 2× XP day · personal Insights")
@@ -515,11 +516,9 @@ struct DailyQuestsWidget: View {
                         .foregroundColor(.secondary.opacity(0.7))
                         .lineLimit(1)
 
-                    // Smart Adaptive Daily Goals (20260603) — surface
-                    // the XP multiplier so users understand WHY some
-                    // quests reward more (auto-tracked 1.5×, social 1×,
-                    // manual 0.7× since they're honor-system).
-                    questMetadataRow(quest: quest)
+                    if hasMetadataRow(for: quest) {
+                        questMetadataRow(quest: quest)
+                    }
                 }
 
                 // Status bar — sits just below the subheader, aligned with
@@ -549,11 +548,20 @@ struct DailyQuestsWidget: View {
                         }
                         .frame(height: 4)
 
+                        // Reserve label slot on completed cards too so the
+                        // progress row keeps the same vertical rhythm as
+                        // active cards (otherwise the completed card looks
+                        // ~10pt shorter / "smashed" next to active siblings).
                         if !isDone {
                             Text(liveProgressLabel(for: quest))
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .foregroundColor(.secondary)
                                 .frame(minWidth: 50, alignment: .trailing)
+                        } else {
+                            Text(" ")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .frame(minWidth: 50, alignment: .trailing)
+                                .accessibilityHidden(true)
                         }
                     }
                     .padding(.top, 2)
@@ -604,24 +612,18 @@ struct DailyQuestsWidget: View {
         }
     }
 
-    /// Sub-row beneath a quest's dynamic description showing the XP
-    /// multiplier (auto/social/manual), the double-XP marker (Pro day),
-    /// and the "rerolled" tag — surfaces just enough metadata to teach
-    /// users which quests are auto-verified vs honor system without
-    /// adding a second visual line per card.
+    /// True when the quest has any metadata badge worth rendering. Used
+    /// to gate the metadata row entirely so empty-state cards collapse
+    /// to the same vertical rhythm as completed cards.
+    private func hasMetadataRow(for quest: DailyQuest) -> Bool {
+        quest.doubleXpBadge != nil || quest.wasRerolled
+    }
+
+    /// Sub-row beneath a quest's dynamic description showing the
+    /// double-XP marker (Pro day) and the "rerolled" tag.
     @ViewBuilder
     private func questMetadataRow(quest: DailyQuest) -> some View {
         HStack(spacing: 6) {
-            if let mult = quest.verificationXpMultiplierLabel {
-                Text(mult)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundColor(verificationLabelColor(for: quest.verificationType))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(
-                        Capsule().fill(verificationLabelColor(for: quest.verificationType).opacity(0.10))
-                    )
-            }
             if let bonus = quest.doubleXpBadge {
                 Text(bonus)
                     .font(.system(size: 9, weight: .bold, design: .rounded))
@@ -636,15 +638,6 @@ struct DailyQuestsWidget: View {
                     .foregroundColor(.secondary)
             }
             Spacer(minLength: 0)
-        }
-    }
-
-    private func verificationLabelColor(for verificationType: String?) -> Color {
-        switch verificationType {
-        case "auto":   return .cyan
-        case "social": return .purple
-        case "manual": return .orange
-        default:       return .secondary
         }
     }
 

@@ -51,8 +51,25 @@ class FriendService: ObservableObject {
     private static let blockedUserIdsCacheKey = "fit33_blocked_user_ids"
     
     private init() {
-        loadCachedFriends()
-        loadCachedBlockedUserIds()
+        // ⚡️ Cold-start Phase 4: prefer pre-decoded caches (decoded on bg
+        // thread by StartupCachePreloader.preloadAll, which runs at the
+        // first statement of Fit33App.init). Falls back to the original
+        // synchronous decode path only if bg lost the race.
+        let pre = StartupCachePreloader.consumeFriends()
+        if let cachedFriends = pre.friends, !cachedFriends.isEmpty {
+            self.friends = cachedFriends
+            AppLogger.debug("[FRIENDS] Loaded \(cachedFriends.count) cached friends (instant — pre-decoded)", category: .social)
+        } else {
+            loadCachedFriends()
+        }
+        if let cachedBlocked = pre.blocked {
+            self.blockedUserIds = cachedBlocked
+            if !cachedBlocked.isEmpty {
+                AppLogger.debug("Loaded \(cachedBlocked.count) cached blocked user IDs (pre-decoded)", category: .social)
+            }
+        } else {
+            loadCachedBlockedUserIds()
+        }
 
         let ids = friends.map { $0.friendId.uuidString }
         if !ids.isEmpty {

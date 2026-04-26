@@ -19,6 +19,11 @@ struct DashboardWhoopWrapper: View {
     @StateObject private var whoopService = WhoopService.shared
     @State private var showingInfoSheet = false
 
+    // Mirror the same key used by `WidgetSettingsSheet` (`showWhoop` binding
+    // in DashboardView) so dismissing the unsynced WHOOP widget here also
+    // unchecks it in the "Add Widgets" sheet — single source of truth.
+    @AppStorage("showWhoopWidget") private var showWhoopWidget = true
+
     init(navigationPath: Binding<NavigationPath>) {
         self._navigationPath = navigationPath
     }
@@ -28,6 +33,15 @@ struct DashboardWhoopWrapper: View {
     /// carries the at-a-glance recovery signal; the wordmark stays neutral
     /// (`Color.primary`) per WHOOP brand guidelines (white on dark, black on
     /// light, never recolored).
+    ///
+    /// When the user hasn't connected WHOOP yet (i.e. the dashboard is
+    /// nudging them with the "Sync now" card) we surface a small dismiss
+    /// "X" opposite the title. Tapping it toggles `showWhoopWidget` off,
+    /// which both removes the widget from the dashboard immediately AND
+    /// unchecks it in the "Add Widgets" settings sheet (same AppStorage
+    /// key). We deliberately hide the X once the service is connected so
+    /// users can't accidentally tear off a working integration — the
+    /// settings sheet remains the canonical entry point for that.
     private var whoopBrandedHeader: some View {
         HStack(spacing: 10) {
             Image("WhoopPuck")
@@ -48,9 +62,24 @@ struct DashboardWhoopWrapper: View {
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
             Spacer(minLength: 0)
+
+            if !whoopService.isConnected {
+                Button {
+                    HapticManager.tap()
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showWhoopWidget = false
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove WHOOP widget")
+                .accessibilityHint("Hides the WHOOP widget from your dashboard. You can add it back from Add Widgets.")
+            }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("WHOOP Recovery")
+        .accessibilityElement(children: .contain)
     }
 
     var body: some View {
@@ -58,19 +87,30 @@ struct DashboardWhoopWrapper: View {
             whoopBrandedHeader
 
             if whoopService.isConnected {
-                Button {
-                    HapticManager.tap()
-                    showingInfoSheet = true
-                } label: {
-                    DashboardWhoopCard(
-                        recovery: whoopService.todayRecovery,
-                        strain: whoopService.todayStrain,
-                        sleep: whoopService.lastSleep,
-                        level: whoopService.currentRecoveryLevel
-                    )
+                if whoopService.todayRecovery == nil {
+                    Button {
+                        HapticManager.tap()
+                        navigationPath.append(DashboardRoute.whoopSettings)
+                    } label: {
+                        DashboardWhoopWaitingCard()
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .accessibilityHint("Tap to open WHOOP settings while today's data syncs")
+                } else {
+                    Button {
+                        HapticManager.tap()
+                        showingInfoSheet = true
+                    } label: {
+                        DashboardWhoopCard(
+                            recovery: whoopService.todayRecovery,
+                            strain: whoopService.todayStrain,
+                            sleep: whoopService.lastSleep,
+                            level: whoopService.currentRecoveryLevel
+                        )
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .accessibilityHint("Tap to learn what each WHOOP metric means")
                 }
-                .buttonStyle(PlainButtonStyle())
-                .accessibilityHint("Tap to learn what each WHOOP metric means")
             } else {
                 Button {
                     HapticManager.tap()
@@ -103,7 +143,20 @@ struct DashboardWhoopWrapper: View {
 struct DashboardWhoopSyncNowCard: View {
     @Environment(\.colorScheme) private var colorScheme
 
-    private var accentColor: Color { .red }
+    // WHOOP's brand is monochrome black/white — use a neutral grey accent
+    // for the card chrome (icon halo, border, shadow) and pair the "Sync
+    // now" pill with an explicit black→grey gradient so the prompt reads
+    // as on-brand instead of an alert/error red.
+    private var accentColor: Color { Color(white: 0.35) }
+
+    private var pillGradientColors: [Color] {
+        // Dark mode: black → mid-grey for clean contrast on the dark card.
+        // Light mode: very-dark-grey → mid-grey so the pill stays readable
+        // without going pitch-black against a white card.
+        colorScheme == .dark
+            ? [Color.black, Color(white: 0.35)]
+            : [Color(white: 0.15), Color(white: 0.4)]
+    }
 
     var body: some View {
         HStack(spacing: Spacing.md) {
@@ -148,7 +201,7 @@ struct DashboardWhoopSyncNowCard: View {
                 Capsule(style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [accentColor, accentColor.opacity(0.7)],
+                            colors: pillGradientColors,
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -158,34 +211,31 @@ struct DashboardWhoopSyncNowCard: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .fill(Color.cardBackground)
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                accentColor.opacity(colorScheme == .dark ? 0.18 : 0.1),
-                                accentColor.opacity(colorScheme == .dark ? 0.04 : 0.02),
-                                Color.clear
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .stroke(accentColor.opacity(colorScheme == .dark ? 0.4 : 0.25), lineWidth: 1)
-        )
-        .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 12, x: 0, y: 5)
+        // Match the rest of the dashboard cards (Oura readiness, workout
+        // stats, etc.) by using the shared `sleekCard` treatment instead
+        // of a one-off background/overlay/shadow stack. The accent color
+        // is the same neutral grey that drives the icon halo + "Sync now"
+        // pill so the whole card reads as a single cohesive monochrome
+        // surface.
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Sync WHOOP. Connect to track recovery, strain, HRV, and sleep.")
     }
 }
 
+// MARK: - Active Card (recovery-ring hero, monochrome chrome)
+
+/// Recovery-ring hero card. The ring IS WHOOP's brand mark — a percentage
+/// trim around the level color (red/yellow/green) so the at-a-glance
+/// recovery signal is the primary visual instead of a 10-cell rainbow grid.
+/// Card chrome uses the shared `.sleekCard()` treatment tinted by the
+/// recovery level (mirrors how `DashboardStravaCard` brand-tags itself in
+/// orange) so the whole tile reads "this is your WHOOP today."
+///
+/// The 10-metric breakdown still lives in `WhoopMetricsInfoSheet` (this
+/// card opens it on tap) — the widget surfaces only the 6 most actionable
+/// today-stats: Recovery score, Strain (mini-bar), Sleep performance,
+/// HRV, RHR, and total Asleep time.
 struct DashboardWhoopCard: View {
     let recovery: WhoopRecoveryScore?
     let strain: WhoopCycleScore?
@@ -196,152 +246,290 @@ struct DashboardWhoopCard: View {
 
     private var accentColor: Color { level.color }
 
+    /// WHOOP-blue — used only for the strain mini-bar so Strain has its
+    /// own brand cue without polluting the rest of the card with extra hues.
+    private var strainColor: Color {
+        Color(red: 0.0, green: 0.62, blue: 0.96)
+    }
+
     var body: some View {
-        VStack(spacing: Spacing.xs) {
-            // Primary row — recovery / strain signals
-            HStack(spacing: 0) {
-                metricCell(
-                    value: recovery?.recoveryScore.map { "\($0)%" } ?? "--",
-                    label: "Recovery",
-                    color: level.color
-                )
-                metricCell(
-                    value: recovery?.hrvRmssdMilli.map { String(format: "%.0f", $0) } ?? "--",
-                    label: "HRV",
-                    color: .cyan
-                )
-                metricCell(
-                    value: strain?.strain.map { String(format: "%.1f", $0) } ?? "--",
-                    label: "Strain",
-                    color: .blue
-                )
-                metricCell(
-                    value: recovery?.restingHeartRate.map { "\($0)" } ?? "--",
-                    label: "RHR",
-                    color: .red
-                )
-                metricCell(
-                    value: sleep?.sleepPerformancePercentage.map { "\(Int($0))%" } ?? "--",
-                    label: "Sleep",
-                    color: .indigo
-                )
-            }
-
-            Divider()
-                .opacity(0.35)
-                .padding(.horizontal, Spacing.md)
-
-            // Secondary row — sleep + physiological detail
-            HStack(spacing: 0) {
-                metricCell(
-                    value: WhoopWidgetFormat.sleepDuration(from: sleep),
-                    label: "Asleep",
-                    color: .indigo,
-                    isSecondary: true
-                )
-                metricCell(
-                    value: sleep?.sleepEfficiencyPercentage.map { "\(Int($0))%" } ?? "--",
-                    label: "Efficiency",
-                    color: .purple,
-                    isSecondary: true
-                )
-                metricCell(
-                    value: recovery?.spo2Percentage.map { String(format: "%.0f%%", $0) } ?? "--",
-                    label: "SpO₂",
-                    color: .teal,
-                    isSecondary: true
-                )
-                metricCell(
-                    value: sleep?.respiratoryRate.map { String(format: "%.1f", $0) } ?? "--",
-                    label: "Resp",
-                    color: .mint,
-                    isSecondary: true
-                )
-                metricCell(
-                    value: WhoopWidgetFormat.calories(from: strain),
-                    label: "Cal",
-                    color: .orange,
-                    isSecondary: true
-                )
-            }
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            heroRow
+            strainSection
+            statStrip
+            secondaryStatStrip
         }
-        .padding(.vertical, Spacing.sm)
-        .frame(maxWidth: .infinity)
-        .background(cardBackground)
-        .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.1 : 0.06), radius: 12, x: 0, y: 3)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
     }
 
-    private func metricCell(value: String, label: String, color: Color, isSecondary: Bool = false) -> some View {
-        // Value is tinted to match the expanded info sheet cards so the widget
-        // speaks WHOOP's visual language (Recovery red/yellow/green, Strain
-        // blue, etc.). Fallback to `.primary` when there is no reading so the
-        // greyed-out "--" state reads cleanly.
-        let hasValue = value != "--"
-        return VStack(spacing: Spacing.xxxs) {
-            Text(value)
-                .font(isSecondary ? .ds_labelMedium : .ds_statSmall)
-                .fontWeight(isSecondary ? .semibold : .regular)
-                .foregroundColor(hasValue ? color : .primary.opacity(0.5))
+    // MARK: Hero — ring + headline copy
+
+    private var heroRow: some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            recoveryRing
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(recoveryHeadline)
+                    .font(.ds_heading3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(recoverySubhead)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var recoveryRing: some View {
+        let progress: CGFloat = {
+            guard let score = recovery?.recoveryScore else { return 0 }
+            return CGFloat(min(max(score, 0), 100)) / 100
+        }()
+
+        return ZStack {
+            Circle()
+                .stroke(accentColor.opacity(colorScheme == .dark ? 0.18 : 0.12), lineWidth: 8)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(
+                    LinearGradient(
+                        colors: [accentColor, accentColor.opacity(0.7)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+
+            VStack(spacing: 0) {
+                Text(recovery?.recoveryScore.map { "\($0)" } ?? "—")
+                    .font(.system(size: 28, weight: .heavy, design: .rounded))
+                    .foregroundColor(accentColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text("%")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .offset(y: -2)
+            }
+        }
+        .frame(width: 84, height: 84)
+        .accessibilityHidden(true)
+    }
+
+    // MARK: Strain mini-bar (WHOOP's second brand signal)
+
+    private var strainSection: some View {
+        let value = strain?.strain ?? 0
+        let progress: CGFloat = CGFloat(min(max(value, 0), 21)) / 21
+        let hasValue = strain?.strain != nil
+
+        return VStack(alignment: .leading, spacing: Spacing.xxs) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Day Strain")
+                    .font(.ds_labelSmall)
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .foregroundColor(.secondary)
+                Spacer(minLength: 0)
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(hasValue ? String(format: "%.1f", value) : "—")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(hasValue ? .primary : .primary.opacity(0.45))
+                    Text("/ 21")
+                        .font(.ds_labelSmall)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.18))
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [strainColor.opacity(0.85), strainColor],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(0, geo.size.width * progress))
+                }
+            }
+            .frame(height: 6)
+        }
+    }
+
+    // MARK: 4-metric stat strip
+
+    private var statStrip: some View {
+        HStack(spacing: 0) {
+            statCell(
+                value: sleep?.sleepPerformancePercentage.map { "\(Int($0))%" } ?? "—",
+                label: "Sleep"
+            )
+            statDivider
+            statCell(
+                value: WhoopWidgetFormat.sleepDuration(from: sleep),
+                label: "Asleep"
+            )
+            statDivider
+            statCell(
+                value: recovery?.hrvRmssdMilli.map { "\(Int($0))" } ?? "—",
+                label: "HRV",
+                unit: "ms"
+            )
+            statDivider
+            statCell(
+                value: recovery?.restingHeartRate.map { "\($0)" } ?? "—",
+                label: "RHR",
+                unit: "bpm"
+            )
+        }
+        .padding(.vertical, Spacing.xs)
+        .padding(.horizontal, Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                .fill(accentColor.opacity(colorScheme == .dark ? 0.08 : 0.05))
+        )
+    }
+
+    private func statCell(value: String, label: String, unit: String? = nil) -> some View {
+        let hasValue = value != "—"
+        return VStack(spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(hasValue ? .primary : .primary.opacity(0.45))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                if let unit, hasValue {
+                    Text(unit)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+            }
             Text(label)
-                .font(.ds_labelSmall)
+                .font(.system(size: 9, weight: .medium))
+                .textCase(.uppercase)
+                .tracking(0.6)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
 
-    private var cardBackground: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(accentColor.opacity(colorScheme == .dark ? 0.08 : 0.04))
-                .offset(y: 6)
-                .blur(radius: 3)
+    private var statDivider: some View {
+        Rectangle()
+            .fill(accentColor.opacity(colorScheme == .dark ? 0.22 : 0.18))
+            .frame(width: 1, height: 24)
+    }
 
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                .offset(y: 4)
+    // MARK: Secondary stat strip — physiological detail
 
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color.cardBackground)
+    /// Less-prominent second row for the deeper physiological signals
+    /// (sleep efficiency, blood oxygen, respiratory rate, calories burned).
+    /// Intentionally rendered without the level-color background tint and
+    /// at a smaller scale so the recovery ring + primary strip stay the
+    /// hero of the card. The detail-level info sheet still hosts the full
+    /// definitions when the user taps the widget.
+    private var secondaryStatStrip: some View {
+        HStack(spacing: 0) {
+            secondaryStatCell(
+                value: sleep?.sleepEfficiencyPercentage.map { "\(Int($0))%" } ?? "—",
+                label: "Efficiency"
+            )
+            secondaryDivider
+            secondaryStatCell(
+                value: recovery?.spo2Percentage.map { String(format: "%.0f%%", $0) } ?? "—",
+                label: "SpO₂"
+            )
+            secondaryDivider
+            secondaryStatCell(
+                value: sleep?.respiratoryRate.map { String(format: "%.1f", $0) } ?? "—",
+                label: "Resp",
+                unit: "/min"
+            )
+            secondaryDivider
+            secondaryStatCell(
+                value: WhoopWidgetFormat.calories(from: strain),
+                label: "Cal"
+            )
+        }
+        .padding(.top, Spacing.xxs)
+    }
 
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                            : [Color.white, Color.white.opacity(0.5), Color.clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1.5
-                )
+    private func secondaryStatCell(value: String, label: String, unit: String? = nil) -> some View {
+        let hasValue = value != "—" && value != "--"
+        return VStack(spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                Text(hasValue ? value : "—")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundColor(hasValue ? .primary.opacity(0.85) : .primary.opacity(0.4))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if let unit, hasValue {
+                    Text(unit)
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+            }
+            Text(label)
+                .font(.system(size: 8, weight: .medium))
+                .textCase(.uppercase)
+                .tracking(0.5)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
 
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [accentColor.opacity(colorScheme == .dark ? 0.25 : 0.18), accentColor.opacity(colorScheme == .dark ? 0.15 : 0.1)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
+    private var secondaryDivider: some View {
+        Rectangle()
+            .fill(Color.secondary.opacity(0.18))
+            .frame(width: 1, height: 18)
+    }
+
+    // MARK: Recovery copy (WHOOP's voice)
+
+    private var recoveryHeadline: String {
+        switch level {
+        case .green: return "Primed to perform"
+        case .yellow: return "Maintain today"
+        case .red: return "Take it easy"
+        case .unknown: return "Recovery pending"
+        }
+    }
+
+    private var recoverySubhead: String {
+        switch level {
+        case .green: return "Your body is ready for high strain."
+        case .yellow: return "Match your effort to today's recovery."
+        case .red: return "Your body needs rest — go light today."
+        case .unknown: return "Today's recovery will land here once your strap syncs."
         }
     }
 
     private var accessibilityDescription: String {
         var parts: [String] = ["WHOOP Recovery widget."]
         if let score = recovery?.recoveryScore {
-            parts.append("Recovery \(score) percent, \(level.label) zone.")
-        }
-        if let hrv = recovery?.hrvRmssdMilli {
-            parts.append("HRV \(Int(hrv)) milliseconds.")
+            parts.append("Recovery \(score) percent, \(level.label) zone. \(recoveryHeadline).")
         }
         if let s = strain?.strain {
-            parts.append("Strain \(String(format: "%.1f", s)).")
-        }
-        if let rhr = recovery?.restingHeartRate {
-            parts.append("Resting heart rate \(rhr).")
+            parts.append("Day strain \(String(format: "%.1f", s)) out of 21.")
         }
         if let perf = sleep?.sleepPerformancePercentage {
             parts.append("Sleep performance \(Int(perf)) percent.")
@@ -349,6 +537,12 @@ struct DashboardWhoopCard: View {
         let asleep = WhoopWidgetFormat.sleepDuration(from: sleep)
         if asleep != "--" {
             parts.append("Slept \(asleep).")
+        }
+        if let hrv = recovery?.hrvRmssdMilli {
+            parts.append("HRV \(Int(hrv)) milliseconds.")
+        }
+        if let rhr = recovery?.restingHeartRate {
+            parts.append("Resting heart rate \(rhr).")
         }
         if let eff = sleep?.sleepEfficiencyPercentage {
             parts.append("Sleep efficiency \(Int(eff)) percent.")
@@ -363,7 +557,55 @@ struct DashboardWhoopCard: View {
         if cal != "--" {
             parts.append("\(cal) calories burned.")
         }
+        parts.append("Tap for definitions of every metric.")
         return parts.joined(separator: " ")
+    }
+}
+
+// MARK: - Waiting Card (connected, but today's recovery not yet synced)
+
+/// Shown when the user has paired their WHOOP but today's recovery score
+/// hasn't landed yet (early morning before the strap uploads, or a brief
+/// sync gap). Mirrors the Strava "Lace up — your next run lands here"
+/// empty state so connected widgets always feel intentional, never broken.
+struct DashboardWhoopWaitingCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var accentColor: Color { Color(white: 0.4) }
+
+    var body: some View {
+        HStack(spacing: Spacing.md) {
+            ZStack {
+                Circle()
+                    .stroke(accentColor.opacity(colorScheme == .dark ? 0.25 : 0.18), lineWidth: 5)
+                    .frame(width: 56, height: 56)
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(accentColor)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Recovery pending")
+                    .font(.ds_bodyMedium)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+                Text("Today's score lands here once your strap syncs.")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("WHOOP recovery pending. Today's score will land here once your strap syncs.")
     }
 }
 

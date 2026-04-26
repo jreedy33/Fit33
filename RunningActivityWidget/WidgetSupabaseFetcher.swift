@@ -50,7 +50,7 @@
 //
 
 import Foundation
-import os
+import OSLog
 
 /// Public URL + anon key. Mirror of `Fit33/Secrets.swift::AppConfig`.
 /// Both values are public-facing by design — the anon key has no

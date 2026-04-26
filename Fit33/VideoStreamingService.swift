@@ -107,7 +107,20 @@ class VideoStreamingService: ObservableObject {
     }
     
     private static let diskCacheFile = "video_gender_cache.json"
-    
+
+    // ⚡️ Cold-start speedup Phase 1.3 (2026-04-25):
+    // Disk-decoded video mappings are stashed here off-main, then promoted to
+    // the @Published caches lazily on first video access (or via the safety
+    // commit that fires once the StartupCoordinator clears the essential
+    // phase). Previously the disk loader's `await MainActor.run { ... }` for
+    // 5431 entries queued behind ContentView body evaluation, fighting for
+    // main-actor time during the freeze window. Reads via `getVideoURL` and
+    // `videoFilenameCache` look up `_pendingDiskCache` as a fallback so
+    // callers see the data even before the main publish lands.
+    private let pendingCacheLock = NSLock()
+    private var _pendingDiskGenderCache: [String: GenderVideoInfo]?
+    private var _pendingDiskFilenameCache: [String: String]?
+
     private init() {
         self.videoMapping = createExerciseVideoMapping()
         createCacheDirectoryIfNeeded()
@@ -170,30 +183,77 @@ class VideoStreamingService: ObservableObject {
         
         let preferred = preferredVideoGender
         
-        // File I/O + JSON decode on background thread to avoid blocking init
-        Task.detached(priority: .userInitiated) {
+        // File I/O + JSON decode on background thread to avoid blocking init.
+        // ⚡️ Cold-start Phase 1.3: stash decoded mappings in _pendingDiskCache
+        // (no main-actor publish yet). Lookups fall back to the pending cache,
+        // and a deferred safety task promotes pending → @Published once the
+        // contended cold-start window has cleared.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
             do {
                 let data = try Data(contentsOf: url)
                 let decoded = try JSONDecoder().decode([String: GenderVideoInfo].self, from: data)
                 guard !decoded.isEmpty else { return }
-                
+
                 var filenames: [String: String] = [:]
                 for (key, info) in decoded {
                     if let fn = info.filenameWithFallback(preferred: preferred) {
                         filenames[key] = fn
                     }
                 }
-                
-                await MainActor.run {
-                    self.genderVideoCache = decoded
-                    self.videoFilenameCache = filenames
-                    self.videosLoaded = true
-                    AppLogger.debug("⚡️ [VIDEO] Restored \(decoded.count) video mappings from disk cache", category: .general)
-                }
+
+                self.pendingCacheLock.lock()
+                self._pendingDiskGenderCache = decoded
+                self._pendingDiskFilenameCache = filenames
+                self.pendingCacheLock.unlock()
+                AppLogger.debug("⚡️ [VIDEO] Decoded \(decoded.count) mappings to pending cache (deferring main-actor publish)", category: .general)
+
+                // Safety publish: ~1.5s after launch the cold-start contention
+                // window has cleared, so promote pending → @Published so
+                // VideoPlaybackEngine's `$videosLoaded` subscribers and direct
+                // `genderVideoCache` readers (workout generators) see populated
+                // mappings even if no UI explicitly accessed a video URL yet.
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                await self.commitPendingDiskCacheIfNeeded()
             } catch {
                 AppLogger.debug("[VIDEO] Disk cache load failed: \(error.localizedDescription)", category: .general)
             }
         }
+    }
+
+    /// Promote disk-decoded video mappings from `_pendingDiskCache` to the
+    /// `@Published` caches. Idempotent: clears the pending storage once the
+    /// publish has happened. Called lazily on first video access (`getVideoURL`)
+    /// and via a safety timer in `loadGenderCacheFromDisk`.
+    @MainActor
+    fileprivate func commitPendingDiskCacheIfNeeded() {
+        pendingCacheLock.lock()
+        let pendingGender = _pendingDiskGenderCache
+        let pendingFilenames = _pendingDiskFilenameCache
+        _pendingDiskGenderCache = nil
+        _pendingDiskFilenameCache = nil
+        pendingCacheLock.unlock()
+
+        guard let pendingGender, !pendingGender.isEmpty else { return }
+        guard genderVideoCache.isEmpty else {
+            // Network path or another caller already populated; nothing to do.
+            return
+        }
+        genderVideoCache = pendingGender
+        if let pendingFilenames {
+            videoFilenameCache = pendingFilenames
+        }
+        videosLoaded = true
+        AppLogger.debug("⚡️ [VIDEO] Promoted \(pendingGender.count) mappings to @Published cache", category: .general)
+    }
+
+    /// Synchronous lookup that consults the pending disk cache when the
+    /// @Published cache hasn't been populated yet (cold-start fast path).
+    /// Called from off-main read paths to avoid races.
+    fileprivate func pendingDiskFilename(for normalizedKey: String, gender: VideoGender) -> String? {
+        pendingCacheLock.lock(); defer { pendingCacheLock.unlock() }
+        return _pendingDiskGenderCache?[normalizedKey]?.filenameWithFallback(preferred: gender)
+            ?? _pendingDiskFilenameCache?[normalizedKey]
     }
     
     private func saveGenderCacheToDisk() {
@@ -666,7 +726,22 @@ class VideoStreamingService: ObservableObject {
     /// Automatically falls back to opposite gender if preferred not available
     func getVideoURL(for exerciseName: String, gender: VideoGender) -> URL? {
         let startTime = Date()
-        
+
+        // ⚡️ Cold-start Phase 1.3: first call hops the disk-cache pending
+        // mappings into @Published. Cheap on subsequent calls (early-out
+        // after pending is nil). Must be on main since we touch @Published —
+        // off-main callers fall back to a lock-protected pending lookup.
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                commitPendingDiskCacheIfNeeded()
+            }
+        } else if let pending = pendingDiskFilename(for: exerciseName.lowercased().trimmingCharacters(in: .whitespaces), gender: gender) {
+            let urlString = "\(storageBaseURL)/\(pending)"
+            if let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) {
+                return url
+            }
+        }
+
         // First check local cache
         if let cachedURL = getLocalCachedVideo(for: exerciseName) {
             SessionLogManager.shared.log(.debug, category: .data, message: "Video from cache: \(exerciseName)", metadata: [

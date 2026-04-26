@@ -82,7 +82,20 @@
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<!-- ⚡️ Cold-start UX fix (2026-04-25):
+		     `UILaunchScreen` was previously `<dict/>` (empty), which makes
+		     iOS render a SOLID WHITE screen for the entire 1.9–3.5s
+		     launch-screen → app-window transition. That's the user-
+		     visible "long startup white screen" complaint — not anything
+		     in our app code. By specifying a color asset that matches the
+		     dashboard's `appBackgroundTop` in both light and dark modes,
+		     iOS now shows a screen that visually matches the app the
+		     instant the icon is tapped. There's no more "flash of white"
+		     between launch and the dashboard rendering. -->
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>

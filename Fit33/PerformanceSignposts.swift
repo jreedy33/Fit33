@@ -41,6 +41,7 @@ enum PerformanceSignposts {
         // Startup fan-out (Cluster A)
         case appLaunch               = "app.launch"
         case appForeground           = "app.foreground"
+        case appFirstFrame           = "app.first_frame"
         case dashboardHydrate        = "dashboard.hydrate"
         case dashboardSocialFanOut   = "dashboard.social_fanout"
         case startupCoordinatorStage = "startup.coordinator_stage"

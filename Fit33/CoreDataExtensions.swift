@@ -17,7 +17,7 @@ extension Exercise {
     
     // Helper to set muscleGroups from [String]
     func setMuscleGroups(_ groups: [String]) {
-        self.muscleGroups = groups as NSObject
+        self.muscleGroups = groups as NSArray
     }
 }
 
@@ -30,7 +30,7 @@ extension User {
     
     // Helper to set equipment from [String]
     func setEquipment(_ items: [String]) {
-        self.equipment = items as NSObject
+        self.equipment = items as NSArray
     }
 }
 

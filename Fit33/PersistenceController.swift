@@ -1,11 +1,50 @@
 import CoreData
 import Foundation
 
+// MARK: - Async-Load Continuation State Box
+//
+// Exactly-once continuation resumption helper used by
+// `PersistenceController.waitUntilStoreLoaded()`. Captures the
+// `coreDataDidLoad` NotificationCenter observer + a continuation; uses
+// an `NSLock` to guarantee only the first resume call goes through
+// (whether triggered by the observer or by the race-check inside
+// `withCheckedContinuation`).
+private final class ResumeStateBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+    var observer: NSObjectProtocol?
+    var continuation: CheckedContinuation<Void, Never>?
+
+    func resumeOnce() {
+        lock.lock()
+        let alreadyResumed = resumed
+        if !alreadyResumed { resumed = true }
+        let cont = continuation
+        let obs = observer
+        continuation = nil
+        observer = nil
+        lock.unlock()
+        guard !alreadyResumed else { return }
+        if let obs = obs { NotificationCenter.default.removeObserver(obs) }
+        cont?.resume()
+    }
+}
+
 // MARK: - Core Data Recovery Notifications
 extension Notification.Name {
     /// Posted when Core Data fails to load even after a reset attempt.
     /// Observers should show a critical error screen to the user.
     static let coreDataLoadFailed = Notification.Name("coreDataLoadFailed")
+
+    /// Posted on the main queue when Core Data has finished loading and
+    /// the persistent store is attached to the coordinator. Observers
+    /// (notably `Fit33App`'s `isCoreDataReady` gate) can flip from
+    /// "showing launch-background overlay" to "rendering ContentView"
+    /// at this point. With `shouldAddStoreAsynchronously = true`, this
+    /// notification typically fires within a few hundred ms after
+    /// `PersistenceController.init` returns, while the iOS launch-
+    /// screen → app-window framework transition is still in flight.
+    static let coreDataDidLoad = Notification.Name("coreDataDidLoad")
 }
 
 // MARK: - Configured background-context factory (Phase 12c, 2026-04-24)
@@ -62,6 +101,51 @@ struct PersistenceController {
     
     /// URL where the backup of the corrupted store was saved (if backup succeeded).
     static var storeBackupURL: URL?
+
+    /// True once the persistent store finishes loading and is attached to
+    /// the coordinator. With `shouldAddStoreAsynchronously = true`, this
+    /// flips ~hundreds of ms AFTER `PersistenceController.init` returns.
+    /// `Fit33App` uses this (plus the `.coreDataDidLoad` notification)
+    /// to gate `ContentView` render — until the store is loaded, the
+    /// app shows a `LaunchBackground` color overlay so consumers
+    /// (`@FetchRequest`, `viewContext.fetch`, etc.) never see a brief
+    /// "store not attached → empty results" race.
+    nonisolated(unsafe) static var isStoreLoaded = false
+
+    /// Suspends the calling task until the persistent store has finished
+    /// loading. Returns immediately if already loaded. Used by services
+    /// that fire `viewContext.fetch` / `bgContext.perform { fetch }`
+    /// during cold-start Tasks spawned from `Fit33App.init` — without
+    /// this gate, those fetches would race the async store-attach and
+    /// silently return empty results, leaving caches stale until a
+    /// later refresh trigger.
+    static func waitUntilStoreLoaded() async {
+        if isStoreLoaded { return }
+        // `OSAllocatedUnfairLock` is `Sendable`-safe and can be captured by
+        // both the observer closure and the post-registration race-check
+        // path below, ensuring exactly-once continuation resumption even
+        // if the load completes mid-registration.
+        let stateBox = ResumeStateBox()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            stateBox.continuation = continuation
+
+            let observer = NotificationCenter.default.addObserver(
+                forName: .coreDataDidLoad,
+                object: nil,
+                queue: .main
+            ) { _ in
+                stateBox.resumeOnce()
+            }
+            stateBox.observer = observer
+
+            // Race: the store may have loaded between the early
+            // `isStoreLoaded` check and the observer registration.
+            // Re-check; if already loaded, resume now.
+            if isStoreLoaded {
+                stateBox.resumeOnce()
+            }
+        }
+    }
     
     static var preview: PersistenceController = {
         let result = PersistenceController(inMemory: true)
@@ -79,7 +163,7 @@ struct PersistenceController {
         sampleUser.xp = 1250
         sampleUser.fitnessGoal = "Strength"
         sampleUser.experienceLevel = "Intermediate"
-        sampleUser.equipment = ["Dumbbells", "Barbell", "Bodyweight"] as NSObject
+        sampleUser.equipment = ["Dumbbells", "Barbell", "Bodyweight"] as NSArray
         sampleUser.availableDays = 4
         sampleUser.createdAt = Date()
         sampleUser.lastWorkoutDate = Calendar.current.date(byAdding: .day, value: -1, to: Date())
@@ -98,7 +182,7 @@ struct PersistenceController {
             exercise.id = UUID()
             exercise.name = name
             exercise.category = category
-            exercise.muscleGroups = muscleGroups as NSObject
+            exercise.muscleGroups = muscleGroups as NSArray
             exercise.equipment = equipment
             exercise.instructions = "Perform with proper form and controlled movement."
         }
@@ -126,126 +210,172 @@ struct PersistenceController {
     
     init(inMemory: Bool = false) {
         container = NSPersistentContainer(name: "DataModel")
-        
+
         // Use persistent storage for meals data (even in DEBUG)
         let useInMemory = inMemory // Respect the parameter, don't force in-memory
-        
+
         if useInMemory {
             container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
             AppLogger.debug("🧪 Using in-memory Core Data (DEBUG mode)", category: .general)
         }
-        
-        // Configure store description with migration options
+
+        // ⚡️ Cold-start sprint 2026-04-26 (async store load):
+        // Configure the store description for ASYNCHRONOUS loading.
+        // PREVIOUSLY: `loadPersistentStores` ran synchronously on main during
+        // `Fit33App`'s stored-property default phase, blocking ~700–1000ms
+        // BEFORE init body could even start. That 700ms then sat
+        // sequentially in front of the iOS launch-screen → app-window
+        // framework transition (~1.9–3s, platform-fixed).
+        //
+        // NEW: `shouldAddStoreAsynchronously = true` makes
+        // `loadPersistentStores` return immediately. The completion handler
+        // runs LATER on a bg queue, in PARALLEL with the iOS framework
+        // transition that would have happened anyway. Net cold-start
+        // reduction: roughly equal to the CD load time (~700ms), since
+        // CD-load and framework-transition now overlap.
+        //
+        // SAFETY: `Fit33App.body` gates `ContentView` render on
+        // `isCoreDataReady` (driven by the `.coreDataDidLoad` notification
+        // posted at the bottom of this completion handler). Until then,
+        // the app shows a `LaunchBackground` color overlay matching the
+        // launch screen — no `@FetchRequest` / `viewContext.fetch` ever
+        // sees an unloaded store.
         if let description = container.persistentStoreDescriptions.first {
-            // Enable automatic migration
             description.shouldMigrateStoreAutomatically = true
             description.shouldInferMappingModelAutomatically = true
+            description.shouldAddStoreAsynchronously = true
         } else {
             AppLogger.warning("⚠️ [CORE DATA] No persistent store description found — migration options skipped", category: .general)
         }
-        
-        var loadError: NSError?
-        var storeURL: URL?
-        
+
+        // Capture the container by reference so the (now-async) completion
+        // handlers below can interact with it without capturing `self`
+        // (PersistenceController is a struct; struct `self` in init is a
+        // copy, but `container` is an `NSPersistentContainer` class
+        // reference and is safely captured).
+        let container = self.container
+
         container.loadPersistentStores { storeDescription, error in
             if let error = error as NSError? {
                 AppLogger.warning("⚠️ Core Data load failed: \(error)", category: .general)
                 AppLogger.error("Error code: \(error.code)", category: .general)
-                loadError = error
-                storeURL = storeDescription.url
+                Self.handleLoadFailure(container: container, error: error, storeURL: storeDescription.url)
             } else {
                 AppLogger.info("✅ Core Data loaded successfully", category: .general)
+                Self.completeLoad(container: container)
             }
         }
-        
-        // Handle migration failures by resetting the store
-        if let error = loadError, let url = storeURL {
-            AppLogger.debug("🔄 Attempting automatic Core Data reset...", category: .general)
-            AppLogger.error("Error details: \(error.localizedDescription)", category: .general)
-            
-            PersistenceController.migrationError = error
-            
-            // 🛡️ Log the migration failure to crash reporting with full context
-            CrashReportingService.shared.reportError(
-                message: "Core Data migration failed — store will be reset",
-                domain: "CoreData",
-                code: "MIGRATION_FAILURE_\(error.code)",
-                error: error,
-                severity: .critical,
-                additionalContext: [
-                    "store_url": url.absoluteString,
-                    "error_domain": error.domain,
-                    "error_code": "\(error.code)",
-                    "error_user_info": "\(error.userInfo)",
-                    "migration_auto_enabled": "true",
-                    "infer_mapping_auto_enabled": "true"
-                ]
-            )
-            
-            let fileManager = FileManager.default
-            
-            // 🛡️ STEP 1: Backup the corrupted store before deleting
-            if fileManager.fileExists(atPath: url.path) {
-                let backupDir = fileManager.temporaryDirectory
-                    .appendingPathComponent("CoreDataBackup_\(Int(Date().timeIntervalSince1970))")
-                
-                do {
-                    try fileManager.createDirectory(at: backupDir, withIntermediateDirectories: true)
-                    
-                    let mainBackup = backupDir.appendingPathComponent(url.lastPathComponent)
-                    try fileManager.copyItem(at: url, to: mainBackup)
-                    
-                    // Also backup -shm and -wal if they exist
-                    let shmURL = URL(fileURLWithPath: url.path + "-shm")
-                    let walURL = URL(fileURLWithPath: url.path + "-wal")
-                    if fileManager.fileExists(atPath: shmURL.path) {
-                        try fileManager.copyItem(at: shmURL, to: backupDir.appendingPathComponent(shmURL.lastPathComponent))
-                    }
-                    if fileManager.fileExists(atPath: walURL.path) {
-                        try fileManager.copyItem(at: walURL, to: backupDir.appendingPathComponent(walURL.lastPathComponent))
-                    }
-                    
-                    PersistenceController.storeBackupURL = backupDir
-                    AppLogger.debug("💾 Core Data store backed up to: \(backupDir.path)", category: .general)
-                } catch {
-                    AppLogger.warning("⚠️ Failed to backup Core Data store: \(error.localizedDescription)", category: .general)
-                    CrashReportingService.shared.reportError(
-                        message: "Failed to backup Core Data store before reset",
-                        domain: "CoreData",
-                        code: "BACKUP_FAILURE",
-                        error: error,
-                        severity: .high
-                    )
-                }
-                
-                // STEP 2: Delete the corrupted store files
-                try? fileManager.removeItem(at: url)
-                
+    }
+
+    /// Migration-recovery + retry path. Called from the async load
+    /// completion handler when the initial load fails. Backs up the
+    /// corrupted store, deletes it, and retries the load (also async).
+    /// Sequence preserved exactly from the pre-async version, just
+    /// restructured to nest inside the retry's completion handler.
+    private static func handleLoadFailure(container: NSPersistentContainer, error: NSError, storeURL: URL?) {
+        AppLogger.debug("🔄 Attempting automatic Core Data reset...", category: .general)
+        AppLogger.error("Error details: \(error.localizedDescription)", category: .general)
+
+        PersistenceController.migrationError = error
+
+        // 🛡️ Log the migration failure to crash reporting with full context
+        CrashReportingService.shared.reportError(
+            message: "Core Data migration failed — store will be reset",
+            domain: "CoreData",
+            code: "MIGRATION_FAILURE_\(error.code)",
+            error: error,
+            severity: .critical,
+            additionalContext: [
+                "store_url": storeURL?.absoluteString ?? "unknown",
+                "error_domain": error.domain,
+                "error_code": "\(error.code)",
+                "error_user_info": "\(error.userInfo)",
+                "migration_auto_enabled": "true",
+                "infer_mapping_auto_enabled": "true"
+            ]
+        )
+
+        let fileManager = FileManager.default
+
+        // 🛡️ STEP 1: Backup the corrupted store before deleting
+        if let url = storeURL, fileManager.fileExists(atPath: url.path) {
+            let backupDir = fileManager.temporaryDirectory
+                .appendingPathComponent("CoreDataBackup_\(Int(Date().timeIntervalSince1970))")
+
+            do {
+                try fileManager.createDirectory(at: backupDir, withIntermediateDirectories: true)
+
+                let mainBackup = backupDir.appendingPathComponent(url.lastPathComponent)
+                try fileManager.copyItem(at: url, to: mainBackup)
+
+                // Also backup -shm and -wal if they exist
                 let shmURL = URL(fileURLWithPath: url.path + "-shm")
                 let walURL = URL(fileURLWithPath: url.path + "-wal")
-                try? fileManager.removeItem(at: shmURL)
-                try? fileManager.removeItem(at: walURL)
-                
-                AppLogger.debug("🗑️ Deleted old Core Data store files", category: .general)
-            }
-            
-            // STEP 3: Try loading again with fresh store
-            var retrySuccess = false
-            container.loadPersistentStores { _, retryError in
-                if let retryError = retryError as NSError? {
-                    AppLogger.error("❌ Retry failed: \(retryError.localizedDescription)", category: .general)
-                } else {
-                    AppLogger.info("✅ Core Data successfully reset and loaded", category: .general)
-                    retrySuccess = true
+                if fileManager.fileExists(atPath: shmURL.path) {
+                    try fileManager.copyItem(at: shmURL, to: backupDir.appendingPathComponent(shmURL.lastPathComponent))
                 }
+                if fileManager.fileExists(atPath: walURL.path) {
+                    try fileManager.copyItem(at: walURL, to: backupDir.appendingPathComponent(walURL.lastPathComponent))
+                }
+
+                PersistenceController.storeBackupURL = backupDir
+                AppLogger.debug("💾 Core Data store backed up to: \(backupDir.path)", category: .general)
+            } catch {
+                AppLogger.warning("⚠️ Failed to backup Core Data store: \(error.localizedDescription)", category: .general)
+                CrashReportingService.shared.reportError(
+                    message: "Failed to backup Core Data store before reset",
+                    domain: "CoreData",
+                    code: "BACKUP_FAILURE",
+                    error: error,
+                    severity: .high
+                )
             }
-            
-            if retrySuccess {
+
+            // STEP 2: Delete the corrupted store files
+            try? fileManager.removeItem(at: url)
+
+            let shmURL = URL(fileURLWithPath: url.path + "-shm")
+            let walURL = URL(fileURLWithPath: url.path + "-wal")
+            try? fileManager.removeItem(at: shmURL)
+            try? fileManager.removeItem(at: walURL)
+
+            AppLogger.debug("🗑️ Deleted old Core Data store files", category: .general)
+        }
+
+        // STEP 3: Retry load (also async per `shouldAddStoreAsynchronously`).
+        let originalErrorCode = error.code
+        let originalErrorDescription = error.localizedDescription
+        container.loadPersistentStores { _, retryError in
+            if let retryError = retryError as NSError? {
+                // STEP 5: Critical failure — Core Data cannot load at all
+                AppLogger.error("❌ Retry failed: \(retryError.localizedDescription)", category: .general)
+                PersistenceController.storeLoadFailed = true
+
+                CrashReportingService.shared.reportError(
+                    message: "Core Data CRITICAL FAILURE — store cannot load even after reset",
+                    domain: "CoreData",
+                    code: "STORE_LOAD_FATAL",
+                    severity: .critical,
+                    additionalContext: [
+                        "original_error": originalErrorDescription,
+                        "original_error_code": "\(originalErrorCode)",
+                        "backup_location": PersistenceController.storeBackupURL?.path ?? "none"
+                    ]
+                )
+
+                // Post notification so UI can show a critical error screen
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .coreDataLoadFailed, object: nil)
+                }
+
+                AppLogger.error("❌ CRITICAL: Could not load Core Data even after reset. App will not function correctly.", category: .general)
+            } else {
                 // STEP 4: Store was reset — auto-restore will happen via syncAllDataFromCloud()
                 // which runs inside checkAuth() on every authenticated app launch.
                 // The user never sees anything — their data reappears seamlessly.
+                AppLogger.info("✅ Core Data successfully reset and loaded", category: .general)
                 PersistenceController.storeWasReset = true
-                
+
                 CrashReportingService.shared.reportError(
                     message: "Core Data store was reset successfully — auto-restore pending via cloud sync",
                     domain: "CoreData",
@@ -253,34 +383,20 @@ struct PersistenceController {
                     severity: .high,
                     additionalContext: [
                         "backup_location": PersistenceController.storeBackupURL?.path ?? "none",
-                        "original_error_code": "\(loadError?.code ?? 0)"
+                        "original_error_code": "\(originalErrorCode)"
                     ]
                 )
-            } else {
-                // STEP 5: Critical failure — Core Data cannot load at all
-                PersistenceController.storeLoadFailed = true
-                
-                CrashReportingService.shared.reportError(
-                    message: "Core Data CRITICAL FAILURE — store cannot load even after reset",
-                    domain: "CoreData",
-                    code: "STORE_LOAD_FATAL",
-                    severity: .critical,
-                    additionalContext: [
-                        "original_error": loadError?.localizedDescription ?? "unknown",
-                        "original_error_code": "\(loadError?.code ?? 0)",
-                        "backup_location": PersistenceController.storeBackupURL?.path ?? "none"
-                    ]
-                )
-                
-                // Post notification so UI can show a critical error screen
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: .coreDataLoadFailed, object: nil)
-                }
-                
-                AppLogger.error("❌ CRITICAL: Could not load Core Data even after reset. App will not function correctly.", category: .general)
+
+                Self.completeLoad(container: container)
             }
         }
-        
+    }
+
+    /// Final post-load configuration. Sets viewContext flags, runs the
+    /// DEBUG-only transformable scan, flips `isStoreLoaded`, and posts
+    /// `.coreDataDidLoad` on main so `Fit33App` can swap the launch
+    /// overlay for `ContentView`.
+    private static func completeLoad(container: NSPersistentContainer) {
         container.viewContext.automaticallyMergesChangesFromParent = true
         container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
 
@@ -293,16 +409,23 @@ struct PersistenceController {
         // Transformable attribute added without a secure transformer.
         // Run a DEBUG-only scan so regressions are caught at dev time.
         #if DEBUG
-        scanUnsafeTransformableAttributes()
+        Self.scanUnsafeTransformableAttributes(container: container)
         #endif
+
+        PersistenceController.isStoreLoaded = true
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .coreDataDidLoad, object: nil)
+        }
     }
 
     /// DEBUG-only audit — logs `.error` for every Transformable attribute
     /// in the Core Data model that lacks `NSSecureUnarchiveFromData` (or a
     /// custom secure transformer) + a `customClassName`. Both are required
-    /// for iOS 17+ crash-safe decoding. Runs inside `init` so regressions
-    /// surface during the first app launch after a model change.
-    private func scanUnsafeTransformableAttributes() {
+    /// for iOS 17+ crash-safe decoding. Runs inside the async load
+    /// completion handler (post-2026-04-26 async store load refactor) so
+    /// regressions surface during the first app launch after a model
+    /// change without re-blocking main during init.
+    private static func scanUnsafeTransformableAttributes(container: NSPersistentContainer) {
         for (entityName, entity) in container.managedObjectModel.entitiesByName {
             for (attrName, attr) in entity.attributesByName
                 where attr.attributeType == .transformableAttributeType {

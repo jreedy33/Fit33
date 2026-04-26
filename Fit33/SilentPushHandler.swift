@@ -90,10 +90,25 @@ enum SilentPushHandler {
     // MARK: - challenge_wake
 
     /// Pushed by the `wake-challenge-opponents` edge function. Our device
-    /// reads the latest HealthKit data, logs it to the appropriate challenge
-    /// progress tables (1v1 / group / private / community), and also retries
-    /// meal / hydration syncs — so opponents see our most up-to-date numbers
-    /// as close to realtime as iOS allows.
+    /// reads the latest HealthKit data and logs it to the challenge progress
+    /// tables (1v1 / group / private / community) so opponents see our most
+    /// up-to-date numbers via realtime.
+    ///
+    /// **Lite path**: this handler ONLY runs the wake-essential subset of
+    /// `BackgroundChallengeSyncService.performLiteWakeSync()` (HealthKit +
+    /// active-challenge fetch + per-service sync). Strava / Fitbit / WHOOP /
+    /// Oura / Readiness / meals / hydration / quest / intelligence work all
+    /// stays on the foreground + BGAppRefresh + BGProcessing paths — none of
+    /// them affect the opponent's view of step / active-energy / distance /
+    /// calorie progress, and bundling them in here was the dominant cause
+    /// of timeouts (and the ensuing iOS budget penalty) for users with
+    /// multiple wearables connected.
+    ///
+    /// Self-cap: 15s. Lite path runs in ~3-7s in the field; 15s leaves
+    /// generous headroom while staying well under iOS's ~30s ceiling. A
+    /// timeout here is treated as `.failed` and counts against future
+    /// silent-push budget — so we keep the timeout snug to surface real
+    /// regressions early instead of masking them.
     private static func handleChallengeWake(completion: @escaping (UIBackgroundFetchResult) -> Void) {
         guard SupabaseManager.shared.isAuthenticated else {
             AppLogger.debug("[SILENT PUSH] challenge_wake skipped — not authenticated", category: .network)
@@ -102,19 +117,16 @@ enum SilentPushHandler {
         }
 
         let start = CFAbsoluteTimeGetCurrent()
-        AppLogger.info("[SILENT PUSH] challenge_wake received — syncing...", category: .network)
+        AppLogger.info("[SILENT PUSH] challenge_wake received — running lite wake sync...", category: .network)
 
-        // Budget: iOS gives us ~30s. We self-cap at 25s so we always
-        // manage to call `completion(_:)` before the system force-ends us
-        // (which would count against our future background delivery budget).
         let workTask = Task { @MainActor in
-            await BackgroundChallengeSyncService.shared.performChallengeSyncInBackground()
+            await BackgroundChallengeSyncService.shared.performLiteWakeSync()
         }
 
         let timeoutTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(25))
+            try? await Task.sleep(for: .seconds(15))
             if !Task.isCancelled {
-                AppLogger.warning("[SILENT PUSH] challenge_wake timed out at 25s — cancelling", category: .network)
+                AppLogger.warning("[SILENT PUSH] challenge_wake timed out at 15s — cancelling lite path", category: .network)
                 workTask.cancel()
             }
         }

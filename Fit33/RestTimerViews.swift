@@ -177,10 +177,18 @@ class RestTimer: ObservableObject {
         adElapsedTime = adTime
         isActive = true
         shouldAnimate = true
-        endDate = Date().addingTimeInterval(duration)
-        
+        let endsAt = Date().addingTimeInterval(duration)
+        endDate = endsAt
+
         displayLink = CADisplayLink(target: self, selector: #selector(tick))
         displayLink?.add(to: .main, forMode: .common)
+
+        // Mirror the rest-end timestamp to the watch so it can fire
+        // a wrist-tap haptic the moment the timer expires. No-op
+        // when no watch is paired/installed (PE invariant 33).
+        Task { @MainActor in
+            PhoneToWatchLiveWorkoutBridge.shared.pushRestEndsAt(endsAt)
+        }
     }
     
     func enableAnimation() {
@@ -206,6 +214,12 @@ class RestTimer: ObservableObject {
         timeRemaining = 0
         adElapsedTime = 0
         originalTotalTime = 0
+
+        // Clear the watch's rest-timer slot so a previously-scheduled
+        // wrist tap doesn't fire after the user manually stops/skips.
+        Task { @MainActor in
+            PhoneToWatchLiveWorkoutBridge.shared.pushRestEndsAt(nil)
+        }
     }
     
     func pause() {

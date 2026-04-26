@@ -42,8 +42,23 @@ Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal) and `.cu
 | iPad Pro 11" | 834 | multitasking / Stage Manager |
 | iPad Pro 13" | 1024 | largest — must use space |
 
-### Apple Watch (future — logging only)
-SE 44mm (184×224) · Series 10 46mm (198×242) · Ultra 2 (205×251).
+### Apple Watch (companion — foreground UI + headless writer, optional)
+SE 44mm (184×224) · Series 10 46mm (198×242) · Ultra 2 (205×251). watchOS minimum target: **10.0** (HKObserverQuery + `enableBackgroundDelivery` + WKApplicationRefreshBackgroundTask all stable; `applicationContext` survives reboots since watchOS 9).
+
+The `Fit33Watch` target is OPTIONAL and `WKRunsIndependentlyOfCompanionApp = true`. The phone must continue to function identically when the watch app is uninstalled — `Fit33/PhoneToWatchSyncBridge.swift` no-ops on `WCSession.isWatchAppInstalled == false`. **The headless background writer remains the primary purpose of the watch target**: HK observers register in `Fit33WatchApp.task` (NEVER in `WatchTodayView.onAppear`), so background-launched processes still wire up the writer without ever showing UI. The foreground UI (added 2026-04-26 in the watch UI sprint) is purely additive read/write enrichment:
+
+| Surface | Status | Notes |
+|---|---|---|
+| `WatchTodayView` (HK rings + Digital-Crown-scrollable challenges + streak + Start Cardio button) | shipped | sized for SE 44mm |
+| `WatchLiveWorkoutView` strength mirror (Mark Done + rest-timer haptic) | shipped | driven by phone push (PE invariant 33) |
+| `WatchActiveWorkoutView` cardio session (HKWorkoutSession + HR + Finish) | shipped | writes HKWorkout, iPhone observer auto-imports |
+| `Fit33WatchComplications` GraphicCircular | shipped (Xcode-target setup pending — see `Fit33WatchComplications/README.md`) | reads App Group snapshot, no independent RPC |
+| Set-by-set weight/reps editing (Digital Crown numeric input) | NOT shipped | Phase 2 |
+| End/Cancel workout from wrist | NOT shipped | phone owns lifecycle |
+| Hydration / meal logging from wrist | NOT shipped | phone-only by design |
+| Notifications scene | NOT shipped | Phase 2 |
+
+Memory budgets stay tight: every additional surface added to `Fit33Watch` competes with the HKObserver writer's residency. Pull-to-refresh is the only remote pull from the watch UI; the headless writer + iPhone widget pull are the canonical freshness paths.
 
 ---
 
@@ -143,19 +158,21 @@ extension Spacing {
 **Architecture (planned)**: watchOS SwiftUI, standalone + iOS companion. Sync via Watch Connectivity + shared Supabase auth. Complications: active-workout timer, daily progress ring, streak count.
 
 ### Viability matrix
-| iOS feature | Watch viability | Priority |
+| iOS feature | Watch viability | Status |
 |---|---|---|
-| Active workout tracking (timer, set log, rest) | HIGH | P0 |
-| Workout / rest timer with haptics + Digital Crown | HIGH | P0 |
-| Daily progress / streaks complication | HIGH | P0 |
-| Quick set log (tap + Digital Crown for weight/reps) | HIGH | P1 |
-| Heart rate integration (watch HR → iOS) | HIGH | P1 |
-| Workout start/stop from wrist | HIGH | P1 |
-| Meal quick-log from recent/favorites | MEDIUM | P2 |
-| Water / hydration tap-to-log | MEDIUM | P2 |
-| Post-workout summary card | MEDIUM | P2 |
-| Friend activity notification | LOW | P3 |
-| Challenge progress complication | LOW | P3 |
+| Workout / rest timer wrist-tap haptic | HIGH | **shipped** (`WatchLiveWorkoutStore.applyRestEndsAt`) |
+| Mark set done from wrist | HIGH | **shipped** (`WatchLiveWorkoutView` + `PhoneToWatchLiveWorkoutBridge`) |
+| Daily HK rings (steps / cal / minutes) | HIGH | **shipped** (`WatchTodayView` activity row) |
+| Crown-scrollable active 1v1 challenges | HIGH | **shipped** (`WatchTodayView` challenge card) |
+| Cardio start/stop with HKWorkoutSession + HR | HIGH | **shipped** (`WatchActiveWorkoutView` + `WatchWorkoutSessionManager`) |
+| Streak count surface | HIGH | **shipped** (Today screen footer) |
+| Challenge progress complication (GraphicCircular) | HIGH | **shipped** (`Fit33WatchComplications`, Xcode target setup pending) |
+| Quick set log with Digital Crown for weight/reps | HIGH | NOT shipped — Phase 2 |
+| End/Cancel active workout from wrist | MEDIUM | NOT shipped — phone owns workout lifecycle |
+| Meal quick-log from recent/favorites | MEDIUM | NOT shipped |
+| Water / hydration tap-to-log | MEDIUM | NOT shipped — phone-only by design |
+| Post-workout summary card | MEDIUM | NOT shipped |
+| Friend activity notification | LOW | NOT shipped |
 | Exercise library browse | NONE | phone only |
 | Custom workout builder | NONE | phone only |
 | Onboarding | NONE | phone only |

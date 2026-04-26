@@ -1265,7 +1265,7 @@ struct CustomWorkoutBuilderView: View {
                             
                             // Convert muscle arrays to NSObject
                             if let primaryMuscles = exerciseDTO.primaryMusclesRaw?.asArray {
-                                exercise.muscleGroups = primaryMuscles as NSObject
+                                exercise.muscleGroups = primaryMuscles as NSArray
                             }
                         }
                         
@@ -1900,7 +1900,7 @@ struct AddCustomExerciseView: View {
         exercise.id = UUID()
         exercise.name = exerciseName.trimmingCharacters(in: .whitespacesAndNewlines)
         exercise.category = selectedCategory
-        exercise.muscleGroups = (Array(primaryMuscleGroups) + Array(secondaryMuscleGroups)) as NSObject
+        exercise.muscleGroups = (Array(primaryMuscleGroups) + Array(secondaryMuscleGroups)) as NSArray
         exercise.equipment = selectedEquipment
         
         // Mark as custom by adding metadata to instructions

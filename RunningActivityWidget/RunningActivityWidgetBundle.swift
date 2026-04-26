@@ -12,6 +12,7 @@ import SwiftUI
 struct RunningActivityWidgetBundle: WidgetBundle {
     var body: some Widget {
         RunningActivityWidget()
+        ActiveChallengeWidget()
         RunningActivityWidgetControl()
         RunningActivityWidgetLiveActivity()
     }

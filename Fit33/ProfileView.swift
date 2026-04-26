@@ -1537,7 +1537,7 @@ struct ProfileView: View {
         user.fitnessGoal = fitnessGoal
         user.experienceLevel = experienceLevel
         user.availableDays = Int16(availableDays)
-        user.equipment = Array(selectedEquipment) as NSObject
+        user.equipment = Array(selectedEquipment) as NSArray
         
         do {
             // Save to Core Data

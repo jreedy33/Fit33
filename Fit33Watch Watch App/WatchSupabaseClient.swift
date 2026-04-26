@@ -27,7 +27,7 @@
 //      our consistency layer.
 
 import Foundation
-import os
+import OSLog
 
 enum WatchSupabaseConfig {
     static let url: URL = {
@@ -47,6 +47,7 @@ enum WatchSupabaseError: Error {
     case http(status: Int, body: String?)
     case transport(Error)
     case encoding(Error)
+    case decode(Error)
 }
 
 enum WatchSupabaseClient {
@@ -118,5 +119,142 @@ enum WatchSupabaseClient {
             throw WatchSupabaseError.http(status: http.statusCode, body: body)
         }
         log.debug("log_challenge_progress OK challenge=\(challengeId, privacy: .public) progress=\(progress)")
+    }
+
+    /// Pulls the caller's active 1v1 challenges via `get_active_challenges`.
+    /// Mirrors `RunningActivityWidget/WidgetSupabaseFetcher.fetchActiveChallenges`
+    /// but slimmer — the watch only needs the columns the Today screen
+    /// renders. Best-effort: on failure, callers fall back to whatever
+    /// the App Group cache last saw.
+    static func fetchActiveChallenges(
+        timezone: String = TimeZone.current.identifier,
+        timeout: TimeInterval = 8.0
+    ) async throws -> [WatchActiveChallenge] {
+        let token: String
+        do {
+            token = try WatchAppGroupSession.readAccessToken()
+        } catch {
+            throw WatchSupabaseError.notAuthenticated
+        }
+
+        let url = WatchSupabaseConfig.url
+            .appendingPathComponent("rest/v1/rpc/get_active_challenges")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(WatchSupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        struct Body: Encodable { let p_timezone: String }
+        do {
+            req.httpBody = try JSONEncoder().encode(Body(p_timezone: timezone))
+        } catch {
+            throw WatchSupabaseError.encoding(error)
+        }
+
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = timeout
+        config.timeoutIntervalForResource = timeout
+        config.waitsForConnectivity = false
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw WatchSupabaseError.transport(error)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw WatchSupabaseError.http(status: -1, body: nil)
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8)
+            log.error("get_active_challenges \(http.statusCode) \(body ?? "<empty>", privacy: .public)")
+            throw WatchSupabaseError.http(status: http.statusCode, body: body)
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .custom { d in
+                let container = try d.singleValueContainer()
+                let raw = try container.decode(String.self)
+                if let parsed = isoFractionalFormatter.date(from: raw) { return parsed }
+                if let parsed = isoFormatter.date(from: raw) { return parsed }
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Unrecognised TIMESTAMPTZ shape: \(raw)"
+                )
+            }
+            let rows = try decoder.decode([GetActiveChallengesRow].self, from: data)
+            // Best-pick first: closest deadline, then most-active today.
+            // Mirror of `WidgetSupabaseFetcher`'s sort to keep the
+            // widget + watch + main app showing the same "top" challenge.
+            let sorted = rows.sorted { lhs, rhs in
+                if lhs.days_remaining != rhs.days_remaining {
+                    return lhs.days_remaining < rhs.days_remaining
+                }
+                return (lhs.my_today_progress + lhs.opponent_today_progress)
+                    > (rhs.my_today_progress + rhs.opponent_today_progress)
+            }
+            return sorted.map { $0.toWatchActiveChallenge() }
+        } catch {
+            throw WatchSupabaseError.decode(error)
+        }
+    }
+
+    private static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+}
+
+// MARK: - RPC row → watch model
+
+/// Wire-format mirror of the subset of `get_active_challenges` columns
+/// the watch UI consumes. snake_case property names match Postgres
+/// output verbatim — Codable's synthesised CodingKeys map 1:1.
+private struct GetActiveChallengesRow: Decodable {
+    let challenge_id: String
+    let challenge_type: String
+    let title: String
+    let daily_target: Int?
+    let target_unit: String
+    let days_remaining: Int
+    let my_today_progress: Int
+    let my_current_streak: Int
+    let opponent_name: String?
+    let opponent_today_progress: Int
+    let am_winning_today: Bool
+    let my_last_progress_at: Date?
+    let opponent_last_progress_at: Date?
+
+    func toWatchActiveChallenge() -> WatchActiveChallenge {
+        WatchActiveChallenge(
+            id: challenge_id,
+            title: title,
+            challengeType: challenge_type,
+            dailyTarget: daily_target,
+            targetUnit: target_unit,
+            daysRemaining: days_remaining,
+            myTodayProgress: my_today_progress,
+            myCurrentStreak: my_current_streak,
+            opponentName: opponent_name,
+            opponentTodayProgress: opponent_today_progress,
+            amWinningToday: am_winning_today,
+            myLastProgressAt: my_last_progress_at,
+            opponentLastProgressAt: opponent_last_progress_at
+        )
     }
 }

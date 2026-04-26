@@ -226,7 +226,43 @@ struct AutoWorkoutPreviewView: View {
             VStack(spacing: 16) {
                 // Header card
                 workoutHeader
-                
+
+                // Bug-Intel 2026-04-25 Report 15 (164c76d8).
+                // Advanced user requested "Legs strength" via AutoGen and
+                // received yoga / mobility moves (Bridge Pose, Downward Dog,
+                // Around Head Rotation, Seated Forearms Stretch) — see runtime
+                // state at shake: todayBand=red, todayScore=14, todaySource=whoop.
+                // FITNESS_EXPERT_AGENT invariant 23 INTENTIONALLY swaps to a
+                // recovery day when WHOOP recovery is in the red band, but the
+                // user had no UI affordance to understand WHY their selected
+                // muscle group / workout type was overridden — the recovery
+                // banner only rendered inside ActiveWorkoutView. Surfacing the
+                // same banner on the preview makes the override transparent
+                // (score + source visible: "14 from WHOOP", "Recovery Day —
+                // mobility / walk / yoga today") so the user sees the cause
+                // before pressing Go. Preserving the override is correct per
+                // invariant 23 (nervous-system recovery > muscle recovery), but
+                // hiding the explanation was a UX regression.
+                //
+                // The banner is a no-op when:
+                //   - no wearable signal is connected (`hasWearableSignal=false`)
+                //   - the readiness-adaptive feature flag is OFF
+                // …so this is safe to ship to users without WHOOP / Oura — the
+                // view is identical to before for them.
+                // `todayReadiness` is non-optional (placeholder when cold) —
+                // the banner self-gates on `snapshot.hasWearableSignal` and
+                // the feature flag, so it renders nothing for unconnected
+                // users. No additional guard needed at the call site.
+                let readinessSnapshot = ReadinessService.shared.todayReadiness
+                ReadinessAdjustmentBanner(
+                    snapshot: readinessSnapshot,
+                    adjustment: ReadinessWorkoutAdjuster.adjustment(
+                        for: readinessSnapshot,
+                        requestedCount: exercises.count
+                    )
+                )
+                .padding(.horizontal, Spacing.xxs)
+
                 // Exercise list section
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {

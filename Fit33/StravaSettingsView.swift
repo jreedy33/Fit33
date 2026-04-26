@@ -29,9 +29,11 @@ struct StravaSettingsView: View {
     @ObservedObject private var unitSettings = UnitSettingsManager.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingDisconnectAlert = false
-    @State private var showingAuthSheet = false
     @State private var selectedActivity: StravaActivity?
     @State private var showingRecap = false
+    @State private var isAuthenticating = false
+    @State private var authErrorMessage: String?
+    @State private var webAuthSession: ASWebAuthenticationSession?
 
     var body: some View {
         ZStack {
@@ -87,9 +89,6 @@ struct StravaSettingsView: View {
         } message: {
             Text("Your synced activities will remain in Fit33, but new activities won't sync until you reconnect.")
         }
-        .sheet(isPresented: $showingAuthSheet) {
-            StravaAuthSheet()
-        }
         .sheet(isPresented: $showingRecap) {
             if let selectedActivity {
                 StravaActivityRecapSheet(activity: selectedActivity)
@@ -107,6 +106,62 @@ struct StravaSettingsView: View {
             // tab-switching back here doesn't spam the API.
             if strava.isConnected {
                 await strava.syncActivities(daysBack: 30, force: false)
+            }
+        }
+    }
+
+    // MARK: - OAuth (direct ASWebAuthenticationSession, no intermediate sheet)
+
+    private func startAuth() {
+        guard let authURL = strava.getAuthorizationURL() else {
+            authErrorMessage = "Could not create authorization URL"
+            return
+        }
+
+        isAuthenticating = true
+        authErrorMessage = nil
+
+        let session = ASWebAuthenticationSession(
+            url: authURL,
+            callbackURLScheme: "fit33"
+        ) { callbackURL, error in
+            Task { @MainActor in
+                if let error = error {
+                    if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                        AppLogger.debug("[STRAVA] User cancelled login", category: .health)
+                    } else {
+                        authErrorMessage = error.localizedDescription
+                    }
+                    isAuthenticating = false
+                    return
+                }
+
+                guard let callbackURL = callbackURL else {
+                    authErrorMessage = "No callback URL received"
+                    isAuthenticating = false
+                    return
+                }
+
+                await handleAuthCallback(callbackURL)
+            }
+        }
+
+        session.presentationContextProvider = WebAuthContextProvider.shared
+        session.prefersEphemeralWebBrowserSession = false
+        session.start()
+        webAuthSession = session
+    }
+
+    private func handleAuthCallback(_ url: URL) async {
+        do {
+            try await strava.handleCallback(url: url)
+            await MainActor.run {
+                isAuthenticating = false
+            }
+        } catch {
+            await MainActor.run {
+                authErrorMessage = error.localizedDescription
+                isAuthenticating = false
             }
         }
     }
@@ -176,28 +231,24 @@ struct StravaSettingsView: View {
                 .accessibilityLabel("Disconnect Strava")
                 .accessibilityHint("Removes Strava connection and stops syncing new activities.")
             } else {
-                Button {
-                    showingAuthSheet = true
-                } label: {
-                    HStack(spacing: Spacing.xs) {
-                        Image(systemName: "link")
-                        Text("Connect with Strava")
+                Button(action: startAuth) {
+                    ZStack {
+                        Image("ConnectWithStravaButton")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(height: 44)
+                            .opacity(isAuthenticating ? 0 : 1)
+
+                        if isAuthenticating {
+                            ProgressView()
+                                .tint(Color.stravaOrange)
+                        }
                     }
-                    .font(.ds_labelLarge)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.sm)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.stravaOrange, Color(red: 252/255, green: 100/255, blue: 30/255)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
-                    )
                 }
                 .buttonStyle(UniversalScaleButtonStyle())
+                .disabled(isAuthenticating)
                 .accessibilityLabel("Connect Strava")
                 .accessibilityHint("Opens Strava sign-in to link your account.")
 
@@ -207,7 +258,7 @@ struct StravaSettingsView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let error = strava.errorMessage {
+                if let error = authErrorMessage ?? strava.errorMessage {
                     Text(error)
                         .font(.ds_bodySmall)
                         .foregroundColor(.red)
@@ -715,180 +766,6 @@ struct StravaSettingsView: View {
         }
     }
 
-}
-
-// MARK: - Strava Auth Sheet
-
-struct StravaAuthSheet: View {
-    @StateObject private var strava = StravaService.shared
-    @Environment(\.dismiss) private var dismiss
-    @State private var isAuthenticating = false
-    @State private var errorMessage: String?
-    @State private var webAuthSession: ASWebAuthenticationSession?
-    
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                Spacer()
-                
-                VStack(spacing: 16) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.stravaOrange.opacity(0.1))
-                            .frame(width: 100, height: 100)
-                        
-                        Image(systemName: "figure.run")
-                            .font(.system(size: 44))
-                            .foregroundColor(Color.stravaOrange)
-                    }
-                    
-                    Text("Connect to Strava")
-                        .font(.ds_heading2)
-                        .fontWeight(.bold)
-                    
-                    Text("Sync your runs, rides, and other cardio activities to get a complete picture of your fitness.")
-                        .font(.ds_bodyMedium)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-                
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Fit33 will be able to:")
-                        .font(.ds_labelLarge)
-                        .fontWeight(.semibold)
-                    
-                    permissionRow(icon: "figure.run", text: "Read your activities")
-                    permissionRow(icon: "heart.fill", text: "Access heart rate data")
-                    permissionRow(icon: "flame.fill", text: "View calories burned")
-                }
-                .padding()
-                .background(RoundedRectangle(cornerRadius: CornerRadius.md).fill(Color.cardBackground))
-                .padding(.horizontal)
-                
-                if let error = errorMessage {
-                    Text(error)
-                        .font(.ds_bodySmall)
-                        .foregroundColor(.red)
-                        .padding(.horizontal)
-                }
-                
-                Spacer()
-                
-                Button(action: startAuth) {
-                    HStack {
-                        if isAuthenticating {
-                            ProgressView()
-                                .tint(.white)
-                        } else {
-                            Image(systemName: "link")
-                            Text("Connect with Strava")
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.md)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.stravaOrange, Color(red: 252/255, green: 100/255, blue: 30/255)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .foregroundColor(.white)
-                    .cornerRadius(CornerRadius.md)
-                }
-                .buttonStyle(UniversalScaleButtonStyle())
-                .disabled(isAuthenticating)
-                .padding(.horizontal)
-                .padding(.bottom, 16)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-            .onChange(of: strava.isConnected) { _, isConnected in
-                if isConnected {
-                    dismiss()
-                }
-            }
-            .onOpenURL { url in
-                Task { await handleCallback(url) }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("StravaCallback"))) { notification in
-                if let url = notification.object as? URL {
-                    Task { await handleCallback(url) }
-                }
-            }
-        }
-    }
-    
-    private func permissionRow(icon: String, text: String) -> some View {
-        HStack(spacing: Spacing.sm) {
-            Image(systemName: icon)
-                .foregroundColor(Color.stravaOrange)
-                .frame(width: 20)
-            Text(text)
-                .font(.ds_bodyMedium)
-        }
-    }
-    
-    private func startAuth() {
-        guard let authURL = strava.getAuthorizationURL() else {
-            errorMessage = "Could not create authorization URL"
-            return
-        }
-        
-        isAuthenticating = true
-        errorMessage = nil
-        
-        webAuthSession = ASWebAuthenticationSession(
-            url: authURL,
-            callbackURLScheme: "fit33"
-        ) { callbackURL, error in
-            Task { @MainActor in
-                if let error = error {
-                    if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                        AppLogger.debug("🔐 [STRAVA] User cancelled login", category: .health)
-                    } else {
-                        errorMessage = error.localizedDescription
-                    }
-                    isAuthenticating = false
-                    return
-                }
-                
-                guard let callbackURL = callbackURL else {
-                    errorMessage = "No callback URL received"
-                    isAuthenticating = false
-                    return
-                }
-                
-                await handleCallback(callbackURL)
-            }
-        }
-        
-        webAuthSession?.presentationContextProvider = WebAuthContextProvider.shared
-        webAuthSession?.prefersEphemeralWebBrowserSession = false
-        
-        webAuthSession?.start()
-    }
-    
-    private func handleCallback(_ url: URL) async {
-        do {
-            try await strava.handleCallback(url: url)
-            await MainActor.run {
-                isAuthenticating = false
-                dismiss()
-            }
-        } catch {
-            await MainActor.run {
-                errorMessage = error.localizedDescription
-                isAuthenticating = false
-            }
-        }
-    }
 }
 
 // MARK: - Date Extension

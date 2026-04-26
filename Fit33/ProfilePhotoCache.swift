@@ -15,8 +15,16 @@ final class ProfilePhotoCache {
     }
     
     private init() {
-        // Load from disk into memory on init
-        loadFromDisk()
+        // ⚡️ Cold-start Phase 4: prefer pre-decoded UIImage from
+        // StartupCachePreloader (read & decoded on bg before init runs on main).
+        // Also pre-flattens via UIGraphicsBeginImageContext so the first
+        // on-screen render avoids a UIKit decode-on-render hitch.
+        if let pre = StartupCachePreloader.consumeProfilePhoto() {
+            memoryCache = pre
+            AppLogger.debug("📸 Profile photo loaded from pre-decoded cache (instant)", category: .general)
+        } else {
+            loadFromDisk()
+        }
     }
     
     /// Get cached profile photo (memory first, then disk)

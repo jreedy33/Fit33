@@ -180,6 +180,9 @@ struct DevMenuView: View {
                     
                     PushNotificationDebugView()
                         .tag(6)
+
+                    WakeDiagnosticsView()
+                        .tag(7)
                     #else
                     Text("Learning Engine Debug (Debug builds only)")
                         .tag(2)
@@ -195,6 +198,9 @@ struct DevMenuView: View {
                     
                     Text("Push Debug (Debug builds only)")
                         .tag(6)
+
+                    Text("Wake Diagnostics (Debug builds only)")
+                        .tag(7)
                     #endif
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -242,6 +248,7 @@ struct DevMenuView: View {
                 tabButton(title: "Health", icon: "waveform.path.ecg", index: 4, colors: [.green, .cyan])
                 tabButton(title: "Social Sim", icon: "person.2.wave.2.fill", index: 5, colors: [.cyan, .blue])
                 tabButton(title: "Push", icon: "bell.badge.fill", index: 6, colors: [.orange, .yellow])
+                tabButton(title: "Wakes", icon: "bell.and.waveform.fill", index: 7, colors: [.orange, .pink])
             }
         }
         .padding(.horizontal)

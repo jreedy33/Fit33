@@ -259,6 +259,11 @@ final class HealthKitService: ObservableObject {
             todaySteps = stepsInt
             todayCalories = calsInt
             todayDistance = distVal
+            // Optimistic widget patch: as soon as the @Published values
+            // commit, push fresh local progress into the active-challenge
+            // widget snapshot. The bridge hash-gates so this is a no-op
+            // when nothing changed.
+            ActiveChallengeWidgetBridge.publishOptimisticLocalProgress()
         }
         
         AppLogger.info("HealthKit today: \(stepsInt) steps, \(calsInt) cal, \(String(format: "%.1f", distVal/1000)) km", category: .health)
@@ -341,6 +346,10 @@ final class HealthKitService: ObservableObject {
                 let todayStart = calendar.startOfDay(for: Date())
                 let todayWorkouts = weekWorkouts.filter { $0.startDate >= todayStart }
                 todayActiveMinutes = todayWorkouts.reduce(0) { $0 + $1.durationMinutes }
+                // Optimistic widget patch — see `syncTodayStats` for the
+                // rationale. `active_minutes` / `walk` / `run` challenges
+                // pick this up before the Supabase round-trip lands.
+                ActiveChallengeWidgetBridge.publishOptimisticLocalProgress()
             }
             
             AppLogger.info("HealthKit synced \(workouts.count) workouts", category: .health)

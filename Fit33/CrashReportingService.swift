@@ -267,9 +267,35 @@ final class CrashReportingService {
             if nsError.domain == "com.apple.AuthenticationServices.AuthorizationError" && nsError.code == 1000 { return }
             if nsError.domain == "com.apple.AuthenticationServices.AuthorizationError" && nsError.code == 1001 { return }
         }
-        if message.hasSuffix(": cancelled") || message.contains("NSURLErrorDomain error -999") { return }
+        // Bug-Intel 2026-04-25 export — Reports 18, 19 (a884bcff / ad233848).
+        // The previous suffix check ": cancelled" only caught messages that
+        // ENDED in that token; the actual NSError-stringified message is
+        //   "❌ [Water] Failed to load settings: Error Domain=NSURLErrorDomain
+        //    Code=-999 \"cancelled\" UserInfo={…NSLocalizedDescription=cancelled}"
+        // — i.e. the `cancelled` lives inside, not at the end. Both literal
+        // patterns below MUST stay in sync with the format produced by
+        // `String(describing: error)` for an NSURLErrorCancelled NSError on
+        // Foundation 26.x. Don't loosen further (a bare `.contains("cancelled")`
+        // would swallow real cancellation-policy bugs in unrelated systems).
+        if message.contains("NSURLErrorDomain Code=-999") { return }
+        if message.contains("NSURLErrorDomain error -999") { return }  // legacy format
+        if message.hasSuffix(": cancelled") { return }
         if message.contains("network connection was lost") || message.contains("not connected to the Internet") { return }
         if message.contains("[APPLE AUTH]") && message.contains("1000") { return }
+        // Bug-Intel 2026-04-25 export — Reports 13, 17 (22422e4e / a22cd96f).
+        // Auth rate limits are user-recoverable (caller already throws a typed
+        // SupabaseAuthError or surfaces a banner). Suppressing them at the
+        // crash-report layer prevents a single user spamming auth/sign_up or
+        // auth/recover from generating dozens of high-severity fingerprints.
+        // NetworkErrorClassifier already routes these to .transientNetwork —
+        // this is the belt-and-suspenders layer for direct AppLogger.error
+        // call sites that pre-date the classifier (e.g. legacy onboarding
+        // recover-flow paths).
+        let lowered = message.lowercased()
+        if lowered.contains("rate limit exceeded") { return }
+        if lowered.contains("rate_limit") { return }
+        if lowered.contains("too many requests") { return }
+        if message.contains("HTTP 429") { return }
 
         // Phase 10 client-side denylist — paired with the server-side
         // bug_intel_noise_filter rows seeded in
@@ -291,6 +317,16 @@ final class CrashReportingService {
         if message.lowercased().contains("502 bad gateway") { return }
         if message.lowercased().contains("503 service unavailable") { return }
         if message.lowercased().contains("504 gateway") { return }
+        // Bug-Intel 2026-04-25 export — Reports 12, 20 (64b1cbec / b59f92b6).
+        // Strava's 503 response body is a literal HTML page, not the canonical
+        // "503 Service Unavailable" string — the message logged is
+        //   "[STRAVA] Sync error: HTTP 503: <!DOCTYPE html>…<title>Strava is
+        //    temporarily unavailable</title>…"
+        // The leading "503 service unavailable" check above misses it. These
+        // two extra needles target the exact prefix produced by
+        // `StravaService.syncActivities` and the Strava upstream HTML title.
+        if message.contains("HTTP 503") { return }
+        if lowered.contains("strava is temporarily unavailable") { return }
         // P0001 "Not authenticated" — SECURITY DEFINER RPCs raise this
         // transiently while auth.uid() resolves during tab-switch session
         // propagation. The caller retries automatically within 500ms.

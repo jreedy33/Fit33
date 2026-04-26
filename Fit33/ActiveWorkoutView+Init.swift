@@ -406,6 +406,13 @@ extension ActiveWorkoutView {
             try? viewContext.save()
         }
         workout.name = liveWorkoutName
+        // Initial push to the Apple Watch's live-workout slot so the
+        // wrist sees "Bench Press · Set 1 of N" the moment the user
+        // starts the workout. Subsequent updates flow through
+        // `handleSetCompletion`. No-op when no watch is paired.
+        if let firstExercise = exercises.first {
+            pushLiveWorkoutStateToWatch(for: firstExercise)
+        }
         DispatchQueue.main.async { initializeWorkout() }
     }
     

@@ -26,12 +26,24 @@ struct DashboardStravaWrapper: View {
     @StateObject private var stravaService = StravaService.shared
     @ObservedObject private var unitSettings = UnitSettingsManager.shared
 
+    // Mirror the same key used by `WidgetSettingsSheet` (`showStrava`
+    // binding in DashboardView) so dismissing the unsynced Strava widget
+    // here also unchecks it in the "Add Widgets" sheet — single source of
+    // truth. Same pattern as the WHOOP wrapper.
+    @AppStorage("showStravaWidget") private var showStravaWidget = true
+
     private var latestActivity: StravaActivity? {
         stravaService.mostRecentActivity
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
+            // The dismiss "X" only appears while Strava is unconnected so
+            // a not-yet-synced user can tear off the prompt without
+            // digging into the Add Widgets sheet. Once the integration is
+            // live we hide it to prevent accidental teardowns; settings
+            // stays the canonical entry point for managing connected
+            // widgets.
             HStack(spacing: 10) {
                 Image("PoweredByStrava")
                     .resizable()
@@ -40,6 +52,22 @@ struct DashboardStravaWrapper: View {
                     .frame(height: 17)
                     .accessibilityLabel("Powered by Strava")
                 Spacer(minLength: 0)
+
+                if !stravaService.isConnected {
+                    Button {
+                        HapticManager.tap()
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showStravaWidget = false
+                        }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove Strava widget")
+                    .accessibilityHint("Hides the Strava widget from your dashboard. You can add it back from Add Widgets.")
+                }
             }
 
             Button {

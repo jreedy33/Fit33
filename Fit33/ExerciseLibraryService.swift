@@ -77,6 +77,12 @@ class ExerciseLibraryService: ObservableObject {
         let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         
         Task.detached(priority: .userInitiated) { [weak self] in
+            // ⚡️ Cold-start sprint 2026-04-26: with async Core Data load,
+            // gate the bundle-seed-and-fetch logic until the store has
+            // attached. Otherwise the initial fetch returns 0 exercises,
+            // we'd inline-seed the bundle a second time, and `isExercisesReady`
+            // would briefly flip false even though cached data exists.
+            await PersistenceController.waitUntilStoreLoaded()
             await MainActor.run { StartupWaterfall.shared.mark("ExerciseLibrary.preWarmCache") }
             let startTime = CFAbsoluteTimeGetCurrent()
             
@@ -101,7 +107,7 @@ class ExerciseLibraryService: ObservableObject {
                             exercise.id = UUID()
                             exercise.name = data.name
                             exercise.category = data.category
-                            exercise.muscleGroups = data.muscleGroups as NSObject
+                            exercise.muscleGroups = data.muscleGroups as NSArray
                             exercise.equipment = data.equipment
                             exercise.instructions = data.instructions
                             exercise.isFavorite = false
@@ -781,11 +787,11 @@ class ExerciseLibraryService: ObservableObject {
                 // Parse comma-separated muscles string into array (new schema uses String, not [String])
                 let muscleArray = cloudExercise.primaryMusclesArray
                 let muscleGroups = muscleArray.isEmpty ? ["General"] : muscleArray
-                exercise.muscleGroups = muscleGroups as NSObject
+                exercise.muscleGroups = muscleGroups as NSArray
                 
                 // Also sync secondary muscles for workout generation filtering
                 let secondaryArray = cloudExercise.secondaryMusclesArray
-                exercise.secondaryMuscles = secondaryArray as NSObject
+                exercise.secondaryMuscles = secondaryArray as NSArray
                 
                 exercise.equipment = cloudExercise.equipment?.isEmpty == false ? cloudExercise.equipment! : "Bodyweight"
                 exercise.instructions = cloudExercise.instructions ?? "No instructions available"
@@ -974,7 +980,7 @@ class ExerciseLibraryService: ObservableObject {
                     exercise.id = UUID()
                     exercise.name = exerciseData.name
                     exercise.category = exerciseData.category
-                    exercise.muscleGroups = exerciseData.muscleGroups as NSObject
+                    exercise.muscleGroups = exerciseData.muscleGroups as NSArray
                     exercise.equipment = exerciseData.equipment
                     exercise.instructions = exerciseData.instructions
                     exercise.isFavorite = false
@@ -1013,7 +1019,7 @@ class ExerciseLibraryService: ObservableObject {
             exercise.id = UUID()
             exercise.name = data.name
             exercise.category = data.category
-            exercise.muscleGroups = data.muscleGroups as NSObject
+            exercise.muscleGroups = data.muscleGroups as NSArray
             exercise.equipment = data.equipment
             exercise.instructions = data.instructions
             exercise.isFavorite = false
@@ -1114,8 +1120,8 @@ class ExerciseLibraryService: ObservableObject {
         exercise.category = dto.category.isEmpty ? "General" : dto.category
         
         let primary = dto.primaryMusclesArray
-        exercise.muscleGroups = (primary.isEmpty ? ["General"] : primary) as NSObject
-        exercise.secondaryMuscles = dto.secondaryMusclesArray as NSObject
+        exercise.muscleGroups = (primary.isEmpty ? ["General"] : primary) as NSArray
+        exercise.secondaryMuscles = dto.secondaryMusclesArray as NSArray
         
         exercise.equipment = (dto.equipment?.isEmpty == false) ? dto.equipment! : "Bodyweight"
         exercise.instructions = dto.instructions ?? "No instructions available"

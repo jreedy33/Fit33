@@ -20,6 +20,13 @@ enum NotificationType: String, CaseIterable, Identifiable {
     case challengeProgress = "challenge_progress"
     case challengeReaction = "challenge_reaction"
     case challengeCancelled = "challenge_cancelled"
+    /// Realtime Widget Server Pull, Phase 7c (2026-04-26): server-side
+    /// hourly engagement nudge for users whose 1v1 opponent has been
+    /// logging while they've been silent. Surfaced as a category in
+    /// Settings → Notifications so users can mute it independently of
+    /// other challenge notification types — some people want the
+    /// banter ("Joe pulled ahead") and some find it pressure-y.
+    case challengeNudge = "challenge_nudge"
     
     // Community Challenges
     case communityFriendJoined = "community_friend_joined"
@@ -63,6 +70,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .challengeProgress: return "Challenge Progress"
         case .challengeReaction: return "Challenge Reactions"
         case .challengeCancelled: return "Challenge Cancelled"
+        case .challengeNudge: return "Challenge Nudges"
         case .communityFriendJoined: return "Friend Joined Community"
         case .privateChallengeInvite: return "Private Challenge Invites"
         case .privateChallengeUpdate: return "Private Challenge Updates"
@@ -96,6 +104,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .challengeProgress: return "Notify when opponent completes their daily goal"
         case .challengeReaction: return "Battle cries and power ups from your challenge opponent"
         case .challengeCancelled: return "Notify when a challenge is cancelled"
+        case .challengeNudge: return "Heads-up when an opponent pulls ahead so you can sync your progress"
         case .communityFriendJoined: return "Notify when friends join a community challenge"
         case .privateChallengeInvite: return "Notify when invited to private challenges"
         case .privateChallengeUpdate: return "Updates on your private challenge communities"
@@ -129,6 +138,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .challengeProgress: return "flame.fill"
         case .challengeReaction: return "bubble.left.fill"
         case .challengeCancelled: return "xmark.circle.fill"
+        case .challengeNudge: return "bell.badge.fill"
         case .communityFriendJoined: return "person.2.circle.fill"
         case .privateChallengeInvite: return "lock.shield.fill"
         case .privateChallengeUpdate: return "person.3.fill"
@@ -162,6 +172,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .challengeProgress: return .blue
         case .challengeReaction: return .orange
         case .challengeCancelled: return .red
+        case .challengeNudge: return .orange
         case .communityFriendJoined: return .cyan
         case .privateChallengeInvite: return .purple
         case .privateChallengeUpdate: return .purple
@@ -196,6 +207,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
              .challengeProgress,       // Notify when opponent completes daily goal
              .challengeReaction,       // Battle cries and power ups from opponent
              .challengeCancelled,      // Important to know when challenge ends
+             .challengeNudge,          // Engagement nudge — silent opponent in active 1v1
              .communityFriendJoined,   // Social discovery - friend joined a community
              .privateChallengeInvite,  // Private challenge invites
              .privateChallengeUpdate,  // Private challenge member joins/progress
@@ -256,6 +268,7 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
             return [.sharedWorkout, .friendRequest, .contactJoined,
                     .challengeInvite, .groupChallengeInvite, .challengeUpdate,
                     .challengeProgress, .challengeReaction, .challengeCancelled,
+                    .challengeNudge,
                     .communityFriendJoined, .privateChallengeInvite,
                     .privateChallengeUpdate, .privateChallengeMessage]
         case .achievements:
@@ -1585,7 +1598,27 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                     
                 case "shared_workout":
                     await FriendService.shared.loadReceivedWorkouts()
-                    
+
+                // Realtime Widget Server Pull, Phase 7c (2026-04-26):
+                // Server-side hourly cron (`enqueue_engagement_nudges_for_stale_opponents`,
+                // migration #123) fires `challenge_nudge` to users whose
+                // opponent has been logging while they've been silent.
+                // When the foreground app receives one, refresh the
+                // active 1v1 challenges so the dashboard card and the
+                // home-screen widget are in sync the moment the user
+                // sees the banner. Critically, also trigger a HealthKit
+                // sync so the user's own progress flows server-side
+                // before they tap into the challenge detail — that's
+                // the whole point of the nudge.
+                case "challenge_nudge":
+                    AppLogger.debug("Engagement nudge received - syncing HealthKit + refreshing challenges", category: .general)
+                    await ChallengeService.shared.fetchActiveChallenges()
+                    await ChallengeService.shared.syncHealthKitDataToChallenges()
+                    // Re-fetch after the HK sync so any newly-written
+                    // progress is reflected. The widget picks this up
+                    // through `ActiveChallengeWidgetBridge.publish`.
+                    await ChallengeService.shared.fetchActiveChallenges()
+
                 default:
                     break
                 }
@@ -1833,7 +1866,28 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         case "weekly_progress":
             DeepLinkManager.shared.pendingDestination = .statsTab
             AppLogger.debug("Opening stats tab for weekly progress", category: .general)
-            
+
+        // Realtime Widget Server Pull, Phase 7c (2026-04-26):
+        // Tap on a `challenge_nudge` banner → refresh active 1v1s,
+        // sync HealthKit so the recipient's just-now data flows
+        // server-side BEFORE they see the challenge detail (so
+        // they don't re-open to "wait, where's my progress?"),
+        // then deep-link straight to the challenge in question.
+        // The `data.challenge_id` field is set by migration #123;
+        // fall back to the dashboard if for any reason it's
+        // missing (older queue rows, manual test inserts, etc.).
+        case "challenge_nudge":
+            await ChallengeService.shared.fetchActiveChallenges()
+            await ChallengeService.shared.syncHealthKitDataToChallenges()
+            await ChallengeService.shared.fetchActiveChallenges()
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
+                AppLogger.debug("Engagement nudge — opening challenge detail: \(challengeId)", category: .general)
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+                AppLogger.debug("Engagement nudge tapped without challenge_id — falling back to dashboard", category: .general)
+            }
+
         default:
             // Sprint 2 Q2-36 — hard allowlist. Anything not in
             // `NotificationManager.knownNotificationTypes` is a server drift
@@ -1865,6 +1919,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         "challenge_invite", "group_challenge_invite", "group_challenge_started",
         "challenge_accepted", "challenge_progress", "challenge_completed",
         "challenge_cancelled", "challenge_update", "challenge_reaction",
+        // Realtime Widget Server Pull, Phase 7c (2026-04-26): server
+        // hourly cron fires `challenge_nudge` to silent users in active
+        // 1v1s. Routed to `.challengeDetail(...)` and triggers a
+        // HealthKit sync so the user's value lands server-side.
+        "challenge_nudge",
         // Private challenges
         "private_challenge_invite", "private_challenge_member_joined",
         "private_challenge_progress", "private_challenge_message",

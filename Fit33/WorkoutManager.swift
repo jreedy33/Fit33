@@ -88,6 +88,14 @@ class WorkoutManager: ObservableObject {
     // Rest timer settings (adjusted based on workout duration)
     @Published var restTimeBetweenSets: Int = 60 // Default 60 seconds
     @Published var targetWorkoutDuration: Int = 45 // Default 45 minutes
+
+    // Flat XP bonus to award on top of `calculateWorkoutXP` when the active
+    // workout originated from a friend's activity feed (friend-workout
+    // preview → start). `UserManager.completeWorkout` reads this AFTER the
+    // readiness multiplier is applied so the bonus is a flat reward, not
+    // multiplied. Reset to 0 on every workout finish/cancel so it can never
+    // leak into the next session.
+    @Published var friendWorkoutBonusXP: Int32 = 0
     
     // Persistent storage for exercise sets data (survives view rebuilds during ads)
     // Key is exercise ID (String), value is array of WorkoutSetData
@@ -574,6 +582,14 @@ class WorkoutManager: ObservableObject {
             AppLogger.debug("📂 [WORKOUT] No saved active workout data found", category: .data)
             return
         }
+
+        // ⚡️ Cold-start sprint 2026-04-26: with async Core Data load, the
+        // viewContext.fetch calls below for the saved workout/exercises
+        // could fire before the store attaches and silently return nil →
+        // we'd create a phantom placeholder Workout and overwrite the
+        // user's actual saved active workout. Gate on store-loaded so
+        // the fetches always see real data.
+        await PersistenceController.waitUntilStoreLoaded()
         
         guard let state = try? JSONDecoder().decode(ActiveWorkoutState.self, from: data) else {
             AppLogger.error("⚠️ [WORKOUT] Could not decode saved workout state", category: .data)
@@ -1152,6 +1168,7 @@ class WorkoutManager: ObservableObject {
         currentSmartProgramId = nil
         currentProgramWeek = nil
         shouldNavigateToWorkoutTab = false
+        friendWorkoutBonusXP = 0
         clearAllSetsData() // Clear persistent sets data
         
         // ⚡️ PERSISTENCE: Clear saved workout state
@@ -1199,6 +1216,7 @@ class WorkoutManager: ObservableObject {
         currentSmartProgramId = nil
         currentProgramWeek = nil
         shouldNavigateToWorkoutTab = false
+        friendWorkoutBonusXP = 0
         clearAllSetsData() // Clear persistent sets data
         
         // ⚡️ PERSISTENCE: Clear saved workout state
@@ -1307,6 +1325,7 @@ class WorkoutManager: ObservableObject {
         autoGenCameFromHomeTab = false
         isTransitioningBackToHome = false
         workoutInsights = nil
+        friendWorkoutBonusXP = 0
         
         // Reset generator state
         generatorSelections = nil

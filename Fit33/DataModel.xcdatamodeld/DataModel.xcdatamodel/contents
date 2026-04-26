@@ -7,9 +7,9 @@
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="instructions" optional="YES" attributeType="String"/>
         <attribute name="isFavorite" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
-        <attribute name="muscleGroups" optional="YES" attributeType="Transformable" valueTransformerName="StringArrayValueTransformer"/>
+        <attribute name="muscleGroups" optional="YES" attributeType="Transformable" valueTransformerName="StringArrayValueTransformer" customClassName="NSArray"/>
         <attribute name="name" optional="YES" attributeType="String"/>
-        <attribute name="secondaryMuscles" optional="YES" attributeType="Transformable" valueTransformerName="StringArrayValueTransformer"/>
+        <attribute name="secondaryMuscles" optional="YES" attributeType="Transformable" valueTransformerName="StringArrayValueTransformer" customClassName="NSArray"/>
         <attribute name="stepsToPerform" optional="YES" attributeType="String"/>
         <attribute name="videoFilename" optional="YES" attributeType="String"/>
         <attribute name="workoutType" optional="YES" attributeType="String"/>
@@ -75,7 +75,7 @@
         <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="currentStreak" optional="YES" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="email" optional="YES" attributeType="String"/>
-        <attribute name="equipment" optional="YES" attributeType="Transformable" valueTransformerName="StringArrayValueTransformer"/>
+        <attribute name="equipment" optional="YES" attributeType="Transformable" valueTransformerName="StringArrayValueTransformer" customClassName="NSArray"/>
         <attribute name="experienceLevel" optional="YES" attributeType="String"/>
         <attribute name="fitnessGoal" optional="YES" attributeType="String"/>
         <attribute name="gender" optional="YES" attributeType="String"/>

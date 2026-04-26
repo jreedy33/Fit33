@@ -128,7 +128,13 @@ struct DashboardChallengesWrapper: View {
                 .padding(.vertical, Spacing.xxs)
             }
         } else if let item = items.first {
+            // Pin the single-item row to the same 156pt height the
+            // multi-item carousel uses so a row with one challenge
+            // matches the size of a row with multiple. Without this
+            // the row collapses to the widget's intrinsic height,
+            // making "top vs bottom" stacked rows look mismatched.
             stackedItemView(item)
+                .frame(height: 156)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 25)
                         .onEnded { _ in }
@@ -842,24 +848,46 @@ struct DashboardChallengesWrapper: View {
         // Use today's progress only — 0 means opponent hasn't started today (correct after midnight reset)
         let myLiveToday = resolver.liveProgress(for: challenge)
         let oppToday = challenge.opponentTodayProgress ?? 0
-        let amWinningNow = myLiveToday > oppToday
+        // Realtime Widget Server Pull, Phase 6b (2026-04-26, rev
+        // 2026-04-26 evening):
+        // When the server's `opponent_last_progress_at` is older than
+        // 24h (or null) we suppress the opponent's raw value instead
+        // of letting it render as a misleading "0 steps". Anything
+        // inside the last 24h is today's known total (possibly
+        // trailing reality by a couple hours) and is shown alongside
+        // an age suffix so the user has the freshness context.
+        // Mirrors the widget's `CompetitionRow` so the dashboard card
+        // and the home-screen widget tell the same story.
+        let oppShowsRaw = ProgressFreshnessKit.shouldShowRawValue(for: challenge.opponentLastProgressAt)
+        let oppFreshness = ProgressFreshnessKit.freshness(for: challenge.opponentLastProgressAt)
+        let oppAgeLabel = ProgressFreshnessKit.ageLabel(for: challenge.opponentLastProgressAt)
+        // Winning state is only claimed when both sides have a real
+        // today number. `oppShowsRaw` is true whenever we have a
+        // last-progress timestamp inside the last 24h (today's data,
+        // possibly trailing reality by a couple hours). When it's
+        // false (`.unknown`: ≥24h or never logged) we leave both
+        // crowns dark — celebrating a lead over a missing/yesterday
+        // residue would be lying.
+        let amWinningNow = oppShowsRaw && myLiveToday > oppToday
+        let oppLeads = oppShowsRaw && oppToday > myLiveToday && oppToday > 0
         
-        return HStack(spacing: 8) {
+        return HStack(spacing: 10) {
             // Your side
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ZStack(alignment: .top) {
                     challengeAvatar(
                         isUser: true,
                         photoUrl: nil,
                         name: userManager.currentUser?.name,
                         done: amWinningNow,
-                        gradientColors: typeGradient
+                        gradientColors: typeGradient,
+                        size: 44
                     )
                     if amWinningNow {
                         Image(systemName: "crown.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: 14))
                             .foregroundColor(.yellow)
-                            .offset(y: -8)
+                            .offset(y: -12)
                     }
                 }
                 
@@ -870,12 +898,12 @@ struct DashboardChallengesWrapper: View {
                         .foregroundColor(.secondary)
                     
                     Text(resolver.formatValue(myLiveToday, unit: challenge.targetUnit, type: resolvedType))
-                        .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
+                        .font(.ds_heading2).fontDesign(.rounded)
                         .foregroundColor(amWinningNow ? .green : .primary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.7)
                 }
-                .frame(maxWidth: 85, alignment: .leading)
+                .frame(maxWidth: 100, alignment: .leading)
             }
             
             Spacer(minLength: 4)
@@ -885,7 +913,10 @@ struct DashboardChallengesWrapper: View {
                 Text("⚔️")
                     .font(.ds_bodySmall)
                 
-                if myLiveToday != oppToday {
+                // Hide the +/- delta entirely when the opponent's
+                // value is stale — comparing against an unknown
+                // number would mislead the user about their lead.
+                if oppShowsRaw && myLiveToday != oppToday {
                     let diff = abs(myLiveToday - oppToday)
                     let diffStr = resolver.formatValue(diff, unit: challenge.targetUnit, type: resolvedType)
                     Text(amWinningNow ? "+\(diffStr)" : "-\(diffStr)")
@@ -899,8 +930,11 @@ struct DashboardChallengesWrapper: View {
             
             Spacer(minLength: 4)
             
-            // Opponent side
-            HStack(spacing: 8) {
+            // Opponent side — renders raw value when fresh, "—" + age
+            // suffix when stale (Phase 6b). The opponent name row also
+            // grows a tiny age suffix in the `.recent` window so users
+            // see the data is a bit behind without losing the value.
+            HStack(spacing: 10) {
                 VStack(alignment: .trailing, spacing: 2) {
                     HStack(spacing: 4) {
                         Text(challenge.opponentName?.components(separatedBy: " ").first ?? "Friend")
@@ -912,29 +946,50 @@ struct DashboardChallengesWrapper: View {
                             VerifiedBadge(size: 10, isGold: challenge.opponentIsGoldVerified == true)
                         }
                     }
-                    
-                    Text(resolver.formatValue(oppToday, unit: challenge.targetUnit, type: resolvedType))
-                        .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
-                        .foregroundColor(!amWinningNow && oppToday > 0 ? .green : .primary)
+
+                    Text(oppShowsRaw
+                         ? resolver.formatValue(oppToday, unit: challenge.targetUnit, type: resolvedType)
+                         : "—")
+                        .font(.ds_heading2).fontDesign(.rounded)
+                        .foregroundColor(oppLeads ? .green : (oppShowsRaw ? .primary : .secondary))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.7)
+
+                    // Age annotation: show nothing when fresh, and a
+                    // subtle "47m" / "4h" suffix for any non-`.fresh`
+                    // reading inside the last 24h (`.recent` or
+                    // `.stale`). The `!oppShowsRaw` branch covers the
+                    // `.unknown` case where the value collapses to `—`.
+                    if !oppShowsRaw, let age = oppAgeLabel {
+                        Text(age)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    } else if (oppFreshness == .recent || oppFreshness == .stale),
+                              let age = oppAgeLabel {
+                        Text(age)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-                .frame(maxWidth: 85, alignment: .trailing)
-                
+                .frame(maxWidth: 100, alignment: .trailing)
+
                 ZStack(alignment: .top) {
                     challengeAvatar(
                         isUser: false,
                         userId: challenge.opponentId.uuidString,
                         photoUrl: challenge.opponentPhotoUrl,
                         name: challenge.opponentName,
-                        done: !amWinningNow && oppToday > 0,
-                        gradientColors: [.orange, .red]
+                        done: oppLeads,
+                        gradientColors: [.orange, .red],
+                        size: 44
                     )
-                    if !amWinningNow && oppToday > 0 {
+                    if oppLeads {
                         Image(systemName: "crown.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: 14))
                             .foregroundColor(.yellow)
-                            .offset(y: -8)
+                            .offset(y: -12)
                     }
                 }
             }
@@ -945,14 +1000,14 @@ struct DashboardChallengesWrapper: View {
     
     // MARK: - Challenge Avatar Helper
     
-    func challengeAvatar(isUser: Bool, userId: String? = nil, photoUrl: String?, name: String?, done: Bool, gradientColors: [Color]) -> some View {
+    func challengeAvatar(isUser: Bool, userId: String? = nil, photoUrl: String?, name: String?, done: Bool, gradientColors: [Color], size: CGFloat = 30) -> some View {
         Group {
             if isUser {
                 if let cachedImage = ProfilePhotoCache.shared.cachedImage {
                     Image(uiImage: cachedImage)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 30, height: 30)
+                        .frame(width: size, height: size)
                         .clipShape(Circle())
                         .overlay(Circle().stroke(done ? Color.green : Color.gray.opacity(0.3), lineWidth: 1.5))
                 } else {
@@ -960,7 +1015,7 @@ struct DashboardChallengesWrapper: View {
                         friendId: SupabaseManager.shared.currentUser?.id.uuidString ?? "me",
                         photoUrl: nil,
                         name: name ?? "You",
-                        size: 30,
+                        size: size,
                         showGradientRing: false,
                         gradientColors: gradientColors
                     )
@@ -971,7 +1026,7 @@ struct DashboardChallengesWrapper: View {
                     friendId: userId ?? UUID().uuidString,
                     photoUrl: photoUrl,
                     name: name ?? "Friend",
-                    size: 30,
+                    size: size,
                     showGradientRing: false,
                     gradientColors: gradientColors
                 )
@@ -1118,6 +1173,7 @@ struct DashboardChallengesWrapper: View {
                                                 .padding(.vertical, 2)
                                                 .background(Capsule().fill(Color.orange))
                                                 .offset(x: 28, y: -4)
+                                                .allowsHitTesting(false)
                                         } else {
                                             Button {
                                                 nudgePendingMember(challengeId: challenge.challengeId, memberId: member.userId)
@@ -1128,9 +1184,11 @@ struct DashboardChallengesWrapper: View {
                                                     .padding(.horizontal, 6)
                                                     .padding(.vertical, 2)
                                                     .background(Capsule().fill(Color.orange))
-                                                    .offset(x: 28, y: -4)
+                                                    .contentShape(Capsule())
                                             }
                                             .buttonStyle(PlainButtonStyle())
+                                            .offset(x: 28, y: -4)
+                                            .zIndex(1)
                                         }
                                     }
                                 }

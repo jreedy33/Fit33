@@ -40,7 +40,21 @@ class ContactsService: ObservableObject {
     
     private init() {
         checkAuthorizationStatus()
-        loadCachedSuggestions()
+        // ⚡️ Cold-start Phase 4: prefer pre-decoded caches from
+        // StartupCachePreloader (decoded on bg before init runs on main).
+        let pre = StartupCachePreloader.consumeContactsSuggestions()
+        if let cachedContacts = pre.contacts {
+            suggestedFriends = cachedContacts
+            if !cachedContacts.isEmpty { hasCheckedContacts = true }
+        }
+        if let cachedPYMK = pre.pymk {
+            peopleYouMayKnow = cachedPYMK
+        }
+        if pre.contacts == nil && pre.pymk == nil {
+            loadCachedSuggestions()
+        } else {
+            AppLogger.debug("Loaded cached suggestions: \(suggestedFriends.count) contacts, \(peopleYouMayKnow.count) PYMK (pre-decoded)", category: .social)
+        }
     }
     
     // MARK: - Persistent Cache

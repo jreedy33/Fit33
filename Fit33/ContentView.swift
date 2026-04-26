@@ -31,6 +31,18 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            // ⚡️ Cold-start UX fix (2026-04-26):
+            // Instant launch-color fallback BEFORE any subview renders. Without
+            // this, between iOS dismissing the LaunchScreen.storyboard and
+            // SwiftUI laying out `MainTabView`'s `AnimatedOrbBackground`, the
+            // bare UIWindow can briefly show through as solid white — the
+            // "white screen flash" complaint. By painting the matching
+            // `LaunchBackground` color asset as the first ZStack child, the
+            // visual transition from launch screen to dashboard is seamless:
+            // dark color throughout (or pale-blue in light mode), no white.
+            Color("LaunchBackground")
+                .ignoresSafeArea()
+
             Group {
                 if shouldShowMainApp {
                     MainTabView()
@@ -40,6 +52,11 @@ struct ContentView: View {
             }
             .environmentObject(userManager)
             .environmentObject(workoutManager)
+        }
+        .onAppear {
+            // ⚡️ Cold-start Phase 3.10 — close the user-visible first-frame
+            // signpost the moment SwiftUI commits the root view.
+            Fit33App.markFirstFrameIfNeeded()
         }
         .fullScreenCover(isPresented: $showWelcomeTutorial) {
             WelcomeTutorialView(isPresented: $showWelcomeTutorial)

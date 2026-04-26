@@ -223,8 +223,9 @@ enum AppConfig {
         ///   * Strava / WHOOP / Oura / Fitbit-context quest templates
         ///   * Friend-named copy (`Beat <Friend>: 8.4K`,
         ///     `Due for legs — do <Friend>'s`)
-        ///   * Pro tier features (5 slots, rerolls, double-XP day,
-        ///     custom quests, Insights view)
+        ///   * Pro tier features (rerolls, double-XP day,
+        ///     custom quests, Insights view). NOTE: 20260619 locked the
+        ///     slot count to 3 for all tiers — Pro no longer gets +2.
         ///
         /// When OFF the client sends `false` for every new RPC param
         /// + an empty activity-mix dict; the server falls back to the

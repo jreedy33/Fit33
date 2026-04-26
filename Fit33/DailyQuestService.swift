@@ -505,7 +505,10 @@ class DailyQuestService: ObservableObject {
         /// recovery-aware copy "You're due for <split> — do <Friend>'s".
         let friendTopWorkoutMatchesRecommendation: Bool
 
-        /// Pro tier flag — drives 5-slot mode + premium-tier templates.
+        /// Pro tier flag — drives access to premium-tier templates.
+        /// 20260619: slot count is now locked at 3 for all tiers (server
+        /// migration `20260619_lock_daily_quests_to_3_slots.sql`); Pro
+        /// no longer expands to 5 slots.
         let questTier: String
     }
 
@@ -2123,6 +2126,12 @@ class DailyQuestService: ObservableObject {
             UserDefaults.standard.set(data, forKey: cacheKey)
             UserDefaults.standard.set(Date(), forKey: cacheDateKey)
         }
+
+        DailyGoalsWidgetBridge.publish(
+            quests: quests,
+            allComplete: allComplete,
+            bonusXp: bonusXp
+        )
     }
     
     private func loadCachedQuests() {
@@ -2148,5 +2157,14 @@ class DailyQuestService: ObservableObject {
         } else {
             self.quests = defaultGoals()
         }
+
+        // Mirror the boot-time slate to the App Group so the home-screen
+        // widget paints real goals on first launch — `cacheQuests` only
+        // fires after a successful server fetch.
+        DailyGoalsWidgetBridge.publish(
+            quests: quests,
+            allComplete: allComplete,
+            bonusXp: bonusXp
+        )
     }
 }

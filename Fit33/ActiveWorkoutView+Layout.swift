@@ -52,6 +52,9 @@ extension ActiveWorkoutView {
                 UIApplication.shared.isIdleTimerDisabled = false
                 for task in initTasks { task.cancel() }
                 initTasks.removeAll()
+                // Tell the watch the live workout is over so it can
+                // tear down the WatchLiveWorkoutView fullScreenCover.
+                PhoneToWatchLiveWorkoutBridge.shared.clearLive()
             }
             .overlay { settingsPanelOverlay }
             .overlay(alignment: .bottom) {

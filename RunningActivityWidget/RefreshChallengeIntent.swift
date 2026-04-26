@@ -27,7 +27,7 @@
 
 import AppIntents
 import WidgetKit
-import os
+import OSLog
 
 /// Tap target for the small refresh control on the active challenge
 /// widget. Pulls fresh data from Supabase, writes the App Group, and

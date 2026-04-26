@@ -15,8 +15,16 @@ class MealService: ObservableObject {
     private var lastLoadDate: Date?
     
     private init() {
-        Task { @MainActor in
-            self.loadTodaysMeals()
+        // ⚡️ Cold-start speedup Phase 1.5 (2026-04-25):
+        // Init still triggers a meal load (so `todaysMeals` is populated by
+        // the time the dashboard's nutrition widget renders), but routes
+        // through `loadTodaysMealsAsync()` which performs the fetch on a
+        // background Core Data context and publishes to `@Published` via a
+        // single MainActor hop. Previously this Task hopped to main and ran
+        // `viewContext.fetch` synchronously on the main thread during the
+        // cold-start contention window.
+        Task {
+            await self.loadTodaysMealsAsync()
         }
     }
     
@@ -322,7 +330,51 @@ class MealService: ObservableObject {
         
         isLoading = false
     }
-    
+
+    /// Async variant used by `init()` so the cold-start meal load never
+    /// blocks the main thread. Heavy fetch + DTO conversion runs on a
+    /// background context, with a single `MainActor` publish at the end.
+    /// Sprint 2026-04-25 (cold-start speedup Phase 1.5).
+    private func loadTodaysMealsAsync() async {
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+
+        let results: [MealEntryData] = await bgContext.perform {
+            let request: NSFetchRequest<MealEntry> = MealEntry.fetchRequest()
+            request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \MealEntry.date, ascending: true)]
+            do {
+                let entries = try bgContext.fetch(request)
+                return entries.map { mealEntry in
+                    MealEntryData(
+                        id: mealEntry.id ?? UUID(),
+                        foodName: mealEntry.foodName ?? "",
+                        quantity: mealEntry.quantity,
+                        unit: mealEntry.unit ?? "",
+                        calories: Int(mealEntry.calories),
+                        protein: Int(mealEntry.protein),
+                        carbs: Int(mealEntry.carbs),
+                        fat: Int(mealEntry.fat),
+                        mealType: MealType(rawValue: mealEntry.mealType ?? "") ?? .breakfast,
+                        date: mealEntry.date ?? Date(),
+                        fdcId: Int(mealEntry.fdcId)
+                    )
+                }
+            } catch {
+                AppLogger.error("Error loading today's meals (bg): \(error.localizedDescription)", category: .nutrition)
+                return []
+            }
+        }
+
+        await MainActor.run {
+            self.todaysMeals = results
+            self.lastLoadDate = Date()
+            self.isLoading = false
+        }
+    }
+
     func getMealsForDate(_ date: Date) -> [MealEntryData] {
         let request: NSFetchRequest<MealEntry> = MealEntry.fetchRequest()
         let calendar = Calendar.current

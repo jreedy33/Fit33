@@ -34,8 +34,14 @@ class FriendRankingService: ObservableObject {
     private let rankedFriendsCacheKey = "fit33_cached_ranked_friends"
     
     private init() {
-        // Load cached ranked friends immediately for instant Friends tab display
-        loadCachedRankedFriends()
+        // ⚡️ Cold-start Phase 4: prefer pre-decoded cache from
+        // StartupCachePreloader (decoded on bg before init runs on main).
+        if let pre = StartupCachePreloader.consumeRankedFriends(), !pre.isEmpty {
+            rankedFriends = pre
+            AppLogger.debug("⚡️ [RANKING] Loaded \(pre.count) cached ranked friends (instant — pre-decoded)", category: .social)
+        } else {
+            loadCachedRankedFriends()
+        }
     }
     
     // MARK: - Local Caching (instant display on cold start)

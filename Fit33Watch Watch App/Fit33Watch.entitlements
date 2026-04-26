@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Shares session JWT + challenge config with the iPhone app and
+         the home-screen widget. Must match the App Group ID hard-coded
+         in WatchAppGroupSession + WatchConnectivityBridge. -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.fit33.app</string>
+    </array>
+    <!-- HealthKit (read-only on the watch — see Info.plist usage strings). -->
+    <key>com.apple.developer.healthkit</key>
+    <true/>
+    <key>com.apple.developer.healthkit.background-delivery</key>
+    <true/>
+    <key>com.apple.developer.healthkit.access</key>
+    <array/>
+</dict>
+</plist>

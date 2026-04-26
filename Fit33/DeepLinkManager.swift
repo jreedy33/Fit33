@@ -152,7 +152,7 @@ class DeepLinkManager: ObservableObject {
             // Handle Strava OAuth callback
             // Format: fit33://strava?code=xxx&scope=xxx
             AppLogger.debug("🏃 [DEEPLINK] Strava OAuth callback received - forwarding to StravaService", category: .network)
-            // The callback is handled via .onOpenURL in StravaAuthSheet
+            // The callback is handled by ASWebAuthenticationSession in StravaSettingsView
             // Post notification for any listening views
             NotificationCenter.default.post(name: Notification.Name("StravaCallback"), object: url)
             return true

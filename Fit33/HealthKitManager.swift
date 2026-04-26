@@ -479,6 +479,10 @@ class HealthKitManager: ObservableObject {
                 await MainActor.run {
                     self.todaySteps = steps
                     self.isLoading = false
+                    // Optimistic widget patch — `ChallengeProgressResolver`
+                    // reads `HealthKitManager.todaySteps` first, so this
+                    // surface needs the same fast-path as `HealthKitService`.
+                    ActiveChallengeWidgetBridge.publishOptimisticLocalProgress()
                 }
                 
                 // Update daily quest progress with latest step count

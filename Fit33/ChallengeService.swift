@@ -230,6 +230,7 @@ class ChallengeService: ObservableObject {
         if activeChallenges.isEmpty {
             UserDefaults.standard.removeObject(forKey: activeChallengesCacheKey)
             AppLogger.debug("Cleared cached active challenges (server confirmed 0)", category: .social)
+            ActiveChallengeWidgetBridge.publish(activeChallenges: [])
             return
         }
         
@@ -244,6 +245,8 @@ class ChallengeService: ObservableObject {
             // No network error to classify; downgrade keeps this out of bug-intel.
             AppLogger.warning("Failed to cache active challenges: \(error.localizedDescription)", category: .social)
         }
+
+        ActiveChallengeWidgetBridge.publish(activeChallenges: activeChallenges)
     }
     
     /// Cache pending invites to UserDefaults
@@ -336,6 +339,7 @@ class ChallengeService: ObservableObject {
                 
                 self.activeChallenges = cached
                 AppLogger.info("Loaded \(cached.count) cached active challenges instantly\(isCacheFromToday ? "" : " (today progress zeroed)")", category: .social)
+                ActiveChallengeWidgetBridge.publish(activeChallenges: cached)
             } catch {
                 AppLogger.warning("Failed to decode cached active challenges: \(error.localizedDescription)", category: .social)
                 UserDefaults.standard.removeObject(forKey: activeChallengesCacheKey)
@@ -3540,8 +3544,58 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
     let amWinningToday: Bool?
     let opponentIsVerified: Bool?
     let opponentIsGoldVerified: Bool?
+    /// Realtime Widget Server Pull, Phase 2a/2b (2026-04-26):
+    /// Stored as raw ISO-8601 strings — same pattern as `startDateString`
+    /// / `endDateString` above — so the synthesized `Codable` decoder
+    /// doesn't depend on `JSONDecoder.dateDecodingStrategy` being set
+    /// (the existing `SupabaseManager.client.rpc(...).execute()` path
+    /// uses the default decoder; flipping that would touch every
+    /// existing model). The computed `myLastProgressAt` /
+    /// `opponentLastProgressAt` accessors below do the parse on demand.
+    /// Sourced from `get_active_challenges`'s new
+    /// `my_last_progress_at` / `opponent_last_progress_at` columns
+    /// (migration #122). NULL when the participant has no
+    /// `challenge_daily_progress` rows since the challenge started —
+    /// `Shared/ProgressFreshness.swift` (Phase 6) maps NULL → unknown
+    /// and renders the value as-is rather than masking with `—`.
+    private let myLastProgressAtString: String?
+    private let opponentLastProgressAtString: String?
 
     var id: UUID { challengeId }
+
+    /// Most recent server-side `MAX(updated_at)` on the caller's
+    /// `challenge_daily_progress` rows for this challenge (or `nil`
+    /// when the RPC didn't return one — older deploys / never logged).
+    var myLastProgressAt: Date? {
+        ActiveChallenge.parseProgressTimestamp(myLastProgressAtString)
+    }
+
+    /// Same shape, opponent side — the headline freshness signal the
+    /// home-screen widget renders to call out a stale opponent.
+    var opponentLastProgressAt: Date? {
+        ActiveChallenge.parseProgressTimestamp(opponentLastProgressAtString)
+    }
+
+    /// Parses Postgres `TIMESTAMPTZ` strings (`2026-04-26T18:14:32.123456+00:00`
+    /// / `2026-04-26T18:14:32Z`) into `Date`. Static so we don't pay a
+    /// per-instance formatter init. `ISO8601DateFormatter` with
+    /// fractional-second support handles every shape Supabase returns.
+    private static let progressTimestampFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let progressTimestampFormatterNoFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static func parseProgressTimestamp(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        if let d = progressTimestampFormatter.date(from: raw) { return d }
+        return progressTimestampFormatterNoFraction.date(from: raw)
+    }
 
     /// Safe display name for opponent (falls back to "Unknown User" when nil)
     var opponentDisplayName: String { opponentName ?? "Unknown User" }
@@ -3584,7 +3638,9 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
         amWinning: Bool,
         amWinningToday: Bool? = nil,
         opponentIsVerified: Bool? = nil,
-        opponentIsGoldVerified: Bool? = nil
+        opponentIsGoldVerified: Bool? = nil,
+        myLastProgressAt: Date? = nil,
+        opponentLastProgressAt: Date? = nil
     ) {
         self.challengeId = challengeId
         self.challengeType = challengeType
@@ -3616,6 +3672,13 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
         self.amWinningToday = amWinningToday
         self.opponentIsVerified = opponentIsVerified
         self.opponentIsGoldVerified = opponentIsGoldVerified
+        // Convenience init takes typed `Date?` and re-serialises into the
+        // same ISO-8601 wire shape Supabase returns. Lets call sites
+        // (previews, simulator, fixtures) use familiar `Date` arithmetic
+        // (`Date().addingTimeInterval(-3600)` for "1h ago") without
+        // having to remember the formatter incantation.
+        self.myLastProgressAtString = myLastProgressAt.map { ActiveChallenge.progressTimestampFormatter.string(from: $0) }
+        self.opponentLastProgressAtString = opponentLastProgressAt.map { ActiveChallenge.progressTimestampFormatter.string(from: $0) }
     }
     
     var type: ChallengeType? {
@@ -3699,6 +3762,8 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
         case amWinningToday = "am_winning_today"
         case opponentIsVerified = "opponent_is_verified"
         case opponentIsGoldVerified = "opponent_is_gold_verified"
+        case myLastProgressAtString = "my_last_progress_at"
+        case opponentLastProgressAtString = "opponent_last_progress_at"
     }
 }
 

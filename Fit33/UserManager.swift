@@ -64,10 +64,20 @@ class UserManager: ObservableObject {
         }
     }
     
-    /// Reloads user state from Core Data - call after cloud sync
+    /// Reloads user state from Core Data - call after cloud sync.
+    ///
+    /// Sprint 2026-04-25 (cold-start speedup Phase 1.4): now routes through the
+    /// async path so the heavy Core Data fetch runs on `bgContext` instead of
+    /// blocking main. Callers (sign-in completion, cloud sync, deep-link) are
+    /// all fire-and-forget — none await the reload — so the deferred semantics
+    /// are functionally equivalent. Previously the sync `viewContext.fetch`
+    /// during cold-start sign-in restoration added ~150–300ms to the freeze
+    /// window when `SupabaseManager.checkAuthOnly` triggered a profile reload.
     func reloadCurrentUser() {
-        loadCurrentUser()
-        AppLogger.debug("UserManager reloaded - hasCompletedOnboarding: \(hasCompletedOnboarding)", category: .auth)
+        Task { @MainActor [weak self] in
+            await self?.loadCurrentUserAsync()
+            AppLogger.debug("UserManager reloaded - hasCompletedOnboarding: \(self?.hasCompletedOnboarding ?? false)", category: .auth)
+        }
     }
     
     /// Async variant used by `init()` so cold start never blocks the main
@@ -85,7 +95,16 @@ class UserManager: ObservableObject {
         }
         AppLogger.debug("[DEBUG] UserManager: loading user from Core Data (SKIP_ONBOARDING not set)", category: .auth)
         #endif
-        
+
+        // ⚡️ Cold-start sprint 2026-04-26: with async Core Data load, the
+        // user fetch below could fire before the store attaches and
+        // return zero rows. The caller then leaves `hasCompletedOnboarding`
+        // at its cached value, but `currentUser` stays nil — leading to
+        // ContentView showing NewOnboardingView for users who are actually
+        // signed in. Wait for the store to be attached so the fetch
+        // returns real data.
+        await PersistenceController.waitUntilStoreLoaded()
+
         let bgContext = PersistenceController.shared.container.newBackgroundContext()
         let result: Result<NSManagedObjectID?, Error> = await withCheckedContinuation { continuation in
             bgContext.perform {
@@ -187,7 +206,7 @@ class UserManager: ObservableObject {
                 testUser.weightLbs = 165.0  // ~165 lbs
                 testUser.fitnessGoal = "Build Muscle"
                 testUser.experienceLevel = "Intermediate"
-                testUser.equipment = ["Dumbbells", "Barbell", "Bench"] as NSObject
+                testUser.equipment = ["Dumbbells", "Barbell", "Bench"] as NSArray
                 testUser.availableDays = 5
                 testUser.hasCompletedOnboarding = true
                 testUser.createdAt = Date()
@@ -312,7 +331,7 @@ class UserManager: ObservableObject {
         newUser.weight = weight
         newUser.fitnessGoal = fitnessGoal
         newUser.experienceLevel = experienceLevel
-        newUser.equipment = equipment as NSObject
+        newUser.equipment = equipment as NSArray
         newUser.availableDays = availableDays
         newUser.strengthLevel = strengthLevel
         newUser.workoutEnvironment = workoutEnvironment
@@ -748,6 +767,18 @@ class UserManager: ObservableObject {
             snapshot: readinessSnapshot,
             isRecoveryWorkout: isRecoverySession
         )
+
+        // Friend-workout bonus — flat +75 XP when this session was started
+        // from a friend's activity-feed preview. Applied AFTER the readiness
+        // multiplier so the bonus stays a fixed reward (not multiplied by
+        // green/red day modifiers). The flag is set by
+        // `FriendWorkoutPreviewView.startWorkout` and reset on
+        // finish/cancel/sign-out in WorkoutManager.
+        let friendBonus = WorkoutManager.shared.friendWorkoutBonusXP
+        if friendBonus > 0 {
+            workout.xpEarned += friendBonus
+        }
+
         user.totalWorkouts += 1
         
         addXP(workout.xpEarned)

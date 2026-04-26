@@ -37,7 +37,12 @@ import UIKit
 
 class BackgroundChallengeSyncService {
     static let shared = BackgroundChallengeSyncService()
-    
+
+    /// `systemUptime` snapshot taken once at process start so we can compute
+    /// time-since-launch without hopping back to a global clock. Used by the
+    /// Phase 2.9 cold-start grace period in `handleBackgroundHealthUpdate`.
+    nonisolated(unsafe) static let processStartUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+
     private let healthStore = HKHealthStore()
     
     /// BGAppRefreshTask identifier — short-quota periodic refresh (~15-30 min windows).
@@ -80,19 +85,41 @@ class BackgroundChallengeSyncService {
     // MARK: - Setup (Call once at app launch)
     // ═══════════════════════════════════════════════════════════
     
-    /// Call this from Fit33App.swift init or .task on first launch.
-    /// Enables HealthKit background delivery and registers the BGTask.
+    /// Call this from Fit33App.swift init on first launch.
+    ///
+    /// ⚡️ Cold-start speedup Phase 5 (2026-04-25):
+    /// Split into two phases. Only `BGTaskScheduler.register(...)` MUST run
+    /// before app finishes launching (per Apple's contract — late
+    /// registration crashes). Everything else (HK background delivery, HK
+    /// observer queries, scheduling next runs) is fire-and-forget and adds
+    /// ~80-150ms of main-thread work to the cold-start critical path with
+    /// no user-visible benefit. Defer those to after first frame paints.
     func setup() {
-        enableHealthKitBackgroundDelivery()
+        // === Critical path (must run synchronously on main during launch) ===
         registerBackgroundTask()
         registerBackgroundProcessingTask()
-        scheduleNextBackgroundSync()
-        scheduleNextProcessingSync()
-        
-        AppLogger.debug("🔄 [BG SYNC] BackgroundChallengeSyncService initialized", category: .social)
-        AppLogger.debug("   └─ HealthKit background delivery: enabled for steps, workouts, active energy", category: .health)
+
+        // === Deferred (post-first-frame; no user-visible UI depends on these) ===
+        Task.detached(priority: .utility) { [weak self] in
+            // Yield off main so first frame paints first, then do the heavier
+            // bookkeeping (HK observer query setup, BGTask scheduling).
+            await self?.completeDeferredSetup()
+        }
+
+        AppLogger.debug("🔄 [BG SYNC] BackgroundChallengeSyncService critical-path setup complete", category: .social)
         AppLogger.debug("   └─ BGAppRefreshTask: registered (~15 min windows)", category: .social)
         AppLogger.debug("   └─ BGProcessingTask: registered (~5 min, typically overnight)", category: .social)
+        AppLogger.debug("   └─ HK background delivery + scheduling: deferred to post-first-frame", category: .social)
+    }
+
+    /// Phase 5 deferred work: HealthKit background delivery + observer
+    /// queries + scheduling next BG runs. Runs once on a background queue
+    /// shortly after first frame paints. No UI element depends on this.
+    private func completeDeferredSetup() async {
+        enableHealthKitBackgroundDelivery()
+        scheduleNextBackgroundSync()
+        scheduleNextProcessingSync()
+        AppLogger.debug("🔄 [BG SYNC] Deferred setup complete (HK background delivery + scheduling)", category: .social)
     }
     
     // ═══════════════════════════════════════════════════════════
@@ -229,6 +256,30 @@ class BackgroundChallengeSyncService {
         
         AppLogger.debug("🔄 [BG SYNC] HealthKit background update: \(source)\(isHighPriority ? " ⚡️ IMMEDIATE" : "")", category: .health)
         UserDefaults.standard.set(now.timeIntervalSince1970, forKey: sourceKey)
+
+        // ⚡️ Cold-start speedup Phase 2.9 (2026-04-25):
+        // HealthKit observers fire when iOS delivers updates the moment the
+        // user opens the app. On cold start the observers can wake before
+        // first frame has even committed, and `performChallengeSyncInBackground`
+        // is a heavy multi-source pipeline (HealthKit + Strava + Fitbit +
+        // WHOOP + Oura + ChallengeService fetches). Running it during the
+        // first 5s freeze window stretched main-thread contention by another
+        // 1-2s in 1.38(55) logs. We now defer the sync until after the
+        // cold-start window unless the event is workout completion (HIGH
+        // priority — user just finished a workout in another app and is
+        // staring at the dashboard waiting for it).
+        let coldStartGracePeriod: TimeInterval = 5.0
+        let timeSinceLaunch = ProcessInfo.processInfo.systemUptime - Self.processStartUptime
+        if !isHighPriority && timeSinceLaunch < coldStartGracePeriod {
+            let waitMs = Int((coldStartGracePeriod - timeSinceLaunch) * 1000)
+            AppLogger.debug("⏸️ [BG SYNC] Deferring \(source) sync \(waitMs)ms (cold-start grace)", category: .social)
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64((coldStartGracePeriod - timeSinceLaunch) * 1_000_000_000))
+                await performChallengeSyncInBackground()
+                onComplete()
+            }
+            return
+        }
 
         // Perform the sync and call the completion handler when done
         Task {
@@ -413,6 +464,93 @@ class BackgroundChallengeSyncService {
         }
         inFlightSyncTask = task
         await task.value
+    }
+
+    /// Lite path optimised for `challenge_wake` silent pushes.
+    ///
+    /// The full `performSyncBody()` is the right tool for BGAppRefresh /
+    /// BGProcessing / scenePhase=active, where we have time to refresh every
+    /// connected wearable + meals + hydration + readiness + intelligence
+    /// caches. For a silent-push wake, the only contract that matters is:
+    ///
+    ///   "Push this device's HealthKit step / active-energy / distance /
+    ///    workout numbers to `challenge_daily_progress` so opponents see
+    ///    fresh values via realtime."
+    ///
+    /// Apple gives the silent-push handler ~30s and aggressively penalises
+    /// future budget when we time out. Users with two or three wearables
+    /// connected routinely hit the timeout in the full pipeline, which is
+    /// why opponents go stale — not because the pushes don't arrive, but
+    /// because they arrive and the recipient runs out of time before the
+    /// `log_challenge_progress` call lands.
+    ///
+    /// Lite path drops: Strava, Fitbit, WHOOP, Oura, ReadinessService,
+    /// meals, hydration, DailyQuestService, AdvancedIntelligence cache,
+    /// recursive opponent-wake. None of these affect the opponent's view of
+    /// our steps / active-min / calories — those go through HealthKit only.
+    /// Strava-driven challenges (run/walk distance) still update because
+    /// Strava writes to HealthKit, which step 1 picks up.
+    ///
+    /// Coalesces with any in-flight full sync so a wake fired during a
+    /// BGAppRefresh doesn't run twice.
+    @MainActor
+    func performLiteWakeSync() async {
+        if let existing = inFlightSyncTask {
+            AppLogger.debug("🔁 [WAKE] Coalescing lite wake into in-flight sync", category: .social)
+            await existing.value
+            return
+        }
+        let task = Task { @MainActor [weak self] in
+            await self?.performLiteWakeBody()
+            self?.inFlightSyncTask = nil
+        }
+        inFlightSyncTask = task
+        await task.value
+    }
+
+    @MainActor
+    private func performLiteWakeBody() async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug("⏭️ [WAKE] Not authenticated — skipping", category: .social)
+            return
+        }
+
+        let start = Date()
+        AppLogger.debug("⚡️ [WAKE] Starting lite wake sync (HK + challenges only)...", category: .social)
+
+        // ── Step 1: Force-refresh HealthKit data (Data invariant #46) ──
+        // Required before reading `todaySteps`/`todayCalories`/`todayActiveMinutes`
+        // from `@Published` properties — otherwise a dawn wake can push
+        // yesterday's cached EoD value and GREATEST() pins the ghost.
+        await HealthKitService.shared.syncAllData(force: true)
+
+        // ── Step 2: Fetch active challenges (Data invariant #49) ──
+        // Auto-fetch if empty: a cold wake (app suspended since last cold
+        // launch) has no in-memory challenge list, and the per-service
+        // sync paths below empty-guard out without these.
+        await ChallengeService.shared.fetchActiveChallenges()
+        await ChallengeService.shared.fetchActiveGroupChallenges()
+
+        let activeCount = ChallengeService.shared.activeChallenges.count
+        let groupCount = ChallengeService.shared.activeGroupChallenges.count
+
+        // ── Step 3: Push HealthKit progress to every challenge surface ──
+        // syncAllTrackingToChallenges + private + community each iterate
+        // the user's active challenges and call `log_challenge_progress`.
+        // The fanout trigger (Data invariant #48) mirrors writes across
+        // tables, so even if one path silently no-ops the others land.
+        await ChallengeService.shared.syncAllTrackingToChallenges()
+        await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
+        await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
+
+        let privateCount = PrivateChallengeService.shared.myChallenges.count
+        let communityCount = CommunityChallengeService.shared.myChallenges.count
+        let duration = Date().timeIntervalSince(start)
+
+        AppLogger.info(
+            "✅ [WAKE] Lite wake complete in \(String(format: "%.2f", duration))s — pushed to \(activeCount) 1v1 + \(groupCount) group + \(privateCount) private + \(communityCount) community",
+            category: .social
+        )
     }
 
     @MainActor

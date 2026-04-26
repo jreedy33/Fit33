@@ -89,28 +89,146 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct Fit33App: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    
+
+    // ⚡️ Cold-start speedup Phase 5 (2026-04-25):
+    // Stored-property default values are evaluated in declaration order
+    // before `init()`'s body runs. By placing `_coldStartKickoff` BEFORE
+    // `persistenceController` / `premiumManager` / every `@StateObject`
+    // (each of which lazily forces a singleton's `.shared` and runs its
+    // synchronous init on main), we steal a head start of ~200-400ms for
+    // the bg pre-decode wave. By the time SwiftUI later evaluates the
+    // ContentView body and triggers FriendService.shared / PrivateChallenge
+    // / Contacts / Ranking / ProfilePhoto inits on main, their JSON caches
+    // are already decoded and `consume…` returns in O(1). Idempotent —
+    // safe even if the App struct is re-instantiated.
+    private let _coldStartKickoff: Void = StartupCachePreloader.kickoff()
+
     let persistenceController = PersistenceController.shared
     let premiumManager = PremiumManager.shared
-    @StateObject private var storeKitManager = StoreKitManager.shared
     @StateObject private var supabaseManager = SupabaseManager.shared
     @StateObject private var appearanceManager = AppearanceManager.shared
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var shakeManager = ShakeDetectionManager.shared
-    @StateObject private var sessionLogManager = SessionLogManager.shared
-    @StateObject private var pushNotificationService = PushNotificationService.shared
-    @StateObject private var realtimeService = RealtimeService.shared
+
+    // ⚡️ Cold-start speedup Phase 5.2 (2026-04-25):
+    // The four singletons below USED to be `@StateObject` (so their
+    // `.shared` was force-initialized during App.init's stored-property
+    // default phase, contributing to a measured 980ms gap between
+    // `persistence.init.end` and the start of `init()` body).
+    // None of them are read in `Fit33App.body`, used as
+    // `@EnvironmentObject`, or bound via `$` anywhere. They are only
+    // touched inside `.task { … }` / `.onChange { … }` closures that
+    // fire AFTER first frame. Demoting them to direct `.shared` access
+    // at the call site means their `.init` runs lazily post-first-frame
+    // instead of blocking cold start.
+    //   - SessionLogManager  (no body refs at all; bring-up Task.detached
+    //                         already fires startSession off-main)
+    //   - StoreKitManager    (no body refs at all; products load lazily)
+    //   - PushNotificationService (only .task closure refs)
+    //   - RealtimeService    (only .task / .onChange closure refs)
     
     @Environment(\.scenePhase) private var scenePhase
-    
+
+    /// Single signpost that bridges `Fit33App.init()` start to the moment the
+    /// WindowGroup root view first commits a frame. End is fired from
+    /// `ContentView.onAppear`. This is the user-visible cold-start latency
+    /// metric; the existing `app.launch` signpost measures only the
+    /// init-to-task latency, not first-frame paint. Sprint 2026-04-25
+    /// (cold-start speedup Phase 3.10).
+    @MainActor private static var firstFrameSignpost: PerformanceSignposts.State?
+    @MainActor private static var firstFrameLanded = false
+
+    @MainActor
+    static func markFirstFrameIfNeeded() {
+        guard !firstFrameLanded else { return }
+        firstFrameLanded = true
+        if let state = firstFrameSignpost {
+            PerformanceSignposts.end(state, slowThresholdMs: 1500)
+            firstFrameSignpost = nil
+        }
+    }
+
+    /// Runs `block` immediately if the StartupCoordinator's `.essential` phase
+    /// is already complete (warm foreground) or schedules it to run as soon as
+    /// `.essential` fires (cold start). Lets cold-start scenePhase wearable
+    /// force-syncs avoid piling onto the contended main thread during the
+    /// initial 2-3s freeze window. Sprint 2026-04-25 (cold-start Phase 1.6).
+    @MainActor
+    private static func runOrDeferUntilEssential(_ block: @escaping @Sendable () -> Void) {
+        if StartupCoordinator.shared.isPhaseComplete(.essential) {
+            block()
+        } else {
+            StartupCoordinator.shared.onPhaseComplete(.essential) {
+                block()
+            }
+        }
+    }
+
+    /// Async helper used by the consolidated startup pipeline (Phase 2.7) to
+    /// gate stages on coordinator phases. Returns immediately if the phase
+    /// is already complete; otherwise suspends until the phase fires.
+    private static func awaitPhase(_ phase: StartupCoordinator.Phase) async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            Task { @MainActor in
+                if StartupCoordinator.shared.isPhaseComplete(phase) {
+                    cont.resume()
+                } else {
+                    StartupCoordinator.shared.onPhaseComplete(phase) {
+                        cont.resume()
+                    }
+                }
+            }
+        }
+    }
+
     init() {
         // ═══════════════════════════════════════════════════════════════
         // CRITICAL PATH — Must run before first frame
         // Only the absolute minimum to show UI and satisfy Apple requirements
         // ═══════════════════════════════════════════════════════════════
-        
+
+        // ⚡️ Cold-start Phase 5 (2026-04-25): timestamp the start of init
+        // so we can attribute every chunk of pre-first-frame work in the
+        // log. By the time `init()`'s body runs, the @StateObject /
+        // PersistenceController / PremiumManager property defaults have
+        // ALREADY been evaluated (Swift evaluates stored-property defaults
+        // in declaration order before the init body). The kickoff for the
+        // JSON pre-decoder is hoisted to `_coldStartKickoff` (the FIRST
+        // declared property) so it leads everything else.
+        let initStart = CFAbsoluteTimeGetCurrent()
+        func mark(_ label: String) {
+            let ms = Int((CFAbsoluteTimeGetCurrent() - initStart) * 1000)
+            AppLogger.info("⏱️ [STARTUP] +\(ms)ms — \(label)", category: .performance)
+        }
+        mark("init() body started (after @StateObject property inits)")
+
+        // ⚡️ Cold-start Phase 3.10: capture user-visible first-frame latency.
+        // Begin here (earliest point in app lifecycle), end from ContentView's
+        // first onAppear via `Fit33App.markFirstFrameIfNeeded()`.
+        MainActor.assumeIsolated {
+            Fit33App.firstFrameSignpost = PerformanceSignposts.begin(.appFirstFrame)
+        }
+
+        // ⚡️ Cold-start speedup Phase 1.1 (2026-04-25):
+        // Fire auth check BEFORE SwiftUI evaluates `WindowGroup.body`. The
+        // previous implementation kicked it off from `WindowGroup.task`,
+        // which only runs AFTER first body evaluation — by which time
+        // ContentView/MainTabView have already triggered ~10 singleton
+        // inits on the main actor (UserManager, VideoStreamingService,
+        // FriendService, etc.), starving `await MainActor.run { isAuthenticated = true }`
+        // for 2086ms (1.38(55) logs). Firing here lets auth complete while
+        // the view tree is still being constructed, eliminating the queue.
+        // The `.task` modifier still calls `checkAuthOnly` for backwards
+        // compat; SupabaseManager's `inFlightAuthCheckTask` single-flights
+        // both callers onto the same task.
+        Task(priority: .userInitiated) {
+            await SupabaseManager.shared.checkAuthOnly()
+        }
+        mark("auth Task spawned")
+
         // BGTaskScheduler.register must be called before app finishes launching
         BackgroundChallengeSyncService.shared.setup()
+        mark("BackgroundChallengeSyncService.setup (BGTask register only)")
 
         // ⚡️ Touch ExerciseLibraryService.shared on the FIRST tick of app init so its
         // preWarmCache() Task.detached runs immediately (bg context fetch + inline bundle seed
@@ -118,12 +236,20 @@ struct Fit33App: App {
         // ready before the user can navigate to it — no "Loading exercises..." state, no
         // grey placeholder cards. See ExerciseLibraryService.preWarmCache() for seed logic.
         _ = ExerciseLibraryService.shared
+        mark("ExerciseLibraryService.shared touched")
 
         // One-time Core Data migration — moved off main thread to prevent startup freeze
         let needsExerciseRefresh = !UserDefaults.standard.bool(forKey: "exercise_lever_fix_applied_v1")
         if needsExerciseRefresh {
             let container = PersistenceController.shared.container
             Task.detached(priority: .userInitiated) {
+                // ⚡️ Cold-start sprint 2026-04-26 (async CD load): wait for the
+                // store to attach before the delete/seed migration. Without
+                // this, the delete-then-seed runs against an unattached store,
+                // returning empty results then inserting bundle rows that
+                // duplicate the user's actual exercise data once the store
+                // attaches.
+                await PersistenceController.waitUntilStoreLoaded()
                 AppLogger.debug("FORCING EXERCISE REFRESH - CLEARING CACHED DATA", category: .general)
                 let bgContext = container.newBackgroundContext()
                 await bgContext.perform {
@@ -148,7 +274,7 @@ struct Fit33App: App {
                         exercise.id = UUID()
                         exercise.name = data.name
                         exercise.category = data.category
-                        exercise.muscleGroups = data.muscleGroups as NSObject
+                        exercise.muscleGroups = data.muscleGroups as NSArray
                         exercise.equipment = data.equipment
                         exercise.instructions = data.instructions
                         exercise.isFavorite = false
@@ -170,32 +296,79 @@ struct Fit33App: App {
             }
         }
         
-        // Session logging
-        SessionLogManager.shared.startSession()
-        SessionLogManager.shared.log(.info, category: .session, message: "App initializing")
-        
-        // ═══════════════════════════════════════════════════════════════
-        // DEFERRED PATH — Runs 0.5s after init so the first frame renders fast
-        // Crash reporting, perf monitors, video engine, haptics, etc.
-        // ═══════════════════════════════════════════════════════════════
-        
+        mark("CD migration check complete")
+
+        // ⚡️ Cold-start speedup Phase 5.1 (2026-04-25):
+        // SessionLogManager's first `.shared` access was costing 628ms on
+        // main during cold start (observed in 2026-04-25 launch logs:
+        // +3ms → +631ms gap was entirely this singleton + its first
+        // `startSession()`/`log()` calls. Type metadata realization for
+        // a 3200-line final class with hundreds of nested enum cases is
+        // expensive on first touch). Push the entire bring-up to a
+        // detached utility task — no UI element waits on session logs
+        // landing in memory, and the logQueue is internally async
+        // anyway so behavior is identical. This frees ~600-900ms of
+        // main-thread budget that was happening BEFORE first frame.
         Task.detached(priority: .utility) {
-            try? await Task.sleep(for: .milliseconds(500))
-            
-            // Singleton inits that don't need main thread
+            SessionLogManager.shared.startSession()
+            SessionLogManager.shared.log(.info, category: .session, message: "App initializing")
+        }
+        mark("SessionLogManager bring-up dispatched (off main)")
+        
+        // ═══════════════════════════════════════════════════════════════
+        // CONSOLIDATED STARTUP PIPELINE
+        // ⚡️ Cold-start speedup Phase 2.7 (2026-04-25):
+        // The previous code spawned three separate `Task.detached` chains
+        // (deferred singletons, crash-reporting + video, StartupCache +
+        // TabPreloader) plus one `Task` for warm-up. Each chain raced for
+        // CPU and main-actor time independently — the deferred singletons
+        // chain alone hopped to main twice, contending with body
+        // evaluation. Consolidating them into ONE pipeline driven by
+        // `StartupCoordinator` phases serializes the heavy work and lets
+        // the OS schedule it after first frame has committed.
+        //
+        // Stage A (immediate, off-main):  StartupCache.warmUp — dashboard
+        //                                  needs cachedUserStats early.
+        // Stage B (after critical phase): Light singletons + perf monitors
+        //                                  (formerly the 500ms-delay chain).
+        // Stage C (essential phase):      TabPreloader, crash reporter, video
+        //                                  engine — none are dashboard-body
+        //                                  critical, so deferred until after
+        //                                  the cold-start contention window.
+        // ═══════════════════════════════════════════════════════════════
+
+        Task(priority: .userInitiated) {
+            // Wire up the phase chain (essential → intelligence → background
+            // and the 8s safety timer) BEFORE anything else awaits a phase.
+            // Cheap; just registers handlers on the coordinator's MainActor.
+            await MainActor.run {
+                StartupCoordinator.shared.beginStartupSequence()
+            }
+
+            let context = PersistenceController.shared.container.viewContext
+
+            // Stage A — runs immediately. StartupCache uses bgContext +
+            // single MainActor publish (Phase 1.2) so this no longer
+            // contends with first-frame work.
+            await StartupWaterfall.shared.measure("StartupCache.warmUp") {
+                await StartupCache.shared.warmUp(context: context)
+            }
+
+            // Stage B — light singletons + perf monitors. Wait for the
+            // critical phase so the perf instruments don't sample during
+            // the cold-start freeze (skewing baselines). On warm
+            // foregrounds .critical fires almost immediately.
+            await Self.awaitPhase(.critical)
+
             _ = MemoryPressureHandler.shared
             _ = TaskThrottler.shared
             _ = CPUProtection.shared
             _ = HeavyWorkSentinel.shared
-            
-            // UIKit / CADisplayLink work must be on main
+
             await MainActor.run {
                 StartupWaterfall.shared.mark("DeferredInit (total)")
-                // ⚡️ Battery: MainThreadWatchdog runs a 500ms-loop thread and
-                // ProductionFPSMonitor schedules a CADisplayLink at 60Hz —
-                // both are development instruments, not production telemetry.
-                // Gate to DEBUG so release builds don't burn battery doing
-                // work no one reads. MetricKit covers real-world crashes.
+                // ⚡️ Battery: MainThreadWatchdog and ProductionFPSMonitor
+                // are development instruments only.
                 #if DEBUG
                 MainThreadWatchdog.shared.start()
                 ProductionFPSMonitor.shared.start()
@@ -209,87 +382,74 @@ struct Fit33App: App {
 
                 StartupWaterfall.shared.end("DeferredInit (total)")
             }
-            
-            await MainActor.run {
-                StartupCoordinator.shared.beginStartupSequence()
-            }
-            
-            AppLogger.info("✅ [PERF] Performance optimizations initialized (watchdog + MetricKit + FPS monitor)", category: .general)
-        }
-        
-        Task.detached(priority: .utility) {
-            try? await Task.sleep(for: .milliseconds(500))
+            AppLogger.info("✅ [PERF] Performance optimizations initialized", category: .general)
+
+            // Stage C — heavy off-main work. Wait for `.essential` so
+            // we don't fight `syncAllDataFromCloud` for network/CPU.
+            // On warm foreground this is instant.
+            await Self.awaitPhase(.essential)
+
             CrashReportingService.shared.initialize()
             VideoThumbnailService.shared.prewarmCDNConnection()
             _ = GenderFilterService.shared
             _ = VideoPlaybackEngine.shared
-        }
-        
-        // ═══════════════════════════════════════════════════════════════
-        // STAGED STARTUP PIPELINE
-        // Stage 1 (0.5s): StartupCache — lightweight user stats for Dashboard
-        // Stage 2 (3s):   TabPreloader — background data for other tabs
-        // Stage 3 (8s):   Intelligence — learning engine, mappings, etc.
-        // ═══════════════════════════════════════════════════════════════
-        
-        Task(priority: .userInitiated) {
-            let context = PersistenceController.shared.container.viewContext
-            
-            await StartupWaterfall.shared.measure("StartupCache.warmUp") {
-                await StartupCache.shared.warmUp(context: context)
-            }
-            
-            try? await Task.sleep(nanoseconds: 3_000_000_000) // 3s
-            
+
             await StartupWaterfall.shared.measure("TabPreloader.beginPreloading") {
                 await TabPreloader.shared.beginPreloading(context: context)
             }
         }
-        
-        // Track app version for update detection
-        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
-        let currentBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
-        let lastVersion = UserDefaults.standard.string(forKey: "last_app_version")
-        let lastBuild = UserDefaults.standard.string(forKey: "last_app_build")
-        
-        if lastVersion == nil {
-            // First launch ever
-            SessionLogManager.shared.logAppFirstLaunch(version: currentVersion, build: currentBuild)
-        } else if lastVersion != currentVersion || lastBuild != currentBuild {
-            // App was updated
-            SessionLogManager.shared.logAppUpdated(
-                previousVersion: lastVersion ?? "unknown",
-                newVersion: currentVersion,
-                previousBuild: lastBuild ?? "unknown",
-                newBuild: currentBuild
+        mark("Consolidated startup pipeline scheduled")
+
+        // ⚡️ Cold-start speedup Phase 5.1 (2026-04-25):
+        // Version-tracking + retention-metrics block was costing 317ms on
+        // main (observed: +631ms → +948ms gap). Pure bookkeeping (Bundle
+        // reads, UserDefaults R/W, one SessionLogManager call) — nothing
+        // here is needed before first frame. Capture launch wall time
+        // synchronously so the bg task computes accurate
+        // "days since last session", then offload everything else.
+        let launchWallTime = Date()
+        Task.detached(priority: .utility) {
+            let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+            let currentBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+            let lastVersion = UserDefaults.standard.string(forKey: "last_app_version")
+            let lastBuild = UserDefaults.standard.string(forKey: "last_app_build")
+
+            if lastVersion == nil {
+                SessionLogManager.shared.logAppFirstLaunch(version: currentVersion, build: currentBuild)
+            } else if lastVersion != currentVersion || lastBuild != currentBuild {
+                SessionLogManager.shared.logAppUpdated(
+                    previousVersion: lastVersion ?? "unknown",
+                    newVersion: currentVersion,
+                    previousBuild: lastBuild ?? "unknown",
+                    newBuild: currentBuild
+                )
+            }
+
+            UserDefaults.standard.set(currentVersion, forKey: "last_app_version")
+            UserDefaults.standard.set(currentBuild, forKey: "last_app_build")
+
+            let sessionCount = UserDefaults.standard.integer(forKey: "total_session_count") + 1
+            UserDefaults.standard.set(sessionCount, forKey: "total_session_count")
+
+            let lastSessionTimestamp = UserDefaults.standard.double(forKey: "last_session_timestamp")
+            var daysSinceLastSession: Int? = nil
+            if lastSessionTimestamp > 0 {
+                let lastDate = Date(timeIntervalSince1970: lastSessionTimestamp)
+                daysSinceLastSession = Calendar.current.dateComponents([.day], from: lastDate, to: launchWallTime).day
+            }
+            UserDefaults.standard.set(launchWallTime.timeIntervalSince1970, forKey: "last_session_timestamp")
+
+            SessionLogManager.shared.logSessionStart(
+                sessionNumber: sessionCount,
+                daysSinceLastSession: daysSinceLastSession,
+                totalWorkoutsCompleted: UserDefaults.standard.integer(forKey: "cached_total_workouts")
             )
         }
-        
-        // Save current version
-        UserDefaults.standard.set(currentVersion, forKey: "last_app_version")
-        UserDefaults.standard.set(currentBuild, forKey: "last_app_build")
-        
-        // Track session count for retention metrics
-        let sessionCount = UserDefaults.standard.integer(forKey: "total_session_count") + 1
-        UserDefaults.standard.set(sessionCount, forKey: "total_session_count")
-        
-        let lastSessionTimestamp = UserDefaults.standard.double(forKey: "last_session_timestamp")
-        var daysSinceLastSession: Int? = nil
-        if lastSessionTimestamp > 0 {
-            let lastDate = Date(timeIntervalSince1970: lastSessionTimestamp)
-            daysSinceLastSession = Calendar.current.dateComponents([.day], from: lastDate, to: Date()).day
-        }
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "last_session_timestamp")
-        
-        // Log session with retention metrics (totalWorkouts will be updated once user data loads)
-        SessionLogManager.shared.logSessionStart(
-            sessionNumber: sessionCount,
-            daysSinceLastSession: daysSinceLastSession,
-            totalWorkoutsCompleted: UserDefaults.standard.integer(forKey: "cached_total_workouts")
-        )
-        
+        mark("Version + session counters bookkeeping dispatched (off main)")
+
         // Register the custom value transformer for Core Data array handling
         StringArrayValueTransformer.register()
+        mark("StringArrayValueTransformer.register")
         
         // DEBUG: Reset onboarding on every launch to test the flow
         // Use the Skip button in the onboarding to bypass during development
@@ -321,11 +481,15 @@ struct Fit33App: App {
             UIView.appearance(whenContainedInInstancesOf: [UIWindow.self]).backgroundColor = UIColor.clear
         }
         
+        mark("UINavigationBar appearance configured")
+
         // Apply saved appearance setting on launch
         AppearanceManager.shared.applyAppearance()
-        
+        mark("AppearanceManager.applyAppearance")
+
         // Set up notification center delegate
         UNUserNotificationCenter.current().delegate = NotificationManager.shared
+        mark("UNUserNotificationCenter delegate set")
         
         // 🚀 Clear video prefetch cache on memory warning
         NotificationCenter.default.addObserver(
@@ -384,6 +548,8 @@ struct Fit33App: App {
         #else
         scheduleIntelligenceInit()
         #endif
+
+        mark("init() body END (returning to SwiftUI runtime → WindowGroup body next)")
     }
     
     /// ⚡️ PERFORMANCE: Coordinated startup sequence
@@ -400,23 +566,55 @@ struct Fit33App: App {
     
     
     @State private var showCoreDataFatalError = false
-    
+
+    /// ⚡️ Cold-start sprint 2026-04-26 (async Core Data store load):
+    /// Tracks whether the persistent store is fully loaded and attached
+    /// to the coordinator. Until this flips true, we render a
+    /// `LaunchBackground` color overlay (matching the LaunchScreen
+    /// asset) instead of `ContentView`. This prevents any
+    /// `@FetchRequest` / `viewContext.fetch` from running against an
+    /// unloaded store and seeing transient empty results — the
+    /// dashboard never sees a "0 workouts" flicker.
+    ///
+    /// Initialized by reading the static flag (in case the store
+    /// loaded BEFORE the body first evaluated — unlikely on cold
+    /// start with async loading, but possible on tab/scene restart),
+    /// and updated via the `.coreDataDidLoad` notification posted by
+    /// `PersistenceController.completeLoad`.
+    @State private var isCoreDataReady = PersistenceController.isStoreLoaded
+
     var body: some Scene {
         WindowGroup {
-            // New onboarding flow includes auth, so always show ContentView
-            // ContentView will show NewOnboardingView (with auth) if not completed
-            ShakeDetectingView {
-                ContentView()
-                    .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                    .environmentObject(premiumManager)
-                    .environmentObject(supabaseManager)
-                    .environmentObject(appearanceManager)
-                    .environmentObject(notificationManager)
-                    .preferredColorScheme(appearanceManager.colorScheme)
-                    .ignoresSafeArea(.all, edges: .all)
+            ZStack {
+                // Always-on launch-color base layer — guarantees no white
+                // flash even during the brief moment between iOS dismissing
+                // the LaunchScreen and our SwiftUI hierarchy fully painting.
+                Color("LaunchBackground")
+                    .ignoresSafeArea()
+
+                if isCoreDataReady {
+                    // New onboarding flow includes auth, so always show ContentView
+                    // ContentView will show NewOnboardingView (with auth) if not completed
+                    ShakeDetectingView {
+                        ContentView()
+                            .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                            .environmentObject(premiumManager)
+                            .environmentObject(supabaseManager)
+                            .environmentObject(appearanceManager)
+                            .environmentObject(notificationManager)
+                            .preferredColorScheme(appearanceManager.colorScheme)
+                            .ignoresSafeArea(.all, edges: .all)
+                    }
+                }
             }
             .sheet(isPresented: $shakeManager.showBugReportSheet) {
                 BugReportView()
+            }
+            // ⚡️ Async Core Data: flip the gate when the store finishes loading.
+            .onReceive(NotificationCenter.default.publisher(for: .coreDataDidLoad)) { _ in
+                if !isCoreDataReady {
+                    isCoreDataReady = true
+                }
             }
             // MARK: - Core Data Fatal Error (store cannot load at all)
             .onReceive(NotificationCenter.default.publisher(for: .coreDataLoadFailed)) { _ in
@@ -462,7 +660,36 @@ struct Fit33App: App {
                             "user_id": supabaseManager.currentUser?.id ?? "unknown"
                         ])
                         
-                        await pushNotificationService.registerForPushNotifications()
+                        await PushNotificationService.shared.registerForPushNotifications()
+
+                        // Realtime Widget Server Pull, Phase 5 (2026-04-26):
+                        // Subscribe to the widget extension's Darwin
+                        // notification so a successful widget-side
+                        // direct Supabase pull (timeline tick or
+                        // refresh-button tap) triggers a main-app
+                        // round-trip back to `get_active_challenges`.
+                        // Lightweight — single CFNotificationCenter
+                        // observer registration. Idempotent across
+                        // auth-state flips.
+                        ActiveChallengeWidgetBridge.startWidgetPullListener()
+
+                        // Realtime Widget Server Pull, Phase 8e (2026-04-26):
+                        // Activate the WCSession bridge so the paired
+                        // Apple Watch (if installed) receives the
+                        // current active-challenge list. The watch app
+                        // uses this to know which challenge IDs to
+                        // log against from its HealthKit observers.
+                        // Activation is a no-op when no watch is
+                        // paired or the companion app isn't installed
+                        // (PE invariant — phones-only path remains the
+                        // default writer of last resort).
+                        PhoneToWatchSyncBridge.shared.activate()
+                        // Initial push of whatever's already loaded.
+                        // Subsequent updates flow through the
+                        // ChallengeService publisher observer below.
+                        PhoneToWatchSyncBridge.shared.sendActiveChallenges(
+                            ChallengeService.shared.activeChallenges
+                        )
                     }
                     
                     notificationManager.checkAuthorizationStatus()
@@ -516,8 +743,8 @@ struct Fit33App: App {
                         
                         // Non-blocking post-auth services (don't hold up the task chain)
                         Task {
-                            realtimeService.setupDefaultCallbacks()
-                            await realtimeService.connect()
+                            RealtimeService.shared.setupDefaultCallbacks()
+                            await RealtimeService.shared.connect()
                             await supabaseManager.updateLastLogin()
                             await AdvancedSessionLogger.shared.checkIfEnabled()
                         }
@@ -704,14 +931,57 @@ struct Fit33App: App {
                         WhoopService.shared.refreshConnectionState()
                         OuraService.shared.refreshConnectionState()
                         StravaService.shared.refreshConnectionState()
+
+                        // ⚡️ Cold-start speedup Phase 1.6 (2026-04-25):
+                        // On cold start, gate the wearable force-syncs behind
+                        // `StartupCoordinator.essential`. Each force-sync spawns
+                        // 4–8 network calls, JSON decoders, Core Data writes,
+                        // and a `ReadinessService.recompute` — fired together
+                        // they routinely added 800–1200ms of CPU contention to
+                        // the cold-start window. After `.essential` is complete
+                        // (~3–5s post-launch), `runOrDeferUntilEssential` runs
+                        // its handler immediately, so warm foregrounds keep the
+                        // existing instant-sync behavior. Internal `isSyncing`
+                        // throttles + 5-min `syncThrottleInterval` ensure no
+                        // duplicate syncs happen.
                         if WhoopService.shared.isConnected {
+                            Self.runOrDeferUntilEssential {
                             Task(priority: .userInitiated) {
                                 await WhoopService.shared.syncAllData(force: true)
+                                // Bug-Intel 2026-04-25 Report 7 (08bcb9e0).
+                                // The fire-and-forget WHOOP force-sync above runs in
+                                // parallel with the coordinated foreground Task below,
+                                // which calls HealthDataService.syncAllHealthData →
+                                // ReadinessService.recompute. Inside that path,
+                                // syncWhoopData(force: false) hits the WhoopService
+                                // `isSyncing` guard (set true by the line above) and
+                                // returns early — so recompute runs against the OLD
+                                // @Published WHOOP state and writes a stale readiness
+                                // band to the dashboard. Snapshot from the bug report
+                                // showed whoopLastSyncAgeSec=29s but readiness was
+                                // computed 38s earlier (i.e. before the force-sync's
+                                // fresh recovery score arrived). Re-running recompute
+                                // here, AFTER WHOOP's @Published state has been
+                                // refreshed, fixes "first launch shows stale WHOOP
+                                // metrics" without introducing a sync recursion (the
+                                // recompute path is read-only — it never re-triggers
+                                // wearable syncs per ReadinessService invariant #33).
+                                await ReadinessService.shared.recompute(force: true)
+                            }
                             }
                         }
                         if OuraService.shared.isConnected {
+                            Self.runOrDeferUntilEssential {
                             Task(priority: .userInitiated) {
                                 await OuraService.shared.syncAllData(force: true)
+                                // Same race as the WHOOP path above — Oura's force
+                                // sync also runs in parallel with HealthDataService,
+                                // and Oura is the fallback readiness source when
+                                // WHOOP isn't connected. Recompute here so dashboard
+                                // recovery + sleep widgets reflect the freshly-pulled
+                                // Oura readings on first launch / scenePhase resume.
+                                await ReadinessService.shared.recompute(force: true)
+                            }
                             }
                         }
                         // Strava parity with WHOOP / Oura — force-sync on every
@@ -721,6 +991,7 @@ struct Fit33App: App {
                         // rapid scenePhase flicker. Auto-refreshes the
                         // access token first if it expires within 5 min.
                         if StravaService.shared.isConnected {
+                            Self.runOrDeferUntilEssential {
                             Task(priority: .userInitiated) {
                                 await StravaService.shared.syncActivities(daysBack: 30, force: true)
                             }
@@ -729,6 +1000,7 @@ struct Fit33App: App {
                             // will surface that and disconnect cleanly.
                             Task(priority: .background) {
                                 await StravaService.shared.evaluateInactivityWindow()
+                            }
                             }
                         }
                         
@@ -762,9 +1034,9 @@ struct Fit33App: App {
                             Task { await supabaseManager.recordLastActive() }
 
                             // Priority 1: Reconnect realtime (instant social updates)
-                            if !realtimeService.isConnected {
-                                realtimeService.setupDefaultCallbacks()
-                                await realtimeService.connect()
+                            if !RealtimeService.shared.isConnected {
+                                RealtimeService.shared.setupDefaultCallbacks()
+                                await RealtimeService.shared.connect()
                             }
                             
                             // Priority 2: Refresh actionable social items immediately
@@ -803,8 +1075,8 @@ struct Fit33App: App {
                             
                             // Push-notification hygiene
                             Task {
-                                await pushNotificationService.recheckAndRegister()
-                                pushNotificationService.performTokenHealthCheck()
+                                await PushNotificationService.shared.recheckAndRegister()
+                                PushNotificationService.shared.performTokenHealthCheck()
                             }
                             // Daily-reset (midnight-rollover cleanup)
                             Task { await DailyResetService.shared.checkAndPerformDailyResetIfNeeded() }
@@ -855,7 +1127,7 @@ struct Fit33App: App {
                         
                         // 🔌 Disconnect from Realtime to save battery (will reconnect on .active)
                         Task {
-                            await realtimeService.disconnect()
+                            await RealtimeService.shared.disconnect()
                         }
                         
                         // ⚡️ MEMORY FIX: Aggressively free video players when backgrounded.

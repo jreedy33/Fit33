@@ -21,6 +21,38 @@ extension ActiveWorkoutView {
         workoutManager.addSetToExercise(id: exerciseId, set: setData)
         
         // Rest timer is shown via the ad interstitial timing
+
+        // Mirror the new "next set" state to the paired Apple Watch
+        // so its live workout view advances + shows the rest-timer
+        // countdown. No-op when no watch is paired/installed.
+        pushLiveWorkoutStateToWatch(for: exercise)
+    }
+
+    /// Sends the current "next set" state for `exercise` to the watch
+    /// via `PhoneToWatchLiveWorkoutBridge`. Called from
+    /// `handleSetCompletion` and from the workout-appear path so the
+    /// watch's `WatchLiveWorkoutView` always shows the active set.
+    func pushLiveWorkoutStateToWatch(for exercise: Exercise) {
+        guard let exerciseId = exercise.id?.uuidString else { return }
+        let sets = workoutManager.exerciseSetsData[exerciseId] ?? []
+        // Next set the user is about to do = first non-completed set,
+        // or `sets.count` if every existing set is done (in which case
+        // the watch shows "Set N+1 of N" until the user moves to the
+        // next exercise on the phone).
+        let nextIndex = sets.firstIndex(where: { !$0.isCompleted }) ?? sets.count
+        let totalSets = max(sets.count, defaultSetCount)
+        let targetSet: WorkoutSetData? = nextIndex < sets.count ? sets[nextIndex] : nil
+        let targetWeight: Double? = (targetSet?.weight ?? 0) > 0 ? targetSet?.weight : nil
+        let targetReps: Int = targetSet?.reps ?? 0
+
+        PhoneToWatchLiveWorkoutBridge.shared.pushExercise(
+            exerciseId: exerciseId,
+            exerciseName: exercise.name ?? "",
+            setIndex: nextIndex,
+            totalSets: totalSets,
+            targetWeight: targetWeight,
+            targetReps: targetReps
+        )
     }
     
     func getRestDuration(for exercise: Exercise) -> TimeInterval {

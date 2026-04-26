@@ -24,6 +24,62 @@
 
 ---
 
+## Sprint Realtime Widget Server Pull (2026-04-26)
+
+**Problem.** Persistent reports of opponent progress showing as "0 steps" or stale by hours in the home-screen `ActiveChallengeWidget`. Investigation traced through three plausible causes:
+1. Server-side fanout drift between `challenge_daily_progress` / `private_challenge_daily_progress` / `community_challenge_daily_progress` (drift columns added in migration #121 disconfirmed this — trigger was healthy on 2026-04-26).
+2. Silent push budget exhaustion — `wake-challenge-opponents` produces priority-5 silent pushes that iOS aggressively rate-limits, particularly for users with multiple wearables and noisy notification histories. APNs delivery rate dropped <40% for some users in the field.
+3. Upstream sync delay — opponents who hadn't opened the app in 10+ hours never published HealthKit progress to Supabase, so even a perfectly-delivered silent push had nothing fresh to fetch.
+
+**Architectural pivot.** Stop relying on the opponent's device to push fresh data. Make the widget itself a Supabase client. Five workstreams shipped in this sprint:
+
+- **Phase 1-3: Widget pulls directly from Supabase every timeline tick.** `RunningActivityWidget/WidgetSupabaseFetcher.swift` (raw URLSession, 3s timeout) calls the extended `get_active_challenges` RPC, which now returns `my_last_progress_at` and `opponent_last_progress_at` so the widget can classify freshness. Successful pulls write to App Group `UserDefaults` via hash-gated `writeIfChanged` and post a Darwin notification (`com.fit33.app.widgetActiveChallengePayloadChanged`). The main app subscribes via `ActiveChallengeWidgetBridge.startWidgetPullListener()` and re-renders its in-app challenge cards from the same shared payload. Daily Goals widget intentionally NOT migrated — that data is the user's own and freshness is already handled by the in-app publish path.
+- **Phase 4: Refresh button replaces the swords emoji.** `RunningActivityWidget/RefreshChallengeIntent.swift` is an `AppIntent` with `openAppWhenRun = false` — tapping the home-screen button runs the same `pullAndMergeIfPossible()` path in-extension and reloads the timeline without opening the app. Min 5s throttle.
+- **Phase 5: Honest stale UX.** `Shared/ProgressFreshness.swift::ProgressFreshnessKit` classifies opponent freshness into `.fresh` (≤30m) / `.recent` (≤2h) / `.stale` (≤24h) / `.unknown`. Stale opponents render `— · 6h ago` instead of "0 steps". Crown / "you're winning" logic now requires the opponent's data to be confidently fresh (`oppShowsRaw`).
+- **Phase 7: Server-side engagement nudges.** Migration #123 (`20260621_engagement_nudges_for_stale_opponents.sql`) adds `enqueue_engagement_nudges_for_stale_opponents()` (hourly pg_cron) which enqueues `challenge_nudge` rows into `push_notification_queue` for any 1v1 participant who has been silent ≥12h while their opponent is active. `send-push-notification` was already type-agnostic (no edge function change). `NotificationManager.swift` routes `challenge_nudge` to a refresh + HK sync + deep-link to the challenge detail. `NotificationType.challengeNudge` was added to the social category and the `knownNotificationTypes` allowlist (test-enforced). Anti-spam: 24h challenge warm-up, 12h staleness floor, 20h per-(recipient, challenge) throttle in SQL; quiet-hours / master-disabled / disabled-types deferred to `send-push-notification`.
+- **Phase 8: Apple Watch headless writer.** New target `Fit33Watch/` (optional, `WKRunsIndependentlyOfCompanionApp = true`) observes HealthKit on the wrist with `HKObserverQuery` + `enableBackgroundDelivery` and writes progress directly to Supabase via the `log_challenge_progress` RPC, bypassing the iPhone entirely. Watch reads the Supabase JWT from App Group `group.com.fit33.app` (read-only — never refreshes). Active-challenge config is synced from phone via WCSession `applicationContext` (`Fit33/PhoneToWatchSyncBridge.swift`). `WKApplicationRefreshBackgroundTask` schedules ~hourly heartbeat flushes. Phone-only path remains fully functional — `PhoneToWatchSyncBridge` no-ops on `WCSession.isWatchAppInstalled == false`.
+
+**Auth/storage trade-off (Phase 1).** Supabase-swift session JWT moved from `UserDefaults.standard` + Keychain to App Group `UserDefaults(suiteName: "group.com.fit33.app")` via `Fit33/SupabaseAppGroupStorage.swift` (implements `AuthLocalStorage`). One-time migration in `SupabaseManager.init()` reads any legacy session and copies it forward. Trade-off: App Group containers are sandbox-readable by any process signed with our team ID + entitlement (i.e. our widget + watch only). Acceptable because (a) JWT is short-lived (1h refresh), (b) refresh tokens NOT persisted to App Group, (c) extensions are READ-ONLY consumers and never call refresh — they fail closed and wait for the host app to refresh. Fully documented in `INFRA_SECURITY_AGENT.md` invariant 21a.
+
+**Memory / binary-size constraint (Phase 2 spike).** Initial design used the supabase-swift SPM package directly in the widget extension; widget process was killed by Jetsam during cold timeline ticks because the SDK pulls in Auth + PostgREST + Realtime + Storage + GoTrue and trips the ~30MB extension memory ceiling. Rewrote `WidgetSupabaseFetcher` to use raw `URLSession` against the PostgREST endpoint (`/rest/v1/rpc/get_active_challenges`) with `waitsForConnectivity = false` and `timeoutIntervalForRequest = 3.0`. Same constraint applies to `Fit33Watch/WatchSupabaseClient.swift`. Codified in `QUALITY_PERFORMANCE_AGENT.md` invariants 25w + 25x.
+
+**ProgressFreshness duplication (Phase 6).** `Shared/ProgressFreshness.swift` (main app) and `RunningActivityWidget/ProgressFreshness.swift` (widget) are byte-for-byte identical and both exist on purpose. We do not extract a shared SPM target because the build cost / Codable bridge cost exceeds the cost of editing two files when thresholds change. Parity is enforced by hashing both files in `ProgressFreshnessParityTests`. Codified in `QUALITY_PERFORMANCE_AGENT.md` invariant 25y.
+
+**Files added.**
+- `Fit33/SupabaseAppGroupStorage.swift` — `AuthLocalStorage` implementation against App Group.
+- `Fit33/Shared/WidgetSupabaseFetcher.swift` — main-app mirror of widget fetcher (used by in-app render path for parity).
+- `Fit33/Shared/ProgressFreshness.swift` — freshness classifier (main app side).
+- `Fit33/PhoneToWatchSyncBridge.swift` — WCSession sender for active-challenge config; activates from `Fit33App` post-auth, subscribes to `ChallengeService.$activeChallenges` with `removeDuplicates` + `debounce`.
+- `Fit33/ActiveChallengeWidgetBridge.swift` — Darwin-notification listener + reload throttle (`requestReloadIfNeeded`).
+- `Fit33/DailyGoalsWidgetBridge.swift` — same throttle pattern for the Daily Goals widget.
+- `Fit33/WakeDiagnosticsView.swift` — DEBUG-only dev-menu surface for `get_my_wake_diagnostics`, including the cross-table progress-drift columns from migration #121.
+- `RunningActivityWidget/WidgetSupabaseFetcher.swift` — raw URLSession Supabase client, 3s timeout, App Group JWT.
+- `RunningActivityWidget/ProgressFreshness.swift` — widget-side mirror of `ProgressFreshnessKit`.
+- `RunningActivityWidget/RefreshChallengeIntent.swift` — in-extension AppIntent, `openAppWhenRun = false`.
+- `Fit33Watch/Fit33WatchApp.swift` — main entry, `WKApplicationDelegateAdaptor`, `WatchLifecycle`.
+- `Fit33Watch/WatchContentView.swift` — minimal "Background sync" status UI.
+- `Fit33Watch/WatchAppGroupSession.swift` — read-only JWT read + user_id extraction.
+- `Fit33Watch/WatchSupabaseClient.swift` — raw URLSession client for `log_challenge_progress`.
+- `Fit33Watch/WatchHealthKitWriter.swift` — `HKObserverQuery` + `HKAnchoredObjectQuery` for steps / active-energy / exercise-minutes, 30s debounce, fan-out to active challenges.
+- `Fit33Watch/WatchConnectivityBridge.swift` — `WCSessionDelegate` consumer of `applicationContext` from phone.
+- `Fit33Watch/WatchBackgroundRefresh.swift` — `WKApplicationRefreshBackgroundTask` scheduler + handler.
+- `Fit33Watch/Info.plist`, `Fit33Watch/Fit33Watch.entitlements`, `Fit33Watch/README.md` — manifest, entitlements, target-creation instructions.
+- `supabase/20260620_get_active_challenges_freshness.sql` — extends `get_active_challenges` with `my_last_progress_at` + `opponent_last_progress_at`.
+- `supabase/20260621_engagement_nudges_for_stale_opponents.sql` — engagement nudge RPC + hourly cron.
+
+**Files changed.**
+- `Fit33/SupabaseManager.swift` — installs `SupabaseAppGroupStorage` as `auth.storage`; one-time legacy migration.
+- `Fit33/Fit33App.swift` — activates `PhoneToWatchSyncBridge.shared` and `ActiveChallengeWidgetBridge.shared.startWidgetPullListener()` post-auth.
+- `Fit33/NotificationManager.swift` — `challenge_nudge` foreground + tap routing; `NotificationType.challengeNudge`; allowlist entry.
+- `Fit33/DashboardView+Challenges.swift` — `competitionProgressSection` now consumes the shared payload + freshness classifier.
+- `RunningActivityWidget/ActiveChallengeWidget.swift` — `ChallengeTimelineProvider.timeline` does Supabase pull → App Group write → reload; small-widget layout updated (winner-crown, refresh button, removed large variant).
+- `Fit33.xcodeproj/project.pbxproj` — adds `SupabaseAppGroupStorage.swift`, `Shared/WidgetSupabaseFetcher.swift`, `Shared/ProgressFreshness.swift`, `PhoneToWatchSyncBridge.swift`, `ActiveChallengeWidgetBridge.swift`, `DailyGoalsWidgetBridge.swift`, `WakeDiagnosticsView.swift` to the `Fit33` target; `WidgetSupabaseFetcher.swift` / `ProgressFreshness.swift` / `RefreshChallengeIntent.swift` to the widget target.
+
+**Open follow-ups.**
+- Manual Xcode step still required for the `Fit33Watch` target — instructions in `Fit33Watch/README.md`. Once the user creates the target, App-Store-Connect needs a watchOS bundle identifier (`com.gofit.app.watchapp`) and a separate APNs entry only if the watch ever fires its own pushes (not in this sprint).
+- Consider lowering the cron cadence on `enqueue_engagement_nudges_for_stale_opponents` from hourly to every 30 min once we have field data on click-through rate.
+- `daily-goals-pull` (Phase 3b) was intentionally skipped — re-evaluate if Daily Goals widget freshness regresses for any reason.
+
 ## Sprint 4 (2026-04-20) Must-Know Patterns
 
 - **CMS exercise edits flow into the app live.** Saving an exercise in `admin.doublethr33s.com/exercises/[id]` writes `public.exercises`, fires a Supabase Realtime `UPDATE`, and `RealtimeService.subscribeExercises()` → `ExerciseLibraryService.upsertExerciseFromCloud(dto)` patches the single Core Data row and invalidates the exercise cache so the `ExerciseLibraryView` reflects the change on the next SwiftUI recompute. Same path for INSERT/DELETE. NEVER trigger `forceSyncExercises()` in response — the surgical upsert is the whole point. The CMS also fire-and-forgets `rpc('refresh_mv_public_exercises')` so cold-start users (which read the matview) also see the change.

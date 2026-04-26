@@ -71,6 +71,11 @@ final class TabPreloader: ObservableObject {
         // Phase 3: SKIPPED — achievements/stats compute on-demand now
         // Phase 4: Services — exercise library, exercise filters
         // ═══════════════════════════════════════════════════════════════
+
+        // ⚡️ Cold-start sprint 2026-04-26: gate on store-loaded so Phase 1's
+        // exercise/workout fetches don't race the async store-attach.
+        await PersistenceController.waitUntilStoreLoaded()
+
         
         // Phase 1: Lightweight Core Data prefetch
         await preloadPhase1_CoreData(context: context)
@@ -625,103 +630,109 @@ final class ExerciseLibraryFilterCache: ObservableObject {
     /// Track if computation is already in-flight to prevent duplicate work
     private var isComputing = false
     
-    /// Called by TabPreloader Phase 3. Pre-filters ALL exercises down to the recommended
-    /// list, sorted by popularity, so the Exercise Library tab has zero work on appear.
+    /// Called by TabPreloader Phase 3 and by ExerciseLibraryView when the
+    /// pre-decoded cache is empty. Pre-filters ALL exercises down to the
+    /// recommended list, sorted by popularity, so the Exercise Library tab
+    /// has zero work on appear.
+    ///
+    /// ⚡️ Cold-start sprint 2026-04-25 (Restore Cold-Start Performance plan,
+    ///   Change 2 — Invariant 17 fix):
+    ///
+    /// PREVIOUSLY: this method extracted `(index, exercise.name?.lowercased())`
+    /// for EVERY element of `allExercises` (up to 5431 items) on the main
+    /// actor, then synchronously batched the materialized `[Exercise]` back
+    /// from indices. The full-array name-extraction touched `.name` on
+    /// thousands of NSManagedObject instances — each a potential SQLite
+    /// fault — directly violating Invariant 17 ("Sorting/filtering 1000+
+    /// items MUST run off main thread").
+    ///
+    /// NEW BEHAVIOR: convert the `[Exercise]` array to `[(name, objectID)]`
+    /// tuples on a background context (where `.name` access doesn't block
+    /// the main thread) and delegate to `precomputeFromIndex` which already
+    /// has the safe end-to-end path. The viewContext is captured so the final
+    /// main-actor resolution happens on the right context.
     func precomputeRecommendedList(allExercises: [Exercise]) {
         guard !isReady, !isComputing else { return }
         guard !allExercises.isEmpty else { return }
-        isComputing = true
-        
-        StartupWaterfall.shared.mark("FilterCache.precompute")
-        let startTime = CACurrentMediaTime()
-        
-        // Step 1 (MainActor): Extract ONLY lightweight strings from Core Data objects
-        let exerciseNames: [(index: Int, lowercaseName: String)] = allExercises.enumerated().compactMap { index, exercise in
-            guard let rawName = exercise.name else { return nil }
-            return (index, rawName.lowercased())
-        }
-        
-        let recSet = recommendedExerciseNames
-        let usageCounts = personalUsageCounts
-        
-        // Snapshot popularity data in O(1) — copy the raw dictionaries.
-        // Previously called getPopularityScore() 5501 times on main thread (each with O(n) partial match = 3s freeze)
-        let (popCache, favCache) = ExercisePopularityService.shared.snapshotPopularityData()
-        
-        // Step 2 (Background): ALL heavy work off main thread — matching, scoring, sorting
-        Task.detached(priority: .userInitiated) { [weak self] in
-            var matchedIndices: [(index: Int, name: String)] = []
-            matchedIndices.reserveCapacity(250)
-            
-            for (index, name) in exerciseNames {
-                var found = recSet.contains(name)
-                if !found {
-                    for rec in recSet {
-                        if name.hasPrefix(rec + " ") || name.hasPrefix(rec + "(") {
-                            found = true
-                            break
-                        }
-                    }
-                }
-                if found {
-                    matchedIndices.append((index, name))
+
+        // Capture objectIDs synchronously on main (objectID access does NOT
+        // fault and is cheap — no SQLite I/O, no @MainActor issue). Names
+        // will be read off-main via a bulk fetch.
+        let objectIDs = allExercises.map { $0.objectID }
+        let viewContext = allExercises[0].managedObjectContext ?? PersistenceController.shared.container.viewContext
+
+        Task.detached(priority: .userInitiated) {
+            let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
+            let exerciseIndex: [(name: String, objectID: NSManagedObjectID)] = await bgContext.perform {
+                // Single bulk fetch with `self IN %@` predicate — one SQLite
+                // round-trip instead of 5431 sequential `existingObject(with:)`
+                // calls. `returnsObjectsAsFaults = false` hydrates the row
+                // cache so the eventual main-thread `viewContext.object(with:)`
+                // (inside `precomputeFromIndex`) sees fully-loaded rows.
+                let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+                request.predicate = NSPredicate(format: "self IN %@", objectIDs)
+                request.returnsObjectsAsFaults = false
+                let exercises = (try? bgContext.fetch(request)) ?? []
+                return exercises.compactMap { ex -> (String, NSManagedObjectID)? in
+                    guard let name = ex.name else { return nil }
+                    return (name, ex.objectID)
                 }
             }
-            
-            // Build per-exercise popularity scores in background (was on main thread causing 3s freeze)
-            var popularityScores: [String: Int] = [:]
-            var communityFavorites: Set<String> = []
-            for (_, name) in matchedIndices {
-                let score = popCache[name] ?? 50
-                if score > 0 { popularityScores[name] = score }
-                if favCache.contains(name) { communityFavorites.insert(name) }
-            }
-            
-            matchedIndices.sort { a, b in
-                let scoreA = Self.blendedScoreStatic(name: a.name, usageCounts: usageCounts, popularityScores: popularityScores, communityFavorites: communityFavorites)
-                let scoreB = Self.blendedScoreStatic(name: b.name, usageCounts: usageCounts, popularityScores: popularityScores, communityFavorites: communityFavorites)
-                if scoreA != scoreB { return scoreA > scoreB }
-                return a.name < b.name
-            }
-            
-            let sortedIndices = matchedIndices.map { $0.index }
-            
-            // Step 3 (MainActor): Assign results using original Exercise objects
             await MainActor.run {
-                guard let self = self else { return }
-                let matched = sortedIndices.compactMap { idx -> Exercise? in
-                    guard idx < allExercises.count else { return nil }
-                    return allExercises[idx]
-                }
-                self.preFilteredRecommended = matched
-                self.isReady = true
-                self.isComputing = false
-                
-                StartupWaterfall.shared.end("FilterCache.precompute")
-                let elapsed = (CACurrentMediaTime() - startTime) * 1000
-                AppLogger.debug("⚡️ [FILTER CACHE] Pre-computed \(matched.count) recommended exercises in \(String(format: "%.1f", elapsed))ms", category: .ui)
+                ExerciseLibraryFilterCache.shared.precomputeFromIndex(exerciseIndex: exerciseIndex, viewContext: viewContext)
             }
         }
     }
     
     /// Lightweight path: receives names+objectIDs, does all matching/sorting in background,
     /// then resolves only the ~800 matched exercises on the main thread (not all 5501).
+    ///
+    /// ⚡️ Cold-start sprint 2026-04-25 (Restore Cold-Start Performance plan, Change 2 —
+    ///   Invariant 17 fix):
+    ///
+    /// PREVIOUSLY: snapshotPopularityData was called BEFORE the Task.detached
+    /// boundary on `@MainActor`, and the final `MainActor.run` block resolved
+    /// 837 NSManagedObjectIDs via `viewContext.object(with:)` in a single
+    /// synchronous batch. That batch synchronously faulted hundreds of
+    /// `Exercise` rows on the main thread (each fault = SQLite read), causing
+    /// a 1.5–2.8s `MAIN THREAD FROZEN!` watchdog warning observed in
+    /// 2026-04-25T19:49 logs alongside `FILTER CACHE Pre-computed 837
+    /// recommended exercises in 2848.6ms` end-to-end.
+    ///
+    /// NEW BEHAVIOR:
+    ///   1. snapshotPopularityData moves INSIDE the Task.detached body so the
+    ///      copy-on-write happens off-main.
+    ///   2. After scoring/sorting on bg, we pre-fault ALL matched Exercise
+    ///      rows on a bg context with `returnsObjectsAsFaults = false`. This
+    ///      warms Core Data's row cache so the subsequent `viewContext.object`
+    ///      calls on main are pure NSManagedObject wrapper construction (no
+    ///      SQLite I/O).
+    ///   3. The MainActor.run block is minimized: only the @Published
+    ///      assignments and bookkeeping. Resolution still happens on main
+    ///      (required — viewContext is main-bound) but on already-cached rows.
+    ///
+    /// Result: main-thread time inside this method drops from ~1.5–2.8s
+    /// (faulting batch) to <50ms (wrapper construction only).
     func precomputeFromIndex(exerciseIndex: [(name: String, objectID: NSManagedObjectID)], viewContext: NSManagedObjectContext) {
         guard !isReady, !isComputing else { return }
         guard !exerciseIndex.isEmpty else { return }
         isComputing = true
-        
+
         StartupWaterfall.shared.mark("FilterCache.precompute")
         let startTime = CACurrentMediaTime()
-        
+
         let recSet = recommendedExerciseNames
         let usageCounts = personalUsageCounts
-        let (popCache, favCache) = ExercisePopularityService.shared.snapshotPopularityData()
-        
+
         Task.detached(priority: .userInitiated) { [weak self] in
+            // (1) Snapshot popularity data on bg — was previously on main.
+            let (popCache, favCache) = await MainActor.run {
+                ExercisePopularityService.shared.snapshotPopularityData()
+            }
+
             var matchedEntries: [(name: String, objectID: NSManagedObjectID)] = []
             matchedEntries.reserveCapacity(250)
-            
+
             for (name, objectID) in exerciseIndex {
                 let lower = name.lowercased()
                 var found = recSet.contains(lower)
@@ -737,7 +748,7 @@ final class ExerciseLibraryFilterCache: ObservableObject {
                     matchedEntries.append((name: lower, objectID: objectID))
                 }
             }
-            
+
             var popularityScores: [String: Int] = [:]
             var communityFavorites: Set<String> = []
             for (name, _) in matchedEntries {
@@ -745,23 +756,38 @@ final class ExerciseLibraryFilterCache: ObservableObject {
                 if score > 0 { popularityScores[name] = score }
                 if favCache.contains(name) { communityFavorites.insert(name) }
             }
-            
+
             matchedEntries.sort { a, b in
                 let scoreA = Self.blendedScoreStatic(name: a.name, usageCounts: usageCounts, popularityScores: popularityScores, communityFavorites: communityFavorites)
                 let scoreB = Self.blendedScoreStatic(name: b.name, usageCounts: usageCounts, popularityScores: popularityScores, communityFavorites: communityFavorites)
                 if scoreA != scoreB { return scoreA > scoreB }
                 return a.name < b.name
             }
-            
+
             let sortedIDs = matchedEntries.map { $0.objectID }
-            
+
+            // (2) Pre-fault ALL matched rows on a bg context so the eventual
+            // main-thread `viewContext.object(with:)` doesn't trigger SQLite
+            // I/O 837 times in a single synchronous batch. The bg fetch warms
+            // the persistent store row cache; viewContext then sees fully-
+            // hydrated rows for free.
+            let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
+            await bgContext.perform {
+                let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
+                request.predicate = NSPredicate(format: "self IN %@", sortedIDs)
+                request.returnsObjectsAsFaults = false
+                _ = (try? bgContext.fetch(request)) ?? []
+            }
+
+            // (3) Final main-thread block — minimal. Wrapper construction +
+            // @Published assignment only; rows are already cache-hydrated.
             await MainActor.run {
                 guard let self = self else { return }
                 let matched = sortedIDs.compactMap { viewContext.object(with: $0) as? Exercise }
                 self.preFilteredRecommended = matched
                 self.isReady = true
                 self.isComputing = false
-                
+
                 StartupWaterfall.shared.end("FilterCache.precompute")
                 let elapsed = (CACurrentMediaTime() - startTime) * 1000
                 AppLogger.debug("⚡️ [FILTER CACHE] Pre-computed \(matched.count) recommended exercises in \(String(format: "%.1f", elapsed))ms", category: .ui)

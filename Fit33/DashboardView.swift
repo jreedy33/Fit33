@@ -503,28 +503,7 @@ struct DashboardView: View {
         }
         // MARK: - Challenge Deep Link Navigation
         .onReceive(deepLinkManager.$pendingDashboardRoute) { route in
-            guard let route = route else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(0.15))
-                guard !Task.isCancelled else { return }
-                if route == "ChallengeCreation" {
-                    showingChallengeCreation = true
-                } else if route.hasPrefix("ChallengeDetail:") {
-                    let idStr = String(route.dropFirst("ChallengeDetail:".count))
-                    if let challenge = ChallengeService.shared.activeChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
-                        dashboardNavPath.append(challenge)
-                        AppLogger.debug("[DEEPLINK] Pushed 1v1 challenge detail: \(challenge.title)", category: .ui)
-                    }
-                    // Look up group challenge
-                    else if let groupChallenge = ChallengeService.shared.activeGroupChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
-                        dashboardNavPath.append(groupChallenge)
-                        AppLogger.debug("[DEEPLINK] Pushed group challenge detail: \(groupChallenge.displayTitle)", category: .ui)
-                    } else {
-                        AppLogger.warning("[DEEPLINK] Challenge not found for ID: \(idStr) — staying on dashboard", category: .ui)
-                    }
-                }
-                deepLinkManager.pendingDashboardRoute = nil
-            }
+            handlePendingDashboardRoute(route)
         }
         .onChange(of: workoutManager.isWorkoutActive) { _, isActive in
             // 🔧 FIX: Reset navigation states AND force NavigationStack reset when workout starts
@@ -670,44 +649,62 @@ struct DashboardView: View {
                 let authMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
                 AppLogger.info("[DASHBOARD] Auth ready (\(authMs)ms), starting all social fetches", category: .performance)
 
-                // 14-wide fan-out was the #1 main-thread stall signal in the
-                // cluster-A bug reports. Wrapped in its own signpost so
-                // Instruments shows the cost as a single interval and so
-                // performance_metrics.op='dashboard.social_fanout' gets an
-                // independent trend series from the parent hydrate.
+                // ⚡️ Cold-start sprint 2026-04-25 (Restore Cold-Start Performance plan, Change 1):
                 //
-                // Sprint 2026-04-24 Phase 4 (N2): trimmed the awaited group
-                // from 14 → 10. The 4511ms dashboard.social_fanout in 1.38 (55)
-                // logs was dominated by the two slowest calls:
-                //   - `subscribeToRealtimeUpdates` — opens a websocket, blocks
-                //     until subscribed (2-4s on cold connection). The dashboard
-                //     body does NOT render anything that depends on THIS call
-                //     having returned; realtime updates push as they land.
-                //   - `refreshSuggestions` — PYMK RPC, populates suggested
-                //     friends card that lives on the Friends tab (not the
-                //     dashboard body).
-                // Both now fire-and-forget. Slowest-in-group now bounded by
-                // the actual dashboard-critical fetches.
+                // PREVIOUSLY: 12-wide `async let` group awaited every social /
+                // challenge / quest / photo fetch before the dashboard
+                // considered itself "ready". The slowest-of-12 was usually a
+                // network round-trip on cold start, dominating user-perceived
+                // load (observed `dashboard.social_fanout` 4288ms in
+                // 2026-04-25T19:49 logs — UI was unresponsive throughout).
+                //
+                // NEW BEHAVIOR — split into TWO buckets:
+                //   CRITICAL (awaited): the four fetches whose results the
+                //     dashboard body actually renders meaningfully on first
+                //     paint — `friends`, `activeCh`, `priv`, `photo`. All
+                //     four already have cached values pre-decoded by
+                //     StartupCachePreloader, so the `await` here just upgrades
+                //     cached → fresh; it doesn't gate first paint.
+                //   DEFERRED (fire-and-forget): everything else. Each fetch
+                //     publishes to its own `@Published` and the dashboard
+                //     swaps cached → fresh in place when it lands. No
+                //     flicker — same-shape state replacement. The
+                //     `dailyQuestService.completedCount` `.onChange` handler
+                //     at the bottom of this view re-runs
+                //     `loadPersonalizedRecommendation` when quests arrive,
+                //     so the welcome-card "close the gap" nudge still
+                //     surfaces post-fan-out.
+                //
+                // Result: `dashboard.social_fanout` interval bounded by ~4
+                // mostly-cached calls instead of 12 network round-trips.
                 let fanOutState = PerformanceSignposts.begin(.dashboardSocialFanOut)
-                
+
                 // Fire-and-forget (not dashboard-body-critical)
                 Task { await PrivateChallengeService.shared.subscribeToRealtimeUpdates() }
                 Task { await ContactsService.shared.refreshSuggestions() }
-                
-                // Dashboard-body-critical — awaited
+                Task { await FriendService.shared.loadPendingRequests() }
+                Task { await FriendService.shared.loadReceivedWorkouts() }
+                Task { await ActivityFeedService.shared.fetchFeed() }
+                Task { await FriendRankingService.shared.fetchRankedFriends() }
+                Task { await ChallengeService.shared.fetchActiveGroupChallenges() }
+                Task { await ChallengeService.shared.fetchPendingInvites() }
+                Task { await ChallengeService.shared.fetchPendingSentChallenges() }
+
+                // Dashboard-body-critical — awaited. All five have pre-decoded
+                // cached values that the body already shows; await upgrades
+                // them to fresh. `quests` stays in this bucket because
+                // `loadPersonalizedRecommendation` (called after this Task
+                // completes) reads fresh quest state to pick the right
+                // welcome-card priority. Without this await, the welcome
+                // card would briefly flash a lower-priority message before
+                // the "close the gap" nudge could surface — the exact
+                // flicker the previous Phase 4 N2 sprint fixed.
                 async let friends: () = FriendService.shared.fetchFriends()
-                async let pending: () = FriendService.shared.loadPendingRequests()
-                async let received: () = FriendService.shared.loadReceivedWorkouts()
-                async let feed: () = ActivityFeedService.shared.fetchFeed()
-                async let ranked: () = FriendRankingService.shared.fetchRankedFriends()
                 async let activeCh: () = ChallengeService.shared.fetchActiveChallenges()
-                async let groupCh: () = ChallengeService.shared.fetchActiveGroupChallenges()
-                async let invites: () = ChallengeService.shared.fetchPendingInvites()
-                async let sent: () = ChallengeService.shared.fetchPendingSentChallenges()
                 async let priv: () = PrivateChallengeService.shared.refreshAll()
-                async let quests: () = dailyQuestService.fetchDailyQuests()
                 async let photo: () = loadProfilePhoto()
-                _ = await (friends, pending, received, feed, ranked, activeCh, groupCh, invites, sent, priv, quests, photo)
+                async let quests: () = dailyQuestService.fetchDailyQuests()
+                _ = await (friends, activeCh, priv, photo, quests)
                 PerformanceSignposts.end(fanOutState, slowThresholdMs: 3_000)
             }
             
@@ -794,6 +791,32 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Deep Link Helper
+    /// Extracted from `body` to keep the SwiftUI type-checker happy. The
+    /// inline closure plus its nested `if let` chain was tipping `body` over
+    /// the "expression too complex" budget.
+    private func handlePendingDashboardRoute(_ route: String?) {
+        guard let route = route else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.15))
+            guard !Task.isCancelled else { return }
+            if route == "ChallengeCreation" {
+                showingChallengeCreation = true
+            } else if route.hasPrefix("ChallengeDetail:") {
+                let idStr = String(route.dropFirst("ChallengeDetail:".count))
+                if let challenge = ChallengeService.shared.activeChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+                    dashboardNavPath.append(challenge)
+                    AppLogger.debug("[DEEPLINK] Pushed 1v1 challenge detail: \(challenge.title)", category: .ui)
+                } else if let groupChallenge = ChallengeService.shared.activeGroupChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+                    dashboardNavPath.append(groupChallenge)
+                    AppLogger.debug("[DEEPLINK] Pushed group challenge detail: \(groupChallenge.displayTitle)", category: .ui)
+                } else {
+                    AppLogger.warning("[DEEPLINK] Challenge not found for ID: \(idStr) — staying on dashboard", category: .ui)
+                }
+            }
+            deepLinkManager.pendingDashboardRoute = nil
+        }
+    }
 }
 
 #Preview {

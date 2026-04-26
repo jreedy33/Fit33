@@ -19,8 +19,6 @@ struct FriendWorkoutPreviewView: View {
     @State private var selectedCoreDataExercise: Exercise? = nil
     @State private var showingSavedConfirmation = false
     @State private var isSaving = false
-    @State private var isAddingExercise = false
-    @State private var showingExercisePicker = false
     
     private let themeColor: Color = .cyan
     private let secondaryThemeColor: Color = .blue
@@ -31,7 +29,7 @@ struct FriendWorkoutPreviewView: View {
                 AnimatedOrbBackground.workout(colorScheme: colorScheme)
                 
                 ScrollView {
-                    VStack(spacing: Spacing.lg) {
+                    VStack(spacing: Spacing.sm) {
                         workoutHeader
                         
                         if isLoading {
@@ -69,13 +67,14 @@ struct FriendWorkoutPreviewView: View {
                                 ProgressView()
                                     .scaleEffect(0.7)
                             } else {
-                                Image(systemName: showingSavedConfirmation ? "bookmark.fill" : "bookmark")
+                                Image(systemName: showingSavedConfirmation ? "star.fill" : "star")
                                     .font(.ds_bodyRegular).fontWeight(.medium)
-                                    .foregroundColor(showingSavedConfirmation ? .green : themeColor)
+                                    .foregroundColor(showingSavedConfirmation ? .yellow : themeColor)
                             }
                         }
                     }
                     .disabled(exercises.isEmpty || isSaving)
+                    .accessibilityLabel(showingSavedConfirmation ? "Added to favorites" : "Add to favorites")
                 }
             }
         }
@@ -105,20 +104,12 @@ struct FriendWorkoutPreviewView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingExercisePicker) {
-            NavigationStack {
-                CustomWorkoutBuilderView(onAddExercise: { exercise in
-                    addExercise(exercise)
-                    showingExercisePicker = false
-                })
-            }
-        }
     }
     
     // MARK: - Header
     
     private var workoutHeader: some View {
-        VStack(spacing: Spacing.xs) {
+        VStack(spacing: 2) {
             Text(friendName + "'s Workout")
                 .font(.ds_heading2)
                 .foregroundColor(.primary)
@@ -129,13 +120,13 @@ struct FriendWorkoutPreviewView: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, Spacing.sm)
+        .padding(.top, 4)
     }
     
     // MARK: - Exercise List
     
     private var exerciseListSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack {
                 Text("Exercises")
                     .font(.headline)
@@ -153,49 +144,53 @@ struct FriendWorkoutPreviewView: View {
             }
             .padding(.horizontal, Spacing.xxs)
             
-            VStack(spacing: 10) {
-                ForEach(Array(exercises.enumerated()), id: \.offset) { index, exercise in
-                    FriendExerciseCard(
-                        number: index + 1,
+            VStack(spacing: Spacing.xs) {
+                ForEach(Array(exercises.enumerated()), id: \.offset) { _, exercise in
+                    FriendExerciseLibraryRow(
                         exerciseName: exercise.exerciseName,
-                        setCount: exercise.setsCompleted,
-                        topSetWeight: exercise.maxWeight,
-                        topSetReps: exercise.maxReps,
                         themeColor: themeColor,
-                        onTap: {
-                            if let coreDataExercise = ExerciseLibraryService.shared.getExercise(byName: exercise.exerciseName) {
-                                selectedCoreDataExercise = coreDataExercise
-                                showingExerciseDetail = true
-                            }
+                        onTap: { coreDataExercise in
+                            selectedCoreDataExercise = coreDataExercise
+                            showingExerciseDetail = true
                         }
                     )
                 }
             }
             
-            // Add Exercise button
-            if !isAddingExercise {
+            // Start Workout primary button uses the dashboard's
+            // `themeColor → secondaryThemeColor` gradient so it visually
+            // echoes the floating GoButton — both routes do the same thing.
+            VStack(spacing: Spacing.xs) {
                 Button(action: {
-                    HapticManager.selectionChanged()
-                    showingExercisePicker = true
+                    HapticManager.impact(.heavy)
+                    startWorkout()
                 }) {
                     HStack(spacing: 8) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.ds_heading3)
-                        Text("Add Exercise")
+                        Image(systemName: "play.fill")
+                            .font(.ds_bodyRegular).fontWeight(.bold)
+                        Text("Start Workout")
                             .font(.subheadline)
-                            .fontWeight(.semibold)
+                            .fontWeight(.bold)
                     }
-                    .foregroundColor(themeColor)
+                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 25)
-                            .stroke(themeColor.opacity(0.3), lineWidth: 2)
-                            .background(RoundedRectangle(cornerRadius: 25).fill(Color.cardBackground))
+                            .fill(
+                                LinearGradient(
+                                    colors: [themeColor, secondaryThemeColor],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                     )
+                    .shadow(color: themeColor.opacity(0.35), radius: 10, x: 0, y: 4)
                 }
-                .padding(.top, 8)
+                .accessibilityLabel("Start \(friendName)'s workout")
+                .accessibilityHint("Begins a new active workout with these exercises")
             }
+            .padding(.top, Spacing.xs)
         }
     }
     
@@ -326,7 +321,13 @@ struct FriendWorkoutPreviewView: View {
         newWorkout.name = metadata.workoutName ?? "\(friendName)'s Workout"
         newWorkout.date = Date()
         newWorkout.isCompleted = false
-        
+
+        // Flag a +75 XP bonus for completing a friend's workout. Read +
+        // applied (and cleared) by `UserManager.completeWorkout`. Set
+        // BEFORE `startWorkout` so the value is in place by the time the
+        // user finishes the session.
+        workoutManager.friendWorkoutBonusXP = 75
+
         workoutManager.startWorkout(workout: newWorkout, exercises: coreDataExercises)
         GoButtonState.shared.hide(reason: "FriendWorkout_started")
     }
@@ -354,21 +355,6 @@ struct FriendWorkoutPreviewView: View {
         showingSavedConfirmation = true
         HapticManager.notification(.success)
         AppLogger.info("Saved friend workout '\(workoutName)' with \(exerciseNames.count) exercises", category: .social)
-    }
-    
-    private func addExercise(_ exercise: Exercise) {
-        guard let name = exercise.name, !name.isEmpty else { return }
-        let dto = FriendExerciseDTO(
-            id: UUID().uuidString,
-            exerciseName: name,
-            order: exercises.count,
-            setsCompleted: 3,
-            maxWeight: nil,
-            maxReps: nil,
-            totalVolume: nil
-        )
-        exercises.append(dto)
-        showGoButton()
     }
     
     private func formatDuration(_ seconds: Int) -> String {
@@ -399,146 +385,67 @@ struct FriendExerciseDTO: Codable, Identifiable {
     }
 }
 
-// MARK: - Friend Exercise Card
-
-private struct FriendExerciseCard: View {
-    let number: Int
+// MARK: - Friend Exercise Library Row
+//
+// Renders the same card as the Exercises tab (`ExerciseCardRow`) when the
+// friend's exercise resolves against `ExerciseLibraryService`. The friend's
+// per-set metrics (sets, top weight × reps) are deliberately NOT shown here
+// — this screen is a "preview before I do my own version", not a recap of
+// the friend's session, so we hide their numbers and only show the canonical
+// exercise identity (name + category + equipment + cached video still).
+//
+// When the exercise can't be resolved (custom / older posts), we fall back
+// to a minimal name-only chip so the workout preview still lists every
+// exercise the friend logged.
+private struct FriendExerciseLibraryRow: View {
     let exerciseName: String
-    let setCount: Int
-    let topSetWeight: Double?
-    let topSetReps: Int?
     let themeColor: Color
-    let onTap: () -> Void
-    
+    let onTap: (Exercise) -> Void
+
     @Environment(\.colorScheme) private var colorScheme
-    
+
     private var libraryExercise: Exercise? {
         ExerciseLibraryService.shared.getExercise(byName: exerciseName)
     }
-    
-    private var categoryGradient: [Color] {
-        switch libraryExercise?.category?.lowercased() {
-        case "chest": return [.purple, .pink]
-        case "back": return [.blue, .cyan]
-        case "legs": return [.green, .teal]
-        case "shoulders": return [.orange, .yellow]
-        case "arms": return [.purple, .indigo]
-        case "core": return [.yellow, .orange]
-        default: return [.cyan, .blue]
-        }
-    }
-    
-    private var categoryIcon: String {
-        switch libraryExercise?.category?.lowercased() {
-        case "chest": return "figure.strengthtraining.traditional"
-        case "back": return "figure.strengthtraining.traditional"
-        case "legs": return "figure.walk"
-        case "shoulders": return "figure.arms.open"
-        case "arms": return "figure.arms.open"
-        case "core": return "figure.core.training"
-        default: return "dumbbell.fill"
-        }
-    }
-    
-    private var weightString: String? {
-        guard let w = topSetWeight, w > 0 else { return nil }
-        let formatted = w.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(w))" : String(format: "%.1f", w)
-        if let reps = topSetReps {
-            return "\(formatted) lbs × \(reps)"
-        }
-        return "\(formatted) lbs"
-    }
-    
+
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: categoryGradient,
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 40, height: 40)
-                        .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
-                    
-                    Image(systemName: categoryIcon)
-                        .font(.ds_labelLarge)
-                        .foregroundColor(.white)
-                }
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(exerciseName)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    
-                    HStack(spacing: 8) {
-                        Text("\(setCount) sets")
-                            .font(.caption)
-                            .foregroundColor(categoryGradient[0])
-                            .fontWeight(.medium)
-                        
-                        if let ws = weightString {
-                            Text("·")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Text(ws)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else if let category = libraryExercise?.category {
-                            Text("·")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Text(category)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.ds_bodySmall).fontWeight(.medium)
-                    .foregroundColor(.secondary)
+        if let exercise = libraryExercise {
+            Button {
+                HapticManager.selectionChanged()
+                onTap(exercise)
+            } label: {
+                ExerciseCardRow(
+                    exercise: exercise,
+                    showChevron: true
+                )
             }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .fill(
-                            LinearGradient(
-                                colors: colorScheme == .dark
-                                    ? [Color(white: 0.15), Color.cardBackground]
-                                    : [Color.white, Color.white.opacity(0.98)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                    
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .stroke(
-                            LinearGradient(
-                                colors: [
-                                    categoryGradient[0].opacity(colorScheme == .dark ? 0.2 : 0.12),
-                                    categoryGradient[1].opacity(colorScheme == .dark ? 0.1 : 0.06)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                }
-            )
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.12 : 0.05), radius: 6, x: 0, y: 3)
+            .buttonStyle(.plain)
+        } else {
+            unresolvedFallback
         }
-        .buttonStyle(.plain)
+    }
+
+    private var unresolvedFallback: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "dumbbell.fill")
+                .font(.ds_bodyRegular)
+                .foregroundColor(.secondary)
+                .frame(width: 56, height: 56)
+                .background(
+                    Circle().fill(Color.secondary.opacity(0.12))
+                )
+
+            Text(exerciseName)
+                .font(.ds_bodyLarge)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Spacer()
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
     }
 }

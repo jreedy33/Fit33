@@ -564,22 +564,15 @@ struct FriendActivityCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header — Profile photo + name + level + time
-            Button {
-                if activity.workoutId != nil {
-                    showWorkoutPreview = true
-                }
-            } label: {
-                headerSection
-            }
-            .buttonStyle(.plain)
-            
+            // Header — Profile photo + name + level + time + chevron
+            headerSection
+
             Divider()
                 .padding(.vertical, Spacing.sm)
-            
+
             // Stats row
             statsRow
-            
+
             // Bottom — muscle tags + emoji button
             HStack {
                 // Muscle tags
@@ -598,20 +591,20 @@ struct FriendActivityCard: View {
                         }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 // Emoji reaction button
                 emojiButton
             }
             .padding(.top, Spacing.xs)
-            
+
             // Inline emoji picker
             if showEmojiPicker {
                 emojiPickerRow
                     .transition(.scale.combined(with: .opacity))
             }
-            
+
             // Show existing reactions
             if !activity.reactions.isEmpty {
                 reactionsDisplay
@@ -620,6 +613,13 @@ struct FriendActivityCard: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if activity.workoutId != nil {
+                HapticManager.impact(.light)
+                showWorkoutPreview = true
+            }
+        }
         .sleekCard(cornerRadius: CornerRadius.xl, accentColor: muscleGradient.first ?? .cyan)
         .contextMenu {
             // Sprint 2 Q2-7 — long-press Report & Block on feed activities
@@ -718,11 +718,12 @@ struct FriendActivityCard: View {
             }
             
             Spacer()
-            
+
             if activity.workoutId != nil {
                 Image(systemName: "chevron.right")
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.secondary.opacity(0.5))
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.secondary.opacity(0.7))
+                    .accessibilityHidden(true)
             }
         }
     }

@@ -467,7 +467,26 @@ class PrivateChallengeService: ObservableObject {
     @Published var chatUnreadChangeToken = UUID()
 
     private init() {
-        loadFromCache()
+        // ⚡️ Cold-start Phase 4: prefer pre-decoded caches from
+        // StartupCachePreloader (decoded on bg before init runs on main).
+        let pre = StartupCachePreloader.consumePrivateChallenges()
+        if let cachedChallenges = pre.challenges {
+            self.myChallenges = cachedChallenges
+            #if DEBUG
+            AppLogger.info("Successfully loaded \(cachedChallenges.count) cached private challenges (pre-decoded)", category: .social)
+            #endif
+        }
+        if let cachedInvites = pre.invites {
+            self.pendingInvites = cachedInvites
+            #if DEBUG
+            AppLogger.info("Successfully loaded \(cachedInvites.count) cached private invites (pre-decoded)", category: .social)
+            #endif
+        }
+        // Fall back to the legacy synchronous loader only if BOTH slots
+        // were unset (preloader hadn't completed in time).
+        if pre.challenges == nil && pre.invites == nil {
+            loadFromCache()
+        }
         loadChatLastReadTimes()
     }
     

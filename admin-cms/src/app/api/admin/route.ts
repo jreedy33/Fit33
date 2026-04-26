@@ -1490,12 +1490,25 @@ export async function POST(req: NextRequest) {
         const since24h = new Date(Date.now() - 24 * 3600_000).toISOString()
         const since7d  = new Date(Date.now() - 7 * 24 * 3600_000).toISOString()
 
+        // Phase 13 close-the-loop (2026-04-26) — the dashboard headline
+        // numbers must reflect OPEN work only. Terminal-status rows
+        // (resolved / wont_fix / duplicate) are filtered out of the
+        // status + source counts and surfaced separately as
+        // `terminal_*` fields so the UI can show "169 fingerprints (47
+        // resolved)" without conflating them. Companion auto-revive
+        // cron (`bug_intel_revive_regressed_fingerprints`, migration
+        // 20260623) flips a row back to `new` if its fix doesn't hold,
+        // so a genuinely-regressed fingerprint will reappear in these
+        // counts within an hour. Manual CMS resolves stay sticky.
+        const TERMINAL_STATUSES = ['resolved', 'wont_fix', 'duplicate'] as const
+
         const [
-          { data: statusCounts },
+          { data: openStatusCounts },
+          { data: terminalStatusCounts },
           { data: severityCounts },
           { data: recentTrends },
           { data: pendingReports },
-          { data: sourceCounts },
+          { data: openSourceCounts },
           // Phase 8 (2026-04-23) — export watermark stats.
           //   lastExportRow: latest last_exported_at across all report rows.
           //   newSinceExport: count of reports with last_exported_at IS NULL
@@ -1505,16 +1518,29 @@ export async function POST(req: NextRequest) {
           //     a cheap conservative floor.
           lastExportRow,
           newSinceExport,
+          // Phase 13 — count of fingerprints currently flagged as
+          // regressed_after_fix so the CMS header can show a "⚠ N
+          // regressions" pill that links straight to the filtered list.
+          regressedRows,
         ] = await Promise.all([
-          admin.from('bug_intelligence_fingerprints').select('status'),
+          admin.from('bug_intelligence_fingerprints')
+            .select('status')
+            .not('status', 'in', `(${TERMINAL_STATUSES.map(s => `"${s}"`).join(',')})`),
+          admin.from('bug_intelligence_fingerprints')
+            .select('status')
+            .in('status', TERMINAL_STATUSES as unknown as string[]),
           admin.from('bug_intelligence_reports').select('severity').gte('created_at', since7d),
           admin.from('bug_intelligence_trends').select('id, trend_type, detected_at, reviewed_at')
             .gte('detected_at', since24h)
             .order('detected_at', { ascending: false }),
           admin.from('bug_intelligence_reports').select('id').eq('review_status', 'pending'),
           // Phase 6: split the inbox by origin so the CMS can show a
-          // tri-category breakdown (crash / log / shake).
-          admin.from('bug_intelligence_fingerprints').select('source'),
+          // tri-category breakdown (crash / log / shake). Phase 13 —
+          // exclude terminal statuses so the breakdown matches the
+          // open-only headline count.
+          admin.from('bug_intelligence_fingerprints')
+            .select('source')
+            .not('status', 'in', `(${TERMINAL_STATUSES.map(s => `"${s}"`).join(',')})`),
           admin.from('bug_intelligence_reports')
             .select('last_exported_at')
             .not('last_exported_at', 'is', null)
@@ -1524,27 +1550,43 @@ export async function POST(req: NextRequest) {
             .select('id', { count: 'exact', head: true })
             .is('last_exported_at', null)
             .in('review_status', ['pending', 'approved']),
+          admin.from('bug_intelligence_fingerprints')
+            .select('fingerprint', { count: 'exact', head: true })
+            .eq('regressed_after_fix', true)
+            .not('status', 'in', `(${TERMINAL_STATUSES.map(s => `"${s}"`).join(',')})`),
         ])
 
         const statusMap: Record<string, number> = {}
-        for (const r of (statusCounts ?? []) as unknown as Array<{ status: string }>) {
+        for (const r of (openStatusCounts ?? []) as unknown as Array<{ status: string }>) {
           statusMap[r.status] = (statusMap[r.status] || 0) + 1
         }
+        const terminalStatusMap: Record<string, number> = {}
+        for (const r of (terminalStatusCounts ?? []) as unknown as Array<{ status: string }>) {
+          terminalStatusMap[r.status] = (terminalStatusMap[r.status] || 0) + 1
+        }
+        const terminalTotal = Object.values(terminalStatusMap).reduce((a, b) => a + b, 0)
+
         const severityMap: Record<string, number> = {}
         for (const r of (severityCounts ?? []) as unknown as Array<{ severity: string }>) {
           severityMap[r.severity] = (severityMap[r.severity] || 0) + 1
         }
         const sourceMap: Record<string, number> = {}
-        for (const r of (sourceCounts ?? []) as unknown as Array<{ source: string }>) {
+        for (const r of (openSourceCounts ?? []) as unknown as Array<{ source: string }>) {
           sourceMap[r.source] = (sourceMap[r.source] || 0) + 1
         }
 
         const lastExportAt = (lastExportRow.data as Array<{ last_exported_at: string }> | null)
           ?.[0]?.last_exported_at ?? null
         const newSinceCount = (newSinceExport as { count: number | null }).count ?? 0
+        const regressedCount = (regressedRows as { count: number | null }).count ?? 0
 
         return NextResponse.json({
           overview: {
+            // Phase 13 (2026-04-26) — these maps now contain OPEN work
+            // only. Use `terminal_*` fields below for the resolved
+            // pill. Older clients that summed `fingerprints_by_status`
+            // were already using it as "total open" intent — this
+            // makes the math match the label.
             fingerprints_by_status: statusMap,
             fingerprints_by_source: sourceMap,
             reports_last_7d_by_severity: severityMap,
@@ -1553,6 +1595,16 @@ export async function POST(req: NextRequest) {
             // Phase 8 — header pill data.
             last_export_at: lastExportAt,
             new_since_last_export: newSinceCount,
+            // Phase 13 — resolved/closed counts surfaced separately so
+            // the UI can show "169 open · 47 resolved" without the
+            // resolved 47 polluting the open-only headline math.
+            terminal_count: terminalTotal,
+            terminal_by_status: terminalStatusMap,
+            // Phase 13 — currently-regressed pipeline-resolved
+            // fingerprints (auto-revival cron flipped them back to
+            // `new` + regressed_after_fix=TRUE). UI can show a
+            // ⚠ pill if non-zero.
+            regressed_open_count: regressedCount,
           },
         })
       }

@@ -1,0 +1,170 @@
+name: Bug-Intel Resolves Deploy
+
+# Phase 13 close-the-loop (2026-04-26).
+#
+# When a push to `main` adds or modifies a `supabase/*.sql` migration
+# whose body contains `-- Resolves: <md5-fingerprint>` directives, this
+# workflow parses every changed migration, collects the fingerprints,
+# and calls `mark_fingerprints_resolved_by_migration(migration_id, fps)`
+# on the Supabase project so the dashboard / export / handoff
+# pipeline drops them automatically.
+#
+# Pairs with the auto-revive cron in
+# `supabase/20260623_bug_intel_auto_revive_on_regression.sql`. Together
+# they form the full "resolved → disappear / reappear on regression"
+# loop the user asked for on 2026-04-26.
+#
+# Why a hook + a cron? The hook is a fast-path for the common case
+# (migration deploys → fingerprints resolve immediately). The cron is
+# the safety net for everything else: the hook may miss directives in
+# files that were never touched by a push (e.g. when a fix lands as
+# a `code_fix:*` close-out without re-deploying its source migration),
+# AND the cron is the ONLY mechanism that can revive a stale fix
+# whose grace window has elapsed.
+#
+# Idempotency: `mark_fingerprints_resolved_by_migration` skips
+# fingerprints that are already in a terminal state. Re-running the
+# workflow on the same push (e.g. after a re-run) is a safe no-op.
+#
+# Required secrets:
+#   SUPABASE_URL              — https://<project>.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY — service role key (same one the
+#                                admin-cms uses)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/*.sql'
+  workflow_dispatch:
+    inputs:
+      migration_glob:
+        description: 'Glob of migrations to scan (defaults to changed files since last run).'
+        required: false
+        default: ''
+
+jobs:
+  resolves:
+    name: Apply -- Resolves: directives
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need history so we can `git diff --name-only` against the
+          # parent of the merge commit to find changed migrations.
+          fetch-depth: 50
+
+      - name: Identify changed migrations
+        id: changed
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.migration_glob }}" ]; then
+            FILES=$(ls ${{ github.event.inputs.migration_glob }} 2>/dev/null || true)
+          else
+            # `before` is HEAD's parent on push events. Fall back to
+            # HEAD~1 if the API didn't populate it (rare).
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              BEFORE="HEAD~1"
+            fi
+            FILES=$(git diff --name-only --diff-filter=AM "$BEFORE" HEAD -- 'supabase/*.sql' || true)
+          fi
+
+          if [ -z "$FILES" ]; then
+            echo "## ℹ️ Bug-Intel Resolves Deploy" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No supabase/*.sql files changed — nothing to deploy." >> "$GITHUB_STEP_SUMMARY"
+            echo "files=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed migrations:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$FILES" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          # Newline-delimited → single-line for matrix passing.
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FILES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Parse Resolves directives + invoke RPC
+        if: steps.changed.outputs.files != ''
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FILES: ${{ steps.changed.outputs.files }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — skipping RPC (warn-only)."
+            exit 0
+          fi
+
+          ANY_RESOLVED=0
+          # Iterate the changed migrations one at a time so each
+          # RPC call binds to a single migration_id (the canonical
+          # `auto_resolved_reason` shape: `migration_resolved:<id>`).
+          while IFS= read -r FILE; do
+            [ -z "$FILE" ] && continue
+            [ ! -f "$FILE" ] && continue
+
+            # Strip the directory + `.sql` suffix to get the canonical
+            # migration_id (e.g. `20260622_mark_audit_2026_04_26_23_01_resolved`).
+            BASENAME="$(basename "$FILE" .sql)"
+
+            # Extract `-- Resolves: <md5>` lines. Case-insensitive on
+            # the keyword, exact 32-char md5 on the fingerprint.
+            FPS=$(grep -Eio '^\s*--\s*Resolves\s*:\s*[0-9a-f]{32}' "$FILE" \
+                  | grep -Eo '[0-9a-f]{32}' \
+                  | sort -u || true)
+            if [ -z "$FPS" ]; then
+              echo "  · $BASENAME → no Resolves: directives, skipping"
+              continue
+            fi
+
+            # Build a JSON array literal: ["fp1","fp2",...]
+            FP_ARRAY=$(echo "$FPS" | jq -R . | jq -s -c .)
+            COUNT=$(echo "$FPS" | wc -l | tr -d ' ')
+
+            echo "  · $BASENAME → $COUNT fingerprint(s)"
+
+            # Call `mark_fingerprints_resolved_by_migration(p_migration_id, p_fingerprints, p_resolution_note)`.
+            # The RPC is service-role-only (it RAISEs 42501 otherwise) and
+            # idempotent (skips already-terminal rows).
+            REQ=$(jq -nc --arg mid "$BASENAME" --arg note "Auto-applied by bug-intel-resolves-deploy GitHub Action" --argjson fps "$FP_ARRAY" \
+                  '{p_migration_id:$mid, p_fingerprints:$fps, p_resolution_note:$note}')
+
+            HTTP_CODE=$(curl -s -o /tmp/resolve.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "Content-Type: application/json" \
+              "$SUPABASE_URL/rest/v1/rpc/mark_fingerprints_resolved_by_migration" \
+              -d "$REQ")
+
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "::error::RPC returned HTTP $HTTP_CODE for $BASENAME"
+              cat /tmp/resolve.json
+              # Don't exit — keep applying the rest, then fail at the end.
+              ANY_RESOLVED=2
+              continue
+            fi
+
+            RESOLVED=$(jq -r '.resolved_count // 0' /tmp/resolve.json)
+            SKIPPED=$(jq -r '.skipped_unknown | length' /tmp/resolve.json)
+            echo "    → resolved=$RESOLVED, skipped_unknown=$SKIPPED"
+            ANY_RESOLVED=1
+          done <<< "$FILES"
+
+          if [ "$ANY_RESOLVED" = "2" ]; then
+            echo "## ⚠️ Bug-Intel Resolves Deploy completed with errors" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          elif [ "$ANY_RESOLVED" = "1" ]; then
+            echo "## ✅ Bug-Intel Resolves Deploy applied" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## ℹ️ Bug-Intel Resolves Deploy: no directives found" >> "$GITHUB_STEP_SUMMARY"
+          fi

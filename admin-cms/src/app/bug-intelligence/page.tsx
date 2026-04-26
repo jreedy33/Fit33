@@ -80,7 +80,11 @@ type Report = {
 type Trend = {
     id: string
     fingerprint: string
-    trend_type: 'new' | 'regression' | 'resolved'
+    // Phase 13 (2026-04-26) — `regression_after_fix` added by the
+    // bug_intel_revive_regressed_fingerprints cron when a
+    // pipeline-resolved fingerprint sees fresh activity past the 48h
+    // grace window. UI groups it under "regression".
+    trend_type: 'new' | 'regression' | 'regression_after_fix' | 'resolved'
     detected_at: string
     today_count: number
     baseline_mean: number | null
@@ -90,6 +94,10 @@ type Trend = {
 }
 
 type Overview = {
+    // Phase 13 (2026-04-26) — `fingerprints_by_status` + `_by_source`
+    // now contain OPEN work only (terminal statuses filtered out
+    // server-side). Use `terminal_count` / `terminal_by_status` for
+    // the closed-out pill so the headline math reflects open issues.
     fingerprints_by_status: Record<string, number>
     fingerprints_by_source?: Record<string, number>
     reports_last_7d_by_severity: Record<string, number>
@@ -101,6 +109,12 @@ type Overview = {
     // Both may be absent on older server builds — the header pill handles null.
     last_export_at?: string | null
     new_since_last_export?: number
+    // Phase 13 — closed-out counts (resolved/wont_fix/duplicate)
+    // and currently-regressed pipeline-resolved fingerprints.
+    // Optional so older server responses don't break the type.
+    terminal_count?: number
+    terminal_by_status?: Record<string, number>
+    regressed_open_count?: number
 }
 
 // Shape returned by the `get_bug_intelligence_export` admin action. Kept
@@ -1514,19 +1528,31 @@ const cardStyle: React.CSSProperties = {
 }
 
 function OverviewRow({ overview }: { overview: Overview }) {
-    const total = Object.values(overview.fingerprints_by_status).reduce((a, b) => a + b, 0)
+    // Phase 13 (2026-04-26) — `fingerprints_by_status` is OPEN work only
+    // server-side. The `Open fingerprints` card therefore reflects what
+    // still needs attention; `terminal_count` is shown as the small
+    // sub-line so resolved work isn't completely invisible. The
+    // companion auto-revive cron will pull a fingerprint back into the
+    // open set (regressed_after_fix=TRUE) if its fix doesn't hold.
+    const openTotal = Object.values(overview.fingerprints_by_status).reduce((a, b) => a + b, 0)
+    const terminalTotal = overview.terminal_count ?? 0
+    const regressedOpen = overview.regressed_open_count ?? 0
     const critical = overview.reports_last_7d_by_severity.critical ?? 0
     const high = overview.reports_last_7d_by_severity.high ?? 0
     const newTrends = overview.trends_last_24h.filter(t => t.trend_type === 'new').length
-    const regressions = overview.trends_last_24h.filter(t => t.trend_type === 'regression').length
+    const regressions = overview.trends_last_24h.filter(t => t.trend_type === 'regression' || t.trend_type === 'regression_after_fix').length
     const sources = overview.fingerprints_by_source ?? {}
     const crashN = sources.crash ?? 0
     const logN   = sources.log ?? 0
     const shakeN = sources.shake ?? 0
 
+    const newSub = regressedOpen > 0
+        ? `${overview.fingerprints_by_status.new ?? 0} new · ${regressedOpen} regressed · ${terminalTotal} resolved`
+        : `${overview.fingerprints_by_status.new ?? 0} new, ${overview.fingerprints_by_status.triaged ?? 0} triaged · ${terminalTotal} resolved`
+
     const cards = [
-        { label: 'Total fingerprints', value: total, sub: `${overview.fingerprints_by_status.new ?? 0} new, ${overview.fingerprints_by_status.triaged ?? 0} triaged` },
-        { label: 'Crash / Log / Bug', value: `${crashN} / ${logN} / ${shakeN}`, sub: 'crash reports · log errors · user shakes' },
+        { label: 'Open fingerprints', value: openTotal, sub: newSub, color: regressedOpen > 0 ? 'var(--warning)' : undefined },
+        { label: 'Crash / Log / Bug (open)', value: `${crashN} / ${logN} / ${shakeN}`, sub: 'crash reports · log errors · user shakes' },
         { label: 'Critical + high (7d)', value: critical + high, sub: `${critical} crit / ${high} high`, color: 'var(--danger)' },
         { label: 'Trends (24h)', value: overview.trends_last_24h.length, sub: `${newTrends} new / ${regressions} regression`, color: 'var(--warning)' },
         { label: 'Pending review', value: overview.pending_reports_count, sub: 'Reports awaiting action', color: 'var(--accent)' },

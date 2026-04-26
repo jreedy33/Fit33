@@ -492,3 +492,28 @@ user_notification_preferences (server-side push preference enforcement)
 - Silent pushes do NOT go through `push_notification_queue`. That table is for user-visible alerts with retry/quiet-hours logic; silent pushes are fire-and-forget and MUST skip quiet hours.
 - When adding a new silent push type, create a new edge function (or a typed branch in an existing one) — do NOT extend `send-push-notification`. The two APNs code paths have different priority/push-type headers and must not be merged.
 - The `trigger_<something>` pg_cron wrapper pattern (reads `internal_config` → `net.http_post` with `x-cron-key`) is now canonical. Reuse it for any future server-scheduled edge-function invocation.
+
+### 2026-04-26: Bug-Intel Phase 13 close-the-loop (resolved → invisible / regression → reappear)
+
+**User ask** (2026-04-26 7:03 PM): "make sure all pending/resolved fingerprints are marked resolved and removed from future reports and admin portal — the numbers on the dash should only reflect issues that are new or not resolved" and (7:07 PM follow-up) "make sure that once an issue is 'resolved' it disappears and only reappears in the dashboard/cms if it's a regression or the bug wasn't actually fixed and that this process is automated."
+
+**Three-piece close-the-loop** (audit fingerprints + auto-revive cron + auto-deploy hook + dashboard filter):
+
+1. **Audit cleanup** — `supabase/20260622_mark_audit_2026_04_26_23_01_resolved.sql` (#124) flushes the entire 36-fingerprint `mode=all` audit (`bug-intelligence-audit-2026-04-26T23-01-25.md`) into terminal status across 8 buckets (4 migration_resolved buckets + 4 code_fix buckets). All 36 also get `latest_resolving_migration_at` stamped so the export-side stale-fix filter (#114) and the new revival cron (#125) agree on the deploy moment. The 36 also ship as `-- Resolves: <fp>` directives at the file footer for the new auto-deploy hook.
+
+2. **Auto-revive cron** — `supabase/20260623_bug_intel_auto_revive_on_regression.sql` (#125). New SECURITY DEFINER service-role RPC `bug_intel_revive_regressed_fingerprints(p_grace_hours INT DEFAULT 48)` that scans pipeline-resolved fingerprints (`auto_resolved_reason` matches `migration_resolved:%` / `code_fix%` / `silent_fix` / `transient_single_incident` / `noise_filter_expanded`) and revives any whose `last_seen_at > GREATEST(latest_resolving_migration_at, resolved_at) + 48h grace`. Flips `status='new'`, `regressed_after_fix=TRUE`, clears `auto_resolved_at`, emits a `regression_after_fix` trend, and reopens the matching `bug_intelligence_reports` row (review_status `merged` → `pending`). pg_cron at `:20 * * * *`. Crucially **never touches HUMAN-resolved rows** (`auto_resolved_reason IS NULL` means a human clicked Resolve — sticky). The 48h grace is in lock-step with `STALE_FIX_GRACE_MS` in `admin-cms/src/app/api/admin/route.ts::get_bug_intelligence_export`; tune both together.
+
+3. **Auto-deploy hook** — `.github/workflows/bug-intel-resolves-deploy.yml`. On push to `main` touching `supabase/*.sql`, scans changed migrations for `-- Resolves: <md5>` directives (one regex per file), groups by migration basename, calls `mark_fingerprints_resolved_by_migration(<basename>, [<fps>], note)` per migration. Uses `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` GitHub secrets. Idempotent — the RPC skips already-terminal rows. Removes the manual "remember to call the RPC after deploy" step from the canonical close-out workflow.
+
+4. **Dashboard filter** — `admin-cms/src/app/api/admin/route.ts::get_bug_intelligence_overview` rewritten so:
+   - `fingerprints_by_status` + `fingerprints_by_source` exclude terminal statuses (resolved / wont_fix / duplicate)
+   - new `terminal_count` + `terminal_by_status` fields surface the closed-out total separately
+   - new `regressed_open_count` field surfaces auto-revived fingerprints (`status='new' AND regressed_after_fix=TRUE`)
+   - `admin-cms/src/app/bug-intelligence/page.tsx::OverviewRow` relabels "Total fingerprints" → "Open fingerprints" and shows resolved + regressed sub-counts. The "⚠ N regressed" pill in the headline is the user's signal that a fix didn't hold.
+
+**Result**: a fingerprint resolved by migration disappears from the dashboard / CMS list / next handoff within seconds. If the bug recurs on any client past the 48h grace, the cron flips it back to `new + regressed_after_fix=TRUE` within an hour and it shows up everywhere again, prominently flagged. Manual CMS resolves stay sticky forever.
+
+**Rules**:
+- Never UPDATE `bug_intelligence_fingerprints.status` directly in app code. Use `mark_fingerprints_resolved_by_migration` (#95 / #114) for migration-driven resolves OR the close-out migration pattern (#109 / #110 / #111 / #113 / #116 / #120 / #124) for hand-curated audits. Both stamp the audit trail; direct UPDATEs bypass the new auto-revive eligibility filter (it keys off `auto_resolved_reason IS NOT NULL`).
+- When you add a `-- Resolves: <fp>` directive to a migration, the GitHub Action will auto-call the RPC on push. Don't also call the RPC by hand in the migration body unless you need it to flip immediately during the migration's own transaction (e.g. when the migration itself ships the fix and you want pre-deploy stale rows already gone).
+- The 48h grace window is the single tunable. If you raise it, change `STALE_FIX_GRACE_MS` in `admin-cms/src/app/api/admin/route.ts` AND the default in `bug_intel_revive_regressed_fingerprints(p_grace_hours)` AND the `regressed_after_fix` rollup window guard in `compute_daily_bug_rollup` so all three pipelines agree. Diverging values cause "fingerprint disappears in handoff but stays open in CMS" (or worse, vice-versa).

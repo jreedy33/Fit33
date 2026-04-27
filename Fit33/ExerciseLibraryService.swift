@@ -934,6 +934,17 @@ class ExerciseLibraryService: ObservableObject {
         // automatic merging on the container.
         await MainActor.run {
             invalidateCache()
+            // Bug `3037a6f4` (2026-04-27 shake report): the batch delete above
+            // permanently invalidates every NSManagedObjectID held by
+            // `ExerciseLibraryFilterCache.preFilteredRecommended`. If we don't
+            // reset that cache, the Exercise Library view binds to ~837 stale
+            // `Exercise` wrappers pointing at deleted rows — header count
+            // shows "837 exercises" but every `ForEach` row skips because
+            // `exercise.name` returns nil on a deleted managed object. Reset
+            // BEFORE flipping `isExercisesReady` so the view's onChange can
+            // call `precomputeRecommendedList` and actually rebuild the cache
+            // (its `guard !isReady` would otherwise no-op).
+            ExerciseLibraryFilterCache.shared.reset()
             let verifyCount = getAllExercises().count
             AppLogger.debug("✅ [VERIFY] Cache now has \(verifyCount) exercises", category: .data)
             if verifyCount > 100 {

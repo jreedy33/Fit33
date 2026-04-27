@@ -554,8 +554,13 @@ struct ExerciseLibraryView: View {
                     loadExercises()
                     
                     // Re-compute the recommended filter cache with actual exercises
-                    // (it was pre-computed at startup when Core Data was empty)
+                    // (it was pre-computed at startup when Core Data was empty,
+                    // OR with bundle-seed objectIDs that the cloud sync just
+                    // wiped — bug `3037a6f4`). Reset first so the
+                    // `guard !isReady` inside `precomputeRecommendedList`
+                    // doesn't no-op and leave us bound to stale objectIDs.
                     if !exercises.isEmpty {
+                        ExerciseLibraryFilterCache.shared.reset()
                         ExerciseLibraryFilterCache.shared.precomputeRecommendedList(allExercises: exercises)
                     }
                     

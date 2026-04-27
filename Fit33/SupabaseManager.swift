@@ -1874,7 +1874,7 @@ class SupabaseManager: ObservableObject {
     /// Update all integration statuses at once (called on app launch)
     func syncAllIntegrationStatuses() async {
         guard let userId = currentUser?.id else { return }
-        
+
         let (stravaConnected, fitbitConnected, appleHealthConnected, inbodyConnected, whoopConnected, ouraConnected) = await MainActor.run {
             (
                 StravaService.shared.isConnected,
@@ -1886,23 +1886,49 @@ class SupabaseManager: ObservableObject {
             )
         }
 
+        // CRITICAL — DO NOT overwrite OAuth integration statuses with `false` from
+        // this launch-time bulk path. iOS keychain entries for OAuth tokens
+        // (WHOOP/Oura/Strava/Fitbit) sometimes get cleared on app uninstall/
+        // reinstall — Apple's documented post-iOS-10.3 behavior is "may be
+        // removed", in practice it's variable per service per device. The
+        // logs from a real reinstall show this clearly: same launch, same
+        // device, Strava SURVIVED (`Strava: true`) while WHOOP + Oura were
+        // wiped (`WHOOP: false, Oura: false`). When we blindly pushed the
+        // local `false` to Supabase, we destroyed the cloud signal "this
+        // user has WHOOP/Oura linked", which (a) corrupted analytics + Bug
+        // Intel rollups that key off integration capability, (b) prevented
+        // any "you lost your token, tap to reconnect" prompt because by the
+        // time UI runs the cloud already agrees user is disconnected, (c)
+        // misdirected silent-push and edge-function targeting that decides
+        // routing based on `is_whoop_connected`. Empty local state is NOT
+        // proof of user intent to disconnect.
+        //
+        // Rule: this bulk-launch path is ADDITIVE for OAuth services — only
+        // pushes `true` (catches up missed connect-time writes). The
+        // canonical `false` writers are the explicit user paths
+        // (`WhoopService.disconnect()` / `OuraService.disconnect()` /
+        // `StravaService.disconnect()` / `FitbitService.disconnect()` —
+        // they each call `updateIntegrationStatus(integration:isConnected:false)`
+        // in-line). Apple Health + InBody push their actual state because
+        // those aren't OAuth — Apple Health is HealthKit runtime auth (can
+        // legitimately revoke per-launch), InBody is BLE pairing.
         struct CoreIntegrationUpdate: Encodable {
-            let is_strava_connected: Bool
-            let is_fitbit_connected: Bool
-            let is_apple_health_connected: Bool
-            let is_inbody_connected: Bool
-            let is_whoop_connected: Bool
+            let is_strava_connected: Bool?
+            let is_fitbit_connected: Bool?
+            let is_apple_health_connected: Bool?
+            let is_inbody_connected: Bool?
+            let is_whoop_connected: Bool?
         }
 
         do {
             try await client
                 .from("user_profiles")
                 .update(CoreIntegrationUpdate(
-                    is_strava_connected: stravaConnected,
-                    is_fitbit_connected: fitbitConnected,
+                    is_strava_connected: stravaConnected ? true : nil,
+                    is_fitbit_connected: fitbitConnected ? true : nil,
                     is_apple_health_connected: appleHealthConnected,
                     is_inbody_connected: inbodyConnected,
-                    is_whoop_connected: whoopConnected
+                    is_whoop_connected: whoopConnected ? true : nil
                 ))
                 .eq("id", value: userId.uuidString)
                 .execute()
@@ -1910,20 +1936,24 @@ class SupabaseManager: ObservableObject {
             AppLogger.warning("[INTEGRATIONS] Failed to sync core statuses: \(error.localizedDescription)", category: .network)
         }
 
-        // Oura column requires migration 20260328_oura_integration.sql — sync separately
-        do {
-            struct OuraUpdate: Encodable { let is_oura_connected: Bool }
-            try await client
-                .from("user_profiles")
-                .update(OuraUpdate(is_oura_connected: ouraConnected))
-                .eq("id", value: userId.uuidString)
-                .execute()
-            AppLogger.info("[INTEGRATIONS] Updated oura status to \(ouraConnected)", category: .network)
-        } catch {
-            AppLogger.debug("[INTEGRATIONS] Oura column not available yet (run 20260328_oura_integration.sql): \(error.localizedDescription)", category: .network)
+        // Oura column requires migration 20260328_oura_integration.sql — sync separately.
+        // Same additive rule: only push `true` so a reinstall that wiped the
+        // Oura keychain doesn't destroy the cloud signal.
+        if ouraConnected {
+            do {
+                struct OuraUpdate: Encodable { let is_oura_connected: Bool }
+                try await client
+                    .from("user_profiles")
+                    .update(OuraUpdate(is_oura_connected: true))
+                    .eq("id", value: userId.uuidString)
+                    .execute()
+                AppLogger.info("[INTEGRATIONS] Updated oura status to true", category: .network)
+            } catch {
+                AppLogger.debug("[INTEGRATIONS] Oura column not available yet (run 20260328_oura_integration.sql): \(error.localizedDescription)", category: .network)
+            }
         }
 
-        AppLogger.info("[INTEGRATIONS] Synced all integration statuses - Strava: \(stravaConnected), Fitbit: \(fitbitConnected), Apple Health: \(appleHealthConnected), InBody: \(inbodyConnected), WHOOP: \(whoopConnected), Oura: \(ouraConnected)", category: .network)
+        AppLogger.info("[INTEGRATIONS] Synced all integration statuses (additive for OAuth) - Strava: \(stravaConnected), Fitbit: \(fitbitConnected), Apple Health: \(appleHealthConnected), InBody: \(inbodyConnected), WHOOP: \(whoopConnected), Oura: \(ouraConnected)", category: .network)
     }
     
     /// Public function to create user profile for OAuth users when they complete onboarding

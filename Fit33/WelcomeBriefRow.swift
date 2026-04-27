@@ -13,8 +13,12 @@
 //    Line 1 — `headline` (semibold, primary color, max 2 lines)
 //    Line 2 — `body` (medium, secondary color, max 2 lines) +
 //             trailing chevron when a CTA is present
-//    Line 3 — chip strip (up to 3 `BriefChipPayload`s)
-//    Line 4 — italic micro-line (`rotatingInsight`, V2 only)
+//    Line 3 — italic micro-line (`rotatingInsight`, V2 only)
+//
+//  Note (2026-04-27): the chip strip was removed from the welcome
+//  card — text-only read is cleaner at this scale. `brief.chips`
+//  is still populated by `DailyBriefEngine` for analytics / future
+//  surfaces, but no longer rendered here.
 //
 //  Routing: row tap → `cta` dispatched via `DashboardBriefRouter`
 //  to `dashboardNavPath` / `WorkoutManager.shouldNavigateToAutoGen`.
@@ -124,10 +128,6 @@ struct WelcomeBriefRow: View {
                     // label inline here was redundant once the
                     // parent surface adopted the framing.
                     bodyAndChevron(brief)
-                    if !brief.chips.isEmpty {
-                        chipStrip(brief.chips)
-                            .padding(.top, Spacing.xxs)
-                    }
                     if let rotating = brief.rotatingInsight, !rotating.isEmpty {
                         rotatingLine(rotating)
                     }
@@ -173,15 +173,6 @@ struct WelcomeBriefRow: View {
                     .foregroundColor(.secondary)
             }
         }
-    }
-
-    private func chipStrip(_ chips: [BriefChipPayload]) -> some View {
-        HStack(spacing: Spacing.xs) {
-            ForEach(chips, id: \.icon) { chip in
-                BriefChipView(chip: chip)
-            }
-        }
-        .transition(.opacity)
     }
 
     private func rotatingLine(_ text: String) -> some View {
@@ -231,35 +222,6 @@ struct WelcomeBriefRow: View {
         case .focusQuest: return "Tap to highlight the matching daily goal"
         case .none: return ""
         }
-    }
-}
-
-// MARK: - Chip view
-
-struct BriefChipView: View {
-    let chip: BriefChipPayload
-
-    var body: some View {
-        HStack(spacing: Spacing.xxs) {
-            Image(systemName: chip.icon)
-                .font(.ds_labelSmall)
-                .foregroundColor(accent)
-            Text(chip.value)
-                .font(.ds_labelMedium)
-                .foregroundColor(.primary)
-            Text(chip.label)
-                .font(.ds_labelSmall)
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal, Spacing.xs)
-        .padding(.vertical, Spacing.xxs)
-        .background(accent.opacity(0.12))
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(accent.opacity(0.25), lineWidth: 0.5))
-    }
-
-    private var accent: Color {
-        Color(hex: chip.accentHex) ?? .secondary
     }
 }
 

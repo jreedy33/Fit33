@@ -1891,16 +1891,57 @@ class DailyQuestService: ObservableObject {
     func onProteinGoalHit() async {
         await reportProgress(questKey: .hitProteinGoal)
     }
-    
-    /// Call with total protein grams eaten today for incremental progress
+
+    /// Canonical user daily protein goal in grams. Mirrors the formula used by
+    /// `DashboardView+Macros` (`max(100, weightLbs × 0.8)`) so the dashboard
+    /// macro card, the Daily Brief's protein deficit, and the
+    /// `hit_protein_goal` quest all measure against the same target. Floors
+    /// at 100g for very-light users so a 110-lb user isn't told their daily
+    /// protein quest completes at 88g (also matches industry-standard
+    /// minimum-effective-dose recommendations).
+    ///
+    /// Add a server-side per-user override on `user_daily_quests.target_value`
+    /// in a future migration if we ever want to personalize this number on a
+    /// row-by-row basis (e.g. competitive bodybuilders at 1.0g/lb). For now
+    /// the entire app reads from this single helper to keep dashboard, brief,
+    /// and quest copy in lockstep.
+    func computeUserProteinGoal() -> Int {
+        let weightLbs = Double(UserManager.shared.currentUser?.weight ?? 150)
+        return max(100, Int((weightLbs * 0.8).rounded()))
+    }
+
+    /// Call after every meal log with TOTAL protein eaten today. Only flips
+    /// the binary `hit_protein_goal` quest to completed once the user has
+    /// actually crossed `computeUserProteinGoal()` — never on partial
+    /// progress.
+    ///
+    /// Why the previous behavior was wrong (2026-04-27 — user-reported,
+    /// dashboard screenshot showing "Eat 1g protein today / Not yet"):
+    /// the server template ships `target_value = 1, target_unit = 'goal'`
+    /// which is a binary completion stamp. The previous body of this method
+    /// reported a delta in raw GRAMS (`needed = totalGrams - currentValue`)
+    /// to the server, so the very first meal with any protein bumped
+    /// `current_value` past 1 and the quest completed — meaning a 20g eggs
+    /// breakfast finished a "Hit your daily protein goal" `difficulty=hard`
+    /// quest. Quest description compounded the bug by interpolating
+    /// `quest.targetValue` (= 1) into the copy ("Eat 1g protein today"),
+    /// telling the user the threshold was 1g.
+    ///
+    /// New behavior: gate the binary completion on the real-world local
+    /// threshold. The mechanic is now consistent with `hit_step_goal` (line
+    /// `lastReportedSteps < HealthKitManager.shared.stepGoal && todaySteps
+    /// >= HealthKitManager.shared.stepGoal` in `reportLiveProgress`).
+    /// `current_value` stays at 0 until goal is hit, then ticks to 1.
     func onProteinProgress(totalGrams: Int) async {
-        guard hasQuest(.hitProteinGoal),
-              let idx = quests.firstIndex(where: { $0.questKey == QuestKey.hitProteinGoal.rawValue }) else { return }
-        let quest = quests[idx]
-        let needed = totalGrams - quest.currentValue
-        if needed > 0 {
-            await reportProgress(questKey: .hitProteinGoal, increment: needed)
+        guard hasQuest(.hitProteinGoal) else { return }
+        let goal = computeUserProteinGoal()
+        guard totalGrams >= goal else { return }
+        // De-dupe: don't re-fire for users who already completed today.
+        if let idx = quests.firstIndex(where: { $0.questKey == QuestKey.hitProteinGoal.rawValue }),
+           quests[idx].isCompleted {
+            return
         }
+        await onProteinGoalHit()
     }
     
     /// Check and report "perfect day" (workout + 3 meals + step goal)

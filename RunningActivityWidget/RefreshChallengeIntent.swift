@@ -28,6 +28,7 @@
 import AppIntents
 import WidgetKit
 import OSLog
+import UIKit
 
 /// Tap target for the small refresh control on the active challenge
 /// widget. Pulls fresh data from Supabase, writes the App Group, and
@@ -47,11 +48,11 @@ struct RefreshChallengeIntent: AppIntent {
 
     private static let log = Logger(subsystem: "com.fit33.app.RunningActivityWidget", category: "challenge-refresh-intent")
 
-    /// User-tappable refresh budget — tapping more than once every few
-    /// seconds is almost certainly a bug or a user being impatient.
-    /// We still always ask WidgetCenter to reload because that surfaces
-    /// the spinner-stop UI feedback even when we throttle the network.
-    private static let minPullInterval: TimeInterval = 3.0
+    /// User-tappable refresh budget. Per `PRODUCT_ENGINEER_AGENT.md`
+    /// invariant 31 ("Throttle min 5s between fires"). We still always
+    /// ask WidgetCenter to reload because that surfaces the spinner-
+    /// stop UI feedback even when we throttle the network.
+    private static let minPullInterval: TimeInterval = 5.0
     /// Tracked across intent invocations within the same widget process
     /// lifetime. iOS may kill the extension between taps which resets
     /// this — that's fine, the throttle is best-effort UX, not a
@@ -60,6 +61,14 @@ struct RefreshChallengeIntent: AppIntent {
     nonisolated(unsafe) private static let pullLock = NSLock()
 
     func perform() async throws -> some IntentResult {
+        // Immediate tactile confirmation that the tap registered. Fired
+        // BEFORE any await so the haptic lands on the same frame the
+        // user lifted their finger — waiting until after the network
+        // pull would feel disconnected from the tap. Medium impact
+        // mirrors the in-app `HapticManager.impact(.medium)` used for
+        // primary action buttons.
+        await Self.fireTapHaptic()
+
         // Short-circuit if the user is mashing the button — the
         // upstream throttle keeps us under PostgREST's connection
         // budget and prevents the App Group write loop from causing
@@ -70,10 +79,41 @@ struct RefreshChallengeIntent: AppIntent {
             // explicitly asked for fresh data we owe them a slightly
             // longer wait before falling back to cache. Still well
             // under iOS's per-intent runtime cap.
-            await ActiveChallengeProvider.pullAndMergeIfPossible(timeoutSeconds: 5.0)
-            Self.log.info("Refresh intent: server pull complete")
+            //
+            // Bug fix 2026-04-27: branch haptics + logs on the actual
+            // pull outcome. The previous version always fired the
+            // success haptic — including on JWT-expiry / transport
+            // failure — so users got happy confirmation without any
+            // data refresh. Now success/warning/error map to real
+            // states the user can feel and (when investigating) read
+            // in Console.app.
+            let outcome = await ActiveChallengeProvider.pullAndMergeIfPossible(timeoutSeconds: 5.0)
+            switch outcome {
+            case .fetched(let wroteFreshData):
+                if wroteFreshData {
+                    Self.log.info("Refresh intent: pulled fresh data — widget will update")
+                    await Self.fireSuccessHaptic()
+                } else {
+                    // Pull succeeded but the bytes matched what the
+                    // App Group already had (no opponent activity
+                    // since the last tick, etc.). Still a successful
+                    // refresh — just nothing to celebrate.
+                    Self.log.info("Refresh intent: pulled, no changes since last tick")
+                    await Self.fireSuccessHaptic()
+                }
+            case .skippedNoAuth:
+                Self.log.warning("Refresh intent: JWT expired — main app must foreground to refresh")
+                await Self.fireThrottledHaptic()
+            case .skippedNoAppGroup:
+                Self.log.error("Refresh intent: App Group unavailable — entitlement misconfigured")
+                await Self.fireErrorHaptic()
+            case .failed(let error):
+                Self.log.error("Refresh intent: pull failed — \(String(describing: error), privacy: .public)")
+                await Self.fireErrorHaptic()
+            }
         } else {
             Self.log.debug("Refresh intent: throttled (last pull < \(Self.minPullInterval, privacy: .public)s ago)")
+            await Self.fireThrottledHaptic()
         }
 
         // Always reload — gives the user a visible "tap registered"
@@ -82,6 +122,51 @@ struct RefreshChallengeIntent: AppIntent {
         // doesn't get caught in the splash damage.
         WidgetCenter.shared.reloadTimelines(ofKind: "ActiveChallengeWidget")
         return .result()
+    }
+
+    // MARK: - Haptics
+    //
+    // The widget extension links UIKit on iOS, so the standard
+    // UIImpactFeedbackGenerator / UINotificationFeedbackGenerator APIs
+    // work here the same way they do in the main app. Generators must
+    // be created and fired on the main thread; `@MainActor` hops handle
+    // that. We allocate fresh generators each time rather than keeping
+    // a static one alive — extension memory budget is tight (~30MB)
+    // and keeping a feedback generator warm across intent invocations
+    // doesn't measurably reduce latency for a once-per-tap impact.
+
+    @MainActor
+    private static func fireTapHaptic() {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+    }
+
+    @MainActor
+    private static func fireSuccessHaptic() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+
+    /// Soft warning haptic when the user mashed the button inside the
+    /// `minPullInterval` window OR when the JWT is expired (transient
+    /// auth state, recovers next time the main app foregrounds).
+    /// Less assertive than `.error`; communicates "I heard you, just
+    /// nothing to do right now."
+    @MainActor
+    private static func fireThrottledHaptic() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.warning)
+    }
+
+    /// Hard error haptic for genuine failures — App Group config bug,
+    /// transport failure, decode error, 5xx. Distinguishes "real
+    /// failure that should be investigated" from the soft warning
+    /// case (throttled / auth expired). Pairs with an `error`-level
+    /// log line so the underlying cause shows up in Console.app.
+    @MainActor
+    private static func fireErrorHaptic() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
     }
 
     /// Returns `true` if the caller is free to do a network pull, or

@@ -20,13 +20,39 @@ struct ChallengeDetailView: View {
     let challenge: ActiveChallenge
     
     @State private var details: ChallengeDetails?
-    @State private var isLoading = true
+    /// Bug fix 2026-04-27 — widget→detail latency: split into THREE explicit
+    /// states (`idle`/`loading`/`loaded`/`failed`) instead of a single
+    /// `isLoading` bool. Lets the battle log render skeleton vs retry CTA
+    /// vs real rows, and lets the notification toggle render a placeholder
+    /// instead of a stale "ON" default before details arrive. The view body
+    /// itself NEVER blocks on this — the head-to-head / stat bar / today /
+    /// cancel button paint instantly from the `challenge` argument we
+    /// already have on push (per QP §19c "split visible work from
+    /// background sync work").
+    @State private var detailsLoadState: DetailsLoadState = .idle
     @State private var showingCancelConfirmation = false
     @State private var isCancelling = false
-    @State private var notifyOnOpponentComplete = true
+    /// `nil` until details first load — gates the toggle UI so we don't
+    /// silently default to "ON" while the real preference is still in
+    /// flight (would have been the wrong choice for users who turned it
+    /// off on the previous device).
+    @State private var notifyOnOpponentComplete: Bool? = nil
     @State private var isTogglingNotification = false
     @State private var lastSyncedSteps = 0
     @State private var showingReactionPicker = false
+
+    private enum DetailsLoadState: Equatable {
+        case idle
+        case loading
+        case loaded
+        case failed
+    }
+
+    /// Soft cap before we paint an inline retry CTA on the battle log
+    /// section. Mirrors the 5s hard cap that `DashboardView.refreshable`
+    /// uses (QP §19c). The `get_challenge_details` RPC keeps running in
+    /// the background past this — we just stop blocking the UI on it.
+    private static let detailsLoadSoftTimeout: TimeInterval = 5.0
     
     private var challengeType: ChallengeType { challenge.resolvedType }
     private var typeColor: Color { challengeType.color }
@@ -41,38 +67,42 @@ struct ChallengeDetailView: View {
         ZStack {
             AnimatedOrbBackground.friends(colorScheme: colorScheme)
                 .ignoresSafeArea()
-            
-            if isLoading {
-                ProgressView()
-                    .scaleEffect(1.2)
-            } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: Spacing.md) {
-                        headToHeadCard
-                        statBar
-                        
-                        if challenge.status == "active" {
-                            reactionSendSection
-                        }
-                        
-                        todayProgressCard
-                        
-                        if challenge.status == "active" {
-                            ReactionFeedView(challenge: challenge)
-                        }
-                        
-                        battleLogSection
-                        
-                        notificationToggleCard
-                        
-                        if challenge.status == "active" || challenge.status == "pending" {
-                            cancelChallengeButton
-                        }
+
+            // Bug fix 2026-04-27 — widget→detail latency: paint the entire
+            // shell IMMEDIATELY from the `challenge` we already have on
+            // push. The previous `if isLoading { ProgressView }` wrapper
+            // blocked the user behind a ~5.6s `get_challenge_details` RPC
+            // even though we already had myToday / oppToday / opponent
+            // name / days remaining / type / target — everything the H2H
+            // card and stat bar need. Per QP §19c we now split visible
+            // work (renders from `challenge`) from background sync work
+            // (battle log + reaction feed → wait for `details`).
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: Spacing.md) {
+                    headToHeadCard
+                    statBar
+
+                    if challenge.status == "active" {
+                        reactionSendSection
                     }
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.top, Spacing.sm)
-                    .padding(.bottom, 60)
+
+                    todayProgressCard
+
+                    if challenge.status == "active" {
+                        ReactionFeedView(challenge: challenge)
+                    }
+
+                    battleLogSection
+
+                    notificationToggleCard
+
+                    if challenge.status == "active" || challenge.status == "pending" {
+                        cancelChallengeButton
+                    }
                 }
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.sm)
+                .padding(.bottom, 60)
             }
         }
         // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
@@ -119,7 +149,11 @@ struct ChallengeDetailView: View {
             
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 120_000_000_000)
-                if !isLoading {
+                // Only poll-refresh once details have successfully loaded
+                // at least once. While we're still in `.loading` / `.failed`
+                // the `loadDetails()` flow (or the user's retry tap) owns
+                // the next fetch — racing them would clobber state.
+                if detailsLoadState == .loaded {
                     details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
                 }
             }
@@ -567,54 +601,96 @@ struct ChallengeDetailView: View {
                     .foregroundColor(.secondary)
             }
             
-            if let details = details, let participants = details.participants {
-                let myProgress = participants.first { $0.userId.uuidString == SupabaseManager.shared.currentUser?.id.uuidString }
-                let opponentProgress = participants.first { $0.userId.uuidString != SupabaseManager.shared.currentUser?.id.uuidString }
-                let calendar = createUTCCalendar()
-                let allDays = generateDays(from: challenge.startDate, to: challenge.endDate)
-                
-                VStack(spacing: 0) {
-                    ForEach(Array(allDays.enumerated()), id: \.offset) { index, date in
-                        let myEntry = myProgress?.dailyProgress?.first { entry in
-                            calendar.startOfDay(for: entry.date) == date
-                        }
-                        let oppEntry = opponentProgress?.dailyProgress?.first { entry in
-                            calendar.startOfDay(for: entry.date) == date
-                        }
-                        
-                        BattleLogRow(
-                            dayNumber: index + 1,
-                            date: date,
-                            myValue: myEntry?.value ?? 0,
-                            opponentValue: oppEntry?.value ?? 0,
-                            target: challenge.dailyTarget ?? 1,
-                            targetUnit: challenge.targetUnit,
-                            opponentName: opponentFirst,
-                            typeColor: typeColor,
-                            typeGradientColors: challengeType.gradientColors,
-                            colorScheme: colorScheme
-                        )
-                        
-                        if index < allDays.count - 1 {
-                            Rectangle()
-                                .fill(Color.primary.opacity(0.04))
-                                .frame(height: 1)
-                                .padding(.horizontal, Spacing.sm)
-                        }
+            battleLogContent
+        }
+    }
+
+    /// Three explicit states for the day-by-day battle log: skeleton bars
+    /// while the `get_challenge_details` RPC is in flight, an inline
+    /// retry CTA when the RPC failed (typical when the widget tap
+    /// foregrounded the app onto a flaky connection — every parallel
+    /// RPC fails with `-1005 connection lost`), and real rows once
+    /// details arrive. Pre-fix this branch silently rendered skeleton
+    /// boxes forever after a failure with no recovery path.
+    @ViewBuilder
+    private var battleLogContent: some View {
+        if let details = details, let participants = details.participants {
+            let myProgress = participants.first { $0.userId.uuidString == SupabaseManager.shared.currentUser?.id.uuidString }
+            let opponentProgress = participants.first { $0.userId.uuidString != SupabaseManager.shared.currentUser?.id.uuidString }
+            let calendar = createUTCCalendar()
+            let allDays = generateDays(from: challenge.startDate, to: challenge.endDate)
+
+            VStack(spacing: 0) {
+                ForEach(Array(allDays.enumerated()), id: \.offset) { index, date in
+                    let myEntry = myProgress?.dailyProgress?.first { entry in
+                        calendar.startOfDay(for: entry.date) == date
+                    }
+                    let oppEntry = opponentProgress?.dailyProgress?.first { entry in
+                        calendar.startOfDay(for: entry.date) == date
+                    }
+
+                    BattleLogRow(
+                        dayNumber: index + 1,
+                        date: date,
+                        myValue: myEntry?.value ?? 0,
+                        opponentValue: oppEntry?.value ?? 0,
+                        target: challenge.dailyTarget ?? 1,
+                        targetUnit: challenge.targetUnit,
+                        opponentName: opponentFirst,
+                        typeColor: typeColor,
+                        typeGradientColors: challengeType.gradientColors,
+                        colorScheme: colorScheme
+                    )
+
+                    if index < allDays.count - 1 {
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.04))
+                            .frame(height: 1)
+                            .padding(.horizontal, Spacing.sm)
                     }
                 }
-                .sleekCardSubtle(cornerRadius: 16)
-            } else {
-                VStack(spacing: Spacing.sm) {
-                    ForEach(0..<min(challenge.durationDays, 7), id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: CornerRadius.sm)
-                            .fill(Color.primary.opacity(0.04))
-                            .frame(height: 56)
+            }
+            .sleekCardSubtle(cornerRadius: 16)
+        } else if detailsLoadState == .failed {
+            Button {
+                HapticManager.impact(.light)
+                loadDetails()
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .font(.ds_bodyMedium)
+                        .foregroundColor(typeColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Couldn't load battle log")
+                            .font(.ds_bodySmall)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                        Text("Tap to retry")
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary)
                     }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.ds_labelSmall)
+                        .foregroundColor(.secondary)
                 }
                 .padding(Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .sleekCardSubtle(cornerRadius: 16)
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Retry loading battle log")
+            .accessibilityHint("The previous load failed. Tap to try again.")
+        } else {
+            VStack(spacing: Spacing.sm) {
+                ForEach(0..<min(challenge.durationDays, 7), id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: CornerRadius.sm)
+                        .fill(Color.primary.opacity(0.04))
+                        .frame(height: 56)
+                }
+            }
+            .padding(Spacing.sm)
+            .sleekCardSubtle(cornerRadius: 16)
         }
     }
     
@@ -623,34 +699,47 @@ struct ChallengeDetailView: View {
     private var notificationToggleCard: some View {
         Group {
             if challenge.status == "active" || challenge.status == "pending" {
+                let isOn = notifyOnOpponentComplete ?? true
                 HStack(spacing: Spacing.sm) {
-                    Image(systemName: notifyOnOpponentComplete ? "bell.fill" : "bell.slash")
+                    Image(systemName: notifyOnOpponentComplete == nil
+                        ? "bell"
+                        : (isOn ? "bell.fill" : "bell.slash"))
                         .font(.ds_bodyMedium)
-                        .foregroundColor(notifyOnOpponentComplete ? typeColor : .secondary)
-                    
+                        .foregroundColor(notifyOnOpponentComplete == nil
+                            ? .secondary
+                            : (isOn ? typeColor : .secondary))
+
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Opponent alerts")
                             .font(.ds_bodySmall)
                             .fontWeight(.medium)
                             .foregroundColor(.primary)
-                        
+
                         Text("Notified when \(opponentFirst) hits their goal")
                             .font(.ds_caption)
                             .foregroundColor(.secondary)
                     }
-                    
+
                     Spacer()
-                    
-                    if isTogglingNotification {
+
+                    // Bug fix 2026-04-27: until details first land, the
+                    // user's actual preference is unknown — show a small
+                    // placeholder spinner instead of defaulting to "ON"
+                    // (which would silently mis-represent the saved
+                    // preference for users who turned it off).
+                    if isTogglingNotification || notifyOnOpponentComplete == nil {
                         ProgressView()
                             .scaleEffect(0.8)
                     } else {
-                        Toggle("", isOn: $notifyOnOpponentComplete)
-                            .labelsHidden()
-                            .tint(typeColor)
-                            .onChange(of: notifyOnOpponentComplete) { _, newValue in
+                        Toggle("", isOn: Binding<Bool>(
+                            get: { notifyOnOpponentComplete ?? true },
+                            set: { newValue in
+                                notifyOnOpponentComplete = newValue
                                 toggleNotificationPreference(newValue)
                             }
+                        ))
+                        .labelsHidden()
+                        .tint(typeColor)
                     }
                 }
                 .padding(Spacing.sm)
@@ -694,21 +783,89 @@ struct ChallengeDetailView: View {
     
     // MARK: - Helpers
     
+    /// Bug fix 2026-04-27 — widget→detail latency:
+    ///   • `.userInitiated` priority so the deep-link RPC isn't queued
+    ///     behind the dashboard's 14-RPC social fanout that fires on
+    ///     every app foreground (`get_friends`, `get_pending_*`,
+    ///     `get_ranked_friends`, `get_friend_activity_feed`, …).
+    ///   • 5s soft timeout race (`detailsLoadSoftTimeout`) so a flaky
+    ///     network can't keep the battle log on a skeleton forever — we
+    ///     flip to `.failed` and surface the inline retry CTA. The
+    ///     underlying RPC keeps running and lands as a late success if
+    ///     it eventually returns; the soft timeout just unblocks the UI.
+    ///   • Resettable from the retry button (state moves
+    ///     `failed` → `loading` → `loaded`/`failed`).
+    ///   • Logged via `AppLogger.warning` not `.error` for the timeout
+    ///     case — a slow network is not a malfunction (QP §25 + §25a).
     private func loadDetails() {
-        Task {
+        // Re-tap on the retry CTA: cycle the state machine without
+        // racing two in-flight loads. The previous load's awaited
+        // result lands harmlessly into `details` if it eventually
+        // returns and we're still mounted.
+        detailsLoadState = .loading
+
+        Task(priority: .userInitiated) {
             AppLogger.debug("🔄 [CHALLENGE DETAIL] Fetching details for challenge: \(challenge.challengeId)", category: .social)
-            details = await challengeService.getChallengeDetails(challengeId: challenge.challengeId)
-            
-            if let fetchedDetails = details {
-                AppLogger.info("✅ [CHALLENGE DETAIL] Details loaded - \(fetchedDetails.participants?.count ?? 0) participants", category: .social)
-                await MainActor.run {
-                    notifyOnOpponentComplete = fetchedDetails.shouldNotifyOnOpponentComplete
+
+            // Race the RPC against the soft timeout. `withTaskGroup`
+            // returns whichever finishes first; `.timedOut` lets the
+            // UI flip to `.failed` (retry CTA) without cancelling the
+            // RPC — if it eventually returns we still capture its
+            // result on the late-completion path below.
+            enum Outcome { case got(ChallengeDetails?), timedOut }
+            let outcome: Outcome = await withTaskGroup(of: Outcome.self, returning: Outcome.self) { group in
+                group.addTask { @Sendable [challengeService, challengeId = challenge.challengeId] in
+                    let result = await challengeService.getChallengeDetails(challengeId: challengeId)
+                    return .got(result)
                 }
-            } else {
-                AppLogger.error("❌ [CHALLENGE DETAIL] Failed to load details", category: .social)
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: UInt64(Self.detailsLoadSoftTimeout * 1_000_000_000))
+                    return .timedOut
+                }
+                let first = await group.next() ?? .timedOut
+                // Cancel the loser. The soft-timeout sleep accepts
+                // cancellation; the RPC is best-effort cancelled by
+                // URLSession on its underlying task.
+                group.cancelAll()
+                return first
             }
-            
-            isLoading = false
+
+            switch outcome {
+            case .got(let fetched):
+                if let fetched {
+                    AppLogger.info("✅ [CHALLENGE DETAIL] Details loaded - \(fetched.participants?.count ?? 0) participants", category: .social)
+                    await MainActor.run {
+                        details = fetched
+                        notifyOnOpponentComplete = fetched.shouldNotifyOnOpponentComplete
+                        detailsLoadState = .loaded
+                    }
+                } else {
+                    AppLogger.warning("⚠️ [CHALLENGE DETAIL] Details RPC returned nil — surfacing retry", category: .social)
+                    await MainActor.run {
+                        detailsLoadState = .failed
+                    }
+                }
+            case .timedOut:
+                AppLogger.warning("⚠️ [CHALLENGE DETAIL] Details soft-timeout (\(Int(Self.detailsLoadSoftTimeout))s) — UI unblocked", category: .social)
+                await MainActor.run {
+                    detailsLoadState = .failed
+                }
+                // Late-completion path: keep awaiting the RPC in case
+                // the network recovers within a reasonable window. If
+                // it lands AND the user is still on this view AND the
+                // state hasn't been reset by a retry tap, hydrate the
+                // UI silently — they get the battle log without an
+                // extra round trip.
+                Task.detached(priority: .background) { @MainActor [challengeService, challengeId = challenge.challengeId] in
+                    let late = await challengeService.getChallengeDetails(challengeId: challengeId)
+                    guard let late, detailsLoadState == .failed else { return }
+                    AppLogger.info("✅ [CHALLENGE DETAIL] Details landed late — silent hydrate", category: .social)
+                    details = late
+                    notifyOnOpponentComplete = late.shouldNotifyOnOpponentComplete
+                    detailsLoadState = .loaded
+                }
+            }
+
             await syncMyProgressInBackground()
         }
     }

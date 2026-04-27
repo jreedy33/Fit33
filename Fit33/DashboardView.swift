@@ -795,26 +795,69 @@ struct DashboardView: View {
     /// Extracted from `body` to keep the SwiftUI type-checker happy. The
     /// inline closure plus its nested `if let` chain was tipping `body` over
     /// the "expression too complex" budget.
+    ///
+    /// Bug fix 2026-04-27 — widget→detail flicker: the previous version
+    /// wrapped this in `Task { ... try? await Task.sleep(for: .seconds(0.15)) }`
+    /// which made the user stare at the Dashboard for 150ms before the
+    /// navigation push slid in. The sleep was a workaround for the cold-
+    /// launch race where `ChallengeService.activeChallenges` hadn't
+    /// hydrated yet. We now address that race directly via retry-on-miss
+    /// (`pushChallengeDetailIfPossible`) and push immediately + with
+    /// animation disabled on the warm path. Result: tap widget → detail
+    /// is on-screen at the next frame, no Dashboard glimpse, no slide.
     private func handlePendingDashboardRoute(_ route: String?) {
-        guard let route = route else { return }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(0.15))
-            guard !Task.isCancelled else { return }
-            if route == "ChallengeCreation" {
-                showingChallengeCreation = true
-            } else if route.hasPrefix("ChallengeDetail:") {
-                let idStr = String(route.dropFirst("ChallengeDetail:".count))
-                if let challenge = ChallengeService.shared.activeChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
-                    dashboardNavPath.append(challenge)
-                    AppLogger.debug("[DEEPLINK] Pushed 1v1 challenge detail: \(challenge.title)", category: .ui)
-                } else if let groupChallenge = ChallengeService.shared.activeGroupChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
-                    dashboardNavPath.append(groupChallenge)
-                    AppLogger.debug("[DEEPLINK] Pushed group challenge detail: \(groupChallenge.displayTitle)", category: .ui)
-                } else {
-                    AppLogger.warning("[DEEPLINK] Challenge not found for ID: \(idStr) — staying on dashboard", category: .ui)
-                }
-            }
+        guard let route else { return }
+        if route == "ChallengeCreation" {
+            showingChallengeCreation = true
             deepLinkManager.pendingDashboardRoute = nil
+            return
+        }
+        if route.hasPrefix("ChallengeDetail:") {
+            let idStr = String(route.dropFirst("ChallengeDetail:".count))
+            pushChallengeDetailIfPossible(idStr: idStr, attempt: 0)
+        }
+    }
+
+    /// Resolves a challenge id against `ChallengeService` caches and
+    /// pushes it onto `dashboardNavPath` with animation disabled so the
+    /// transition from widget → detail looks instant. Falls back to a
+    /// short retry loop (max ~360ms total) when the cache hasn't
+    /// hydrated yet on cold launch — once it lands or we exhaust
+    /// attempts, we clear the pending route.
+    private func pushChallengeDetailIfPossible(idStr: String, attempt: Int) {
+        if let challenge = ChallengeService.shared.activeChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                dashboardNavPath.append(challenge)
+            }
+            AppLogger.debug("[DEEPLINK] Pushed 1v1 challenge detail: \(challenge.title)", category: .ui)
+            deepLinkManager.pendingDashboardRoute = nil
+            return
+        }
+        if let groupChallenge = ChallengeService.shared.activeGroupChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                dashboardNavPath.append(groupChallenge)
+            }
+            AppLogger.debug("[DEEPLINK] Pushed group challenge detail: \(groupChallenge.displayTitle)", category: .ui)
+            deepLinkManager.pendingDashboardRoute = nil
+            return
+        }
+        // Cache miss — typical only on cold launch where the active-
+        // challenges cache hasn't hydrated yet. Three quick retries at
+        // 120ms each cover the gap; after that we give up and leave the
+        // user on the Dashboard rather than spin forever.
+        guard attempt < 3 else {
+            AppLogger.warning("[DEEPLINK] Challenge not found after \(attempt) retries for ID: \(idStr) — staying on dashboard", category: .ui)
+            deepLinkManager.pendingDashboardRoute = nil
+            return
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            pushChallengeDetailIfPossible(idStr: idStr, attempt: attempt + 1)
         }
     }
 }

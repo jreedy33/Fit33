@@ -166,10 +166,34 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
     //
     // Pulls the freshest active-challenges payload from Postgres,
     // merges it with whatever the main app last wrote to the App Group,
-    // and persists the result. Errors are swallowed by design — the
-    // worst case is "render from cache this tick", which is what would
-    // have happened pre-Phase-3 anyway.
-    static func pullAndMergeIfPossible(timeoutSeconds: TimeInterval) async {
+    // and persists the result.
+    //
+    // Bug fix 2026-04-27 — the previous version returned `Void` and
+    // swallowed every error path. Callers (especially the user-tap
+    // refresh intent) had no way to tell whether the network pull
+    // actually happened, so they fired "success" haptics + log lines
+    // even when the JWT was expired and zero bytes left the device.
+    // Now returns `PullOutcome` so the intent can branch on real status.
+    enum PullOutcome {
+        /// Pull + merge succeeded; `wroteFreshData` is `true` when the
+        /// merged payload differed from the App Group cache (so the
+        /// widget will visually update on the next render), `false`
+        /// when the bytes were identical and `writeIfChanged` skipped.
+        case fetched(wroteFreshData: Bool)
+        /// JWT missing / expired. Recoverable on next main-app
+        /// foreground tick (the SDK refreshes the token then). Not a
+        /// malfunction — log at warn, surface a soft failure haptic.
+        case skippedNoAuth
+        /// App Group entitlement missing or `appGroupID` mismatch.
+        /// Hard config bug — should never happen in production.
+        case skippedNoAppGroup
+        /// Transport / 5xx / decode failure. The most "real" failure
+        /// case — log at error so the bug-intel rollup can fingerprint.
+        case failed(Error)
+    }
+
+    @discardableResult
+    static func pullAndMergeIfPossible(timeoutSeconds: TimeInterval) async -> PullOutcome {
         // Cache-the-cache so we keep main-app-written photo flags +
         // display name when the pull supersedes the row contents.
         let cached = ActiveChallengeWidgetSnapshot.readAll()
@@ -189,15 +213,22 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
             // Network/decode errors get info-level so we can spot
             // genuine RPC drift in the field.
             switch error {
-            case .notAuthenticated, .appGroupUnavailable:
-                log.debug("Widget pull skipped: \(String(describing: error), privacy: .public)")
+            case .notAuthenticated:
+                log.debug("Widget pull skipped: notAuthenticated")
+                return .skippedNoAuth
+            case .appGroupUnavailable:
+                log.debug("Widget pull skipped: appGroupUnavailable")
+                return .skippedNoAppGroup
+            case .http(status: 401, _):
+                log.debug("Widget pull skipped: JWT expired (HTTP 401) — main-app refresh required")
+                return .skippedNoAuth
             default:
                 log.info("Widget pull failed: \(String(describing: error), privacy: .public)")
+                return .failed(error)
             }
-            return
         } catch {
             log.info("Widget pull failed: \(String(describing: error), privacy: .public)")
-            return
+            return .failed(error)
         }
 
         // Hash-gate the App Group write — most ticks the data is
@@ -218,7 +249,7 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
         let hkSteps = await WidgetHealthKitReader.todayStepsIfAuthorized()
         merged = applyHealthKitStepOverlay(merged, hkSteps: hkSteps)
 
-        writeIfChanged(merged: merged)
+        let didWrite = writeIfChanged(merged: merged)
 
         // Phase 7d (2026-04-26): widget-side WRITE-back. After the
         // overlay, push fresh HK step counts to the server so opponents
@@ -231,6 +262,8 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
                 await pushFreshStepProgressIfNeeded(merged: merged, hkSteps: hkSteps)
             }
         }
+
+        return .fetched(wroteFreshData: didWrite)
     }
 
     /// Overlays today's cumulative step count from HealthKit on every
@@ -443,10 +476,17 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
     /// `ActiveChallengeWidgetBridge.publish` so consumers (the widget
     /// itself + the in-app surfaces wired up in Phase 5) see one
     /// canonical view of the world.
-    private static func writeIfChanged(merged: [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge]) {
+    ///
+    /// Returns `true` when fresh bytes were persisted (and a Darwin
+    /// notification posted), `false` when the payload was unchanged
+    /// or the App Group was unavailable. Used by the refresh intent
+    /// to differentiate "successful pull, nothing new to show" from
+    /// "successful pull, widget will visually update".
+    @discardableResult
+    private static func writeIfChanged(merged: [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge]) -> Bool {
         guard let defaults = UserDefaults(suiteName: ActiveChallengeWidgetSnapshot.appGroupID) else {
             log.error("Widget pull: App Group unavailable — cannot persist fresh payload")
-            return
+            return false
         }
 
         let chosen = merged.first
@@ -463,7 +503,7 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
             let existingChosen = defaults.data(forKey: ActiveChallengeWidgetSnapshot.challengeKey)
             if existingList == listData && existingChosen == chosenData {
                 log.debug("Widget pull: payload unchanged, skipping App Group write")
-                return
+                return false
             }
 
             if let chosenData {
@@ -492,8 +532,10 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
                 nil,
                 true
             )
+            return true
         } catch {
             log.error("Widget pull: encode failed: \(String(describing: error), privacy: .public)")
+            return false
         }
     }
 }

@@ -678,14 +678,48 @@ class ContactsService: ObservableObject {
             AppLogger.info("Notified \(response.notifications_queued) existing users. Message: \(response.message)", category: .social)
 
         } catch {
-            _ = NetworkErrorClassifier.log(
-                error,
-                context: "[CONTACTS] notify-contacts-user-joined invoke",
-                category: .social,
-                transientLevel: .debug,
-                endpoint: "functions/notify-contacts-user-joined",
-                userId: SupabaseManager.shared.currentUser?.id
-            )
+            // Bug-intel fingerprint `1951d472` (2026-04-27, 2 occurrences,
+            // build 1.38(58)). The IDOR guard `auth.uid() === new_user_id`
+            // legitimately rejects this invoke during the brief window
+            // between `auth.signUp` and the new JWT propagating into the
+            // edge function's `Authorization: Bearer <jwt>` context — the
+            // daily `check_pending_join_notifications` cron catches up so
+            // existing users still get the "X joined Fit33" push.
+            //
+            // The classifier matches on the response body string
+            // ("forbidden: new_user_id must match caller"), but
+            // `supabase-functions-swift` collapses every non-2xx response
+            // into the generic `FunctionsError.httpError(code: 403,
+            // data: ...)` with `localizedDescription = "Edge Function
+            // returned a non-2xx status code: 403"` — the body never
+            // surfaces, so the classifier always falls through to
+            // `.realError` and our `transientLevel: .debug` request is
+            // overridden to `.error` (creating a fingerprint each onboard).
+            //
+            // Fix: detect the bare 403 here, BEFORE the classifier sees
+            // it. We're scoped to one specific endpoint, so the false-
+            // positive surface is zero — any 403 from this edge function
+            // is the IDOR onboarding race by definition. Other status
+            // codes (5xx / 4xx-non-403) still go through the classifier
+            // so we keep eyes on real failures.
+            let desc = (error as NSError).localizedDescription
+            let isOnboarding403 = desc.contains("non-2xx status code: 403")
+                || desc.lowercased().contains("forbidden: new_user_id must match caller")
+            if isOnboarding403 {
+                AppLogger.debug(
+                    "[CONTACTS] notify-contacts-user-joined skipped (auth race during onboarding) — daily cron will catch up",
+                    category: .social
+                )
+            } else {
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "[CONTACTS] notify-contacts-user-joined invoke",
+                    category: .social,
+                    transientLevel: .debug,
+                    endpoint: "functions/notify-contacts-user-joined",
+                    userId: SupabaseManager.shared.currentUser?.id
+                )
+            }
         }
     }
 }

@@ -11,6 +11,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 enum DailyGoalsWidgetSnapshot {
     static let appGroupID = "group.com.fit33.app"
@@ -19,6 +20,9 @@ enum DailyGoalsWidgetSnapshot {
     static let bonusXpKey = "fit33.widget.dailyGoals.bonusXp"
     static let allCompleteKey = "fit33.widget.dailyGoals.allComplete"
 
+    /// Slim widget-only model. New fields are Optional so a stale payload
+    /// from an older app build still decodes cleanly into placeholder-ish
+    /// values until the main app launches and re-publishes.
     struct WidgetDailyGoal: Codable, Hashable {
         let title: String
         let icon: String
@@ -28,23 +32,83 @@ enum DailyGoalsWidgetSnapshot {
         let targetUnit: String
         let isCompleted: Bool
         let funLabel: String?
+        let description: String?
+        let xpReward: Int?
+        let difficulty: String?
 
         var progress: Double {
             guard targetValue > 0 else { return isCompleted ? 1 : 0 }
             return min(Double(currentValue) / Double(targetValue), 1.0)
         }
 
-        /// Short progress label e.g. "3,200 / 5,000 steps", "1/1", "✓".
+        /// Mirror of `DailyQuest.categoryEmoji` in the main app — used as
+        /// the centerpiece of the progress ring so the widget matches the
+        /// in-app card identity at a glance.
+        var categoryEmoji: String {
+            switch category {
+            case "workout":   return "💪"
+            case "nutrition": return "🥗"
+            case "social":    return "👥"
+            case "steps":     return "🚶"
+            case "tracking":  return "📊"
+            case "wildcard":  return "🌟"
+            case "reward":    return "📺"
+            default:          return "⭐"
+            }
+        }
+
+        /// Mirror of `DailyQuest.categoryColor` — drives the progress ring,
+        /// progress bar, and card stroke gradient.
+        var categoryColor: Color {
+            switch category {
+            case "workout":   return .blue
+            case "nutrition": return .green
+            case "social":    return .purple
+            case "steps":     return .cyan
+            case "tracking":  return .indigo
+            case "wildcard":  return .orange
+            case "reward":    return .yellow
+            default:          return .cyan
+            }
+        }
+
+        /// Live-progress label that mirrors `DailyQuestsWidget.liveProgressLabel`
+        /// in the app — formats steps as "3.2k / 10K steps", workouts as
+        /// "0/1 workout", glasses, sets, etc. Falls back to a generic
+        /// "current/target unit" string for unknown units.
         var progressLabel: String {
             if isCompleted { return "Done" }
-            let formatter = NumberFormatter()
-            formatter.numberStyle = .decimal
-            let current = formatter.string(from: NSNumber(value: currentValue)) ?? "\(currentValue)"
-            let target = formatter.string(from: NSNumber(value: targetValue)) ?? "\(targetValue)"
-            if targetValue <= 1 {
-                return "Tap in app"
+            switch targetUnit {
+            case "steps":
+                if targetValue >= 1000 {
+                    let targetK = Double(targetValue) / 1000.0
+                    if currentValue >= 1000 {
+                        let currentK = Double(currentValue) / 1000.0
+                        return String(format: "%.1fk / %.0fK steps", currentK, targetK)
+                    }
+                    return String(format: "%d / %.0fK steps", currentValue, targetK)
+                }
+                return "\(currentValue)/\(targetValue) steps"
+            case "glasses":
+                return "\(currentValue)/\(targetValue) glasses"
+            case "sets":
+                return "\(currentValue)/\(targetValue) sets"
+            case "meals", "meal":
+                return "\(currentValue)/\(targetValue) \(targetValue == 1 ? "meal" : "meals")"
+            case "workouts", "workout":
+                return "\(currentValue)/\(targetValue) \(targetValue == 1 ? "workout" : "workouts")"
+            case "minutes":
+                return "\(currentValue)/\(targetValue) min"
+            case "goal":
+                return currentValue >= targetValue ? "Goal hit!" : "Not yet"
+            case "videos":
+                return "\(currentValue)/\(targetValue) \(targetValue == 1 ? "video" : "videos")"
+            default:
+                if targetValue <= 1 {
+                    return isCompleted ? "Done" : "Tap in app"
+                }
+                return "\(currentValue)/\(targetValue) \(targetUnit)"
             }
-            return "\(current) / \(target)"
         }
     }
 
@@ -63,16 +127,22 @@ enum DailyGoalsWidgetSnapshot {
                     currentValue: 0, targetValue: 1,
                     targetUnit: "workout",
                     isCompleted: false,
-                    funLabel: "💪 Just show up"
+                    funLabel: "💪 Just show up",
+                    description: "Finish any workout today",
+                    xpReward: 30,
+                    difficulty: "easy"
                 ),
                 WidgetDailyGoal(
                     title: "Halfway There",
                     icon: "figure.walk.motion",
                     category: "steps",
-                    currentValue: 0, targetValue: 5000,
+                    currentValue: 3200, targetValue: 5000,
                     targetUnit: "steps",
                     isCompleted: false,
-                    funLabel: "👟 Solid effort"
+                    funLabel: "👟 Solid effort",
+                    description: "3.2K of 5K steps",
+                    xpReward: 25,
+                    difficulty: "easy"
                 ),
                 WidgetDailyGoal(
                     title: "Breakfast Check-in",
@@ -81,7 +151,10 @@ enum DailyGoalsWidgetSnapshot {
                     currentValue: 0, targetValue: 1,
                     targetUnit: "meal",
                     isCompleted: false,
-                    funLabel: "🌅 Morning fuel"
+                    funLabel: "🌅 Morning fuel",
+                    description: "Log your breakfast",
+                    xpReward: 20,
+                    difficulty: "easy"
                 )
             ],
             allComplete: false,

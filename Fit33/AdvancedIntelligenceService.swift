@@ -1630,10 +1630,16 @@ class AdvancedIntelligenceService: ObservableObject {
         case .log3Meals, .logMeal:
             return max(MealService.shared.todaysMeals.count, quest.currentValue)
 
-        // Macros / protein
+        // Macros / protein — see DailyQuestService.computeUserProteinGoal for
+        // why we measure against the user's real gram threshold instead of
+        // the binary `target_value=1` template stamp. Without this, the
+        // "nearly complete" nudge fired the moment any meal was logged
+        // because raw grams were compared to a binary target.
         case .hitProteinGoal:
             let todayProtein = MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
-            return max(todayProtein, quest.currentValue)
+            let goal = DailyQuestService.shared.computeUserProteinGoal()
+            let live = todayProtein >= goal ? quest.targetValue : 0
+            return max(live, quest.currentValue)
         case .logAllMacros:
             let meals = MealService.shared.todaysMeals
             let logged = (meals.contains { $0.protein > 0 } ? 1 : 0)
@@ -1680,9 +1686,21 @@ class AdvancedIntelligenceService: ObservableObject {
             let noun = gap == 1 ? "meal" : "meals"
             return "Log \(gap) more \(noun) to finish \(quest.title) (+\(xp) XP) 🍽️"
 
-        // Macros / protein
+        // Macros / protein — `gap` is the binary 0/1 distance to completion,
+        // not gram-units, so we recompute the gram gap locally against the
+        // user's real protein target. Otherwise the nudge would say
+        // "Just 1g more protein" once the user is one binary stamp short.
         case .hitProteinGoal:
-            return "Just \(gap)g more protein to finish \(quest.title) (+\(xp) XP) 🥩"
+            let consumed = MealService.shared.todaysMeals.reduce(0) { $0 + $1.protein }
+            let goal = DailyQuestService.shared.computeUserProteinGoal()
+            let gramGap = max(0, goal - consumed)
+            // Suppress the nudge if the user has barely started — it fires
+            // at the "nearly complete" priority, so >50% is a reasonable
+            // "close enough to nudge" floor (also matches the >=60%
+            // threshold guarding the parent priority in the legacy
+            // recommendation-cache path).
+            guard gramGap > 0, consumed * 2 >= goal else { return nil }
+            return "Just \(gramGap)g more protein to finish \(quest.title) (+\(xp) XP) 🥩"
         case .logAllMacros:
             let noun = gap == 1 ? "macro" : "macros"
             return "Log \(gap) more \(noun) (P/C/F) to finish \(quest.title) (+\(xp) XP) 🥗"

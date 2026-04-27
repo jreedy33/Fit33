@@ -43,6 +43,13 @@ enum DailyGoalsWidgetBridge {
     /// Slim widget-only model. Mirrors only what the widget UI needs so
     /// the encoded payload stays small (well under the 4KB UserDefaults
     /// preference soft cap).
+    ///
+    /// 2026-04-27 — schema v2: added `description`, `xpReward`, and
+    /// `difficulty` so the medium / large home-screen widget can render
+    /// a near-exact replica of the in-app `compactQuestRow` (subheader
+    /// description + "+XP" pill + difficulty chip). Schema is intentionally
+    /// flat / additive — the widget side decodes new fields as Optional so
+    /// a stale payload from a previous app version still decodes cleanly.
     struct WidgetDailyGoal: Codable {
         let title: String
         let icon: String          // SF Symbol name
@@ -52,6 +59,9 @@ enum DailyGoalsWidgetBridge {
         let targetUnit: String
         let isCompleted: Bool
         let funLabel: String?
+        let description: String?
+        let xpReward: Int?
+        let difficulty: String?
     }
 
     /// Writes the latest 3 daily goals to App Group `UserDefaults` and
@@ -73,7 +83,10 @@ enum DailyGoalsWidgetBridge {
                 targetValue: quest.targetValue,
                 targetUnit: quest.targetUnit,
                 isCompleted: quest.isCompleted,
-                funLabel: quest.funLabel
+                funLabel: quest.funLabel,
+                description: quest.description,
+                xpReward: quest.xpReward,
+                difficulty: quest.difficulty
             )
         }
 

@@ -367,10 +367,18 @@ struct DailyQuestsWidget: View {
             let mealCount = mealService.todaysMeals.count
             return max(mealCount, quest.currentValue)
             
-        // Protein quests — live meal protein total
+        // Protein quests — live binary completion against the user's real
+        // protein goal (`DailyQuestService.computeUserProteinGoal`). Returning
+        // raw grams against a `target_value=1` binary template pegged the
+        // progress bar at 100% on the first meal even though the quest
+        // wasn't actually complete. Now the bar shows 0% until the user
+        // crosses the gram threshold, then snaps to 100% — matches the
+        // mechanic in `MealService → DailyQuestService.onProteinProgress`.
         case .hitProteinGoal:
             let todayProtein = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
-            return max(todayProtein, quest.currentValue)
+            let goal = DailyQuestService.shared.computeUserProteinGoal()
+            let live = todayProtein >= goal ? quest.targetValue : 0
+            return max(live, quest.currentValue)
         case .logHighProteinMeal:
             let has = mealService.todaysMeals.contains { $0.protein >= 30 }
             return has ? 1 : quest.currentValue
@@ -1170,8 +1178,24 @@ struct DailyQuestsWidget: View {
     }
 
     /// Formats a challenge-deficit / lead string. Kept intentionally short
-    /// (≤~32 chars) so the quest row never truncates.
-    /// Examples: "5K to catch KC", "Lead KC by 1.2K", "Tied with KC".
+    /// (≤~35 chars per Data invariant 32 single-line contract) so the quest
+    /// row never truncates on iPhone SE / 13 mini.
+    ///
+    /// All four scenarios share the same "{number} {unit} {direction}
+    /// {opponent} - {action prompt}" cadence so the voice stays consistent
+    /// regardless of who's ahead. Action prompts ("close it!", "break it!",
+    /// "keep it up!", "first move wins") give the user something to do —
+    /// neutral descriptions ("Tied with KC", "You vs KC today") tested as
+    /// flat in user feedback (2026-04-27 dashboard screenshot).
+    ///
+    /// Examples (Manuel = 6-char first name, fits comfortably under 35 chars):
+    ///   • Winning  → `1.1K ahead of Manuel - keep it up!`         (33)
+    ///   • Losing   → `1.1K behind Manuel - close it!`              (30)
+    ///   • Tied     → `Tied with Manuel - break it!`                (28)
+    ///   • Not yet  → `You vs Manuel - first move wins`             (31)
+    /// Long-name guard (`Christopher` = 11-char first name → truncated to 10
+    /// at the call site via `shortOpponentName`) keeps every variant ≤ 35
+    /// chars even at the edge.
     private func challengeDeficitCopy(
         challenge: ActiveChallenge,
         unitShort: String,
@@ -1194,16 +1218,16 @@ struct DailyQuestsWidget: View {
         }
 
         if diff == 0 && mine > 0 {
-            return "Tied with \(name)"
+            return "Tied with \(name) - break it!"
         }
         if theirs > mine {
-            return "\(format(diff)) \(unitShort) to catch \(name)"
+            return "\(format(diff)) \(unitShort) behind \(name) - close it!"
         }
         if mine > theirs && mine > 0 {
-            return "Lead \(name) by \(format(diff)) \(unitShort)"
+            return "\(format(diff)) \(unitShort) ahead of \(name) - keep it up!"
         }
-        // Nobody's moved yet — just frame the competition.
-        return "You vs \(name) today"
+        // Nobody's moved yet — frame the competition + nudge first move.
+        return "You vs \(name) - first move wins"
     }
 
     /// Truncates a display name so it fits: first word only, max 10 chars.
@@ -1212,6 +1236,48 @@ struct DailyQuestsWidget: View {
         let firstWord = raw.split(separator: " ").first.map(String.init) ?? raw
         if firstWord.count <= 10 { return firstWord }
         return String(firstWord.prefix(9)) + "…"
+    }
+
+    // MARK: - Quest copy variations (PE invariant 25-variations, 2026-04-27)
+    //
+    // Tiered copy picker for quests where the right phrasing depends on
+    // user context: connected wearables, fitness goal, time of day, partial
+    // progress. Order from most-specific to fallback so the highest tier
+    // that passes wins. Within a tier, day-rotate using
+    // `Self.dayRotated(...)` so users don't see the same line every day.
+    //
+    // Factual claim discipline (FE invariant 18b extension): only mention a
+    // wearable signal when the wearable is connected AND has surfaced a
+    // reading today (`hasWearableRecoverySignal`). NEVER claim "boosts
+    // recovery" to a user without a wearable — they have no way to verify.
+    // NEVER tie protein to "WHOOP Strain" — Strain is heart-rate-driven,
+    // protein affects Recovery (next-day HRV/RHR) instead.
+
+    /// Day-seeded selector that picks one string from a pool. Stable within
+    /// a calendar day (no flicker on pull-to-refresh) but evolves across
+    /// days. `variant` lets callers stagger pools so two quests don't
+    /// always land on the same index.
+    private static func dayRotated(_ pool: [String], variant: Int = 0) -> String {
+        guard !pool.isEmpty else { return pool.first ?? "" }
+        let day = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0
+        return pool[(day + variant) % pool.count]
+    }
+
+    /// True when the user's `fitnessGoal` (multi-select comma-separated string
+    /// from onboarding) contains the keyword. Case-insensitive.
+    private func goalContains(_ keyword: String) -> Bool {
+        guard let raw = UserManager.shared.currentUser?.fitnessGoal else { return false }
+        return raw.localizedCaseInsensitiveContains(keyword)
+    }
+
+    /// True when a wearable is connected AND has surfaced a band reading.
+    /// Gates copy that claims a wearable-tied benefit so we never advertise
+    /// "boosts tomorrow's recovery" to a user without a wearable to verify.
+    /// `todayReadiness` is non-optional (defaults to `.placeholder()` when
+    /// no wearable is connected per Data invariant 35), so we read
+    /// `hasWearableSignal` directly.
+    private var hasWearableRecoverySignal: Bool {
+        ReadinessService.shared.todayReadiness.hasWearableSignal
     }
 
     private static func isPersonalizedWorkoutDescription(_ text: String) -> Bool {
@@ -1308,14 +1374,113 @@ struct DailyQuestsWidget: View {
                let copy = challengeDeficitCopy(challenge: ch, unitShort: "glass", kFormatted: false) {
                 return copy
             }
-            return "Drink 8 glasses today"
+            // PE invariant 25-variations.
+            let glasses = hydrationService.todaySummary?.entryCount ?? 0
+            let remaining = max(0, 8 - glasses)
+
+            // Tier 4 — partial progress (1–7 glasses already logged).
+            if glasses > 0 && remaining > 0 {
+                if remaining <= 2 {
+                    return Self.dayRotated([
+                        "\(remaining) more glasses - so close",
+                        "\(remaining) more to hit 8 - finish it",
+                    ], variant: 1)
+                }
+                return Self.dayRotated([
+                    "\(remaining) more glasses today",
+                    "\(remaining) glasses left of 8",
+                ], variant: 1)
+            }
+
+            // Tier 3 — wearable + factual hydration→HRV claim. Dehydration
+            // suppresses HRV and elevates RHR; properly-hydrated days
+            // measurably improve next-day Recovery scores.
+            if hasWearableRecoverySignal {
+                return Self.dayRotated([
+                    "8 glasses - keep HRV strong",
+                    "Drink 8 - dehydration tanks recovery",
+                    "8 glasses today - your RHR thanks you",
+                ], variant: 2)
+            }
+
+            // Tier 2 — fitness-goal-aware.
+            if goalContains("lose weight") || goalContains("lean") {
+                return Self.dayRotated([
+                    "8 glasses - hunger likes to fake thirst",
+                    "Drink 8 today - cuts cravings",
+                ], variant: 3)
+            }
+
+            // Tier 1 — generic fallback.
+            return Self.dayRotated([
+                "Drink 8 glasses today",
+                "Hit 8 glasses - stay topped off",
+                "8 glasses of water today",
+            ], variant: 4)
         case .hitProteinGoal:
             if let ch = firstActiveChallenge(matching: ["protein"]),
                let copy = challengeDeficitCopy(challenge: ch, unitShort: "g", kFormatted: false) {
                 return copy
             }
-            let goal = quest.targetValue
-            return goal > 0 ? "Eat \(goal)g protein today" : "Hit daily protein goal"
+            // PE invariant 25-variations — tiered copy picker.
+            // `computeUserProteinGoal` is the single source of truth for the
+            // gram threshold (mirrors DashboardView+Macros + Daily Brief).
+            let goal = DailyQuestService.shared.computeUserProteinGoal()
+            let consumed = mealService.todaysMeals.reduce(0) { $0 + $1.protein }
+            let remaining = max(0, goal - consumed)
+            let hour = Calendar.current.component(.hour, from: Date())
+
+            // Tier 4 — partial progress + time-of-day. Mirrors the brief's
+            // "<X>g of protein left" cadence, anchors on the meal that
+            // closes the gap.
+            if consumed > 0 && consumed < goal {
+                if hour >= 18 {
+                    return Self.dayRotated([
+                        "\(remaining)g left - dinner closes it",
+                        "\(remaining)g protein - finish strong",
+                    ], variant: 1)
+                }
+                return Self.dayRotated([
+                    "\(remaining)g protein left",
+                    "\(remaining)g to your protein goal",
+                ], variant: 1)
+            }
+
+            // Tier 3 — wearable + factually-correct recovery claim. Protein
+            // → muscle-protein-synthesis → next-day HRV/RHR (i.e. Recovery,
+            // NOT Strain — Strain is HR-driven). Gated on
+            // `hasWearableRecoverySignal` so non-wearable users never see a
+            // claim they can't verify.
+            if hasWearableRecoverySignal && goalContains("muscle") {
+                return Self.dayRotated([
+                    "Eat \(goal)g - boost tomorrow's recovery",
+                    "Hit \(goal)g - lock in today's gains",
+                    "\(goal)g protein - fuel muscle repair",
+                ], variant: 2)
+            }
+
+            // Tier 2 — fitness-goal-aware (no wearable claim).
+            if goalContains("muscle") || goalContains("stronger") {
+                return Self.dayRotated([
+                    "Eat \(goal)g protein - fuel today's gains",
+                    "Hit \(goal)g - build the muscle you train for",
+                    "\(goal)g protein keeps the gains coming",
+                ], variant: 3)
+            }
+            if goalContains("lose weight") || goalContains("lean") {
+                return Self.dayRotated([
+                    "\(goal)g protein keeps you on pace",
+                    "Eat \(goal)g - protein burns more than carbs",
+                    "Hit \(goal)g - protein wins the satiety game",
+                ], variant: 3)
+            }
+
+            // Tier 1 — generic fallback (rotates daily).
+            return Self.dayRotated([
+                "Eat \(goal)g protein today",
+                "Hit \(goal)g - your daily protein target",
+                "\(goal)g protein - get to work",
+            ], variant: 4)
         case .logHighProteinMeal:
             return "Log a 30g+ protein meal"
             
@@ -1373,11 +1538,61 @@ struct DailyQuestsWidget: View {
                let copy = challengeDeficitCopy(challenge: ch, unitShort: "day", kFormatted: false) {
                 return copy
             }
-            let streak = UserManager.shared.currentUser?.currentStreak ?? 0
-            if streak > 0 {
-                return "Keep your \(streak)-day streak"
+            // PE invariant 25-variations — streak-milestone-aware. Higher
+            // streaks earn higher-stakes language; near-milestone streaks
+            // surface the upcoming round number to motivate.
+            let streak = Int(UserManager.shared.currentUser?.currentStreak ?? 0)
+
+            // Tier 4 — about to hit a milestone (within 1 day).
+            let nextMilestone: Int? = {
+                let milestones = [3, 7, 14, 30, 60, 100, 365]
+                return milestones.first(where: { $0 == streak + 1 })
+            }()
+            if let milestone = nextMilestone {
+                return Self.dayRotated([
+                    "Day \(streak) - hit \(milestone) tomorrow",
+                    "1 more day to \(milestone)-day streak",
+                ], variant: 1)
             }
-            return "Start a workout streak"
+
+            // Tier 3 — long streaks (legendary territory).
+            if streak >= 100 {
+                return Self.dayRotated([
+                    "Day \(streak) - don't break it now",
+                    "\(streak) days - you don't miss",
+                    "Day \(streak) - keep it untouchable",
+                ], variant: 2)
+            }
+            if streak >= 30 {
+                return Self.dayRotated([
+                    "Day \(streak) - protect the streak",
+                    "\(streak)-day streak - keep it alive",
+                    "Day \(streak) - momentum is yours",
+                ], variant: 3)
+            }
+            if streak >= 7 {
+                return Self.dayRotated([
+                    "Day \(streak) - keep building",
+                    "\(streak)-day streak - one more day",
+                    "Day \(streak) - habit is forming",
+                ], variant: 4)
+            }
+
+            // Tier 2 — early streak (1–6 days).
+            if streak > 0 {
+                return Self.dayRotated([
+                    "Keep your \(streak)-day streak",
+                    "Day \(streak) - one more rep",
+                    "\(streak) days down - keep going",
+                ], variant: 5)
+            }
+
+            // Tier 1 — no streak yet.
+            return Self.dayRotated([
+                "Start a workout streak today",
+                "Day 1 starts now",
+                "Begin your streak today",
+            ], variant: 6)
         case .stretchSession:
             return "Complete a guided stretch session"
         case .beatVolumePR:

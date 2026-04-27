@@ -24,7 +24,13 @@ name: Bug-Intel RPC Smoke
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # every 15 minutes
+    # 2026-04-26: reduced from `*/15` (96/day) to `5 * * * *` (24/day,
+    # 5 min past every hour, staggered with symbolicate-crashes which
+    # runs at :00) after the jreedy33 account hit 100% of its monthly
+    # GitHub Actions budget. The RPC smoke catches schema drift within
+    # 60 min instead of 15 min — still well under the average human
+    # response time to act on a drift signal.
+    - cron: '5 * * * *'
   push:
     branches: [main]
     paths:

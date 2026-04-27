@@ -18,7 +18,13 @@ name: Symbolicate Crash Reports
 
 on:
   schedule:
-    - cron: '*/15 * * * *'        # every 15 min
+    # 2026-04-26: reduced from `*/15` (96/day) to `0 * * * *` (24/day,
+    # top of every hour) after the jreedy33 account hit 100% of its
+    # monthly GitHub Actions budget. Symbolicating within an hour of
+    # the crash being reported is fast enough — bug-intel reports
+    # already get the symbolicated trace by the time a human reads
+    # the next handoff.
+    - cron: '0 * * * *'
   workflow_dispatch: {}           # manual trigger from Actions UI
 
 concurrency:

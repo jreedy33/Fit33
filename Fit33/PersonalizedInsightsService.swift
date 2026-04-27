@@ -287,7 +287,20 @@ class PersonalizedInsightsService: ObservableObject {
             self.activeInsights = insights
             AppLogger.debug("🧠 [INSIGHTS] Fetched \(insights.count) active insights", category: .general)
         } catch {
-            AppLogger.error("❌ [INSIGHTS] Failed to fetch insights: \(error)", category: .general)
+            // Bug-intel a47d011b (2026-04-27): replace bare AppLogger.error with
+            // NetworkErrorClassifier so transient timeouts / offline (-1001 /
+            // -1009 / 5xx) on get_active_insights classify as .warning instead
+            // of crash-fingerprinting at error level. Mirrors the fetchStreaks
+            // path two functions below. See QUALITY_PERFORMANCE_AGENT invariant 25a.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "❌ [INSIGHTS] Failed to fetch insights",
+                category: .general,
+                transientLevel: .warning,
+                op: "insights.get_active",
+                endpoint: "rpc/get_active_insights",
+                userId: userId
+            )
         }
     }
     

@@ -90,7 +90,19 @@ class PushNotificationService: ObservableObject {
                 "error_type": String(describing: type(of: error)),
                 "error_full": String(errorString.prefix(500))
             ])
-            AppLogger.error("[PUSH] Queue flush failed after \(elapsedMs)ms (trigger: \(source)): \(error.localizedDescription)", category: .network)
+            // Bug-intel ecca580f (2026-04-27): replace bare AppLogger.error with
+            // NetworkErrorClassifier so transient 5xx (especially 503 from
+            // process_push_notification_queue edge function) classify as
+            // .warning instead of crash-fingerprinting at error level.
+            // See QUALITY_PERFORMANCE_AGENT invariant 25a.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[PUSH] Queue flush failed after \(elapsedMs)ms (trigger: \(source))",
+                category: .network,
+                transientLevel: .warning,
+                op: "push.queue_flush",
+                endpoint: "functions/send-push-notification"
+            )
         }
     }
     

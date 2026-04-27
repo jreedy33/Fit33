@@ -38,19 +38,23 @@ class HealthKitManager: ObservableObject {
     /// nil = never fetched. Compared against the current calendar day on
     /// every read of `effectiveTodaySteps` so a stale post-midnight cache
     /// returns 0 instead of yesterday's count.
-    private var todayStepsFetchedDay: (year: Int, day: Int)?
+    private var todayStepsFetchedDay: (year: Int, month: Int, day: Int)?
 
     /// `todaySteps` gated on day freshness. Returns 0 if the cached value
     /// is from a previous local day. Use this in challenge / quest progress
     /// resolvers; the raw `todaySteps` is kept for backward compat where
     /// callers explicitly want "last known fetched value."
+    ///
+    /// We stamp `(year, month, day)` rather than `(year, dayOfYear)` because
+    /// `Calendar.Component.dayOfYear` is iOS 18+; the year + month + day
+    /// triple is equivalent for a "same local calendar day?" comparison and
+    /// keeps the deployment target unconstrained.
     var effectiveTodaySteps: Int {
         guard let stamp = todayStepsFetchedDay else { return 0 }
         let cal = Calendar.current
         let now = Date()
-        let nowDay = cal.component(.dayOfYear, from: now)
-        let nowYear = cal.component(.year, from: now)
-        if stamp.year == nowYear && stamp.day == nowDay {
+        let comps = cal.dateComponents([.year, .month, .day], from: now)
+        if stamp.year == comps.year && stamp.month == comps.month && stamp.day == comps.day {
             return todaySteps
         }
         return 0
@@ -578,9 +582,12 @@ class HealthKitManager: ObservableObject {
 
             // Stamp the local day so `effectiveTodaySteps` can detect a
             // stale cache after a midnight rollover (bug-intel 80234a6b).
+            // Year + month + day (not dayOfYear, which is iOS 18+).
             let cal = Calendar.current
-            let stamp = (year: cal.component(.year, from: Date()),
-                         day: cal.component(.dayOfYear, from: Date()))
+            let comps = cal.dateComponents([.year, .month, .day], from: Date())
+            let stamp = (year: comps.year ?? 0,
+                         month: comps.month ?? 0,
+                         day: comps.day ?? 0)
 
             Task {
                 await MainActor.run {

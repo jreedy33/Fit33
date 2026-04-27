@@ -72,10 +72,15 @@ enum ActiveChallengeWidgetBridge {
     /// lock.
     nonisolated(unsafe) private static let reloadLock = NSLock()
     /// Min seconds between consecutive `reloadAllTimelines()` calls.
-    /// 8s lets HK observer bursts (steps + active_energy + distance
-    /// firing in the same millisecond) coalesce into a single reload
-    /// while still feeling "live" to the user.
-    private static let minReloadInterval: TimeInterval = 8.0
+    /// Phase 7e (2026-04-27): drops 8s → 4s after field reports of
+    /// opponent-progress lag. The 8s coalesce window was sized for HK
+    /// observer bursts (steps + active_energy + distance firing in the
+    /// same millisecond) — those still coalesce inside 4s on real
+    /// hardware (sub-100ms typical), and the silent-push reception path
+    /// (one event, no burst) gets visibly faster paint. iOS itself has
+    /// an internal coalesce on `reloadAllTimelines()` so dropping below
+    /// 4s starts hitting diminishing returns.
+    private static let minReloadInterval: TimeInterval = 4.0
 
     // Photo files mirrored into the App Group container so the widget
     // process can render real avatars without network access.

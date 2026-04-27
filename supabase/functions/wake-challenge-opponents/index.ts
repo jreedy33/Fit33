@@ -39,16 +39,25 @@ const APNS_HOST_SANDBOX = "api.sandbox.push.apple.com";
 // bucket so a chatty progress_update push can't suppress a foreground
 // wake (and vice-versa). Foreground / cron / background_sync stay at
 // 15 min — they're broad-spectrum opponent nudges. progress_update is
-// 60s — fired by a single user's progress write, capped at one push
-// per recipient per minute regardless of how often the writer pushes.
+// 20s — fired by a single user's progress write, capped at one push
+// per recipient per 20s regardless of how often the writer pushes.
 //
 // Widget Freshness Sprint Phase 7b (2026-04-26) — see
 // `supabase/20260625_opponent_progress_silent_push.sql`.
+//
+// Phase 7e (2026-04-27): progress_update drops 60s → 20s after field
+// reports of opponent values lagging by 2-15 min when both apps are
+// suspended. Apple's APNs silent-push throttle (~2-3/hr per device in
+// low-power, more in active use) is the real ceiling — we cap at 3/min
+// here purely as defense-in-depth against a runaway writer. Pairs with
+// the iOS-side `Fit33/BackgroundChallengeSyncService.throttleStepsInterval`
+// 120s → 60s and `RunningActivityWidget/ActiveChallengeWidget.widgetPushThrottle`
+// 120s → 30s in the same sprint.
 const THROTTLE_WINDOWS_MS_BY_SOURCE: Record<string, number> = {
     foreground: 15 * 60 * 1000,
     background_sync: 15 * 60 * 1000,
     cron: 15 * 60 * 1000,
-    progress_update: 60 * 1000,
+    progress_update: 20 * 1000,
 };
 const DEFAULT_THROTTLE_WINDOW_MS = 15 * 60 * 1000;
 

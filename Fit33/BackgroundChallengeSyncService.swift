@@ -69,7 +69,16 @@ class BackgroundChallengeSyncService {
     /// the LITE path (`performLiteWakeSync`) so the 2-minute cadence costs only
     /// the HealthKit refresh + `log_challenge_progress` writes — none of the
     /// heavy multi-wearable pipeline.
-    private static let throttleStepsInterval: TimeInterval = 120  // 2 min
+    ///
+    /// Widget Freshness Sprint Phase 7e (2026-04-27): steps drop further from
+    /// 120s → 60s after field reports of opponent-progress visibly lagging by
+    /// 2-15 min when both apps are suspended. The LITE path is genuinely cheap
+    /// (HK force-refresh is throttled and coalesced; `log_challenge_progress`
+    /// is a single RPC) and the server-side trigger fan-out has its own per-
+    /// recipient throttle, so doubling the rate here cannot saturate APNs.
+    /// Pairs with the widget-extension `widgetPushThrottle` 120s → 30s and
+    /// the edge function `progress_update` 60s → 20s in the same sprint.
+    private static let throttleStepsInterval: TimeInterval = 60   // 1 min
     private static let throttleDefaultInterval: TimeInterval = 600 // 10 min
 
     /// Resolve the throttle window for a HealthKit observer source.

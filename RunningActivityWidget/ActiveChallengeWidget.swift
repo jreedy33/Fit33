@@ -306,13 +306,22 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
     // Per-challenge debounce so we don't hammer `log_challenge_progress`
     // every time the timeline ticks (one tick = ~20 min, but small + medium
     // widgets each get their own ticks, and iOS may schedule extras).
-    // 120s matches the main-app `BackgroundChallengeSyncService` steps
-    // throttle (QP invariant 25z) so the cumulative push cadence stays
-    // consistent across widget + main-app paths.
+    //
+    // Phase 7e (2026-04-27): drops 120s → 30s. Widget timeline ticks fire at
+    // most every ~20 min (iOS budget ~40-70 reloads/day per kind), so 30s is
+    // effectively a "never throttle out a real tick" floor — when the tick
+    // fires AND HK has fresh data AND the value beats the per-value dedupe,
+    // we always push. The 120s ceiling was the dominant reason the writer's
+    // value sat on his widget locally (HK overlay) without ever landing in
+    // Supabase when his main app was suspended. Server uses GREATEST() so
+    // over-pushing is safe; the per-value dedupe (`widgetPushValueKeyPrefix`)
+    // already guarantees we never push the same number twice. Pairs with
+    // main-app `throttleStepsInterval` 120s → 60s and edge function
+    // `progress_update` 60s → 20s in the same sprint.
     //
     // State is stored in App Group `UserDefaults` so it survives across
     // widget process restarts. Keys are scoped per-challenge.
-    private static let widgetPushThrottle: TimeInterval = 120
+    private static let widgetPushThrottle: TimeInterval = 30
     private static let widgetPushKeyPrefix = "fit33.widget.lastStepPush.v1."
     private static let widgetPushValueKeyPrefix = "fit33.widget.lastStepValue.v1."
 
@@ -533,6 +542,24 @@ struct ActiveChallengeWidgetEntryView: View {
         // renders the right tone for the chosen background — dark for
         // color & dark styles, light for the grey style.
         .environment(\.colorScheme, entry.style == .light ? .light : .dark)
+        // Tap-to-open deep link. When a challenge is rendered, tapping the
+        // widget anywhere outside the embedded refresh `Button` opens the
+        // app and pushes the in-app challenge detail view via
+        // `DeepLinkManager` → `.challengeDetail(challengeId:)` (handled in
+        // `MainTabView`'s deep-link router). When the empty state is
+        // shown we fall back to the challenges list (Friends tab) so the
+        // user lands somewhere they can start a new one. The refresh
+        // `Button(intent:)` keeps its own hit region per PRODUCT_ENGINEER
+        // invariant 31 — `widgetURL` is the WIDGET-WIDE default action,
+        // not a replacement for the in-extension intent.
+        .widgetURL(widgetTapURL)
+    }
+
+    private var widgetTapURL: URL? {
+        if let challenge = entry.challenge {
+            return URL(string: "fit33://challenge/\(challenge.challengeId)")
+        }
+        return URL(string: "fit33://challenges")
     }
 }
 

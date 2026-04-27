@@ -1083,7 +1083,21 @@ class CommunityChallengeService: ObservableObject {
                     AppLogger.warning("log_community_challenge_progress timeout (attempt \(attempt)/\(maxRetries)), retrying...", category: .social)
                     try? await Task.sleep(nanoseconds: delay)
                 } else {
-                    AppLogger.error("Error logging community progress: \(error.localizedDescription)", category: .social)
+                    // Bug-intel e03ca9df / d29ff85a (2026-04-27): replace bare
+                    // AppLogger.error with NetworkErrorClassifier so 40P01
+                    // (deadlock_detected — server-side fix in
+                    // 20260628_log_community_challenge_progress_deadlock_retry.sql
+                    // adds retry but the residual case still surfaces here)
+                    // and other transient classes log as .warning instead of
+                    // crash-fingerprinting. QUALITY_PERFORMANCE_AGENT inv 25a.
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "Error logging community progress",
+                        category: .social,
+                        transientLevel: .warning,
+                        op: "community_challenge.progress_sync",
+                        endpoint: "rpc/log_community_challenge_progress"
+                    )
                     return false
                 }
             }

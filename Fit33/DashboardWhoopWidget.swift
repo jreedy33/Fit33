@@ -228,9 +228,12 @@ struct DashboardWhoopSyncNowCard: View {
 /// Recovery-ring hero card. The ring IS WHOOP's brand mark — a percentage
 /// trim around the level color (red/yellow/green) so the at-a-glance
 /// recovery signal is the primary visual instead of a 10-cell rainbow grid.
-/// Card chrome uses the shared `.sleekCard()` treatment tinted by the
-/// recovery level (mirrors how `DashboardStravaCard` brand-tags itself in
-/// orange) so the whole tile reads "this is your WHOOP today."
+///
+/// Card chrome is intentionally neutral (white-ish in light mode, dark
+/// gray in dark mode) — the recovery color is confined to the ring +
+/// percent digit so the at-a-glance signal pops without flooding the
+/// whole tile in red on a low-recovery day. Mirrors the neutral chrome
+/// already used by `DashboardWhoopSyncNowCard` / `DashboardWhoopWaitingCard`.
 ///
 /// The 10-metric breakdown still lives in `WhoopMetricsInfoSheet` (this
 /// card opens it on tap) — the widget surfaces only the 6 most actionable
@@ -244,7 +247,17 @@ struct DashboardWhoopCard: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    private var accentColor: Color { level.color }
+    /// Recovery color (red/yellow/green) — used ONLY inside the recovery
+    /// ring (stroke + center percent digit). Do not apply to card chrome,
+    /// stat-strip backgrounds, or dividers; those must stay neutral so a
+    /// low-recovery day doesn't paint the entire dashboard tile red.
+    private var ringColor: Color { level.color }
+
+    /// Neutral chrome accent for the `.sleekCard()` outer glow + shadow.
+    /// Matches the `Color(white: 0.4)` used by the connected-but-pending
+    /// `DashboardWhoopWaitingCard` so all three WHOOP card states share the
+    /// same monochrome chrome and only the inner content differs.
+    private var chromeAccent: Color { Color(white: 0.4) }
 
     /// WHOOP-blue — used only for the strain mini-bar so Strain has its
     /// own brand cue without polluting the rest of the card with extra hues.
@@ -262,7 +275,7 @@ struct DashboardWhoopCard: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: chromeAccent)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
     }
@@ -302,12 +315,12 @@ struct DashboardWhoopCard: View {
 
         return ZStack {
             Circle()
-                .stroke(accentColor.opacity(colorScheme == .dark ? 0.18 : 0.12), lineWidth: 8)
+                .stroke(ringColor.opacity(colorScheme == .dark ? 0.18 : 0.12), lineWidth: 8)
             Circle()
                 .trim(from: 0, to: progress)
                 .stroke(
                     LinearGradient(
-                        colors: [accentColor, accentColor.opacity(0.7)],
+                        colors: [ringColor, ringColor.opacity(0.7)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
@@ -318,7 +331,7 @@ struct DashboardWhoopCard: View {
             VStack(spacing: 0) {
                 Text(recovery?.recoveryScore.map { "\($0)" } ?? "—")
                     .font(.system(size: 28, weight: .heavy, design: .rounded))
-                    .foregroundColor(accentColor)
+                    .foregroundColor(ringColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 Text("%")
@@ -404,8 +417,12 @@ struct DashboardWhoopCard: View {
         .padding(.vertical, Spacing.xs)
         .padding(.horizontal, Spacing.sm)
         .background(
+            // Neutral monochrome backdrop — never recovery-color-tinted.
+            // A low-recovery day would otherwise paint a red wash across
+            // the primary stat strip, which is what the user explicitly
+            // asked to remove (only the ring stays colored).
             RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
-                .fill(accentColor.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.10 : 0.06))
         )
     }
 
@@ -435,7 +452,10 @@ struct DashboardWhoopCard: View {
 
     private var statDivider: some View {
         Rectangle()
-            .fill(accentColor.opacity(colorScheme == .dark ? 0.22 : 0.18))
+            // Neutral monochrome divider — never recovery-color-tinted.
+            // Matches the `secondaryDivider` below for consistency, and
+            // keeps the only red/yellow/green surface the recovery ring.
+            .fill(Color.secondary.opacity(colorScheme == .dark ? 0.22 : 0.18))
             .frame(width: 1, height: 24)
     }
 

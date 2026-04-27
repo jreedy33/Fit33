@@ -19,6 +19,40 @@ class HealthKitManager: ObservableObject {
     @Published var monthlyAverage: Int = 0
     @Published var stepGoal: Int = 10000
     @Published var isLoading = false
+
+    // Bug-intel 80234a6b (2026-04-27): user shake at 4:12 AM — "my steps in
+    // app did not immediately reset to 0 at the start of the new day."
+    // `todaySteps` had no day-boundary tracking; once set at e.g. 11:30 PM
+    // yesterday, the @Published value persisted across midnight until the
+    // next `fetchTodaySteps()` ran. ChallengeProgressResolver.resolveProgress
+    // (.steps) reads HealthKitManager.shared.todaySteps and would happily
+    // return yesterday's count.
+    //
+    // Fix: stamp the local-day component every time we update todaySteps,
+    // and expose `effectiveTodaySteps` which returns 0 when the cached value
+    // isn't from today's local day. ChallengeProgressResolver reads the
+    // effective accessor; the raw `todaySteps` stays public for compat.
+    /// Local day-of-year + year of the last successful `fetchTodaySteps()`.
+    /// nil = never fetched. Compared against the current calendar day on
+    /// every read of `effectiveTodaySteps` so a stale post-midnight cache
+    /// returns 0 instead of yesterday's count.
+    private var todayStepsFetchedDay: (year: Int, day: Int)?
+
+    /// `todaySteps` gated on day freshness. Returns 0 if the cached value
+    /// is from a previous local day. Use this in challenge / quest progress
+    /// resolvers; the raw `todaySteps` is kept for backward compat where
+    /// callers explicitly want "last known fetched value."
+    var effectiveTodaySteps: Int {
+        guard let stamp = todayStepsFetchedDay else { return 0 }
+        let cal = Calendar.current
+        let now = Date()
+        let nowDay = cal.component(.dayOfYear, from: now)
+        let nowYear = cal.component(.year, from: now)
+        if stamp.year == nowYear && stamp.day == nowDay {
+            return todaySteps
+        }
+        return 0
+    }
     
     /// Whether to save workouts to Apple Health (user preference)
     @Published var saveWorkoutsToHealth: Bool {
@@ -474,10 +508,17 @@ class HealthKitManager: ObservableObject {
             }
             
             let steps = Int(result?.sumQuantity()?.doubleValue(for: .count()) ?? 0)
-            
+
+            // Stamp the local day so `effectiveTodaySteps` can detect a
+            // stale cache after a midnight rollover (bug-intel 80234a6b).
+            let cal = Calendar.current
+            let stamp = (year: cal.component(.year, from: Date()),
+                         day: cal.component(.dayOfYear, from: Date()))
+
             Task {
                 await MainActor.run {
                     self.todaySteps = steps
+                    self.todayStepsFetchedDay = stamp
                     self.isLoading = false
                     // Optimistic widget patch — `ChallengeProgressResolver`
                     // reads `HealthKitManager.todaySteps` first, so this

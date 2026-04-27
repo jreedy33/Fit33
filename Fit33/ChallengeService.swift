@@ -2952,7 +2952,13 @@ class ChallengeProgressResolver: ObservableObject {
         
         switch challengeType {
         case .steps:
-            let managerSteps = HealthKitManager.shared.todaySteps
+            // Bug-intel 80234a6b (2026-04-27): use the day-boundary-gated
+            // accessor so a stale pre-midnight cache returns 0 instead of
+            // yesterday's count. `effectiveTodaySteps` returns 0 when
+            // HealthKitManager's `todaySteps` was last fetched on a
+            // different local calendar day — preventing the
+            // "4,253 steps at 4:12 AM" perceived regression.
+            let managerSteps = HealthKitManager.shared.effectiveTodaySteps
             if managerSteps > 0 {
                 localValue = managerSteps
                 localHasData = true

@@ -52,14 +52,100 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
         //     from cache — so the budget loss is "no fresh data this
         //     tick" not "blank widget".
         await Self.pullAndMergeIfPossible(timeoutSeconds: 3.0)
-        let entry = Self.entry(for: configuration)
-        // Refresh every 20 minutes. The main app reloads on every
-        // challenge update via `ActiveChallengeWidgetBridge`, so this is
-        // just a safety net for users who haven't opened the app in a
-        // while. 20min keeps the widget feeling live while still well
-        // under iOS's per-widget reload budget (40-70/day).
-        let nextRefresh = Calendar.current.date(byAdding: .minute, value: 20, to: Date()) ?? Date().addingTimeInterval(1200)
-        return Timeline(entries: [entry], policy: .after(nextRefresh))
+        let nowEntry = Self.entry(for: configuration)
+
+        // Bug-intel 80234a6b (2026-04-27): widget should reflect 0 progress
+        // immediately at the local-day rollover instead of holding yesterday's
+        // value until the next 20-min tick. Build a synthetic midnight entry
+        // with today's progress reset to 0; iOS automatically picks whichever
+        // entry's `date` is closest-but-not-after `now()`, so this entry only
+        // becomes the rendered one at exactly local midnight.
+        let now = Date()
+        let cal = Calendar.current
+        let nextMidnight = cal.nextDate(
+            after: now,
+            matching: DateComponents(hour: 0, minute: 0, second: 0),
+            matchingPolicy: .nextTime
+        ) ?? now.addingTimeInterval(24 * 3600)
+
+        let midnightEntry = Self.midnightResetEntry(from: nowEntry, at: nextMidnight)
+
+        // Refresh policy: whichever comes sooner — 20 min from now, OR
+        // 5 min after midnight (so we pull fresh server data shortly
+        // after the rollover and replace the synthetic reset entry with
+        // a real one). 20 min keeps us well under iOS's per-widget
+        // reload budget (40-70/day) for users with stable timelines.
+        let twentyMinFromNow = now.addingTimeInterval(20 * 60)
+        let fiveMinAfterMidnight = nextMidnight.addingTimeInterval(5 * 60)
+        let nextRefresh = min(twentyMinFromNow, fiveMinAfterMidnight)
+
+        return Timeline(entries: [nowEntry, midnightEntry], policy: .after(nextRefresh))
+    }
+
+    /// Construct a "midnight reset" timeline entry by cloning the current
+    /// entry but zeroing both participants' today-progress. iOS displays
+    /// this entry starting at exactly `midnight` until the next refresh
+    /// fires (~5 min later). The Phase 7c live-HK overlay re-evaluates at
+    /// render time, so step-typed challenges also pick up any literal
+    /// post-midnight steps if the user is walking right at the rollover.
+    private static func midnightResetEntry(
+        from base: ActiveChallengeEntry,
+        at midnight: Date
+    ) -> ActiveChallengeEntry {
+        guard let baseChallenge = base.challenge else {
+            // No active challenge — empty state at midnight is identical
+            // to empty state now; just stamp the future date.
+            return ActiveChallengeEntry(
+                date: midnight,
+                challenge: nil,
+                userPhoto: base.userPhoto,
+                opponentPhoto: base.opponentPhoto,
+                style: base.style
+            )
+        }
+
+        let resetChallenge = ActiveChallengeWidgetSnapshot.WidgetActiveChallenge(
+            challengeId: baseChallenge.challengeId,
+            challengeType: baseChallenge.challengeType,
+            displayTitle: baseChallenge.displayTitle,
+            mode: baseChallenge.mode,
+            targetUnit: baseChallenge.targetUnit,
+            dailyTarget: baseChallenge.dailyTarget,
+            // daysRemaining decrements at midnight — but only by 1, and
+            // the client-rendered countdown can derive it. Pass through
+            // the existing value; the post-midnight refresh tick fires
+            // 5 min later and will pull the authoritative value.
+            daysRemaining: max(0, baseChallenge.daysRemaining - 1),
+            durationDays: baseChallenge.durationDays,
+            myTodayProgress: 0,
+            opponentTodayProgress: 0,
+            opponentId: baseChallenge.opponentId,
+            opponentName: baseChallenge.opponentName,
+            opponentPhotoUrl: baseChallenge.opponentPhotoUrl,
+            opponentIsVerified: baseChallenge.opponentIsVerified,
+            opponentIsGoldVerified: baseChallenge.opponentIsGoldVerified,
+            myCurrentStreak: baseChallenge.myCurrentStreak,
+            // amWinningToday at 0–0 → tied, neither is "winning"; render
+            // accordingly. The 5-min post-midnight refresh corrects this
+            // once real progress arrives.
+            amWinningToday: false,
+            myDisplayName: baseChallenge.myDisplayName,
+            hasUserPhoto: baseChallenge.hasUserPhoto,
+            hasOpponentPhoto: baseChallenge.hasOpponentPhoto,
+            // Clear last-progress-at so the freshness pill reads
+            // "— · just now" (Phase 6 unknown==fresh contract) at
+            // midnight rather than "— · 8h ago" from yesterday's row.
+            myLastProgressAt: nil,
+            opponentLastProgressAt: nil
+        )
+
+        return ActiveChallengeEntry(
+            date: midnight,
+            challenge: resetChallenge,
+            userPhoto: base.userPhoto,
+            opponentPhoto: base.opponentPhoto,
+            style: base.style
+        )
     }
 
     private static func entry(for configuration: ChallengePickerIntent) -> ActiveChallengeEntry {

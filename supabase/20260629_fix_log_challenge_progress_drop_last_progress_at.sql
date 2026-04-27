@@ -250,8 +250,13 @@ BEGIN
         RAISE EXCEPTION '[20260629 audit] expected exactly 1 log_challenge_progress overload, got %', v_count;
     END IF;
 
-    IF position('last_progress_at' in v_src) > 0 THEN
-        RAISE EXCEPTION '[20260629 audit] log_challenge_progress still references last_progress_at column — hotfix did not land';
+    -- Look for the WRITE pattern, not just the string. The function body
+    -- intentionally references `last_progress_at` in a comment to flag
+    -- to future maintainers that the column doesn't exist on
+    -- challenge_participants. The audit only fires if a real assignment
+    -- (`last_progress_at = …` or `last_progress_at  := …`) reappears.
+    IF v_src ~ '\mlast_progress_at\s*[:=]' THEN
+        RAISE EXCEPTION '[20260629 audit] log_challenge_progress still ASSIGNS last_progress_at — hotfix did not land';
     END IF;
 
     IF position('FOR UPDATE'        in v_src) = 0 THEN

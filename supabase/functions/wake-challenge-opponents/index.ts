@@ -35,8 +35,22 @@ const APNS_PRIVATE_KEY = (Deno.env.get("APNS_PRIVATE_KEY") || "").replace(/\\n/g
 const APNS_HOST_PRODUCTION = "api.push.apple.com";
 const APNS_HOST_SANDBOX = "api.sandbox.push.apple.com";
 
-// Per-user throttle window (must be >= send-push-notification's silent cap).
-const THROTTLE_WINDOW_MS = 15 * 60 * 1000;
+// Per-source throttle windows. Each `triggered_by` source has its own
+// bucket so a chatty progress_update push can't suppress a foreground
+// wake (and vice-versa). Foreground / cron / background_sync stay at
+// 15 min — they're broad-spectrum opponent nudges. progress_update is
+// 60s — fired by a single user's progress write, capped at one push
+// per recipient per minute regardless of how often the writer pushes.
+//
+// Widget Freshness Sprint Phase 7b (2026-04-26) — see
+// `supabase/20260625_opponent_progress_silent_push.sql`.
+const THROTTLE_WINDOWS_MS_BY_SOURCE: Record<string, number> = {
+    foreground: 15 * 60 * 1000,
+    background_sync: 15 * 60 * 1000,
+    cron: 15 * 60 * 1000,
+    progress_update: 60 * 1000,
+};
+const DEFAULT_THROTTLE_WINDOW_MS = 15 * 60 * 1000;
 
 // Hard cap on recipients per invocation — defense-in-depth against a runaway
 // query. 500 is more than enough for the entire active-challenge population.
@@ -66,7 +80,17 @@ function isServiceRoleJWT(token: string): boolean {
 }
 
 interface RequestBody {
-    source?: "foreground" | "cron" | "background_sync";
+    source?: "foreground" | "cron" | "background_sync" | "progress_update";
+    /// Used by `source: "progress_update"` (server trigger) to bypass the
+    /// per-caller opponent resolution and target a pre-computed list. Only
+    /// honored when service-role / x-cron-key auth is present.
+    recipient_ids?: string[];
+    /// Optional metadata for diagnostics — never used to route logic, just
+    /// echoed in console logs so we can correlate APNs failures with the
+    /// originating progress write.
+    writer_id?: string;
+    challenge_id?: string;
+    source_table?: string;
 }
 
 serve(async (req) => {
@@ -116,7 +140,22 @@ serve(async (req) => {
         // ── Resolve candidate recipient user IDs ──────────────────────────
         let candidateIds: string[] = [];
 
-        if (source === "cron") {
+        if (source === "progress_update") {
+            // Server-driven trigger fan-out (Widget Freshness Phase 7b).
+            // Only service-role / cron-key callers may target an
+            // arbitrary recipient list — a user JWT cannot be trusted
+            // to address other users.
+            if (!isServiceRole) {
+                return json({ error: "progress_update requires service role" }, 403, corsHeaders);
+            }
+            const provided = Array.isArray(body.recipient_ids) ? body.recipient_ids : [];
+            // Defensive UUID-shape check; PostgREST returns strings.
+            candidateIds = provided
+                .filter((s): s is string => typeof s === "string" && s.length === 36);
+            if (candidateIds.length === 0) {
+                return json({ message: "No recipient_ids", sent: 0, throttled: 0 }, 200, corsHeaders);
+            }
+        } else if (source === "cron") {
             candidateIds = await resolveAllActiveChallengeParticipants(supabase);
         } else {
             if (!callerUserId) {
@@ -132,12 +171,19 @@ serve(async (req) => {
         // Cap + dedupe (dedupe already done by resolve*, but belt & braces)
         const uniqueIds = Array.from(new Set(candidateIds)).slice(0, MAX_RECIPIENTS_PER_RUN);
 
-        // ── Apply 15-min throttle via silent_push_wake_log ────────────────
-        const cutoff = new Date(Date.now() - THROTTLE_WINDOW_MS).toISOString();
+        // ── Per-source throttle via silent_push_wake_log ──────────────────
+        //
+        // Each `triggered_by` source has its own bucket — progress_update
+        // wakes (60s window) NEVER throttle out a foreground / cron wake
+        // (15 min window) and vice-versa. Lookup filters on `triggered_by`
+        // so the recent-rows set is source-scoped.
+        const throttleWindowMs = THROTTLE_WINDOWS_MS_BY_SOURCE[source] ?? DEFAULT_THROTTLE_WINDOW_MS;
+        const cutoff = new Date(Date.now() - throttleWindowMs).toISOString();
         const { data: recentRows, error: logErr } = await supabase
             .from("silent_push_wake_log")
             .select("user_id")
             .in("user_id", uniqueIds)
+            .eq("triggered_by", source)
             .gte("sent_at", cutoff);
 
         if (logErr) {

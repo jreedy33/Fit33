@@ -1127,21 +1127,29 @@ class ChallengeService: ObservableObject {
         // Refresh PENDING sent challenges (NOT active - challenge is pending until opponent accepts)
         await fetchPendingSentChallenges()
         
-        // IMPORTANT: Sync creator's existing progress if challenge starts today or earlier
-        // This ensures creators get credit for progress made before creating the challenge
+        // IMPORTANT: Sync creator's existing progress if challenge starts today or earlier.
+        // This is fire-and-forget — the work is HK force-sync + Strava check + multi-source
+        // progress calc + logProgress server roundtrip (3-10s under network pressure). Blocking
+        // the send-button spinner on it produces the "took forever" feel reported in
+        // 1.38 (56) logs (S963 visible 77s; user shook the phone). Realtime + the next
+        // BG / HK observer sync will reflect any landed progress within seconds anyway,
+        // and `fetchPendingSentChallenges` (above) already updated the dashboard list.
+        // QP invariants 19c/19d/19e: split user-visible work from background-sync work.
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         let challengeStartDay = calendar.startOfDay(for: startDate)
-        
+
         if challengeStartDay <= today {
-            AppLogger.debug("Challenge starts today - syncing creator's existing progress...", category: .social)
-            await syncCreatorProgressOnCreate(
-                challengeId: challengeId,
-                challengeType: type,
-                targetUnit: targetUnit
-            )
+            AppLogger.debug("Challenge starts today - scheduling creator's existing progress sync (fire-and-forget)", category: .social)
+            Task { [weak self] in
+                await self?.syncCreatorProgressOnCreate(
+                    challengeId: challengeId,
+                    challengeType: type,
+                    targetUnit: targetUnit
+                )
+            }
         }
-        
+
         PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "challenge_created")
     }
     

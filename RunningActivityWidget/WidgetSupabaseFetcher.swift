@@ -164,6 +164,77 @@ enum WidgetSupabaseFetcher {
         return sorted.map { $0.toWidgetActiveChallenge(userDisplayName: userDisplayName) }
     }
 
+    /// Pushes a step-count progress value for a challenge directly from
+    /// the widget extension. Phase 7d (Widget Freshness Sprint —
+    /// 2026-04-26): keeps opponents seeing fresh numbers even when the
+    /// user's main Fit33 app has been closed for hours, by piggybacking
+    /// on the 20-min widget timeline tick that's already pulling
+    /// `get_active_challenges`. Pairs with the server-side trigger
+    /// (`supabase/20260625_opponent_progress_silent_push.sql`) — the
+    /// trigger fires a silent push to opponents within seconds of this
+    /// write landing.
+    ///
+    /// IMPORTANT: write surface is intentionally narrow. The widget can
+    /// ONLY call this RPC, ONLY with `p_source = "widget"`. The server
+    /// has a kill switch (`internal_config.widget_writes_enabled`) that
+    /// silently no-ops widget-source writes if anything goes sideways
+    /// in production.
+    ///
+    /// Auth model: same App Group JWT the read path uses — short-lived,
+    /// best-effort. On 401 (token expired because the main app hasn't
+    /// run a refresh in >JWT lifetime) we just bail. The main app picks
+    /// it back up on its next foreground tick.
+    ///
+    /// Throws on transport / 5xx so callers can decide whether to retry;
+    /// 401 is rethrown as `.http(status: 401)` so the caller can
+    /// distinguish auth-expired from a real server failure.
+    ///
+    /// - Parameters:
+    ///   - challengeId: 1v1 challenge UUID (`group_challenges.id`).
+    ///   - stepCount: total cumulative steps for today; server applies
+    ///     `GREATEST(existing, new)` so over-reporting is safe.
+    ///   - timezone: IANA tz id; drives the server's `today` window.
+    ///   - timeout: hard ceiling on the HTTP call. Default 3s — same
+    ///     budget as the timeline read path. Inside that envelope we
+    ///     have plenty of room for the lock + upsert + streak recompute.
+    static func logChallengeStepProgress(
+        challengeId: String,
+        stepCount: Int,
+        timezone: String = TimeZone.current.identifier,
+        timeout: TimeInterval = 3.0
+    ) async throws {
+        let token = try readSessionAccessToken()
+
+        // Local-day yyyy-MM-dd, matching the main app's `dateStr` arg
+        // shape (`Fit33/ChallengeService.swift::logProgress`). Using
+        // local date keeps the caller-tz day boundary consistent
+        // (Data invariant #45).
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: timezone) ?? TimeZone.current
+        let today = formatter.string(from: Date())
+
+        let body: [String: Any] = [
+            "p_challenge_id": challengeId,
+            "p_progress_value": stepCount,
+            "p_progress_date": today,
+            "p_source": "widget",
+            // p_workout_id intentionally omitted — encodes as DEFAULT NULL.
+            "p_timezone": timezone,
+            // Steps need allow_decrease=true at midnight rollover
+            // (Data invariant #47). Same posture as main app
+            // `syncHealthKitDataToChallenges`.
+            "p_allow_decrease": true,
+        ]
+
+        try await postRPCDiscardingResponse(
+            name: "log_challenge_progress",
+            body: body,
+            jwt: token,
+            timeout: timeout
+        )
+    }
+
     // MARK: - Session token reader
 
     /// Reads the access-token JWT out of the main-app-published session
@@ -202,6 +273,78 @@ enum WidgetSupabaseFetcher {
     }
 
     // MARK: - RPC plumbing
+
+    /// Variant of `postRPC` that accepts a heterogeneous body
+    /// (Int / Bool / String — `log_challenge_progress` mixes types)
+    /// and discards the response. Phase 7d write path. Same auth +
+    /// timeout posture as the read path; throws `WidgetSupabaseFetcherError`
+    /// on transport / non-2xx so the caller can branch on 401 vs other
+    /// failures.
+    private static func postRPCDiscardingResponse(
+        name: String,
+        body: [String: Any],
+        jwt: String,
+        timeout: TimeInterval
+    ) async throws {
+        let url = WidgetSupabaseConfig.url
+            .appendingPathComponent("rest/v1/rpc/\(name)")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(WidgetSupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
+
+        do {
+            // `JSONSerialization` (not `JSONEncoder`) because the body
+            // is `[String: Any]` — Codable wants a homogeneous dict.
+            // Validate first per QP invariant #9 (JSON safety).
+            guard JSONSerialization.isValidJSONObject(body) else {
+                throw WidgetSupabaseFetcherError.transport(
+                    NSError(domain: "WidgetSupabaseFetcher", code: -1, userInfo: [
+                        NSLocalizedDescriptionKey: "Invalid JSON body for \(name)",
+                    ])
+                )
+            }
+            req.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        } catch let err as WidgetSupabaseFetcherError {
+            throw err
+        } catch {
+            throw WidgetSupabaseFetcherError.transport(error)
+        }
+
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = timeout
+        config.timeoutIntervalForResource = timeout
+        config.waitsForConnectivity = false
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw WidgetSupabaseFetcherError.transport(error)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw WidgetSupabaseFetcherError.http(status: -1, body: nil)
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8)
+            // 401 is the dominant failure mode here — JWT expired
+            // because the main app hasn't refreshed in >JWT lifetime.
+            // Log at debug; the caller treats it as "no push this tick".
+            if http.statusCode == 401 {
+                log.debug("RPC \(name, privacy: .public) auth-expired: HTTP 401")
+            } else {
+                log.info("RPC \(name, privacy: .public) failed: HTTP \(http.statusCode) body=\(body ?? "<empty>", privacy: .public)")
+            }
+            throw WidgetSupabaseFetcherError.http(status: http.statusCode, body: body)
+        }
+    }
 
     private static func postRPC(
         name: String,

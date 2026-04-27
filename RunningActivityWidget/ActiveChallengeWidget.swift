@@ -119,8 +119,185 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
         // anything new), and re-writing the same bytes on every tick
         // would still trigger Darwin observers in the main app
         // (Phase 5) and waste their reload budget.
-        let merged = mergeFreshWithCache(fresh: fresh, cachedById: cachedById, cachedDisplayName: cachedDisplayName)
+        var merged = mergeFreshWithCache(fresh: fresh, cachedById: cachedById, cachedDisplayName: cachedDisplayName)
+
+        // Phase 7c (2026-04-26): widget-side HealthKit overlay. For
+        // step-typed challenges, READ today's cumulative step count
+        // directly from HealthKit and overlay it on top of the server
+        // value via `max(server, hk)` so the displayed number tracks
+        // live walking even when the main app is force-killed and
+        // hasn't been able to push to Supabase. Monotonic — never
+        // regresses below the server-confirmed value (mirrors QP
+        // invariant 25u).
+        let hkSteps = await WidgetHealthKitReader.todayStepsIfAuthorized()
+        merged = applyHealthKitStepOverlay(merged, hkSteps: hkSteps)
+
         writeIfChanged(merged: merged)
+
+        // Phase 7d (2026-04-26): widget-side WRITE-back. After the
+        // overlay, push fresh HK step counts to the server so opponents
+        // see them via the Phase 7b silent-push trigger — even when the
+        // user hasn't opened the main Fit33 app in hours. Fire-and-
+        // forget (`Task.detached`) so a slow `log_challenge_progress`
+        // round trip never holds up the timeline render.
+        if let hkSteps {
+            Task.detached(priority: .background) {
+                await pushFreshStepProgressIfNeeded(merged: merged, hkSteps: hkSteps)
+            }
+        }
+    }
+
+    /// Overlays today's cumulative step count from HealthKit on every
+    /// step-typed challenge in the merged list. Returns the input
+    /// unchanged when HealthKit is unavailable / unauthorized — the
+    /// caller can't tell the difference, which is the right "fail
+    /// closed to server data" posture. The HK read is hoisted into
+    /// the caller (`pullAndMergeIfPossible`) so Phase 7d can reuse
+    /// the same value for the write-back path without a second HK
+    /// query.
+    private static func applyHealthKitStepOverlay(
+        _ rows: [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge],
+        hkSteps: Int?
+    ) -> [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge] {
+        // Cheap fast-path: skip the merge work when no rendered
+        // challenge actually consumes step data, OR when HK is
+        // unavailable / unauthorized.
+        let needsSteps = rows.contains(where: { isStepTypedChallenge($0) })
+        guard needsSteps, let hkSteps else { return rows }
+
+        return rows.map { row in
+            guard isStepTypedChallenge(row) else { return row }
+            let next = max(row.myTodayProgress, hkSteps)
+            guard next != row.myTodayProgress else { return row }
+            return ActiveChallengeWidgetSnapshot.WidgetActiveChallenge(
+                challengeId: row.challengeId,
+                challengeType: row.challengeType,
+                displayTitle: row.displayTitle,
+                mode: row.mode,
+                targetUnit: row.targetUnit,
+                dailyTarget: row.dailyTarget,
+                daysRemaining: row.daysRemaining,
+                durationDays: row.durationDays,
+                myTodayProgress: next,
+                opponentTodayProgress: row.opponentTodayProgress,
+                opponentId: row.opponentId,
+                opponentName: row.opponentName,
+                opponentPhotoUrl: row.opponentPhotoUrl,
+                opponentIsVerified: row.opponentIsVerified,
+                opponentIsGoldVerified: row.opponentIsGoldVerified,
+                myCurrentStreak: row.myCurrentStreak,
+                amWinningToday: next > row.opponentTodayProgress,
+                myDisplayName: row.myDisplayName,
+                hasUserPhoto: row.hasUserPhoto,
+                hasOpponentPhoto: row.hasOpponentPhoto,
+                // HK overlay is by definition a "now" datapoint —
+                // stamp `myLastProgressAt` to now so the freshness
+                // pill (`ProgressFreshness.fresh`) reflects the live
+                // local read instead of the older server timestamp.
+                myLastProgressAt: Date(),
+                opponentLastProgressAt: row.opponentLastProgressAt
+            )
+        }
+    }
+
+    /// True when this challenge's `myTodayProgress` is a step count
+    /// that HealthKit's `stepCount` total can sensibly overlay. Walk /
+    /// run distance challenges track meters, not steps — they need a
+    /// different HK query (`distanceWalkingRunning`) and are out of
+    /// scope for Phase 7c. Daily-target unit is the canonical signal
+    /// (matches the same check `ChallengeProgressResolver` uses on the
+    /// main-app side for the optimistic patch).
+    private static func isStepTypedChallenge(
+        _ row: ActiveChallengeWidgetSnapshot.WidgetActiveChallenge
+    ) -> Bool {
+        let type = row.challengeType.lowercased()
+        let unit = row.targetUnit.lowercased()
+        return type == "steps" || unit == "steps"
+    }
+
+    // MARK: - Phase 7d: Widget-side write-back
+    //
+    // Per-challenge debounce so we don't hammer `log_challenge_progress`
+    // every time the timeline ticks (one tick = ~20 min, but small + medium
+    // widgets each get their own ticks, and iOS may schedule extras).
+    // 120s matches the main-app `BackgroundChallengeSyncService` steps
+    // throttle (QP invariant 25z) so the cumulative push cadence stays
+    // consistent across widget + main-app paths.
+    //
+    // State is stored in App Group `UserDefaults` so it survives across
+    // widget process restarts. Keys are scoped per-challenge.
+    private static let widgetPushThrottle: TimeInterval = 120
+    private static let widgetPushKeyPrefix = "fit33.widget.lastStepPush.v1."
+    private static let widgetPushValueKeyPrefix = "fit33.widget.lastStepValue.v1."
+
+    /// Pushes today's HK step count to `log_challenge_progress` for every
+    /// step-typed challenge where HK exceeds the server-confirmed value.
+    /// Per-challenge debounced (120s) and value-deduped (skip the push
+    /// when the count hasn't changed since the previous push). 401s are
+    /// expected ("main app hasn't refreshed JWT in N hours") and silently
+    /// drop; the next 20-min tick will retry, and the user opening the
+    /// app rotates the JWT so the widget can resume pushing.
+    private static func pushFreshStepProgressIfNeeded(
+        merged: [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge],
+        hkSteps: Int
+    ) async {
+        guard hkSteps > 0 else { return }
+        guard let defaults = UserDefaults(suiteName: ActiveChallengeWidgetSnapshot.appGroupID) else {
+            return
+        }
+
+        // Find the rows we actually need to push. Skip when the server
+        // already knows >= our HK count (server saw a more recent push
+        // from elsewhere — the main app, BGAppRefresh, or another widget
+        // tick that beat us).
+        let candidates = merged.filter { row in
+            isStepTypedChallenge(row) && hkSteps > row.myTodayProgress
+        }
+        guard !candidates.isEmpty else { return }
+
+        let now = Date()
+        for row in candidates {
+            let throttleKey = widgetPushKeyPrefix + row.challengeId
+            let valueKey = widgetPushValueKeyPrefix + row.challengeId
+
+            // Per-challenge time + value debounce.
+            let lastPushAt = defaults.object(forKey: throttleKey) as? Date
+            if let lastPushAt, now.timeIntervalSince(lastPushAt) < widgetPushThrottle {
+                continue
+            }
+            let lastValue = defaults.integer(forKey: valueKey)
+            if lastValue >= hkSteps {
+                continue
+            }
+
+            do {
+                try await WidgetSupabaseFetcher.logChallengeStepProgress(
+                    challengeId: row.challengeId,
+                    stepCount: hkSteps
+                )
+                defaults.set(now, forKey: throttleKey)
+                defaults.set(hkSteps, forKey: valueKey)
+                log.info("Widget pushed steps=\(hkSteps) to challenge=\(row.challengeId.prefix(8), privacy: .public)")
+            } catch let error as WidgetSupabaseFetcherError {
+                switch error {
+                case .http(status: 401, _):
+                    // JWT expired — main app hasn't refreshed in
+                    // a while. Silent drop; bump the throttle so we
+                    // don't spin on 401 every tick.
+                    defaults.set(now, forKey: throttleKey)
+                    return
+                case .notAuthenticated, .appGroupUnavailable, .malformedSession:
+                    // Config / signed-out states. Stop trying — every
+                    // candidate would hit the same wall.
+                    return
+                default:
+                    // Transport / 5xx / decode — let the next tick retry.
+                    log.debug("Widget push failed (non-fatal): \(String(describing: error), privacy: .public)")
+                }
+            } catch {
+                log.debug("Widget push failed (non-fatal): \(String(describing: error), privacy: .public)")
+            }
+        }
     }
 
     /// Combines the fresh server-side rows with cached photo flags +

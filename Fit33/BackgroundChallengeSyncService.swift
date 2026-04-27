@@ -58,8 +58,48 @@ class BackgroundChallengeSyncService {
     /// Per-source throttle window. One noisy source (steps) no longer starves
     /// the others (e.g. active energy / distance) because each has its own timer.
     /// Workouts are flagged high-priority and bypass the throttle entirely.
-    private let perSourceThrottleInterval: TimeInterval = 600 // 10 minutes per source
-    
+    ///
+    /// Widget Freshness Sprint (2026-04-26 Phase 7): steps drop from 600s → 120s
+    /// so the home-screen widget reflects manual steps inside ~2 min in the worst
+    /// case, and opponents see fresh step counts via the realtime / progress_update
+    /// fast paths sooner. Other sources stay at 600s — they're proportionally
+    /// less time-sensitive (active energy / distance / exercise time accumulate
+    /// over longer windows) and pushing them more often costs Strava + Fitbit +
+    /// WHOOP + Oura roundtrips on every wake (see `performSyncBody`). Steps use
+    /// the LITE path (`performLiteWakeSync`) so the 2-minute cadence costs only
+    /// the HealthKit refresh + `log_challenge_progress` writes — none of the
+    /// heavy multi-wearable pipeline.
+    private static let throttleStepsInterval: TimeInterval = 120  // 2 min
+    private static let throttleDefaultInterval: TimeInterval = 600 // 10 min
+
+    /// Resolve the throttle window for a HealthKit observer source.
+    /// `workout` callers always bypass via `isHighPriority` upstream — this
+    /// function is only consulted for low-priority sources.
+    private func throttleInterval(for source: String) -> TimeInterval {
+        switch source {
+        case "steps": return Self.throttleStepsInterval
+        default: return Self.throttleDefaultInterval
+        }
+    }
+
+    /// Sources that take the LITE wake path (HK refresh + challenge push only,
+    /// no Strava/Fitbit/WHOOP/Oura/meals/hydration/Quests/Intelligence). Steps
+    /// fire often enough that running the full pipeline every time burns
+    /// background-budget on data that isn't relevant to a step delta. Other
+    /// observer sources land here too: distance + active energy + exercise
+    /// time are all HealthKit-derived, and the FULL pipeline still runs on
+    /// the regular BGAppRefresh / BGProcessing / scenePhase=active paths.
+    /// Workout completions stay on the FULL path — those need Strava +
+    /// readiness recompute + cardio_workouts persistence.
+    private func usesLiteWakePath(for source: String) -> Bool {
+        switch source {
+        case "steps", "active_energy", "distance", "exercise_time":
+            return true
+        default:
+            return false
+        }
+    }
+
     /// UserDefaults key prefix for per-source last-sync timestamps.
     /// Key form: `bg_challenge_last_sync_<source>` (e.g. `bg_challenge_last_sync_steps`).
     private let lastSyncKeyPrefix = "bg_challenge_last_sync_"
@@ -247,9 +287,12 @@ class BackgroundChallengeSyncService {
         // High-priority events (workout completions) always sync immediately.
         // Low-priority events (steps, energy, distance, exercise_time) throttle
         // independently per source — a step flood no longer suppresses an
-        // active-energy or distance event fired in the same window.
-        if !isHighPriority && elapsed < perSourceThrottleInterval {
-            AppLogger.debug("⏭️ [BG SYNC] Skipping \(source) — synced \(Int(elapsed))s ago (per-source throttle)", category: .social)
+        // active-energy or distance event fired in the same window. Steps use
+        // a tighter 2-minute window (Widget Freshness Sprint 2026-04-26 #7)
+        // because they drive the home-screen widget's most user-visible number.
+        let interval = throttleInterval(for: source)
+        if !isHighPriority && elapsed < interval {
+            AppLogger.debug("⏭️ [BG SYNC] Skipping \(source) — synced \(Int(elapsed))s ago (per-source throttle, window=\(Int(interval))s)", category: .social)
             onComplete()
             return
         }
@@ -270,20 +313,36 @@ class BackgroundChallengeSyncService {
         // staring at the dashboard waiting for it).
         let coldStartGracePeriod: TimeInterval = 5.0
         let timeSinceLaunch = ProcessInfo.processInfo.systemUptime - Self.processStartUptime
+        let useLite = usesLiteWakePath(for: source)
         if !isHighPriority && timeSinceLaunch < coldStartGracePeriod {
             let waitMs = Int((coldStartGracePeriod - timeSinceLaunch) * 1000)
-            AppLogger.debug("⏸️ [BG SYNC] Deferring \(source) sync \(waitMs)ms (cold-start grace)", category: .social)
+            AppLogger.debug("⏸️ [BG SYNC] Deferring \(source) sync \(waitMs)ms (cold-start grace, lite=\(useLite))", category: .social)
             Task {
                 try? await Task.sleep(nanoseconds: UInt64((coldStartGracePeriod - timeSinceLaunch) * 1_000_000_000))
-                await performChallengeSyncInBackground()
+                if useLite {
+                    await performLiteWakeSync()
+                } else {
+                    await performChallengeSyncInBackground()
+                }
                 onComplete()
             }
             return
         }
 
-        // Perform the sync and call the completion handler when done
+        // Perform the sync and call the completion handler when done.
+        // Continuous HealthKit observers (steps, active_energy, distance,
+        // exercise_time) take the LITE path — they fire often and don't
+        // depend on Strava/Fitbit/WHOOP/Oura/meals/hydration/Quests data
+        // for opponents to see our step delta. Workout completions stay
+        // on the FULL pipeline (need Strava enrichment + cardio_workouts
+        // persistence + readiness recompute). Full sync still runs on the
+        // regular BGAppRefresh / BGProcessing / scenePhase=active paths.
         Task {
-            await performChallengeSyncInBackground()
+            if useLite {
+                await performLiteWakeSync()
+            } else {
+                await performChallengeSyncInBackground()
+            }
 
             // Sprint 3 Q2-28: Notify HealthKitManager so it can refresh its
             // @Published UI state. This replaces the duplicate foreground

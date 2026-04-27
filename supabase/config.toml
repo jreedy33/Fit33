@@ -149,7 +149,16 @@ site_url = "http://127.0.0.1:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = ["https://127.0.0.1:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
-jwt_expiry = 3600
+# Widget Freshness Sprint Phase 7d (2026-04-26): bumped to 24h so the
+# RunningActivityWidget extension can keep pushing step progress to
+# `log_challenge_progress` for a full app-vacation day. The widget
+# extension cannot refresh JWTs (only the host app can — Infra
+# invariant 21a), so the JWT lifetime IS the widget's write window.
+# Without this, widget writes only land for the first hour after each
+# main-app open. Production parity requires setting `jwt_exp = 86400`
+# via the Supabase Management API or dashboard for the hosted project
+# (`ehooeghabzefgoqzugrc`).
+jwt_expiry = 86400
 # JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).
 # jwt_issuer = ""
 # Path to JWT signing key. DO NOT commit your signing keys file to git.

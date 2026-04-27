@@ -128,6 +128,17 @@ final class WhoopService: ObservableObject {
            let strain = try? JSONDecoder().decode(WhoopCycleScore.self, from: data) {
             todayStrain = strain
         }
+        // Sleep cache: mirrors recovery/strain so the dashboard widget's
+        // sleep-derived metrics (SLEEP, ASLEEP, EFFICIENCY, RESP) survive a
+        // cold start. Without this, those four cells render `--` until the
+        // next `fetchSleep()` HTTP call resolves — and if WHOOP hasn't yet
+        // scored last night's sleep at the moment we open the app, the user
+        // sees a half-empty WHOOP card even though they're connected.
+        if lastSleep == nil,
+           let data = UserDefaults.standard.data(forKey: "whoop_last_sleep"),
+           let sleep = try? JSONDecoder().decode(WhoopSleepScore.self, from: data) {
+            lastSleep = sleep
+        }
         if lastSyncDate == nil,
            let date = UserDefaults.standard.object(forKey: "whoop_last_sync") as? Date {
             lastSyncDate = date
@@ -242,16 +253,34 @@ final class WhoopService: ObservableObject {
 
     private func refreshAccessToken() async throws {
         guard let currentRefreshToken = refreshToken else {
-            // Don't auto-disconnect here. A nil refresh token is usually
-            // transient (locked keychain on a BGTask wake) rather than an
-            // actual missing-token state. Wiping the access token plus the
-            // local cache on every transient nil read is what historically
-            // caused users to find WHOOP "magically disconnected" after
-            // routine TestFlight / App Store updates — the keychain wasn't
-            // gone, it just wasn't readable for a moment, and we treated
-            // that moment as a permanent revoke. Throw and let the caller
-            // surface the reconnect UI on its own terms.
-            AppLogger.warning("[WHOOP] refreshAccessToken: no stored refresh token (keychain locked?) — throwing, NOT disconnecting", category: .auth)
+            // Disambiguate "keychain transiently locked" (BGTask wake on a
+            // locked device — both reads return nil) from "refresh token
+            // genuinely wiped" (only this one is nil; access token still
+            // there). Reading `accessToken` here probes the keychain at the
+            // exact moment we need to refresh; if it returns a value, the
+            // device is unlocked AND the keychain is readable AND we're in
+            // the genuinely-missing case. Without this disambiguation, a
+            // wiped-refresh-token state was unrecoverable: every fetch hit
+            // this `throw`, the per-endpoint catch blocks swallowed the
+            // error to debug-level "skipped: not connected", `isConnected`
+            // stayed `true` (it's keyed off accessToken presence), and the
+            // dashboard widget showed a half-empty card forever. The user
+            // had no UI signal pointing at "reconnect" because Settings
+            // still rendered as "Connected". Now: if keychain is unlocked
+            // and refresh token is gone, treat it like a 4xx revoke (fall
+            // through to `disconnect()`) so the Settings + dashboard switch
+            // back to the "Sync WHOOP" reconnect CTA. If `accessToken` ALSO
+            // returns nil, keychain really is locked — throw without
+            // disconnecting like before (transient, will retry next cold
+            // start once the device is unlocked).
+            let keychainReadable = KeychainHelper.load(key: "whoop_access_token") != nil
+            if keychainReadable {
+                AppLogger.error("[WHOOP] Refresh token wiped (keychain readable, accessToken present, refreshToken missing) — disconnecting so user sees reconnect prompt", category: .auth)
+                disconnect()
+                errorMessage = "WHOOP needs to be reconnected. Tap Connect WHOOP to sign in again."
+            } else {
+                AppLogger.warning("[WHOOP] refreshAccessToken: keychain unreadable (likely locked on BGTask wake) — throwing, NOT disconnecting", category: .auth)
+            }
             throw WhoopError.notConnected
         }
 
@@ -479,11 +508,24 @@ final class WhoopService: ObservableObject {
             ])
             recentSleeps = result.records
 
-            if let latest = result.records.first(where: { !$0.nap && $0.scoreState == "SCORED" }),
-               let score = latest.score {
+            // Sort by start descending so we always pick last night's sleep
+            // even if WHOOP ever returns records ascending. Defensive — the
+            // public docs say records come back newest-first, but a single
+            // bad ordering would otherwise stick the dashboard on a 7-day-old
+            // sleep score.
+            let sortedScored = result.records
+                .filter { !$0.nap && $0.scoreState == "SCORED" }
+                .sorted { (lhs, rhs) in
+                    (lhs.start ?? "") > (rhs.start ?? "")
+                }
+
+            if let latest = sortedScored.first, let score = latest.score {
                 lastSleep = score
+                if let encoded = try? JSONEncoder().encode(score) {
+                    UserDefaults.standard.set(encoded, forKey: "whoop_last_sleep")
+                }
             }
-            AppLogger.info("[WHOOP] Synced \(result.records.count) sleep records", category: .health)
+            AppLogger.info("[WHOOP] Synced \(result.records.count) sleep records (scored non-nap: \(sortedScored.count))", category: .health)
         } catch let error as WhoopError where error.isConnectionError {
             AppLogger.debug("[WHOOP] Sleep skipped: \(error.localizedDescription ?? "not connected")", category: .health)
         } catch {
@@ -566,7 +608,7 @@ final class WhoopService: ObservableObject {
         lastSyncDate = nil
         isConnected = false
 
-        for key in ["whoop_profile", "whoop_last_sync", "whoop_today_recovery", "whoop_today_strain"] {
+        for key in ["whoop_profile", "whoop_last_sync", "whoop_today_recovery", "whoop_today_strain", "whoop_last_sleep"] {
             UserDefaults.standard.removeObject(forKey: key)
         }
 

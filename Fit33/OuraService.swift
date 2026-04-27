@@ -237,14 +237,24 @@ final class OuraService: ObservableObject {
 
     private func refreshAccessToken() async throws {
         guard let currentRefreshToken = refreshToken else {
-            // Don't auto-disconnect on a nil refresh token. See the matching
-            // doc comment in `WhoopService.refreshAccessToken` — the typical
-            // cause is a locked keychain during a BGTask wake, not an actual
-            // missing token. Wiping cached state on every transient nil read
-            // is what made users find Oura "spontaneously disconnected" after
-            // routine TestFlight / App Store updates. Throw and let the
-            // caller decide whether to surface the reconnect prompt.
-            AppLogger.warning("[OURA] refreshAccessToken: no stored refresh token (keychain locked?) — throwing, NOT disconnecting", category: .auth)
+            // Disambiguate transient keychain-locked nil from a genuinely
+            // wiped refresh token by probing `accessToken` at this exact
+            // moment. See the matching `WhoopService.refreshAccessToken`
+            // comment for the full rationale: if both are nil the keychain
+            // is locked (transient — will retry next foreground); if only
+            // refreshToken is nil while accessToken still reads, the token
+            // was permanently wiped and we MUST `disconnect()` so the UI
+            // surfaces the reconnect prompt. Without disambiguation a wiped
+            // refresh token leaves the Oura widget connected-but-empty
+            // forever — every fetch swallows `.notConnected` to debug log.
+            let keychainReadable = KeychainHelper.load(key: "oura_access_token") != nil
+            if keychainReadable {
+                AppLogger.error("[OURA] Refresh token wiped (keychain readable, accessToken present, refreshToken missing) — disconnecting so user sees reconnect prompt", category: .auth)
+                disconnect()
+                errorMessage = "Oura needs to be reconnected. Tap Connect Oura to sign in again."
+            } else {
+                AppLogger.warning("[OURA] refreshAccessToken: keychain unreadable (likely locked on BGTask wake) — throwing, NOT disconnecting", category: .auth)
+            }
             throw OuraError.notConnected
         }
 

@@ -34,7 +34,7 @@ struct ChallengeEntity: AppEntity, Identifiable, Hashable {
 
 struct ChallengeQuery: EntityQuery {
     func entities(for identifiers: [ChallengeEntity.ID]) async throws -> [ChallengeEntity] {
-        let all = ActiveChallengeWidgetSnapshot.readAll()
+        let all = await Self.readAllWithFallback()
         let wanted = Set(identifiers)
         return all
             .filter { wanted.contains($0.challengeId) }
@@ -42,7 +42,7 @@ struct ChallengeQuery: EntityQuery {
     }
 
     func suggestedEntities() async throws -> [ChallengeEntity] {
-        ActiveChallengeWidgetSnapshot.readAll().map(Self.entity(from:))
+        await Self.readAllWithFallback().map(Self.entity(from:))
     }
 
     func defaultResult() async -> ChallengeEntity? {
@@ -51,7 +51,39 @@ struct ChallengeQuery: EntityQuery {
         if let pick = ActiveChallengeWidgetSnapshot.read() {
             return Self.entity(from: pick)
         }
-        return ActiveChallengeWidgetSnapshot.readAll().first.map(Self.entity(from:))
+        return await Self.readAllWithFallback().first.map(Self.entity(from:))
+    }
+
+    /// Cache-first read with a direct-Supabase fallback when the App Group
+    /// is empty. Bug-intel 2026-04-27 (Manuel — widget edit sheet
+    /// "Challenge" picker stuck on "Loading…" then snaps back):
+    ///   The picker query path used to be cache-only, which meant an
+    ///   empty App Group blob (e.g. user installed the widget before
+    ///   ever foregrounding the main app, OR the main app got force-
+    ///   killed before its first publish, OR realtime fired before
+    ///   Bridge.publish landed) showed `[]` and iOS rendered "Loading…"
+    ///   followed by an empty dropdown.
+    ///
+    ///   The timeline path (`ActiveChallengeProvider.pullAndMergeIfPossible`)
+    ///   already does a direct Supabase pull from inside the widget
+    ///   process and writes the result to the App Group — so the home-
+    ///   screen tile rendered fine while the picker was broken. We
+    ///   reuse that exact code path here so there's only ONE pull
+    ///   implementation, ONE App Group write, and ONE Phase-5 Darwin
+    ///   notification on success (which keeps the main app in sync).
+    ///
+    ///   Timeout: 3.0s mirrors the timeline budget. iOS's
+    ///   AppIntent picker query has a soft ~5s wall-clock budget before
+    ///   it falls back to the placeholder, so 3s leaves headroom for
+    ///   JSON decode + entity mapping. If the pull misses the deadline
+    ///   OR errors (notAuthenticated, transport, 401, etc.), we fall
+    ///   back to whatever's still in the cache — usually `[]`, which
+    ///   renders an empty dropdown rather than hanging.
+    private static func readAllWithFallback() async -> [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge] {
+        let cached = ActiveChallengeWidgetSnapshot.readAll()
+        if !cached.isEmpty { return cached }
+        await ActiveChallengeProvider.pullAndMergeIfPossible(timeoutSeconds: 3.0)
+        return ActiveChallengeWidgetSnapshot.readAll()
     }
 
     private static func entity(from challenge: ActiveChallengeWidgetSnapshot.WidgetActiveChallenge) -> ChallengeEntity {

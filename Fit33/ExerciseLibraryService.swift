@@ -148,13 +148,25 @@ class ExerciseLibraryService: ObservableObject {
             // only resolve the ~800 matched exercises on the main thread (not all 5501).
             if nameList.count > 100 {
                 let bgCtx = PersistenceController.shared.container.newBackgroundContextSafely()
-                let exerciseIndex: [(name: String, objectID: NSManagedObjectID)] = await bgCtx.perform {
+                // 2026-04-27: tuple → `RecommendedExerciseEntry` so the
+                // background pass also captures category/workoutType/equipment
+                // for the new strength-only filter inside
+                // `precomputeFromIndex`. Setting `returnsObjectsAsFaults = false`
+                // hydrates these scalar attrs in the same SQLite round-trip.
+                let exerciseIndex: [RecommendedExerciseEntry] = await bgCtx.perform {
                     let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                     request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
+                    request.returnsObjectsAsFaults = false
                     let exercises = (try? bgCtx.fetch(request)) ?? []
-                    return exercises.compactMap { ex in
+                    return exercises.compactMap { ex -> RecommendedExerciseEntry? in
                         guard let name = ex.name else { return nil }
-                        return (name: name, objectID: ex.objectID)
+                        return RecommendedExerciseEntry(
+                            name: name,
+                            category: ex.category,
+                            workoutType: ex.workoutType,
+                            equipment: ex.equipment,
+                            objectID: ex.objectID
+                        )
                     }
                 }
                 await MainActor.run { [weak self] in

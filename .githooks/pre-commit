@@ -4,42 +4,50 @@
 # Activate once:
 #   git config core.hooksPath .githooks
 #
-# Runs two cheap checks against the STAGED Swift files:
-#   1. classifier_lint.py in warn-only mode, scoped to staged paths under Fit33/
-#   2. perf_lint.sh (the existing build-phase lint) — informational only
-#
-# Neither check blocks the commit today. They print warnings so you notice
-# invariant 25a violations before they hit CI. Flip `STRICT_CLASSIFIER=1 git commit`
-# to hard-fail locally when you're trying to clear the backlog for a batch.
+# Runs the following checks:
+#   1. classifier_lint.py in warn-only mode, scoped to staged Fit33/*.swift
+#      (warn-only unless STRICT_CLASSIFIER=1).
+#   2. pre_commit_migration_check.sh — HARD FAILS the commit when staged
+#      `supabase/*.sql` files are missing from `supabase/MIGRATION_INDEX.md`
+#      (Sprint 4 AGD-9). The migration index is the canonical release-train
+#      manifest; drift here is what causes "client ships against a migration
+#      that never reaches prod" (audit 2026-04-27 finding #5).
 
 set -e
 
-STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^Fit33/.*\.swift$' || true)
-
-if [ -z "$STAGED_SWIFT" ]; then
-  exit 0
-fi
-
 REPO_ROOT=$(git rev-parse --show-toplevel)
 
-# Classifier lint on staged files only.
-if [ -x "$REPO_ROOT/scripts/classifier_lint.py" ] || [ -f "$REPO_ROOT/scripts/classifier_lint.py" ]; then
-  FLAGS=""
-  if [ "${STRICT_CLASSIFIER:-0}" = "1" ]; then
-    FLAGS="--strict"
-  fi
-  # Scan per-file so the output only reflects files touched by this commit.
-  FAILED=0
-  for f in $STAGED_SWIFT; do
-    if ! python3 "$REPO_ROOT/scripts/classifier_lint.py" $FLAGS --root "$REPO_ROOT/$f" 2>/dev/null; then
-      FAILED=1
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^Fit33/.*\.swift$' || true)
+
+# Classifier lint on staged files (when there are any).
+if [ -n "$STAGED_SWIFT" ]; then
+  if [ -x "$REPO_ROOT/scripts/classifier_lint.py" ] || [ -f "$REPO_ROOT/scripts/classifier_lint.py" ]; then
+    FLAGS=""
+    if [ "${STRICT_CLASSIFIER:-0}" = "1" ]; then
+      FLAGS="--strict"
     fi
-  done
-  if [ "$FAILED" = "1" ] && [ "${STRICT_CLASSIFIER:-0}" = "1" ]; then
-    echo ""
-    echo "pre-commit: classifier_lint.py --strict found violations in staged files." >&2
-    echo "            Re-run 'git commit' without STRICT_CLASSIFIER=1 to bypass, or" >&2
-    echo "            add '// classifier_lint:allow' to the legitimate catch blocks." >&2
+    # Scan per-file so the output only reflects files touched by this commit.
+    FAILED=0
+    for f in $STAGED_SWIFT; do
+      if ! python3 "$REPO_ROOT/scripts/classifier_lint.py" $FLAGS --root "$REPO_ROOT/$f" 2>/dev/null; then
+        FAILED=1
+      fi
+    done
+    if [ "$FAILED" = "1" ] && [ "${STRICT_CLASSIFIER:-0}" = "1" ]; then
+      echo ""
+      echo "pre-commit: classifier_lint.py --strict found violations in staged files." >&2
+      echo "            Re-run 'git commit' without STRICT_CLASSIFIER=1 to bypass, or" >&2
+      echo "            add '// classifier_lint:allow' to the legitimate catch blocks." >&2
+      exit 1
+    fi
+  fi
+fi
+
+# Migration index drift guard — hard-fails when staged supabase/*.sql files
+# are not registered in MIGRATION_INDEX.md. Self-checks for staged migrations
+# and exits 0 cleanly when none are present, so this runs unconditionally.
+if [ -f "$REPO_ROOT/scripts/pre_commit_migration_check.sh" ]; then
+  if ! bash "$REPO_ROOT/scripts/pre_commit_migration_check.sh"; then
     exit 1
   fi
 fi

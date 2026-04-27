@@ -1,0 +1,165 @@
+-- ============================================================================
+-- 20260706 — Retire fixed-threshold "N sets in a single workout" quests
+--
+-- Follow-up to 20260610 + 20260611 + 20260630 (PE invariant 19d watch-list).
+-- Two more quests fail the "user-takeable lever today" test:
+--
+--   * exercise_sets_15  "Set Machine"  (daily_quests_v2_migration.sql)
+--   * exercise_sets_25  "Volume King"  (daily_quests_v2_migration.sql)
+--
+-- WHY (Joe, 2026-04-27 — Daily Goals dashboard screenshot, second pass):
+--   "I don't love this goal: Set Machine — because once you complete a
+--    workout that isn't 15 sets, you don't have a chance to improve it
+--    unless you do another workout, which isn't safe. It should also be
+--    more coordinated with [Crush a Workout] — be more specific like
+--    'hit 15 sets in a workout.' That way they hit both goals, and there's
+--    room for 2 more."
+--
+--   Two structural problems compound:
+--
+--   (1) STRUCTURAL REDUNDANCY with `complete_workout`. You CANNOT hit 15
+--       sets without completing a workout, and `complete_workout` is
+--       always slot 1. So the slate's `v_redundant_with_workout` filter
+--       (in get_daily_quests v4 line 165) is supposed to exclude these
+--       keys whenever slot 1 is a workout — but in the screenshot the
+--       slate STILL ships [`complete_workout`, `exercise_sets_15`, ?]
+--       suggesting either (a) the slate predates the filter shipping to
+--       prod, or (b) a stale eligibility-pool branch is re-admitting it.
+--       Either way: the quest IS the redundancy. Removing the template
+--       removes the bug class entirely.
+--
+--   (2) LOCKED-IN AFTER SLOT 1 — same anti-pattern as 20260610/11/30.
+--       Once the user finishes their one safe workout for the day with
+--       < 15 sets, the quest pins at "0/15 — Not yet" and the only path
+--       to completion is a second workout, which violates FE invariant
+--       18 (no two full workouts/day). Same shape as overnight-sensor
+--       quests (locked by morning) and relative-to-others quests
+--       (locked by another user). The user has zero deterministic
+--       levers post-slot-1.
+--
+--   (3) ARBITRARY THRESHOLD. 15 / 25 sets are not tied to the user's
+--       actual program prescription. A 4-exercise legs day with 12
+--       working sets is a perfectly good workout — penalizing it as
+--       "Not yet" is a coaching anti-signal. `complete_workout` already
+--       captures the "did you train?" question without picking an
+--       arbitrary set count.
+--
+-- WHAT THIS MIGRATION DOES:
+--
+--   1. SOFT-disables both templates (`is_active = FALSE`). Templates stay
+--      on disk so historical `user_daily_quests` rows still resolve to
+--      a row for title/icon lookups (PE invariant 19d: never DELETE).
+--
+--   2. CLEANS UP today's not-yet-completed `user_daily_quests` rows for
+--      both keys so users staring at the bad quest right now (e.g. Joe
+--      in the screenshot — "Set Machine · 0/15 sets") aren't stuck with
+--      it until midnight. Following the 20260611 / 20260630 precedent:
+--      only TODAY's incomplete rows; preserve completed + historical
+--      rows for streak/audit.
+--
+-- BRIEF ↔ SLATE COORDINATION (PE invariant 25c + 25d, verified pre-ship):
+--   * `Fit33/DailyBriefEngine.swift::matchQuests` maps each `DebtKind`
+--     to a target-key set:
+--       .muscleGroup / .noWorkoutYet → ["complete_workout",
+--                                       "complete_program_day",
+--                                       "do_friend_workout",
+--                                       "workout_30_min",
+--                                       "exercise_sets_15"]   ← retired key
+--       .streakRisk                  → ["complete_workout",
+--                                       "complete_program_day",
+--                                       "exercise_sets_15"]   ← retired key
+--     After retirement, every workout-class debt still resolves to
+--     `complete_workout` / `complete_program_day` (slot 1 anchors) +
+--     `do_friend_workout` / `workout_30_min` (eligible alternates).
+--     The brief's "← from your brief" chip + `.focusQuest()` CTA still
+--     hit a live quest on the slate. Zero coordination break.
+--   * Server-side Layer 8 (Debt Booster) in get_daily_quests v4 doesn't
+--     reference `exercise_sets_*` for any debt kind — it elevates
+--     `hit_protein_goal` / `log_water_8` / `hit_step_goal`. Untouched.
+--   * Server-side Layer 7 (Capacity Band Re-Ranker) `v_pr_pool` includes
+--     `exercise_sets_25` as a green-day PR-elevation candidate — once
+--     the template is `is_active = FALSE`, the `WHERE qt.is_active = TRUE`
+--     clause in the eligibility pool drops it, so the Layer 7 reference
+--     becomes dead code (harmless; `beat_volume_pr` + `beat_personal_record`
+--     remain in the PR pool to take its place).
+--   * Server-side challenge-override block: `'lift' = ANY(p_active_challenge_types)`
+--     appends `exercise_sets_15` to `v_challenge_quest_keys`, but the
+--     downstream `EXISTS (... AND is_active)` check (line 412) drops
+--     inactive keys — lift-challenge participants gracefully fall through
+--     to normal slate logic (slot 1 = `complete_workout` already covers
+--     the lift challenge). DATA invariant 31's "lift → exercise_sets_15"
+--     mapping is updated in the agent doc to drop the entry.
+--
+-- iOS notes:
+--   * `Fit33/DailyQuestService.swift` — `QuestKey.exerciseSets15` /
+--     `.exerciseSets25` enum cases STAY (PE 19d backwards-compat for
+--     historical rows). `onWorkoutCompleted(durationSeconds:totalSets:)`
+--     `reportProgress(.exerciseSets15/25)` calls also stay; they become
+--     server-side no-ops for new users (no matching active row to update)
+--     but remain functional for any in-flight rows still on disk.
+--   * `Fit33/DailyQuestViews.swift::dynamicDescription` — both cases
+--     return their static description; no behavior change required.
+--   * `Fit33/DailyBriefEngine.swift::matchQuests` keeps the retired
+--     keys in the debt-target arrays as a never-fires fallback; cleaning
+--     them up later is a doc-debt task, not a ship blocker.
+--
+-- DESIGN INVARIANT (extends PE 19d / FE 20a / FE 20a-relative):
+--   Every Daily Goal must have a USER-TAKEABLE PATH TO COMPLETION
+--   throughout the day, even AFTER slot 1 (the workout) is done. A quest
+--   that locks pass/fail when slot 1 finishes (e.g. "hit N sets in a
+--   single workout" with N > the user's actual session) is the same
+--   anti-pattern family as overnight-sensor quests (locked by morning)
+--   and relative-to-others quests (locked by another user). When
+--   designing a new quest, ask: "if the user's only workout today
+--   finishes at 12pm with average effort, can THIS quest still progress
+--   to completion this afternoon by an action under the user's sole
+--   control?" If no → reject the design.
+--
+-- Idempotent: re-running flips `is_active` back to FALSE (no-op) and the
+-- DELETE … WHERE is_completed = FALSE is harmless on re-run.
+-- ============================================================================
+
+BEGIN;
+
+-- 1. Soft-disable both templates -----------------------------------------
+UPDATE quest_templates
+   SET is_active = FALSE
+ WHERE quest_key IN ('exercise_sets_15', 'exercise_sets_25');
+
+-- 2. Clean up today's in-flight rows so users see a fresh slate ----------
+-- Only DELETE incomplete rows; completed rows stay so XP / streak credit
+-- (if somehow earned today) is preserved. Date filter uses UTC ±1 day to
+-- cover every user timezone without a per-user lookup (same shape as the
+-- 20260619 catch-up block + 20260630 retirement migration).
+DELETE FROM user_daily_quests
+ WHERE quest_key IN ('exercise_sets_15', 'exercise_sets_25')
+   AND is_completed = FALSE
+   AND quest_date >= ((now() AT TIME ZONE 'UTC')::DATE - INTERVAL '1 day')
+   AND quest_date <= ((now() AT TIME ZONE 'UTC')::DATE + INTERVAL '1 day');
+
+COMMIT;
+
+-- ─── Verification ─────────────────────────────────────────────────────────
+-- SELECT quest_key, title, is_active
+--   FROM quest_templates
+--  WHERE quest_key IN ('exercise_sets_15', 'exercise_sets_25')
+--  ORDER BY quest_key;
+-- Expected: both rows present with is_active = FALSE.
+--
+-- SELECT COUNT(*) FROM user_daily_quests
+--  WHERE quest_key IN ('exercise_sets_15', 'exercise_sets_25')
+--    AND quest_date = current_date
+--    AND is_completed = FALSE;
+-- Expected: 0 (post-cleanup).
+--
+-- Brief↔slate coordination smoke test (run after iOS refetch):
+-- SELECT q.quest_key, q.is_completed
+--   FROM user_daily_quests q
+--  WHERE q.user_id = auth.uid()
+--    AND q.quest_date = current_date
+--  ORDER BY q.created_at;
+-- Expected: 3 rows, none of them exercise_sets_15 / exercise_sets_25.
+-- Slot 1 = complete_workout (or complete_program_day); slot 2 + 3 drawn
+-- from non-workout pool unless a `lift` challenge is active (in which
+-- case slot 2/3 falls through challenge override gracefully — see the
+-- `EXISTS (... AND is_active)` guard).

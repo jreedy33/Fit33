@@ -43,6 +43,13 @@ struct DailyQuest: Codable, Identifiable {
     let isCustom: Bool?
     /// Stamped by `reroll_daily_quest` so the UI can show "Rerolled".
     let isReroll: Bool?
+    /// Daily Mission Unification (20260703 — Phase 1): TRUE when the
+    /// server's Layer 7 (red-day recovery elevation) or Layer 8
+    /// (debt booster) chose this quest specifically because of the
+    /// brief signals the client passed in. iOS uses this to render
+    /// the "← from your brief" chip on the quest card. Optional —
+    /// nil for legacy slates returned by pre-v4 server overloads.
+    let isBriefInfluenced: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -62,6 +69,7 @@ struct DailyQuest: Codable, Identifiable {
         case doubleXp = "double_xp"
         case isCustom = "is_custom"
         case isReroll = "is_reroll"
+        case isBriefInfluenced = "is_brief_influenced"
     }
 
     init(
@@ -71,7 +79,8 @@ struct DailyQuest: Codable, Identifiable {
         difficulty: String, isCompleted: Bool, completedAt: String?,
         funLabel: String?, verificationType: String?,
         tier: String? = nil, doubleXp: Bool? = nil,
-        isCustom: Bool? = nil, isReroll: Bool? = nil
+        isCustom: Bool? = nil, isReroll: Bool? = nil,
+        isBriefInfluenced: Bool? = nil
     ) {
         self.id = id
         self.questKey = questKey
@@ -93,6 +102,7 @@ struct DailyQuest: Codable, Identifiable {
         self.doubleXp = doubleXp
         self.isCustom = isCustom
         self.isReroll = isReroll
+        self.isBriefInfluenced = isBriefInfluenced
     }
     
     var progress: Double {
@@ -603,7 +613,36 @@ class DailyQuestService: ObservableObject {
         
         let workoutStreak = Int(UserManager.shared.currentUser?.currentStreak ?? 0)
         let totalWorkouts = Int(UserManager.shared.currentUser?.totalWorkouts ?? 0)
-        let preferredTime = UserBehaviorLearningEngine.shared.userPreferences?.preferredTimeOfDay ?? "any"
+        // Phase 7 (2026-04-27 — Daily Mission Unification): when V2
+        // has fired a `best_workout_time` insight in the last 14 days,
+        // prefer it over the legacy `UserBehaviorLearningEngine`
+        // preference. The V2 insight is significance-gated
+        // (Pearson n>=12, delta>=15%, p<=0.15) so it only overrides
+        // when the signal is real. Falls back to the legacy
+        // preference when no insight is available OR V2 is off.
+        let preferredTime: String = {
+            guard AppConfig.FeatureFlags.personalizedInsightsV2 else {
+                return UserBehaviorLearningEngine.shared.userPreferences?.preferredTimeOfDay ?? "any"
+            }
+            // Look for the V2 best-workout-time insight by title
+            // prefix (set in `PersonalizedInsightsService
+            // .detectBestWorkoutTime`). We accept any of the three
+            // canonical titles below and parse the slot from the
+            // message text — a tiny coupling cost vs. an extra
+            // column on `user_personalized_insights`.
+            let candidate = PersonalizedInsightsService.shared.activeInsights.first { insight in
+                insight.title == "You crush mornings."
+                    || insight.title == "Afternoon is your sweet spot."
+                    || insight.title == "Evening lifts hit hardest."
+            }
+            if let candidate {
+                let lower = candidate.message.lowercased()
+                if lower.contains("morning") { return "morning" }
+                if lower.contains("afternoon") { return "afternoon" }
+                if lower.contains("evening") { return "evening" }
+            }
+            return UserBehaviorLearningEngine.shared.userPreferences?.preferredTimeOfDay ?? "any"
+        }()
         let avgDuration = UserBehaviorLearningEngine.shared.userPreferences?.preferredWorkoutDuration ?? 45
         let hasWeightLog = WeightTrackingService.shared.statistics != nil
         let hydrationActive = HydrationService.shared.settings.dailyGoalMl > 0
@@ -765,27 +804,55 @@ class DailyQuestService: ObservableObject {
         )
     }
 
-    /// One-on-one step / walk / run challenge with the highest daily
-    /// target. We bias toward 1v1 over group challenges so the "Beat
-    /// <FriendName>" copy actually has a single named opponent.
+    /// One-on-one step / walk / run challenge anchor for the
+    /// "Beat <FriendName>" goal copy. Opponent ranking is the canonical
+    /// social-anchor priority (PE invariant 25e):
+    ///   Tier 1 — today's signals: opponent who actually moved today
+    ///            wins (Abbie 0 / Manuel 877 → Manuel anchors).
+    ///   Tier 2 — long-term Fit33 engagement: when both are at 0
+    ///            (e.g. 7am, app hasn't synced), prefer the friend
+    ///            who uses Fit33 in general.
+    ///   Tier 3 — daily target descending: existing tiebreaker so a
+    ///            harder challenge still wins when tier 1+2 are even.
     private struct FriendStepSeed { let name: String; let target: Int }
     private func friendStepChallengeSeed() -> FriendStepSeed? {
         let stepTypes: Set<String> = ["steps", "walk", "run"]
-        let candidate = ChallengeService.shared.activeChallenges
-            .filter { stepTypes.contains($0.challengeType) }
-            .compactMap { ch -> FriendStepSeed? in
-                guard let target = ch.dailyTarget, target > 0,
-                      let opp = ch.opponentName, !opp.isEmpty else { return nil }
-                return FriendStepSeed(name: Self.firstName(opp), target: target)
-            }
-            .max(by: { $0.target < $1.target })
-        return candidate
+        let now = Date()
+        struct Scored {
+            let seed: FriendStepSeed
+            let engagement: Double
+            let target: Int
+        }
+        let candidates: [Scored] = ChallengeService.shared.activeChallenges.compactMap { ch in
+            guard stepTypes.contains(ch.challengeType),
+                  let target = ch.dailyTarget, target > 0,
+                  let opp = ch.opponentName, !opp.isEmpty else { return nil }
+            let engagement = FriendRankingService.opponentEngagementScore(
+                opponentId: ch.opponentId,
+                opponentTodayProgress: ch.opponentTodayProgress,
+                opponentLastProgressAt: ch.opponentLastProgressAt,
+                now: now
+            )
+            return Scored(
+                seed: FriendStepSeed(name: Self.firstName(opp), target: target),
+                engagement: engagement,
+                target: target
+            )
+        }
+        // Sort by tiered score, then daily target as final tiebreaker.
+        return candidates.max { lhs, rhs in
+            if lhs.engagement != rhs.engagement { return lhs.engagement < rhs.engagement }
+            return lhs.target < rhs.target
+        }?.seed
     }
 
     /// Most recent shared workout from a top friend that we'd like to
     /// surface as a `do_friend_workout` slot. We prefer the friend whose
     /// most recent shared split MATCHES the user's `suggestedSplit`
-    /// (recovery-aware), then fall back to the most recent overall.
+    /// (recovery-aware); among matching candidates we prefer the
+    /// recently-engaged friend per PE invariant 25e (a friend who's
+    /// active in Fit33 makes the "do Manuel's workout" CTA land with a
+    /// live-rival feel instead of a ghost-friend anti-narrative).
     private func friendWorkoutSeed(suggestedSplit: String?) async -> FriendWorkoutSeed? {
         // Use the in-memory feed cache — `ActivityFeedService` keeps the
         // last 20 rows hydrated, and the only freshness sensitive piece
@@ -804,15 +871,34 @@ class DailyQuestService: ObservableObject {
         }
         guard !workoutRows.isEmpty else { return nil }
 
+        // Engagement score per friend — the activity feed only carries
+        // userId (no per-challenge today-progress here), so we feed
+        // (nil/nil) for the tier-1 real-time signals and rely on tier 2
+        // (relationshipScore via FriendRankingService). Falls back to
+        // feed-recency when both candidates have no relationshipScore.
+        func engagement(_ act: FriendActivity) -> Double {
+            FriendRankingService.opponentEngagementScore(
+                opponentId: act.userId,
+                opponentTodayProgress: nil,
+                opponentLastProgressAt: nil
+            )
+        }
+
         // Prefer a split-match when the user has a recovery suggestion.
-        let chosen: (activity: FriendActivity, split: String)? = {
-            if let suggested = suggestedSplit, !suggested.isEmpty,
-               let match = workoutRows.first(where: { $0.split == suggested }) {
-                return match
+        // Within the matching subset, anchor on the most-engaged friend
+        // (relationshipScore-ranked) — falls back to feed order on tie.
+        let pool: [(activity: FriendActivity, split: String)] = {
+            if let suggested = suggestedSplit, !suggested.isEmpty {
+                let matches = workoutRows.filter { $0.split == suggested }
+                if !matches.isEmpty { return matches }
             }
-            return workoutRows.first
+            return workoutRows
         }()
-        guard let chosen = chosen,
+        let chosen = pool.max { lhs, rhs in
+            engagement(lhs.activity) < engagement(rhs.activity)
+        }
+
+        guard let chosen,
               let workoutIdStr = chosen.activity.workoutId,
               let workoutId = UUID(uuidString: workoutIdStr),
               let title = chosen.activity.metadata.workoutName else { return nil }
@@ -965,14 +1051,34 @@ class DailyQuestService: ObservableObject {
         )
     }
     
+    /// Multi-signal Day-1 detection. A user is treated as "Day 1" only when
+    /// EVERY signal of prior activity is empty. Using only `totalWorkouts == 0`
+    /// (the previous gate) caused experienced users to flash beginner quests
+    /// on cold start because the cloud profile sync writes `total_workouts`
+    /// AFTER `gatherUserContext()` has already captured the stale local value.
+    /// Streak / XP / lastWorkoutDate / experienceLevel are populated from
+    /// previous sessions' syncs and from the streak-check that runs before
+    /// quest fetch, so even when `totalWorkouts` is momentarily 0 the user
+    /// can still be reliably identified as established.
+    private func isLikelyDay1User(totalWorkouts: Int, workoutStreak: Int) -> Bool {
+        guard totalWorkouts == 0, workoutStreak == 0 else { return false }
+        let user = UserManager.shared.currentUser
+        if (user?.xp ?? 0) > 0 { return false }
+        if user?.lastWorkoutDate != nil { return false }
+        let level = (user?.experienceLevel ?? "").lowercased()
+        if level == "intermediate" || level == "advanced" { return false }
+        return true
+    }
+
     /// Fallback goals that are always returned when the server returns empty or errors.
     /// Context-aware: experienced users get real generic quests, beginners get onboarding quests.
     private func defaultGoals() -> [DailyQuest] {
         let totalWorkouts = Int(UserManager.shared.currentUser?.totalWorkouts ?? 0)
-        if totalWorkouts > 0 {
-            return experiencedUserFallbackGoals()
+        let workoutStreak = Int(UserManager.shared.currentUser?.currentStreak ?? 0)
+        if isLikelyDay1User(totalWorkouts: totalWorkouts, workoutStreak: workoutStreak) {
+            return [beginnerSocialQuest(), beginnerWorkoutQuest(), beginnerProgramQuest()]
         }
-        return [beginnerSocialQuest(), beginnerWorkoutQuest(), beginnerProgramQuest()]
+        return experiencedUserFallbackGoals()
     }
     
     private func experiencedUserFallbackGoals() -> [DailyQuest] {
@@ -1028,8 +1134,13 @@ class DailyQuestService: ObservableObject {
     // MARK: - Fetch Daily Quests
     
     func fetchDailyQuests(force: Bool = false) async {
-        guard let userId = SupabaseManager.shared.currentUser?.id else {
-            AppLogger.warning("📋 [QUESTS] ⚠️ No currentUser — skipping fetch", category: .general)
+        // Data invariant 26 — guard `isAuthenticated` before any
+        // Supabase read/write/RPC. A persisted `currentUser` can exist
+        // while the Supabase session is expired, in which case
+        // `auth.uid()` is null server-side and the call would throw.
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id else {
+            AppLogger.warning("📋 [QUESTS] ⚠️ Not authenticated — skipping fetch", category: .general)
             if quests.isEmpty {
                 self.quests = defaultGoals()
             }
@@ -1051,8 +1162,13 @@ class DailyQuestService: ObservableObject {
         // Gather user context for personalized quest selection
         let ctx = await gatherUserContext()
         
-        // Day 1: show hardcoded beginner quests instead of server quests
-        if ctx.totalWorkouts == 0 {
+        // Day 1: show hardcoded beginner quests instead of server quests.
+        // Multi-signal gate (see `isLikelyDay1User`): cloud profile sync can
+        // race the quest fetch on cold start, leaving `totalWorkouts` at 0
+        // momentarily for established users. Falling back to the secondary
+        // signals (streak / xp / lastWorkoutDate / experienceLevel) prevents
+        // the "advanced user sees Send a Challenge" flash on relaunch.
+        if isLikelyDay1User(totalWorkouts: ctx.totalWorkouts, workoutStreak: ctx.workoutStreak) {
             AppLogger.info("📋 [QUESTS] Day 1 — showing beginner goal cards", category: .general)
             self.quests = [beginnerSocialQuest(), beginnerWorkoutQuest(), beginnerProgramQuest()]
             self.isLoading = false
@@ -1101,6 +1217,22 @@ class DailyQuestService: ObservableObject {
                 let p_friend_top_workout_split: String?
                 let p_friend_top_workout_matches_recommendation: Bool
                 let p_quest_tier: String
+                // ── Daily Mission Unification (20260703 — Phase 2) ────
+                /// Capacity band from the Daily Brief engine. The
+                /// server's Layer 7 (Capacity Band Re-Ranker) reads
+                /// this to demote hard-difficulty quests on red days
+                /// + elevate PR-flag quests on green days. nil/null
+                /// → server falls back to legacy 6-layer behavior.
+                let p_capacity_band: String?
+                let p_capacity_score: Int?
+                /// Top debt the brief surfaced (matches Swift
+                /// `DebtKind.rawValue`). Server's Layer 8 (Debt
+                /// Booster) force-elevates the matching quest into
+                /// slot 2 or 3 when payload meets the threshold.
+                let p_top_debt_kind: String?
+                /// JSONB: { muscles, days, deficitG, deficitVsPaceG,
+                /// deficitL, deficitMl, gap, gapRaw, subKind }.
+                let p_top_debt_payload: [String: String]?
 
                 enum CodingKeys: String, CodingKey {
                     case p_user_id, p_timezone, p_has_program, p_has_friends, p_has_challenge
@@ -1118,6 +1250,7 @@ class DailyQuestService: ObservableObject {
                     case p_friend_top_workout_split
                     case p_friend_top_workout_matches_recommendation
                     case p_quest_tier
+                    case p_capacity_band, p_capacity_score, p_top_debt_kind, p_top_debt_payload
                 }
 
                 func encode(to encoder: Encoder) throws {
@@ -1182,6 +1315,23 @@ class DailyQuestService: ObservableObject {
                     }
                     try container.encode(p_friend_top_workout_matches_recommendation, forKey: .p_friend_top_workout_matches_recommendation)
                     try container.encode(p_quest_tier, forKey: .p_quest_tier)
+                    // Daily Mission Unification (20260703 — Phase 2):
+                    // brief signals are optional; only encode when
+                    // the brief has actually been composed. Server
+                    // accepts NULL defaults and falls back to legacy
+                    // 6-layer behavior when missing.
+                    if let band = p_capacity_band, !band.isEmpty {
+                        try container.encode(band, forKey: .p_capacity_band)
+                    }
+                    if let score = p_capacity_score, score > 0 {
+                        try container.encode(score, forKey: .p_capacity_score)
+                    }
+                    if let debt = p_top_debt_kind, !debt.isEmpty {
+                        try container.encode(debt, forKey: .p_top_debt_kind)
+                    }
+                    if let payload = p_top_debt_payload, !payload.isEmpty {
+                        try container.encode(payload, forKey: .p_top_debt_payload)
+                    }
                 }
             }
             
@@ -1247,7 +1397,19 @@ class DailyQuestService: ObservableObject {
                     && ctx.friendTopWorkoutMatchesRecommendation,
                 p_quest_tier: AppConfig.FeatureFlags.smartAdaptiveQuests
                     ? ctx.questTier
-                    : "free"
+                    : "free",
+                // Daily Mission Unification (20260703 — Phase 2): pull
+                // from `DailyBriefStore.shared.brief?.decision` so the
+                // server's Layer 7 + Layer 8 see the same Decision the
+                // brief headline was built from. When the brief hasn't
+                // composed yet (cold launch race), all four are nil
+                // and the server falls back to legacy 6-layer logic
+                // — exactly the same behavior as before this PR for
+                // any user without a brief on hand.
+                p_capacity_band:    DailyBriefStore.shared.brief?.decision?.capacityBand.rawValue,
+                p_capacity_score:   DailyBriefStore.shared.brief?.decision?.capacityScore,
+                p_top_debt_kind:    DailyBriefStore.shared.brief?.decision?.topDebtKind?.rawValue,
+                p_top_debt_payload: DailyBriefStore.shared.brief?.decision?.topDebtPayload
             )
             
             let response: DailyQuestsResponse = try await SupabaseManager.shared.supabaseClient
@@ -1337,7 +1499,11 @@ class DailyQuestService: ObservableObject {
     /// Call this when the user completes an action that might advance a quest.
     /// The function checks if the quest is active today before making the RPC call.
     func reportProgress(questKey: QuestKey, increment: Int = 1) async {
-        guard let userId = SupabaseManager.shared.currentUser?.id else { return }
+        // Data invariant 26 — guard `isAuthenticated` before the RPC
+        // so we don't generate background "not authenticated" errors
+        // during the startup auth race.
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id else { return }
         
         // Only call RPC if this quest is actually assigned today and not yet done
         guard hasQuest(questKey) else {
@@ -1391,7 +1557,8 @@ class DailyQuestService: ObservableObject {
                     tier: old.tier,
                     doubleXp: old.doubleXp,
                     isCustom: old.isCustom,
-                    isReroll: old.isReroll
+                    isReroll: old.isReroll,
+                    isBriefInfluenced: old.isBriefInfluenced
                 )
                 
                 // Trigger celebration if quest just completed
@@ -1814,7 +1981,9 @@ class DailyQuestService: ObservableObject {
     /// imported. Triggers `verify_strava_quests_for_today` so PR / outdoor
     /// quests flip without the user opening the daily-goals widget.
     func onStravaActivityImported() async {
-        guard SupabaseManager.shared.currentUser?.id != nil else { return }
+        // Data invariant 26 — auth gate before RPC.
+        guard SupabaseManager.shared.isAuthenticated,
+              SupabaseManager.shared.currentUser?.id != nil else { return }
         guard AppConfig.FeatureFlags.smartAdaptiveQuests else { return }
 
         // We only need to invoke the verifier when the user has at
@@ -1851,7 +2020,9 @@ class DailyQuestService: ObservableObject {
     /// committed. Triggers `verify_wearable_quests_for_today` for sleep /
     /// recovery / strain / walk-when-red quests.
     func onReadinessRecomputed() async {
-        guard SupabaseManager.shared.currentUser?.id != nil else { return }
+        // Data invariant 26 — auth gate before RPC.
+        guard SupabaseManager.shared.isAuthenticated,
+              SupabaseManager.shared.currentUser?.id != nil else { return }
         guard AppConfig.FeatureFlags.smartAdaptiveQuests else { return }
 
         let wearableKeys: Set<String> = [
@@ -1920,7 +2091,11 @@ class DailyQuestService: ObservableObject {
     }
 
     func reroll(questId: UUID) async -> RerollOutcome {
-        guard SupabaseManager.shared.currentUser?.id != nil else {
+        // Data invariant 26 — guard `isAuthenticated`, not just
+        // `currentUser`. A persisted user with an expired session
+        // would otherwise hit `auth.uid()` null server-side.
+        guard SupabaseManager.shared.isAuthenticated,
+              SupabaseManager.shared.currentUser?.id != nil else {
             return RerollOutcome(success: false, reason: "not_authenticated",
                                  newQuestKey: nil, remaining: 0, isPro: false)
         }
@@ -1984,6 +2159,10 @@ class DailyQuestService: ObservableObject {
     /// The `apply_double_xp_on_complete` server trigger awards the bonus
     /// XP at completion time.
     func claimDoubleXpDay() async -> (success: Bool, reason: String?) {
+        // Data invariant 26 — auth gate before RPC.
+        guard SupabaseManager.shared.isAuthenticated else {
+            return (false, "not_authenticated")
+        }
         guard PremiumManager.shared.isPremiumUser else {
             return (false, "pro_required")
         }
@@ -2026,6 +2205,10 @@ class DailyQuestService: ObservableObject {
     /// verification only — the user marks it complete by calling
     /// `reportProgress(questKey:)` with the returned key.
     func submitCustomQuest(title: String, targetValue: Int, targetUnit: String) async -> (success: Bool, reason: String?) {
+        // Data invariant 26 — auth gate before RPC.
+        guard SupabaseManager.shared.isAuthenticated else {
+            return (false, "not_authenticated")
+        }
         guard PremiumManager.shared.isPremiumUser else {
             return (false, "pro_required")
         }
@@ -2070,6 +2253,8 @@ class DailyQuestService: ObservableObject {
     /// for a category (e.g. user wants to re-engage with `nutrition`
     /// after the system suppressed it).
     func unsuppressCategory(_ category: String) async -> Bool {
+        // Data invariant 26 — auth gate before RPC.
+        guard SupabaseManager.shared.isAuthenticated else { return false }
         guard PremiumManager.shared.isPremiumUser else { return false }
         struct Result: Decodable { let success: Bool }
         struct Params: Encodable { let p_category: String; let p_is_pro: Bool }
@@ -2084,6 +2269,42 @@ class DailyQuestService: ObservableObject {
         } catch {
             #if DEBUG
             AppLogger.warning("⚠️ [QUESTS] unsuppress_quest_category failed: \(error)", category: .general)
+            #endif
+            return false
+        }
+    }
+
+    /// Daily Goals Insights toggle (migration 20260702). Pro-only.
+    /// `enabled = true`  → clears `suppressed_until` (mirrors `unsuppressCategory`).
+    /// `enabled = false` → writes the forever-sentinel so `get_daily_quests` v3
+    /// excludes the category indefinitely. Refreshes the slate on success
+    /// so the user sees the toggle take effect immediately.
+    func setCategoryEnabled(_ category: String, enabled: Bool) async -> Bool {
+        // Data invariant 26 — auth gate before RPC.
+        guard SupabaseManager.shared.isAuthenticated else { return false }
+        guard PremiumManager.shared.isPremiumUser else { return false }
+        struct Result: Decodable { let success: Bool }
+        struct Params: Encodable {
+            let p_category: String
+            let p_enabled: Bool
+            let p_is_pro: Bool
+        }
+        do {
+            let result: Result = try await SupabaseManager.shared.supabaseClient
+                .rpc("set_quest_category_enabled", params: Params(
+                    p_category: category,
+                    p_enabled: enabled,
+                    p_is_pro: true
+                ))
+                .execute()
+                .value
+            if result.success {
+                await fetchDailyQuests(force: true)
+            }
+            return result.success
+        } catch {
+            #if DEBUG
+            AppLogger.warning("⚠️ [QUESTS] set_quest_category_enabled failed: \(error)", category: .general)
             #endif
             return false
         }

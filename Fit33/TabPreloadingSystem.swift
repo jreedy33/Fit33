@@ -518,6 +518,21 @@ struct WorkoutStatsSnapshot {
 
 // MARK: - EXERCISE LIBRARY FILTER CACHE (Pre-computed for instant tab load)
 
+/// Lightweight off-main snapshot of an Exercise row used by
+/// `ExerciseLibraryFilterCache.precomputeFromIndex`. Captures everything the
+/// recommended-list strength classifier needs (`workoutType` + name +
+/// category + equipment) without holding a live `Exercise` reference, so the
+/// background classification pass never faults the main-thread Core Data
+/// stack. The objectID at the end is what we hand back to the view context
+/// when assembling the final `[Exercise]`.
+struct RecommendedExerciseEntry {
+    let name: String
+    let category: String?
+    let workoutType: String?
+    let equipment: String?
+    let objectID: NSManagedObjectID
+}
+
 /// Pre-computes and caches the recommended exercise list at startup.
 /// On cold start, the Exercise Library tab reads directly from this cache — zero work on tab switch.
 /// The recommended list is DYNAMIC: it blends a curated top-200 baseline with the user's
@@ -663,19 +678,24 @@ final class ExerciseLibraryFilterCache: ObservableObject {
 
         Task.detached(priority: .userInitiated) {
             let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
-            let exerciseIndex: [(name: String, objectID: NSManagedObjectID)] = await bgContext.perform {
-                // Single bulk fetch with `self IN %@` predicate — one SQLite
-                // round-trip instead of 5431 sequential `existingObject(with:)`
-                // calls. `returnsObjectsAsFaults = false` hydrates the row
-                // cache so the eventual main-thread `viewContext.object(with:)`
-                // (inside `precomputeFromIndex`) sees fully-loaded rows.
+            // Capture name/category/workoutType/equipment off-main so the
+            // strength-classification step (added 2026-04-27 per user request
+            // "Recommended only shows strength specific to gender") can run
+            // off the main thread alongside the curated-list match.
+            let exerciseIndex: [RecommendedExerciseEntry] = await bgContext.perform {
                 let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
                 request.predicate = NSPredicate(format: "self IN %@", objectIDs)
                 request.returnsObjectsAsFaults = false
                 let exercises = (try? bgContext.fetch(request)) ?? []
-                return exercises.compactMap { ex -> (String, NSManagedObjectID)? in
+                return exercises.compactMap { ex -> RecommendedExerciseEntry? in
                     guard let name = ex.name else { return nil }
-                    return (name, ex.objectID)
+                    return RecommendedExerciseEntry(
+                        name: name,
+                        category: ex.category,
+                        workoutType: ex.workoutType,
+                        equipment: ex.equipment,
+                        objectID: ex.objectID
+                    )
                 }
             }
             await MainActor.run {
@@ -713,7 +733,7 @@ final class ExerciseLibraryFilterCache: ObservableObject {
     ///
     /// Result: main-thread time inside this method drops from ~1.5–2.8s
     /// (faulting batch) to <50ms (wrapper construction only).
-    func precomputeFromIndex(exerciseIndex: [(name: String, objectID: NSManagedObjectID)], viewContext: NSManagedObjectContext) {
+    func precomputeFromIndex(exerciseIndex: [RecommendedExerciseEntry], viewContext: NSManagedObjectContext) {
         guard !isReady, !isComputing else { return }
         guard !exerciseIndex.isEmpty else { return }
         isComputing = true
@@ -733,8 +753,8 @@ final class ExerciseLibraryFilterCache: ObservableObject {
             var matchedEntries: [(name: String, objectID: NSManagedObjectID)] = []
             matchedEntries.reserveCapacity(250)
 
-            for (name, objectID) in exerciseIndex {
-                let lower = name.lowercased()
+            for entry in exerciseIndex {
+                let lower = entry.name.lowercased()
                 var found = recSet.contains(lower)
                 if !found {
                     for rec in recSet {
@@ -744,9 +764,27 @@ final class ExerciseLibraryFilterCache: ObservableObject {
                         }
                     }
                 }
-                if found {
-                    matchedEntries.append((name: lower, objectID: objectID))
-                }
+                guard found else { continue }
+
+                // STRENGTH-ONLY filter (per user request 2026-04-27 — the
+                // Recommended initial view should surface strength work, not
+                // plyo / cardio / stretches even if they're in the curated
+                // list). Mirrors the `.strength` case in
+                // `ExerciseLibraryView.applyFiltersOnly` so behavior is
+                // consistent: explicit `workoutType` wins, fall back to the
+                // smart name+category+equipment classifier.
+                let isStrength: Bool = {
+                    if let wt = entry.workoutType, !wt.isEmpty {
+                        return wt.lowercased() == "strength"
+                    }
+                    let smart = ExerciseFilterService.classifyExerciseType(
+                        name: entry.name, category: entry.category, equipment: entry.equipment
+                    )
+                    return smart == .strength
+                }()
+                guard isStrength else { continue }
+
+                matchedEntries.append((name: lower, objectID: entry.objectID))
             }
 
             var popularityScores: [String: Int] = [:]

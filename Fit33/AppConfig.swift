@@ -162,15 +162,24 @@ enum AppConfig {
         return isDebug
     }
 
-    /// Sprint 3 (Q2-40): kill-switch for unfinished analytics detectors in
-    /// `PersonalizedInsightsService` — `detectBestWorkoutTime`,
-    /// `analyzeHydrationPerformanceCorrelation`, and the social/nutrition
-    /// pattern stubs. These return hardcoded or synthetic data today, which
-    /// risks surfacing bogus coaching to users ("you lift heavier when
-    /// hydrated"). OFF in production. Flip to `true` for internal builds
-    /// that want to exercise the UI code paths.
+    /// Personalized Insights V2 — wearable + cross-source correlation
+    /// detectors flipped on 2026-04-27 (Daily Brief feature).
+    /// Three of four detectors are now real Pearson correlations
+    /// (significance-gated, see `Fit33/V2Analyzer.swift`):
+    ///   * `detectBestWorkoutTime` → time-of-day x volume on Core Data
+    ///   * `detectNutritionPatterns` → protein x next-day volume on
+    ///     `daily_summaries`
+    ///   * `detectSocialPatterns` → workout frequency uplift during
+    ///     active 1v1/community challenges
+    /// The fourth — `analyzeHydrationPerformanceCorrelation` — still
+    /// holds a `volumeValues = []` placeholder pending a per-day
+    /// volume column on `daily_summaries`; it returns r = 0 in that
+    /// state and never surfaces a recommendation, so the flip is safe.
+    /// Each detector requires `n >= 10`/`12`, `|r| >= 0.3`, `p <= 0.15`
+    /// before writing — Data invariant 36 (`(user_id, insight_key)`
+    /// upsert key) is honored via `upsertCorrelationInsight`.
     enum FeatureFlags {
-        static let personalizedInsightsV2: Bool = false
+        static let personalizedInsightsV2: Bool = true
 
         // MARK: - Wearable Personalization Platform
         //

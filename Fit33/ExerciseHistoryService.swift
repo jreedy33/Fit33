@@ -749,7 +749,7 @@ class ExerciseHistoryService: ObservableObject {
     /// Used by ExerciseCard tile row. Cached by exercise name (deduplicates
     /// concurrent calls). Returns [] for first-time exercises and caches the
     /// empty result to avoid hammering Supabase.
-    func fetchRecentSessions(for exerciseName: String, limit: Int = 3) async -> [ExerciseSessionSummary] {
+    func fetchRecentSessions(for exerciseName: String, limit: Int = 2) async -> [ExerciseSessionSummary] {
         if let cached = recentSessionsCache[exerciseName] {
             return Array(cached.prefix(limit))
         }

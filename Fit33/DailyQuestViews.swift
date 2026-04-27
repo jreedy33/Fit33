@@ -11,6 +11,14 @@ import CoreData
 
 // MARK: - Daily Quests Widget (Dashboard)
 
+/// Tracks the "← from your brief" focus glow. Phase 3 — Daily Mission
+/// Unification (2026-04-27). When the user taps a brief whose CTA is
+/// `.focusQuest(key)`, the router writes the quest key into
+/// `DailyBriefStore.shared.pendingQuestFocus`. `DailyQuestsWidget`
+/// observes that, sets `glowingQuestKey`, applies a brighter ring on
+/// the matching card for ~1.2s, then clears.
+private let questGlowDuration: TimeInterval = 1.2
+
 struct DailyQuestsWidget: View {
     @ObservedObject var questService: DailyQuestService
     @ObservedObject private var adManager = AdManager.shared
@@ -24,6 +32,15 @@ struct DailyQuestsWidget: View {
     /// Pro Quest Insights view. Self-contained so the widget can be
     /// embedded on any surface without a NavigationStack contract.
     @State private var showQuestInsights: Bool = false
+
+    /// Phase 3 (2026-04-27 — Daily Mission Unification): observed
+    /// from `DailyBriefStore.shared` so the brief's `.focusQuest(key)`
+    /// CTA can highlight the matching card. Read-only — the wrapper
+    /// owns the @ObservedObject lifecycle.
+    @ObservedObject private var briefStore = DailyBriefStore.shared
+    /// The quest currently glowing as a result of a `.focusQuest`
+    /// tap. Cleared via async work-item after `questGlowDuration`.
+    @State private var glowingQuestKey: String?
 
     // Today's completed workouts (most recent first). Powers the
     // personalized workout-quest completion summary, e.g.
@@ -62,50 +79,90 @@ struct DailyQuestsWidget: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerRow
-            
+
             if questService.isLoading && questService.quests.isEmpty {
                 loadingContent
             } else {
                 questsCard
             }
         }
-    }
-    
-    // MARK: - Header
-    
-    private var headerRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "trophy.fill")
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.yellow, .orange],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .font(.title3)
-            Text("Daily Goals")
-                .font(.title3)
-                .fontWeight(.bold)
-            
-            Spacer()
-            
-            // Bonus progress dots
-            bonusIndicator
-            
-            // Streak badge
-            if questService.questStreak > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "flame.fill")
-                        .font(.ds_bodySmall)
-                        .foregroundColor(.orange)
-                    Text("\(questService.questStreak)")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.orange)
+        // The header chevron is the canonical entry point to the
+        // Daily Goals Insights sheet (replaces the in-card "Daily Goals
+        // Insights" purple banner that used to live above the slate).
+        // Free users land on the sheet's `proGate` paywall stub, which
+        // double-duties as the upsell surface.
+        .sheet(isPresented: $showQuestInsights) {
+            NavigationStack {
+                QuestInsightsView(questService: questService)
+            }
+        }
+        // Phase 3 (2026-04-27 — Daily Mission Unification): when the
+        // welcome card's `.focusQuest(key)` CTA fires, briefly glow
+        // the matching card so the user sees the connection. Clears
+        // after `questGlowDuration` so the card returns to its
+        // normal stroke. Re-tapping the brief while still glowing
+        // restarts the timer (set fires again, .onChange reacts).
+        .onChange(of: briefStore.pendingQuestFocus) { _, key in
+            guard let key else {
+                glowingQuestKey = nil
+                return
+            }
+            glowingQuestKey = key
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(questGlowDuration))
+                if glowingQuestKey == key {
+                    glowingQuestKey = nil
+                }
+                if briefStore.pendingQuestFocus == key {
+                    briefStore.pendingQuestFocus = nil
                 }
             }
         }
+    }
+
+    // MARK: - Header
+
+    /// "Daily Goals" + chevron. Tapping anywhere on the header row
+    /// opens the Daily Goals Insights sheet — the same sheet the old
+    /// purple banner used to launch. The X/3 counter (or +50 XP star
+    /// when all complete) sits on the trailing edge where the streak
+    /// badge used to live.
+    private var headerRow: some View {
+        Button {
+            showQuestInsights = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "trophy.fill")
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.yellow, .orange],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .font(.title3)
+                Text("Daily Goals")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                Image(systemName: "chevron.right")
+                    .font(.callout)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                bonusIndicator
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Daily Goals")
+        // Phase 3 (2026-04-27 — Daily Mission Unification): copy
+        // updated to match the new Mission framing — the Insights
+        // sheet now answers "Why these goals?" rather than just
+        // showing 28-day stats.
+        .accessibilityHint("Why these goals?")
     }
     
     // MARK: - Bonus Indicator (3 dots in header)
@@ -157,11 +214,10 @@ struct DailyQuestsWidget: View {
                         .animation(.spring(response: 0.4), value: isComplete)
                 }
 
-                if doneCount > 0 {
-                    Text("\(doneCount)/3")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
+                Text("\(doneCount)/3")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(doneCount > 0 ? .primary : .secondary)
+                    .padding(.leading, 2)
             }
         }
     }
@@ -191,100 +247,67 @@ struct DailyQuestsWidget: View {
                 compactQuestRow(quest: quest)
             }
 
-            // Smart Adaptive Daily Goals (20260607) — Pro insights link
-            // for subscribers; upsell CTA for free users. Both are
-            // dismissable / scroll-friendly and only render once the
-            // server has actually returned a quest slate.
-            if !questService.quests.isEmpty {
-                proAdaptiveFooter
+            // Free-user upsell CTA (Pro users get the Insights entry
+            // point through the header chevron — no in-slate banner).
+            // Renders only once the server has returned a real slate.
+            if !questService.quests.isEmpty && !PremiumManager.shared.isPremiumUser {
+                freeUpgradeFooter
                     .padding(.top, 4)
             }
         }
     }
 
-    /// Footer row beneath the daily slate. Pro: links into the Insights
-    /// view. Free: nudges toward an upgrade with the explicit benefits
-    /// (more rerolls, custom quests, double-XP). 20260619: slot count
-    /// is now locked at 3 for all tiers per product decision.
-    @ViewBuilder
-    private var proAdaptiveFooter: some View {
-        if PremiumManager.shared.isPremiumUser {
-            Button {
-                showQuestInsights = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "chart.bar.xaxis")
-                        .font(.ds_caption)
-                        .foregroundColor(.purple)
-                    Text("Quest Insights")
-                        .font(.ds_caption)
-                        .fontWeight(.semibold)
+    /// Free-user upgrade CTA. Pro users see no in-slate banner — the
+    /// header "Daily Goals" chevron is the canonical Insights entry
+    /// point (replaces the purple banner that used to live here).
+    /// 20260619: slot count is locked at 3 for all tiers per product
+    /// decision.
+    private var freeUpgradeFooter: some View {
+        Button {
+            // No dedicated PaywallView ships in the iOS app yet; the
+            // existing developer toggle stands in until the real
+            // upgrade flow lands. PremiumManager.isPremiumUser
+            // currently defaults to TRUE in DEBUG so this branch
+            // primarily exists for the future state.
+            PremiumManager.shared.togglePremiumStatus()
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.ds_caption)
+                    .foregroundStyle(
+                        LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pro: 5 rerolls/day · Custom quests · Insights")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundColor(.primary)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.ds_caption)
+                    Text("Plus 2× XP day · personal Insights")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.purple.opacity(0.08))
-                )
-            }
-            .buttonStyle(.plain)
-            .sheet(isPresented: $showQuestInsights) {
-                NavigationStack {
-                    QuestInsightsView(questService: questService)
-                }
-            }
-        } else {
-            Button {
-                // No dedicated PaywallView ships in the iOS app yet; the
-                // existing developer toggle stands in until the real
-                // upgrade flow lands. PremiumManager.isPremiumUser
-                // currently defaults to TRUE in DEBUG so this branch
-                // primarily exists for the future state.
-                PremiumManager.shared.togglePremiumStatus()
-            } label: {
-                HStack(alignment: .center, spacing: 10) {
-                    Image(systemName: "sparkles")
-                        .font(.ds_caption)
-                        .foregroundStyle(
-                            LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Spacer()
+                Text("Upgrade")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(
+                            LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
                         )
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Pro: 5 rerolls/day · Custom quests · Insights")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundColor(.primary)
-                        Text("Plus 2× XP day · personal Insights")
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Text("Upgrade")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(
-                            Capsule().fill(
-                                LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
-                            )
-                        )
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.orange.opacity(0.08))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.orange.opacity(0.25), lineWidth: 1)
-                )
+                    )
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.orange.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+            )
         }
+        .buttonStyle(.plain)
     }
     
     // MARK: - Live Progress (client-side real-time values from local data sources)
@@ -495,13 +518,22 @@ struct DailyQuestsWidget: View {
             // the right of the emoji ring so the card stays compact (the bar
             // sits just below the subheader, not below the ring).
             VStack(alignment: .leading, spacing: 4) {
-                Text(quest.title)
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                    // Reserve space so long titles don't collide with the
-                    // XP pill pinned to the card's top-trailing corner.
-                    .padding(.trailing, 56)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(quest.title)
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    // Phase 3 (2026-04-27 — Daily Mission Unification):
+                    // "from your brief" provenance chip. Only renders
+                    // for the 1-2 cards the brief actually drove —
+                    // never every card.
+                    if isBriefInfluenced(quest) {
+                        briefInfluenceChip
+                    }
+                }
+                // Reserve space so long titles don't collide with the
+                // XP pill pinned to the card's top-trailing corner.
+                .padding(.trailing, 56)
 
                 if isDone {
                     Text(completionSummary(for: quest))
@@ -590,12 +622,11 @@ struct DailyQuestsWidget: View {
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(
-                    isDone
-                        ? LinearGradient(colors: [.green.opacity(0.35), .mint.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        : LinearGradient(colors: [quest.categoryColor.opacity(0.35), quest.categoryColor.opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    lineWidth: 1
+                    cardStroke(quest: quest, isDone: isDone),
+                    lineWidth: glowingQuestKey == quest.questKey ? 2 : 1
                 )
         )
+        .animation(.easeInOut(duration: 0.25), value: glowingQuestKey)
         }
         .buttonStyle(.plain)
         // Smart Adaptive Daily Goals (20260607) — long-press to reroll
@@ -610,6 +641,63 @@ struct DailyQuestsWidget: View {
                 }
             }
         }
+    }
+
+    /// Phase 3 (2026-04-27): chooses the stroke gradient. Brief-
+    /// influenced quests get a blue→cyan accent so they read as
+    /// "linked to your mission" without requiring the user to read
+    /// the chip. Glow state intensifies the brief-influenced
+    /// gradient briefly when the user taps the brief.
+    private func cardStroke(quest: DailyQuest, isDone: Bool) -> LinearGradient {
+        let isInfluenced = isBriefInfluenced(quest)
+        let isGlowing = glowingQuestKey == quest.questKey
+        if isDone {
+            return LinearGradient(
+                colors: [.green.opacity(0.35), .mint.opacity(0.2)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        }
+        if isInfluenced {
+            let alpha: Double = isGlowing ? 0.85 : 0.45
+            return LinearGradient(
+                colors: [.blue.opacity(alpha), .cyan.opacity(alpha * 0.7)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        }
+        return LinearGradient(
+            colors: [quest.categoryColor.opacity(0.35), quest.categoryColor.opacity(0.18)],
+            startPoint: .topLeading, endPoint: .bottomTrailing
+        )
+    }
+
+    /// Phase 3 (2026-04-27 — Daily Mission Unification): a quest
+    /// is "from your brief" iff (a) the server flagged it on this
+    /// fetch (Layer 7 / Layer 8 in the v4 RPC), OR (b) the
+    /// client-side engine matched it from the live brief Decision
+    /// (covers legacy slates fetched before the v4 migration
+    /// shipped). Either path is sufficient.
+    private func isBriefInfluenced(_ quest: DailyQuest) -> Bool {
+        if quest.isBriefInfluenced == true { return true }
+        return briefStore.linkedQuestKeys.contains(quest.questKey)
+    }
+
+    /// Tiny "← from your brief" pill rendered inline with the quest
+    /// title when the engine elevated it. Tappable — taps re-trigger
+    /// the brief's CTA so users can ping-pong between the brief
+    /// (above) and the quest (below) without scrolling away.
+    private var briefInfluenceChip: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 9, weight: .semibold))
+            Text("from brief")
+                .font(.ds_labelSmall)
+        }
+        .foregroundColor(.blue.opacity(0.85))
+        .padding(.horizontal, Spacing.xxs)
+        .padding(.vertical, 2)
+        .background(Color.blue.opacity(0.10))
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.blue.opacity(0.25), lineWidth: 0.5))
     }
 
     /// True when the quest has any metadata badge worth rendering. Used

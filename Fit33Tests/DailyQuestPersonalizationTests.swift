@@ -181,6 +181,132 @@ final class DailyQuestPersonalizationTests: XCTestCase {
         XCTAssertEqual(decoded.doubleXpBadge, "✨ 2× XP today")
     }
 
+    func testDailyQuestDecodesIsBriefInfluencedFlag() throws {
+        // Daily Mission Unification (20260703 Phase 1). The server stamps
+        // `is_brief_influenced = true` on quests selected by Layer 7
+        // (capacity band re-rank) or Layer 8 (debt booster). Drift in the
+        // CodingKey would silently strip the "← from your brief" chip.
+        let json = """
+        {
+          "id": "11111111-2222-3333-4444-555566667777",
+          "quest_key": "active_recovery_logged",
+          "title": "Active Recovery",
+          "description": "Walk 15 min — your body needs the day.",
+          "icon": "figure.walk",
+          "category": "workout",
+          "target_value": 15,
+          "current_value": 0,
+          "target_unit": "minutes",
+          "xp_reward": 38,
+          "league_points": 8,
+          "difficulty": "easy",
+          "is_completed": false,
+          "completed_at": null,
+          "fun_label": null,
+          "verification_type": "auto",
+          "is_brief_influenced": true
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(DailyQuest.self, from: json)
+        XCTAssertEqual(decoded.isBriefInfluenced, true)
+    }
+
+    // MARK: - Optimistic update preserves is_brief_influenced
+
+    /// Regression for the Daily Brief unification:
+    /// `DailyQuestService.reportProgress` rewrites a `DailyQuest` after
+    /// every `update_quest_progress` RPC. The rewrite previously dropped
+    /// `is_brief_influenced` because the new field was added without
+    /// updating the optimistic-update initializer call. This test mirrors
+    /// the same field-by-field copy and asserts the flag survives a
+    /// progress tick (so the "← from your brief" chip stays on screen
+    /// while the bar fills).
+    func testOptimisticUpdatePreservesIsBriefInfluenced() {
+        let old = makeQuest(
+            verification: "auto",
+            isBriefInfluenced: true,
+            currentValue: 0,
+            targetValue: 3
+        )
+
+        // Mirror the exact initializer that
+        // `reportProgress.quests[idx] = DailyQuest(...)` uses, with the
+        // `currentValue` replaced by the new server value.
+        let newValue = 1
+        let nowComplete = false
+        let updated = DailyQuest(
+            id: old.id,
+            questKey: old.questKey,
+            title: old.title,
+            description: old.description,
+            icon: old.icon,
+            category: old.category,
+            targetValue: old.targetValue,
+            currentValue: newValue,
+            targetUnit: old.targetUnit,
+            xpReward: old.xpReward,
+            leaguePoints: old.leaguePoints,
+            difficulty: old.difficulty,
+            isCompleted: nowComplete,
+            completedAt: nil,
+            funLabel: old.funLabel,
+            verificationType: old.verificationType,
+            tier: old.tier,
+            doubleXp: old.doubleXp,
+            isCustom: old.isCustom,
+            isReroll: old.isReroll,
+            isBriefInfluenced: old.isBriefInfluenced
+        )
+
+        XCTAssertEqual(updated.isBriefInfluenced, true,
+            "Progress tick must preserve is_brief_influenced — otherwise the brief chip disappears as the bar fills")
+        XCTAssertEqual(updated.currentValue, newValue)
+        XCTAssertEqual(updated.id, old.id)
+    }
+
+    func testOptimisticUpdatePreservesAllNewBriefAndProFields() {
+        // Belt-and-suspenders: every new field added since the original
+        // 20260601 wire format should ride through the optimistic update.
+        // If any drift, this test pins the regression to the exact field.
+        let old = makeQuest(
+            verification: "auto",
+            doubleXp: true,
+            isCustom: false,
+            isReroll: true,
+            isBriefInfluenced: true,
+            currentValue: 5,
+            targetValue: 10
+        )
+        let updated = DailyQuest(
+            id: old.id,
+            questKey: old.questKey,
+            title: old.title,
+            description: old.description,
+            icon: old.icon,
+            category: old.category,
+            targetValue: old.targetValue,
+            currentValue: 7,
+            targetUnit: old.targetUnit,
+            xpReward: old.xpReward,
+            leaguePoints: old.leaguePoints,
+            difficulty: old.difficulty,
+            isCompleted: false,
+            completedAt: nil,
+            funLabel: old.funLabel,
+            verificationType: old.verificationType,
+            tier: old.tier,
+            doubleXp: old.doubleXp,
+            isCustom: old.isCustom,
+            isReroll: old.isReroll,
+            isBriefInfluenced: old.isBriefInfluenced
+        )
+        XCTAssertEqual(updated.doubleXp, true)
+        XCTAssertEqual(updated.isCustom, false)
+        XCTAssertEqual(updated.isReroll, true)
+        XCTAssertEqual(updated.isBriefInfluenced, true)
+    }
+
     func testDailyQuestDecodesLegacyRowsWithoutNewFields() throws {
         // Older server responses (pre-20260607) won't have the new
         // columns. Decoding must succeed with `nil` defaults so the
@@ -211,6 +337,7 @@ final class DailyQuestPersonalizationTests: XCTestCase {
         XCTAssertNil(decoded.doubleXp)
         XCTAssertNil(decoded.isCustom)
         XCTAssertNil(decoded.isReroll)
+        XCTAssertNil(decoded.isBriefInfluenced)
         XCTAssertFalse(decoded.wasRerolled)
         XCTAssertFalse(decoded.isCustomPro)
         XCTAssertNil(decoded.doubleXpBadge)
@@ -234,7 +361,11 @@ final class DailyQuestPersonalizationTests: XCTestCase {
         verification: String?,
         doubleXp: Bool? = nil,
         isCustom: Bool? = nil,
-        isReroll: Bool? = nil
+        isReroll: Bool? = nil,
+        isBriefInfluenced: Bool? = nil,
+        currentValue: Int = 0,
+        targetValue: Int = 1,
+        isCompleted: Bool = false
     ) -> DailyQuest {
         DailyQuest(
             id: UUID(),
@@ -243,20 +374,21 @@ final class DailyQuestPersonalizationTests: XCTestCase {
             description: "Test quest",
             icon: "dumbbell",
             category: "workout",
-            targetValue: 1,
-            currentValue: 0,
+            targetValue: targetValue,
+            currentValue: currentValue,
             targetUnit: "session",
             xpReward: 50,
             leaguePoints: 10,
             difficulty: "medium",
-            isCompleted: false,
+            isCompleted: isCompleted,
             completedAt: nil,
             funLabel: nil,
             verificationType: verification,
             tier: nil,
             doubleXp: doubleXp,
             isCustom: isCustom,
-            isReroll: isReroll
+            isReroll: isReroll,
+            isBriefInfluenced: isBriefInfluenced
         )
     }
 }

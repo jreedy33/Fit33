@@ -163,12 +163,15 @@ struct ExerciseLibraryView: View {
             SmartExerciseSearchService.shared.invalidateCache()
             
             // ⚡️ INSTANT: For default "Recommended" with no extra filters, use the pre-computed list
-            // This was built at startup by TabPreloader — zero work here, just pointer assignment
+            // This was built at startup by TabPreloader — zero work here, just pointer assignment.
+            // The cache is already strength-filtered (per Recommended-list spec
+            // 2026-04-27); we layer strict-gender on top here so a gender
+            // switch in Settings reflects without rebuilding the cache.
             let filterCache = ExerciseLibraryFilterCache.shared
             if selectedCategories.isEmpty && selectedEquipmentItems.isEmpty && selectedMuscleGroups.isEmpty && exerciseFilter == .recommended && filterCache.isReady {
-                preFilteredExercises = filterCache.preFilteredRecommended
+                preFilteredExercises = applyStrictGenderFilter(to: filterCache.preFilteredRecommended)
                 #if DEBUG
-                AppLogger.debug("⚡️ [PERF] INSTANT recommended from pre-computed cache: \(preFilteredExercises.count) exercises (0ms)", category: .workout)
+                AppLogger.debug("⚡️ [PERF] INSTANT recommended from pre-computed cache: \(preFilteredExercises.count) exercises (gender-filtered)", category: .workout)
                 #endif
             } else if selectedCategories.isEmpty && selectedEquipmentItems.isEmpty && selectedMuscleGroups.isEmpty && exerciseFilter == .recommended {
                 // Fallback: cache not ready yet (very early cold start), compute inline
@@ -214,26 +217,60 @@ struct ExerciseLibraryView: View {
         cachedFilteredExercises = preFilteredExercises
     }
     
-    // ⚡️ OPTIMIZED: Fast recommended filter using precomputed Set lookup
+    // ⚡️ OPTIMIZED: Fast recommended filter using precomputed Set lookup.
+    // Used only on the cold-start fallback path when ExerciseLibraryFilterCache
+    // hasn't finished its background pass yet. Mirrors the precompute logic:
+    // (1) curated-list match, (2) strength-only, (3) strict gender.
     private func applyOptimizedRecommendedFilter(to exercises: [Exercise]) -> [Exercise] {
-        // Use precomputed set for O(1) lookup instead of O(n) contains check
         let recommendedSet = ExerciseLibraryFilterCache.shared.recommendedExerciseNames
         
         return exercises.filter { exercise in
-            guard let name = exercise.name?.lowercased() else { return false }
+            guard let rawName = exercise.name else { return false }
+            let name = rawName.lowercased()
             
-            // Fast check: does name contain any recommended exercise?
-            // First try exact word boundary matches (most common case)
+            var matchedCurated = false
             for rec in recommendedSet {
                 if name == rec || 
                    name.hasPrefix(rec + " ") || 
                    name.hasPrefix(rec + "(") ||
                    name.contains(" " + rec + " ") ||
                    name.contains(" " + rec + "(") {
-                    return true
+                    matchedCurated = true
+                    break
                 }
             }
-            return false
+            guard matchedCurated else { return false }
+            guard isStrengthExercise(exercise) else { return false }
+            return GenderFilterService.shared.shouldShowExerciseStrict(rawName)
+        }
+    }
+
+    // MARK: - Recommended-list helpers (strength + strict gender)
+    
+    /// Mirrors the `.strength` case in `applyFiltersOnly` so the Recommended
+    /// list's strength check stays in lock-step with the dedicated Strength
+    /// filter. Explicit `workoutType` wins; otherwise fall back to the
+    /// name+category+equipment classifier.
+    private func isStrengthExercise(_ exercise: Exercise) -> Bool {
+        if let workoutType = exercise.workoutType, !workoutType.isEmpty {
+            return workoutType.lowercased() == "strength"
+        }
+        let smartType = ExerciseFilterService.classifyExerciseType(
+            name: exercise.name, category: exercise.category, equipment: exercise.equipment
+        )
+        return smartType == .strength
+    }
+    
+    /// Apply strict gender filter (no opposite-gender fallback) to a
+    /// pre-filtered recommended list. Per user request 2026-04-27, the
+    /// Recommended initial view should never surface opposite-gender clips
+    /// even if that's the only version available — gender-tagged exercises
+    /// without our preferred-gender video are simply hidden.
+    private func applyStrictGenderFilter(to exercises: [Exercise]) -> [Exercise] {
+        let svc = GenderFilterService.shared
+        return exercises.filter { exercise in
+            guard let name = exercise.name else { return false }
+            return svc.shouldShowExerciseStrict(name)
         }
     }
     
@@ -244,11 +281,20 @@ struct ExerciseLibraryView: View {
         // Filter by exercise filter type
         switch exerciseFilter {
         case .recommended:
+            // Curated list + strength-only + strict gender (per user request
+            // 2026-04-27). Same predicate set the precomputed cache and the
+            // cold-start fallback use, so layered filters (category /
+            // equipment / muscle on top of Recommended) stay consistent.
+            let svc = GenderFilterService.shared
             filtered = filtered.filter { exercise in
-                let fullName = (exercise.name ?? "").lowercased()
-                return recommendedExercises.contains { rec in
+                guard let rawName = exercise.name else { return false }
+                let fullName = rawName.lowercased()
+                let inCurated = recommendedExercises.contains { rec in
                     fullName == rec || fullName.hasPrefix(rec + " ") || fullName.hasPrefix(rec + "(")
                 }
+                guard inCurated else { return false }
+                guard isStrengthExercise(exercise) else { return false }
+                return svc.shouldShowExerciseStrict(rawName)
             }
         case .favorites:
             filtered = filtered.filter { $0.isFavorite }
@@ -577,6 +623,29 @@ struct ExerciseLibraryView: View {
                 loadExercises()
                 updateFilteredExercises()
                 forceRenderID = UUID()
+            }
+            // 👤 Refresh when the user switches preferred gender (Settings ->
+            // Profile). Recommended list is gender-aware (strict — see
+            // `applyStrictGenderFilter`) so we MUST re-filter, not just bump
+            // a render ID. `lastFilterKey = ""` forces the filter cache to
+            // rebuild on the next call.
+            .onReceive(NotificationCenter.default.publisher(for: .genderPreferenceChanged)) { _ in
+                AppLogger.debug("📚 Exercise Library: Gender preference changed, refreshing...", category: .workout)
+                lastFilterKey = ""
+                searchResultsCache.removeAll()
+                updateFilteredExercises()
+                forceRenderID = UUID()
+            }
+            // 🔁 Tab tap → reset to Recommended (per user request 2026-04-27).
+            // MainTabView posts `.exerciseTabSelected` whenever the user lands
+            // on tab 1 from anywhere else. Resetting only the filter (not
+            // search/category) keeps any in-progress drill-down intact while
+            // still meeting "tapping the tab brings me back to Recommended".
+            .onReceive(NotificationCenter.default.publisher(for: .exerciseTabSelected)) { _ in
+                if exerciseFilter != .recommended {
+                    AppLogger.debug("📚 Exercise Library: Tab tapped, resetting filter to Recommended", category: .workout)
+                    exerciseFilter = .recommended
+                }
             }
         }
     }

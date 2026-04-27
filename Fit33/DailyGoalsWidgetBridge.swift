@@ -131,4 +131,39 @@ enum DailyGoalsWidgetBridge {
         reloadLock.unlock()
         WidgetCenter.shared.reloadAllTimelines()
     }
+
+    // MARK: - Midnight reset
+
+    /// Audit follow-up (2026-04-27 #14): `HealthKitManager.resetDailyCountersIfNeeded`
+    /// previously called `WidgetCenter.shared.reloadAllTimelines()` directly,
+    /// bypassing the same hash + throttle gates that `publish(...)` enforces.
+    /// At midnight, every active HK observer can fire near-simultaneously
+    /// across a multi-extension widget surface; an unguarded direct reload
+    /// can spend WidgetKit's daily reload budget on duplicate ticks.
+    ///
+    /// This entry point is intentionally NOT payload-hash gated — at the
+    /// day rollover the widget MUST regenerate timelines (yesterday's
+    /// progress disappears, today's day-1 row hasn't been written yet),
+    /// and the App Group payload may not have changed yet. We bypass the
+    /// hash skip but still respect a 60s coalescing window so back-to-back
+    /// midnight ticks (e.g. multiple HK observers settling) only fire one
+    /// reload.
+    static func requestMidnightReset() {
+        reloadLock.lock()
+        let now = Date()
+        // Force the next `publish` to also reload by invalidating the
+        // remembered hash — yesterday's payload should not look "fresh".
+        lastPayloadHash = nil
+        if let last = lastReloadAt, now.timeIntervalSince(last) < 60 {
+            reloadLock.unlock()
+            AppLogger.debug("📱 [WIDGET] Midnight reset throttled — already reloaded within 60s", category: .general)
+            return
+        }
+        lastReloadAt = now
+        pendingReloadTask?.cancel()
+        pendingReloadTask = nil
+        reloadLock.unlock()
+        AppLogger.debug("📱 [WIDGET] Midnight reset — reloading all timelines", category: .general)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
 }

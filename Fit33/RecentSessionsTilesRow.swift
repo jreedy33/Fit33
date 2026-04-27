@@ -2,8 +2,16 @@
 //  RecentSessionsTilesRow.swift
 //  Fit33
 //
-//  Condensed "last N sessions" tile row shown under the exercise title in
-//  ExerciseCard. Each tile = one prior workout session: avg weight + short date.
+//  Condensed "Previous Max" tile row shown under the exercise title in
+//  ExerciseCard. Each tile = one prior workout session: top-set weight +
+//  short date. Capped at 2 tiles so the row stays single-line on narrow
+//  devices — adding a 3rd tile wraps "Apr 26" → two lines on iPhone SE / 13 mini.
+//
+//  Renders the heaviest single set per session (`maxWeight`) prefixed with a
+//  "Previous Max:" label so users read it as their PR-trend snapshot, not a
+//  session average. Switched 2026-04-27 — historical avg-weight rendering was
+//  visually similar but conceptually misleading (a 70 lb top-set workout
+//  reported as "67 lb" was confusing alongside the suggested-weight column).
 //
 //  Owner: Product Engineer (per ENGINEERING_TEAM.md). Data source: invariant
 //  driven — `ExerciseHistoryService.shared.fetchRecentSessions(for:limit:)`.
@@ -28,7 +36,10 @@ struct RecentSessionsTilesRow: View {
             EmptyView()
         } else {
             HStack(spacing: Spacing.xs) {
-                ForEach(sessions.prefix(3)) { session in
+                Text("Previous Max:")
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+                ForEach(sessions.prefix(2)) { session in
                     tile(for: session)
                 }
                 Spacer(minLength: 0)
@@ -39,7 +50,8 @@ struct RecentSessionsTilesRow: View {
     }
 
     private func tile(for session: ExerciseSessionSummary) -> some View {
-        let displayWeight = useKg ? session.avgWeight * 0.453592 : session.avgWeight
+        let rawWeight = session.maxWeight > 0 ? session.maxWeight : session.avgWeight
+        let displayWeight = useKg ? rawWeight * 0.453592 : rawWeight
         let weightString: String = {
             guard displayWeight > 0 else { return "—" }
             return displayWeight.truncatingRemainder(dividingBy: 1) == 0
@@ -49,7 +61,7 @@ struct RecentSessionsTilesRow: View {
         let unit = useKg ? "kg" : "lb"
         let dateString = Self.dateFormatter.string(from: session.workoutDate)
         let a11y = displayWeight > 0
-            ? "Previous session \(dateString): \(weightString) \(unit) average"
+            ? "Previous max \(dateString): \(weightString) \(unit)"
             : "Previous session \(dateString)"
 
         return HStack(spacing: 4) {

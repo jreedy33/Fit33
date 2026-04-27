@@ -14,6 +14,10 @@ enum DashboardRoute: Hashable {
     case smartProgramDayPreview(programId: String, dayNumber: Int)
     case stravaSettings
     case whoopSettings
+    /// Weekly League leaderboard (2026-04-27). Pushed when the user
+    /// taps the new league badge in the welcome card. Mirrors the
+    /// FriendsTab `LeagueDetail` push so the surface is identical.
+    case weeklyLeague
 }
 
 enum WorkoutCreationType {

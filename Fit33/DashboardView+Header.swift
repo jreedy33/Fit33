@@ -234,29 +234,47 @@ extension DashboardView {
     
     var headerView: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Top section with Welcome back and Level
-            HStack {
-                Text(getWelcomeMessage())
-                    .font(.subheadline)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                // User Level Display - floating badge (no background)
+            // Top section — Mission framing replaces the old generic
+            // "Welcome back," (2026-04-27 — Daily Mission Unification).
+            // Letter-spaced caps to read as a header label, not body
+            // copy; left-aligned with the user info below so the
+            // narrative flows top-down: MISSION → name → headline.
+            // Top row — both halves in the same light-grey
+            // letter-spaced caps treatment (2026-04-27 cleanup —
+            // matches the "TODAY'S MISSION," label style across the
+            // whole greeting so the line reads as one quiet header
+            // rather than a label glued to a name).
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
                 HStack(spacing: 4) {
-                    Image(systemName: userManager.getLevelIcon())
-                        .font(.ds_caption)
-                        .foregroundColor(userManager.getLevelColor())
-                    
-                    Text(userManager.getLevelTitle())
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(userManager.getLevelColor())
+                    Text("TODAY'S MISSION, \(getFirstName().uppercased())")
+                        .font(.ds_labelSmall)
+                        .tracking(1.4)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    if userManager.isVerified || userManager.isGoldVerified {
+                        VerifiedBadge(size: 12, isGold: userManager.isGoldVerified)
+                    }
                 }
-                .accessibilityLabel("Level \(userManager.getLevel()): \(userManager.getLevelTitle())")
+
+                Spacer()
+
+                // League badge — tappable, pushes the full league
+                // leaderboard view (2026-04-27). Replaces the old
+                // XP-level badge ("Legendary Master 148"). Same
+                // surface as the FriendsTab `LeagueDetail` push — no
+                // popup card, no sheet. Falls back to the level
+                // title when the user hasn't been placed in a league
+                // yet (Monday placement, fresh accounts). Widget
+                // isolation per PE invariant 9 — owns its own
+                // `@StateObject WeeklyLeagueService.shared` so league
+                // refreshes don't recompute the dashboard.
+                DashboardLeagueBadge(navigationPath: $dashboardNavPath)
             }
-            
-            // Bottom section with icon and user info
+
+            // Bottom section — flame + brief. The user's name has
+            // moved to the top line, so this row is now just the
+            // streak hero + the fused brief content.
             HStack(spacing: 14) {
                 // Hero icon - Flame with streak counter (tappable for info)
                 Button(action: {
@@ -300,31 +318,15 @@ extension DashboardView {
                 .accessibilityLabel("Current streak: \(userManager.currentUser?.currentStreak ?? 0) days")
                 .accessibilityHint("Tap for streak details")
                 .buttonStyle(.plain)
-                
-                // User info section - moved to the right
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 4) {
-                        Text(getFirstName())
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        
-                        if userManager.isVerified || userManager.isGoldVerified {
-                            VerifiedBadge(size: 16, isGold: userManager.isGoldVerified)
-                        }
-                    }
-                    
-                    // Motivational message - now prominent
-                    Text(personalizedRecommendation?.message ?? currentMotivationalMessage)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                
-                Spacer()
+
+                // Daily Brief — fused multi-source insight (replaces
+                // the old single-line motivational subtitle, 2026-04-27).
+                // Engine: `DailyBriefEngine.compose()`; widget isolation
+                // in `DashboardWelcomeBriefWrapper` (PE invariant 9).
+                DashboardWelcomeBriefWrapper(navigationPath: $dashboardNavPath)
+                    .environmentObject(workoutManager)
+
+                Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, Spacing.md)
@@ -640,5 +642,108 @@ extension DashboardView {
                 workoutManager.shouldNavigateToAutoGen = true
             }
         }
+    }
+}
+
+// MARK: - Dashboard League Badge (replaces the old "Legendary Master N" XP badge)
+
+/// Floating tappable league badge in the welcome card's top-right
+/// corner. Source-of-truth: `WeeklyLeagueService.shared.standing`.
+/// Tapping pushes `WeeklyLeagueDetailView` onto the dashboard's
+/// existing NavigationStack — same surface as the FriendsTab
+/// `LeagueDetail` deep link (full page, not a sheet). The detail
+/// view sets its own `.navigationBarHidden(true)` so it draws its
+/// own header inside the parent stack (no nested NavigationStack
+/// — PE invariant 6).
+///
+/// Fallback hierarchy when no league standing yet:
+///   1. `notPlaced == true` → "Earn XP to enter" placement copy.
+///   2. `standing == nil` AND not placed → temporarily renders the
+///      legacy XP-level title ("Legendary Master 148") so the slot
+///      is never blank during the cold-start fetch.
+///
+/// Widget isolation (PE invariant 9): owns its own
+/// `@StateObject WeeklyLeagueService.shared` so league fetches
+/// (which run on weekly placement events + foreground refresh) do
+/// not recompute the parent `DashboardView` body.
+struct DashboardLeagueBadge: View {
+    @Binding var navigationPath: NavigationPath
+    @StateObject private var league = WeeklyLeagueService.shared
+    @StateObject private var userManager = UserManager.shared
+
+    init(navigationPath: Binding<NavigationPath>) {
+        self._navigationPath = navigationPath
+    }
+
+    var body: some View {
+        Button {
+            HapticManager.impact(.light)
+            navigationPath.append(DashboardRoute.weeklyLeague)
+        } label: {
+            badgeContent
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint("Tap to view this week's league leaderboard")
+        .task {
+            // Fetch on first paint if standing isn't already loaded.
+            // The service throttles internally so a tab-return won't
+            // hammer the RPC.
+            if league.standing == nil && !league.hasJoined && !league.notPlaced {
+                await league.fetchOrJoinLeague()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var badgeContent: some View {
+        if let standing = league.standing {
+            HStack(spacing: 4) {
+                Text(standing.tierEmoji)
+                    .font(.ds_caption)
+                Text("\(standing.tierName) League")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: standing.tierGradient,
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+            }
+        } else if league.notPlaced {
+            HStack(spacing: 4) {
+                Image(systemName: "trophy")
+                    .font(.ds_caption)
+                    .foregroundColor(.orange)
+                Text("Earn XP to enter")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.orange)
+            }
+        } else {
+            // Cold-start fallback. The legacy level title prevents an
+            // empty slot while the league fetch is in flight.
+            HStack(spacing: 4) {
+                Image(systemName: userManager.getLevelIcon())
+                    .font(.ds_caption)
+                    .foregroundColor(userManager.getLevelColor())
+                Text(userManager.getLevelTitle())
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(userManager.getLevelColor())
+            }
+        }
+    }
+
+    private var accessibilityLabel: String {
+        if let standing = league.standing {
+            return "\(standing.tierName) League, rank \(standing.myRank) of \(standing.groupSize)"
+        }
+        if league.notPlaced {
+            return "Not yet placed in a league. Earn XP to enter."
+        }
+        return "Level \(userManager.getLevel()): \(userManager.getLevelTitle())"
     }
 }

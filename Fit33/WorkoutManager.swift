@@ -32,6 +32,7 @@ class WorkoutManager: ObservableObject {
     @Published var shouldNavigateToProfileFriends: Bool = false  // 🔧 Redirect Home→Profile friends (Challenge a Friend)
     @Published var autoGenCameFromHomeTab: Bool = false   // 🔧 Track if auto-gen was started from Home tab
     @Published var shouldNavigateToHomeTabInstant: Bool = false  // 🔧 Instant tab switch (no animation)
+    @Published var shouldNavigateToMealsTab: Bool = false  // 🔧 Daily Brief CTA — meal/water/weight log opens the Nutrition tab (SimpleMealPlanView wraps its own NavigationStack so it must NOT be pushed via `dashboardNavPath` — PE invariant 6)
     
     // 🔧 Navigate to program views on Workout tab (from Dashboard)
     @Published var shouldNavigateToProgramOverview: Bool = false
@@ -1137,13 +1138,16 @@ class WorkoutManager: ObservableObject {
         // ═══════════════════════════════════════════════════════════════════════
         // QUICK WINS: Record performance history, context, and proficiency
         // ═══════════════════════════════════════════════════════════════════════
-        if let workout = currentWorkout {
+        if currentWorkout != nil {
             // Save enhanced workout stats to Core Data first (synchronous)
             saveEnhancedWorkoutStats()
-            
-            // Then record performance data async (non-blocking)
+
+            // Then record equipment proficiency async (non-blocking).
+            // NOTE: exercise_performance_history is written by
+            // ExerciseHistoryService.saveExercisePerformance() (canonical writer),
+            // invoked from ActiveWorkoutView+Persistence.saveExercisePerformanceHistoryWithData.
+            // Do NOT add a second writer here — see DATA_BACKEND_AGENT.md invariant 28d.
             Task {
-                await recordExercisePerformance()
                 await updateEquipmentProficiency()
             }
         }
@@ -1405,82 +1409,6 @@ class WorkoutManager: ObservableObject {
                 op: "workout_context.insert",
                 userId: authUserId
             )
-        }
-    }
-    
-    /// Record exercise performance history for progressive overload
-    private func recordExercisePerformance() async {
-        guard SupabaseManager.shared.isAuthenticated else {
-            AppLogger.warning("[PERF HISTORY] Skipping — not authenticated", category: .auth)
-            return
-        }
-        // RLS-safety: prefer auth.uid() over Core Data User.id (legacy-account safe).
-        guard let userId = SupabaseManager.shared.currentUser?.id,
-              let workout = currentWorkout,
-              let exercises = workout.exercises as? Set<WorkoutExercise> else {
-            return
-        }
-        
-        for workoutExercise in exercises {
-            guard let exercise = workoutExercise.exercise,
-                  let exerciseName = exercise.name,
-                  let sets = workoutExercise.sets as? Set<WorkoutSet> else {
-                continue
-            }
-            
-            let completedSets = sets.filter { $0.isCompleted }.sorted { $0.setNumber < $1.setNumber }
-            guard !completedSets.isEmpty else { continue }
-            
-            // Find best set
-            guard let bestSet = completedSets.max(by: { 
-                ($0.weight * Double($0.reps)) < ($1.weight * Double($1.reps)) 
-            }) else { continue }
-            
-            // Calculate totals
-            let totalVolume = completedSets.reduce(0.0) { $0 + ($1.weight * Double($1.reps)) }
-            
-            // Calculate 1RM using Epley formula
-            let oneRM: Double
-            if bestSet.reps == 1 {
-                oneRM = bestSet.weight
-            } else if bestSet.reps > 12 {
-                oneRM = bestSet.weight * (1 + 0.033 * 12)
-            } else {
-                oneRM = bestSet.weight * (1 + 0.033 * Double(bestSet.reps))
-            }
-            
-            // Save to Supabase
-            let dto: [String: AnyJSON] = [
-                "user_id": .string(userId.uuidString),
-                "workout_id": workout.id.map { .string($0.uuidString) } ?? .null,
-                "exercise_name": .string(exerciseName),
-                "workout_date": .string(ISO8601DateFormatter().string(from: workout.date ?? Date())),
-                "best_set_weight": .double(bestSet.weight),
-                "best_set_reps": .integer(Int(bestSet.reps)),
-                "total_sets": .integer(completedSets.count),
-                "total_volume": .double(totalVolume),
-                "one_rep_max_estimate": .double(oneRM),
-                "equipment_used": .string(exercise.equipment ?? "Bodyweight")
-            ]
-            
-            do {
-                try await SupabaseManager.shared.supabaseClient
-                    .from("exercise_performance_history")
-                    .insert(dto)
-                    .execute()
-                #if DEBUG
-                AppLogger.debug("✅ Recorded performance: \(exerciseName) - \(bestSet.weight)lbs x \(bestSet.reps) (1RM: \(String(format: "%.1f", oneRM))lbs)", category: .data)
-                #endif
-            } catch {
-                NetworkErrorClassifier.log(
-                    error,
-                    context: "Recording exercise_performance_history for \(exerciseName)",
-                    category: .data,
-                    transientLevel: .debug,
-                    op: "exercise_performance_history.insert",
-                    userId: userId
-                )
-            }
         }
     }
     

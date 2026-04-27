@@ -614,6 +614,15 @@ final class WhoopService: ObservableObject {
 
         Task {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "whoop", isConnected: false)
+            // Stale-wearable invalidation (Phase 0 — 2026-04-27): force
+            // a readiness recompute so `ReadinessService.todayReadiness`
+            // flips back to placeholder (.unknown band, .none source)
+            // immediately. Without this the dashboard's Daily Brief
+            // would keep reading the cached snapshot's yellow band
+            // and surface "Mid recovery" copy for a now-disconnected
+            // WHOOP — a real bug observed when the 4d-recover path
+            // auto-disconnects the user.
+            await ReadinessService.shared.recompute(force: true)
         }
 
         AppLogger.debug("[WHOOP] Disconnected", category: .health)

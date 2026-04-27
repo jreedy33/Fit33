@@ -127,6 +127,38 @@ final class GenderFilterService: ObservableObject {
         
         return false
     }
+
+    /// Strict variant used by curated "Recommended" lists (Exercise Library
+    /// initial view + Custom Workout Builder build mode). UNLIKE
+    /// `shouldShowExercise`, this NEVER falls back to opposite-gender content
+    /// — if the exercise is gender-tagged but only has the opposite gender's
+    /// video, we hide it entirely. Exercises with no gender tagging at all
+    /// (i.e. not present in the cache) are still shown because they're
+    /// gender-neutral by definition.
+    ///
+    /// Why a separate method? Other call sites (workout generation, ad-hoc
+    /// search) intentionally fall back so the user always has SOMETHING to
+    /// see. The Recommended initial view, on the other hand, is meant to
+    /// feel "curated for me" — surfacing an opposite-gender clip there
+    /// breaks that promise per user request 2026-04-27.
+    func shouldShowExerciseStrict(_ exerciseName: String) -> Bool {
+        let key = exerciseName.lowercased()
+        
+        // Try exact match first
+        if let info = exerciseGenderCache[key] {
+            return info.isAvailable(for: preferredGender)
+        }
+        
+        // Try normalized match (handles "(Leaning)" vs "Lean", etc.)
+        let normalizedKey = normalizeExerciseName(key)
+        if let info = exerciseGenderCache[normalizedKey] {
+            return info.isAvailable(for: preferredGender)
+        }
+        
+        // Not in gender cache at all — treat as gender-neutral and show it.
+        // (e.g. legacy exercises with a single non-gender-tagged video.)
+        return true
+    }
     
     /// Get the correct video filename for an exercise based on gender
     func getVideoFilename(for exerciseName: String, fallbackToOpposite: Bool = true) -> String? {
@@ -377,6 +409,10 @@ final class GenderFilterService: ObservableObject {
 extension Notification.Name {
     static let genderPreferenceChanged = Notification.Name("genderPreferenceChanged")
     static let userProfileUpdated = Notification.Name("userProfileUpdated")
+    /// Posted by `MainTabView` when the user lands on the Exercises tab
+    /// (tab index 1) from any other tab. Used by `ExerciseLibraryView` to
+    /// snap the filter back to Recommended (per user request 2026-04-27).
+    static let exerciseTabSelected = Notification.Name("exerciseTabSelected")
 }
 
 // MARK: - VideoStreamingService Extension

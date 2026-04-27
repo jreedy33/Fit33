@@ -156,7 +156,14 @@ class HealthKitManager: ObservableObject {
         // row yet for today, which the widget handles). Without this
         // call the widget would stay on yesterday's snapshot until its
         // next 20-min `.policy(.after(...))` tick.
-        WidgetCenter.shared.reloadAllTimelines()
+        //
+        // Route through `DailyGoalsWidgetBridge.requestMidnightReset()`
+        // (audit 2026-04-27 #14): this path is the singular midnight
+        // reset for both widgets, so we go through the bridge which
+        // applies a 60s coalescing window across back-to-back
+        // day-changed / significantTimeChange ticks instead of issuing
+        // an unguarded `reloadAllTimelines()` for each.
+        DailyGoalsWidgetBridge.requestMidnightReset()
     }
     
     // MARK: - Authorization

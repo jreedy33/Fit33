@@ -2,14 +2,19 @@
 //  QuestInsightsView.swift
 //  Fit33
 //
-//  Smart Adaptive Daily Goals — Pro Insights screen.
+//  Daily Goals Insights — Pro screen.
 //
 //  Reads `v_user_quest_personalization_summary` (security_invoker view,
-//  20260607 migration) and renders:
+//  20260607 migration; `user_disabled` column added 20260702) and renders:
 //    • the user's 28-day per-category completion bars
 //    • the user's dominant / least-touched activity buckets
 //    • currently-suppressed categories with a Pro "un-suppress" override
 //      (calls `unsuppress_quest_category` RPC).
+//    • per-category Toggle row letting Pro users opt-out of an entire
+//      category from their daily slate (`set_quest_category_enabled`,
+//      migration 20260702). Disabled categories are removed from the
+//      next slate via `get_daily_quests` v3's existing suppression
+//      filter — no surgery on the 60-line eligibility CTE required.
 //
 //  Pro-gated by PremiumManager. Free users see a paywall stub. The view
 //  is presented as a sheet from DailyQuestsWidget so it can render on any
@@ -22,6 +27,7 @@ import SwiftUI
 struct QuestInsightsView: View {
     @ObservedObject var questService: DailyQuestService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var rows: [PersonalizationRow] = []
     @State private var dominantCategory: String? = nil
@@ -30,27 +36,85 @@ struct QuestInsightsView: View {
     @State private var isLoading: Bool = true
     @State private var loadError: String? = nil
     @State private var unsuppressing: Set<String> = []
+    @State private var togglingCategory: Set<String> = []
+    /// Optimistic toggle state. We flip this immediately so the Toggle
+    /// snaps in place without waiting on the RPC + reload roundtrip.
+    /// Cleared once the row is re-read from `v_user_quest_personalization_summary`.
+    @State private var localToggleState: [String: Bool] = [:]
+
+    /// Canonical 5 toggleable categories (matches the diversity sweep
+    /// in `get_daily_quests` v3 — Data invariant #30). Examples are
+    /// product copy; keep ≤45 chars so they fit alongside the Toggle
+    /// on the iPhone SE form factor.
+    private static let toggleableCategories: [CategoryToggle] = [
+        CategoryToggle(
+            key: "workout",
+            label: "Strength & Workouts",
+            example: "Complete a chest & tricep workout",
+            icon: "dumbbell.fill",
+            tint: .blue
+        ),
+        CategoryToggle(
+            key: "nutrition",
+            label: "Nutrition & Hydration",
+            example: "Drink 8 glasses of water",
+            icon: "fork.knife",
+            tint: .green
+        ),
+        CategoryToggle(
+            key: "steps",
+            label: "Steps & Movement",
+            example: "Walk 10,000 steps",
+            icon: "figure.walk",
+            tint: .cyan
+        ),
+        CategoryToggle(
+            key: "social",
+            label: "Social",
+            example: "React to a friend's workout",
+            icon: "person.2.fill",
+            tint: .purple
+        ),
+        CategoryToggle(
+            key: "tracking",
+            label: "Tracking",
+            example: "Log your weight",
+            icon: "chart.line.uptrend.xyaxis",
+            tint: .indigo
+        )
+    ]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if !PremiumManager.shared.isPremiumUser {
-                    proGate
-                } else if isLoading {
-                    loadingState
-                } else if let err = loadError {
-                    errorState(err)
-                } else {
-                    headerSummary
-                    completionBarsSection
-                    suppressedSection
-                    legendFooter
+        ZStack {
+            AnimatedOrbBackground.home(colorScheme: colorScheme)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    if !PremiumManager.shared.isPremiumUser {
+                        proGate
+                    } else if isLoading {
+                        loadingState
+                    } else if let err = loadError {
+                        errorState(err)
+                    } else {
+                        headerSummary
+                        completionBarsSection
+                        suppressedSection
+                        categoryTogglesSection
+                        legendFooter
+                    }
                 }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
         }
-        .navigationTitle("Quest Insights")
+        // Phase 3 (2026-04-27 — Daily Mission Unification): renamed
+        // from "Daily Goals Insights" to match the new Mission
+        // framing — the sheet now answers "Why these goals?" by
+        // showing per-category state + brief-influenced provenance,
+        // not just 28-day stats.
+        .navigationTitle("Why these goals?")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -105,20 +169,25 @@ struct QuestInsightsView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color.secondary.opacity(0.08))
+                .fill(Color.cardBackground)
         )
     }
 
     private var completionBarsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // User-disabled categories don't belong in the per-category
+        // history chart (they're hidden from the slate; surfacing them
+        // here would be confusing). Auto-suppressed rows DO show up
+        // because the user can still re-engage them.
+        let visibleRows = rows.filter { !$0.userDisabled }
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Completion by Category")
                 .font(.ds_heading3)
-            if rows.isEmpty {
+            if visibleRows.isEmpty {
                 Text("No data yet — complete a few daily goals to populate.")
                     .font(.ds_bodySmall)
                     .foregroundColor(.secondary)
             } else {
-                ForEach(rows.sorted(by: { $0.completionRate28d > $1.completionRate28d })) { row in
+                ForEach(visibleRows.sorted(by: { $0.completionRate28d > $1.completionRate28d })) { row in
                     completionBar(row)
                 }
             }
@@ -211,8 +280,108 @@ struct QuestInsightsView: View {
             }
             .disabled(unsuppressing.contains(row.category))
             .buttonStyle(.plain)
+            .accessibilityLabel("Resume \(humanLabel(row.category)) goals")
         }
         .padding(.vertical, 6)
+    }
+
+    // MARK: - Goal-Type Toggles (20260702)
+
+    /// Per-category opt-in/opt-out. Calls `set_quest_category_enabled`
+    /// (Pro RPC, migration 20260702) which writes the forever-sentinel
+    /// to `user_quest_personalization.suppressed_until` so the next
+    /// slate from `get_daily_quests` v3 skips the disabled categories.
+    /// On success, `setCategoryEnabled` triggers a server-side slate
+    /// refresh — the dashboard updates within ~1s without the user
+    /// needing to pull-to-refresh.
+    private var categoryTogglesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Goal Types")
+                .font(.ds_heading3)
+            Text("Toggle off any category you don't want to see in your daily 3 goals. Your slate refreshes immediately.")
+                .font(.ds_bodySmall)
+                .foregroundColor(.secondary)
+            VStack(spacing: 4) {
+                ForEach(Self.toggleableCategories) { cat in
+                    categoryToggleRow(category: cat)
+                    if cat.id != Self.toggleableCategories.last?.id {
+                        Divider().padding(.leading, 40)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.cardBackground)
+        )
+    }
+
+    private func categoryToggleRow(category cat: CategoryToggle) -> some View {
+        let row = rows.first(where: { $0.category == cat.key })
+        let isEnabled = isCategoryEnabled(cat.key, row: row)
+        let inFlight = togglingCategory.contains(cat.key)
+
+        let bind = Binding<Bool>(
+            get: { isEnabled },
+            set: { newVal in
+                handleToggle(category: cat.key, newValue: newVal)
+            }
+        )
+
+        return HStack(spacing: 12) {
+            Image(systemName: cat.icon)
+                .font(.title3)
+                .foregroundColor(cat.tint)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(cat.label).font(.ds_labelMedium)
+                Text(cat.example)
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            if inFlight {
+                ProgressView().scaleEffect(0.7).padding(.trailing, 4)
+            }
+            Toggle("", isOn: bind)
+                .labelsHidden()
+                .tint(cat.tint)
+                .disabled(inFlight)
+                .accessibilityLabel("\(cat.label) goals")
+                .accessibilityHint(isEnabled
+                    ? "Currently included in your daily goals"
+                    : "Currently hidden from your daily goals")
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func isCategoryEnabled(_ key: String, row: PersonalizationRow?) -> Bool {
+        if let local = localToggleState[key] { return local }
+        // No personalization row = the category has never been touched
+        // and isn't user-disabled, so it's enabled by default.
+        return !(row?.userDisabled ?? false)
+    }
+
+    private func handleToggle(category: String, newValue: Bool) {
+        // Optimistic flip so the Toggle snaps before the RPC returns.
+        localToggleState[category] = newValue
+        togglingCategory.insert(category)
+
+        Task {
+            let ok = await questService.setCategoryEnabled(category, enabled: newValue)
+            togglingCategory.remove(category)
+            if ok {
+                await loadInsights()
+                // Drop the optimistic value so the source of truth is
+                // the freshly-loaded `user_disabled` column.
+                localToggleState.removeValue(forKey: category)
+            } else {
+                // Roll back on failure so the UI matches reality.
+                localToggleState[category] = !newValue
+            }
+        }
     }
 
     private var legendFooter: some View {
@@ -263,10 +432,10 @@ struct QuestInsightsView: View {
                 .foregroundStyle(LinearGradient(colors: [.yellow, .orange],
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing))
-            Text("Quest Insights is a Pro feature")
+            Text("Daily Goals Insights is a Pro feature")
                 .font(.ds_heading3)
                 .multilineTextAlignment(.center)
-            Text("See per-category 28-day completion, what's currently paused, and re-engage suppressed categories on demand.")
+            Text("See per-category 28-day completion, what's currently paused, and toggle entire goal types on or off whenever you want.")
                 .font(.ds_bodySmall)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -284,6 +453,7 @@ struct QuestInsightsView: View {
             case "mixed":      return ("Steady", .yellow)
             case "cold":       return ("Cold", .secondary)
             case "suppressed": return ("Paused", .orange)
+            case "disabled":   return ("Off", .secondary)
             default:           return (state.capitalized, .secondary)
             }
         }()
@@ -300,6 +470,7 @@ struct QuestInsightsView: View {
         case "mixed":      return .yellow
         case "cold":       return .secondary
         case "suppressed": return .orange
+        case "disabled":   return .secondary
         default:           return .blue
         }
     }
@@ -335,7 +506,7 @@ struct QuestInsightsView: View {
         do {
             let response: [PersonalizationRow] = try await SupabaseManager.shared.supabaseClient
                 .from("v_user_quest_personalization_summary")
-                .select("category, total_assigned_28d, total_completed_28d, completion_rate_28d, skip_streak, last_completed_at, suppressed_until, state, user_dominant_category, user_least_category, user_sessions_28d")
+                .select("category, total_assigned_28d, total_completed_28d, completion_rate_28d, skip_streak, last_completed_at, suppressed_until, user_disabled, state, user_dominant_category, user_least_category, user_sessions_28d")
                 .eq("user_id", value: userId.uuidString)
                 .execute()
                 .value
@@ -353,7 +524,7 @@ struct QuestInsightsView: View {
             // logging through the classifier so a missing-view error during a
             // staged rollout doesn't generate high-severity bug-intel fingerprints.
             // (Bug-intel: missing-view PGRST205 should auto-resolve once the
-            // 20260607_pro_quest_monetization migration is live.)
+            // 20260607 + 20260702 migrations are live.)
             let lowered = error.localizedDescription.lowercased()
             let isSchemaCache = lowered.contains("schema cache")
                 || lowered.contains("pgrst205")
@@ -391,6 +562,17 @@ struct QuestInsightsView: View {
     }
 }
 
+// MARK: - Toggleable category descriptor
+
+private struct CategoryToggle: Identifiable {
+    let key: String
+    let label: String
+    let example: String
+    let icon: String
+    let tint: Color
+    var id: String { key }
+}
+
 // MARK: - Decodable row matching v_user_quest_personalization_summary
 
 private struct PersonalizationRow: Identifiable, Decodable {
@@ -402,6 +584,7 @@ private struct PersonalizationRow: Identifiable, Decodable {
     let skipStreak: Int
     let lastCompletedAt: Date?
     let suppressedUntil: Date?
+    let userDisabled: Bool
     let state: String
     let userDominantCategory: String?
     let userLeastCategory: String?
@@ -415,6 +598,7 @@ private struct PersonalizationRow: Identifiable, Decodable {
         case skipStreak              = "skip_streak"
         case lastCompletedAt         = "last_completed_at"
         case suppressedUntil         = "suppressed_until"
+        case userDisabled            = "user_disabled"
         case state
         case userDominantCategory    = "user_dominant_category"
         case userLeastCategory       = "user_least_category"
@@ -428,6 +612,7 @@ private struct PersonalizationRow: Identifiable, Decodable {
         self.totalCompleted28d = try c.decodeIfPresent(Int.self, forKey: .totalCompleted28d) ?? 0
         self.completionRate28d = try c.decodeIfPresent(Double.self, forKey: .completionRate28d) ?? 0
         self.skipStreak = try c.decodeIfPresent(Int.self, forKey: .skipStreak) ?? 0
+        self.userDisabled = try c.decodeIfPresent(Bool.self, forKey: .userDisabled) ?? false
         self.state = try c.decodeIfPresent(String.self, forKey: .state) ?? "cold"
         self.userDominantCategory = try c.decodeIfPresent(String.self, forKey: .userDominantCategory)
         self.userLeastCategory = try c.decodeIfPresent(String.self, forKey: .userLeastCategory)

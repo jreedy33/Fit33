@@ -207,7 +207,7 @@ struct ExerciseCard: View {
         guard !name.isEmpty, name != "Exercise" else { return }
         didLoadRecentSessions = true
         Task { @MainActor in
-            let summaries = await ExerciseHistoryService.shared.fetchRecentSessions(for: name, limit: 3)
+            let summaries = await ExerciseHistoryService.shared.fetchRecentSessions(for: name, limit: 2)
             guard !Task.isCancelled else { return }
             // Guard against the exercise having been swapped while the fetch was in flight.
             guard exerciseName == name else { return }

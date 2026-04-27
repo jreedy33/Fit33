@@ -25,4 +25,12 @@ jobs:
           cache-dependency-path: admin-cms/package-lock.json
 
       - run: npm ci
+      # Audit follow-up (2026-04-27 #12): the CMS hosts privileged API
+      # routes, CSP, cookie auth, and service-role calls. Lint catches
+      # broken hooks, unsafe patterns, and style regressions that the
+      # type/build pass alone misses. Marked continue-on-error while we
+      # ramp the existing backlog of warnings to zero — flip to required
+      # gating once `npm run lint` is clean on a representative branch.
+      - run: npm run lint
+        continue-on-error: true
       - run: npm run build

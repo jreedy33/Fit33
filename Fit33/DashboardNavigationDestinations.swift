@@ -78,6 +78,13 @@ struct DashboardNavigationDestinations: ViewModifier {
             StravaSettingsView()
         case .whoopSettings:
             WhoopSettingsView()
+        case .weeklyLeague:
+            // Mirrors the FriendsTab `LeagueDetail` push (same view,
+            // same NavigationStack-aware behavior). The view sets its
+            // own `.navigationBarHidden(true)` so it draws its own
+            // header inside the dashboard's stack — no nested
+            // NavigationStack (PE invariant 6).
+            WeeklyLeagueDetailView()
         }
     }
 }

@@ -31,11 +31,17 @@ struct WhoopSettingsView: View {
         }
         .navigationTitle("WHOOP")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            if !whoopService.isConnected {
-                startAuth()
-            }
-        }
+        // NOTE (2026-04-27 fix): used to auto-fire `startAuth()` on
+        // appear when not connected. That presented an
+        // `ASWebAuthenticationSession` before the navigation push
+        // transition finished — iOS couldn't establish the
+        // presentation context, the auth session silently failed,
+        // and the user saw a black screen that auto-popped back to
+        // the dashboard. Now we let the user tap the explicit
+        // "Connect WHOOP" button in `connectionCard` (line ~86),
+        // which surfaces `whoopService.errorMessage` (from the
+        // 4d-recover auto-disconnect path) inline so they
+        // understand WHY they got disconnected before reconnecting.
     }
 
     // MARK: - Connection Card

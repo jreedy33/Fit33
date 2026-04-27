@@ -125,6 +125,13 @@ final class ReadinessService: ObservableObject {
         isComputing = true
         defer { isComputing = false }
 
+        // Phase 4 (2026-04-27 — Daily Mission Unification): capture
+        // the OLD band before we overwrite `todayReadiness` so we can
+        // detect a band flip and trigger one mid-day re-rank of the
+        // quest slate. Avoids the "started red, recovered to green
+        // by noon, but my slate is still all stretches" problem.
+        let previousBand: ReadinessBand = todayReadiness.band
+
         let snapshot = computeReadiness(for: Date())
         todayReadiness = snapshot
         Self.saveCachedSnapshot(snapshot)
@@ -151,6 +158,73 @@ final class ReadinessService: ObservableObject {
         Task.detached(priority: .background) {
             await DailyQuestService.shared.onReadinessRecomputed()
         }
+
+        // Phase 4 (2026-04-27 — Daily Mission Unification): band-flip
+        // re-rank. When the wearable signal materially changes the
+        // capacity band AND we have a wearable signal AND the slate
+        // was selected before this band landed, force-fetch a new
+        // slate from `get_daily_quests` v4 so Layer 7's red→green
+        // transitions actually swap recovery quests for PR quests
+        // (and vice versa). Throttled to one re-rank per band-flip
+        // per day so a flap-y signal can't burn through quest slots.
+        // Only fires when the user has a wearable connected — bands
+        // for the placeholder snapshot are always yellow/.unknown,
+        // so this is a no-op for unconnected users.
+        if snapshot.hasWearableSignal,
+           previousBand != snapshot.band,
+           shouldRerankForBandFlip(newBand: snapshot.band) {
+            stampBandFlipRerank(band: snapshot.band)
+            AppLogger.info(
+                "[Readiness] Band flipped \(previousBand.rawValue) -> \(snapshot.band.rawValue) — triggering quest slate re-rank",
+                category: .health
+            )
+            Task { @MainActor in
+                await DailyQuestService.shared.fetchDailyQuests(force: true)
+            }
+        }
+    }
+
+    // MARK: - Phase 4 — Band-flip re-rank throttle
+
+    /// Once-per-band-per-day re-rank stamp. Persisted in
+    /// `UserDefaults` so a kill-and-relaunch within the same
+    /// calendar day cannot re-fire the same flip.
+    private static let bandFlipStampKey = "fit33.readiness.bandFlipStamp.v1"
+
+    private struct BandFlipStamp: Codable {
+        let date: String        // yyyy-MM-dd local
+        let band: String        // ReadinessBand.rawValue
+    }
+
+    /// True iff today's calendar date hasn't already seen a re-rank
+    /// trigger for the new band. Reads `UserDefaults` synchronously
+    /// — cheap, no network IO.
+    private func shouldRerankForBandFlip(newBand: ReadinessBand) -> Bool {
+        let today = Self.todayKey()
+        guard let data = UserDefaults.standard.data(forKey: Self.bandFlipStampKey),
+              let stamp = try? JSONDecoder().decode(BandFlipStamp.self, from: data) else {
+            return true
+        }
+        if stamp.date != today { return true }
+        // Same day — only re-rank if the band genuinely differs from
+        // the last stamp. Two flips back to the same band in one day
+        // shouldn't burn the budget (e.g. red → yellow → red).
+        return stamp.band != newBand.rawValue
+    }
+
+    private func stampBandFlipRerank(band: ReadinessBand) {
+        let stamp = BandFlipStamp(date: Self.todayKey(), band: band.rawValue)
+        if let data = try? JSONEncoder().encode(stamp) {
+            UserDefaults.standard.set(data, forKey: Self.bandFlipStampKey)
+        }
+    }
+
+    private static func todayKey() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone.current
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f.string(from: Date())
     }
 
     /// Hydrate `readinessHistory` from Supabase. Idempotent — safe to

@@ -1019,58 +1019,181 @@ class PersonalizedInsightsService: ObservableObject {
         await detectSocialPatterns(userId: userId)
     }
     
+    /// V2 (2026-04-27): real Pearson on workout-hour-of-day vs
+    /// per-session volume Z-score, computed on Core Data. Surfaces a
+    /// `user_personalized_insights` row only when the best slot is
+    /// >15% above the mean and `n >= 12` workouts spread across at
+    /// least two slots. No-op otherwise — never invent confidence.
+    /// Data invariant 36 (upsert on `(user_id, insight_key)`).
     private func detectBestWorkoutTime(userId: UUID) async {
-        // Sprint 3 (Q2-40): hardcoded "morning_person" with fabricated
-        // confidence + volume multiplier. Gated until we actually analyze
-        // the `workout_time_performance` table.
         guard AppConfig.FeatureFlags.personalizedInsightsV2 else { return }
+        let analysis = await V2Analyzer.bestWorkoutTime()
+        guard let analysis else { return }
 
-        struct PatternUpsert: Encodable {
-            let user_id: String
-            let pattern_type: String
-            let pattern_name: String
-            let pattern_data: String
-            let confidence_score: Double
-            let data_points_used: Int
-            let impact_area: String
-            let leverage_recommendation: String?
+        let title: String
+        let message: String
+        switch analysis.bestSlot {
+        case "morning":
+            title = "You crush mornings."
+            message = "Morning sessions average \(analysis.deltaPctText) more volume than your other slots."
+        case "afternoon":
+            title = "Afternoon is your sweet spot."
+            message = "Afternoon sessions average \(analysis.deltaPctText) more volume than your other slots."
+        default:
+            title = "Evening lifts hit hardest."
+            message = "Evening sessions average \(analysis.deltaPctText) more volume than your other slots."
         }
-        
-        // Query for best time slot (placeholder)
-        let pattern = PatternUpsert(
-            user_id: userId.uuidString,
-            pattern_type: "time_preference",
-            pattern_name: "morning_person",
-            pattern_data: "{\"best_time_slot\": \"morning\", \"avg_volume_multiplier\": 1.2}",
-            confidence_score: 0.7,
-            data_points_used: 15,
-            impact_area: "workout_performance",
-            leverage_recommendation: "Schedule your most important lifts in the morning for 20% better performance"
+
+        await upsertCorrelationInsight(
+            userId: userId,
+            insightKey: "best_workout_time",
+            type: .pattern,
+            category: .workout,
+            title: title,
+            message: message,
+            detail: "Based on \(analysis.sampleSize) workouts in the last 60 days.",
+            priority: .medium,
+            icon: "clock.fill",
+            accentColor: "#5E5CE6",
+            correlationType: "time_x_volume",
+            rSquared: analysis.rSquared,
+            pValue: analysis.pValue,
+            sampleSize: analysis.sampleSize,
+            wearableSource: "derived"
         )
-        
+    }
+
+    /// V2 (2026-04-27): correlates daily protein intake with the
+    /// next day's workout volume across the last 60 days. Surfaces
+    /// "high-protein days drive +X% volume tomorrow" when the
+    /// correlation is significant (`r >= 0.3`, `p <= 0.15`,
+    /// `n >= 10`). No-op otherwise.
+    private func detectNutritionPatterns(userId: UUID) async {
+        guard AppConfig.FeatureFlags.personalizedInsightsV2 else { return }
+        let data = await getRecentDailySummaries(userId: userId, days: 60)
+        guard let analysis = V2Analyzer.proteinNextDayVolume(data: data) else { return }
+
+        let title = "Protein → next-day volume."
+        let message = "High-protein days drive about \(analysis.upliftPctText) more volume the next workout."
+        await upsertCorrelationInsight(
+            userId: userId,
+            insightKey: "protein_next_day_volume",
+            type: .correlation,
+            category: .nutrition,
+            title: title,
+            message: message,
+            detail: "Pearson r = \(String(format: "%.2f", analysis.r)) over \(analysis.sampleSize) day pairs.",
+            priority: .high,
+            icon: "fork.knife",
+            accentColor: "#FF453A",
+            correlationType: "protein_x_volume",
+            rSquared: analysis.r * analysis.r,
+            pValue: analysis.pValue,
+            sampleSize: analysis.sampleSize,
+            wearableSource: "derived"
+        )
+    }
+
+    /// V2 (2026-04-27): compares workout frequency on days with at
+    /// least one active 1v1 / private / community challenge against
+    /// days with none. Surfaces the ratio when significant
+    /// (`>= 1.3×` AND ≥ 7 days in each bucket).
+    private func detectSocialPatterns(userId: UUID) async {
+        guard AppConfig.FeatureFlags.personalizedInsightsV2 else { return }
+        let data = await getRecentDailySummaries(userId: userId, days: 90)
+        guard let analysis = V2Analyzer.challengeBoostedFrequency(data: data) else { return }
+
+        let title = "Challenges fire you up."
+        let message = "You train \(analysis.upliftPctText) more often during active 1v1 / community challenges."
+        await upsertCorrelationInsight(
+            userId: userId,
+            insightKey: "challenge_workout_uplift",
+            type: .correlation,
+            category: .social,
+            title: title,
+            message: message,
+            detail: "Compared \(analysis.activeChallengeDays) challenge days vs \(analysis.idleDays) idle days.",
+            priority: .medium,
+            icon: "person.2.fill",
+            accentColor: "#0A84FF",
+            correlationType: "social_x_completion",
+            rSquared: nil,
+            pValue: nil,
+            sampleSize: analysis.activeChallengeDays + analysis.idleDays,
+            wearableSource: "derived"
+        )
+    }
+
+    /// V2 helper — full upsert on `user_personalized_insights` with
+    /// `correlation_type` / `r_squared` / `p_value` / `sample_size` /
+    /// `wearable_source` columns from migration 20260507. Conflicts on
+    /// `(user_id, insight_key)` per Data invariant 36 so nightly
+    /// re-runs never duplicate rows.
+    private func upsertCorrelationInsight(
+        userId: UUID,
+        insightKey: String,
+        type: InsightType,
+        category: InsightCategory,
+        title: String,
+        message: String,
+        detail: String?,
+        priority: InsightPriority,
+        icon: String,
+        accentColor: String,
+        correlationType: String,
+        rSquared: Double?,
+        pValue: Double?,
+        sampleSize: Int,
+        wearableSource: String
+    ) async {
+        struct InsightUpsert: Encodable {
+            let user_id: String
+            let insight_key: String
+            let insight_type: String
+            let insight_category: String
+            let title: String
+            let message: String
+            let detail_message: String?
+            let priority: Int
+            let icon: String
+            let accent_color: String
+            let correlation_type: String
+            let r_squared: Double?
+            let p_value: Double?
+            let sample_size: Int
+            let wearable_source: String
+            let valid_until: String
+        }
+
+        let validUntil = Calendar.current.date(byAdding: .day, value: 14, to: Date())!
+        let row = InsightUpsert(
+            user_id: userId.uuidString,
+            insight_key: insightKey,
+            insight_type: type.rawValue,
+            insight_category: category.rawValue,
+            title: title,
+            message: message,
+            detail_message: detail,
+            priority: priority.rawValue,
+            icon: icon,
+            accent_color: accentColor,
+            correlation_type: correlationType,
+            r_squared: rSquared,
+            p_value: pValue,
+            sample_size: sampleSize,
+            wearable_source: wearableSource,
+            valid_until: dateToISO(validUntil)
+        )
+
         do {
             try await supabase.supabaseClient
-                .from("user_behavior_patterns")
-                .upsert(pattern, onConflict: "user_id,pattern_type,pattern_name")
+                .from("user_personalized_insights")
+                .upsert(row, onConflict: "user_id,insight_key")
                 .execute()
+            AppLogger.debug("💡 [INSIGHTS V2] Upserted \(insightKey): \(message)", category: .general)
         } catch {
-            AppLogger.error("❌ [INSIGHTS] Failed to save pattern: \(error)", category: .general)
+            AppLogger.error("❌ [INSIGHTS V2] Upsert failed for \(insightKey): \(error)", category: .general)
         }
-    }
-    
-    private func detectNutritionPatterns(userId: UUID) async {
-        // Sprint 3 (Q2-40): empty stub. Gate so future scaffolding cannot
-        // surface synthesized coaching before real analysis ships.
-        guard AppConfig.FeatureFlags.personalizedInsightsV2 else { return }
-        // Detect if user is consistently high/low on certain macros
-        // Placeholder for now
-    }
-    
-    private func detectSocialPatterns(userId: UUID) async {
-        // Sprint 3 (Q2-40): empty stub. Same gate as nutrition patterns.
-        guard AppConfig.FeatureFlags.personalizedInsightsV2 else { return }
-        // Check if challenges boost workout frequency
-        // Placeholder for now
     }
     
     // MARK: - Performance Windows

@@ -222,6 +222,16 @@ struct MainTabView: View {
                 AppLogger.debug("Switching to Workout tab for Custom Workout Builder", category: .ui)
             }
         }
+        .onChange(of: workoutManager.shouldNavigateToMealsTab) { _, shouldNavigate in
+            // Daily Brief CTA — meal / water / weight log opens the
+            // Nutrition tab. Pushing `SimpleMealPlanView` onto the
+            // dashboard's NavigationStack auto-bounces back to root
+            // because it wraps its own NavigationStack (PE invariant 6).
+            if shouldNavigate {
+                workoutManager.shouldNavigateToMealsTab = false
+                selectedTab = 3
+            }
+        }
         .onChange(of: selectedTab) { oldValue, newValue in
             if oldValue != newValue {
                 let switchStartTime = CACurrentMediaTime()
@@ -261,6 +271,18 @@ struct MainTabView: View {
                 scrollToTopTrigger = UUID()
                 // Immediately hide GO button when switching tabs
                 GoButtonState.shared.hide(reason: "tab_switch")
+                
+                // 🔁 Tab tap notifications. The Exercises tab listens for
+                // `.exerciseTabSelected` to reset its filter back to
+                // Recommended every time the user lands on it (per user
+                // request 2026-04-27). Keep this alongside the existing
+                // `scrollToTopTrigger` so callers don't have to subscribe to
+                // a UUID-based environment value just to detect "I came
+                // back". Posted only when this tap actually changes tabs
+                // (oldValue != newValue is enforced above).
+                if newValue == 1 {
+                    NotificationCenter.default.post(name: .exerciseTabSelected, object: nil)
+                }
                 
                 // Always pop to root when switching to Home tab
                 // This prevents stale navigation states from showing unexpected views

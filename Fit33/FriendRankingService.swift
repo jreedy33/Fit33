@@ -294,6 +294,59 @@ class FriendRankingService: ObservableObject {
     func contactName(forFriendId friendId: UUID) -> String? {
         return friendsFromContacts.first { $0.friendId == friendId }?.contactName
     }
+
+    // MARK: - Social Anchor Priority (PE invariant 25e)
+
+    /// Composite score for ranking opponents/friends as the social anchor
+    /// for a Daily Goal or Daily Brief surface. Higher = more preferred.
+    ///
+    /// Tiering (per Joe's 2026-04-27 product principle):
+    ///   - **Tier 1** — today's signals (real-time engagement). The
+    ///     opponent has actually moved today, so the goal/brief copy
+    ///     anchored on them lands with a live "they just synced" feel
+    ///     instead of a ghost-rival "Beat Abbie at 0K" anti-narrative.
+    ///       +200 if `opponentTodayProgress > 0`
+    ///       +100 if `opponentLastProgressAt` within last 24h (server
+    ///            reflects activity even if today's number hasn't ticked
+    ///            past zero yet — covers same-day post-midnight case).
+    ///   - **Tier 2** — long-term engagement (the no-data fallback). When
+    ///     both opponents are at 0 today (e.g. 7am, app hasn't synced),
+    ///     prefer the friend who uses Fit33 in general. We use
+    ///     `FriendRankingService.relationshipScore` as the proxy: it
+    ///     aggregates workouts shared, completed, challenges together —
+    ///     interactions that can ONLY happen when the friend is using
+    ///     the app. Clamped to 0–100 so a single very-engaged friend
+    ///     can't dominate the tier-1 boost.
+    ///       + min(100, relationshipScore)
+    ///
+    /// Callers add their own surface-specific tiebreaker (e.g.
+    /// `dailyTarget` for step challenges) AFTER this score so the tier
+    /// hierarchy is preserved.
+    ///
+    /// Returns 0 when `opponentId` is nil (still allows callers to fall
+    /// back on their surface-specific tiebreakers).
+    static func opponentEngagementScore(
+        opponentId: UUID?,
+        opponentTodayProgress: Int?,
+        opponentLastProgressAt: Date?,
+        now: Date = Date()
+    ) -> Double {
+        var score: Double = 0
+
+        // Tier 1 — today's signals (real-time)
+        if (opponentTodayProgress ?? 0) > 0 { score += 200 }
+        if let lastAt = opponentLastProgressAt,
+           now.timeIntervalSince(lastAt) < 86_400 {
+            score += 100
+        }
+
+        // Tier 2 — long-term engagement (fallback when tier 1 ties at 0)
+        if let oppId = opponentId {
+            score += min(100, FriendRankingService.shared.getScore(forFriendId: oppId))
+        }
+
+        return score
+    }
 }
 
 // MARK: - Interaction Types

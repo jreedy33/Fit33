@@ -28,7 +28,8 @@
 import AppIntents
 import WidgetKit
 import OSLog
-import UIKit
+import AudioToolbox
+import Foundation
 
 /// Tap target for the small refresh control on the active challenge
 /// widget. Pulls fresh data from Supabase, writes the App Group, and
@@ -61,13 +62,28 @@ struct RefreshChallengeIntent: AppIntent {
     nonisolated(unsafe) private static let pullLock = NSLock()
 
     func perform() async throws -> some IntentResult {
+        // Diagnostic logging trail (2026-04-27): logged at `.notice`
+        // level so it shows up in Console without enabling debug
+        // filtering, AND mirrored to App Group UserDefaults via
+        // `WidgetTapLog` so the main app can read recent tap activity
+        // even when the user can't easily attach Console. Pair this
+        // with `WidgetTapLog.summary()` from the main app to surface
+        // a "last 10 widget taps" debug card.
+        let tapNumber = WidgetTapLog.recordTapReceived()
+        Self.log.notice("🔔 [Widget tap #\(tapNumber, privacy: .public)] Refresh button pressed")
+
         // Immediate tactile confirmation that the tap registered. Fired
         // BEFORE any await so the haptic lands on the same frame the
         // user lifted their finger — waiting until after the network
-        // pull would feel disconnected from the tap. Medium impact
-        // mirrors the in-app `HapticManager.impact(.medium)` used for
-        // primary action buttons.
-        await Self.fireTapHaptic()
+        // pull would feel disconnected from the tap.
+        Self.fireTapHaptic()
+
+        // Capture environmental state up front — knowing which leg
+        // failed is half the diagnostic battle (App Group missing →
+        // entitlement bug; JWT missing → main-app refresh required;
+        // both present + pull still failed → transport / 5xx).
+        let env = WidgetTapLog.captureEnvironment()
+        Self.log.notice("[Widget tap #\(tapNumber, privacy: .public)] env appGroup=\(env.appGroupAvailable, privacy: .public) hasJWT=\(env.hasJWT, privacy: .public) cachedChallenges=\(env.cachedChallengeCount, privacy: .public) lastWriteAge=\(env.lastWriteAgeDescription, privacy: .public)")
 
         // Short-circuit if the user is mashing the button — the
         // upstream throttle keeps us under PostgREST's connection
@@ -87,86 +103,101 @@ struct RefreshChallengeIntent: AppIntent {
             // data refresh. Now success/warning/error map to real
             // states the user can feel and (when investigating) read
             // in Console.app.
+            Self.log.notice("[Widget tap #\(tapNumber, privacy: .public)] pull start (timeout=5s)")
+            let pullStart = Date()
             let outcome = await ActiveChallengeProvider.pullAndMergeIfPossible(timeoutSeconds: 5.0)
+            let pullMs = Int(Date().timeIntervalSince(pullStart) * 1000)
+
             switch outcome {
             case .fetched(let wroteFreshData):
                 if wroteFreshData {
-                    Self.log.info("Refresh intent: pulled fresh data — widget will update")
-                    await Self.fireSuccessHaptic()
+                    Self.log.notice("✅ [Widget tap #\(tapNumber, privacy: .public)] pull OK in \(pullMs, privacy: .public)ms — fresh bytes written, widget will update")
+                    WidgetTapLog.recordOutcome(tapNumber: tapNumber, outcome: .successFresh, durationMs: pullMs, error: nil)
+                    Self.fireSuccessHaptic()
                 } else {
                     // Pull succeeded but the bytes matched what the
                     // App Group already had (no opponent activity
                     // since the last tick, etc.). Still a successful
                     // refresh — just nothing to celebrate.
-                    Self.log.info("Refresh intent: pulled, no changes since last tick")
-                    await Self.fireSuccessHaptic()
+                    Self.log.notice("✅ [Widget tap #\(tapNumber, privacy: .public)] pull OK in \(pullMs, privacy: .public)ms — bytes unchanged (no new data on server)")
+                    WidgetTapLog.recordOutcome(tapNumber: tapNumber, outcome: .successUnchanged, durationMs: pullMs, error: nil)
+                    Self.fireSuccessHaptic()
                 }
             case .skippedNoAuth:
-                Self.log.warning("Refresh intent: JWT expired — main app must foreground to refresh")
-                await Self.fireThrottledHaptic()
+                Self.log.warning("⚠️ [Widget tap #\(tapNumber, privacy: .public)] pull skipped in \(pullMs, privacy: .public)ms — JWT expired (foreground main app to refresh)")
+                WidgetTapLog.recordOutcome(tapNumber: tapNumber, outcome: .skippedNoAuth, durationMs: pullMs, error: nil)
+                Self.fireThrottledHaptic()
             case .skippedNoAppGroup:
-                Self.log.error("Refresh intent: App Group unavailable — entitlement misconfigured")
-                await Self.fireErrorHaptic()
+                Self.log.error("❌ [Widget tap #\(tapNumber, privacy: .public)] pull skipped — App Group unavailable (entitlement bug)")
+                WidgetTapLog.recordOutcome(tapNumber: tapNumber, outcome: .skippedNoAppGroup, durationMs: pullMs, error: nil)
+                Self.fireErrorHaptic()
             case .failed(let error):
-                Self.log.error("Refresh intent: pull failed — \(String(describing: error), privacy: .public)")
-                await Self.fireErrorHaptic()
+                Self.log.error("❌ [Widget tap #\(tapNumber, privacy: .public)] pull failed in \(pullMs, privacy: .public)ms — \(String(describing: error), privacy: .public)")
+                WidgetTapLog.recordOutcome(tapNumber: tapNumber, outcome: .failed, durationMs: pullMs, error: String(describing: error))
+                Self.fireErrorHaptic()
             }
         } else {
-            Self.log.debug("Refresh intent: throttled (last pull < \(Self.minPullInterval, privacy: .public)s ago)")
-            await Self.fireThrottledHaptic()
+            // Bumped from .debug → .notice so we can see throttle
+            // events in Console without enabling debug filtering.
+            Self.log.notice("⏱️ [Widget tap #\(tapNumber, privacy: .public)] throttled (< \(Self.minPullInterval, privacy: .public)s since last pull)")
+            WidgetTapLog.recordOutcome(tapNumber: tapNumber, outcome: .throttled, durationMs: 0, error: nil)
+            Self.fireThrottledHaptic()
         }
 
         // Always reload — gives the user a visible "tap registered"
         // beat even when the network call was a no-op. We scope the
         // reload to JUST our widget kind so the daily goals widget
         // doesn't get caught in the splash damage.
+        Self.log.notice("🔄 [Widget tap #\(tapNumber, privacy: .public)] reloadTimelines(ofKind: ActiveChallengeWidget)")
         WidgetCenter.shared.reloadTimelines(ofKind: "ActiveChallengeWidget")
         return .result()
     }
 
     // MARK: - Haptics
     //
-    // The widget extension links UIKit on iOS, so the standard
-    // UIImpactFeedbackGenerator / UINotificationFeedbackGenerator APIs
-    // work here the same way they do in the main app. Generators must
-    // be created and fired on the main thread; `@MainActor` hops handle
-    // that. We allocate fresh generators each time rather than keeping
-    // a static one alive — extension memory budget is tight (~30MB)
-    // and keeping a feedback generator warm across intent invocations
-    // doesn't measurably reduce latency for a once-per-tap impact.
+    // Bug fix 2026-04-27: switched off `UIImpactFeedbackGenerator` /
+    // `UINotificationFeedbackGenerator` because those APIs silently
+    // drop their haptic in widget extension processes — they require
+    // full audio-session access that the extension sandbox doesn't
+    // grant. The community-standard workaround is
+    // `AudioServicesPlaySystemSound` with the four reserved haptic
+    // sound IDs (1519/1520/1521), which routes through the system
+    // audio service and DOES fire the Taptic engine from extensions.
+    //   • 1519 — peek (light, single tap)
+    //   • 1520 — pop (medium, single thump)
+    //   • 1521 — cancelled (three quick pulses, "warning")
+    // No `@MainActor` hop required — `AudioServicesPlaySystemSound` is
+    // safe from any thread, unlike UIKit's feedback generators which
+    // had to be initialized on main.
 
-    @MainActor
+    /// Light tap on button press — confirms the intent fired even when
+    /// the rest of the perform chain (network, etc.) is still running.
     private static func fireTapHaptic() {
-        let generator = UIImpactFeedbackGenerator(style: .medium)
-        generator.impactOccurred()
+        AudioServicesPlaySystemSound(1519)
     }
 
-    @MainActor
+    /// Medium "pop" on a successful refresh — fresh bytes landed OR
+    /// a successful pull confirmed nothing changed.
     private static func fireSuccessHaptic() {
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.success)
+        AudioServicesPlaySystemSound(1520)
     }
 
-    /// Soft warning haptic when the user mashed the button inside the
-    /// `minPullInterval` window OR when the JWT is expired (transient
-    /// auth state, recovers next time the main app foregrounds).
-    /// Less assertive than `.error`; communicates "I heard you, just
-    /// nothing to do right now."
-    @MainActor
+    /// Triple-pulse "cancelled" cue when the user mashed the button
+    /// inside `minPullInterval` OR the JWT is expired (transient auth
+    /// state — recovers the next time the main app foregrounds). Distinct
+    /// from `fireErrorHaptic` so users can feel "I heard you, nothing to
+    /// do right now" vs. "something is broken".
     private static func fireThrottledHaptic() {
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.warning)
+        AudioServicesPlaySystemSound(1521)
     }
 
-    /// Hard error haptic for genuine failures — App Group config bug,
-    /// transport failure, decode error, 5xx. Distinguishes "real
-    /// failure that should be investigated" from the soft warning
-    /// case (throttled / auth expired). Pairs with an `error`-level
-    /// log line so the underlying cause shows up in Console.app.
-    @MainActor
+    /// Same triple-pulse pattern as throttled — iOS only exposes three
+    /// reserved haptic sound IDs to extensions, so we reuse 1521 for
+    /// genuine failures (App Group config bug, transport failure, 5xx,
+    /// decode error). The accompanying `error`-level log line in
+    /// Console differentiates the two for postmortem.
     private static func fireErrorHaptic() {
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.error)
+        AudioServicesPlaySystemSound(1521)
     }
 
     /// Returns `true` if the caller is free to do a network pull, or
@@ -180,5 +211,180 @@ struct RefreshChallengeIntent: AppIntent {
         }
         lastPullAt = now
         return true
+    }
+}
+
+// MARK: - Tap diagnostics
+//
+// Persistent tap trail mirrored to App Group `UserDefaults` so we can
+// confirm widget refresh button behavior even when Console.app isn't
+// readily attached (the most common reason "no haptic, no update"
+// reports come in without supporting evidence).
+//
+// Storage layout (App Group `group.com.fit33.app`):
+//   • `fit33.widget.refresh.tapCount`    — Int, monotonic all-time tap counter
+//   • `fit33.widget.refresh.lastTapAt`   — Date, most recent tap timestamp
+//   • `fit33.widget.refresh.lastOutcome` — String, raw outcome code
+//   • `fit33.widget.refresh.lastDurationMs` — Int, network duration of last pull
+//   • `fit33.widget.refresh.lastError`   — String?, error description if any
+//   • `fit33.widget.refresh.recentEvents` — JSON-encoded `[Event]`, ring buffer
+//     of the last 10 taps so a future debug surface can render a timeline.
+//
+// All writes are best-effort — if the App Group is unavailable we log
+// to OSLog and silently no-op. We never let logging failures bubble up
+// and break the actual refresh flow.
+enum WidgetTapLog {
+    private static let appGroupID = "group.com.fit33.app"
+    private static let log = Logger(subsystem: "com.fit33.app.RunningActivityWidget", category: "widget-tap-log")
+
+    private static let tapCountKey = "fit33.widget.refresh.tapCount"
+    private static let lastTapAtKey = "fit33.widget.refresh.lastTapAt"
+    private static let lastOutcomeKey = "fit33.widget.refresh.lastOutcome"
+    private static let lastDurationMsKey = "fit33.widget.refresh.lastDurationMs"
+    private static let lastErrorKey = "fit33.widget.refresh.lastError"
+    private static let recentEventsKey = "fit33.widget.refresh.recentEvents"
+    /// Cap the ring buffer at 10 — small enough to render in a debug
+    /// card, large enough to spot patterns ("3 throttles in a row →
+    /// user is mashing", "5 noAuth in a row → JWT refresh broken").
+    private static let recentEventsMax = 10
+
+    /// Outcome shape — kept stringly-typed in the on-disk JSON so
+    /// adding a new case in a future build doesn't break decode of
+    /// older payloads written to the App Group.
+    enum Outcome: String, Codable {
+        case tapReceived       // Logged at the moment the intent fires; no pull yet
+        case successFresh      // Pull OK, fresh bytes written
+        case successUnchanged  // Pull OK, but bytes matched cache
+        case throttled         // Inside `minPullInterval` window
+        case skippedNoAuth     // JWT expired
+        case skippedNoAppGroup // App Group entitlement bug
+        case failed            // Transport / 5xx / decode
+    }
+
+    /// One row in the persistent tap trail. Decoded by the main app's
+    /// debug surfaces (when wired up) to render a recent-history list.
+    struct Event: Codable {
+        let tapNumber: Int
+        let timestamp: Date
+        let outcome: String
+        let durationMs: Int?
+        let error: String?
+    }
+
+    /// Snapshot of the widget's environment at tap time — what's in
+    /// the App Group, whether the cached JWT looks valid, age of the
+    /// last successful App Group write. Logged at every tap so when
+    /// the user reports "no update" we can immediately tell whether
+    /// the widget process even has the inputs it needs to refresh.
+    struct EnvironmentSnapshot {
+        let appGroupAvailable: Bool
+        let hasJWT: Bool
+        let cachedChallengeCount: Int
+        let lastWriteAt: Date?
+
+        var lastWriteAgeDescription: String {
+            guard let lastWriteAt else { return "never" }
+            let secs = Int(Date().timeIntervalSince(lastWriteAt))
+            if secs < 60 { return "\(secs)s" }
+            if secs < 3600 { return "\(secs / 60)m" }
+            if secs < 86400 { return "\(secs / 3600)h" }
+            return "\(secs / 86400)d"
+        }
+    }
+
+    /// Increments the all-time tap counter, stamps `lastTapAt`, and
+    /// appends a `tapReceived` event to the ring buffer. Returns the
+    /// new tap number so the caller can correlate log lines.
+    @discardableResult
+    static func recordTapReceived() -> Int {
+        guard let defaults = UserDefaults(suiteName: appGroupID) else {
+            log.error("Tap log: App Group unavailable — counter will not advance")
+            return -1
+        }
+        let next = defaults.integer(forKey: tapCountKey) + 1
+        defaults.set(next, forKey: tapCountKey)
+        defaults.set(Date(), forKey: lastTapAtKey)
+        defaults.set(Outcome.tapReceived.rawValue, forKey: lastOutcomeKey)
+        defaults.removeObject(forKey: lastErrorKey)
+        appendEvent(Event(
+            tapNumber: next,
+            timestamp: Date(),
+            outcome: Outcome.tapReceived.rawValue,
+            durationMs: nil,
+            error: nil
+        ), defaults: defaults)
+        return next
+    }
+
+    /// Stamps the final outcome of a tap (called after the pull /
+    /// throttle decision). Updates the "last" fields AND appends a
+    /// second ring-buffer event so the trail captures both the moment
+    /// of receipt and the moment of resolution.
+    static func recordOutcome(tapNumber: Int, outcome: Outcome, durationMs: Int, error: String?) {
+        guard let defaults = UserDefaults(suiteName: appGroupID) else {
+            log.error("Tap log #\(tapNumber): App Group unavailable — outcome will not be recorded")
+            return
+        }
+        defaults.set(outcome.rawValue, forKey: lastOutcomeKey)
+        defaults.set(durationMs, forKey: lastDurationMsKey)
+        if let error {
+            defaults.set(error, forKey: lastErrorKey)
+        } else {
+            defaults.removeObject(forKey: lastErrorKey)
+        }
+        appendEvent(Event(
+            tapNumber: tapNumber,
+            timestamp: Date(),
+            outcome: outcome.rawValue,
+            durationMs: durationMs,
+            error: error
+        ), defaults: defaults)
+    }
+
+    /// Reads the current widget-process environment so the intent can
+    /// log it on every tap. Pure inspection — no writes here.
+    static func captureEnvironment() -> EnvironmentSnapshot {
+        let defaults = UserDefaults(suiteName: appGroupID)
+        let appGroupAvailable = defaults != nil
+        // JWT presence proxy: the main-app Supabase SDK parks the
+        // session blob at this exact key (see
+        // `WidgetSessionStorage.userDefaultsKey` in the fetcher).
+        // Cheap "is the blob there" check — actual expiry detection
+        // happens inside the fetcher when it tries to use the token.
+        let hasJWT = (defaults?.data(forKey: "supabase.session.fit33.supabase.session.v1") != nil)
+        let cachedChallengeCount: Int = {
+            guard let defaults,
+                  let data = defaults.data(forKey: "fit33.widget.activeChallenges.list.v1"),
+                  let list = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
+                return 0
+            }
+            return list.count
+        }()
+        let lastWriteAt = defaults?.object(forKey: "fit33.widget.activeChallenge.updatedAt") as? Date
+        return EnvironmentSnapshot(
+            appGroupAvailable: appGroupAvailable,
+            hasJWT: hasJWT,
+            cachedChallengeCount: cachedChallengeCount,
+            lastWriteAt: lastWriteAt
+        )
+    }
+
+    /// Appends a single event to the persistent ring buffer, trimming
+    /// the head so we never keep more than `recentEventsMax` rows.
+    /// JSON-encoded so a future main-app surface can decode without
+    /// linking the widget extension target.
+    private static func appendEvent(_ event: Event, defaults: UserDefaults) {
+        var events: [Event] = []
+        if let data = defaults.data(forKey: recentEventsKey),
+           let decoded = try? JSONDecoder().decode([Event].self, from: data) {
+            events = decoded
+        }
+        events.append(event)
+        if events.count > recentEventsMax {
+            events.removeFirst(events.count - recentEventsMax)
+        }
+        if let encoded = try? JSONEncoder().encode(events) {
+            defaults.set(encoded, forKey: recentEventsKey)
+        }
     }
 }

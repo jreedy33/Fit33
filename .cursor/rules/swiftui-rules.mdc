@@ -46,6 +46,29 @@ These rules only load when editing Swift files under `Fit33/`. Cross-cutting rul
 - **`@FetchRequest` must have `fetchLimit`**: When a view only displays N items (e.g. `prefix(10)`), set `fetchLimit: N`. Without it Core Data fetches ALL matching rows and every row change triggers view invalidation. Dashboard uses `fetchLimit: 10`.
 - **Horizontal `DragGesture` in vertical `ScrollView`**: Use `.simultaneousGesture(DragGesture(minimumDistance: 25))` — NOT `.highPriorityGesture` with minimumDistance 8. High priority with low distance steals touches from vertical scroll.
 
+## Widget / Watch Extension Auth (App Group session blob)
+- **The Supabase session blob in App Group `UserDefaults` is camelCase, NOT snake_case.** `supabase-swift` 2.40's internal `Sources/Auth/Internal/SessionStorage.swift` `store(_:)` uses a plain `JSONEncoder()` with **no** `keyEncodingStrategy` — even though `AuthClient.Configuration.jsonEncoder` (in `Defaults.swift`) is configured with `.convertToSnakeCase`, that configured encoder is NOT used by `SessionStorage.live`. Net result: the on-disk blob has top-level keys `accessToken`, `refreshToken`, `expiresAt`, `expiresIn`, `tokenType`, `user` — never `access_token`. Any extension-side decoder that defines a `MinimalSession` looking for `access_token` will throw `DecodingError.keyNotFound` and surface as `malformedSession` / `notAuthenticated`, leaving the widget stuck on stale bytes (we shipped this bug 2026-04-27 — silent until users tapped the refresh affordance).
+- **Canonical key**: `supabase.session.fit33.supabase.session.v1` in `UserDefaults(suiteName: "group.com.fit33.app")`. NEVER hardcode `fit33.widget.supabase.session.v1` — that's a stale older key. Single source of truth lives in `Fit33/SupabaseAppGroupStorage.swift` (`SupabaseAppGroupStorage.userDefaultsKey`).
+- **Required decoder shape**: every extension-side `MinimalSession` MUST tolerate both `accessToken` and `access_token` to stay resilient to future supabase-swift SDK bumps (and to past versions if a user's blob predates the fix). Pattern in `RunningActivityWidget/WidgetSupabaseFetcher.swift` and `Fit33Watch Watch App/WatchAppGroupSession.swift`:
+  ```swift
+  struct MinimalSession: Decodable {
+      let accessToken: String
+      private enum CodingKeys: String, CodingKey {
+          case accessToken
+          case access_token  // swiftlint:disable:this identifier_name
+      }
+      init(from decoder: Decoder) throws {
+          let c = try decoder.container(keyedBy: CodingKeys.self)
+          if let t = try c.decodeIfPresent(String.self, forKey: .accessToken) { self.accessToken = t }
+          else if let t = try c.decodeIfPresent(String.self, forKey: .access_token) { self.accessToken = t }
+          else { throw DecodingError.keyNotFound(CodingKeys.accessToken, .init(codingPath: c.codingPath, debugDescription: "neither accessToken nor access_token present")) }
+      }
+  }
+  ```
+- **Do NOT** call `JSONDecoder().keyDecodingStrategy = .convertFromSnakeCase` on the App-Group blob — the keys are already camelCase, so the strategy becomes a no-op AND silently breaks if the SDK ever flips back to snake_case. The dual-key custom `init(from:)` above is the only forward-compatible shape.
+- **App-side storage rule**: `Fit33/SupabaseAppGroupStorage.swift` is a pass-through `AuthLocalStorage` — it stores/retrieves the raw `Data` blob from `supabase-swift` without re-encoding. Do not add a re-encode step "to fix the casing" — that would mutate the blob the SDK expects to read back unchanged on the main app side and break session restore on app launch.
+- **Diagnostic**: `WidgetTapLog.captureEnvironment()` in `RunningActivityWidget/RefreshChallengeIntent.swift` reads the same `UserDefaults` key as `WidgetSessionStorage` — keep them in sync. A divergence here was the 2026-04-27 root cause: tap log reported `hasJWT=true` while the fetcher couldn't decode the same blob.
+
 ## Core Data Context Safety
 - **NEVER use service singleton caches inside `bgContext.perform`**: `ExerciseLibraryService.shared.getExercise(byName:)` and `.getAllExercises()` return viewContext objects. Inside `bgContext.perform`, always use `bgContext.fetch()` to get objects.
 - **NEVER use `getAllExercises()` on a non-`@MainActor` class**: The returned viewContext objects are unsafe to access from background threads. Use pre-extracted cache data (e.g., `exerciseAnalysisCache` in `SmartExercisePairingEngine`) for background work; resolve names to `Exercise` objects only for final results.

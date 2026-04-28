@@ -111,6 +111,10 @@ final class DailyBriefTests: XCTestCase {
     /// Canonical compose: green WHOOP + chest/tris 5d overdue + Build
     /// Muscle goal + 1v1 booster. This is the example the user
     /// described and the test that proves the fusion works.
+    /// Phase 7 (2026-04-27): body copy refresh to "wins today's
+    /// quest" + cross-facet `{ifBehindRival}` clause that collapses
+    /// to empty when no `BriefContext` is supplied (this test
+    /// fixture). Headline shape unchanged.
     func test_template_northStar_greenMuscleBuildMuscleWithBooster() {
         let r = DailyBriefTemplates.compose(
             band: .green,
@@ -121,7 +125,7 @@ final class DailyBriefTests: XCTestCase {
             streak: 7
         )
         XCTAssertEqual(r.headline, "Strain is fresh — chest & triceps are 5 days overdue.")
-        XCTAssertEqual(r.body, "Push day in ~28 min wins your daily quest + your 1v1 with Paul.")
+        XCTAssertEqual(r.body, "Push day in ~28 min wins today's quest + your 1v1 with Paul.")
     }
 
     func test_template_greenMuscleBuildMuscle_noBooster() {
@@ -363,6 +367,162 @@ final class DailyBriefTests: XCTestCase {
         XCTAssertFalse(r.body.contains("{ifLinked}"))
         XCTAssertFalse(r.headline.contains("{linkedQuestTitle}"))
         XCTAssertFalse(r.body.contains("{linkedQuestTitle}"))
+    }
+
+    // MARK: - Phase 7 (2026-04-27): BriefContext token resolution
+
+    /// Helper: build a BriefContext with sensible defaults so each
+    /// test only specifies the field(s) it cares about.
+    private func makeContext(
+        rivalFirstName: String? = nil,
+        rivalTodayFormatted: String? = nil,
+        rivalSignedGap: Int? = nil,
+        rivalChallengeType: String? = nil,
+        recoveryScore: Int? = nil,
+        sleepHours: Double? = nil,
+        sleepDebtMin: Int? = nil,
+        strainPrev: Double? = nil,
+        primarySource: String? = nil,
+        hasWearableSignal: Bool = false,
+        topOverdueMuscle: String? = nil,
+        topOverdueDays: Int? = nil,
+        stepsSoFar: Int = 0,
+        stepGoal: Int = 10000,
+        lastRunDistanceM: Double? = nil,
+        lastRunDaysAgo: Int? = nil,
+        workoutDoneToday: Bool = false,
+        streak: Int = 0
+    ) -> BriefContext {
+        BriefContext(
+            rivalFirstName: rivalFirstName,
+            rivalTodayFormatted: rivalTodayFormatted,
+            rivalSignedGap: rivalSignedGap,
+            rivalChallengeType: rivalChallengeType,
+            recoveryScore: recoveryScore,
+            sleepHours: sleepHours,
+            sleepDebtMin: sleepDebtMin,
+            strainPrev: strainPrev,
+            hrvDeltaPct: nil,
+            rhrTrendBpm: nil,
+            primarySource: primarySource,
+            hasWearableSignal: hasWearableSignal,
+            topOverdueMuscle: topOverdueMuscle,
+            topOverdueDays: topOverdueDays,
+            stepsSoFar: stepsSoFar,
+            stepGoal: stepGoal,
+            activeMinutesToday: 0,
+            caloriesBurnedToday: 0,
+            lastRunDistanceM: lastRunDistanceM,
+            lastRunDaysAgo: lastRunDaysAgo,
+            workoutDoneToday: workoutDoneToday,
+            lastWorkoutDaysAgo: nil,
+            streak: streak,
+            hour: 14
+        )
+    }
+
+    func test_context_behindRivalClause_rendersWhenBehind() {
+        let ctx = makeContext(
+            rivalFirstName: "Manuel",
+            rivalSignedGap: -1200,    // user behind by 1200 steps
+            rivalChallengeType: "steps"
+        )
+        let r = DailyBriefTemplates.compose(
+            band: .unknown, debt: .stepsBehindGoal, goal: .generalFitness,
+            debtFields: ["gap": "3.0k"], booster: nil, streak: 0,
+            context: ctx
+        )
+        XCTAssertTrue(r.body.contains("Manuel"), "Expected rival name in body, got: \(r.body)")
+        XCTAssertTrue(r.body.contains("up 1.2k"), "Expected formatted gap, got: \(r.body)")
+    }
+
+    func test_context_behindRivalClause_suppressesNoiseGap() {
+        // 50-step lead is noise — should not render the rival clause.
+        let ctx = makeContext(
+            rivalFirstName: "Manuel",
+            rivalSignedGap: -50,
+            rivalChallengeType: "steps"
+        )
+        let r = DailyBriefTemplates.compose(
+            band: .unknown, debt: .stepsBehindGoal, goal: .generalFitness,
+            debtFields: ["gap": "3.0k"], booster: nil, streak: 0,
+            context: ctx
+        )
+        XCTAssertFalse(r.body.contains("Manuel"), "Noise-level gap must not surface rival, got: \(r.body)")
+    }
+
+    func test_context_aheadRivalClause_rendersWhenAhead() {
+        let ctx = makeContext(
+            rivalFirstName: "Abbie",
+            rivalSignedGap: 320,    // calorie challenge, user ahead
+            rivalChallengeType: "calories"
+        )
+        let r = DailyBriefTemplates.compose(
+            band: .green, debt: .allClear, goal: .generalFitness,
+            debtFields: [:], booster: nil, streak: 14,
+            context: ctx
+        )
+        XCTAssertTrue(r.body.contains("Abbie"), "Expected rival in flex line, got: \(r.body)")
+        XCTAssertTrue(r.body.contains("up 320 cal"), "Expected formatted gap, got: \(r.body)")
+    }
+
+    func test_context_overdueClauseFires_whenNotTheFiringDebt() {
+        // Steps debt firing, but chest is overdue — body should
+        // mention both.
+        let ctx = makeContext(
+            topOverdueMuscle: "chest & triceps",
+            topOverdueDays: 5
+        )
+        let r = DailyBriefTemplates.compose(
+            band: .unknown, debt: .stepsBehindGoal, goal: .generalFitness,
+            debtFields: ["gap": "3.0k"], booster: nil, streak: 0,
+            context: ctx
+        )
+        XCTAssertTrue(r.body.contains("chest & triceps"), "Expected overdue tail in body, got: \(r.body)")
+        XCTAssertTrue(r.body.contains("5d overdue"), "Expected day count, got: \(r.body)")
+    }
+
+    func test_context_nilContextKeepsCleanOutput() {
+        // Backwards-compat: tests passing no context must produce
+        // body copy with NO leaked `{...}` braces.
+        let r = DailyBriefTemplates.compose(
+            band: .unknown, debt: .stepsBehindGoal, goal: .generalFitness,
+            debtFields: ["gap": "3.0k"], booster: nil, streak: 0,
+            context: nil
+        )
+        XCTAssertFalse(r.body.contains("{"))
+        XCTAssertFalse(r.body.contains("}"))
+        XCTAssertFalse(r.body.contains("ifBehindRival"))
+    }
+
+    func test_context_redDayBedtimeRenders() {
+        let r = DailyBriefTemplates.compose(
+            band: .red, debt: .recoveryNeeded, goal: .buildMuscle,
+            debtFields: ["score": "22"], booster: nil, streak: 7,
+            context: makeContext(hasWearableSignal: true)
+        )
+        XCTAssertTrue(r.body.contains("PM") || r.body.contains("AM"),
+                      "Expected suggested bedtime in red-recovery body, got: \(r.body)")
+    }
+
+    // MARK: - Phase 7b: insight-body gap formatting publicized
+
+    func test_insightBody_publicHelpers_round_trip() {
+        // Public helpers used by `DailyBriefEngine.buildInsightBody`
+        // — verify they keep the action-body cadence in sync.
+        XCTAssertEqual(DailyBriefTemplates.displayUnitPublic(for: "steps"), "steps")
+        XCTAssertEqual(DailyBriefTemplates.displayUnitPublic(for: "calories"), "cal")
+        XCTAssertEqual(DailyBriefTemplates.displayUnitPublic(for: "active_minutes"), "min")
+
+        XCTAssertEqual(DailyBriefTemplates.formatGapPublic(1200, unit: "steps"), "1.2k")
+        XCTAssertEqual(DailyBriefTemplates.formatGapPublic(320, unit: "cal"), "320 cal")
+        XCTAssertEqual(DailyBriefTemplates.formatGapPublic(15, unit: "min"), "15 min")
+        XCTAssertEqual(DailyBriefTemplates.formatGapPublic(1, unit: "workouts"), "1 workout")
+
+        XCTAssertTrue(DailyBriefTemplates.isMeaningfulGapPublic(250, type: "steps"))
+        XCTAssertFalse(DailyBriefTemplates.isMeaningfulGapPublic(50, type: "steps"))
+        XCTAssertTrue(DailyBriefTemplates.isMeaningfulGapPublic(50, type: "calories"))
+        XCTAssertFalse(DailyBriefTemplates.isMeaningfulGapPublic(20, type: "calories"))
     }
 
     // MARK: - V2 Pearson

@@ -12,10 +12,10 @@
 //  silent and the user is expected to open the iPhone app, which
 //  will refresh the token and re-publish the session blob.
 //
-//  Same minimal-decoder shape as `WidgetSupabaseFetcher` —
-//  forward-compatible with whatever supabase-swift's `Session`
-//  serialisation looks like, as long as `access_token` stays
-//  top-level (true since 2.x).
+//  Same minimal-decoder shape as `WidgetSupabaseFetcher` — accepts
+//  both `accessToken` (camelCase, what supabase-swift v2.x actually
+//  emits via plain `JSONEncoder()`) and `access_token` (snake_case,
+//  defensive fallback). Whichever the SDK happens to write wins.
 
 import Foundation
 import OSLog
@@ -43,11 +43,35 @@ enum WatchAppGroupSession {
         guard let blob = defaults.data(forKey: userDefaultsKey) else {
             throw AccessTokenError.notAuthenticated
         }
-        struct MinimalSession: Decodable { let access_token: String }
+        struct MinimalSession: Decodable {
+            let accessToken: String
+
+            private enum CodingKeys: String, CodingKey {
+                case accessToken
+                case access_token // swiftlint:disable:this identifier_name
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                if let token = try c.decodeIfPresent(String.self, forKey: .accessToken) {
+                    self.accessToken = token
+                } else if let token = try c.decodeIfPresent(String.self, forKey: .access_token) {
+                    self.accessToken = token
+                } else {
+                    throw DecodingError.keyNotFound(
+                        CodingKeys.accessToken,
+                        DecodingError.Context(
+                            codingPath: c.codingPath,
+                            debugDescription: "Neither 'accessToken' nor 'access_token' present in session blob"
+                        )
+                    )
+                }
+            }
+        }
         do {
             let session = try JSONDecoder().decode(MinimalSession.self, from: blob)
-            guard !session.access_token.isEmpty else { throw AccessTokenError.malformedSession }
-            return session.access_token
+            guard !session.accessToken.isEmpty else { throw AccessTokenError.malformedSession }
+            return session.accessToken
         } catch {
             log.error("Watch session decode failed: \(String(describing: error), privacy: .public)")
             throw AccessTokenError.malformedSession

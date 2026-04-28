@@ -9,11 +9,15 @@
 //  `@StateObject` so quest/wearable updates don't recompute the
 //  whole `DashboardView`).
 //
-//  Visual contract:
+//  Visual contract (Phase 7b — 2026-04-27):
 //    Line 1 — `headline` (semibold, primary color, max 2 lines)
-//    Line 2 — `body` (medium, secondary color, max 2 lines) +
-//             trailing chevron when a CTA is present
-//    Line 3 — italic micro-line (`rotatingInsight`, V2 only)
+//    Line 2 — `body` (medium, secondary color, max 2 lines)
+//
+//  The third italic line ("rotatingInsight") was retired here and
+//  the engine instead PROMOTES insight content INTO the body when
+//  the user has no urgent debt to action — keeps the welcome card
+//  to a clean two-line read while still surfacing trends + stats.
+//  See `DailyBriefEngine.decideMode` + `buildInsightBody`.
 //
 //  Note (2026-04-27): the chip strip was removed from the welcome
 //  card — text-only read is cleaner at this scale. `brief.chips`
@@ -127,10 +131,14 @@ struct WelcomeBriefRow: View {
                     // MISSION → user name → headline. The duplicate
                     // label inline here was redundant once the
                     // parent surface adopted the framing.
+                    //
+                    // Phase 7b (2026-04-27 — Insight Promotion): the
+                    // separate italic `rotatingLine` was retired —
+                    // the engine now blends trends + stats INTO the
+                    // body itself when there's no urgent debt to
+                    // action, so this view only renders the
+                    // headline/body pair.
                     bodyAndChevron(brief)
-                    if let rotating = brief.rotatingInsight, !rotating.isEmpty {
-                        rotatingLine(rotating)
-                    }
                 } else {
                     placeholder
                 }
@@ -145,44 +153,31 @@ struct WelcomeBriefRow: View {
 
     // MARK: - Sub-views
 
-    /// Headline + body collapsed into a single VStack so the
-    /// chevron sits on the OUTER edge of the whole text block, not
-    /// the body line — cleaner read at the welcome-card scale where
-    /// the headline already pulls the eye.
+    /// Headline + body stacked vertically. The trailing chevron was
+    /// removed (2026-04-27) — the whole row is still tappable and the
+    /// CTA is conveyed by the headline copy itself, so the affordance
+    /// arrow read as visual noise at the welcome-card scale.
+    ///
+    /// Spacing (2026-04-27 follow-up): bumped from 2pt to `.xxs` (4pt)
+    /// so the headline / body pair has a clean breath between them
+    /// — the previous 2pt was reading as cramped, especially when
+    /// the body wraps to two lines.
     private func bodyAndChevron(_ brief: DailyBrief) -> some View {
-        HStack(alignment: .center, spacing: Spacing.xs) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(brief.headline)
-                    .font(.ds_heading3)
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(brief.body)
-                    .font(.ds_bodySmall)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if hasChevron(brief) {
-                Spacer(minLength: Spacing.xxs)
-                Image(systemName: "chevron.right")
-                    .font(.ds_labelSmall)
-                    .foregroundColor(.secondary)
-            }
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text(brief.headline)
+                .font(.ds_heading3)
+                .foregroundColor(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(brief.body)
+                .font(.ds_bodySmall)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private func rotatingLine(_ text: String) -> some View {
-        Text(text)
-            .font(.ds_labelSmall)
-            .italic()
-            .foregroundColor(.secondary.opacity(0.75))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.top, Spacing.xxs)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var placeholder: some View {
@@ -198,11 +193,6 @@ struct WelcomeBriefRow: View {
     }
 
     // MARK: - Helpers
-
-    private func hasChevron(_ brief: DailyBrief) -> Bool {
-        if case .none = brief.cta { return false }
-        return true
-    }
 
     private var accessibilityLabel: String {
         guard let brief else { return "Daily brief loading" }

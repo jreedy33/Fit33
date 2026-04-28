@@ -246,8 +246,14 @@ extension DashboardView {
             // rather than a label glued to a name).
             HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
                 HStack(spacing: 4) {
-                    Text("TODAY'S MISSION, \(getFirstName().uppercased())")
-                        .font(.ds_labelSmall)
+                    // 2026-04-27 — copy reverted from "TODAY'S MISSION, NAME"
+                    // to a simpler "WELCOME BACK, NAME". Same letter-spaced
+                    // caps treatment (system font, secondary color, tracking
+                    // 1.4) bumped one step up (`.ds_labelSmall` →
+                    // `.ds_labelMedium`) so the greeting reads at glance
+                    // distance without crowding the league badge on the right.
+                    Text("WELCOME BACK, \(getFirstName().uppercased())")
+                        .font(.ds_labelMedium)
                         .tracking(1.4)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -701,7 +707,9 @@ struct DashboardLeagueBadge: View {
             HStack(spacing: 4) {
                 Text(standing.tierEmoji)
                     .font(.ds_caption)
-                Text("\(standing.tierName) League")
+                // 2026-04-27 — dropped the trailing " League" word; the
+                // tier name + emoji read as a league badge on their own.
+                Text(standing.tierName)
                     .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundStyle(
@@ -711,6 +719,12 @@ struct DashboardLeagueBadge: View {
                             endPoint: .trailing
                         )
                     )
+                // Trend indicator — green up if on track to advance, red
+                // down if on track to drop, otherwise a flat dash for
+                // "holding". Source-of-truth: `LeagueStanding`'s
+                // promotion/relegation zone helpers (rank vs.
+                // promotion/relegation count for this group).
+                trendIndicator(for: standing)
             }
         } else if league.notPlaced {
             HStack(spacing: 4) {
@@ -737,9 +751,40 @@ struct DashboardLeagueBadge: View {
         }
     }
 
+    /// Tiny up/down/flat trend chip rendered next to the tier name.
+    /// Encodes whether the user is currently in the promotion zone
+    /// (advance), relegation zone (drop), or holding their tier.
+    @ViewBuilder
+    private func trendIndicator(for standing: LeagueStanding) -> some View {
+        if standing.isInPromotionZone {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.green)
+                .accessibilityLabel("On track to advance")
+        } else if standing.isInRelegationZone {
+            Image(systemName: "arrow.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.red)
+                .accessibilityLabel("At risk of dropping")
+        } else {
+            Image(systemName: "minus")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.secondary)
+                .accessibilityLabel("Holding tier")
+        }
+    }
+
     private var accessibilityLabel: String {
         if let standing = league.standing {
-            return "\(standing.tierName) League, rank \(standing.myRank) of \(standing.groupSize)"
+            let trend: String
+            if standing.isInPromotionZone {
+                trend = ", on track to advance"
+            } else if standing.isInRelegationZone {
+                trend = ", at risk of dropping"
+            } else {
+                trend = ", holding tier"
+            }
+            return "\(standing.tierName) League, rank \(standing.myRank) of \(standing.groupSize)\(trend)"
         }
         if league.notPlaced {
             return "Not yet placed in a league. Earn XP to enter."

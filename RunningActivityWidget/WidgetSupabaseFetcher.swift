@@ -241,11 +241,17 @@ enum WidgetSupabaseFetcher {
     /// blob in App Group UserDefaults. Returns the raw JWT string ready
     /// to drop into `Authorization: Bearer <token>`.
     ///
-    /// We deliberately decode only `access_token` from the blob —
-    /// supabase-swift's full `Session` type has 8+ fields including
-    /// nested `User`, all of which can drift across SDK versions. This
-    /// minimal decoder is forward-compatible with any session shape
-    /// that keeps `access_token` at the top level (true since 2.x).
+    /// We deliberately decode only the access-token field from the
+    /// blob — supabase-swift's full `Session` type has 8+ fields
+    /// including a nested `User`, all of which can drift across SDK
+    /// versions. This minimal decoder accepts both `accessToken`
+    /// (camelCase — what supabase-swift v2.x actually emits, since
+    /// `SessionStorage.live` uses a plain `JSONEncoder()` with no key
+    /// strategy and the `Session` struct has camelCase property names)
+    /// and `access_token` (snake_case — defensive fallback for older
+    /// blobs migrated from the legacy Keychain item or any future SDK
+    /// that switches to `.convertToSnakeCase`). Whichever one is
+    /// present wins.
     static func readSessionAccessToken() throws -> String {
         guard let defaults = UserDefaults(suiteName: WidgetSessionStorage.appGroupID) else {
             throw WidgetSupabaseFetcherError.appGroupUnavailable
@@ -253,17 +259,37 @@ enum WidgetSupabaseFetcher {
         guard let blob = defaults.data(forKey: WidgetSessionStorage.userDefaultsKey) else {
             throw WidgetSupabaseFetcherError.notAuthenticated
         }
-        // snake_case property name matches supabase-swift's serialised
-        // session blob shape — `Codable` synthesizes the right CodingKey.
         struct MinimalSession: Decodable {
-            let access_token: String
+            let accessToken: String
+
+            private enum CodingKeys: String, CodingKey {
+                case accessToken
+                case access_token // swiftlint:disable:this identifier_name
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                if let token = try c.decodeIfPresent(String.self, forKey: .accessToken) {
+                    self.accessToken = token
+                } else if let token = try c.decodeIfPresent(String.self, forKey: .access_token) {
+                    self.accessToken = token
+                } else {
+                    throw DecodingError.keyNotFound(
+                        CodingKeys.accessToken,
+                        DecodingError.Context(
+                            codingPath: c.codingPath,
+                            debugDescription: "Neither 'accessToken' nor 'access_token' present in session blob"
+                        )
+                    )
+                }
+            }
         }
         do {
             let session = try JSONDecoder().decode(MinimalSession.self, from: blob)
-            guard !session.access_token.isEmpty else {
+            guard !session.accessToken.isEmpty else {
                 throw WidgetSupabaseFetcherError.malformedSession
             }
-            return session.access_token
+            return session.accessToken
         } catch WidgetSupabaseFetcherError.malformedSession {
             throw WidgetSupabaseFetcherError.malformedSession
         } catch {

@@ -166,6 +166,81 @@ struct BriefDecision: Codable, Equatable {
     }
 }
 
+// MARK: - Brief Context (cross-facet signals for richer body copy)
+
+/// Cross-facet signals fused into the brief so body templates can
+/// reference EVERYTHING the user is doing — not just the firing
+/// debt. Powers the new 1-2 line body copy that names rivals,
+/// cites last-night sleep, mentions overdue muscles even when the
+/// firing debt is something else, etc.
+///
+/// Built once per `compose()` after the top debt is picked, then
+/// handed to `DailyBriefTemplates.compose(... context:)` for token
+/// interpolation. All fields are nil/zero-tolerant — when a service
+/// isn't connected (no WHOOP, no Strava, no rival), the matching
+/// `{ifBehindRival}` / `{ifSleepLow}` / `{ifRecentRun}` clauses
+/// collapse to empty strings, so the same template degrades
+/// gracefully across user states.
+///
+/// NOT Codable on purpose — this is per-compose ephemeral state, not
+/// persisted to disk like `BriefDecision`.
+struct BriefContext {
+    // — Active rival (most engaged 1v1, regardless of who's leading).
+    /// First name of the most engaged opponent across active 1v1s.
+    /// Picked via `FriendRankingService.opponentEngagementScore`
+    /// (PE invariant 25e — never anchor on a ghost-friend). Nil
+    /// when no 1v1 challenges are active.
+    let rivalFirstName: String?
+    /// Opponent's progress today, formatted for the unit
+    /// ("4.2k" steps, "320 cal", "32 min"). Nil when no rival or
+    /// the type doesn't have a clean unit display.
+    let rivalTodayFormatted: String?
+    /// Signed gap (myToday − oppToday). Positive = you're ahead,
+    /// negative = behind. Nil when neither side has logged today.
+    let rivalSignedGap: Int?
+    /// "steps" / "calories" / "active_minutes" / "workouts" / etc.
+    /// Used to format `{rivalUnit}` and the gap suffix.
+    let rivalChallengeType: String?
+
+    // — Wearable / readiness signals (DailyReadinessSnapshot mirror).
+    let recoveryScore: Int?
+    let sleepHours: Double?
+    let sleepDebtMin: Int?
+    let strainPrev: Double?
+    let hrvDeltaPct: Double?
+    let rhrTrendBpm: Double?
+    /// "WHOOP" / "Oura" / "Apple Health" / nil.
+    let primarySource: String?
+    let hasWearableSignal: Bool
+
+    // — Top overdue muscle pair (even when not the firing debt).
+    /// e.g. "chest & triceps". Nil when nothing is meaningfully
+    /// overdue or when muscle group IS the firing debt (in which
+    /// case `{muscles}` already covers it via debtFields).
+    let topOverdueMuscle: String?
+    let topOverdueDays: Int?
+
+    // — Today's activity (HealthKit).
+    let stepsSoFar: Int
+    let stepGoal: Int
+    let activeMinutesToday: Int
+    let caloriesBurnedToday: Int
+
+    // — Strava recent.
+    /// Distance in meters of the most recent run, or nil.
+    let lastRunDistanceM: Double?
+    /// Days since last run (0 = today, 1 = yesterday). Nil when
+    /// no recent run.
+    let lastRunDaysAgo: Int?
+
+    // — Workout state.
+    let workoutDoneToday: Bool
+    let lastWorkoutDaysAgo: Int?
+
+    let streak: Int
+    let hour: Int
+}
+
 /// Final fused brief consumed by `WelcomeBriefRow`. Codable so we
 /// can mirror it to UserDefaults for cold-start cold-paint.
 struct DailyBrief: Codable, Equatable {
@@ -292,6 +367,18 @@ final class DailyBriefEngine {
             slate.first(where: { $0.questKey == firstKey })?.title
         }
 
+        // Phase 7 (2026-04-27 — Welcome card insight enrichment):
+        // build the cross-facet `BriefContext` so body templates can
+        // reference rivals, sleep, strain, overdue muscles, Strava
+        // runs, etc. — not just the one debt that fired. Templates
+        // gracefully degrade when fields are nil (no wearable / no
+        // rival / no Strava → those `{if...}` clauses collapse).
+        let context = await buildBriefContext(
+            band: band,
+            topDebt: topDebt,
+            streak: streak
+        )
+
         let rendered = DailyBriefTemplates.compose(
             band: band,
             debt: debtKind,
@@ -299,8 +386,29 @@ final class DailyBriefEngine {
             debtFields: topDebt?.debtFields ?? [:],
             booster: booster?.boosterCopy,
             streak: streak,
-            linkedQuestTitle: linkedQuestTitle
+            linkedQuestTitle: linkedQuestTitle,
+            context: context
         )
+
+        // Phase 7b (2026-04-27 — Insight Promotion): decide whether
+        // to keep the action-shaped body or swap in a rotating
+        // insight line. Action wins when the user has a real
+        // urgency to close (steep debts, red recovery, streak
+        // risk). Otherwise we surface a trend / stat / flex from
+        // the insight pool — same visual slot, different intent.
+        // Headline is always factual either way; only the body
+        // gets re-routed.
+        let useInsightBody = shouldPromoteInsight(
+            topDebt: topDebt,
+            debtKind: debtKind
+        )
+        let promotedBody: String? = useInsightBody
+            ? buildInsightBody(
+                context: context,
+                booster: booster?.boosterCopy
+            )
+            : nil
+        let finalBody = promotedBody ?? rendered.body
 
         let templateCTA = DailyBriefTemplates.cta(
             band: band,
@@ -344,9 +452,17 @@ final class DailyBriefEngine {
             linkedQuestKeys: linkedKeys
         )
 
+        // Phase 7b (2026-04-27): trace tag so analytics can A/B
+        // action-vs-insight body framings. The italic third line
+        // is no longer rendered by the row, but the underlying
+        // `rotatingInsight` field stays populated for telemetry +
+        // for the insight-pool to draw on (it's one of the
+        // candidate sources inside `buildInsightBody`).
+        if useInsightBody { trace.append("body:insight") }
+
         return DailyBrief(
             headline: rendered.headline,
-            body: rendered.body,
+            body: finalBody,
             ctaCode: BriefCTACoder.code(for: cta),
             ctaPayload: BriefCTACoder.payload(for: cta),
             chips: chips,
@@ -365,6 +481,161 @@ final class DailyBriefEngine {
             return score
         }
         return 0
+    }
+
+    // MARK: - Phase 7b: Action vs Insight body decision
+
+    /// Threshold below which we PROMOTE an insight body in place of
+    /// the template's action body. Calibrated against the urgency
+    /// scale the facets emit (red=100, big muscle debt=82-90,
+    /// late-evening hydration=70 cap, normal steps gap=30-70).
+    /// Anything ≥ 60 = "user has a real time-sensitive gap; nudge
+    /// the action." Anything < 60 = "they're cruising or only mildly
+    /// off pace; surface a flex/trend instead." Same threshold
+    /// shape we use for nudge cadence elsewhere.
+    private static let actionUrgencyThreshold: Int = 60
+
+    /// Returns true when the body should be a rotating
+    /// insight/trend instead of the template's action line. Some
+    /// debt kinds ALWAYS stay action-shaped — red recovery (the
+    /// user genuinely needs to rest, not be flexed at) and
+    /// late-day streak risk (the chain is on the line). Everything
+    /// else flips to insight mode below the urgency threshold OR
+    /// when there's no debt at all (`.allClear`).
+    private func shouldPromoteInsight(
+        topDebt: FacetSignal?,
+        debtKind: DebtKind
+    ) -> Bool {
+        switch debtKind {
+        case .recoveryNeeded, .streakRisk:
+            return false
+        case .allClear:
+            return true
+        default:
+            return (topDebt?.urgency ?? 0) < Self.actionUrgencyThreshold
+        }
+    }
+
+    /// Builds today's INSIGHT body — a flex / trend / stat the user
+    /// can read in 1-2 lines. Pulls candidates from across every
+    /// connected source (streak, rival, Strava, recovery, sleep,
+    /// PersonalizedInsightsService) and picks one via day-of-year
+    /// rotation so the same user sees a consistent line within a
+    /// calendar day but the line evolves day-to-day. Booster
+    /// (`+ your 1v1 with Manuel`) is appended when relevant so the
+    /// insight body still carries the social anchor.
+    ///
+    /// Order of candidates is intentionally diverse — the picker is
+    /// modulo-based, not preference-based, so streaks/PRs/rivals/
+    /// runs/recovery all get airtime across the week. Empty pool
+    /// (truly cold start, no signals at all) falls back to a quiet
+    /// motivational line that NEVER reads like a nag.
+    private func buildInsightBody(
+        context: BriefContext,
+        booster: String?
+    ) -> String {
+        var pool: [String] = []
+
+        // 1. Streak flex (anything 3+).
+        if context.streak >= 30 {
+            pool.append("Day \(context.streak) of your streak — legendary territory.")
+        } else if context.streak >= 7 {
+            pool.append("\(context.streak)-day streak — full habit territory.")
+        } else if context.streak >= 3 {
+            pool.append("\(context.streak)-day streak — momentum's locked in.")
+        }
+
+        // 2. Rival flex (when AHEAD with a meaningful gap).
+        if let name = context.rivalFirstName,
+           let signed = context.rivalSignedGap, signed > 0,
+           DailyBriefTemplates.isMeaningfulGapPublic(signed, type: context.rivalChallengeType) {
+            let unit = DailyBriefTemplates.displayUnitPublic(for: context.rivalChallengeType)
+            let formatted = DailyBriefTemplates.formatGapPublic(signed, unit: unit)
+            pool.append("Up \(formatted) on \(name) — keep the pressure on.")
+        }
+
+        // 3. Rival flex (when BEHIND — converts the signal into a
+        // "they're moving, you can still pass" framing rather than
+        // a passive flex).
+        if let name = context.rivalFirstName,
+           let signed = context.rivalSignedGap, signed < 0,
+           DailyBriefTemplates.isMeaningfulGapPublic(abs(signed), type: context.rivalChallengeType) {
+            let unit = DailyBriefTemplates.displayUnitPublic(for: context.rivalChallengeType)
+            let formatted = DailyBriefTemplates.formatGapPublic(abs(signed), unit: unit)
+            pool.append("\(name) is up \(formatted) — closeable if you move now.")
+        }
+
+        // 4. Sleep flex (well-rested: ≥7.5h).
+        if let sleep = context.sleepHours, sleep >= 7.5 {
+            pool.append(String(format: "Slept %.1fh last night — recovery's earning compound interest.", sleep))
+        }
+
+        // 5. Strain headroom flex (low previous strain + green band).
+        if let strain = context.strainPrev, strain < 10.0,
+           context.recoveryScore != nil, (context.recoveryScore ?? 0) >= 70 {
+            pool.append(String(format: "Yesterday's %.1f strain left tons of room — body's primed.", strain))
+        }
+
+        // 6. Recovery score flex (high recovery).
+        if let rec = context.recoveryScore, rec >= 80 {
+            pool.append("Recovery's at \(rec)% — your body's begging for a session.")
+        }
+
+        // 7. Strava recent (last run within 3 days, ≥1km).
+        if let dist = context.lastRunDistanceM, dist >= 1000,
+           let days = context.lastRunDaysAgo, days <= 3 {
+            let km = dist / 1000.0
+            let label: String
+            if km >= 9.5 && km <= 10.5 { label = "10K" }
+            else if km >= 4.5 && km <= 5.5 { label = "5K" }
+            else { label = String(format: "%.1fK", km) }
+            let when = days == 0 ? "today" : (days == 1 ? "yesterday" : "\(days)d ago")
+            pool.append("Coming off your \(label) \(when) — the engine's primed.")
+        }
+
+        // 8. Workout already in (post-workout flex).
+        if context.workoutDoneToday {
+            pool.append("Workout's already in — protein + sleep close the loop.")
+        }
+
+        // 9. Overdue muscles as a "tomorrow's mission" flex.
+        if let m = context.topOverdueMuscle, let d = context.topOverdueDays, d >= 5 {
+            pool.append("\(m.capitalized) are \(d)d overdue — tomorrow's session is loaded.")
+        }
+
+        // 10. PersonalizedInsightsService correlation (existing
+        // engine — tightened to ≤80 chars so it never tail-truncates
+        // mid-word the way the old italic line did).
+        if AppConfig.FeatureFlags.personalizedInsightsV2 {
+            let insights = PersonalizedInsightsService.shared.activeInsights
+            if let top = insights.max(by: { $0.priority < $1.priority }),
+               !top.message.isEmpty, top.message.count <= 80 {
+                pool.append(top.message)
+            }
+        }
+
+        // 11. Last-resort fallback — quiet motivation that never nags.
+        if pool.isEmpty {
+            pool.append("Quiet day. Anything you do today protects what you've built.")
+        }
+
+        // Day-rotate so the same user sees the same line all day
+        // but a different one tomorrow. Calendar.ordinality gives
+        // a stable-within-a-day integer.
+        let day = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0
+        var pick = pool[day % pool.count]
+
+        // Append the booster if the chosen line doesn't already
+        // mention the rival by name (avoid double-naming).
+        if let booster, !booster.isEmpty,
+           let rival = context.rivalFirstName,
+           !pick.contains(rival) {
+            // Trim trailing period before splicing in the booster.
+            if pick.hasSuffix(".") { pick.removeLast() }
+            pick += " + \(booster)."
+        }
+
+        return pick
     }
 
     /// Phase 2 (2026-04-27): swaps the templates-layer CTA for
@@ -388,6 +659,163 @@ final class DailyBriefEngine {
         default:
             return templateCTA
         }
+    }
+
+    // MARK: - Brief Context builder (Phase 7)
+
+    /// Gathers cross-facet signals into a `BriefContext` for richer
+    /// 1-2 line body copy. Reads only `@Published` state already
+    /// kept fresh by other services + one Core Data hit for muscle
+    /// recovery (the same one `muscleDebtFacet` made — engine-level
+    /// memoization is a future optimization, but the call is cheap
+    /// and runs off-main inside `WorkoutSuggestionEngine`).
+    ///
+    /// All lookups are nil-safe — when a service isn't connected
+    /// (no rival, no WHOOP, no Strava), the corresponding fields
+    /// stay nil and the templates' `{if...}` clauses collapse to
+    /// empty strings. Same template, graceful degradation across
+    /// every user state (free / Pro / wearable / no-wearable / new
+    /// account / power user).
+    private func buildBriefContext(
+        band: CapacityBand,
+        topDebt: FacetSignal?,
+        streak: Int
+    ) async -> BriefContext {
+        let snapshot = ReadinessService.shared.todayReadiness
+        let now = Date()
+        let hour = Calendar.current.component(.hour, from: now)
+
+        // Most-engaged rival across active 1v1s. We deliberately
+        // pick a rival even when we ARE winning — body copy can
+        // surface "you're up 1.2k on Manuel" as a flex, not just
+        // "Manuel's leading you". Engagement-first ranking matches
+        // PE invariant 25e (never anchor on a ghost-friend).
+        let challenges = ChallengeService.shared.activeChallenges
+        struct RivalCandidate {
+            let firstName: String
+            let myToday: Int
+            let oppToday: Int
+            let challengeType: String
+            let engagement: Double
+        }
+        var rivalPick: RivalCandidate?
+        for c in challenges {
+            guard let oppName = c.opponentName else { continue }
+            let firstName = oppName.components(separatedBy: " ").first ?? oppName
+            let engagement = FriendRankingService.opponentEngagementScore(
+                opponentId: c.opponentId,
+                opponentTodayProgress: c.opponentTodayProgress,
+                opponentLastProgressAt: c.opponentLastProgressAt,
+                now: now
+            )
+            let cand = RivalCandidate(
+                firstName: firstName,
+                myToday: c.myTodayProgress ?? 0,
+                oppToday: c.opponentTodayProgress ?? 0,
+                challengeType: c.challengeType,
+                engagement: engagement
+            )
+            if rivalPick == nil || cand.engagement > rivalPick!.engagement {
+                rivalPick = cand
+            }
+        }
+        let rivalFirstName = rivalPick?.firstName
+        let rivalChallengeType = rivalPick?.challengeType
+        let rivalSignedGap: Int? = rivalPick.map { $0.myToday - $0.oppToday }
+        let rivalTodayFormatted: String? = rivalPick.map { c in
+            switch c.challengeType {
+            case "steps":
+                return c.oppToday >= 1000
+                    ? String(format: "%.1fk", Double(c.oppToday) / 1000.0)
+                    : "\(c.oppToday)"
+            case "calories":   return "\(c.oppToday) cal"
+            case "active_minutes": return "\(c.oppToday) min"
+            default:           return "\(c.oppToday)"
+            }
+        }
+
+        // Top overdue muscle (even when NOT the firing debt — body
+        // copy uses this for "still chest & triceps overdue" tail
+        // clauses on protein/water/step debts).
+        let muscleStates = await WorkoutSuggestionEngine.shared.getMuscleRecoveryStatesAsync()
+        let overdueLifted: Set<WorkoutSuggestionEngine.MuscleCategory> = [
+            .chest, .back, .shoulders, .biceps, .triceps,
+            .quads, .hamstrings, .glutes
+        ]
+        let overdueCandidates = muscleStates
+            .filter { overdueLifted.contains($0.category) }
+            .compactMap { state -> (WorkoutSuggestionEngine.MuscleCategory, Int)? in
+                guard let last = state.lastTrainedDate else { return (state.category, 7) }
+                let days = Int(now.timeIntervalSince(last) / 86_400)
+                guard days >= 4 else { return nil }
+                return (state.category, days)
+            }
+            .sorted { $0.1 > $1.1 }
+        let topOverdueMuscle: String?
+        let topOverdueDays: Int?
+        if topDebt?.debtKind == .muscleGroup {
+            topOverdueMuscle = nil
+            topOverdueDays = nil
+        } else if let pair = overdueCandidates.first {
+            topOverdueMuscle = canonicalPairLabel(for: pair.0)
+            topOverdueDays = pair.1
+        } else {
+            topOverdueMuscle = nil
+            topOverdueDays = nil
+        }
+
+        // Last workout days-ago (across all muscle states).
+        let mostRecentWorkout = muscleStates.compactMap(\.lastTrainedDate).max()
+        let lastWorkoutDaysAgo: Int? = mostRecentWorkout.map {
+            Int(now.timeIntervalSince($0) / 86_400)
+        }
+
+        // Today's workout completion — quest-state-driven so it
+        // matches the same definition the engine's other facets use.
+        let workoutDoneToday = DailyQuestService.shared.quests.contains {
+            ["complete_workout", "complete_program_day",
+             "exercise_sets_15", "exercise_sets_25",
+             "complete_2_workouts", "early_bird_workout"]
+                .contains($0.questKey) && $0.isCompleted
+        }
+
+        // Strava — most recent activity (run / walk / ride). We
+        // consider anything within last 7 days "recent" for body
+        // copy purposes.
+        let recent = StravaService.shared.recentActivities
+            .filter { ["Run", "Walk", "Ride", "VirtualRide"].contains($0.type) }
+            .max(by: { $0.startDate < $1.startDate })
+        let lastRunDistanceM = recent?.distance
+        let lastRunDaysAgo: Int? = recent.map {
+            Int(now.timeIntervalSince($0.startDate) / 86_400)
+        }
+
+        return BriefContext(
+            rivalFirstName: rivalFirstName,
+            rivalTodayFormatted: rivalTodayFormatted,
+            rivalSignedGap: rivalSignedGap,
+            rivalChallengeType: rivalChallengeType,
+            recoveryScore: snapshot.hasWearableSignal ? snapshot.score : nil,
+            sleepHours: snapshot.sleepHours,
+            sleepDebtMin: snapshot.sleepDebtMin,
+            strainPrev: snapshot.strainPrev,
+            hrvDeltaPct: snapshot.hrvDeltaPct,
+            rhrTrendBpm: snapshot.rhrTrendBpm,
+            primarySource: snapshot.hasWearableSignal ? snapshot.primarySource.displayName : nil,
+            hasWearableSignal: snapshot.hasWearableSignal,
+            topOverdueMuscle: topOverdueMuscle,
+            topOverdueDays: topOverdueDays,
+            stepsSoFar: HealthKitService.shared.todaySteps,
+            stepGoal: HealthKitManager.shared.stepGoal,
+            activeMinutesToday: HealthKitService.shared.todayActiveMinutes,
+            caloriesBurnedToday: HealthKitService.shared.todayCalories,
+            lastRunDistanceM: lastRunDistanceM,
+            lastRunDaysAgo: lastRunDaysAgo,
+            workoutDoneToday: workoutDoneToday,
+            lastWorkoutDaysAgo: lastWorkoutDaysAgo,
+            streak: streak,
+            hour: hour
+        )
     }
 
     // MARK: - Quest matching (Phase 2)

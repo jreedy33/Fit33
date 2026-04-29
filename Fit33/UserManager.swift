@@ -833,12 +833,20 @@ class UserManager: ObservableObject {
                 // per user). The Core Data `WorkoutExercise.id` is per-row
                 // not per-catalog-entry, so two Bench Press sessions would
                 // have different ids; we use the canonical exercise NAME
+                // (via `safeDisplayName`, which traverses the `exercise`
+                // relationship + cached fallbacks per `CoreDataExtensions`)
                 // instead so "I've already done bench press" stays
                 // de-duped across sessions.
                 await MainActor.run {
                     for ex in exercises {
-                        let attribution = (ex.name ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !attribution.isEmpty else { continue }
+                        let attribution = ex.safeDisplayName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                        // Skip the loading / fallback values from `safeDisplayName`
+                        // so a session that fires before the exercise library
+                        // hydrates doesn't dedupe under "loading..." /
+                        // "exercise" and burn the lifetime award on garbage.
+                        guard !attribution.isEmpty,
+                              attribution != "loading...",
+                              attribution != "exercise" else { continue }
                         if WeeklyLeagueService.shared.canAwardPoints(source: .newExerciseTried, attribution: attribution) {
                             Task {
                                 await WeeklyLeagueService.shared.addPoints(source: .newExerciseTried)

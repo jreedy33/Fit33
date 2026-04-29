@@ -40,7 +40,14 @@ enum NotificationType: String, CaseIterable, Identifiable {
     // Progress & Achievements
     case personalRecord = "personal_record"
     case streakMilestone = "streak_milestone"
-    case levelUp = "level_up"
+    // 2026-04-29 — League Redesign Plan §B2.
+    // Renamed from `levelUp` ("level_up") to `tierPromotion` ("tier_promotion").
+    // The XP-100-boundary level-up trigger is gone; this category now fires
+    // on Monday-rollup tier promotions (Bronze → Silver, Stand-Out skip-tier,
+    // Crown of the Week, Bounceback). Existing opt-ins stored under the old
+    // `level_up_enabled` UserDefaults key are migrated automatically by
+    // `NotificationManager.migrateLevelUpOptInIfNeeded()` on init.
+    case tierPromotion = "tier_promotion"
     case goalAchieved = "goal_achieved"
     
     // Health & Nutrition
@@ -79,7 +86,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .privateChallengeMessage: return "Private Challenge Messages"
         case .personalRecord: return "Personal Records"
         case .streakMilestone: return "Streak Celebrations"
-        case .levelUp: return "Level Up Alerts"
+        case .tierPromotion: return "Tier Promotions"
         case .goalAchieved: return "Goal Achievements"
         case .nutritionReminder: return "Meal Logging Reminders"
         case .proteinGoal: return "Protein Target Alerts"
@@ -114,7 +121,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .privateChallengeMessage: return "Messages in your private challenge groups"
         case .personalRecord: return "Celebrate when you beat your best"
         case .streakMilestone: return "Celebrate streak milestones"
-        case .levelUp: return "Notify when you level up"
+        case .tierPromotion: return "Notify when you promote to a new league tier"
         case .goalAchieved: return "Alert when you hit your goals"
         case .nutritionReminder: return "Remind you to log your meals"
         case .proteinGoal: return "Alert when protein is running low"
@@ -149,7 +156,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .privateChallengeMessage: return "bubble.left.and.bubble.right.fill"
         case .personalRecord: return "trophy.fill"
         case .streakMilestone: return "flame.fill"
-        case .levelUp: return "star.fill"
+        case .tierPromotion: return "trophy.fill"
         case .goalAchieved: return "target"
         case .nutritionReminder: return "fork.knife"
         case .proteinGoal: return "leaf.fill"
@@ -184,7 +191,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .privateChallengeMessage: return .pink
         case .personalRecord: return .yellow
         case .streakMilestone: return .orange
-        case .levelUp: return .purple
+        case .tierPromotion: return .yellow
         case .goalAchieved: return .green
         case .nutritionReminder: return .pink
         case .proteinGoal: return .red
@@ -220,7 +227,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
              .privateChallengeMessage, // Chat messages in private challenges
              .personalRecord,          // Celebrate achievements
              .streakMilestone,         // Celebrate consistency
-             .levelUp,                 // Gamification engagement
+             .tierPromotion,           // Weekly League rollup tier promotion
              .goalAchieved,            // Progress celebration
              .nutritionReminder,       // Full app engagement
              .morningMotivation,       // Daily engagement touchpoint
@@ -278,7 +285,7 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
                     .communityFriendJoined, .privateChallengeInvite,
                     .privateChallengeUpdate, .privateChallengeMessage]
         case .achievements:
-            return [.personalRecord, .streakMilestone, .levelUp, .goalAchieved]
+            return [.personalRecord, .streakMilestone, .tierPromotion, .goalAchieved]
         case .health:
             return [.nutritionReminder, .proteinGoal, .stepsGoal, .waterReminder, .weightReminder]
         case .motivation:
@@ -381,14 +388,33 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             // First launch: enable defaults
             enabledNotifications = Set(NotificationType.allCases.filter { $0.defaultEnabled }.map { $0.rawValue })
         }
-        
+
+        // 2026-04-29 — League Redesign Plan §B2.
+        // One-time migration of the legacy `level_up` opt-in to the new
+        // `tier_promotion` channel. Existing users who had Level Up alerts
+        // toggled ON keep getting tier-promotion pushes; the legacy raw
+        // value is removed from the set so the Settings UI reflects the
+        // rename truthfully. Idempotent — runs at most once per install
+        // since the second pass finds neither the legacy raw value nor an
+        // outstanding migration flag.
+        if !UserDefaults.standard.bool(forKey: "tier_promotion_optin_migrated_v1") {
+            if enabledNotifications.contains("level_up") {
+                enabledNotifications.remove("level_up")
+                enabledNotifications.insert(NotificationType.tierPromotion.rawValue)
+            }
+            UserDefaults.standard.set(true, forKey: "tier_promotion_optin_migrated_v1")
+        }
+
         super.init()
-        
+
         // Save defaults if first launch
         if UserDefaults.standard.array(forKey: "enabled_notifications") == nil {
             saveEnabledNotifications()
         }
-        
+
+        // Persist the migrated set if we modified it above.
+        saveEnabledNotifications()
+
         checkAuthorizationStatus()
     }
     
@@ -1014,16 +1040,21 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         sendImmediateNotification(content: content, identifier: "pr_\(Date().timeIntervalSince1970)")
     }
     
-    /// Level up notification
-    func sendLevelUpNotification(newLevel: Int, title: String) {
-        guard isNotificationEnabled(.levelUp) && isAuthorized else { return }
-        
+    /// Tier promotion notification (League Redesign Plan §B2 — replaces the
+    /// legacy `sendLevelUpNotification`). Fires from the Monday rollup
+    /// codepath via `WeeklyLeagueService.detectAndQueueTierPromotion`. Push
+    /// channel is `.tierPromotion`; existing opt-ins under the old
+    /// `level_up_enabled` UserDefaults key are migrated by
+    /// `migrateLevelUpOptInIfNeeded()` on init.
+    func sendTierPromotionNotification(newTierName: String, newTierRank: Int) {
+        guard isNotificationEnabled(.tierPromotion) && isAuthorized else { return }
+
         let content = UNMutableNotificationContent()
-        content.title = "LEVEL UP! ⬆️"
-        content.body = "You've reached Level \(newLevel): \(title)!"
+        content.title = "Tier Up! 🏆"
+        content.body = "You've reached \(newTierName) — open Fit33 to see your new league."
         content.sound = .default
-        
-        sendImmediateNotification(content: content, identifier: "levelup_\(newLevel)")
+
+        sendImmediateNotification(content: content, identifier: "tier_promote_\(newTierRank)")
     }
     
     /// Steps goal achieved
@@ -1854,6 +1885,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             DeepLinkManager.shared.pendingDestination = .streakInfo
             AppLogger.debug("Opening streak info", category: .general)
             
+        // 2026-04-29 — League Redesign Plan §B2.
+        // "level_up" kept as inbound alias for any in-flight push payloads
+        // that were enqueued before the rename; new push types use
+        // "tier_promotion" and route to the same destination (the league
+        // tab — a tier promotion is a league moment, not a stats moment).
+        case "tier_promotion":
+            DeepLinkManager.shared.pendingDestination = .statsTab
+            AppLogger.debug("Opening stats tab for tier promotion", category: .general)
         case "level_up", "goal_achieved":
             DeepLinkManager.shared.pendingDestination = .statsTab
             AppLogger.debug("Opening stats tab for achievement", category: .general)
@@ -1948,7 +1987,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         "private_challenge_progress", "private_challenge_message",
         "private_challenge_update",
         // Achievements & motivation
-        "personal_record", "streak_milestone", "level_up", "goal_achieved",
+        // 2026-04-29 — League Redesign Plan §B2. `tier_promotion` is the new
+        // forward type; `level_up` stays in the allowlist for back-compat with
+        // already-queued payloads from before the rename.
+        "personal_record", "streak_milestone", "tier_promotion", "level_up", "goal_achieved",
         "weekly_progress", "morning_motivation",
         // Health / nutrition
         "nutrition_reminder", "protein_goal", "water_reminder", "steps_goal",

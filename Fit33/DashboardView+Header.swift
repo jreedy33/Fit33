@@ -675,7 +675,6 @@ extension DashboardView {
 struct DashboardLeagueBadge: View {
     @Binding var navigationPath: NavigationPath
     @StateObject private var league = WeeklyLeagueService.shared
-    @StateObject private var userManager = UserManager.shared
 
     init(navigationPath: Binding<NavigationPath>) {
         self._navigationPath = navigationPath
@@ -719,6 +718,19 @@ struct DashboardLeagueBadge: View {
                             endPoint: .trailing
                         )
                     )
+                // 2026-04-29 — League Redesign Plan §A2.
+                // Crown of the Week cosmetic. When the user finished rank 1
+                // last rollup, the server sets `crown_until = now() + 7d`.
+                // We render a small `crown.fill` flair next to the tier
+                // name for the duration; iOS computes the active state
+                // from the timestamp so the cue auto-expires without a
+                // server push.
+                if standing.hasActiveCrown {
+                    Image(systemName: "crown.fill")
+                        .font(.ds_caption)
+                        .foregroundColor(.yellow)
+                        .accessibilityLabel("Crown of the week")
+                }
                 // Trend indicator — green up if on track to advance, red
                 // down if on track to drop, otherwise a flat dash for
                 // "holding". Source-of-truth: `LeagueStanding`'s
@@ -731,22 +743,29 @@ struct DashboardLeagueBadge: View {
                 Image(systemName: "trophy")
                     .font(.ds_caption)
                     .foregroundColor(.orange)
-                Text("Earn XP to enter")
+                // 2026-04-29 — League Redesign Plan §B3. Replaces the legacy
+                // "Earn XP to enter" copy. New users tap the badge to land
+                // on the educational "How leagues work" page; "Placement
+                // Monday" is what's actually true between Tue-Sun.
+                Text("Placement Monday")
                     .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundColor(.orange)
             }
         } else {
-            // Cold-start fallback. The legacy level title prevents an
-            // empty slot while the league fetch is in flight.
+            // Cold-start fallback while the league fetch is in flight.
+            // 2026-04-29 — League Redesign Plan §B3. Replaces the legacy
+            // "Legendary Master 148" XP-level title. Tier is now identity;
+            // when no standing has loaded yet we render a quiet trophy +
+            // "Loading..." placeholder so the slot is never empty.
             HStack(spacing: 4) {
-                Image(systemName: userManager.getLevelIcon())
+                Image(systemName: "trophy")
                     .font(.ds_caption)
-                    .foregroundColor(userManager.getLevelColor())
-                Text(userManager.getLevelTitle())
+                    .foregroundColor(.secondary)
+                Text("Loading…")
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(userManager.getLevelColor())
+                    .foregroundColor(.secondary)
             }
         }
     }
@@ -787,8 +806,8 @@ struct DashboardLeagueBadge: View {
             return "\(standing.tierName) League, rank \(standing.myRank) of \(standing.groupSize)\(trend)"
         }
         if league.notPlaced {
-            return "Not yet placed in a league. Earn XP to enter."
+            return "Not yet placed in a league. Placement runs on Monday."
         }
-        return "Level \(userManager.getLevel()): \(userManager.getLevelTitle())"
+        return "League standing loading"
     }
 }

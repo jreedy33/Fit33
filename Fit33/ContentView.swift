@@ -8,10 +8,24 @@ struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @StateObject private var userManager = UserManager.shared
     @StateObject private var workoutManager = WorkoutManager.shared
+    // 2026-04-29 — League Redesign Plan §B2. ContentView observes the
+    // weekly-league singleton so the tier-promotion overlay re-renders the
+    // moment `pendingTierPromotion` changes (set by detection in
+    // `fetchOrJoinLeague`, cleared by the overlay's onDismiss).
+    @StateObject private var weeklyLeagueService = WeeklyLeagueService.shared
     
     // Welcome tutorial state - shown once per session when user completes onboarding
     @State private var showWelcomeTutorial = false
     @State private var hasShownTutorialThisSession = false
+
+    // 2026-04-29 — League Redesign Plan §B1 ship gate.
+    // One-time "Your level is now your tier" framing card. Triggered for
+    // any existing user with non-zero XP who hasn't seen it yet. Stored
+    // separately from `showWelcomeTutorial` because it's an *upgrade*
+    // surface (existing users only) — new users never see it.
+    @State private var showLevelToTierMigration = false
+    @State private var migrationLegacyLevel: Int = 1
+    @State private var migrationLegacyTitle: String = ""
     
     // Track the last known onboarding state to detect transitions
     @State private var lastKnownOnboardingState: Bool? = nil
@@ -57,9 +71,31 @@ struct ContentView: View {
             // ⚡️ Cold-start Phase 3.10 — close the user-visible first-frame
             // signpost the moment SwiftUI commits the root view.
             Fit33App.markFirstFrameIfNeeded()
+
+            // 2026-04-29 — League Redesign Plan §B1 ship gate.
+            // First-launch-after-update one-time migration card. Triggers
+            // once per install for any user with prior XP. Skipped on the
+            // onboarding flow (we only want to nudge users already in the
+            // main app).
+            if shouldShowMainApp, LevelToTierMigrationGate.shouldShow() {
+                migrationLegacyLevel = userManager.getLevel()
+                migrationLegacyTitle = userManager.getLevelTitle()
+                showLevelToTierMigration = true
+            }
         }
         .fullScreenCover(isPresented: $showWelcomeTutorial) {
             WelcomeTutorialView(isPresented: $showWelcomeTutorial)
+        }
+        .sheet(isPresented: $showLevelToTierMigration, onDismiss: {
+            LevelToTierMigrationGate.markShown()
+        }) {
+            LevelToTierMigrationCard(
+                legacyLevel: migrationLegacyLevel,
+                legacyTitle: migrationLegacyTitle,
+                onDismiss: {
+                    showLevelToTierMigration = false
+                }
+            )
         }
         .overlay(alignment: .top) {
             if BadgeService.shared.showUnlockToast,
@@ -71,23 +107,23 @@ struct ContentView: View {
             }
         }
         .animation(.spring(response: 0.5, dampingFraction: 0.8), value: BadgeService.shared.showUnlockToast)
+        // 2026-04-29 — League Redesign Plan §B2.
+        // Replaces the legacy `LevelUpCelebrationOverlay` (every 100 XP) with
+        // `TierPromotionOverlay` (Monday-rollup tier increase only). Fires at
+        // most once per week per user. Driven by
+        // `WeeklyLeagueService.shared.pendingTierPromotion`.
         .overlay {
-            if userManager.showLevelUpCelebration {
-                LevelUpCelebrationOverlay(
-                    level: userManager.newLevelReached,
-                    levelTitle: userManager.getLevelTitle(),
-                    levelIcon: userManager.getLevelIcon(),
-                    levelColor: userManager.getLevelColor()
-                ) {
+            if let event = weeklyLeagueService.pendingTierPromotion {
+                TierPromotionOverlay(event: event) {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                        userManager.showLevelUpCelebration = false
+                        weeklyLeagueService.clearPendingTierPromotion()
                     }
                 }
                 .transition(.opacity.combined(with: .scale))
                 .zIndex(999)
             }
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: userManager.showLevelUpCelebration)
+        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: weeklyLeagueService.pendingTierPromotion)
         .onChange(of: userManager.hasCompletedOnboarding) { oldValue, newValue in
             AppLogger.debug("[TUTORIAL] hasCompletedOnboarding changed: \(oldValue) → \(newValue), lastKnown: \(String(describing: lastKnownOnboardingState))", category: .ui)
             

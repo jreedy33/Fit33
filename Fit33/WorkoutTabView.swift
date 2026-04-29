@@ -1056,26 +1056,47 @@ struct WorkoutHomeView: View {
             }
         }
         
-        // 6. LEVEL UP - Close to next level
-        let xpForNextLevel = (userLevel + 1) * 100 // Simple XP calculation
-        let xpProgress = Double(userXP) / Double(xpForNextLevel)
-        if xpProgress >= 0.6 {
-            let xpRemaining = xpForNextLevel - userXP
-            goals.append(NextGoal(
-                id: "level_up",
-                type: .levelUp,
-                title: "Level \(userLevel + 1) Awaits!",
-                subtitle: "Keep grinding to level up",
-                icon: "arrow.up.circle.fill",
-                progress: xpProgress,
-                remaining: "\(xpRemaining) XP needed",
-                timeContext: nil,
-                accentColor: .purple,
-                action: .startWorkout(focus: nil),
-                priority: 6,
-                xpReward: nil
-            ))
+        // 6. PROMOTION ZONE — points toward the next league tier (League
+        //    Redesign Plan §B1 / §A2). Replaces the legacy "Level N+1 Awaits!"
+        //    XP-based nudge. Source-of-truth: `WeeklyLeagueService.shared.standing`.
+        //    Reads the singleton directly because `getNextGoals` is a synchronous
+        //    pure function on a snapshot — adding an @ObservedObject would force
+        //    the entire workout tab to recompute on every league poll.
+        if let standing = WeeklyLeagueService.shared.standing,
+           standing.promotionCount > 0,
+           !standing.isInPromotionZone {
+            // Top-of-promotion-zone points = points held by the rank just
+            // above the cutoff. We need to BEAT that to enter the zone, so
+            // "remaining" reflects the actual required gap.
+            let cutoffRank = standing.promotionCount
+            let cutoffEntry = standing.leaderboard.first(where: { $0.rank == cutoffRank })
+            let pointsToBeat = (cutoffEntry?.points ?? standing.myPoints) + 1
+            let pointsNeeded = max(1, pointsToBeat - standing.myPoints)
+            let progress = standing.myPoints == 0
+                ? 0.0
+                : min(1.0, Double(standing.myPoints) / Double(pointsToBeat))
+
+            // Only show once the user is at least 60% of the way there —
+            // matches the discoverability bar the legacy Level-Up nudge used.
+            if progress >= 0.6 {
+                let nextTierName = standing.nextTierName ?? "the next tier"
+                goals.append(NextGoal(
+                    id: "promotion_zone",
+                    type: .levelUp,
+                    title: "Promotion Zone",
+                    subtitle: "Climb into \(nextTierName)",
+                    icon: "arrow.up.circle.fill",
+                    progress: progress,
+                    remaining: "\(pointsNeeded) pts to advance",
+                    timeContext: nil,
+                    accentColor: standing.tierSwiftUIColor,
+                    action: .startWorkout(focus: nil),
+                    priority: 6,
+                    xpReward: nil
+                ))
+            }
         }
+
         
         // 7. WEIGHT MILESTONE - Next lifting achievement (if lifting heavy)
         if heaviestWeight > 50 {

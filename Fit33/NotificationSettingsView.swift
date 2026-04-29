@@ -519,11 +519,11 @@ struct NotificationSettingsView: View {
                 }
                 
                 testButton(
-                    title: "Test Level Up",
-                    icon: "star.fill",
-                    color: .purple
+                    title: "Test Tier Promotion",
+                    icon: "trophy.fill",
+                    color: .yellow
                 ) {
-                    notificationManager.sendLevelUpNotification(newLevel: 5, title: "Warrior")
+                    notificationManager.sendTierPromotionNotification(newTierName: "Silver", newTierRank: 2)
                 }
                 
                 testButton(

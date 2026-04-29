@@ -219,6 +219,8 @@
 		7C8CF4772F9FA463007CD766 /* V2Analyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */; };
 		7C8CF4782F9FA463007CD766 /* WelcomeBriefRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */; };
 		7C8CF97E2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF97D2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift */; };
+		7C8CF9D12FA1EC6C007CD766 /* TierPromotionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF9D02FA1EC6C007CD766 /* TierPromotionOverlay.swift */; };
+		7C8CF9D32FA1EC80007CD766 /* LevelToTierMigrationCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF9D22FA1EC80007CD766 /* LevelToTierMigrationCard.swift */; };
 		7C8EB1C02F26ABD4007BFA55 /* PerformanceOptimizations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */; };
 		7C8EB1C32F26B03C007BFA55 /* StravaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */; };
 		7C8EB1C42F26B03C007BFA55 /* StravaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C12F26B03C007BFA55 /* StravaService.swift */; };
@@ -665,6 +667,8 @@
 		7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Analyzer.swift; sourceTree = "<group>"; };
 		7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeBriefRow.swift; sourceTree = "<group>"; };
 		7C8CF97D2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotatorView.swift; sourceTree = "<group>"; };
+		7C8CF9D02FA1EC6C007CD766 /* TierPromotionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TierPromotionOverlay.swift; sourceTree = "<group>"; };
+		7C8CF9D22FA1EC80007CD766 /* LevelToTierMigrationCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelToTierMigrationCard.swift; sourceTree = "<group>"; };
 		7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizations.swift; sourceTree = "<group>"; };
 		7C8EB1C12F26B03C007BFA55 /* StravaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaService.swift; sourceTree = "<group>"; };
 		7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaSettingsView.swift; sourceTree = "<group>"; };
@@ -944,6 +948,7 @@
 		A12345678901234567890138 /* Fit33 */ = {
 			isa = PBXGroup;
 			children = (
+				7C8CF9D02FA1EC6C007CD766 /* TierPromotionOverlay.swift */,
 				7C6DE3802F5BE05F00BCA276 /* AchievementService.swift */,
 				7C8CF97D2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift */,
 				7C6DE3822F5BE06300BCA276 /* AchievementsView.swift */,
@@ -970,6 +975,7 @@
 				7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */,
 				7C3DF1D52F2D6FD900A9CDA7 /* AppConfig.swift */,
 				7CB08C722ED810A500236ECB /* AppearanceManager.swift */,
+				7C8CF9D22FA1EC80007CD766 /* LevelToTierMigrationCard.swift */,
 				7CAA1F802F424534008200B9 /* AppHealthDiagnostics.swift */,
 				7CAA1F822F42453A008200B9 /* AppHealthDiagnosticsView.swift */,
 				7C0C42792F182C6500F02E84 /* AppPerformanceSystem.swift */,
@@ -1565,6 +1571,7 @@
 				7CAFD56E2EE231C600920F0D /* Logger.swift in Sources */,
 				7CAFD5712EE232C600920F0D /* NetworkErrorClassifier.swift in Sources */,
 				7CAFD5732EE233A000920F0D /* ScreenCodeMap.swift in Sources */,
+				7C8CF9D12FA1EC6C007CD766 /* TierPromotionOverlay.swift in Sources */,
 				7CAFD5562EDEA71200920F0D /* SocialAuthService.swift in Sources */,
 				7C792AFA2F2B9F5A0048A97E /* ShoppingListView.swift in Sources */,
 				7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */,
@@ -1615,6 +1622,7 @@
 				7C53E2242F353B7700C2F7EC /* ChallengeCreationFlow.swift in Sources */,
 				7C0C41CE2F00A63D00F02E84 /* LimitationFilterEngine.swift in Sources */,
 				7C47F9E32EE3BF8600BEC4D7 /* StretchModeView.swift in Sources */,
+				7C8CF9D32FA1EC80007CD766 /* LevelToTierMigrationCard.swift in Sources */,
 				7CACB57D2F2E9722003A7C91 /* ChallengePreviewWidget.swift in Sources */,
 				7C6DE3F52F5CAD7400BCA276 /* CriticalPathTests.swift in Sources */,
 				7CACB57F2F5A000100AAAAAA /* ChallengeReactionsView.swift in Sources */,

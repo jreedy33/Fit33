@@ -5,13 +5,19 @@ struct AchievementsView: View {
     @StateObject private var achievementService = BadgeService.shared
     @State private var selectedCategory: String? = nil
     
-    private let categories = ["workout", "streak", "social", "nutrition", "level", "special"]
+    // 2026-04-29 — League Redesign Plan §B1. "level" category is gone;
+    // tier-based achievements live under "tier" with a trophy icon. The
+    // "level" key is preserved here ONLY for back-compat with already-saved
+    // BadgeService rows (legacy `category="level"` rows still render under
+    // the Tier filter). New BadgeService writes use "tier".
+    private let categories = ["workout", "streak", "social", "nutrition", "tier", "special"]
     private let categoryLabels = [
         "workout": "Workout",
         "streak": "Streak",
         "social": "Social",
         "nutrition": "Nutrition",
-        "level": "Level",
+        "tier": "Tier",
+        "level": "Tier",       // legacy alias — surfaces old "level"-tagged rows under Tier
         "special": "Special"
     ]
     private let categoryIcons = [
@@ -19,7 +25,8 @@ struct AchievementsView: View {
         "streak": "flame.fill",
         "social": "person.2.fill",
         "nutrition": "fork.knife",
-        "level": "star.fill",
+        "tier": "trophy.fill",
+        "level": "trophy.fill", // legacy alias
         "special": "sparkles"
     ]
     

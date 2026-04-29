@@ -1578,6 +1578,15 @@ class DailyQuestService: ObservableObject {
                     
                     // Award league points for quest completion
                     await WeeklyLeagueService.shared.addPoints(source: .challengeTarget)
+
+                    // 2026-04-29 — League Redesign Plan §C1.
+                    // Additional +15 league points per quest completion via
+                    // the new `.dailyQuestCompleted` source. Stacks ON TOP of
+                    // the legacy +25 `.challengeTarget` award (kept for
+                    // backwards-compat with existing leaderboards). No
+                    // client-side cap — there are at most 3 quests/day, so
+                    // the implicit cap is 3 × 15 = +45/day.
+                    await WeeklyLeagueService.shared.addPoints(source: .dailyQuestCompleted)
                     
                     // Auto-hide celebration
                     Task { @MainActor in

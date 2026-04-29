@@ -48,6 +48,18 @@ class AchievementService: ObservableObject {
     }
     
     // MARK: - Main Achievement Generation
+    //
+    // 2026-04-29 — League Redesign Plan §B1.
+    // `liveTierRank` is the user's current Weekly League tier rank (1-7). It
+    // drives the new tier-achievement rows. Defaulted to 1 so the two
+    // background callers (`AppPerformanceSystem` + `TabPreloadingSystem`) —
+    // which don't have access to `WeeklyLeagueService` and only run for
+    // cache-warm purposes — still compile and produce a sensible (Bronze-
+    // floor) achievement set. The view-layer caller on the main actor
+    // reads the live rank off `WeeklyLeagueService.shared.standing` and
+    // passes it through. We can't read the @MainActor singleton inside
+    // this nonisolated function directly without an await hop, so the
+    // parameter is the contract.
     func generateAllAchievements(
         totalWorkouts: Int,
         currentStreak: Int,
@@ -58,10 +70,13 @@ class AchievementService: ObservableObject {
         mostSetsInWorkout: Int,
         workoutsThisMonth: Int,
         userLevel: Int,
-        userXP: Int
+        userXP: Int,
+        liveTierRank: Int = 1
     ) -> [Achievement] {
-        // Create cache key from all parameters
-        let cacheKey = "\(totalWorkouts)-\(currentStreak)-\(longestStreak)-\(Int(heaviestWeight))-\(highestReps)-\(longestWorkoutMinutes)-\(mostSetsInWorkout)-\(workoutsThisMonth)-\(userLevel)-\(userXP)"
+        // Cache key includes liveTierRank so the achievement set
+        // invalidates when the user's tier changes (the seven tier rows
+        // flip from "not earned" to "earned" in lockstep).
+        let cacheKey = "\(totalWorkouts)-\(currentStreak)-\(longestStreak)-\(Int(heaviestWeight))-\(highestReps)-\(longestWorkoutMinutes)-\(mostSetsInWorkout)-\(workoutsThisMonth)-\(userLevel)-\(userXP)-tier\(liveTierRank)"
         
         // Return cached achievements if parameters haven't changed
         if let cached = cachedAchievements, lastCacheKey == cacheKey {
@@ -118,17 +133,65 @@ class AchievementService: ObservableObject {
             ))
         }
         
-        // MARK: - Level Achievements (50 achievements)
-        for level in 1...50 {
-            let title = getLevelTitle(level: level)
+        // MARK: - Tier Achievements (7 tiers + 5 milestones)
+        //
+        // 2026-04-29 — League Redesign Plan §B1. Replaces the legacy 50-row
+        // "Reach Level N" loop. Tier IS identity now; the 7 rows below mirror
+        // the seven Weekly League tiers (Bronze → Verified). The 5 milestone
+        // rows flag big league moments (Crown / Bounceback / Shield / Stand-Out
+        // / Verified-Holder-4-Weeks). Sprint 3 §sprint3-celebration-polish
+        // wires real `is_earned` detection for the milestones once the source
+        // events exist server-side; for now they read off Sprint 1 data
+        // (current tier + total promotions) so the rows show real progress
+        // for tier achievements and stay correctly "not earned" for the
+        // future-event milestones.
+        // `liveTierRank` is the function parameter — provided by the
+        // main-actor caller. Reading `WeeklyLeagueService.shared.standing`
+        // inline here would require crossing the MainActor isolation
+        // boundary from this nonisolated function.
+        let tierAchievements: [(rank: Int, name: String, color: Color, icon: String)] = [
+            (1, "Bronze",    .orange,                                                  "trophy.fill"),
+            (2, "Silver",    .gray,                                                    "trophy.fill"),
+            (3, "Gold",      .yellow,                                                  "trophy.fill"),
+            (4, "Platinum",  Color(red: 0.66, green: 0.66, blue: 0.78),                "crown.fill"),
+            (5, "Diamond",   .cyan,                                                    "diamond.fill"),
+            (6, "Elite",     Color(red: 1.0, green: 0.42, blue: 0.21),                 "flame.fill"),
+            (7, "Verified",  Color(red: 0.11, green: 0.63, blue: 0.95),                "checkmark.seal.fill")
+        ]
+
+        for tier in tierAchievements {
+            let earned = liveTierRank >= tier.rank
             achievements.append(Achievement(
-                id: "level_\(level)",
-                title: title,
-                description: "Reach level \(level)",
-                icon: getLevelIcon(level: level),
-                color: getLevelColor(level: level),
-                isEarned: userLevel >= level,
-                progress: min(1.0, Double(userLevel) / Double(level))
+                id: "tier_\(tier.rank)",
+                title: "Reach \(tier.name)",
+                description: "Earn a spot in the \(tier.name) league",
+                icon: tier.icon,
+                color: tier.color,
+                isEarned: earned,
+                progress: min(1.0, Double(liveTierRank) / Double(tier.rank))
+            ))
+        }
+
+        // 5 league-milestone achievements — placeholders until Sprint 2/3 wires
+        // the real event sources. They render as "not earned" with progress 0,
+        // so the achievement grid still shows them as goals but no false-claims.
+        let milestoneAchievements: [(id: String, title: String, description: String, icon: String, color: Color)] = [
+            ("milestone_first_crown",      "First Crown",         "Finish #1 in your weekly league",     "crown.fill",                  .yellow),
+            ("milestone_first_bounceback", "Bounceback",          "Promote the week after a relegation", "arrow.uturn.up.circle.fill",  .green),
+            ("milestone_first_shield",     "Shield Earned",       "Promote into a new tier",             "shield.lefthalf.filled",      .blue),
+            ("milestone_standout",         "Stand-Out",           "Top-3 finishes 3 weeks in a row",     "sparkles",                    .purple),
+            ("milestone_verified_4w",      "Verified Holder",     "Hold the Verified tier 4 weeks",      "checkmark.seal.fill",         Color(red: 0.11, green: 0.63, blue: 0.95))
+        ]
+
+        for milestone in milestoneAchievements {
+            achievements.append(Achievement(
+                id: milestone.id,
+                title: milestone.title,
+                description: milestone.description,
+                icon: milestone.icon,
+                color: milestone.color,
+                isEarned: false,
+                progress: 0
             ))
         }
         
@@ -216,9 +279,10 @@ class AchievementService: ObservableObject {
         workoutsThisMonth: Int,
         userLevel: Int,
         userXP: Int,
+        liveTierRank: Int = 1,
         limit: Int = 5
     ) -> [Achievement] {
-        
+
         let allAchievements = generateAllAchievements(
             totalWorkouts: totalWorkouts,
             currentStreak: currentStreak,
@@ -229,7 +293,8 @@ class AchievementService: ObservableObject {
             mostSetsInWorkout: mostSetsInWorkout,
             workoutsThisMonth: workoutsThisMonth,
             userLevel: userLevel,
-            userXP: userXP
+            userXP: userXP,
+            liveTierRank: liveTierRank
         )
         
         // Filter to only unearned achievements with progress > 0
@@ -257,13 +322,16 @@ class AchievementService: ObservableObject {
         // Lower number = higher priority
         if achievement.id.hasPrefix("workouts_") { return 1 }
         if achievement.id.hasPrefix("streak_") { return 2 }
-        if achievement.id.hasPrefix("level_") { return 3 }
-        if achievement.id.hasPrefix("monthly_") { return 4 }
-        if achievement.id.hasPrefix("weight_") { return 5 }
-        if achievement.id.hasPrefix("reps_") { return 6 }
-        if achievement.id.hasPrefix("time_") { return 7 }
-        if achievement.id.hasPrefix("sets_") { return 8 }
-        return 9
+        // 2026-04-29 — League Redesign Plan §B1. Was "level_" (50 rows);
+        // now "tier_" (7 rows). "milestone_" rows surface just below tiers.
+        if achievement.id.hasPrefix("tier_") { return 3 }
+        if achievement.id.hasPrefix("milestone_") { return 4 }
+        if achievement.id.hasPrefix("monthly_") { return 5 }
+        if achievement.id.hasPrefix("weight_") { return 6 }
+        if achievement.id.hasPrefix("reps_") { return 7 }
+        if achievement.id.hasPrefix("time_") { return 8 }
+        if achievement.id.hasPrefix("sets_") { return 9 }
+        return 10
     }
     
     private func ensureVariety(_ achievements: [Achievement]) -> [Achievement] {
@@ -296,7 +364,9 @@ class AchievementService: ObservableObject {
     private func getAchievementCategory(_ id: String) -> String {
         if id.hasPrefix("workouts_") { return "workouts" }
         if id.hasPrefix("streak_") { return "streak" }
-        if id.hasPrefix("level_") { return "level" }
+        // 2026-04-29 — League Redesign Plan §B1.
+        if id.hasPrefix("tier_") { return "tier" }
+        if id.hasPrefix("milestone_") { return "milestone" }
         if id.hasPrefix("monthly_") { return "monthly" }
         if id.hasPrefix("weight_") { return "weight" }
         if id.hasPrefix("reps_") { return "reps" }
@@ -785,7 +855,15 @@ struct WorkoutProgressView: View {
         let monthWorkouts = workoutsThisMonth
         let level = userManager.getLevel()
         let xp = Int(userManager.currentUser?.xp ?? 0)
-        
+        // 2026-04-29 — League Redesign Plan §B1.
+        // Read the live tier rank on the main actor BEFORE the Task.detached
+        // hop so the achievement generator (nonisolated, off-main) gets the
+        // value as a plain Int. `WeeklyLeagueService` is @MainActor, so a
+        // direct read inside the detached task wouldn't compile.
+        let liveTierRank = WeeklyLeagueService.shared.standing?.tierRank
+            ?? WeeklyLeagueService.shared.notPlacedTierRank
+            ?? 1
+
         let achievements = await Task.detached(priority: .userInitiated) {
             AchievementService.shared.generateAllAchievements(
                 totalWorkouts: totalWorkoutsCount,
@@ -797,7 +875,8 @@ struct WorkoutProgressView: View {
                 mostSetsInWorkout: sets,
                 workoutsThisMonth: monthWorkouts,
                 userLevel: level,
-                userXP: xp
+                userXP: xp,
+                liveTierRank: liveTierRank
             )
         }.value
         
@@ -854,7 +933,19 @@ struct WorkoutProgressView: View {
                 Spacer()
                 
                 VStack(alignment: .trailing, spacing: 8) {
-                    Text("Level \(userManager.getLevel())")
+                    // 2026-04-29 — League Redesign Plan §B1. Replaces the
+                    // legacy "Level N" badge + "(N) XP" subtitle. Tier IS the
+                    // user's identity now; reads `WeeklyLeagueService.shared`
+                    // directly (singleton — see DashboardView+Activity for
+                    // the same pattern) and falls back through standing →
+                    // notPlacedTierName → "Bronze" so the slot is never empty.
+                    let tierName = WeeklyLeagueService.shared.standing?.tierName
+                        ?? WeeklyLeagueService.shared.notPlacedTierName
+                        ?? "Bronze"
+                    let tierGradient = WeeklyLeagueService.shared.standing?.tierGradient
+                        ?? [Color.orange, Color(red: 0.8, green: 0.5, blue: 0.2)]
+
+                    Text(tierName)
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
@@ -862,49 +953,26 @@ struct WorkoutProgressView: View {
                         .padding(.vertical, Spacing.xs)
                         .background(
                             LinearGradient(
-                                gradient: Gradient(colors: [.purple, .blue]),
+                                gradient: Gradient(colors: tierGradient),
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
                         .cornerRadius(20)
-                    
-                    Text("\(userManager.currentUser?.xp ?? 0) XP")
+
+                    Text("\(WeeklyLeagueService.shared.standing?.myPoints ?? 0) pts this week")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
                 }
             }
-            
-            // XP Progress with enhanced styling
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Progress to Level \(userManager.getLevel() + 1)")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    Spacer()
-                    Text("\(userManager.getXPForNextLevel()) XP to go")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(height: 12)
-                    
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [.purple, .blue, .cyan]),
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: xpProgressWidth, height: 12)
-                        .animation(.easeInOut(duration: 1), value: xpProgressWidth)
-                }
-            }
+
+            // Promotion-zone progress (replaces the legacy XP-to-next-level
+            // bar). Reads live league standing — tier-as-identity narrative.
+            // For Verified (rank 7) there is no next tier, so we collapse to
+            // a "You're at the apex" line. For unplaced users we show a
+            // neutral placeholder. League Redesign Plan §B1.
+            tierProgressSection
         }
         .padding(Spacing.lg)
         .background(
@@ -2524,11 +2592,81 @@ struct WorkoutProgressView: View {
         workouts.count
     }
     
-    private var xpProgressWidth: CGFloat {
-        let currentXP = Double(userManager.currentUser?.xp ?? 0)
-        let levelXP = Double(userManager.getLevel() * 100)
-        let progress = levelXP > 0 ? currentXP / levelXP : 0
-        return CGFloat(progress) * 280 // Approximate width of progress bar
+    /// Promotion-zone progress section for the hero stats block. Replaces the
+    /// legacy `xpProgressWidth` bar. League Redesign Plan §B1.
+    @ViewBuilder
+    private var tierProgressSection: some View {
+        let standing = WeeklyLeagueService.shared.standing
+        let nextTier = standing?.nextTierName
+        let promoCount = standing?.promotionCount ?? 0
+        let myRank = standing?.myRank ?? 0
+        let myPoints = standing?.myPoints ?? 0
+        let groupSize = standing?.groupSize ?? 0
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if let nextTier {
+                    Text("Promotion Zone — \(nextTier)")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                } else if standing?.tierRank == 7 {
+                    Text("Verified — apex tier")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                } else {
+                    Text("This week's league")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                Spacer()
+                if let standing, standing.isInPromotionZone {
+                    Text("In zone — top \(promoCount)")
+                        .font(.subheadline)
+                        .foregroundColor(.green)
+                } else if let _ = standing, promoCount > 0, myRank > 0 {
+                    let ranksToCloseRaw = max(0, myRank - promoCount)
+                    Text("\(ranksToCloseRaw) rank\(ranksToCloseRaw == 1 ? "" : "s") to climb")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("\(myPoints) pts")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            // Progress bar — fraction of group size already passed (groupSize - myRank) / groupSize.
+            // For Verified, render full-width bar in tier color (apex achieved).
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(height: 12)
+
+                let progressFraction: Double = {
+                    if let standing {
+                        if standing.tierRank == 7 { return 1.0 }
+                        guard groupSize > 0, myRank > 0 else { return 0 }
+                        return max(0, min(1, Double(groupSize - myRank + 1) / Double(groupSize)))
+                    }
+                    return 0
+                }()
+                let tierColors = standing?.tierGradient ?? [.purple, .blue, .cyan]
+                GeometryReader { geo in
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: tierColors),
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geo.size.width * CGFloat(progressFraction), height: 12)
+                        .animation(.easeInOut(duration: 1), value: progressFraction)
+                }
+                .frame(height: 12)
+            }
+            .frame(height: 12)
+        }
     }
     
     private var currentStreak: Int {

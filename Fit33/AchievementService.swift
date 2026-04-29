@@ -213,4 +213,33 @@ class BadgeService: ObservableObject {
     func onPersonalRecord() async {
         await checkAndUnlock(key: "first_pr")
     }
+
+    // MARK: - Weekly League — Tier + Milestone unlock hooks
+    //
+    // 2026-04-29 — League Redesign Plan §B1 + Sprint 3 polish.
+    // The achievements ladder reflowed from 50-level to 7-tier + 5-milestone
+    // in `WorkoutProgressView`. These two methods are the unlock pipeline:
+    // `WeeklyLeagueService.detectAndQueueTierPromotion` calls them when a
+    // promotion or league moment fires, so the achievement unlock toast
+    // appears alongside the `TierPromotionOverlay`. Achievement keys
+    // (e.g. `tier_2`, `milestone_first_crown`) are server-seeded; this
+    // method silently no-ops when a key has no row, so hot-path Swift
+    // code is safe to call before the seed migration ships.
+
+    /// Unlocks the tier achievement for the rank the user just reached.
+    /// Idempotent — `checkAndUnlock` short-circuits when the achievement
+    /// is already unlocked.
+    func onTierAchieved(tierRank: Int) async {
+        guard tierRank >= 1, tierRank <= 7 else { return }
+        await checkAndUnlock(key: "tier_\(tierRank)")
+    }
+
+    /// Unlocks a league milestone achievement keyed by the milestone id.
+    /// Recognized keys: `milestone_first_crown`, `milestone_stand_out`,
+    /// `milestone_bounceback`, `milestone_shield_burned`, `milestone_verified`.
+    /// Caller is responsible for the variant → key mapping.
+    func onLeagueMilestone(key: String) async {
+        guard key.hasPrefix("milestone_") else { return }
+        await checkAndUnlock(key: key)
+    }
 }

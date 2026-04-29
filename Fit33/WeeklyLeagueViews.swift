@@ -638,7 +638,17 @@ struct WeeklyLeagueDetailView: View {
     @State private var selectedTab = 0 // 0: Leaderboard, 1: History
     @State private var hasLoadedFull = false
     @State private var showingProfile: ProfileUser?
-    
+
+    // Countdown driver for the not-placed educational state. Refreshed every
+    // 60s so the "2d 14h until Monday" hero ticks down without burning CPU
+    // (battery + reduce-motion friendly per DESIGN_AGENT motion rules).
+    @State private var nowTick = Date()
+    // Sheet presentation for the canonical "How leagues work" reference doc
+    // (`WeeklyLeagueInfoView`). Presented as a sheet — not a push — so the
+    // user keeps the "I'm still on my league page" mental model from the
+    // not-placed runway.
+    @State private var showingLeagueInfo = false
+
     var body: some View {
         ZStack {
             // Background
@@ -668,9 +678,22 @@ struct WeeklyLeagueDetailView: View {
                 hasLoadedFull = true
             }
         }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            // Only re-render the countdown when the user is in the not-placed
+            // state. For placed users the body branch never reads `nowTick`,
+            // so this is a no-op write either way.
+            if leagueService.notPlaced {
+                nowTick = Date()
+            }
+        }
         .sheet(item: $showingProfile) { profileUser in
             NavigationStack {
                 FriendProfileView(user: profileUser)
+            }
+        }
+        .sheet(isPresented: $showingLeagueInfo) {
+            NavigationStack {
+                WeeklyLeagueInfoView()
             }
         }
     }
@@ -940,33 +963,427 @@ struct WeeklyLeagueDetailView: View {
     /// Shown when `WeeklyLeagueService.notPlaced` is true — the user joined
     /// mid-week and placement happens on the next Monday rollup (see the
     /// Weekly League Monday-only placement invariant in SUPABASE_AGENT.md).
+    ///
+    /// This is the destination for the welcome-widget's "Earn XP to enter"
+    /// badge tap (`DashboardLeagueBadge`), so it doubles as the educational
+    /// home for new users waiting for placement. Unlike `WeeklyLeagueInfoView`
+    /// (the evergreen reference doc reachable from the FriendsTab `(i)`
+    /// button), this surface is future-tense and personal — "Your league
+    /// starts Monday" + a live countdown — and explicitly contrasts the two
+    /// point systems users routinely confuse:
+    ///   • Lifetime XP — Core Data `user.xp`, accrues per workout, drives
+    ///     level titles, never resets.
+    ///   • Weekly League Points — Supabase counter, resets every Monday,
+    ///     decides tier. NOTE: per `WeeklyLeagueService.addPoints` line 357,
+    ///     pre-placement users do NOT accumulate league points yet — points
+    ///     start at the first Monday roster join. Copy on this page is
+    ///     deliberately forward-tense ("Once you're placed, +50 per workout")
+    ///     so we never misrepresent the contract.
     private var leaderboardNotPlacedState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "hourglass")
-                .font(.system(size: 44))
-                .foregroundColor(.orange)
-            Text("You're not placed yet")
-                .font(.headline)
-            if let tier = leagueService.notPlacedTierName {
-                Text("You'll start in the \(tier) tier next week.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            } else {
-                Text("Placements run every Monday. Keep logging workouts — you'll see your rank once the next week starts.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
+        // 2026-04-29 — League Redesign Plan §B3.
+        // The legacy two-counter "XP vs League Points" card is gone — once
+        // tier is the centerpiece, putting them side-by-side with similar
+        // weight teaches the user the WRONG mental model. The replacement
+        // section (`howLeaguesWorkCard`) is a single narrative ladder:
+        // tier → weekly points → Monday rollup → next tier. The
+        // `pointsBreakdownCard` + `mondayResetCard` + footer CTA stay —
+        // they're already tier-centric and explain *what to do this week*.
+        VStack(spacing: Spacing.md) {
+            notPlacedHeroCard
+            howLeaguesWorkCard
+            pointsBreakdownCard
+            mondayResetCard
+            notPlacedFooterCTA
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.top, Spacing.sm)
+        .padding(.bottom, Spacing.xl)
+    }
+
+    // MARK: - Not Placed: Hero (countdown to Monday)
+
+    private var notPlacedHeroCard: some View {
+        let tierName = leagueService.notPlacedTierName ?? "Bronze"
+        let tier = pendingTier(for: tierName)
+        let accent = tier.color
+        let gradient = tier.gradient
+
+        return VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(spacing: Spacing.md) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: gradient,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 64, height: 64)
+                        .shadow(color: accent.opacity(0.35), radius: 12, x: 0, y: 4)
+
+                    Text(tier.emoji)
+                        .font(.system(size: 32))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Your league starts Monday.")
+                        .font(.ds_heading2)
+                        .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 4) {
+                        Text("You'll join")
+                            .font(.ds_bodyMedium)
+                            .foregroundColor(.secondary)
+                        Text(tierName)
+                            .font(.ds_bodyMedium)
+                            .fontWeight(.semibold)
+                            .foregroundColor(accent)
+                        Text("at next reset.")
+                            .font(.ds_bodyMedium)
+                            .foregroundColor(.secondary)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
             }
-            if let next = leagueService.notPlacedNextWeek {
-                Text("Next placement: \(next)")
-                    .font(.caption)
+
+            // Countdown row — "2d 14h · until Monday"
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "hourglass")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(accent)
+                Text(countdownText)
+                    .font(.ds_stat)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.85)
+                Text("until Monday")
+                    .font(.ds_labelMedium)
                     .foregroundColor(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, Spacing.xxs)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accent)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Your league starts Monday. You'll join \(tierName) at next reset. \(countdownText) until Monday.")
+    }
+
+    // MARK: - Not Placed: How leagues work (replaces XP-vs-League card)
+    //
+    // 2026-04-29 — League Redesign Plan §B3.
+    // Single narrative ladder: tier → weekly points → Monday rollup → next
+    // tier. Tier IS the user's identity now, so a side-by-side "XP vs
+    // League Points" treatment fights the new mental model. Three rows,
+    // all tier-centric, all forward-tensed (these are things that will
+    // happen *once you're placed*).
+
+    private var howLeaguesWorkCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            notPlacedSectionLabel("How leagues work", icon: "questionmark.circle.fill", iconColor: .blue)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                notPlacedStepRow(
+                    icon: "trophy.fill",
+                    iconColor: .orange,
+                    title: "You'll start in Bronze",
+                    detail: "Everyone begins here. There's no level — just your tier."
+                )
+                notPlacedStepRow(
+                    icon: "bolt.fill",
+                    iconColor: .yellow,
+                    title: "Workouts and quests earn league points",
+                    detail: "Points reset every Monday — they decide if you climb or hold."
+                )
+                notPlacedStepRow(
+                    icon: "arrow.up.circle.fill",
+                    iconColor: .green,
+                    title: "Top of your group promotes",
+                    detail: "Climb 7 tiers all the way to Verified."
+                )
+            }
+            .padding(Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sleekCard(cornerRadius: CornerRadius.lg, accentColor: .blue)
+        }
+    }
+
+    // MARK: - Not Placed: How points stack (forward-tense — once placed)
+
+    private var pointsBreakdownCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            notPlacedSectionLabel("How points stack", icon: "bolt.fill", iconColor: .orange)
+
+            VStack(spacing: Spacing.xs) {
+                pointsRow(icon: "dumbbell.fill",  label: "Complete a workout", points: 50, color: .blue)
+                pointsRow(icon: "trophy.fill",    label: "Hit a personal record", points: 30, color: .yellow)
+                pointsRow(icon: "flag.checkered", label: "Hit a challenge target", points: 25, color: .purple)
+                pointsRow(icon: "fork.knife",     label: "Log a meal", points: 10, color: .green)
+                pointsRow(icon: "sun.max.fill",   label: "Daily login", points: 5,  color: .cyan)
+            }
+
+            Text("Once you're placed, every action above adds to your weekly total.")
+                .font(.ds_bodySmall)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, Spacing.xxs)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
+    }
+
+    private func pointsRow(icon: String, label: String, points: Int, color: Color) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.ds_bodyMedium)
+                .foregroundColor(color)
+                .frame(width: 26, alignment: .center)
+
+            Text(label)
+                .font(.ds_bodyMedium)
+                .foregroundColor(.primary)
+
+            Spacer(minLength: 0)
+
+            Text("+\(points)")
+                .font(.ds_labelMedium)
+                .fontWeight(.bold)
+                .foregroundColor(color)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(color.opacity(colorScheme == .dark ? 0.15 : 0.10))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(color.opacity(0.25), lineWidth: 0.5)
+                )
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), plus \(points) league points")
+    }
+
+    // MARK: - Not Placed: What happens at reset
+
+    private var mondayResetCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            notPlacedSectionLabel("When Monday arrives", icon: "arrow.triangle.2.circlepath", iconColor: .green)
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                // 2026-04-29 — League Redesign Plan §A1.
+                // Copy now reflects the percentage-zones rollup ("top finishers
+                // promote") rather than the legacy fixed "top 5 promote"
+                // wording. The zone size is derived live from group_size ×
+                // tier-percentage; see `calc_league_zone_count()` in
+                // `20260715_league_percentage_zones.sql`.
+                notPlacedStepRow(number: 1, text: "You're placed in \(leagueService.notPlacedTierName ?? "Bronze") with up to 30 other athletes.")
+                notPlacedStepRow(number: 2, text: "Earn points all week — top finishers promote, bottom relegates.")
+                notPlacedStepRow(number: 3, text: "Your tier carries forward. Next week, you climb from there.")
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 60)
-        .frame(maxWidth: .infinity)
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
+    }
+
+    // MARK: - Not Placed: Footer CTA
+
+    private var notPlacedFooterCTA: some View {
+        VStack(spacing: Spacing.sm) {
+            Button {
+                HapticManager.impact(.medium)
+                // Dismiss back to the dashboard, where the primary
+                // "Custom Workout" / "Generate Workout" cards live in
+                // `startWorkoutButton`. The user's lifetime XP starts
+                // earning immediately; league points unlock at Monday
+                // placement.
+                dismiss()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "dumbbell.fill")
+                        .font(.ds_bodyMedium)
+                    Text("Start a Workout")
+                        .font(.ds_bodyMedium)
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm + 2)
+                .background(
+                    Capsule()
+                        .fill(LinearGradient.ds_primaryAccent)
+                        .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 4)
+                )
+            }
+            .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
+            .accessibilityHint("Closes this page and returns to the dashboard so you can start a workout. Earns lifetime XP now; league points unlock Monday.")
+
+            Text("Earns lifetime XP now · league points unlock Monday")
+                .font(.ds_caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button {
+                HapticManager.impact(.light)
+                showingLeagueInfo = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Learn more about leagues")
+                        .font(.ds_labelMedium)
+                        .fontWeight(.semibold)
+                    Image(systemName: "chevron.right")
+                        .font(.ds_caption)
+                }
+                .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, Spacing.xxs)
+            .accessibilityLabel("Learn more about leagues")
+            .accessibilityHint("Opens the full Weekly League guide in a sheet.")
+        }
+        .padding(.top, Spacing.xs)
+    }
+
+    // MARK: - Not Placed: helpers
+
+    /// Maps a tier name (from `notPlacedTierName`) to its emoji + brand color
+    /// + 2-stop gradient. Sourced from `WeeklyLeagueInfoView.tiers` so the
+    /// pending-tier hero matches the colors used everywhere else in the
+    /// league flow (single source of truth for tier visuals).
+    private struct PendingTier {
+        let emoji: String
+        let color: Color
+        let gradient: [Color]
+    }
+
+    private func pendingTier(for name: String) -> PendingTier {
+        switch name {
+        case "Silver":
+            return PendingTier(emoji: "🥈", color: Color(red: 0.75, green: 0.75, blue: 0.78), gradient: [Color(red: 0.85, green: 0.85, blue: 0.88), Color(red: 0.65, green: 0.65, blue: 0.70)])
+        case "Gold":
+            return PendingTier(emoji: "🥇", color: Color(red: 0.95, green: 0.78, blue: 0.20), gradient: [Color(red: 1.00, green: 0.85, blue: 0.30), Color(red: 0.85, green: 0.65, blue: 0.15)])
+        case "Platinum":
+            return PendingTier(emoji: "💎", color: Color(red: 0.55, green: 0.78, blue: 0.95), gradient: [Color(red: 0.70, green: 0.85, blue: 0.98), Color(red: 0.40, green: 0.65, blue: 0.90)])
+        case "Diamond":
+            return PendingTier(emoji: "🔷", color: Color(red: 0.40, green: 0.62, blue: 0.95), gradient: [Color(red: 0.55, green: 0.75, blue: 1.00), Color(red: 0.30, green: 0.50, blue: 0.90)])
+        case "Elite":
+            return PendingTier(emoji: "🔥", color: Color(red: 1.00, green: 0.45, blue: 0.20), gradient: [Color(red: 1.00, green: 0.55, blue: 0.25), Color(red: 0.85, green: 0.30, blue: 0.10)])
+        case "Verified":
+            return PendingTier(emoji: "✅", color: Color(red: 0.11, green: 0.63, blue: 0.95), gradient: [Color(red: 0.20, green: 0.70, blue: 1.00), Color(red: 0.05, green: 0.50, blue: 0.85)])
+        default:
+            // Bronze (default for new users)
+            return PendingTier(emoji: "🥉", color: Color(red: 0.80, green: 0.50, blue: 0.20), gradient: [Color(red: 0.90, green: 0.60, blue: 0.25), Color(red: 0.65, green: 0.40, blue: 0.15)])
+        }
+    }
+
+    /// Live countdown to the next Monday rollup. Largest two units when there
+    /// is more than a day remaining; falls through to "Xh Ym" / "Xm" as the
+    /// rollup approaches. Uses UTC to match the server-side
+    /// `get_current_week_monday()` boundary (Monday 12 AM UTC, set in
+    /// `supabase/20260331_league_auto_placement.sql`).
+    private var countdownText: String {
+        guard let monday = parsedNextMonday() else { return "Soon" }
+        let interval = max(0, monday.timeIntervalSince(nowTick))
+        let totalMinutes = Int(interval / 60)
+        let days = totalMinutes / (60 * 24)
+        let hours = (totalMinutes % (60 * 24)) / 60
+        let minutes = totalMinutes % 60
+        if days > 0 { return "\(days)d \(hours)h" }
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        if minutes > 0 { return "\(minutes)m" }
+        return "Now"
+    }
+
+    private func parsedNextMonday() -> Date? {
+        guard let raw = leagueService.notPlacedNextWeek else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.date(from: raw)
+    }
+
+    /// UPPERCASE label used by the not-placed sections. Matches the visual
+    /// pattern of `WeeklyLeagueInfoView.sectionLabel(_:icon:iconColor:)` —
+    /// inline-replicated for now per the rule of 3 (promote to a shared
+    /// helper when a 3rd consumer appears).
+    private func notPlacedSectionLabel(_ title: String, icon: String, iconColor: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.ds_bodySmall)
+                .foregroundColor(iconColor)
+            Text(title.uppercased())
+                .font(.ds_labelSmall)
+                .fontWeight(.semibold)
+                .tracking(0.6)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    /// Numbered step row — mirrors `WeeklyLeagueInfoView.stepRow(number:text:)`
+    /// for visual consistency. Same rule-of-3 deferred-extract policy.
+    private func notPlacedStepRow(number: Int, text: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Text("\(number)")
+                .font(.ds_labelMedium)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+                .frame(width: 22, height: 22)
+                .background(
+                    Circle().fill(
+                        LinearGradient(
+                            colors: [.green, .mint],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                )
+
+            Text(text)
+                .font(.ds_bodyMedium)
+                .foregroundColor(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Icon-led row used by the "How leagues work" card (League Redesign
+    /// Plan §B3). Replaces the old XP-vs-League side-by-side teaching cards.
+    /// Title + detail pair makes the ladder feel narrative, not numeric.
+    private func notPlacedStepRow(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        detail: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .font(.ds_bodyMedium)
+                .foregroundColor(iconColor)
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.ds_labelMedium)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(detail)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
     }
 
     /// Shown when standing is nil and we're not loading and not in the

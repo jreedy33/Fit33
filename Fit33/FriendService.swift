@@ -863,10 +863,20 @@ class FriendService: ObservableObject {
             
             await fetchSentWorkouts()
             AppLogger.info("Workout sent to friend", category: .social)
-            
+
             // Update daily quest progress for sharing a workout
             await DailyQuestService.shared.onWorkoutShared()
-            
+
+            // 2026-04-29 — League Redesign Plan §C1.
+            // +15 league points for sharing a workout. Capped at 3×/week
+            // client-side via `WeeklyLeagueService.canAwardPoints` (server
+            // cap in Sprint 3 §sprint3-caps-enforcement). Send-flow
+            // success path only — failures fall through to the catch and
+            // don't award.
+            if WeeklyLeagueService.shared.canAwardPoints(source: .workoutSharedWithFriend) {
+                await WeeklyLeagueService.shared.addPoints(source: .workoutSharedWithFriend)
+            }
+
             return true
         } catch {
             _ = NetworkErrorClassifier.log(

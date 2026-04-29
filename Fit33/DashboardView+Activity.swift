@@ -130,11 +130,36 @@ extension DashboardView {
                     color: .orange
                 )
                 
+                // Tier stat tile — replaces the legacy "Level N" tile
+                // (League Redesign Plan, Sprint 1 §B1). Tier IS the user's
+                // identity now; the value reads `WeeklyLeagueService.shared`
+                // directly because dashboard StatCards live outside the
+                // service-owning navigation stack and don't justify an
+                // @StateObject (PE invariant 9 — keeps the stat row from
+                // recomputing on every league fetch). Falls back through
+                // standing → notPlacedTierName → "Bronze" so the slot is
+                // never empty.
                 StatCard(
-                    title: "Level",
-                    value: "\(userManager.getLevel())",
-                    icon: "star.fill",
-                    color: .yellow
+                    title: "Tier",
+                    value: WeeklyLeagueService.shared.standing?.tierName
+                        ?? WeeklyLeagueService.shared.notPlacedTierName
+                        ?? "Bronze",
+                    icon: "trophy.fill",
+                    color: WeeklyLeagueService.shared.standing?.tierSwiftUIColor ?? .yellow
+                )
+            }
+
+            // 2026-04-29 — League Redesign Plan §A5.
+            // Peak Day Bonus widget. Renders below the stat row when the
+            // user has been placed at least once after migration #148. The
+            // server picks one ISO weekday per user per week; League Points
+            // earned that day count 3×. The widget shows the day name plus
+            // a live "Today!" badge when `peakDay == today`.
+            if let standing = WeeklyLeagueService.shared.standing,
+               let peakDayName = standing.peakDayName {
+                peakDayBonusCard(
+                    dayName: peakDayName,
+                    isToday: standing.isPeakDayToday
                 )
             }
         }
@@ -168,5 +193,69 @@ extension DashboardView {
             }
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.1), radius: 16, x: 0, y: 8)
+    }
+
+    /// Peak Day Bonus inline widget. Shown inside the activity stats card
+    /// once the server has assigned a peak day to the user (post-migration
+    /// #148). Today-state has a brighter gradient + pulsing label so the
+    /// user can't miss the 3× window.
+    @ViewBuilder
+    private func peakDayBonusCard(dayName: String, isToday: Bool) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: isToday ? "bolt.fill" : "bolt")
+                .font(.title3)
+                .foregroundColor(isToday ? .yellow : .secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(isToday ? "Peak Day — TODAY" : "Peak Day")
+                        .font(.ds_labelMedium)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    if isToday {
+                        Text("3×")
+                            .font(.ds_labelSmall)
+                            .fontWeight(.bold)
+                            .foregroundColor(.yellow)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.yellow.opacity(0.18))
+                            )
+                    }
+                }
+                Text(isToday
+                     ? "Every league point you earn today counts 3×"
+                     : "On \(dayName), every league point counts 3×")
+                    .font(.ds_caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(
+                    isToday
+                        ? LinearGradient(
+                            colors: [Color.yellow.opacity(0.20), Color.orange.opacity(0.12)],
+                            startPoint: .leading, endPoint: .trailing)
+                        : LinearGradient(
+                            colors: [Color.secondary.opacity(0.08), Color.secondary.opacity(0.04)],
+                            startPoint: .leading, endPoint: .trailing)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .stroke(isToday ? Color.yellow.opacity(0.4) : Color.secondary.opacity(0.15), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(isToday
+            ? "Peak Day is today. Every league point you earn counts three times."
+            : "Peak Day is \(dayName). On that weekday, every league point counts three times.")
     }
 }

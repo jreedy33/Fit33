@@ -612,10 +612,22 @@ class WeightTrackingService: ObservableObject {
                 .execute()
             
             AppLogger.info("✅ [Weight] Logged \(weight) \(weightUnitSuffix) to cloud", category: .health)
-            
+
             // Update daily quest progress for weight logging
             Task { @MainActor in
                 await DailyQuestService.shared.onWeightLogged()
+            }
+
+            // 2026-04-29 — League Redesign Plan §C1.
+            // Award +5 league points for logging body weight, capped at
+            // 1×/day client-side via `WeeklyLeagueService.canAwardPoints`.
+            // Multiple weigh-ins in one day still update statistics + the
+            // optimistic UI; only the FIRST log of the day adds league
+            // points. Server-side cap (Sprint 3) is the source of truth.
+            Task { @MainActor in
+                if WeeklyLeagueService.shared.canAwardPoints(source: .bodyWeightLogged) {
+                    await WeeklyLeagueService.shared.addPoints(source: .bodyWeightLogged)
+                }
             }
             
             // Update user profile weight

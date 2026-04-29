@@ -226,8 +226,20 @@ class ActivityFeedService: ObservableObject {
                     p_emoji: emoji
                 ))
                 .execute()
-            
+
             HapticManager.notification(.success)
+
+            // 2026-04-29 — League Redesign Plan §C1.
+            // Award +2 league points for giving kudos. Capped at 5×/day
+            // client-side (server-side cap in Sprint 3 §sprint3-caps-enforcement).
+            // The point award is fire-and-forget — the kudos UX is not
+            // blocked on the league round-trip.
+            Task { @MainActor in
+                if WeeklyLeagueService.shared.canAwardPoints(source: .friendKudosGiven) {
+                    await WeeklyLeagueService.shared.addPoints(source: .friendKudosGiven)
+                }
+            }
+
             // Sprint 2 Q2-35 — flush push queue so the activity owner gets a
             // push about the reaction (previously only the in-app badge updated).
             await MainActor.run {

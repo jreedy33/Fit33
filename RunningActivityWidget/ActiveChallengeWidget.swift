@@ -738,7 +738,7 @@ struct ActiveChallengeWidgetEntryView: View {
                     // squarely across the score row. That overlap is
                     // explicitly OK — the user clears the bubble by
                     // opening the app, restoring the numbers.
-                    .offset(x: compactBubble ? 36 : 60, y: compactBubble ? 44 : 58)
+                    .offset(x: compactBubble ? 39 : 64, y: compactBubble ? 40 : 53)
                     .accessibilityLabel("\(smack.senderFirstName) is talking smack: \(smack.reactionText)")
             }
         }

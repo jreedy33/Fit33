@@ -60,7 +60,7 @@ struct ActiveChallengeHeaderRow: View {
         .padding(.vertical, Spacing.sm)
         .sheet(isPresented: $showingReactionPicker) {
             ReactionPickerSheet(challenge: challenge, onSend: { _ in })
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
     }
@@ -122,6 +122,11 @@ struct ActiveChallengeHeaderRow: View {
                     )
             }
             .buttonStyle(.plain)
+            // Extra trailing padding so the smiley reads as its own
+            // affordance instead of bleeding into the chevron's tap
+            // target. The HStack's 10pt spacing alone left them too
+            // visually flush.
+            .padding(.trailing, 8)
             .accessibilityLabel("Send a battle cry")
             .accessibilityHint("Opens the reaction picker without leaving the dashboard")
         }

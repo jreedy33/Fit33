@@ -282,27 +282,26 @@ struct ReactionPickerSheet: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Fun header
-                    headerSection
-                    
-                    // Reaction grid
-                    reactionGrid
+            ZStack {
+                // Animated blue/cyan orb backdrop — matches the rest of
+                // the social surfaces (home, friends, challenge detail)
+                // so the picker feels like part of the same world
+                // instead of a flat sheet floating on top.
+                AnimatedOrbBackground.home(colorScheme: colorScheme)
+                    .ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Fun header
+                        headerSection
+                        
+                        // Reaction grid
+                        reactionGrid
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.bottom, 30)
                 }
-                .padding(.horizontal, Spacing.md)
-                .padding(.bottom, 30)
             }
-            .background(
-                LinearGradient(
-                    colors: colorScheme == .dark
-                        ? [Color(white: 0.06), Color(white: 0.04)]
-                        : [Color(white: 0.96), Color.white],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-            )
             .navigationTitle(isCompetition ? "⚔️ Battle Cries" : "💪 Power Ups")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

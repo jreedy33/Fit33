@@ -194,7 +194,7 @@ struct ChallengeDetailView: View {
         }
         .sheet(isPresented: $showingReactionPicker) {
             ReactionPickerSheet(challenge: challenge, onSend: { _ in })
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingAddWidgetSheet) {

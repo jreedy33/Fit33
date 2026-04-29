@@ -445,7 +445,7 @@ struct ActiveChallengeWidget: View {
         .buttonStyle(PlainButtonStyle())
         .sheet(isPresented: $showingReactionPicker) {
             ReactionPickerSheet(challenge: challenge, onSend: { _ in })
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
     }

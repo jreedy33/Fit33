@@ -328,17 +328,20 @@ struct DashboardWhoopCard: View {
                 )
                 .rotationEffect(.degrees(-90))
 
-            VStack(spacing: 0) {
-                Text(recovery?.recoveryScore.map { "\($0)" } ?? "—")
-                    .font(.system(size: 28, weight: .heavy, design: .rounded))
+            VStack(spacing: 1) {
+                Text(recovery?.recoveryScore.map { "\($0)%" } ?? "—")
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
                     .foregroundColor(ringColor)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text("%")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .minimumScaleFactor(0.6)
+                Text("Recovery")
+                    .font(.system(size: 7, weight: .medium, design: .rounded))
+                    .textCase(.uppercase)
+                    .tracking(0.5)
                     .foregroundColor(.secondary)
-                    .offset(y: -2)
+                    .lineLimit(1)
             }
+            .padding(.horizontal, 6)
         }
         .frame(width: 84, height: 84)
         .accessibilityHidden(true)
@@ -388,42 +391,37 @@ struct DashboardWhoopCard: View {
         }
     }
 
-    // MARK: 4-metric stat strip
+    // MARK: 4-metric primary stat strip
 
+    /// Primary stat strip — Sleep Performance, Time Asleep, HRV, Resting
+    /// Heart Rate. Renders transparent (no rounded backdrop) so it sits
+    /// flush with the card surface; the only chrome is the inter-cell
+    /// dividers.
     private var statStrip: some View {
         HStack(spacing: 0) {
             statCell(
                 value: sleep?.sleepPerformancePercentage.map { "\(Int($0))%" } ?? "—",
-                label: "Sleep"
+                label: "Sleep\nPerformance"
             )
             statDivider
             statCell(
                 value: WhoopWidgetFormat.sleepDuration(from: sleep),
-                label: "Asleep"
+                label: "Time\nAsleep"
             )
             statDivider
             statCell(
                 value: recovery?.hrvRmssdMilli.map { "\(Int($0))" } ?? "—",
-                label: "HRV",
+                label: "Heart Rate\nVariability",
                 unit: "ms"
             )
             statDivider
             statCell(
                 value: recovery?.restingHeartRate.map { "\($0)" } ?? "—",
-                label: "RHR",
+                label: "Resting\nHeart Rate",
                 unit: "bpm"
             )
         }
         .padding(.vertical, Spacing.xs)
-        .padding(.horizontal, Spacing.sm)
-        .background(
-            // Neutral monochrome backdrop — never recovery-color-tinted.
-            // A low-recovery day would otherwise paint a red wash across
-            // the primary stat strip, which is what the user explicitly
-            // asked to remove (only the ring stays colored).
-            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
-                .fill(Color.secondary.opacity(colorScheme == .dark ? 0.10 : 0.06))
-        )
     }
 
     private func statCell(value: String, label: String, unit: String? = nil) -> some View {
@@ -446,6 +444,9 @@ struct DashboardWhoopCard: View {
                 .textCase(.uppercase)
                 .tracking(0.6)
                 .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(1)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
     }
@@ -471,23 +472,23 @@ struct DashboardWhoopCard: View {
         HStack(spacing: 0) {
             secondaryStatCell(
                 value: sleep?.sleepEfficiencyPercentage.map { "\(Int($0))%" } ?? "—",
-                label: "Efficiency"
+                label: "Sleep\nEfficiency"
             )
             secondaryDivider
             secondaryStatCell(
                 value: recovery?.spo2Percentage.map { String(format: "%.0f%%", $0) } ?? "—",
-                label: "SpO₂"
+                label: "SpO₂\nOxygen"
             )
             secondaryDivider
             secondaryStatCell(
                 value: sleep?.respiratoryRate.map { String(format: "%.1f", $0) } ?? "—",
-                label: "Resp",
+                label: "Resp\nRate",
                 unit: "/min"
             )
             secondaryDivider
             secondaryStatCell(
                 value: WhoopWidgetFormat.calories(from: strain),
-                label: "Cal"
+                label: "Calories\nBurned"
             )
         }
         .padding(.top, Spacing.xxs)
@@ -513,6 +514,9 @@ struct DashboardWhoopCard: View {
                 .textCase(.uppercase)
                 .tracking(0.5)
                 .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(1)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
     }

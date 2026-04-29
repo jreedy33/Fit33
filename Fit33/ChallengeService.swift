@@ -145,6 +145,16 @@ class ChallengeService: ObservableObject {
     @Published var activeGroupChallenges: [ActiveGroupChallenge] = [] // Group challenges (3+ people)
     @Published var challengeTemplates: [ChallengeTemplate] = []
     @Published var isLoading = false
+
+    /// Last server-surfaced error from `createChallenge` (RPC + direct-insert paths).
+    /// Cleared at the start of every send attempt, set when both RPC tries + direct
+    /// insert all fail. The Send Challenge flow reads this so the user sees the
+    /// real Postgres / network message ("Opponent not found", "Cannot challenge
+    /// yourself", "Not authenticated", "offline") instead of the generic
+    /// "There was an issue sending your challenge. Please try again." Surfaced
+    /// 2026-04-27 sync-triage Phase 2 — the brother's "could not send" error
+    /// was previously dead-end logged.
+    @Published var lastCreateChallengeError: String?
     
     // Track last known invite IDs for detecting new invites
     private var lastCheckedInviteIds: Set<UUID> = []
@@ -839,8 +849,30 @@ class ChallengeService: ObservableObject {
         startDate: Date = Date(), // Today - challenge starts when opponent accepts
         durationDays: Int = 7
     ) async -> UUID? {
+        // Sync-triage 2026-04-27 Phase 2: clear last error at the START of
+        // every attempt so a stale message from a previous failed send isn't
+        // shown after a successful retry.
+        lastCreateChallengeError = nil
+
+        // Breadcrumb for bug-intel: when the user shakes after a "could not
+        // send" alert, this logs the op + opponent prefix so triage can see
+        // exactly which call path was attempted (and the error message we
+        // captured below if it failed).
+        SessionLogManager.shared.log(
+            .info,
+            category: .social,
+            message: "Sending 1v1 challenge",
+            metadata: [
+                "op": "challenges.create",
+                "opponent_id_prefix": String(opponentId.uuidString.prefix(8)),
+                "type": type.rawValue,
+                "duration_days": "\(durationDays)",
+                "daily_target": dailyTarget.map { "\($0)" } ?? "nil"
+            ]
+        )
+
         let startDateStr = ChallengeFormatters.dateOnly.string(from: startDate)
-        
+
         // Try RPC first (preferred - atomic transaction in DB)
         if let challengeId = await createChallengeViaRPC(
             opponentId: opponentId, type: type, title: title, description: description,
@@ -848,22 +880,24 @@ class ChallengeService: ObservableObject {
             startDateStr: startDateStr, durationDays: durationDays
         ) {
             await postChallengeCreation(challengeId: challengeId, opponentId: opponentId, type: type, targetUnit: targetUnit, startDate: startDate)
+            lastCreateChallengeError = nil
             return challengeId
         }
-        
+
         // Retry RPC once after a brief delay (transient network issues)
         AppLogger.debug("Retrying challenge creation after delay...", category: .social)
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
-        
+
         if let challengeId = await createChallengeViaRPC(
             opponentId: opponentId, type: type, title: title, description: description,
             dailyTarget: dailyTarget, totalTarget: totalTarget, targetUnit: targetUnit,
             startDateStr: startDateStr, durationDays: durationDays
         ) {
             await postChallengeCreation(challengeId: challengeId, opponentId: opponentId, type: type, targetUnit: targetUnit, startDate: startDate)
+            lastCreateChallengeError = nil
             return challengeId
         }
-        
+
         // Fallback: Direct table inserts if RPC is broken/missing
         AppLogger.warning("RPC failed twice, attempting direct table insert fallback...", category: .social)
         if let challengeId = await createChallengeDirectInsert(
@@ -872,10 +906,17 @@ class ChallengeService: ObservableObject {
             startDateStr: startDateStr, durationDays: durationDays
         ) {
             await postChallengeCreation(challengeId: challengeId, opponentId: opponentId, type: type, targetUnit: targetUnit, startDate: startDate)
+            lastCreateChallengeError = nil
             return challengeId
         }
-        
+
         AppLogger.error("All challenge creation methods failed", category: .social)
+        // If neither RPC try nor the direct-insert path set a more specific
+        // message, fall back to a generic one so the alert still shows
+        // something actionable.
+        if lastCreateChallengeError == nil {
+            lastCreateChallengeError = "Couldn't reach the server. Check your connection and try again."
+        }
         return nil
     }
     
@@ -930,6 +971,15 @@ class ChallengeService: ObservableObject {
                 endpoint: "rpc/create_challenge",
                 userId: SupabaseManager.shared.currentUser?.id
             )
+            // Sync-triage 2026-04-27 Phase 2: capture the actual error so the
+            // Send Challenge flow can show "Opponent not found" / "Cannot
+            // challenge yourself" / "Not authenticated" / network-timeout
+            // copy instead of the generic "There was an issue sending..."
+            // alert. Prefer PostgrestError.message (server-supplied) over
+            // localizedDescription (which is often "The operation couldn't
+            // be completed.") and fall back to the raw error description if
+            // neither is human-readable.
+            lastCreateChallengeError = Self.extractUserFacingErrorMessage(from: error)
             return nil
         }
     }
@@ -1099,8 +1149,68 @@ class ChallengeService: ObservableObject {
                 endpoint: "group_challenges(insert)",
                 userId: currentUserId
             )
+            // Phase 2 — capture the same error message here so the user
+            // sees the real problem even when the RPC + direct-insert paths
+            // both fail. RPC error wins if it was already set (the RPC is
+            // the canonical write path); otherwise the direct-insert error
+            // becomes the user-facing message.
+            if lastCreateChallengeError == nil {
+                lastCreateChallengeError = Self.extractUserFacingErrorMessage(from: error)
+            }
             return nil
         }
+    }
+
+    /// Phase 2 helper — turn a Supabase / URLSession error into a sentence
+    /// the Send Challenge alert can show without exposing raw stack frames
+    /// or PostgrestError struct dumps.
+    ///
+    /// Priority (most-specific to most-generic):
+    ///   1. `PostgrestError.message` (server-supplied human text:
+    ///      "Opponent not found", "Cannot challenge yourself",
+    ///      "Not authenticated", "JWT expired", etc.)
+    ///   2. `URLError` → friendly network copy (offline, timeout, no DNS)
+    ///   3. `NSError` `localizedDescription` if it looks human-readable
+    ///   4. The raw `String(describing:)` as a final fallback so triage
+    ///      still gets *something*.
+    static func extractUserFacingErrorMessage(from error: Error) -> String {
+        // PostgrestError exposes `.message` reliably across the supabase-swift
+        // versions we ship (it's the message field on the Codable struct
+        // returned by PostgREST). Reflection avoids importing the type at
+        // every call site.
+        let mirror = Mirror(reflecting: error)
+        for child in mirror.children {
+            if child.label == "message", let msg = child.value as? String, !msg.isEmpty {
+                // Strip the "ERROR:  42501: " prefix Postgres adds to RLS
+                // / RAISE EXCEPTION messages so the alert reads naturally.
+                let cleaned = msg
+                    .replacingOccurrences(of: #"^ERROR:\s+\d+:\s+"#, with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cleaned.isEmpty { return cleaned }
+            }
+        }
+
+        if let urlErr = error as? URLError {
+            switch urlErr.code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
+                return "You're offline. Reconnect and try again."
+            case .timedOut:
+                return "The server took too long to respond. Try again."
+            case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                return "Couldn't reach the server. Try again in a moment."
+            default:
+                return urlErr.localizedDescription
+            }
+        }
+
+        let ns = error as NSError
+        let localized = ns.localizedDescription
+        if !localized.isEmpty,
+           !localized.contains("operation couldn") /* "The operation couldn't be completed." — useless */ {
+            return localized
+        }
+
+        return String(describing: error)
     }
     
     /// Post-creation tasks (logging, syncing, etc.)

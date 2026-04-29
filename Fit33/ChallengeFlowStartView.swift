@@ -274,7 +274,16 @@ struct ChallengeFlowStartView: View {
             .alert("Failed to Send Challenge", isPresented: $showingError) {
                 Button("OK") { }
             } message: {
-                Text("There was an issue sending your challenge. Please try again.")
+                // Sync-triage 2026-04-27 Phase 2: surface the real server
+                // error from `ChallengeService.lastCreateChallengeError`
+                // (e.g. "Opponent not found", "Cannot challenge yourself",
+                // "You're offline...") instead of the previous always-on
+                // "There was an issue sending your challenge." copy. Falls
+                // back to the generic line if no specific message landed
+                // (e.g. RPC + direct insert both failed silently — already
+                // a logged invariant, but defensive).
+                Text(ChallengeService.shared.lastCreateChallengeError
+                     ?? "There was an issue sending your challenge. Please try again.")
             }
             .sheet(isPresented: $showingQRScanner) {
                 QRCodeScannerView()

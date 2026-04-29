@@ -125,7 +125,9 @@ extension NewOnboardingView {
             Button("Cancel", role: .cancel) {}
         }
         .sheet(isPresented: $showingPhotoPicker) {
-            OnboardingPhotoPicker(image: $profilePhotoImage)
+            OnboardingPhotoPicker { image in
+                processOnboardingPhoto(image)
+            }
         }
         .fullScreenCover(isPresented: $showingCamera) {
             OnboardingCameraPicker { image in
@@ -133,13 +135,50 @@ extension NewOnboardingView {
             }
         }
     }
-    
-    /// Process and resize the photo for onboarding
+
+    /// Process, resize, and immediately upload the photo for onboarding.
+    ///
+    /// Sync-triage 2026-04-28: previously this just set
+    /// `profilePhotoImage = scaledImage` and the actual cloud upload was
+    /// deferred until `completeOnboarding()` (when the user taps "Create
+    /// Account" on the Review & Confirm step). That created a window
+    /// where the user could send friend requests from the Add Friends
+    /// step (step 14) BEFORE the photo URL landed in
+    /// `user_profiles.profile_photo_url` — receivers got the friend
+    /// request card with the initials fallback (e.g. "JO" green circle)
+    /// instead of the photo. Reproduced 2026-04-28: @joe sent @jreedy a
+    /// request mid-onboarding; @jreedy received the card with initials
+    /// even though @joe had picked a photo at step 12.
+    ///
+    /// Fix: kick off the cloud upload immediately when the photo is
+    /// picked. The upload still runs as a fire-and-forget Task so the
+    /// UI stays responsive — but by the time the user finishes the next
+    /// step or two and reaches Add Friends, the URL is in the row and
+    /// any friend request fires with a populated photo.
+    ///
+    /// Also folds in the resize that the camera path always applied —
+    /// the previous library-picked photo path bypassed
+    /// `resizeImageForOnboarding` because it wrote directly to the
+    /// `@State profilePhotoImage` binding from `OnboardingPhotoPicker`,
+    /// which uploaded a full-resolution image to Storage. Unifying both
+    /// paths through this function caps the upload at ~300px on every
+    /// device (per the original camera-path intent).
     func processOnboardingPhoto(_ image: UIImage) {
         // Resize to reasonable dimensions (300x300 max) for profile photos
         let maxDimension: CGFloat = 300
         let scaledImage = resizeImageForOnboarding(image, maxDimension: maxDimension)
         profilePhotoImage = scaledImage
+
+        // Upload immediately so the photo URL is populated in
+        // user_profiles before the user can send any friend requests
+        // from the Add Friends step. `uploadOnboardingProfilePhoto`
+        // is fire-and-forget and short-circuits cleanly if the user
+        // isn't authenticated yet (defensive — shouldn't happen here
+        // because the photo step comes after both signup and phone
+        // verification, both of which establish the auth session).
+        Task {
+            await uploadOnboardingProfilePhoto(scaledImage)
+        }
     }
     
     /// Resize image maintaining aspect ratio

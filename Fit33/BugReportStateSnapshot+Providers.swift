@@ -39,6 +39,17 @@ extension BugReportSnapshotter {
         // wearable-connection states in every shake report so "my
         // dashboard pill is stuck on yellow" triage is one snapshot.
         register(ReadinessService.shared)
+        // Sync-triage 2026-04-27 Phase 3 — bug-intel `721fe5d6`'s shake
+        // snapshot had ZERO Friend* / Challenge* state, so triage couldn't
+        // see whether the receiver actually had a `pendingRequests` row
+        // at the moment of the shake. Adding these three closes that
+        // observability gap: next time a user reports "got the push, no
+        // card", the shake snapshot will show pendingRequests.count = 0
+        // (vs. > 0 = renderer/UI bug, vs. 0 = fetch/realtime bug).
+        register(FriendService.shared)
+        register(ChallengeService.shared)
+        register(PrivateChallengeService.shared)
+        register(RealtimeService.shared)
     }
 }
 
@@ -231,6 +242,108 @@ extension WorkoutManager: SnapshotProvider {
         if shouldNavigateToProgramOverview { stuckFlags.append("toProgramOverview") }
         if shouldNavigateToProgramDay { stuckFlags.append("toProgramDay") }
         v["pendingNavigationFlags"] = .strings(stuckFlags)
+        return v
+    }
+}
+
+// MARK: - FriendService
+//
+// Sync-triage 2026-04-27 Phase 3 — bug-intel fingerprint `721fe5d6`
+// (HIGH, "Friend request push notification not syncing with Friends
+// inbox") had no Friend* state in its runtime snapshot, so triage
+// could only guess whether the receiver's iOS client had actually
+// fetched the pending row. Surfacing pendingRequests.count + friends
+// count + age of last fetch makes the next occurrence self-diagnosing:
+//   pendingRequests.count > 0  → renderer / Dashboard wrapper bug
+//   pendingRequests.count == 0 → fetch / realtime / RLS bug
+// Never include displayName / requestId — server-side enrichment
+// already joins user_profiles for Claude.
+
+extension FriendService: SnapshotProvider {
+    var snapshotKey: String { "FriendService" }
+
+    @MainActor
+    func contributeSnapshot() -> [String: SnapshotValue] {
+        [
+            "pendingRequests.count": .int(pendingRequests.count),
+            "sentRequests.count": .int(sentRequests.count),
+            "friends.count": .int(friends.count),
+            "receivedWorkouts.count": .int(receivedWorkouts.count),
+            "receivedWorkouts.unreadCount": .int(receivedWorkouts.filter { $0.isPending }.count),
+            "blockedUserIds.count": .int(blockedUserIds.count),
+            "isLoading": .bool(isLoading),
+        ]
+    }
+}
+
+// MARK: - ChallengeService
+//
+// Same goal as FriendService — surface the actionable card counts so
+// the next "got the notification, no card" shake report tells us
+// instantly whether `pendingInvites` was 0 (fetch bug) or > 0
+// (renderer bug). `activeChallenges` count goes too because it's the
+// other half of the home-screen widget's data source.
+
+extension ChallengeService: SnapshotProvider {
+    var snapshotKey: String { "ChallengeService" }
+
+    @MainActor
+    func contributeSnapshot() -> [String: SnapshotValue] {
+        var v: [String: SnapshotValue] = [
+            "pendingInvites.count": .int(pendingInvites.count),
+            "pendingSentChallenges.count": .int(pendingSentChallenges.count),
+            "activeChallenges.count": .int(activeChallenges.count),
+            "activeGroupChallenges.count": .int(activeGroupChallenges.count),
+            "activeGroupChallenges.pendingInviteCount": .int(activeGroupChallenges.filter { $0.isMyInvitePending }.count),
+            "isLoading": .bool(isLoading),
+        ]
+        if let lastErr = lastCreateChallengeError {
+            // Phase 2 cross-link — when the user shakes after a "Failed to
+            // Send Challenge" alert, the actual server message lands here.
+            v["lastCreateChallengeError"] = .string(lastErr)
+        }
+        return v
+    }
+}
+
+// MARK: - PrivateChallengeService
+
+extension PrivateChallengeService: SnapshotProvider {
+    var snapshotKey: String { "PrivateChallengeService" }
+
+    @MainActor
+    func contributeSnapshot() -> [String: SnapshotValue] {
+        [
+            "pendingInvites.count": .int(pendingInvites.count),
+            "myChallenges.count": .int(myChallenges.count),
+            "isLoading": .bool(isLoading),
+        ]
+    }
+}
+
+// MARK: - RealtimeService
+//
+// `isConnected` + age of last connect tells triage whether the
+// auth/realtime race window is the explanation for missing cards.
+// If isConnected=false at shake time AND pendingRequests.count=0
+// in FriendService above, that's the canonical Phase 3 race.
+
+extension RealtimeService: SnapshotProvider {
+    var snapshotKey: String { "RealtimeService" }
+
+    @MainActor
+    func contributeSnapshot() -> [String: SnapshotValue] {
+        // Note: only read `@Published` (i.e. `internal`) properties here —
+        // `isConnecting` / `hasConfiguredCallbacks` / `lastConnectTime`
+        // are file-private inside RealtimeService.swift and cannot be
+        // surfaced from this cross-file extension. `isConnected` is the
+        // primary signal triage needs anyway.
+        var v: [String: SnapshotValue] = [
+            "isConnected": .bool(isConnected),
+        ]
+        if let err = connectionError {
+            v["connectionError"] = .string(err)
+        }
         return v
     }
 }

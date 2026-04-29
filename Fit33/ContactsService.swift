@@ -122,7 +122,22 @@ class ContactsService: ObservableObject {
     }
     
     var canAccessContacts: Bool {
-        authorizationStatus == .authorized
+        // iOS 18 added `CNAuthorizationStatus.limited` (raw value 4) — mirrors
+        // the Photos permission model: the user grants access to a subset of
+        // contacts via the system picker. `enumerateContacts` with limited
+        // access returns the picked subset, NOT an empty list, NOT an error.
+        // Treating `.limited` as "no access" was a 2026-04-28 simulator-side
+        // regression where iOS 18 returned status 4 after a "Allow Access"
+        // tap, but every gate downstream of `canAccessContacts` aborted with
+        // "No access to contacts" (`fetchContactsAndFindFriends`,
+        // `syncContactsToDatabase`, `findMatchingUsers`, `refreshSuggestionsIfNeeded`).
+        // Net effect: a user who tapped Allow saw "No contacts on Fit33 yet"
+        // even when their contacts list contained registered users.
+        if #available(iOS 18.0, *) {
+            return authorizationStatus == .authorized || authorizationStatus == .limited
+        } else {
+            return authorizationStatus == .authorized
+        }
     }
     
     var shouldShowPermissionPrompt: Bool {

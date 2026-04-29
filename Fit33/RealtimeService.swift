@@ -252,7 +252,17 @@ class RealtimeService: ObservableObject {
     private var isConnecting = false
     private var lastConnectTime: Date?
     private static let connectThrottleInterval: TimeInterval = 10
-    
+
+    /// Threshold past which we consider the realtime channel "stale" / probably
+    /// dead — exceeded `Date().timeIntervalSince(lastEventReceivedAt)` means
+    /// either no events ever arrived OR iOS killed the WebSocket while we
+    /// were suspended. The connect-throttle (`connectThrottleInterval`) is
+    /// bypassed once we cross this threshold so a foreground retry actually
+    /// re-arms the channel instead of silently no-op'ing.
+    ///
+    /// Sync-triage 2026-04-28 — paired with `forceReconnectIfStale()` below.
+    static let staleEventThreshold: TimeInterval = 30
+
     /// Start all realtime subscriptions for the current user
     func connect() async {
         guard SupabaseManager.shared.isAuthenticated,
@@ -266,9 +276,23 @@ class RealtimeService: ObservableObject {
             AppLogger.debug("⏭️ [REALTIME] Skipping connect — already connecting", category: .network)
             return
         }
-        if isConnected, let lastConnect = lastConnectTime,
-           Date().timeIntervalSince(lastConnect) < Self.connectThrottleInterval {
-            AppLogger.debug("⏭️ [REALTIME] Skipping connect — connected \(Int(Date().timeIntervalSince(lastConnect)))s ago", category: .network)
+        // 2026-04-28 sync-triage Layer B — the 10s connect-throttle protects
+        // against rapid scenePhase storms, but it MUST yield when the
+        // channel looks dead. If `lastEventReceivedAt` is older than
+        // `staleEventThreshold` (or `nil`), bypass the throttle so the
+        // foreground retry path can actually rebuild the WebSocket.
+        // Without this bypass, a user who backgrounds for 30s and
+        // returns gets a "skipped — connected 9s ago" no-op while the
+        // socket has been dead for 25s.
+        let recentlyConnected = lastConnectTime.map {
+            Date().timeIntervalSince($0) < Self.connectThrottleInterval
+        } ?? false
+        let recentEvent = lastEventReceivedAt.map {
+            Date().timeIntervalSince($0) < Self.staleEventThreshold
+        } ?? false
+        if isConnected && recentlyConnected && recentEvent {
+            let connAge = lastConnectTime.map { Int(Date().timeIntervalSince($0)) } ?? -1
+            AppLogger.debug("⏭️ [REALTIME] Skipping connect — connected \(connAge)s ago, last event fresh", category: .network)
             return
         }
         isConnecting = true
@@ -303,6 +327,132 @@ class RealtimeService: ObservableObject {
         AppLogger.info("Connected to all channels", category: .network)
         logRealtimeEvent(type: "CONNECTED", source: "RealtimeService",
                         details: "✅ All 10 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed, privacy_changes + auto-tracked refresh timer")
+
+        // ─── Sync-triage 2026-04-28 Layer B — post-connect canonical resync ───
+        //
+        // Bug-intel `721fe5d6` (HIGH, 2026-04-27): a freshly-onboarded user
+        // got the friend-request push but the card never appeared on home.
+        // Auth/JWT propagation can race the initial RPC fetches AND any
+        // INSERT event that fires server-side BEFORE every channel above
+        // finishes `await channel.subscribe()`. Both paths are at risk, so
+        // every `connect()` ends with a one-shot resync of every
+        // `@Published` array the dashboard carousel + activity feed read.
+        //
+        // 2026-04-28 (Layer B) — the original (Phase 3+4) resync only
+        // hit 4 surfaces; under the dead-socket scenario, every social
+        // service is at risk simultaneously, so the resync now covers
+        // the same 9 surfaces as the foreground social re-sync in
+        // `Fit33App.scenePhase == .active`. `connect()` becomes the
+        // single canonical "everything social, refreshed" entry point.
+        //
+        // We detach because `connect()` is awaited from the main
+        // foreground pipeline and we don't want to extend that critical
+        // path; per-service `isAuthenticated` guards + `RequestCoalescer`
+        // de-dupe make these fetches cheap when the foreground re-sync
+        // already kicked them off (Data invariant #4 — no duplicate
+        // fetches; coalescer turns parallel callers into one network
+        // roundtrip).
+        Task.detached(priority: .userInitiated) {
+            // Friend request cards
+            await FriendService.shared.fetchPendingRequests()
+            // 1v1 challenge invite cards (received)
+            await ChallengeService.shared.fetchPendingInvites()
+            // 1v1 challenge cards I sent (so the sender carousel updates
+            // when the opponent accepts)
+            await ChallengeService.shared.fetchPendingSentChallenges()
+            // Group challenge invites (`isMyInvitePending` filter on
+            // `activeGroupChallenges` drives the group invite card)
+            await ChallengeService.shared.fetchActiveGroupChallenges()
+            // Private challenge invites (carousel)
+            await PrivateChallengeService.shared.fetchPendingInvites()
+            // Private challenge list (the body of accepted private
+            // challenges — friends sub for new members landed here)
+            await PrivateChallengeService.shared.fetchMyChallenges()
+            // Community challenges (leaderboard widget)
+            await CommunityChallengeService.shared.fetchMyChallenges()
+            // Recent Activity feed (Joe-can't-see-Paul's-workouts)
+            await ActivityFeedService.shared.fetchFeed()
+            // Received-workout cards (carousel)
+            await FriendService.shared.fetchReceivedWorkouts()
+
+            // Hoist counts into local lets — `AppLogger.debug`'s message param
+            // is `@autoclosure` (deferred), and Swift won't allow `await` in a
+            // non-async autoclosure. Reading these MainActor-isolated
+            // @Published values requires `await` to hop actors, so capture
+            // them ahead of the log call. Cheap (n main-actor hops, no
+            // network).
+            let frCount = await FriendService.shared.pendingRequests.count
+            let ciCount = await ChallengeService.shared.pendingInvites.count
+            let csCount = await ChallengeService.shared.pendingSentChallenges.count
+            let cgCount = await ChallengeService.shared.activeGroupChallenges.count
+            let pcCount = await PrivateChallengeService.shared.pendingInvites.count
+            let pmCount = await PrivateChallengeService.shared.myChallenges.count
+            let cmCount = await CommunityChallengeService.shared.myChallenges.count
+            let afCount = await ActivityFeedService.shared.activities.count
+            let rwCount = await FriendService.shared.receivedWorkouts.count
+            AppLogger.debug(
+                "[REALTIME] Post-connect canonical resync complete (friend req: \(frCount), 1v1 inv: \(ciCount), 1v1 sent: \(csCount), group: \(cgCount), priv inv: \(pcCount), priv mine: \(pmCount), comm mine: \(cmCount), feed: \(afCount), recv workouts: \(rwCount))",
+                category: .network
+            )
+        }
+    }
+
+    /// Sync-triage 2026-04-28 Layer B — reconnect realtime if the channel
+    /// looks dead.
+    ///
+    /// The previous Phase 3+4 fix called `connect()` only when
+    /// `RealtimeService.shared.isConnected == false`. That's a trap —
+    /// `isConnected` is a Swift `@Published` Bool, not a live socket-state
+    /// query. iOS suspends the app, the underlying WebSocket dies, but
+    /// `isConnected` stays `true` because nothing in this service flips it
+    /// back to `false` on socket close. Result: the foreground retry path
+    /// became a permanent no-op for returning users, and realtime events
+    /// from the background never landed.
+    ///
+    /// The cheapest reliable "is the socket dead?" signal is "did we receive
+    /// ANY realtime event recently?" — `lastEventReceivedAt` is updated by
+    /// every postgres_changes payload via `logRealtimeEvent`, and if it's
+    /// older than `staleEventThreshold` (30s), the channel is at minimum
+    /// suspect. We tear down + re-subscribe; the post-connect canonical
+    /// resync above handles the missed-event window.
+    ///
+    /// Idempotent: when the channel IS healthy (recent event), the
+    /// throttle inside `connect()` itself short-circuits and this is a
+    /// cheap no-op.
+    func forceReconnectIfStale() async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            AppLogger.debug("[REALTIME] forceReconnectIfStale: not authenticated, skipping", category: .network)
+            return
+        }
+
+        let now = Date()
+        let lastEventAge: TimeInterval = lastEventReceivedAt.map {
+            now.timeIntervalSince($0)
+        } ?? .greatestFiniteMagnitude
+        let isStale = lastEventAge > Self.staleEventThreshold
+
+        if isStale {
+            AppLogger.info(
+                "🔄 [REALTIME] Stale channel detected (last event \(lastEventReceivedAt == nil ? "never" : "\(Int(lastEventAge))s ago"), threshold \(Int(Self.staleEventThreshold))s) — forcing reconnect",
+                category: .network
+            )
+            logRealtimeEvent(
+                type: "FORCE_RECONNECT",
+                source: "RealtimeService",
+                details: "🔄 Stale channel — last event \(lastEventReceivedAt == nil ? "never" : "\(Int(lastEventAge))s ago"). Tearing down + re-subscribing."
+            )
+            // Tear down so `connect()` doesn't bail on the
+            // `if isConnected || friendshipsChannel != nil { disconnect }`
+            // happy-path inside `connect()` — we want a deterministic
+            // teardown + fresh subscribe even if it ran <10s ago.
+            await disconnect()
+            await connect()
+        } else {
+            AppLogger.debug(
+                "[REALTIME] forceReconnectIfStale: channel healthy (last event \(Int(lastEventAge))s ago) — no-op",
+                category: .network
+            )
+        }
     }
     
     /// Disconnect from all realtime channels

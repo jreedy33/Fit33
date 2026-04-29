@@ -429,9 +429,29 @@ struct NewOnboardingView: View {
         }
         .onAppear {
             OnboardingSessionManager.shared.startNewSession()
-            
-            // Restore progress from a prior interrupted session
-            if !supabaseManager.isAuthenticated {
+
+            // Restore progress from a prior interrupted session.
+            //
+            // 2026-04-28 — was previously gated on `!supabaseManager.isAuthenticated`,
+            // which silently broke the most common interruption case: user
+            // signs up successfully (so `isAuthenticated == true`), gets
+            // mid-onboarding, leaves to Settings (e.g., to grant Contacts
+            // permission), iOS aggressively suspends/kills the app (Low
+            // Power Mode + Settings round-trip is a frequent trigger on
+            // real hardware), the app re-launches, the session is restored
+            // from keychain → `isAuthenticated` flips back to true → the
+            // gate prevented checkpoint restore → `currentStep` defaulted
+            // back to `.auth` → user lands on the signup page after
+            // already having an account. Reported as a real-device
+            // regression on iPhone 17 Pro / iOS 26.5 / low_power_mode=true.
+            //
+            // The actual condition we care about is "is onboarding still
+            // incomplete?" — if so, try to restore. `restoreFromCheckpoint`
+            // is itself a no-op when no checkpoint exists or the checkpoint
+            // is for step 0, so calling it for already-onboarded users is
+            // also safe (we still gate on `!hasCompletedOnboarding` to
+            // avoid pointless UserDefaults reads on the hot path).
+            if !userManager.hasCompletedOnboarding {
                 restoreFromCheckpoint()
             }
             

@@ -52,9 +52,14 @@ struct VerifiedBadge: View {
 struct WeeklyLeagueWidget: View {
     @ObservedObject var leagueService: WeeklyLeagueService
     @Environment(\.colorScheme) private var colorScheme
-    @State private var showingLeagueInfo = false
     @State private var showingProfile: ProfileUser?
     let onTap: () -> Void
+    /// When set, the info `(i)` button calls this closure instead of presenting
+    /// a sheet. Hosting tab views (Friends) wire this up to push
+    /// `WeeklyLeagueInfoView` onto their `NavigationStack` so the info content
+    /// reads as a real page (custom header + orb background) rather than a
+    /// generic modal.
+    var onShowInfo: (() -> Void)? = nil
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -74,12 +79,15 @@ struct WeeklyLeagueWidget: View {
                     .fontWeight(.bold)
                 
                 Button {
-                    showingLeagueInfo = true
+                    HapticManager.impact(.light)
+                    onShowInfo?()
                 } label: {
                     Image(systemName: "info.circle")
                         .font(.ds_bodyRegular).fontWeight(.medium)
                         .foregroundColor(.secondary)
                 }
+                .accessibilityLabel("How weekly leagues work")
+                .accessibilityHint("Opens the Weekly League info page")
             }
             
             // Card content
@@ -98,10 +106,6 @@ struct WeeklyLeagueWidget: View {
                 }
             }
             .buttonStyle(.plain)
-        }
-        .sheet(isPresented: $showingLeagueInfo) {
-            WeeklyLeagueInfoSheet(standing: standing)
-                .presentationDragIndicator(.visible)
         }
         .sheet(item: $showingProfile) { profileUser in
             NavigationStack {
@@ -1270,313 +1274,333 @@ struct WeeklyLeagueDetailView: View {
     }
 }
 
-// MARK: - Weekly League Info Sheet
+// MARK: - Weekly League Info Page
 
-struct WeeklyLeagueInfoSheet: View {
+/// Full page (NavigationLink push) that explains the Weekly League system.
+/// Replaces the legacy `WeeklyLeagueInfoSheet` modal — pushed from the
+/// `(i)` button on `WeeklyLeagueWidget`.
+///
+/// Visual contract (DESIGN_AGENT invariants 5 / 9 / 11):
+/// - `AnimatedOrbBackground.friends(colorScheme:)` — canonical blue/cyan orb
+///   that matches `WeeklyLeagueDetailView` so the league flow stays cohesive.
+/// - Hidden system nav bar + custom in-layout chevron header.
+/// - Primary content cards use `.sleekCard()`; numbers/spacing/radii/fonts use
+///   the `Spacing.*` / `CornerRadius.*` / `Font.ds_*` tokens.
+struct WeeklyLeagueInfoView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
-    let standing: LeagueStanding?
-    @State private var showingProfile: ProfileUser?
+    @ObservedObject private var leagueService = WeeklyLeagueService.shared
     
-    private let tiers: [(emoji: String, name: String, rank: Int)] = [
-        ("🥉", "Bronze", 1),
-        ("🥈", "Silver", 2),
-        ("🥇", "Gold", 3),
-        ("💎", "Platinum", 4),
-        ("🔷", "Diamond", 5),
-        ("🔥", "Elite", 6),
-        ("✅", "Verified", 7)
-    ]
-    
-    private var exampleCompetitor: LeagueEntry? {
-        standing?.leaderboard.first(where: { !$0.isCurrentUser })
+    private struct Tier {
+        let emoji: String
+        let name: String
+        let blurb: String
+        let rank: Int
+        let color: Color
     }
     
+    private let tiers: [Tier] = [
+        Tier(emoji: "🥉", name: "Bronze",   blurb: "Where every athlete starts",         rank: 1, color: Color(red: 0.80, green: 0.50, blue: 0.20)),
+        Tier(emoji: "🥈", name: "Silver",   blurb: "Showing up, week after week",        rank: 2, color: Color(red: 0.75, green: 0.75, blue: 0.78)),
+        Tier(emoji: "🥇", name: "Gold",     blurb: "Consistent and climbing",            rank: 3, color: Color(red: 0.95, green: 0.78, blue: 0.20)),
+        Tier(emoji: "💎", name: "Platinum", blurb: "Strong week-over-week presence",     rank: 4, color: Color(red: 0.55, green: 0.78, blue: 0.95)),
+        Tier(emoji: "🔷", name: "Diamond",  blurb: "Top performers across the app",      rank: 5, color: Color(red: 0.40, green: 0.62, blue: 0.95)),
+        Tier(emoji: "🔥", name: "Elite",    blurb: "Relentless. Rare air.",              rank: 6, color: Color(red: 1.00, green: 0.45, blue: 0.20)),
+        Tier(emoji: "✅", name: "Verified", blurb: "Top 5 here earn the gold checkmark", rank: 7, color: Color(red: 0.11, green: 0.63, blue: 0.95))
+    ]
+    
+    private var standing: LeagueStanding? { leagueService.standing }
+    
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    heroSection
-                    howItWorksSection
-                    tiersSection
-                    promotionSection
-                    pointsSection
-                    
-                    if let competitor = exampleCompetitor, let standing = standing {
-                        exampleSection(competitor: competitor, tier: standing.tierName)
-                    }
-                }
-                .padding()
-            }
-            .background(
-                LinearGradient(
-                    colors: colorScheme == .dark
-                        ? [Color(white: 0.08), Color(white: 0.05)]
-                        : [Color(white: 0.98), Color(white: 0.95)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+        ZStack {
+            AnimatedOrbBackground.friends(colorScheme: colorScheme)
                 .ignoresSafeArea()
-            )
-            .navigationTitle("Weekly Leagues")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
-                }
-            }
-            .sheet(item: $showingProfile) { profileUser in
-                NavigationStack {
-                    FriendProfileView(user: profileUser)
+            
+            VStack(spacing: 0) {
+                header
+                
+                ScrollView {
+                    VStack(spacing: Spacing.md) {
+                        heroBanner
+                        howItWorksCard
+                        tierLadderCard
+                        pointsCard
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, Spacing.sm)
+                    .padding(.bottom, Spacing.xl)
                 }
             }
         }
+        .navigationBarHidden(true)
+    }
+    
+    // MARK: - Header (custom in-layout, matches WeeklyLeagueDetailView)
+    
+    private var header: some View {
+        HStack {
+            Button {
+                HapticManager.impact(.light)
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.ds_labelLarge)
+                    .foregroundColor(.primary)
+                    .padding(10)
+                    .background(Circle().fill(Color.gray.opacity(0.15)))
+            }
+            .accessibilityLabel("Back")
+            
+            Spacer()
+            
+            Text("Weekly League")
+                .font(.title3)
+                .fontWeight(.bold)
+            
+            Spacer()
+            
+            Color.clear.frame(width: 36, height: 36)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.top, Spacing.xs)
+        .padding(.bottom, Spacing.xs)
     }
     
     // MARK: - Hero
     
-    private var heroSection: some View {
-        VStack(spacing: 12) {
+    private var heroBanner: some View {
+        let accent = standing?.tierSwiftUIColor ?? .blue
+        let gradient = standing?.tierGradient ?? [.blue, .cyan]
+        let tierName = standing?.tierName
+        let pendingTierName = leagueService.notPlacedTierName
+        
+        return HStack(spacing: Spacing.md) {
             ZStack {
                 Circle()
                     .fill(
-                        RadialGradient(
-                            colors: [Color.yellow.opacity(0.3), Color.clear],
-                            center: .center,
-                            startRadius: 30,
-                            endRadius: 80
-                        )
-                    )
-                    .frame(width: 140, height: 140)
-                
-                Image(systemName: "trophy.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(
                         LinearGradient(
-                            colors: standing?.tierGradient ?? [.yellow, .orange],
+                            colors: gradient,
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
+                    .frame(width: 56, height: 56)
+                    .shadow(color: accent.opacity(0.35), radius: 12, x: 0, y: 4)
+                
+                Text(standing?.tierEmoji ?? "🏆")
+                    .font(.system(size: 28))
             }
             
-            Text("Compete Weekly")
-                .font(.title2)
-                .fontWeight(.bold)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Train all week. Climb the ladder.")
+                    .font(.ds_heading3)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                if let tierName {
+                    HStack(spacing: 4) {
+                        Image(systemName: "location.fill")
+                            .font(.ds_caption)
+                        Text("You're in \(tierName)")
+                            .font(.ds_labelMedium)
+                    }
+                    .foregroundColor(accent)
+                } else if let pendingTierName {
+                    Text("You'll join \(pendingTierName) at next reset")
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Train this week to get placed")
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.secondary)
+                }
+            }
             
-            Text("Every week you're placed in a league with friends and athletes at your tier. Work out to earn points and climb the leaderboard!")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Spacing.xs)
+            Spacer(minLength: 0)
         }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accent)
     }
     
     // MARK: - How It Works
     
-    private var howItWorksSection: some View {
-        infoCard(title: "How It Works", icon: "questionmark.circle.fill", color: .blue) {
-            VStack(alignment: .leading, spacing: 12) {
-                infoRow(step: "1", text: "Leagues reset every Monday at midnight UTC")
-                infoRow(step: "2", text: "Complete workouts to earn points throughout the week")
-                infoRow(step: "3", text: "Top finishers promote to the next tier; bottom finishers relegate")
-                infoRow(step: "4", text: "Your tier persists across weeks — keep climbing!")
+    private var howItWorksCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionLabel("How it works", icon: "sparkles", iconColor: .blue)
+            
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                stepRow(number: 1, text: "New league every Monday at 12 AM UTC")
+                stepRow(number: 2, text: "Earn points by training — strength, cardio, even short sessions count")
+                stepRow(number: 3, text: "Top of your league promotes; bottom relegates")
+                stepRow(number: 4, text: "Your tier carries forward — keep climbing")
             }
         }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
     }
     
-    // MARK: - Tiers
+    // MARK: - Tier Ladder
     
-    private var tiersSection: some View {
-        infoCard(title: "League Tiers", icon: "star.circle.fill", color: .yellow) {
-            VStack(spacing: 8) {
-                ForEach(tiers, id: \.rank) { tier in
-                    HStack(spacing: 12) {
-                        if tier.rank == 7 {
-                            VerifiedBadge(size: 22)
-                                .frame(width: 32)
-                        } else {
-                            Text(tier.emoji)
-                                .font(.title3)
-                                .frame(width: 32)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(tier.name)
-                                .font(.subheadline)
-                                .fontWeight(standing?.tierName == tier.name ? .bold : .regular)
-                            
-                            if tier.rank == 7 {
-                                Text("Earn a blue badge next to your name")
-                                    .font(.caption2)
-                                    .foregroundColor(Color(red: 0.11, green: 0.63, blue: 0.95))
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        if standing?.tierName == tier.name {
-                            Text("You're here")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, Spacing.xs)
-                                .padding(.vertical, 3)
-                                .background(
-                                    Capsule()
-                                        .fill(standing?.tierSwiftUIColor ?? .blue)
-                                )
-                        }
-                    }
-                    .padding(.vertical, Spacing.xxs)
+    private var tierLadderCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionLabel("The ladder", icon: "chart.bar.fill", iconColor: standing?.tierSwiftUIColor ?? .blue)
+            
+            VStack(spacing: 0) {
+                ForEach(Array(tiers.reversed().enumerated()), id: \.element.rank) { index, tier in
+                    tierRow(tier: tier)
                     
-                    if tier.rank < tiers.count {
-                        Divider()
+                    if index < tiers.count - 1 {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.12))
+                            .frame(height: 0.5)
+                            .padding(.leading, 44)
                     }
                 }
             }
         }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: standing?.tierSwiftUIColor ?? .blue)
     }
     
-    // MARK: - Promotion / Relegation
-    
-    private var promotionSection: some View {
-        infoCard(title: "Promotion & Relegation", icon: "arrow.up.arrow.down.circle.fill", color: .green) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.title3)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Promotion")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Top finishers in your league move up to the next tier")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                HStack(spacing: 10) {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .foregroundColor(.red)
-                        .font(.title3)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Relegation")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Bottom finishers drop down a tier — stay active to hold your spot!")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                HStack(spacing: 10) {
-                    Image(systemName: "shield.fill")
-                        .foregroundColor(.secondary)
-                        .font(.title3)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Safe Zone")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Everyone in the middle stays at their current tier")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+    private func tierRow(tier: Tier) -> some View {
+        let isCurrent = standing?.tierName == tier.name
+        
+        return HStack(spacing: Spacing.sm) {
+            Group {
+                if tier.rank == 7 {
+                    VerifiedBadge(size: 20)
+                } else {
+                    Text(tier.emoji)
+                        .font(.system(size: 22))
                 }
             }
+            .frame(width: 28, alignment: .center)
+            
+            VStack(alignment: .leading, spacing: 1) {
+                Text(tier.name)
+                    .font(.ds_bodyMedium)
+                    .fontWeight(isCurrent ? .bold : .semibold)
+                    .foregroundColor(.primary)
+                
+                Text(tier.blurb)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            
+            Spacer(minLength: 0)
+            
+            if isCurrent {
+                Text("YOU")
+                    .font(.ds_caption)
+                    .fontWeight(.bold)
+                    .tracking(0.5)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(
+                            LinearGradient(
+                                colors: standing?.tierGradient ?? [tier.color, tier.color],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                    )
+            }
         }
+        .padding(.vertical, Spacing.xs)
+        .background(
+            isCurrent
+                ? RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .fill(tier.color.opacity(colorScheme == .dark ? 0.10 : 0.06))
+                : nil
+        )
     }
     
     // MARK: - Points
     
-    private var pointsSection: some View {
-        infoCard(title: "Earning Points", icon: "bolt.circle.fill", color: .orange) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Points are earned from completed workouts. The more consistent you are, the more points you'll accumulate throughout the week.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                HStack(spacing: 16) {
-                    pointBadge(label: "Workout", value: "+pts")
-                    pointBadge(label: "Daily Login", value: "+pts")
-                    pointBadge(label: "Consistency", value: "bonus")
-                }
-                .frame(maxWidth: .infinity)
+    private var pointsCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionLabel("Earn points by", icon: "bolt.fill", iconColor: .orange)
+            
+            HStack(spacing: Spacing.xs) {
+                pointPill(icon: "dumbbell.fill",       label: "Strength",  color: .blue)
+                pointPill(icon: "figure.run",          label: "Cardio",    color: .cyan)
+                pointPill(icon: "flame.fill",          label: "Streaks",   color: .orange)
             }
+            
+            Text("Stay consistent — the league rewards weeks, not single PRs.")
+                .font(.ds_bodySmall)
+                .foregroundColor(.secondary)
+                .padding(.top, Spacing.xxs)
         }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
     }
     
-    // MARK: - Example
+    private func pointPill(icon: String, label: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.ds_bodySmall)
+            Text(label)
+                .font(.ds_labelMedium)
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .frame(maxWidth: .infinity)
+        .background(
+            Capsule()
+                .fill(color.opacity(colorScheme == .dark ? 0.15 : 0.10))
+        )
+        .overlay(
+            Capsule()
+                .stroke(color.opacity(0.25), lineWidth: 0.5)
+        )
+    }
     
-    private func exampleSection(competitor: LeagueEntry, tier: String) -> some View {
-        infoCard(title: "Your League", icon: "person.2.circle.fill", color: .cyan) {
-            Text("For example, you and \(competitor.firstName) are both competing in \(tier) this week. Keep pushing to stay ahead!")
-                .font(.subheadline)
+    // MARK: - Shared label
+    
+    private func sectionLabel(_ title: String, icon: String, iconColor: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.ds_bodySmall)
+                .foregroundColor(iconColor)
+            Text(title.uppercased())
+                .font(.ds_labelSmall)
+                .fontWeight(.semibold)
+                .tracking(0.6)
                 .foregroundColor(.secondary)
         }
     }
     
-    // MARK: - Shared Components
-    
-    private func infoCard<Content: View>(title: String, icon: String, color: Color, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                    .font(.title3)
-                Text(title)
-                    .font(.headline)
-                    .fontWeight(.bold)
-            }
-            
-            content()
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.cardBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.gray.opacity(0.1), lineWidth: 1)
-        )
-    }
-    
-    private func infoRow(step: String, text: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(step)
-                .font(.caption)
+    private func stepRow(number: Int, text: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Text("\(number)")
+                .font(.ds_labelMedium)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
                 .frame(width: 22, height: 22)
-                .background(Circle().fill(Color.blue))
+                .background(
+                    Circle().fill(
+                        LinearGradient(
+                            colors: [.blue, .cyan],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                )
             
             Text(text)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(.ds_bodyMedium)
+                .foregroundColor(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-    
-    private func pointBadge(label: String, value: String) -> some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(.orange)
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, Spacing.xs)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.orange.opacity(0.1))
-        )
     }
 }
 

@@ -1033,19 +1033,87 @@ struct Fit33App: App {
                             // recordLastActive is a one-shot UPSERT, fire-and-forget.
                             Task { await supabaseManager.recordLastActive() }
 
-                            // Priority 1: Reconnect realtime (instant social updates)
-                            if !RealtimeService.shared.isConnected {
-                                RealtimeService.shared.setupDefaultCallbacks()
-                                await RealtimeService.shared.connect()
-                            }
-                            
-                            // Priority 2: Refresh actionable social items immediately
-                            // These must load fast so user sees friend requests / challenge invites instantly
-                            async let pendingRequests: () = FriendService.shared.fetchPendingRequests()
-                            async let pendingInvites: () = ChallengeService.shared.fetchPendingInvites()
-                            async let privateInvites: () = PrivateChallengeService.shared.fetchPendingInvites()
-                            async let newWorkouts: () = FriendService.shared.checkForNewWorkouts()
-                            _ = await (pendingRequests, pendingInvites, privateInvites, newWorkouts)
+                            // ─── Priority 1: Realtime reconnect-if-stale ───
+                            //
+                            // Sync-triage 2026-04-28 — the previous
+                            // `if !RealtimeService.shared.isConnected` gate was
+                            // a no-op for returning users: when iOS suspends
+                            // the app, the WebSocket dies but `isConnected`
+                            // (a Swift `@Published` flag) stays `true` because
+                            // there is no socket-close callback wired to it.
+                            // Result: `connect()` is skipped, the Phase 3
+                            // post-connect resync never fires, and the user
+                            // returns to a stale dashboard while realtime
+                            // events from background never arrive.
+                            //
+                            // Use the new `forceReconnectIfStale()` helper —
+                            // it tears down + re-subscribes ONLY when the
+                            // last realtime event is older than 30s (or
+                            // missing), which is the cheapest reliable
+                            // signal that the channel is dead. Inside that
+                            // helper, `connect()`'s 10s lockout is bypassed
+                            // when stale so the resync actually runs.
+                            RealtimeService.shared.setupDefaultCallbacks()
+                            await RealtimeService.shared.forceReconnectIfStale()
+
+                            // ─── Priority 2: Unconditional social re-sync ───
+                            //
+                            // 2026-04-28 sync-triage Layer A — replace the
+                            // previous "Priority 2 + Phase 3+4 conditional
+                            // fallback" with a single unconditional fan-out.
+                            //
+                            // The earlier design split fetches across two
+                            // blocks gated by `!isConnected`. Both gates
+                            // were dead-no-ops on returning users (see the
+                            // Priority 1 comment), so neither realtime nor
+                            // the fallback was rescuing the carousel — the
+                            // user sat on stale `@Published` arrays.
+                            //
+                            // Cost analysis: 9 RPCs in parallel, all
+                            // already-coalesced via `RequestCoalescer` and
+                            // each guarded by `SupabaseManager.isAuthenticated`
+                            // (Data invariant 26). Returning users hit the
+                            // realtime resync inside `connect()` first,
+                            // so most of these will short-circuit. The
+                            // remaining roundtrip (one per pending surface,
+                            // server-side `SECURITY DEFINER` RPCs) is the
+                            // worst-case 9× ~80ms ≈ <1s of parallel work
+                            // for ironclad reliability across all four
+                            // affected surfaces (friend requests,
+                            // challenge invites, private invites, group
+                            // invites, activity feed, community challenges,
+                            // private challenges, received workouts,
+                            // sent challenges).
+                            //
+                            // Carousel data sources covered (one fetch
+                            // per `@Published` the carousel reads — see
+                            // `DashboardModels.DashboardNotificationCarousel`):
+                            //   FriendService.pendingRequests   ← s1
+                            //   ChallengeService.pendingInvites ← s2
+                            //   ChallengeService.pendingSentChallenges ← s3
+                            //   ChallengeService.activeGroupChallenges ← s4 (group invites)
+                            //   PrivateChallengeService.pendingInvites ← s5
+                            //   PrivateChallengeService.myChallenges   ← s6
+                            //   CommunityChallengeService.myChallenges ← s7
+                            //   ActivityFeedService.activities          ← s8
+                            //   FriendService.receivedWorkouts          ← s9
+                            //
+                            // s9 routes through `checkForNewWorkouts` (not
+                            // bare `fetchReceivedWorkouts`) so the
+                            // per-id "new since last check" notification
+                            // path stays intact — that's the existing
+                            // FriendService behavior the previous
+                            // foreground block invoked.
+                            async let s1: () = FriendService.shared.fetchPendingRequests()
+                            async let s2: () = ChallengeService.shared.fetchPendingInvites()
+                            async let s3: () = ChallengeService.shared.fetchPendingSentChallenges()
+                            async let s4: () = ChallengeService.shared.fetchActiveGroupChallenges()
+                            async let s5: () = PrivateChallengeService.shared.fetchPendingInvites()
+                            async let s6: () = PrivateChallengeService.shared.fetchMyChallenges()
+                            async let s7: () = CommunityChallengeService.shared.fetchMyChallenges()
+                            async let s8: () = ActivityFeedService.shared.fetchFeed()
+                            async let s9: () = FriendService.shared.checkForNewWorkouts()
+                            _ = await (s1, s2, s3, s4, s5, s6, s7, s8, s9)
                             
                             // Priority 3: Health sync FIRST so HealthKit values are fresh
                             // (must run BEFORE community/private refresh so leaderboard data is current)

@@ -136,6 +136,8 @@ struct FriendsTabView: View {
                     CommunityChallengesHubView()
                 } else if destination == "LeagueDetail" {
                     WeeklyLeagueDetailView()
+                } else if destination == "LeagueInfo" {
+                    WeeklyLeagueInfoView()
                 } else if destination.hasPrefix("PrivateChallenge_") {
                     let idStr = String(destination.dropFirst("PrivateChallenge_".count))
                     if let challenge = PrivateChallengeService.shared.myChallenges.first(where: { $0.challengeId.uuidString == idStr }) {
@@ -843,6 +845,9 @@ struct FriendsTabView: View {
                         }
                     }
                 }
+            },
+            onShowInfo: {
+                navigationPath.append("LeagueInfo")
             }
         )
     }
@@ -3275,6 +3280,9 @@ struct FriendsLeagueWrapper: View {
                             }
                         }
                     }
+                },
+                onShowInfo: {
+                    navigationPath.append("LeagueInfo")
                 }
             )
         }

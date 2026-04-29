@@ -32,6 +32,10 @@ struct ReactionPresets {
     
     // ⚔️ COMPETITION — Trash Talk / Battle Cries
     static let trashTalk: [ReactionPreset] = [
+        // Pinned at the top so it's the loudest, most "shoutable" line —
+        // matches the home-screen widget shout-bubble copy that yells
+        // out of the icon when an opponent fires this off at you.
+        ReactionPreset(id: "trash_do_better",       emoji: "📢", text: "Do better!",                category: .trashTalk),
         ReactionPreset(id: "trash_catch_me",        emoji: "🔥", text: "Catch me if you can!",      category: .trashTalk),
         ReactionPreset(id: "trash_all_you_got",     emoji: "😤", text: "That all you got?",          category: .trashTalk),
         ReactionPreset(id: "trash_see_you_slack",   emoji: "👀", text: "I see you slacking...",      category: .trashTalk),

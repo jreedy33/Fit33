@@ -19,6 +19,11 @@ enum ActiveChallengeWidgetSnapshot {
     static let updatedAtKey = "fit33.widget.activeChallenge.updatedAt"
     static let userPhotoFilename = "widget_user_photo.jpg"
     static let opponentPhotoPrefix = "widget_opponent_"
+    /// Smack-talk shout-bubble payload. Written by the main app's
+    /// `SmackTalkWidgetBridge.publish` whenever an opponent fires off
+    /// a trash-talk reaction while the app is closed; cleared on
+    /// next foreground (`Fit33App` scenePhase `.active`).
+    static let smackTalkKey = "fit33.widget.smackTalk.v1"
 
     static func opponentPhotoFilename(opponentId: String) -> String {
         "\(opponentPhotoPrefix)\(opponentId).jpg"
@@ -143,6 +148,38 @@ enum ActiveChallengeWidgetSnapshot {
             guard let target = dailyTarget, target > 0 else { return false }
             return myTodayProgress >= target && opponentTodayProgress >= target
         }
+    }
+
+    // MARK: - Smack Talk (shout bubble)
+    //
+    // Mirrors `Fit33/SmackTalkWidgetBridge.WidgetSmackTalk` byte-for-byte
+    // (same JSON CodingKeys + same `iso8601` date strategy). When the
+    // main-app struct changes, mirror it here in the SAME edit pass.
+    struct WidgetSmackTalk: Codable, Hashable {
+        let challengeId: String
+        let senderFirstName: String
+        let reactionEmoji: String
+        let reactionText: String
+        let reactionCategory: String
+        let receivedAt: Date
+
+        var isCompetition: Bool { reactionCategory == "trash_talk" }
+    }
+
+    /// Reads the most recent unread smack-talk payload, or `nil` when
+    /// none is pending. Filtered to the resolved challenge by the
+    /// caller — `entry(for:)` only paints the shout bubble when the
+    /// payload's `challengeId` matches the challenge currently being
+    /// rendered, so a smack on challenge B doesn't yell out of a
+    /// widget pinned to challenge A.
+    static func readSmackTalk() -> WidgetSmackTalk? {
+        guard let defaults = UserDefaults(suiteName: appGroupID),
+              let data = defaults.data(forKey: smackTalkKey) else {
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(WidgetSmackTalk.self, from: data)
     }
 
     /// Reads the auto-pick / fallback challenge from the App Group.

@@ -424,8 +424,21 @@ class ContactsService: ObservableObject {
             for friend in matchedUsers {
                 AppLogger.debug("\(friend.displayName) (@\(friend.username ?? "no username"))", category: .social)
             }
+        } catch is CancellationError {
+            // Tab-switch / view-disappear cancellation is the canonical
+            // teardown path — not an error. Bug-intel `5491a773` (1 occ,
+            // crash class) was logging this as .error and inflating the
+            // severity score. Silent return matches the structured-
+            // concurrency contract in swiftui-rules #4.
+            AppLogger.debug("[Social] findMatchingUsersDirect cancelled (tab switch / view disappear)", category: .social)
         } catch {
-            AppLogger.error("Query failed: \(error.localizedDescription)", category: .social)
+            // URLError.cancelled (-999) is the URLSession-side spelling of
+            // the same teardown path — surface as debug, not error.
+            if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled {
+                AppLogger.debug("[Social] Contact match request cancelled (URLSession)", category: .social)
+            } else {
+                AppLogger.error("Query failed: \(error.localizedDescription)", category: .social)
+            }
         }
     }
     
@@ -591,8 +604,14 @@ class ContactsService: ObservableObject {
             
             // Check for any pending "contact joined" notifications
             await checkForContactJoinedNotifications()
+        } catch is CancellationError {
+            AppLogger.debug("[Social] syncContactsToDatabase cancelled (tab switch / view disappear)", category: .social)
         } catch {
-            AppLogger.error("Error syncing contacts: \(error.localizedDescription)", category: .social)
+            if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled {
+                AppLogger.debug("[Social] Contact sync cancelled (URLSession)", category: .social)
+            } else {
+                AppLogger.error("Error syncing contacts: \(error.localizedDescription)", category: .social)
+            }
         }
     }
     
@@ -610,8 +629,16 @@ class ContactsService: ObservableObject {
             for notification in notifications {
                 await sendContactJoinedPushNotification(notification)
             }
+        } catch is CancellationError {
+            // Bug-intel `910d8141` (1 occ, crash class). Tab-switch teardown
+            // — not an error. Same pattern as findMatchingUsersDirect.
+            AppLogger.debug("[Social] checkForContactJoinedNotifications cancelled (tab switch / view disappear)", category: .social)
         } catch {
-            AppLogger.error("Error checking contact notifications: \(error.localizedDescription)", category: .social)
+            if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled {
+                AppLogger.debug("[Social] Contact notification check cancelled (URLSession)", category: .social)
+            } else {
+                AppLogger.error("Error checking contact notifications: \(error.localizedDescription)", category: .social)
+            }
         }
     }
     

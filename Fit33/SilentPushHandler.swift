@@ -33,10 +33,68 @@ enum SilentPushHandler {
             handleChallengeWake(completion: completion)
         case "strava_activity_new":
             handleStravaActivityNew(userInfo: userInfo, completion: completion)
+        case "challenge_reaction":
+            handleChallengeReaction(userInfo: userInfo, completion: completion)
         default:
             AppLogger.debug("[SILENT PUSH] Ignoring unknown silent push type: '\(type)'", category: .network)
             completion(.noData)
         }
+    }
+
+    // MARK: - challenge_reaction
+    //
+    // Lands here because `send-push-notification` adds
+    // `content-available: 1` to challenge_reaction APNs payloads
+    // alongside the visible alert, so iOS wakes the app for ~30s
+    // even when it's been suspended. Whole job: parse the smack
+    // out of the push payload, write a single-slot
+    // `WidgetSmackTalk` into the App Group so the home-screen
+    // Active Challenge widget can yell it out of the icon, and
+    // reload the widget timeline.
+    //
+    // Foreground guard: when the user is actively in the app
+    // (`UIApplication.shared.applicationState == .active`), they
+    // can already see the smack inside `ChallengeDetailView`'s
+    // reaction feed — yelling at them through the widget on top
+    // of that is redundant. We skip the App Group write in that
+    // case; the foreground willPresent banner + in-app feed
+    // carry the message instead.
+    private static func handleChallengeReaction(
+        userInfo: [AnyHashable: Any],
+        completion: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        guard let challengeId = userInfo["challenge_id"] as? String,
+              let emoji = userInfo["reaction_emoji"] as? String,
+              let text = userInfo["reaction_text"] as? String else {
+            AppLogger.debug("[SILENT PUSH] challenge_reaction missing required fields — skipping widget write", category: .social)
+            completion(.noData)
+            return
+        }
+        let category = (userInfo["reaction_category"] as? String) ?? "trash_talk"
+        let senderFullName = (userInfo["from_user_name"] as? String) ?? "Someone"
+        let senderFirstName = senderFullName
+            .components(separatedBy: " ")
+            .first
+            .flatMap { $0.isEmpty ? nil : $0 } ?? "Someone"
+
+        // App Group lowercase contract — see
+        // `ActiveChallengeWidgetBridge.publish` for the full rationale
+        // (PostgREST returns lowercase UUIDs, `Foundation.UUID.uuidString`
+        // returns uppercase; everything escaping into the App Group
+        // container MUST be lowercased so the widget's match-by-id
+        // lookup stays honest).
+        let payload = SmackTalkWidgetBridge.WidgetSmackTalk(
+            challengeId: challengeId.lowercased(),
+            senderFirstName: senderFirstName,
+            reactionEmoji: emoji,
+            reactionText: text,
+            reactionCategory: category,
+            receivedAt: Date()
+        )
+        SmackTalkWidgetBridge.publish(payload, shouldWrite: {
+            UIApplication.shared.applicationState != .active
+        })
+        completion(.newData)
     }
 
     // MARK: - strava_activity_new

@@ -46,17 +46,52 @@ final class WhoopService: ObservableObject {
     private var accessToken: String? {
         get { KeychainHelper.load(key: "whoop_access_token") }
         set {
-            if let val = newValue { KeychainHelper.save(key: "whoop_access_token", value: val) }
-            else { KeychainHelper.delete(key: "whoop_access_token") }
+            if let val = newValue {
+                _ = KeychainHelper.save(key: "whoop_access_token", value: val)
+            } else {
+                KeychainHelper.delete(key: "whoop_access_token")
+            }
         }
     }
 
     private var refreshToken: String? {
         get { KeychainHelper.load(key: "whoop_refresh_token") }
         set {
-            if let val = newValue { KeychainHelper.save(key: "whoop_refresh_token", value: val) }
-            else { KeychainHelper.delete(key: "whoop_refresh_token") }
+            if let val = newValue {
+                _ = KeychainHelper.save(key: "whoop_refresh_token", value: val)
+            } else {
+                KeychainHelper.delete(key: "whoop_refresh_token")
+            }
         }
+    }
+
+    /// Persists a rotated refresh token AND verifies the keychain readback
+    /// matches the new value. Returns `true` only when the round-trip
+    /// confirms the write stuck. Bug-intel `af583196` ("WHOOP refresh token
+    /// wiped, keychain readable, accessToken present, refreshToken missing"
+    /// — 13 occ across 2 users): the original setter discarded the
+    /// SecItemAdd OSStatus, so a transient keychain failure (locked-class
+    /// race during BGTask wake) silently lost the rotated RT. The very
+    /// next refresh (an hour later) found RT=notFound → `disconnect()` →
+    /// the user got auto-signed-out of WHOOP nearly every session. Now
+    /// we abort the rotation if the write didn't stick, keep the previous
+    /// (still-valid) RT in the in-memory cache via the keychain, and let
+    /// the next refresh attempt try again instead of permanently wiping
+    /// the user's connection.
+    @discardableResult
+    private func writeRefreshTokenVerified(_ value: String) -> Bool {
+        let preStatus = KeychainHelper.loadWithStatus(key: "whoop_refresh_token").status
+        let ok = KeychainHelper.saveAndVerify(key: "whoop_refresh_token", value: value)
+        OAuthAuditLog.record(
+            service: "whoop",
+            event: ok ? .keychainProbe : .refreshFailure,
+            reason: ok ? "rt_write_verified" : "rt_write_FAILED_no_readback",
+            details: [
+                "pre_rt_status": KeychainHelper.statusLabel(preStatus),
+                "verified": String(ok)
+            ]
+        )
+        return ok
     }
 
     private var tokenExpiresAt: Date? {
@@ -400,7 +435,14 @@ final class WhoopService: ObservableObject {
             // start once the device is unlocked).
             let keychainReadable = KeychainHelper.load(key: "whoop_access_token") != nil
             if keychainReadable {
-                AppLogger.error("[WHOOP] Refresh token wiped (keychain readable, accessToken present, refreshToken missing) — disconnecting so user sees reconnect prompt", category: .auth)
+                // Logged at .warning (NOT .error) — this is a known, recoverable
+                // state. The user sees a "Reconnect WHOOP" CTA in Settings and
+                // on the dashboard widget; nothing crashed, no data was lost.
+                // Logging at .error inflates bug-intel severity scores and
+                // forces the fingerprint into the high-severity export queue
+                // every time it fires (canonical incident: bug-intel `af583196`,
+                // 13 occ across 2 users polluting the daily handoff).
+                AppLogger.warning("[WHOOP] Refresh token wiped (keychain readable, accessToken present, refreshToken missing) — disconnecting so user sees reconnect prompt", category: .auth)
                 disconnect(reason: "rt_wiped_keychain_readable")
                 errorMessage = "WHOOP needs to be reconnected. Tap Connect WHOOP to sign in again."
             } else {
@@ -484,7 +526,33 @@ final class WhoopService: ObservableObject {
         // defensive pattern.
         let rotated = (tokenResponse.refreshToken?.isEmpty == false)
         if let r = tokenResponse.refreshToken, !r.isEmpty {
-            refreshToken = r
+            // Verified write — bug-intel `af583196`. If the keychain write
+            // silently failed (locked-class race during BGTask wake), we
+            // would have lost the rotated RT and the next refresh would
+            // hit the disconnect branch. Verifying the read-back lets us
+            // log loud + retry once before declaring success.
+            let firstAttempt = writeRefreshTokenVerified(r)
+            if !firstAttempt {
+                AppLogger.warning(
+                    "[WHOOP] Rotated RT failed verified-write — retrying once",
+                    category: .auth
+                )
+                let retry = writeRefreshTokenVerified(r)
+                if !retry {
+                    // Don't disconnect — the previous (non-rotated) RT is
+                    // still in the keychain. We mark the rotation as failed
+                    // so the audit trail captures it, but accept that the
+                    // server has now rotated and our local copy is stale.
+                    // Next refresh attempt will get HTTP 400 invalid_grant
+                    // and run through the canonical disconnect path with
+                    // a clear cause, instead of silently signing the user
+                    // out via "rt missing".
+                    AppLogger.warning(
+                        "[WHOOP] Rotated RT could not be persisted (keychain write failed twice). Continuing with this session; next refresh will surface the canonical disconnect path.",
+                        category: .auth
+                    )
+                }
+            }
         }
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 3600))
 
@@ -798,7 +866,14 @@ final class WhoopService: ObservableObject {
             await ReadinessService.shared.recompute(force: true)
         }
 
-        AppLogger.error("[WHOOP] Disconnected — reason=\(reason) pre_at=\(KeychainHelper.statusLabel(preAt.status)) pre_rt=\(KeychainHelper.statusLabel(preRt.status))", category: .auth)
+        // .warning (not .error): every disconnect lands here, including
+        // intentional user "Disconnect WHOOP" taps and the silent recovery
+        // path triggered by `rt_wiped_keychain_readable`. None of those
+        // are bug-class events — they should not inflate severity scores
+        // in the bug-intel pipeline. Real failures (HTTP 4xx token reject,
+        // refresh failure) are already logged at .error in the calling
+        // path before they reach disconnect().
+        AppLogger.warning("[WHOOP] Disconnected — reason=\(reason) pre_at=\(KeychainHelper.statusLabel(preAt.status)) pre_rt=\(KeychainHelper.statusLabel(preRt.status))", category: .auth)
         OAuthAuditLog.record(
             service: "whoop",
             event: .disconnect,

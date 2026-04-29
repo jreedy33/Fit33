@@ -161,8 +161,53 @@ class ChallengeService: ObservableObject {
     
     // MARK: - Challenge Sync Throttling
     private var lastChallengeSyncDate: Date?
-    private var isChallengeSyncing = false
+
+    /// Timestamp of when the current sync started, or `nil` if no sync is
+    /// running. Replaces the previous `isChallengeSyncing: Bool` flag.
+    ///
+    /// Why a timestamp instead of a Bool: the bool was a one-way trapdoor. The
+    /// three sync entry points (`syncHealthKitDataToChallenges`,
+    /// `syncAllTrackingToChallenges`, `recalculateAllChallengeProgress`) all
+    /// SET it true on entry and rely on `defer { = false }` to clear. If ANY
+    /// `await` inside the body suspends indefinitely (RequestCoalescer
+    /// deadlock, BGTask `expirationHandler` racing the body, a hung URLSession
+    /// the OS never resolves), `defer` never fires and the flag stays true
+    /// for the rest of the process lifetime — every subsequent sync attempt
+    /// logs "⏭️ Skipping HK sync — already in progress" forever, and the
+    /// only recovery is force-quitting the app.
+    ///
+    /// Canonical incident 2026-04-29: Manuel d10d5d03's session C80082ED-
+    /// 1777494012 — fresh process, HK reading 332 steps, every sync attempt
+    /// blocked by stuck flag. His leaderboards stayed at 0 because the
+    /// transient-HK-zero clobber (paired server-side fix in
+    /// `20260720_progress_zero_clobber_guard.sql`) wrote 0 from a previous
+    /// session, then the stuck flag prevented any non-zero recovery push.
+    ///
+    /// Treating the lock as stale after `challengeSyncStaleAfter` seconds
+    /// makes it self-healing: a hung sync still hangs in the background, but
+    /// the next caller (after the stale window) can proceed and writes its
+    /// own timestamp. RPCs are idempotent so a concurrent ghost caller
+    /// causes no data corruption — just wasted bytes.
+    private var challengeSyncStartedAt: Date?
+
     private static let challengeSyncThrottleInterval: TimeInterval = 30
+
+    /// Stale-lock window. Aligned with `challengeSyncThrottleInterval` so
+    /// that exactly when the throttle would allow the next sync, the lock
+    /// also auto-releases — no double-blocking. Must be SHORTER than any
+    /// pathological sync duration we want to recover from. 30 s is well
+    /// above the normal 5-15 s sync time and below the 60 s mark where users
+    /// would notice "my widget is still 0".
+    private static let challengeSyncStaleAfter: TimeInterval = 30
+
+    /// True iff a sync is currently considered in-flight (started within the
+    /// last `challengeSyncStaleAfter` seconds). Older timestamps are treated
+    /// as evidence of a hung body whose `defer` block never fired, and the
+    /// lock is reported as released so the next caller can retry.
+    private var isChallengeSyncing: Bool {
+        guard let started = challengeSyncStartedAt else { return false }
+        return Date().timeIntervalSince(started) < Self.challengeSyncStaleAfter
+    }
     
     #if DEBUG
     private var syncAttemptCount = 0
@@ -2374,7 +2419,8 @@ class ChallengeService: ObservableObject {
             #if DEBUG
             syncThrottledCount += 1
             #endif
-            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping HK sync — already in progress", category: .social)
+            let elapsed = challengeSyncStartedAt.map { Int(Date().timeIntervalSince($0)) } ?? -1
+            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping HK sync — already in progress (\(elapsed)s)", category: .social)
             return
         }
         if let lastSync = lastChallengeSyncDate,
@@ -2385,9 +2431,9 @@ class ChallengeService: ObservableObject {
             AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping HK sync — synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .social)
             return
         }
-        isChallengeSyncing = true
+        challengeSyncStartedAt = Date()
         defer {
-            isChallengeSyncing = false
+            challengeSyncStartedAt = nil
             lastChallengeSyncDate = Date()
             #if DEBUG
             syncCompletedCount += 1
@@ -2586,7 +2632,8 @@ class ChallengeService: ObservableObject {
             #if DEBUG
             syncThrottledCount += 1
             #endif
-            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping universal sync — already in progress", category: .social)
+            let elapsed = challengeSyncStartedAt.map { Int(Date().timeIntervalSince($0)) } ?? -1
+            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping universal sync — already in progress (\(elapsed)s)", category: .social)
             return
         }
         if let lastSync = lastChallengeSyncDate,
@@ -2597,9 +2644,9 @@ class ChallengeService: ObservableObject {
             AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping universal sync — synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .social)
             return
         }
-        isChallengeSyncing = true
+        challengeSyncStartedAt = Date()
         defer {
-            isChallengeSyncing = false
+            challengeSyncStartedAt = nil
             lastChallengeSyncDate = Date()
             #if DEBUG
             syncCompletedCount += 1
@@ -2980,7 +3027,8 @@ class ChallengeService: ObservableObject {
             #if DEBUG
             syncThrottledCount += 1
             #endif
-            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping recalculate — sync in progress", category: .social)
+            let elapsed = challengeSyncStartedAt.map { Int(Date().timeIntervalSince($0)) } ?? -1
+            AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping recalculate — sync in progress (\(elapsed)s)", category: .social)
             return
         }
         if let lastSync = lastChallengeSyncDate,
@@ -2991,9 +3039,9 @@ class ChallengeService: ObservableObject {
             AppLogger.debug("⏭️ [CHALLENGE SYNC] Skipping recalculate — synced \(Int(Date().timeIntervalSince(lastSync)))s ago", category: .social)
             return
         }
-        isChallengeSyncing = true
+        challengeSyncStartedAt = Date()
         defer {
-            isChallengeSyncing = false
+            challengeSyncStartedAt = nil
             lastChallengeSyncDate = Date()
             #if DEBUG
             syncCompletedCount += 1

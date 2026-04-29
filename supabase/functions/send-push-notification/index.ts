@@ -335,6 +335,21 @@ serve(async (req) => {
           const apnsHost = getAPNsHost(tokenData.apns_environment)
           const sendStart = Date.now()
 
+          // `challenge_reaction` ("smack talk") rides the visible-alert
+          // queue but ALSO needs to wake the recipient's app in the
+          // background so the home-screen widget can paint the comic-
+          // book shout bubble ("Do better!" yelling out of the icon)
+          // before the user opens the app. iOS allows `content-available:1`
+          // alongside `aps.alert` — the alert still displays, AND
+          // `application(_:didReceiveRemoteNotification:fetchCompletionHandler:)`
+          // is invoked in the background so `SilentPushHandler` can
+          // write to the App Group via `SmackTalkWidgetBridge`. Other
+          // notification types stay alert-only to preserve the
+          // canonical "queue is for visible alerts only, silent
+          // pushes go through their own channel" boundary
+          // (supabase-rules invariant).
+          const wakeAppForBackgroundPaint = (notification.notification_type === 'challenge_reaction')
+
           const apnsResponse = await sendToAPNs(
             tokenData.device_token,
             {
@@ -344,7 +359,8 @@ serve(async (req) => {
             },
             apnsToken,
             apnsHost,
-            badgeCount
+            badgeCount,
+            wakeAppForBackgroundPaint
           )
 
           const durationMs = Date.now() - sendStart
@@ -420,21 +436,32 @@ async function sendToAPNs(
   payload: { title: string; body: string; data: Record<string, unknown> },
   apnsToken: string,
   apnsHost: string = APNS_HOST_PRODUCTION,
-  badgeCount: number = 0
+  badgeCount: number = 0,
+  wakeAppForBackgroundPaint: boolean = false
 ): Promise<{ success: boolean; error?: string }> {
   
-  const apnsPayload: Record<string, unknown> = {
-    aps: {
-      alert: {
-        title: payload.title,
-        body: payload.body,
-      },
-      sound: 'default',
-      // Dynamic badge: real count of pending actionable items for this user
-      // 0 clears the badge, >0 shows the count on the app icon
-      badge: badgeCount,
-      'mutable-content': 1,
+  const aps: Record<string, unknown> = {
+    alert: {
+      title: payload.title,
+      body: payload.body,
     },
+    sound: 'default',
+    // Dynamic badge: real count of pending actionable items for this user
+    // 0 clears the badge, >0 shows the count on the app icon
+    badge: badgeCount,
+    'mutable-content': 1,
+  }
+  // Adds background-fetch wake on top of the visible alert (currently
+  // only set for `challenge_reaction` so the smack-talk widget can
+  // paint the shout bubble before the user opens the app). iOS still
+  // displays the alert; the app gets ~30s of background runtime in
+  // `application(_:didReceiveRemoteNotification:fetchCompletionHandler:)`
+  // to update the App Group.
+  if (wakeAppForBackgroundPaint) {
+    aps['content-available'] = 1
+  }
+  const apnsPayload: Record<string, unknown> = {
+    aps,
     // Include custom data at the root level
     ...payload.data
   }

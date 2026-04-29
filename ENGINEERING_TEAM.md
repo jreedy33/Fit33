@@ -38,6 +38,7 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 | Staff Infra & Security | `INFRA_SECURITY_AGENT.md` | Secrets, auth, CI/CD, edge function access, compliance | "How it stays safe" |
 | Staff Data & Backend | `DATA_BACKEND_AGENT.md` | Supabase schema, RLS, RPCs, Core Data, DTOs | "How data flows correctly" |
 | Staff Quality & Performance | `QUALITY_PERFORMANCE_AGENT.md` | Testing, memory, performance, accessibility, stability | "How it stays stable" |
+| Staff Bug Intelligence | `BUG_INTELLIGENCE_AGENT.md` | Bug-detection / classification / triage / resolution pipeline (`bug_intelligence_*` + `bug_intel_*` + `triage-bugs` + iOS classifier chain + CMS export) | "How we'll know when something breaks" |
 | Staff Design System Enforcement | `DESIGN_SYSTEM_AGENT.md` | Token migration, dedup, metrics | "How the design gets into the code" |
 | Staff Fitness Expert | `FITNESS_EXPERT_AGENT.md` | Exercise science, program design, workout validation | "What the workout should actually be" |
 | Staff Device Compatibility | `DEVICE_COMPATIBILITY_AGENT.md` | Responsive layout, iPad, Apple Watch planning | "How it fits every screen" |
@@ -92,6 +93,19 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 | AVAudioSession refcounting | Quality & Performance | — |
 | Reduce-motion enforcement | Quality & Performance | Design System |
 | Admin CMS cookie hardening | Infra & Security | Product Engineer |
+| New error catch block / classifier coverage | Bug Intelligence | Quality & Performance |
+| New screen → ScreenCodeMap entry | Bug Intelligence | Product Engineer |
+| `bug_intelligence_*` schema change | Bug Intelligence | Supabase Expert, Data |
+| `bug_intel_*` RPC change | Bug Intelligence | Supabase Expert |
+| `triage-bugs` / `triage-shake-reports` edge function | Bug Intelligence | Infra (auth), Data (DTOs) |
+| `bug_intel_noise_filter` denylist tuning | Bug Intelligence | Quality & Performance |
+| `NetworkErrorClassifier` / `DiagnosticContext` / `AppLogger` | Bug Intelligence | Quality & Performance |
+| `CrashReportingService` / `BugReportStateSnapshot` | Bug Intelligence | Quality & Performance |
+| Migration `Resolves:` directive replay | Bug Intelligence | Supabase Expert |
+| CMS `/bug-intelligence` export schema | Bug Intelligence | Data |
+| New transient-by-design failure mode | Bug Intelligence | Quality & Performance |
+| `class=unknown` heuristic gap | Bug Intelligence | Data |
+| Pipeline phase migration (collapse/classify/score/resolve) | Bug Intelligence | Supabase Expert |
 
 ---
 
@@ -175,6 +189,7 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 - DTOs / RPCs / realtime / Core Data contexts → Data & Backend
 - Schema / table design / migrations → Supabase Expert
 - Performance / crashes / accessibility → Quality & Performance
+- Bug-intel pipeline (`bug_intelligence_*`, `triage-bugs`, classifier, ScreenCodeMap, CMS export) → Bug Intelligence
 - Token migration → Design System Enforcement
 - Exercise / workout / program logic → Fitness Expert
 - Layout / device / iPad / Watch planning → Device Compatibility
@@ -199,7 +214,7 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 9. JSONSerialization safety — always `isValidJSONObject` first. *(swiftui-rules.mdc)*
 10. AVFoundation + GenderFilterService off the main thread. *(swiftui-rules.mdc)*
 11. Realtime tables must have `REPLICA IDENTITY FULL` AND be registered in the `supabase_realtime` publication. *(supabase-rules.mdc)*
-12. Admin CMS: CSP in BOTH `next.config.ts` AND `middleware.ts`; httpOnly Secure SameSite=Strict cookies. *(admin-cms-rules.mdc)*
+12. Admin CMS: CSP **only in `middleware.ts`** (per-request nonce + `strict-dynamic`); `next.config.ts` intentionally omits it (Sprint 5 / Q2-20 — two sources fight and silently regress to `'unsafe-inline'`). httpOnly Secure SameSite=Strict cookies. *(admin-cms-rules.mdc + INFRA_SECURITY_AGENT.md #23)*
 
 ---
 

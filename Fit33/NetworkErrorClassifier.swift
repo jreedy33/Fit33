@@ -56,11 +56,32 @@ enum NetworkErrorClassifier {
                  NSURLErrorNetworkConnectionLost,
                  NSURLErrorNotConnectedToInternet,
                  NSURLErrorInternationalRoamingOff,
-                 NSURLErrorDataNotAllowed:
+                 NSURLErrorDataNotAllowed,
+                 // NSURLErrorCannotParseResponse (-1017): server returned a
+                 // body PostgREST / our edge functions couldn't decode —
+                 // almost always a Cloudflare flap mid-restart returning
+                 // truncated JSON or an HTML error page. Pairs with the
+                 // `Status Code: 502/503` HTML matchers below. Retry queue
+                 // recovers automatically. (Bug-intel Phase 12 denylist —
+                 // server-side filter `nsurl_cannot_parse_response`,
+                 // migration `20260713_…`.)
+                 NSURLErrorCannotParseResponse:
                 return .transientNetwork
             default:
                 break
             }
+        }
+
+        // BGTaskSchedulerErrorDomain code 1 (BGTaskSchedulerError.unavailable):
+        // device is currently unavailable for background tasks — Low Power
+        // Mode, "Background App Refresh" disabled in Settings, simulator,
+        // or scheduler rate-limit. Apple-documented expected state, never a
+        // bug. `BackgroundChallengeSyncService.scheduleNext()` already
+        // swallows the throw internally; this routes any legacy log call
+        // sites to `.warning` instead of `.error`. Pairs with the server
+        // filter `bgtask_scheduler_unavailable` from migration `20260713_…`.
+        if nsError.domain == "BGTaskSchedulerErrorDomain" && nsError.code == 1 {
+            return .transientNetwork
         }
 
         let lower = nsError.localizedDescription.lowercased()

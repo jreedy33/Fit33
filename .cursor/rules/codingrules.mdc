@@ -24,7 +24,7 @@ When editing a file, the matching scoped rule loads automatically. When reading/
   - If the invariant applies to ALL agents (cross-cutting) → add it to `codingrules.mdc`.
   - If the new fact is agent-specific need-to-know (e.g. a new canonical model / service ownership) → add to the current `*_AGENT.md`.
   - Dated narrative / audit / migration notes → append to `docs/history/*_AGENT.md` (NOT the current agent file).
-- **Agent files**: `QUALITY_PERFORMANCE_AGENT.md`, `PRODUCT_ENGINEER_AGENT.md`, `DATA_BACKEND_AGENT.md`, `INFRA_SECURITY_AGENT.md`, `SUPABASE_AGENT.md`, `FITNESS_EXPERT_AGENT.md`, `DESIGN_AGENT.md`, `DESIGN_SYSTEM_AGENT.md`, `DEVICE_COMPATIBILITY_AGENT.md`, `SUPPORT_AGENT.md`.
+- **Agent files**: `QUALITY_PERFORMANCE_AGENT.md`, `PRODUCT_ENGINEER_AGENT.md`, `DATA_BACKEND_AGENT.md`, `INFRA_SECURITY_AGENT.md`, `SUPABASE_AGENT.md`, `BUG_INTELLIGENCE_AGENT.md`, `FITNESS_EXPERT_AGENT.md`, `DESIGN_AGENT.md`, `DESIGN_SYSTEM_AGENT.md`, `DEVICE_COMPATIBILITY_AGENT.md`, `SUPPORT_AGENT.md`.
 
 ## General Principles
 - Always prefer simple solutions.

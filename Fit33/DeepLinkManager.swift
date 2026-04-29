@@ -17,6 +17,7 @@ class DeepLinkManager: ObservableObject {
         
         // Social / Friends
         case friends
+        case friendsActivity    // Friends tab landing (inline activity feed) — used by activity_reaction pushes
         case friendRequests     // Direct to friend requests tab
         case friendSearch       // Direct to friend search tab
         case sharedWorkout(workoutId: String)

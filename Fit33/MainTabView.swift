@@ -549,6 +549,18 @@ struct MainTabView: View {
             deepLinkManager.pendingFriendsRoute = "FriendSearch"
             deepLinkManager.pendingDestination = nil
             AppLogger.debug("[DEEPLINK] Switched to Friends tab → pushing FriendSearch", category: .ui)
+
+        // Activity-feed reactions (`activity_reaction` push). Land on the
+        // Friends tab landing screen — the activity feed is rendered INLINE
+        // there. Pushing `FriendsList` would hide the feed behind the
+        // friends-list sheet. Bug-intel `184e70c6`: tapping a reaction
+        // notification used to fall through to `default` → silent no-op.
+        case .friendsActivity:
+            selectedTab = 4
+            // Intentionally NO pendingFriendsRoute — keep the navigation stack
+            // at root so the inline activity feed is visible.
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Switched to Friends tab landing for activity reaction", category: .ui)
             
         // Received workouts - handled by WorkoutTabView
         case .receivedWorkouts, .receivedWorkout, .sharedWorkout:

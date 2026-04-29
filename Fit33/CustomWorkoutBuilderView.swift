@@ -2031,7 +2031,7 @@ struct CustomWorkoutBuilderView: View {
             case .addToWorkout(_, let onSelect):
                 onSelect(exercise)
                 dismiss()
-            case .build:
+            case .build, .pickMultiple:
                 break // Not single-select
             }
             return

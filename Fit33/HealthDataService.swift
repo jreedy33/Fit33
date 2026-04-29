@@ -1257,21 +1257,39 @@ final class HealthDataService: ObservableObject {
             return
         }
 
+        // `sleep_logs` requires NOT NULL `start_time` + `end_time` (PG 23502
+        // crash class — bug-intel `14b58e6a` / `9dd27552`, 26 occurrences on
+        // real devices). HealthKit's daily rollup gives us a duration only,
+        // not bracketing timestamps. We synthesize an "ended this morning"
+        // window from the rollup; real per-sample HK sleep stages take a
+        // different write path. A `hours <= 0` rollup (fresh device, no HK
+        // data yet) skips entirely — there's nothing meaningful to write.
+        guard hours > 0 else {
+            AppLogger.debug(
+                "[HEALTH] Skipping saveSleepFromHealthKit — HK rollup returned \(hours)h",
+                category: .health
+            )
+            return
+        }
+
+        let endTime = Date()
+        let startTime = endTime.addingTimeInterval(-hours * 3600)
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
-        let dateStr = Self.iso8601.string(from: yesterday)
-        
+
         let insert = HealthKitSleepInsert(
             userId: userId.uuidString,
-            dateOfSleep: dateStr,
+            dateOfSleep: Self.dayFormatter.string(from: yesterday),
+            startTime: Self.iso8601.string(from: startTime),
+            endTime: Self.iso8601.string(from: endTime),
             durationMs: Int(hours * 3600 * 1000),
             minutesAsleep: Int(hours * 60),
             source: "healthkit"
         )
-        
+
         do {
             try await SupabaseManager.shared.supabaseClient
                 .from("sleep_logs")
-                .upsert(insert)
+                .upsert(insert, onConflict: "user_id,date_of_sleep,source")
                 .execute()
         } catch {
             NetworkErrorClassifier.log(error, context: "Failed to save HealthKit sleep", category: .health)
@@ -2037,13 +2055,17 @@ struct HealthKitWorkoutInsert: Codable {
 struct HealthKitSleepInsert: Codable {
     let userId: String
     let dateOfSleep: String
+    let startTime: String
+    let endTime: String
     let durationMs: Int
     let minutesAsleep: Int
     let source: String
-    
+
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
         case dateOfSleep = "date_of_sleep"
+        case startTime = "start_time"
+        case endTime = "end_time"
         case durationMs = "duration_ms"
         case minutesAsleep = "minutes_asleep"
         case source

@@ -94,7 +94,7 @@ Related Agent
 |---|---|---|---|---|
 | PP-001 | App loses data when offline | High | No offline queue (H-4) | Resolved (CloudSyncRetryQueue) |
 | PP-002 | Keyboard doesn't dismiss on tap outside | Medium | Missing `.scrollDismissesKeyboard` (M-8) | Open |
-| PP-003 | Challenge progress shows on wrong day | Critical | Timezone mismatch (C-7) | Open |
+| PP-003 | Challenge progress shows on wrong day | Critical | Timezone mismatch (C-7) | Resolved (caller-timezone fix — `supabase/20260520_challenge_daily_reset_caller_tz.sql` + Data invariants 45–47; bug-intel fingerprint `6be18e3a` closed). New "wrong day" reports → likely a different root cause; route to Data & Backend. |
 | PP-004 | Can't find specific foods in search | Medium | USDA coverage gaps | Open |
 | PP-005 | Streak lost unexpectedly | High | Timezone + recovery day counting | Open |
 | PP-006 | Workout feels repetitive | Medium | Exercise selection history weighting | Open |

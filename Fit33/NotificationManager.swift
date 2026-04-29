@@ -19,6 +19,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
     case challengeUpdate = "challenge_update"
     case challengeProgress = "challenge_progress"
     case challengeReaction = "challenge_reaction"
+    case activityReaction = "activity_reaction"
     case challengeCancelled = "challenge_cancelled"
     /// Realtime Widget Server Pull, Phase 7c (2026-04-26): server-side
     /// hourly engagement nudge for users whose 1v1 opponent has been
@@ -69,6 +70,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .challengeUpdate: return "Challenge Updates"
         case .challengeProgress: return "Challenge Progress"
         case .challengeReaction: return "Challenge Reactions"
+        case .activityReaction: return "Activity Feed Reactions"
         case .challengeCancelled: return "Challenge Cancelled"
         case .challengeNudge: return "Challenge Nudges"
         case .communityFriendJoined: return "Friend Joined Community"
@@ -103,6 +105,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .challengeUpdate: return "Updates on your active challenges"
         case .challengeProgress: return "Notify when opponent completes their daily goal"
         case .challengeReaction: return "Battle cries and power ups from your challenge opponent"
+        case .activityReaction: return "Notify when friends react to your workout, meal, or weight log"
         case .challengeCancelled: return "Notify when a challenge is cancelled"
         case .challengeNudge: return "Heads-up when an opponent pulls ahead so you can sync your progress"
         case .communityFriendJoined: return "Notify when friends join a community challenge"
@@ -137,6 +140,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .challengeUpdate: return "chart.line.uptrend.xyaxis"
         case .challengeProgress: return "flame.fill"
         case .challengeReaction: return "bubble.left.fill"
+        case .activityReaction: return "heart.fill"
         case .challengeCancelled: return "xmark.circle.fill"
         case .challengeNudge: return "bell.badge.fill"
         case .communityFriendJoined: return "person.2.circle.fill"
@@ -171,6 +175,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
         case .challengeUpdate: return .purple
         case .challengeProgress: return .blue
         case .challengeReaction: return .orange
+        case .activityReaction: return .pink
         case .challengeCancelled: return .red
         case .challengeNudge: return .orange
         case .communityFriendJoined: return .cyan
@@ -206,6 +211,7 @@ enum NotificationType: String, CaseIterable, Identifiable {
              .challengeUpdate,         // Keep users engaged with active challenges
              .challengeProgress,       // Notify when opponent completes daily goal
              .challengeReaction,       // Battle cries and power ups from opponent
+             .activityReaction,        // Friends reacting to your workout / meal / weight log
              .challengeCancelled,      // Important to know when challenge ends
              .challengeNudge,          // Engagement nudge — silent opponent in active 1v1
              .communityFriendJoined,   // Social discovery - friend joined a community
@@ -267,8 +273,8 @@ enum NotificationCategory: String, CaseIterable, Identifiable {
         case .social:
             return [.sharedWorkout, .friendRequest, .contactJoined,
                     .challengeInvite, .groupChallengeInvite, .challengeUpdate,
-                    .challengeProgress, .challengeReaction, .challengeCancelled,
-                    .challengeNudge,
+                    .challengeProgress, .challengeReaction, .activityReaction,
+                    .challengeCancelled, .challengeNudge,
                     .communityFriendJoined, .privateChallengeInvite,
                     .privateChallengeUpdate, .privateChallengeMessage]
         case .achievements:
@@ -1827,6 +1833,17 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             await ChallengeService.shared.fetchActiveGroupChallenges()
             DeepLinkManager.shared.pendingDestination = .dashboard
             AppLogger.debug("Challenge cancelled, all lists refreshed", category: .general)
+
+        // Bug-intel `184e70c6` (Sprint Q2-37): "activity_reaction" pushes were
+        // landing in the `default` arm and being silently no-op'd into a
+        // `.dashboard` fallback. Refresh the friend activity feed so the
+        // reaction count is fresh, then surface the Friends-tab landing
+        // screen where the inline feed lives. We deliberately do NOT push
+        // `FriendsList` — that view doesn't show the activity feed.
+        case "activity_reaction":
+            await ActivityFeedService.shared.fetchFeed()
+            DeepLinkManager.shared.pendingDestination = .friendsActivity
+            AppLogger.debug("Activity reaction — opening Friends tab activity feed", category: .general)
             
         // Achievement notifications
         case "personal_record":
@@ -1919,6 +1936,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         "challenge_invite", "group_challenge_invite", "group_challenge_started",
         "challenge_accepted", "challenge_progress", "challenge_completed",
         "challenge_cancelled", "challenge_update", "challenge_reaction",
+        // Activity-feed reactions (friends ❤️ your workout / meal / weight log)
+        "activity_reaction",
         // Realtime Widget Server Pull, Phase 7c (2026-04-26): server
         // hourly cron fires `challenge_nudge` to silent users in active
         // 1v1s. Routed to `.challengeDetail(...)` and triggers a

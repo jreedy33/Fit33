@@ -62,6 +62,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { verifyAssnJws } from "./verify-jws.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -138,21 +139,35 @@ function decodeJwsPayload<T>(jws: string): T | null {
   }
 }
 
-// JWS signature verification. Phase 1b ships this as a stub that returns
-// the env-gated result. Production deploy will swap this for a real
-// chain validator that:
-//   1. Parses the header's `x5c` to extract the leaf cert.
-//   2. Validates the chain to Apple's root CA (pinned in env / KV).
-//   3. Verifies the JWS signature using the leaf's public key.
-// Until that lands, we set `is_signature_valid` to whatever
-// ASSN_VERIFY_SIGNATURE says — `false` is fail-closed (no subscription
-// mutations) but events are still logged for forensic replay.
-async function verifyJwsSignature(_jws: string): Promise<boolean> {
-  const flag = Deno.env.get("ASSN_VERIFY_SIGNATURE") ?? "false";
-  // When the chain validator lands, replace this with a real check.
-  // For Phase 1b: default to false (audit-only) — flip to true when
-  // verified end-to-end against sandbox + prod cert chains.
-  return flag === "true";
+// JWS signature verification.
+// Phase 1d (MON-13) — `./verify-jws.ts` does the actual work:
+//   1. Parses the JWS header's `x5c` chain.
+//   2. Walks the chain — each cert signed by the next.
+//   3. Anchors the chain to a pinned Apple Root CA G3 (DER bundled).
+//   4. Verifies the JWS signature against the leaf's public key (ES256).
+//
+// The ASSN_VERIFY_SIGNATURE env flag controls how the result is consumed,
+// not whether verification runs. We ALWAYS run the validator and persist
+// the boolean result on `iap_receipts.is_signature_valid` for forensic
+// replay. The flag determines whether `is_signature_valid=false` is
+// treated as fail-closed (refuse to mutate `subscriptions`) or audit-only
+// (still mutate, but with the failure logged on the row).
+//
+// Phase 1d defaults: ASSN_VERIFY_SIGNATURE=false (audit-only). After
+// soaking 7+ days of real prod events with the validator returning
+// `valid: true` for every legitimate notification, flip the env flag to
+// "true" and redeploy — that's the cohort cutover, no code change.
+async function verifyJwsSignature(jws: string): Promise<boolean> {
+  const result = await verifyAssnJws(jws);
+  if (!result.valid) {
+    // Forensic log — every failure carries a reason label so we can
+    // categorize them (chain break vs signature invalid vs Apple cert
+    // rotation). Unauthenticated by design — Apple is the only POSTer.
+    console.warn(
+      `[assn-webhook] JWS verify FAILED reason=${result.reason ?? "unknown"}`,
+    );
+  }
+  return result.valid;
 }
 
 // ─── User resolution ──────────────────────────────────────────────────────

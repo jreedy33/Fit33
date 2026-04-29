@@ -88,7 +88,18 @@ class StoreKitManager: ObservableObject {
         let startedAt = Date()
 
         do {
-            let result = try await product.purchase()
+            // MON-9: Pass the user's Supabase auth.uid() as appAccountToken so
+            // App Store Server Notifications v2 carry it back in the JWS payload.
+            // The assn-webhook then resolves user_id directly from the token
+            // instead of a fragile email/originalTransactionId lookup. Per
+            // MONETIZATION_AGENT invariant 23 (canonical user resolution).
+            // Falls back to no token if user is unauthenticated (which should
+            // never happen at the call site but is defensive).
+            var purchaseOptions: Set<Product.PurchaseOption> = []
+            if let userID = SupabaseManager.shared.currentUser?.id {
+                purchaseOptions.insert(.appAccountToken(userID))
+            }
+            let result = try await product.purchase(options: purchaseOptions)
 
             switch result {
             case .success(let verification):

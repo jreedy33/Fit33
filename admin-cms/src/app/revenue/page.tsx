@@ -1,19 +1,21 @@
 'use client'
 
-// Revenue tab — owner: MONETIZATION_AGENT.md.
-// Today this page renders the agent's roadmap when the subscriptions
-// schema isn't deployed yet (Phase pre-1a). When `get_revenue_overview`
-// returns `schema_deployed: true`, the same components light up with real
-// MRR / ARR / active / trial / churn from `revenue_daily_rollup`.
+// Revenue tab — Overview (root /revenue route).
+// Owner: MONETIZATION_AGENT.md (invariants 27 + 30).
 //
-// The 5 sub-views (Overview, Subscribers, Transactions, Grants,
-// Experiments) per MONETIZATION_AGENT invariant 27 will each get their
-// own page under `/revenue/<sub>` as Phase 2+ ships. Today only Overview
-// exists; the other tabs render a "coming in Phase N" placeholder so the
-// nav contract is established without faking data.
+// Renders the agent's roadmap when the subscriptions schema isn't deployed
+// (Phase pre-1a). When `get_revenue_overview` returns `schema_deployed:true`
+// the same components light up with real MRR / ARR / active / trial / churn
+// from `revenue_daily_rollup`.
+//
+// Sub-tabs (Subscribers, Transactions, Grants, Experiments) are now full
+// Next.js routes under /revenue/<sub>. The shared nav lives in
+// components/RevenueTabNav so all five pages render the same chrome.
 
 import { useEffect, useState } from 'react'
 import AdminShell from '@/components/AdminShell'
+import { RevenueHeader } from '@/components/RevenueTabNav'
+import { KpiCard, SignalCard, formatCents } from '@/components/RevenueCards'
 import { adminApi } from '@/lib/api'
 
 type RoadmapItem = { phase: string; deliverable: string }
@@ -51,21 +53,10 @@ interface DeployedOverview {
 
 type OverviewResponse = PreSchemaOverview | DeployedOverview
 
-type SubTab = 'overview' | 'subscribers' | 'transactions' | 'grants' | 'experiments'
-
-const SUB_TABS: Array<{ id: SubTab; label: string; icon: string; phaseGate: string }> = [
-  { id: 'overview',     label: 'Overview',     icon: '💰', phaseGate: 'Phase 2'  },
-  { id: 'subscribers',  label: 'Subscribers',  icon: '👥', phaseGate: 'Phase 3'  },
-  { id: 'transactions', label: 'Transactions', icon: '🧾', phaseGate: 'Phase 3'  },
-  { id: 'grants',       label: 'Grants',       icon: '🎁', phaseGate: 'Phase 4'  },
-  { id: 'experiments',  label: 'Experiments',  icon: '🧪', phaseGate: 'Phase 5'  },
-]
-
 export default function RevenuePage() {
   const [overview, setOverview] = useState<OverviewResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<SubTab>('overview')
 
   useEffect(() => {
     let cancelled = false
@@ -88,37 +79,7 @@ export default function RevenuePage() {
   return (
     <AdminShell>
       <div className="p-6 max-w-7xl mx-auto">
-        <header className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Revenue</h1>
-              <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-                Subscriptions, IAP, ad revenue, comp grants. Owner:{' '}
-                <code style={{ color: 'var(--accent)' }}>MONETIZATION_AGENT.md</code>
-              </p>
-            </div>
-          </div>
-
-          <nav className="flex gap-2 border-b mt-4" style={{ borderColor: 'var(--border)' }}>
-            {SUB_TABS.map((tab) => {
-              const isActive = activeTab === tab.id
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className="px-4 py-2.5 text-sm font-medium border-b-2 transition-colors"
-                  style={{
-                    borderColor: isActive ? 'var(--accent)' : 'transparent',
-                    color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-                  }}
-                >
-                  <span className="mr-2">{tab.icon}</span>
-                  {tab.label}
-                </button>
-              )
-            })}
-          </nav>
-        </header>
+        <RevenueHeader />
 
         {loading && (
           <div className="flex justify-center py-20">
@@ -134,26 +95,13 @@ export default function RevenuePage() {
         )}
 
         {!loading && !error && overview && (
-          <>
-            {activeTab === 'overview' && <OverviewTab overview={overview} />}
-            {activeTab !== 'overview' && (
-              <SubTabPlaceholder
-                tab={SUB_TABS.find((t) => t.id === activeTab)!}
-                schemaDeployed={overview.schema_deployed}
-              />
-            )}
-          </>
+          overview.schema_deployed
+            ? <DeployedOverviewView overview={overview} />
+            : <PreSchemaOverviewView overview={overview} />
         )}
       </div>
     </AdminShell>
   )
-}
-
-function OverviewTab({ overview }: { overview: OverviewResponse }) {
-  if (!overview.schema_deployed) {
-    return <PreSchemaOverviewView overview={overview} />
-  }
-  return <DeployedOverviewView overview={overview} />
 }
 
 function PreSchemaOverviewView({ overview }: { overview: PreSchemaOverview }) {
@@ -200,13 +148,13 @@ function PreSchemaOverviewView({ overview }: { overview: PreSchemaOverview }) {
           />
           <SignalCard
             label="PremiumManager"
-            value="always-premium"
-            note="UserManager.swift — flips to server-driven in Phase 1c"
+            value="server-aware"
+            note="UserManager.swift — refreshFromServer() observability live; flip in Phase 2"
           />
           <SignalCard
             label="AdMob"
             value="prod-wired"
-            note="AdManager.swift — interstitial + rewarded + ATT + #if DEBUG guard"
+            note="AdManager.swift — interstitial + rewarded + ATT + COPPA gates"
           />
         </div>
       </section>
@@ -308,11 +256,6 @@ function DeployedOverviewView({ overview }: { overview: DeployedOverview }) {
     return a - b
   }
 
-  function formatCents(cents: number | undefined) {
-    if (cents === undefined) return '—'
-    return `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  }
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -365,6 +308,13 @@ function DeployedOverviewView({ overview }: { overview: DeployedOverview }) {
               </tr>
             </thead>
             <tbody>
+              {overview.rollup_30d.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="text-center text-sm py-8" style={{ color: 'var(--text-muted)' }}>
+                    No rollup rows yet. The pg_cron job runs nightly at 03:00 UTC; rows will appear after the first scheduled run with real subscription data.
+                  </td>
+                </tr>
+              )}
               {overview.rollup_30d.map((row) => (
                 <tr key={row.snapshot_date}>
                   <td className="text-sm">{row.snapshot_date}</td>
@@ -389,98 +339,6 @@ function DeployedOverviewView({ overview }: { overview: DeployedOverview }) {
           </table>
         </div>
       </section>
-    </div>
-  )
-}
-
-function SubTabPlaceholder({
-  tab,
-  schemaDeployed,
-}: {
-  tab: { id: SubTab; label: string; icon: string; phaseGate: string }
-  schemaDeployed: boolean
-}) {
-  return (
-    <div className="card text-center py-16">
-      <div className="text-5xl mb-4">{tab.icon}</div>
-      <div className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-        {tab.label}
-      </div>
-      <div className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
-        {schemaDeployed
-          ? `${tab.label} ships in ${tab.phaseGate}.`
-          : `${tab.label} ships in ${tab.phaseGate} (after Phase 1 schema deploy).`}
-      </div>
-      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        See <code style={{ color: 'var(--accent)' }}>MONETIZATION_AGENT.md</code> § Phased Rollout.
-      </div>
-    </div>
-  )
-}
-
-function SignalCard({ label, value, note }: { label: string; value: number | string; note: string }) {
-  return (
-    <div className="card">
-      <div className="text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
-        {label}
-      </div>
-      <div className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
-        {typeof value === 'number' ? value.toLocaleString() : value}
-      </div>
-      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        {note}
-      </div>
-    </div>
-  )
-}
-
-function KpiCard({
-  label,
-  value,
-  delta,
-  deltaFormat,
-  color,
-}: {
-  label: string
-  value: number | string
-  delta?: number | null
-  deltaFormat?: 'cents' | 'count'
-  color: string
-}) {
-  const showDelta = delta !== null && delta !== undefined && delta !== 0
-  const deltaPositive = (delta ?? 0) > 0
-  const deltaLabel = showDelta
-    ? deltaFormat === 'cents'
-      ? `${deltaPositive ? '+' : ''}$${((delta ?? 0) / 100).toFixed(2)}`
-      : `${deltaPositive ? '+' : ''}${delta}`
-    : null
-
-  return (
-    <div className="card">
-      <div className="flex items-center gap-3">
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0"
-          style={{ background: `${color}18`, color }}
-        >
-          ●
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-            {label}
-          </div>
-          <div className="text-xl font-bold truncate" style={{ color: 'var(--text-primary)' }}>
-            {typeof value === 'number' ? value.toLocaleString() : value}
-          </div>
-          {deltaLabel && (
-            <div
-              className="text-xs font-medium mt-0.5"
-              style={{ color: deltaPositive ? '#22c55e' : '#ef4444' }}
-            >
-              {deltaLabel} vs yesterday
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   )
 }

@@ -3798,24 +3798,378 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      // Stubs for the per-user mutation actions. These intentionally fail
-      // closed today — calling them returns 503 + "schema not deployed",
-      // which is the correct behavior until Phase 1a ships. The
-      // `WRITE_ACTIONS` registration above ensures every attempted call
-      // is rate-limited + audit-logged regardless of the stub return.
-      case 'grant_premium_to_user':
-      case 'revoke_premium_from_user':
-      case 'extend_trial':
-      case 'mark_refund_acknowledged':
-      case 'update_subscription_note': {
-        return NextResponse.json(
-          {
-            error: 'Subscription schema not yet deployed. See MONETIZATION_AGENT.md Phase 1a.',
+      // ───────────────────────────────────────────────────
+      // /revenue/subscribers — list active + recent subscriptions
+      // ───────────────────────────────────────────────────
+      // Owner: MONETIZATION_AGENT.md (invariant 27 — Subscribers tab).
+      // Joins `subscriptions` to `user_profiles` so the table shows
+      // email + name without N+1 queries. Filters: status, tier, q (email
+      // ilike). Limit capped at 100 via safeLimit. Pagination via `page`.
+      case 'list_subscribers': {
+        const { status: filterStatus, tier: filterTier, q, page = 0 } = params
+        const lim = safeLimit(params.limit, 100)
+        const pg = Math.max(0, Number(page) || 0)
+
+        // Probe schema deployment first so the UI can render the roadmap
+        // panel instead of an error if Phase 1a hasn't shipped on this env.
+        const probe = await admin
+          .from('subscriptions')
+          .select('id', { head: true, count: 'exact' })
+          .limit(1)
+        if (probe.error) {
+          return NextResponse.json({
             schema_deployed: false,
-            action,
-          },
-          { status: 503 },
-        )
+            subscribers: [],
+            total: 0,
+          })
+        }
+
+        let dbQuery = admin
+          .from('subscriptions')
+          .select(
+            `id, user_id, product_id, tier, status, started_at, expires_at,
+             will_auto_renew, is_in_intro_offer, ownership_type,
+             original_transaction_id, environment, last_assn_event_at,
+             last_assn_notification_type, revenue_cents, currency,
+             created_at, updated_at,
+             user_profiles:user_id (email, name, username)`,
+            { count: 'exact' },
+          )
+          .order('updated_at', { ascending: false })
+          .range(pg * lim, (pg + 1) * lim - 1)
+
+        if (filterStatus && typeof filterStatus === 'string') {
+          dbQuery = dbQuery.eq('status', filterStatus)
+        }
+        if (filterTier && typeof filterTier === 'string') {
+          dbQuery = dbQuery.eq('tier', filterTier)
+        }
+
+        const { data, error, count } = await dbQuery
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        // PostgREST returns embedded foreign-table data as an ARRAY even
+        // when the FK is single-cardinality. Flatten to a single object
+        // so the CMS page receives `user_profiles: {email,name,username}`
+        // not `user_profiles: [{...}]` — the latter would silently break
+        // every `.email` access in the table cells.
+        type RawRow = Record<string, unknown> & {
+          user_profiles?: Array<{ email?: string; name?: string; username?: string }> | null
+        }
+        const flatten = (r: RawRow) => {
+          const arr = Array.isArray(r.user_profiles) ? r.user_profiles : null
+          return { ...r, user_profiles: arr && arr.length > 0 ? arr[0] : null }
+        }
+        let rows = (data as RawRow[] | null || []).map(flatten)
+
+        // Optional email/username/name search — apply post-fetch since
+        // PostgREST can't `.ilike` through a left-join cleanly without
+        // foreign-table filtering syntax, which the supabase-js client
+        // doesn't expose. q is sanitized by sanitizeSearch.
+        if (q && typeof q === 'string' && q.trim()) {
+          const needle = sanitizeSearch(q).toLowerCase()
+          rows = rows.filter((r) => {
+            const u = r.user_profiles as { email?: string; name?: string; username?: string } | null
+            if (!u) return false
+            return (
+              (u.email || '').toLowerCase().includes(needle) ||
+              (u.name || '').toLowerCase().includes(needle) ||
+              (u.username || '').toLowerCase().includes(needle)
+            )
+          })
+        }
+
+        return NextResponse.json({
+          schema_deployed: true,
+          subscribers: rows,
+          total: count || 0,
+        })
+      }
+
+      // ───────────────────────────────────────────────────
+      // /revenue/transactions — list IAP receipts (ASSN events)
+      // ───────────────────────────────────────────────────
+      // Owner: MONETIZATION_AGENT.md (invariant 27 — Transactions tab).
+      // Reads from `iap_receipts` which is the canonical event log written
+      // by the assn-webhook. Filters: notification_type, environment.
+      // Most-recent-first ordering matches how forensics work in practice.
+      case 'list_iap_receipts': {
+        const { notification_type, environment, page = 0 } = params
+        const lim = safeLimit(params.limit, 100)
+        const pg = Math.max(0, Number(page) || 0)
+
+        const probe = await admin
+          .from('iap_receipts')
+          .select('id', { head: true, count: 'exact' })
+          .limit(1)
+        if (probe.error) {
+          return NextResponse.json({
+            schema_deployed: false,
+            transactions: [],
+            total: 0,
+          })
+        }
+
+        let dbQuery = admin
+          .from('iap_receipts')
+          .select(
+            `id, user_id, original_transaction_id, transaction_id,
+             notification_type, notification_subtype, product_id,
+             environment, is_signature_valid, received_at,
+             user_profiles:user_id (email, name, username)`,
+            { count: 'exact' },
+          )
+          .order('received_at', { ascending: false })
+          .range(pg * lim, (pg + 1) * lim - 1)
+
+        if (notification_type && typeof notification_type === 'string') {
+          dbQuery = dbQuery.eq('notification_type', notification_type)
+        }
+        if (environment && typeof environment === 'string') {
+          dbQuery = dbQuery.eq('environment', environment)
+        }
+
+        const { data, error, count } = await dbQuery
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        // Flatten user_profiles array → single object (see list_subscribers).
+        type RawRow = Record<string, unknown> & {
+          user_profiles?: Array<{ email?: string; name?: string; username?: string }> | null
+        }
+        const rows = (data as RawRow[] | null || []).map((r) => {
+          const arr = Array.isArray(r.user_profiles) ? r.user_profiles : null
+          return { ...r, user_profiles: arr && arr.length > 0 ? arr[0] : null }
+        })
+
+        return NextResponse.json({
+          schema_deployed: true,
+          transactions: rows,
+          total: count || 0,
+        })
+      }
+
+      // ───────────────────────────────────────────────────
+      // /revenue/grants — admin grant audit log
+      // ───────────────────────────────────────────────────
+      // Owner: MONETIZATION_AGENT.md (invariant 27 — Grants tab + invariant 30
+      // — every comp / refund-ack / trial-extension is audit-logged).
+      // Reads `subscription_grants` ordered by created_at DESC.
+      case 'list_grants': {
+        const { kind, page = 0 } = params
+        const lim = safeLimit(params.limit, 100)
+        const pg = Math.max(0, Number(page) || 0)
+
+        const probe = await admin
+          .from('subscription_grants')
+          .select('id', { head: true, count: 'exact' })
+          .limit(1)
+        if (probe.error) {
+          return NextResponse.json({
+            schema_deployed: false,
+            grants: [],
+            total: 0,
+          })
+        }
+
+        let dbQuery = admin
+          .from('subscription_grants')
+          .select(
+            `id, user_id, kind, reason, expires_at, trial_extra_days,
+             iap_receipt_id, admin_user_id, admin_email, created_at,
+             user_profiles:user_id (email, name, username)`,
+            { count: 'exact' },
+          )
+          .order('created_at', { ascending: false })
+          .range(pg * lim, (pg + 1) * lim - 1)
+
+        if (kind && typeof kind === 'string') {
+          dbQuery = dbQuery.eq('kind', kind)
+        }
+
+        const { data, error, count } = await dbQuery
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        // Flatten user_profiles array → single object (see list_subscribers).
+        type RawRow = Record<string, unknown> & {
+          user_profiles?: Array<{ email?: string; name?: string; username?: string }> | null
+        }
+        const rows = (data as RawRow[] | null || []).map((r) => {
+          const arr = Array.isArray(r.user_profiles) ? r.user_profiles : null
+          return { ...r, user_profiles: arr && arr.length > 0 ? arr[0] : null }
+        })
+
+        return NextResponse.json({
+          schema_deployed: true,
+          grants: rows,
+          total: count || 0,
+        })
+      }
+
+      // ───────────────────────────────────────────────────
+      // Per-user mutating actions (grant / revoke / extend / refund-ack)
+      // ───────────────────────────────────────────────────
+      // Owner: MONETIZATION_AGENT.md invariants 28–30.
+      // - Schema-presence gated; if Phase 1a not deployed → 503.
+      // - Validates target user exists before calling the SECURITY DEFINER RPC.
+      // - The RPCs themselves write the `subscription_grants` audit row.
+      //   We ALSO emit `logAdminAction()` (handled in the POST envelope above
+      //   via the WRITE_ACTIONS set) so the action lands in TWO audit logs:
+      //   `admin_audit_log` (CMS-side) AND `subscription_grants` (DB-side).
+      //   Both views matter — the first is "who did what in the CMS", the
+      //   second is "what happened to this user's revenue history".
+      case 'grant_premium_to_user': {
+        const { user_id, reason, expires_at } = params
+        if (!user_id || typeof user_id !== 'string') {
+          return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
+        }
+
+        const probe = await admin.from('subscriptions').select('id', { head: true }).limit(1)
+        if (probe.error) {
+          return NextResponse.json(
+            { error: 'Subscription schema not yet deployed.', schema_deployed: false },
+            { status: 503 },
+          )
+        }
+
+        const { data, error } = await admin.rpc('grant_premium_to_user', {
+          p_user_id: user_id,
+          p_reason: reason || 'CMS comp grant',
+          p_expires_at: expires_at || null,
+          p_admin_user_id: adminAuth.userId!,
+          p_admin_email: adminAuth.email || null,
+        })
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+        return NextResponse.json({ schema_deployed: true, result: data })
+      }
+
+      case 'revoke_premium_from_user': {
+        const { user_id, reason } = params
+        if (!user_id || typeof user_id !== 'string') {
+          return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
+        }
+
+        const probe = await admin.from('subscriptions').select('id', { head: true }).limit(1)
+        if (probe.error) {
+          return NextResponse.json(
+            { error: 'Subscription schema not yet deployed.', schema_deployed: false },
+            { status: 503 },
+          )
+        }
+
+        const { data, error } = await admin.rpc('revoke_premium_from_user', {
+          p_user_id: user_id,
+          p_reason: reason || 'CMS comp revoke',
+          p_admin_user_id: adminAuth.userId!,
+          p_admin_email: adminAuth.email || null,
+        })
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+        return NextResponse.json({ schema_deployed: true, result: data })
+      }
+
+      case 'extend_trial': {
+        const { user_id, extra_days, reason } = params
+        if (!user_id || typeof user_id !== 'string') {
+          return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
+        }
+        const days = Number(extra_days)
+        if (!Number.isFinite(days) || days < 1 || days > 90) {
+          return NextResponse.json({ error: 'extra_days must be 1..90' }, { status: 400 })
+        }
+
+        const probe = await admin.from('subscriptions').select('id', { head: true }).limit(1)
+        if (probe.error) {
+          return NextResponse.json(
+            { error: 'Subscription schema not yet deployed.', schema_deployed: false },
+            { status: 503 },
+          )
+        }
+
+        const { data, error } = await admin.rpc('extend_trial', {
+          p_user_id: user_id,
+          p_extra_days: days,
+          p_reason: reason || 'CMS trial extension',
+          p_admin_user_id: adminAuth.userId!,
+          p_admin_email: adminAuth.email || null,
+        })
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+        return NextResponse.json({ schema_deployed: true, result: data })
+      }
+
+      case 'mark_refund_acknowledged': {
+        const { user_id, transaction_id, reason } = params
+        if (!user_id || typeof user_id !== 'string') {
+          return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
+        }
+
+        const probe = await admin.from('subscriptions').select('id', { head: true }).limit(1)
+        if (probe.error) {
+          return NextResponse.json(
+            { error: 'Subscription schema not yet deployed.', schema_deployed: false },
+            { status: 503 },
+          )
+        }
+
+        const { data, error } = await admin.rpc('mark_refund_acknowledged', {
+          p_user_id: user_id,
+          p_transaction_id: transaction_id || null,
+          p_reason: reason || 'CMS refund ack',
+          p_admin_user_id: adminAuth.userId!,
+          p_admin_email: adminAuth.email || null,
+        })
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+        return NextResponse.json({ schema_deployed: true, result: data })
+      }
+
+      // `update_subscription_note` writes a `kind='note'` row into
+      // `subscription_grants`. There's no dedicated RPC — the table accepts
+      // free-form notes for support history.
+      case 'update_subscription_note': {
+        const { user_id, note } = params
+        if (!user_id || typeof user_id !== 'string') {
+          return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
+        }
+        if (!note || typeof note !== 'string' || note.trim().length === 0) {
+          return NextResponse.json({ error: 'note text is required' }, { status: 400 })
+        }
+
+        const probe = await admin.from('subscriptions').select('id', { head: true }).limit(1)
+        if (probe.error) {
+          return NextResponse.json(
+            { error: 'Subscription schema not yet deployed.', schema_deployed: false },
+            { status: 503 },
+          )
+        }
+
+        const { data, error } = await admin
+          .from('subscription_grants')
+          .insert({
+            user_id,
+            kind: 'note',
+            reason: note.trim().slice(0, 2000),
+            admin_user_id: adminAuth.userId!,
+            admin_email: adminAuth.email || null,
+          })
+          .select('id, created_at')
+          .single()
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+        return NextResponse.json({ schema_deployed: true, note_id: data.id, created_at: data.created_at })
       }
 
       default:

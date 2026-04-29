@@ -75,6 +75,21 @@ The shared `quest_templates` row carries `target_value = 1` as a binary completi
 ### Rest timer defaults
 26. Default rest **90s**, range 0-300s in 15s increments. `0 = Off`. `defaultRestSeconds` is read by `getRestDuration(for:)` directly — no category-based hardcoded values. `autoStartRestTimer` gates `RestTimer.startWithAdOffset()` — when `false`, completing a set does not start the countdown (supersets / circuits / drop sets).
 
+### Quality workout corpus (auto-gen training data)
+27. **The auto-gen recommender only learns from "quality" workouts (score ≥ 70).** Junk 7-min / 2-exercise tap-throughs MUST never enter `collaborative_workout_data`. Canonical rubric (`Fit33/WorkoutQualityScorer.swift` mirrors `score_workout_quality` SQL RPC, migration #154 — must stay in sync if either changes — total 100 pts):
+    * Duration ≥ 25 min — 20 pts
+    * `completion_rate` ≥ 0.80 — 25 pts
+    * ≥ 3 distinct catalog exercises — 15 pts
+    * ≥ 12 working sets (warmups excluded) — 15 pts
+    * ≥ 50% of weight-eligible sets have non-zero weight — 10 pts
+    * Avg time-between-set-completions ≥ 20s (proxy: `duration / completedSets`) — 10 pts
+    * FE invariants pass (push:pull ≤ 2:1, ≤ 2 horizontal presses) — 5 pts (lenient bonus)
+
+    Bands: `high` (≥70 — qualifies for corpus), `medium` (40–69), `low` (<40). The first four checks sum to 75 by design — a workout MUST clear Duration + Completion + ExerciseCount + Sets to qualify; the remaining 30 pts are nuance and never carry a poor workout over the bar by themselves. New "what makes a good workout?" PRs MUST update both `WorkoutQualityScorer.swift` AND `score_workout_quality` in the SAME commit. Bodyweight + duration-based exercises auto-pass the weight-distribution check (no weight expected).
+
+### Reversible completion (Delete Workout)
+28. **The Delete Workout button on the completion screen is the one place where every server-side workout side-effect is reversed atomically.** `WorkoutManager.deleteCompletedWorkout(_:)` calls the `delete_workout_and_revert_stats` RPC (migration #155) which reverses XP, league points (+ Peak Day multiplier already baked into `awarded_points`), daily quest progress (`complete_workout` / `complete_program_day` / `do_friend_workout` / `workout_30_min` slots), `user_progress.total_xp` + `total_workouts`, AND the corpus row (FK CASCADE via #154). iOS owns conditional streak revert — only roll the streak back if THIS was the only completed workout for the calendar day (server can't decide without joining `cardio_workouts`). HKWorkout deletion is best-effort (`HealthKitManager.deleteWorkoutInWindow`) — only deletes workouts written by THIS app, identified by source bundle id. **Guard**: the Delete button is disabled when the workout has been shared with a friend (`didSendToFriend == true`) — the friend already received the data and we have no "un-share" path. New eager writes from the completion path MUST be reversed by both sides: the server-side step is added to `delete_workout_and_revert_stats` and the iOS-side counterpart is added to `WorkoutManager.deleteCompletedWorkout`.
+
 ---
 
 ## Canonical Exercise Database (6,428 exercises)

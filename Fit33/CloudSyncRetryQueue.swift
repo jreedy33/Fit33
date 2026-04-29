@@ -77,6 +77,31 @@ final class CloudSyncRetryQueue: ObservableObject {
         AppLogger.warning("Cloud sync queued for retry (\(entries.count) pending)", category: .network)
     }
 
+    /// Cancel any pending workout-cloud-sync entry for the given workout
+    /// id. Called from `WorkoutManager.deleteCompletedWorkout` so the queue
+    /// doesn't try to re-create the row we just deleted from Supabase.
+    /// Matches by Core Data object URI containing the workout id (the
+    /// `Workout` is already gone by the time the drain fires, but the URI
+    /// is opaque, so we resolve via the on-disk entries directly).
+    func cancelWorkoutCloudSync(workoutId: UUID) {
+        let ctx = PersistenceController.shared.container.viewContext
+        let beforeCount = entries.count
+        entries.removeAll { entry in
+            guard entry.kind == .workoutCloudSync,
+                  let url = URL(string: entry.objectURI),
+                  let objectId = ctx.persistentStoreCoordinator?.managedObjectID(forURIRepresentation: url),
+                  let workout = try? ctx.existingObject(with: objectId) as? Workout else {
+                return false
+            }
+            return workout.id == workoutId
+        }
+        if entries.count != beforeCount {
+            persist()
+            pendingCount = entries.count
+            AppLogger.info("Cancelled \(beforeCount - entries.count) queued cloud sync entry for deleted workout", category: .network)
+        }
+    }
+
     /// Drains anything whose `nextAttemptAt ≤ now`. Called on:
     ///   • scenePhase == .active
     ///   • after `recoverSessionIfNeeded` / successful auth restore

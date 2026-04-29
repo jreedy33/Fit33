@@ -732,12 +732,13 @@ struct ActiveChallengeWidgetEntryView: View {
         .overlay(alignment: .topLeading) {
             if let smack = entry.smackTalk {
                 SmackShoutBubble(smack: smack, compact: compactBubble)
-                    // Sit just below the widget's top edge so the bubble
-                    // doesn't clip on the rounded corner, with the tail
-                    // angled down-left at the type-emoji icon below.
-                    // Slight +x keeps the bubble's left edge clear of
-                    // the widget's leading inset.
-                    .offset(x: compactBubble ? 8 : 16, y: compactBubble ? 4 : 6)
+                    // Pushed down + right so the bubble clears the
+                    // type-emoji icon (top-left) and the "Steps · vs
+                    // Joe · 7d left" header row entirely, landing
+                    // squarely across the score row. That overlap is
+                    // explicitly OK — the user clears the bubble by
+                    // opening the app, restoring the numbers.
+                    .offset(x: compactBubble ? 36 : 60, y: compactBubble ? 44 : 58)
                     .accessibilityLabel("\(smack.senderFirstName) is talking smack: \(smack.reactionText)")
             }
         }
@@ -1494,7 +1495,6 @@ private struct SmackShoutBubble: View {
     private var vPadding: CGFloat { compact ? 4 : 5 }
     private var tailLength: CGFloat { compact ? 5 : 6 }
     private var cornerRadius: CGFloat { compact ? 10 : 12 }
-    private var maxBubbleWidth: CGFloat { compact ? 120 : 200 }
 
     var body: some View {
         HStack(spacing: 5) {
@@ -1513,7 +1513,14 @@ private struct SmackShoutBubble: View {
         // the bubble portion and uses the remaining `tailLength` for
         // the tail.
         .padding(.bottom, vPadding + tailLength)
-        .frame(maxWidth: maxBubbleWidth, alignment: .leading)
+        // Hug the content width. Without `fixedSize`, the flexible
+        // parent (the widget overlay) inflates the bubble to its max
+        // even when the text is short, leaving an empty stub past the
+        // "!". `fixedSize(horizontal:)` forces the bubble to its
+        // intrinsic width so the pill ends right after the last
+        // glyph. All current presets are ≤ ~24 chars, which renders
+        // well under the medium widget's content width.
+        .fixedSize(horizontal: true, vertical: false)
         .background(
             ShoutBubbleShape(
                 cornerRadius: cornerRadius,

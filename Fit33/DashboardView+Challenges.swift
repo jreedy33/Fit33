@@ -593,58 +593,13 @@ struct DashboardChallengesWrapper: View {
         // Type-aware colors — each challenge type gets its own visual identity
         let typeColor: Color = resolvedType.color
         let typeGradient: [Color] = resolvedType.gradientColors
-        let opponentFirst = challenge.opponentName?.components(separatedBy: " ").first ?? "Friend"
         
         return VStack(spacing: 0) {
-            // Header — shared shape, type-aware content
-            NavigationLink(value: challenge) {
-                HStack(alignment: .center, spacing: 10) {
-                    // Type-specific icon with gradient ring
-                    ZStack {
-                        Circle()
-                            .stroke(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5)
-                            .frame(width: 36, height: 36)
-                        Text(resolvedType.emoji)
-                            .font(.ds_heading3)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(challenge.displayTitle)
-                            .font(.subheadline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        HStack(spacing: 6) {
-                            Text(isAccountability ? "with \(opponentFirst)" : "vs \(opponentFirst)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            
-                            Text("•")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            
-                            Text("\(challenge.daysRemaining)d left")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(typeColor)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Mode badge
-                    Text(isAccountability ? "🤝" : "⚔️")
-                        .font(.ds_bodyRegular)
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.ds_labelMedium)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, Spacing.sm)
-            }
-            .buttonStyle(PlainButtonStyle())
+            // Header row owns its own state for the battle-cry sheet so
+            // the smiley shortcut works from any embedding (single
+            // carousel, stacked carousel, future surfaces). See
+            // `ActiveChallengeHeaderRow.swift`.
+            ActiveChallengeHeaderRow(challenge: challenge)
             
             // Bottom section — different layout per mode, type-aware colors + live data
             HStack(spacing: 0) {

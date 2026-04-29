@@ -256,6 +256,15 @@ struct WorkoutCompletionView: View {
     @State private var sendToFriendError: String?
     @State private var didSendToFriend = false
     @State private var showingFriendSearch = false
+
+    // Delete-workout flow (migration #155). The workout is fully deleted +
+    // every server-side stat side-effect is reversed via the
+    // `delete_workout_and_revert_stats` RPC. UX guard: blocked when the
+    // workout has been shared with a friend (the friend already received
+    // the data and we don't have an "un-share" path).
+    @State private var showingDeleteConfirmation = false
+    @State private var isDeletingWorkout = false
+    @State private var deleteWorkoutError: String?
     
     var totalSets: Int {
         exerciseSets.values.reduce(0) { total, sets in
@@ -366,7 +375,14 @@ struct WorkoutCompletionView: View {
                         progressPhotoPrompt
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
-                    
+
+                    // Delete button lives at the very bottom of the scrollable
+                    // content, after Take Photo. Migration #155 — reverses
+                    // every server-side stat (XP/streak/league/quests) AND
+                    // local Core Data + HealthKit. See
+                    // `WorkoutManager.deleteCompletedWorkout`.
+                    deleteWorkoutButton
+
                     Spacer(minLength: 40)
                 }
                 .padding(.horizontal, Spacing.md)
@@ -419,6 +435,22 @@ struct WorkoutCompletionView: View {
             Button("OK") { sendToFriendError = nil }
         } message: {
             Text(sendToFriendError ?? "")
+        }
+        .alert("Delete this workout?", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                Task { await performDeleteWorkout() }
+            }
+        } message: {
+            Text("This permanently removes the workout and reverses XP, streak, league points, and daily quest progress. This cannot be undone.")
+        }
+        .alert("Couldn't delete", isPresented: .init(
+            get: { deleteWorkoutError != nil },
+            set: { if !$0 { deleteWorkoutError = nil } }
+        )) {
+            Button("OK") { deleteWorkoutError = nil }
+        } message: {
+            Text(deleteWorkoutError ?? "")
         }
         .overlay(
             ConfettiView(isActive: showingCelebration)
@@ -1134,7 +1166,103 @@ struct WorkoutCompletionView: View {
             }
         }
     }
-    
+
+    // MARK: - Delete Workout (Migration #155)
+
+    /// Always-visible button anchored at the very bottom of the completion
+    /// flow. Tapping triggers `showingDeleteConfirmation`; on confirm we
+    /// call `WorkoutManager.deleteCompletedWorkout` which atomically
+    /// reverses every server-side AND local stat side-effect.
+    ///
+    /// UX guard: if the workout has been shared with a friend
+    /// (`didSendToFriend == true`) the button is disabled with explanatory
+    /// secondary text, because the friend already received the data and
+    /// we don't have an "un-share" path. Cancel-the-friend-message is the
+    /// user's recourse there.
+    private var deleteWorkoutButton: some View {
+        Group {
+            if didSendToFriend {
+                VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                    Text("Delete unavailable")
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.secondary)
+                    Text("Already shared with a friend — they have the workout details.")
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary.opacity(0.8))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                        .fill(Color.cardBackground.opacity(0.5))
+                )
+            } else {
+                Button(action: {
+                    HapticManager.impact(.medium)
+                    showingDeleteConfirmation = true
+                }) {
+                    HStack(spacing: Spacing.sm) {
+                        if isDeletingWorkout {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .tint(.red)
+                        } else {
+                            Image(systemName: "trash")
+                                .font(.ds_bodyRegular)
+                                .foregroundColor(.red)
+                        }
+                        Text(isDeletingWorkout ? "Deleting…" : "Delete Workout")
+                            .font(.ds_labelMedium)
+                            .foregroundColor(.red)
+                        Spacer()
+                    }
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                            .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                                    .fill(Color.red.opacity(0.06))
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isDeletingWorkout)
+                .accessibilityLabel("Delete workout")
+                .accessibilityHint("Permanently removes this workout and reverses all stats")
+            }
+        }
+    }
+
+    /// Perform the delete + revert flow. Called from the confirmation
+    /// alert. Dismisses the completion view + navigates home on success.
+    @MainActor
+    private func performDeleteWorkout() async {
+        guard !isDeletingWorkout else { return }
+        isDeletingWorkout = true
+        defer { isDeletingWorkout = false }
+
+        let outcome = await workoutManager.deleteCompletedWorkout(workout)
+
+        guard outcome.success else {
+            deleteWorkoutError = outcome.errorMessage ?? "Something went wrong while deleting this workout. Please try again."
+            return
+        }
+
+        HapticManager.notification(.success)
+        // Dismiss the completion view, then navigate home on the next tick
+        // so the dismiss animation completes before the tab switch.
+        dismiss()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(0.3))
+            guard !Task.isCancelled else { return }
+            workoutManager.navigateToHomeTab()
+        }
+    }
+
     // doneButton replaced by stickyActionBar
     
     // MARK: - Helper Functions

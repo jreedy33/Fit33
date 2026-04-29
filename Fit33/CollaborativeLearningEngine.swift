@@ -103,13 +103,24 @@ class CollaborativeLearningEngine: ObservableObject {
     
     // MARK: - Data Recording (Called after workout completion)
     
-    /// Record a completed workout for collaborative analysis
+    /// Record a completed workout for collaborative analysis.
+    ///
+    /// Migration #154 (20260723_quality_workout_corpus.sql) added the
+    /// `is_quality_workout` GENERATED column on `collaborative_workout_data`
+    /// as the canonical corpus filter (score >= 70). The HARD client-side
+    /// gate here is defense-in-depth so a junk 7-min / 2-exercise
+    /// tap-through never produces a write at all — the auto-gen recommender
+    /// reads from the corpus, so even a skipped row beats a bad one.
     func recordWorkoutCompletion(
         userId: String,
         userProfile: UserProfileSnapshot,
         exercises: [CompletedExercise],
         workoutType: String,  // "auto-gen", "custom", "program"
         programId: String? = nil,
+        qualityScore: Int? = nil,
+        qualityBand: String? = nil,
+        workoutHistoryId: String? = nil,
+        totalSets: Int? = nil,
         wasSuccessful: Bool = true  // Did user complete the full workout?
     ) async {
         guard SupabaseManager.shared.isAuthenticated else {
@@ -120,9 +131,18 @@ class CollaborativeLearningEngine: ObservableObject {
             AppLogger.warning("[COLLABORATIVE] Skipping workout record — empty userId", category: .auth)
             return
         }
+        // Hard quality gate (migration #154). A nil score means we couldn't
+        // compute one — fall back to the legacy 3-exercise heuristic to
+        // avoid breaking older code paths that haven't been ported yet.
+        if let score = qualityScore {
+            guard score >= 70 else {
+                AppLogger.info("🚫 [COLLABORATIVE] Skipping corpus push — score \(score) below quality threshold (70). Junk workouts don't train the recommender.", category: .workout)
+                return
+            }
+        }
         do {
             // 1. Record the workout completion
-            let workoutData: [String: AnyJSON] = [
+            var workoutData: [String: AnyJSON] = [
                 "id": .string(UUID().uuidString),
                 "user_id": .string(userId),
                 "workout_type": .string(workoutType),
@@ -142,7 +162,20 @@ class CollaborativeLearningEngine: ObservableObject {
                 "user_equipment": .array(userProfile.equipment.map { .string($0) }),
                 "completed_at": .string(ISO8601DateFormatter().string(from: Date()))
             ]
-            
+
+            // Migration #154 quality columns. workout_history_id is the FK
+            // that lets `delete_workout_and_revert_stats` cascade the corpus
+            // row when the user deletes their workout.
+            if let historyId = workoutHistoryId {
+                workoutData["workout_history_id"] = .string(historyId)
+            }
+            if let score = qualityScore {
+                workoutData["workout_quality_score"] = .integer(score)
+            }
+            if let total = totalSets {
+                workoutData["total_sets"] = .integer(total)
+            }
+
             try await supabase
                 .from("collaborative_workout_data")
                 .insert(workoutData)
@@ -154,7 +187,7 @@ class CollaborativeLearningEngine: ObservableObject {
             // 3. Update user similarity profile
             await updateUserSimilarityProfile(userId: userId, profile: userProfile)
             
-            AppLogger.debug("🌐 [COLLABORATIVE] Recorded workout with \(exercises.count) exercises", category: .workout)
+            AppLogger.debug("🌐 [COLLABORATIVE] Recorded quality workout (score=\(qualityScore ?? -1)) with \(exercises.count) exercises", category: .workout)
             
         } catch {
             // Route through classifier so RLS / transient / auth-expired errors don't

@@ -40,6 +40,7 @@ struct ChallengeDetailView: View {
     @State private var isTogglingNotification = false
     @State private var lastSyncedSteps = 0
     @State private var showingReactionPicker = false
+    @State private var showingAddWidgetSheet = false
 
     private enum DetailsLoadState: Equatable {
         case idle
@@ -109,6 +110,30 @@ struct ChallengeDetailView: View {
         .trackScreen(.challengeDetail, metadata: ["challenge_id": challenge.id])
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Top-right "+" — opens an instructional sheet that walks
+            // the user through pinning the active-challenge widget on
+            // their home screen. Active-only; no point pitching the
+            // widget for finished challenges. iOS does not allow
+            // programmatic widget installation or deep-linking to the
+            // widget gallery for a specific app, so this is the best
+            // discovery surface we can ship. (See `AddHomescreenWidgetSheet.swift`.)
+            if challenge.status == "active" {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        HapticManager.impact(.medium)
+                        showingAddWidgetSheet = true
+                    } label: {
+                        Label("Add Home Screen Widget", systemImage: "plus")
+                            .labelStyle(.titleAndIcon)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                    }
+                    .accessibilityLabel("Add home screen widget")
+                    .accessibilityHint("Opens a step-by-step guide for adding the widget")
+                }
+            }
+        }
         .onAppear {
             // Sprint 2026-04-24 Phase 4 (N1): pause intelligence phases while
             // user is in this detail view — see UserFocusSentinel doc.
@@ -170,6 +195,11 @@ struct ChallengeDetailView: View {
         .sheet(isPresented: $showingReactionPicker) {
             ReactionPickerSheet(challenge: challenge, onSend: { _ in })
                 .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingAddWidgetSheet) {
+            AddHomescreenWidgetSheet()
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
     }

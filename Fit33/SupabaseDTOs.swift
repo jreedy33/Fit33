@@ -643,6 +643,13 @@ struct WorkoutHistoryDTO: Codable {
     let totalSetsPlanned: Int?
     let totalSetsCompleted: Int?
     let caloriesBurned: Double?
+    // Quality scoring (migration #154 — 20260723_quality_workout_corpus.sql).
+    // The server-side RPC `score_workout_quality` is the canonical authority;
+    // these client-side values are an optimistic snapshot inserted alongside
+    // the workout so the corpus partial index has data immediately. The
+    // server recomputes after insert via fire-and-forget RPC call.
+    let qualityScore: Int?
+    let qualityBand: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, date, duration, notes, exercises
@@ -653,6 +660,46 @@ struct WorkoutHistoryDTO: Codable {
         case totalSetsPlanned = "total_sets_planned"
         case totalSetsCompleted = "total_sets_completed"
         case caloriesBurned = "calories_burned"
+        case qualityScore = "quality_score"
+        case qualityBand = "quality_band"
+    }
+}
+
+/// Server response from `delete_workout_and_revert_stats(p_workout_id UUID)`
+/// (migration #155). Mirrors the `RETURN jsonb_build_object(...)` shape in
+/// `supabase/20260724_delete_workout_and_revert_stats.sql`.
+struct DeleteWorkoutRevertResponse: Codable {
+    let success: Bool
+    let reason: String?
+    let workoutId: String?
+    let userId: String?
+    let workoutDate: String?
+    let xpReverted: Int?
+    let leaguePointsReverted: Int?
+    let leagueAwardRowsDeleted: Int?
+    let leagueMembersUpdated: Int?
+    let pendingUpdated: Int?
+    let perfRowsDeleted: Int?
+    let setRowsDeleted: Int?
+    let collabRowsDeleted: Int?
+    let questRowsUpdated: Int?
+    let workoutRowsDeleted: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case success, reason
+        case workoutId = "workout_id"
+        case userId = "user_id"
+        case workoutDate = "workout_date"
+        case xpReverted = "xp_reverted"
+        case leaguePointsReverted = "league_points_reverted"
+        case leagueAwardRowsDeleted = "league_award_rows_deleted"
+        case leagueMembersUpdated = "league_members_updated"
+        case pendingUpdated = "pending_updated"
+        case perfRowsDeleted = "perf_rows_deleted"
+        case setRowsDeleted = "set_rows_deleted"
+        case collabRowsDeleted = "collab_rows_deleted"
+        case questRowsUpdated = "quest_rows_updated"
+        case workoutRowsDeleted = "workout_rows_deleted"
     }
 }
 

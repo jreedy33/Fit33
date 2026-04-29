@@ -4746,7 +4746,7 @@ class SupabaseManager: ObservableObject {
     // MARK: - Workout History Cloud Sync
     
     /// Saves a completed workout to the cloud
-    func saveWorkoutToCloud(workout: Workout) async throws {
+    func saveWorkoutToCloud(workout: Workout, quality: WorkoutQualityResult? = nil) async throws {
         guard let userId = currentUser?.id,
               let workoutId = workout.id?.uuidString else { 
             AppLogger.warning("[WORKOUT SAVE] Cannot save - no user or workout ID", category: .network)
@@ -4808,7 +4808,9 @@ class SupabaseManager: ObservableObject {
             completionRate: rate,
             totalSetsPlanned: totalPlanned,
             totalSetsCompleted: totalCompleted,
-            caloriesBurned: workout.caloriesBurned > 0 ? workout.caloriesBurned : nil
+            caloriesBurned: workout.caloriesBurned > 0 ? workout.caloriesBurned : nil,
+            qualityScore: quality?.score,
+            qualityBand: quality?.band.rawValue
         )
         
         try await client
@@ -4817,6 +4819,38 @@ class SupabaseManager: ObservableObject {
             .execute()
         
         AppLogger.debug("Workout saved to cloud: \(workout.name ?? "Workout")", category: .network)
+
+        // Migration #154: ask the server to canonicalize the quality score
+        // server-side. Client values are optimistic; this RPC is the
+        // source-of-truth and updates `quality_reasons` JSONB too.
+        // Fire-and-forget — failure here doesn't undo the insert.
+        Task { [client] in
+            do {
+                _ = try await client
+                    .rpc("score_workout_quality", params: ["p_workout_id": workoutId])
+                    .execute()
+            } catch {
+                AppLogger.warning("[QUALITY] score_workout_quality RPC failed (non-fatal): \(error.localizedDescription)", category: .network)
+            }
+        }
+    }
+
+    /// Atomically delete a completed workout AND reverse every server-side
+    /// stat side-effect (XP / streak / league / quests / corpus). Migration
+    /// #155 (`20260724_delete_workout_and_revert_stats.sql`).
+    ///
+    /// Returns the structured RPC result so callers can show "+/- N XP"
+    /// feedback. Throws if the network/RPC fails — callers should still
+    /// proceed with local Core Data deletion to avoid a stuck UI.
+    @discardableResult
+    func deleteWorkoutAndRevertStats(workoutId: UUID) async throws -> DeleteWorkoutRevertResponse {
+        AppLogger.info("[WORKOUT DELETE] Calling delete_workout_and_revert_stats for \(workoutId.uuidString.prefix(8))...", category: .network)
+        let response: DeleteWorkoutRevertResponse = try await client
+            .rpc("delete_workout_and_revert_stats", params: ["p_workout_id": workoutId.uuidString])
+            .execute()
+            .value
+        AppLogger.info("[WORKOUT DELETE] Server reverted: xp=-\(response.xpReverted ?? 0) league=-\(response.leaguePointsReverted ?? 0) quests=\(response.questRowsUpdated ?? 0)", category: .network)
+        return response
     }
     
     /// Updates only the calories_burned field on an existing workout_history row.

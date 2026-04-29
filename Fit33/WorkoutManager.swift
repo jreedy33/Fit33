@@ -44,7 +44,15 @@ class WorkoutManager: ObservableObject {
     @Published var shouldClearWorkoutTabNav: Bool = false  // 🔧 Clear nav path before workout starts
     @Published var currentTime: Date = Date()
     @Published var workoutInsights: WorkoutInsights? = nil
-    
+
+    /// Quality scoring result attached to the most recently finished workout
+    /// (migration #154 — `score_workout_quality` rubric mirror). Populated by
+    /// `ActiveWorkoutView+Actions.finishWorkout`, read by
+    /// `WorkoutManager.finishWorkout` to gate the collaborative learning
+    /// corpus push (score must be >= 70 to qualify). Cleared on
+    /// `cancelWorkout()` and at the end of `finishWorkout()`.
+    @Published var lastWorkoutQuality: WorkoutQualityResult? = nil
+
     // Workout generator selections state
     @Published var generatorSelections: (bodyParts: Set<String>, equipment: Set<String>, surpriseMe: Bool)? = nil
     @Published var shouldTriggerWorkoutGeneration: Bool = false
@@ -1064,18 +1072,27 @@ class WorkoutManager: ObservableObject {
                     workoutType = "custom"
                 }
                 
-                // Record to collaborative engine
+                // Migration #154 — Quality-gated training corpus.
+                // Pass the local quality score (canonical authority is the
+                // server-side `score_workout_quality` RPC; this is the
+                // optimistic mirror). Engine refuses to push the row to
+                // `collaborative_workout_data` if score < 70.
+                let qualitySnapshot = lastWorkoutQuality
                 await CollaborativeLearningEngine.shared.recordWorkoutCompletion(
                     userId: userIdString,
                     userProfile: userProfile,
                     exercises: completedExercises,
                     workoutType: workoutType,
                     programId: currentSmartProgramId,
-                    wasSuccessful: completedExercises.count >= 3  // Consider successful if 3+ exercises done
+                    qualityScore: qualitySnapshot?.score,
+                    qualityBand: qualitySnapshot?.band.rawValue,
+                    workoutHistoryId: workout.id?.uuidString,
+                    totalSets: completedExercises.reduce(0) { $0 + $1.setsCompleted },
+                    wasSuccessful: qualitySnapshot?.qualifiesForCorpus ?? (completedExercises.count >= 3)
                 )
-                
+
                 #if DEBUG
-                AppLogger.debug("🌐 CollaborativeLearningEngine: Recorded \(completedExercises.count) exercises for global analysis", category: .data)
+                AppLogger.debug("🌐 CollaborativeLearningEngine: Recorded \(completedExercises.count) exercises for global analysis (quality=\(qualitySnapshot?.score ?? -1))", category: .data)
                 #endif
             }
         }
@@ -1215,6 +1232,7 @@ class WorkoutManager: ObservableObject {
         currentExercises = []
         workoutStartTime = nil
         workoutInsights = nil
+        lastWorkoutQuality = nil
         currentProgramDayNumber = nil
         currentProgramDayFocus = nil
         currentSmartProgramId = nil
@@ -1229,6 +1247,169 @@ class WorkoutManager: ObservableObject {
         #if DEBUG
         AppLogger.debug("✅ WorkoutManager: Workout cancelled successfully", category: .data)
         #endif
+    }
+
+    // MARK: - Delete Completed Workout (Migration #155)
+
+    /// Result of a `deleteCompletedWorkout` call. Surfaced to the UI so the
+    /// caller can show an accurate "reverted -N XP, -M league pts" toast or
+    /// fall back to a generic message if the server reversal partially
+    /// failed (we still complete the local Core Data deletion regardless,
+    /// because leaving a deleted-but-visible workout in Core Data is the
+    /// worst outcome — the user thinks they deleted it but it's still there).
+    struct DeleteWorkoutOutcome {
+        let success: Bool
+        let xpReverted: Int
+        let leaguePointsReverted: Int
+        let questsReverted: Int
+        let serverReversalSucceeded: Bool
+        let errorMessage: String?
+    }
+
+    /// Atomically delete a completed workout and reverse every server-side
+    /// AND local-side stat side-effect. Powers the new Delete button on the
+    /// workout completion screen (the user can decide "this doesn't count"
+    /// and have it forgotten everywhere).
+    ///
+    /// Order of operations (intentional — server first so we get a real
+    /// reversal count back; local cleanup proceeds even if server fails so
+    /// the user isn't stuck with a phantom workout):
+    ///   1. Server RPC `delete_workout_and_revert_stats` (migration #155).
+    ///   2. Cancel any pending CloudSyncRetryQueue entry for this workout.
+    ///   3. Delete the matching HKWorkout from Apple Health (best-effort).
+    ///   4. Reverse local Core Data User stats (XP / totalWorkouts /
+    ///      conditional streak revert if this was the only workout today).
+    ///   5. Delete the Core Data Workout (cascades WorkoutExercise + WorkoutSet).
+    ///   6. cancelWorkout() to clear all WorkoutManager transient state.
+    @MainActor
+    @discardableResult
+    func deleteCompletedWorkout(_ workout: Workout) async -> DeleteWorkoutOutcome {
+        guard let workoutId = workout.id else {
+            AppLogger.error("[WORKOUT DELETE] Cannot delete — workout has no id", category: .workout)
+            return DeleteWorkoutOutcome(success: false, xpReverted: 0, leaguePointsReverted: 0, questsReverted: 0, serverReversalSucceeded: false, errorMessage: "Workout has no id")
+        }
+        let workoutDate = workout.date ?? Date()
+        let xpEarned = Int(workout.xpEarned)
+        let durationSec: TimeInterval = TimeInterval(workout.duration)
+
+        AppLogger.info("🗑️ [WORKOUT DELETE] Starting delete + revert for \(workoutId.uuidString.prefix(8)) (xp=\(xpEarned))", category: .workout)
+
+        // 1. Server-side atomic revert (RPC). Capture result for UI feedback.
+        var serverOK = false
+        var xpReverted = 0
+        var leaguePointsReverted = 0
+        var questsReverted = 0
+        var serverError: String?
+
+        if SupabaseManager.shared.isAuthenticated {
+            do {
+                let response = try await SupabaseManager.shared.deleteWorkoutAndRevertStats(workoutId: workoutId)
+                serverOK = response.success
+                xpReverted = response.xpReverted ?? 0
+                leaguePointsReverted = response.leaguePointsReverted ?? 0
+                questsReverted = response.questRowsUpdated ?? 0
+            } catch {
+                serverError = error.localizedDescription
+                AppLogger.error("[WORKOUT DELETE] Server reversal failed (continuing with local cleanup): \(error)", category: .network)
+            }
+        } else {
+            AppLogger.warning("[WORKOUT DELETE] Skipping server reversal — not authenticated", category: .auth)
+        }
+
+        // 2. Cancel any pending cloud-sync retry for this workout so the
+        // queue doesn't re-create the row we just deleted.
+        CloudSyncRetryQueue.shared.cancelWorkoutCloudSync(workoutId: workoutId)
+
+        // 3. Delete the HKWorkout from Apple Health (best-effort — runs in
+        // background; user can also delete manually from the Health app).
+        let hkStartDate = workoutDate.addingTimeInterval(-durationSec)
+        let hkEndDate = workoutDate
+        Task.detached(priority: .background) {
+            await HealthKitManager.shared.deleteWorkoutInWindow(start: hkStartDate, end: hkEndDate)
+        }
+
+        // 4. Reverse local Core Data User stats.
+        if let user = UserManager.shared.currentUser {
+            user.xp = max(0, user.xp - Int32(xpEarned))
+            user.totalWorkouts = max(0, user.totalWorkouts - 1)
+
+            // Conditional streak revert: only if THIS workout was on
+            // `lastWorkoutDate` AND no other completed workout exists for
+            // the same calendar day. The server can't decide this without
+            // joining cardio_workouts + workout_history, so it owns
+            // "delete the row" while the client owns "should the streak
+            // tick back?". See migration #155 header §"Streak revert is
+            // iOS-side".
+            let calendar = Calendar.current
+            let workoutDay = calendar.startOfDay(for: workoutDate)
+            if let lastDay = user.lastWorkoutDate.map({ calendar.startOfDay(for: $0) }),
+               lastDay == workoutDay {
+                let otherWorkoutsSameDay = countOtherCompletedWorkouts(on: workoutDay, excluding: workoutId)
+                if otherWorkoutsSameDay == 0 {
+                    user.currentStreak = max(0, user.currentStreak - 1)
+                    // Roll lastWorkoutDate back to the most recent completed workout (or nil).
+                    user.lastWorkoutDate = mostRecentCompletedWorkoutDate(excluding: workoutId)
+                    AppLogger.info("[WORKOUT DELETE] Streak rolled back: was the only workout on \(workoutDay)", category: .workout)
+                } else {
+                    AppLogger.debug("[WORKOUT DELETE] Streak preserved: \(otherWorkoutsSameDay) other workout(s) on \(workoutDay)", category: .workout)
+                }
+            }
+        }
+
+        // 5. Delete the Core Data Workout. The Workout → WorkoutExercise and
+        // WorkoutExercise → WorkoutSet relationships are .cascade per the
+        // model, so deleting the parent purges the children automatically.
+        let context = PersistenceController.shared.container.viewContext
+        context.delete(workout)
+        do {
+            try context.save()
+        } catch {
+            AppLogger.error("[WORKOUT DELETE] Failed to save Core Data after delete: \(error)", category: .data)
+        }
+
+        // 6. Cancel any active workout state. We use `cancelWorkout()`
+        // (NOT `finishWorkout()`) because finishWorkout would push to the
+        // collaborative engine — the exact opposite of what we want when
+        // the user is deleting.
+        cancelWorkout()
+
+        AppLogger.info("✅ [WORKOUT DELETE] Complete. server=\(serverOK) xp=-\(xpReverted) league=-\(leaguePointsReverted) quests=\(questsReverted)", category: .workout)
+
+        return DeleteWorkoutOutcome(
+            success: true,
+            xpReverted: xpReverted,
+            leaguePointsReverted: leaguePointsReverted,
+            questsReverted: questsReverted,
+            serverReversalSucceeded: serverOK,
+            errorMessage: serverError
+        )
+    }
+
+    /// How many OTHER completed workouts exist on the same calendar day —
+    /// used by the streak-revert decision in `deleteCompletedWorkout`.
+    @MainActor
+    private func countOtherCompletedWorkouts(on day: Date, excluding workoutId: UUID) -> Int {
+        let context = PersistenceController.shared.container.viewContext
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: day)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return 0 }
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.predicate = NSPredicate(format: "isCompleted == YES AND date >= %@ AND date < %@ AND id != %@", dayStart as NSDate, dayEnd as NSDate, workoutId as CVarArg)
+        request.fetchLimit = 2 // we only need to know "any" — early exit
+        return (try? context.count(for: request)) ?? 0
+    }
+
+    /// Most recent completed workout date excluding the one being deleted.
+    /// Used to update `lastWorkoutDate` after a streak revert so the next
+    /// workout's gap calculation starts from the right anchor.
+    @MainActor
+    private func mostRecentCompletedWorkoutDate(excluding workoutId: UUID) -> Date? {
+        let context = PersistenceController.shared.container.viewContext
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.predicate = NSPredicate(format: "isCompleted == YES AND id != %@", workoutId as CVarArg)
+        request.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+        request.fetchLimit = 1
+        return (try? context.fetch(request).first)?.date
     }
     
     /// Replace an exercise in the current workout with a new one

@@ -297,7 +297,57 @@ class HealthKitManager: ObservableObject {
         AppLogger.error("Failed to save workout after retries: \(lastError?.localizedDescription ?? "unknown")", category: .health)
         throw HealthKitError.saveFailed(lastError ?? NSError(domain: "HealthKit", code: -1))
     }
-    
+
+    /// Delete the HKWorkout(s) we wrote in the given start/end window.
+    /// Used by `WorkoutManager.deleteCompletedWorkout` so the user's
+    /// "forget this workout" intent reaches Apple Health too. Best-effort:
+    /// a failure here is logged but not re-thrown, since the rest of the
+    /// delete flow has already run by the time this is called.
+    ///
+    /// Match scope: source = THIS app + start within ±5 minutes of the
+    /// requested window. We don't have the HKWorkout's UUID at delete time
+    /// (saveWorkoutToHealth doesn't return it), so the time window is the
+    /// strongest match signal we have.
+    func deleteWorkoutInWindow(start: Date, end: Date) async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let tolerance: TimeInterval = 5 * 60
+        let windowStart = start.addingTimeInterval(-tolerance)
+        let windowEnd = end.addingTimeInterval(tolerance)
+        let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: windowEnd, options: [])
+
+        do {
+            let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { continuation in
+                let query = HKSampleQuery(
+                    sampleType: HKObjectType.workoutType(),
+                    predicate: predicate,
+                    limit: HKObjectQueryNoLimit,
+                    sortDescriptors: nil
+                ) { _, samples, error in
+                    if let error = error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    continuation.resume(returning: (samples as? [HKWorkout]) ?? [])
+                }
+                healthStore.execute(query)
+            }
+
+            // Only delete workouts WE wrote — sourceRevision.source.bundleIdentifier
+            // matches our app's bundle id. Refusing to delete other apps'
+            // entries is the right safety guarantee here.
+            let ours = workouts.filter { $0.sourceRevision.source.bundleIdentifier == Bundle.main.bundleIdentifier }
+            guard !ours.isEmpty else {
+                AppLogger.debug("[HK DELETE] No matching workouts in window \(windowStart)–\(windowEnd)", category: .health)
+                return
+            }
+
+            try await healthStore.delete(ours)
+            AppLogger.info("[HK DELETE] Deleted \(ours.count) workout(s) from Apple Health", category: .health)
+        } catch {
+            AppLogger.warning("[HK DELETE] Failed (non-fatal): \(error.localizedDescription)", category: .health)
+        }
+    }
+
     /// Save a running workout to Apple Health with distance
     func saveRunningWorkoutToHealth(
         startDate: Date,

@@ -154,7 +154,20 @@ extension ActiveWorkoutView {
         let capturedExercises = exercises
         let capturedWorkout = workout
         let capturedElapsedTime = elapsedTime
-        
+
+        // Migration #154: score the workout BEFORE clearing transient data.
+        // The result is stashed on WorkoutManager so the Done-button path
+        // (collaborative engine corpus gate) and the cloud upsert below
+        // both read the same canonical value.
+        let qualityResult = WorkoutQualityScorer.score(
+            workout: capturedWorkout,
+            exercises: capturedExercises,
+            exerciseSets: capturedSetsData,
+            workoutDuration: capturedElapsedTime
+        )
+        workoutManager.lastWorkoutQuality = qualityResult
+        AppLogger.info("📊 [QUALITY] Workout scored \(qualityResult.score)/100 (\(qualityResult.band.rawValue)) — corpus: \(qualityResult.qualifiesForCorpus ? "✅" : "❌")", category: .workout)
+
         // Calculate totals for logging
         var totalSetsCompleted = 0
         var exercisesCompleted = 0
@@ -210,7 +223,7 @@ extension ActiveWorkoutView {
         if SupabaseManager.shared.isAuthenticated {
             Task {
                 do {
-                    try await SupabaseManager.shared.saveWorkoutToCloud(workout: workout)
+                    try await SupabaseManager.shared.saveWorkoutToCloud(workout: workout, quality: qualityResult)
                 } catch {
                     AppLogger.error("⚠️ Failed to sync workout to cloud: \(error)", category: .network)
                     await MainActor.run {

@@ -59,7 +59,6 @@
 		7C0C42202F09DB7200F02E84 /* LearningEngineDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C421F2F09DB7200F02E84 /* LearningEngineDebugView.swift */; };
 		7C0C426A2F16E22700F02E84 /* ExerciseNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42692F16E22700F02E84 /* ExerciseNameCache.swift */; };
 		7C0C427C2F1833C100F02E84 /* FriendProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C427B2F1833C100F02E84 /* FriendProfileView.swift */; };
-		7C9A7F022F5E281C00B5C928 /* SendWorkoutToFriendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */; };
 		7C0C427E2F1833CB00F02E84 /* FriendService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C427D2F1833CB00F02E84 /* FriendService.swift */; };
 		7C0C42802F1833DA00F02E84 /* FriendsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C427F2F1833DA00F02E84 /* FriendsListView.swift */; };
 		7C0C42822F18340100F02E84 /* SharedWorkoutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42812F18340100F02E84 /* SharedWorkoutPreviewView.swift */; };
@@ -219,6 +218,7 @@
 		7C8CF4742F9FA437007CD766 /* DailyBriefEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF46F2F9FA437007CD766 /* DailyBriefEngine.swift */; };
 		7C8CF4772F9FA463007CD766 /* V2Analyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */; };
 		7C8CF4782F9FA463007CD766 /* WelcomeBriefRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */; };
+		7C8CF97E2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF97D2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift */; };
 		7C8EB1C02F26ABD4007BFA55 /* PerformanceOptimizations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */; };
 		7C8EB1C32F26B03C007BFA55 /* StravaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */; };
 		7C8EB1C42F26B03C007BFA55 /* StravaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C12F26B03C007BFA55 /* StravaService.swift */; };
@@ -231,6 +231,7 @@
 		7C98FAC42EEC7EA8001AE1F3 /* SessionLogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */; };
 		7C98FAC62EECA9F4001AE1F3 /* DevSessionLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */; };
 		7C98FAC82EEDB4A0001AE1F3 /* SmartExerciseSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */; };
+		7C9A7F022F5E281C00B5C928 /* SendWorkoutToFriendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */; };
 		7CA0643A2F7ACA48004CF656 /* PrivacySettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */; };
 		7CA0643C2F7ACA56004CF656 /* PrivacySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */; };
 		7CA81D852F6EF0E80020170A /* AdvancedSessionLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */; };
@@ -243,7 +244,6 @@
 		7CAA1F872F4255EE008200B9 /* ExerciseBundleEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F862F4255EE008200B9 /* ExerciseBundleEngine.swift */; };
 		7CAA1FA12F4AAAA0008200B9 /* SystemMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FA02F4AAAA0008200B9 /* SystemMetrics.swift */; };
 		7CAA1FA32F4AAAA0008200B9 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FA22F4AAAA0008200B9 /* KeychainHelper.swift */; };
-		7CADB1A12F4AAAB0008200B9 /* OAuthAuditLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CADB1A02F4AAAB0008200B9 /* OAuthAuditLog.swift */; };
 		7CAA1FAD2F428889008200B9 /* CommunityChallengeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FAC2F428889008200B9 /* CommunityChallengeViews.swift */; };
 		7CAA1FAF2F428898008200B9 /* CommunityChallengeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FAE2F428898008200B9 /* CommunityChallengeService.swift */; };
 		7CAA1FB12F428A75008200B9 /* SmartMealPlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FB02F428A75008200B9 /* SmartMealPlannerView.swift */; };
@@ -273,6 +273,7 @@
 		7CACB57B2F2E971E003A7C91 /* ChallengeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CACB57A2F2E971E003A7C91 /* ChallengeDetailView.swift */; };
 		7CACB57D2F2E9722003A7C91 /* ChallengePreviewWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CACB57C2F2E9722003A7C91 /* ChallengePreviewWidget.swift */; };
 		7CACB57F2F5A000100AAAAAA /* ChallengeReactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CACB57E2F5A000100AAAAAA /* ChallengeReactionsView.swift */; };
+		7CADB1A12F4AAAB0008200B9 /* OAuthAuditLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CADB1A02F4AAAB0008200B9 /* OAuthAuditLog.swift */; };
 		7CAFD5562EDEA71200920F0D /* SocialAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD5552EDEA71200920F0D /* SocialAuthService.swift */; };
 		7CAFD5582EDF3A8B00920F0D /* ExerciseHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD5572EDF3A8B00920F0D /* ExerciseHistoryService.swift */; };
 		7CAFD55A2EDF780500920F0D /* HydrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAFD5592EDF780500920F0D /* HydrationService.swift */; };
@@ -501,7 +502,6 @@
 		7C0C42692F16E22700F02E84 /* ExerciseNameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseNameCache.swift; sourceTree = "<group>"; };
 		7C0C42792F182C6500F02E84 /* AppPerformanceSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPerformanceSystem.swift; sourceTree = "<group>"; };
 		7C0C427B2F1833C100F02E84 /* FriendProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendProfileView.swift; sourceTree = "<group>"; };
-		7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendWorkoutToFriendView.swift; sourceTree = "<group>"; };
 		7C0C427D2F1833CB00F02E84 /* FriendService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendService.swift; sourceTree = "<group>"; };
 		7C0C427F2F1833DA00F02E84 /* FriendsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsListView.swift; sourceTree = "<group>"; };
 		7C0C42812F18340100F02E84 /* SharedWorkoutPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedWorkoutPreviewView.swift; sourceTree = "<group>"; };
@@ -664,6 +664,7 @@
 		7C8CF4712F9FA437007CD766 /* DailyBriefTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyBriefTemplates.swift; sourceTree = "<group>"; };
 		7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Analyzer.swift; sourceTree = "<group>"; };
 		7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeBriefRow.swift; sourceTree = "<group>"; };
+		7C8CF97D2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotatorView.swift; sourceTree = "<group>"; };
 		7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizations.swift; sourceTree = "<group>"; };
 		7C8EB1C12F26B03C007BFA55 /* StravaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaService.swift; sourceTree = "<group>"; };
 		7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaSettingsView.swift; sourceTree = "<group>"; };
@@ -676,6 +677,7 @@
 		7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionLogManager.swift; sourceTree = "<group>"; };
 		7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevSessionLogsView.swift; sourceTree = "<group>"; };
 		7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartExerciseSearchService.swift; sourceTree = "<group>"; };
+		7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendWorkoutToFriendView.swift; sourceTree = "<group>"; };
 		7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsManager.swift; sourceTree = "<group>"; };
 		7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsView.swift; sourceTree = "<group>"; };
 		7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSessionLogger.swift; sourceTree = "<group>"; };
@@ -688,7 +690,6 @@
 		7CAA1F862F4255EE008200B9 /* ExerciseBundleEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseBundleEngine.swift; sourceTree = "<group>"; };
 		7CAA1FA02F4AAAA0008200B9 /* SystemMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMetrics.swift; sourceTree = "<group>"; };
 		7CAA1FA22F4AAAA0008200B9 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
-		7CADB1A02F4AAAB0008200B9 /* OAuthAuditLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthAuditLog.swift; sourceTree = "<group>"; };
 		7CAA1FAC2F428889008200B9 /* CommunityChallengeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityChallengeViews.swift; sourceTree = "<group>"; };
 		7CAA1FAE2F428898008200B9 /* CommunityChallengeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityChallengeService.swift; sourceTree = "<group>"; };
 		7CAA1FB02F428A75008200B9 /* SmartMealPlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartMealPlannerView.swift; sourceTree = "<group>"; };
@@ -718,6 +719,7 @@
 		7CACB57A2F2E971E003A7C91 /* ChallengeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeDetailView.swift; sourceTree = "<group>"; };
 		7CACB57C2F2E9722003A7C91 /* ChallengePreviewWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengePreviewWidget.swift; sourceTree = "<group>"; };
 		7CACB57E2F5A000100AAAAAA /* ChallengeReactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeReactionsView.swift; sourceTree = "<group>"; };
+		7CADB1A02F4AAAB0008200B9 /* OAuthAuditLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthAuditLog.swift; sourceTree = "<group>"; };
 		7CAFD5552EDEA71200920F0D /* SocialAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialAuthService.swift; sourceTree = "<group>"; };
 		7CAFD5572EDF3A8B00920F0D /* ExerciseHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseHistoryService.swift; sourceTree = "<group>"; };
 		7CAFD5592EDF780500920F0D /* HydrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HydrationService.swift; sourceTree = "<group>"; };
@@ -943,6 +945,7 @@
 			isa = PBXGroup;
 			children = (
 				7C6DE3802F5BE05F00BCA276 /* AchievementService.swift */,
+				7C8CF97D2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift */,
 				7C6DE3822F5BE06300BCA276 /* AchievementsView.swift */,
 				7C8CF10C2F9EB22C007CD766 /* ActiveChallengeWidgetBridge.swift */,
 				7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */,
@@ -1903,6 +1906,7 @@
 				72F444178A0149A0F7BA3AA1 /* PlateCalculatorView.swift in Sources */,
 				3A5A490282C7308CC0EB73ED /* SelectAllTextField.swift in Sources */,
 				D94A4475A737B2B3F4D6BF42 /* RenameExerciseView.swift in Sources */,
+				7C8CF97E2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift in Sources */,
 				75494973A1E7BA66E430B943 /* WorkoutSettingsPanel.swift in Sources */,
 				4A3749E2940214E934C8BA1A /* NowPlayingBar.swift in Sources */,
 				7C8CEA722F9A7599007CD766 /* DiagnosticContext.swift in Sources */,
@@ -2009,7 +2013,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RunningActivityWidget/RunningActivityWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Daily Goals";
@@ -2040,7 +2044,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RunningActivityWidget/RunningActivityWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Daily Goals";
@@ -2071,7 +2075,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33Watch/Fit33Watch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fit33Watch/Info.plist;
@@ -2105,7 +2109,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33Watch/Fit33Watch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fit33Watch/Info.plist;
@@ -2262,7 +2266,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2300,7 +2304,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

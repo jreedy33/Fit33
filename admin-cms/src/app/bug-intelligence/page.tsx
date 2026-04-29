@@ -2570,3 +2570,178 @@ function ReportCard({ r, onReview, onCreatePr }: {
         </div>
     )
 }
+
+// Shake-source evidence block. Renders the user-typed description + the
+// (possibly user-annotated, red-circled) screenshot inline plus the
+// `likely_source_files` and Phase 7 runtime state snapshot the iOS app
+// captures but hides from the user-facing UI. Crash/log-source reports
+// have `linked_bug_report = null` and never see this component.
+function ShakeEvidenceBlock({ bug }: { bug: LinkedBugReport }) {
+    const [expanded, setExpanded] = useState(true)
+    const [imageOpen, setImageOpen] = useState(false)
+    const screenshotSrc = bug.screenshot_base64
+        ? (bug.screenshot_base64.startsWith('data:')
+            ? bug.screenshot_base64
+            : `data:image/jpeg;base64,${bug.screenshot_base64}`)
+        : null
+    const stateKeys = bug.state_snapshot
+        ? Object.keys(bug.state_snapshot).filter(k => !k.startsWith('__'))
+        : []
+
+    return (
+        <div style={{
+            border: '1px solid rgba(5, 150, 105, 0.35)',
+            background: 'rgba(5, 150, 105, 0.06)',
+            borderRadius: 6,
+            padding: 10,
+            marginBottom: 8,
+        }}>
+            <button
+                onClick={() => setExpanded(v => !v)}
+                style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: '#059669',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    width: '100%',
+                    justifyContent: 'space-between',
+                }}
+            >
+                <span>Evidence — user shake report</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{expanded ? '▾' : '▸'}</span>
+            </button>
+
+            {expanded && (
+                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-primary)' }}>
+                    <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>
+                            What happened
+                        </div>
+                        <div style={{ whiteSpace: 'pre-wrap' }}>{bug.description}</div>
+                    </div>
+                    {bug.expected_behavior && (
+                        <div style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>
+                                Expected
+                            </div>
+                            <div style={{ whiteSpace: 'pre-wrap' }}>{bug.expected_behavior}</div>
+                        </div>
+                    )}
+                    {bug.additional_info && (
+                        <div style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>
+                                Additional notes
+                            </div>
+                            <div style={{ whiteSpace: 'pre-wrap' }}>{bug.additional_info}</div>
+                        </div>
+                    )}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                        {bug.screen_name && <MetaItem label="Screen" value={bug.screen_name} />}
+                        {bug.severity && <MetaItem label="User severity" value={bug.severity} />}
+                        {bug.reproduces_every_time !== null && bug.reproduces_every_time !== undefined && (
+                            <MetaItem label="Reproduces" value={bug.reproduces_every_time ? 'every time' : 'sometimes'} />
+                        )}
+                        {bug.app_version && <MetaItem label="App version" value={bug.app_version} />}
+                        {bug.device_model && <MetaItem label="Device" value={bug.device_model} />}
+                        {bug.os_version && <MetaItem label="OS" value={bug.os_version} />}
+                    </div>
+
+                    {screenshotSrc && (
+                        <div style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>
+                                Screenshot (user marks in red)
+                            </div>
+                            <button
+                                onClick={() => setImageOpen(true)}
+                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'zoom-in', display: 'block' }}
+                                title="Click to enlarge"
+                            >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                    src={screenshotSrc}
+                                    alt="User-attached screenshot, possibly with red marker annotations"
+                                    style={{
+                                        maxWidth: '100%',
+                                        maxHeight: 320,
+                                        borderRadius: 6,
+                                        border: '1px solid var(--border)',
+                                        display: 'block',
+                                    }}
+                                />
+                            </button>
+                        </div>
+                    )}
+
+                    {bug.likely_source_files && bug.likely_source_files.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>
+                                Likely source files (ScreenCodeMap)
+                            </div>
+                            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: 'var(--accent)' }}>
+                                {bug.likely_source_files.map(f => (
+                                    <div key={f}>→ {f}</div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {stateKeys.length > 0 && bug.state_snapshot && (
+                        <details style={{ fontSize: 11 }}>
+                            <summary style={{ cursor: 'pointer', color: 'var(--accent)', fontWeight: 600 }}>
+                                Runtime state at shake ({stateKeys.length} service{stateKeys.length === 1 ? '' : 's'})
+                            </summary>
+                            <pre style={{
+                                background: '#0a0a0f',
+                                color: '#e2e8f0',
+                                padding: 10,
+                                borderRadius: 6,
+                                overflow: 'auto',
+                                maxHeight: 240,
+                                marginTop: 6,
+                                fontSize: 11,
+                                border: '1px solid var(--border)',
+                            }}>
+                                {JSON.stringify(bug.state_snapshot, null, 2)}
+                            </pre>
+                        </details>
+                    )}
+                </div>
+            )}
+
+            {imageOpen && screenshotSrc && (
+                <div
+                    onClick={() => setImageOpen(false)}
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0,0,0,0.85)',
+                        zIndex: 9999,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 24,
+                        cursor: 'zoom-out',
+                    }}
+                    role="dialog"
+                    aria-label="Enlarged screenshot"
+                >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                        src={screenshotSrc}
+                        alt="Enlarged user-attached screenshot"
+                        style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain' }}
+                    />
+                </div>
+            )}
+        </div>
+    )
+}

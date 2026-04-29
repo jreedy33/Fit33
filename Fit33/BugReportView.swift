@@ -22,9 +22,10 @@ struct BugReportView: View {
     // Phase 7 / Cheat Code — runtime state captured at shake moment
     // (before the user starts typing, before they navigate). This is
     // what lets Claude diff "todayLog.weightLbs=199 vs recentLogs.first
-    // .weightLbs=190" at triage time. `snapshotServiceCount` drives the
-    // small badge in the context card so the user knows state was
-    // collected.
+    // .weightLbs=190" at triage time. The snapshot is attached to the
+    // submitted bug report but intentionally NOT surfaced in the user
+    // UI — it appears in the admin CMS bug-intelligence detail panel.
+    // `snapshotServiceCount` is kept for diagnostics only.
     @State private var capturedSnapshot: [String: Any]? = nil
     @State private var snapshotServiceCount: Int = 0
     // Tap-to-annotate sheet — user circles the bug with a red marker.
@@ -46,7 +47,9 @@ struct BugReportView: View {
                         // Header with icon
                         headerSection
 
-                        // Context Claude will receive: current screen + files
+                        // Context: current screen only (files + runtime
+                        // state still attached to the payload but hidden
+                        // from the user — visible in admin CMS).
                         contextSection
 
                         // Severity picker (user tells Claude how bad it is)

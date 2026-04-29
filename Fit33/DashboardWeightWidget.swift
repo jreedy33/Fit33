@@ -9,9 +9,7 @@ struct DashboardWeightWidget: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingInput = false
     @State private var showingPremiumUpgrade = false
-    @State private var weightInput = ""
-    @FocusState private var isInputFocused: Bool
-    
+
     // Match the WeightTrackerWidget color scheme (orange/yellow)
     private let gradientColors: [Color] = [.orange, .yellow]
     
@@ -19,7 +17,15 @@ struct DashboardWeightWidget: View {
         Button(action: {
             HapticManager.tap()
             if premiumManager.isPremiumUser {
-                showingInput = true
+                // Disable the system fullScreenCover slide-up animation —
+                // our inner ZStack drives the popup with its own snappy spring
+                // so the card "pops" instantly instead of waiting on the
+                // standard ~350ms sheet animation + sequential keyboard slide.
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
+                    showingInput = true
+                }
             } else {
                 showingPremiumUpgrade = true
             }
@@ -27,12 +33,13 @@ struct DashboardWeightWidget: View {
             widgetContentWithPremiumBadge
         }
         .buttonStyle(PlainButtonStyle())
-        .sheet(isPresented: $showingInput) {
-            WeightInputSheet(weightService: weightService, autoFocus: $showingInput)
-                .presentationDetents([.height(280)])
-                .presentationDragIndicator(.visible)
-                .presentationBackgroundInteraction(.enabled)
-                .interactiveDismissDisabled(false)
+        .fullScreenCover(isPresented: $showingInput) {
+            WeightInputPopupCard(weightService: weightService) {
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) { showingInput = false }
+            }
+            .presentationBackground(.clear)
         }
         .fullScreenCover(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(triggeringFeature: .weightTracking)
@@ -360,65 +367,87 @@ struct DashboardWeightWidget: View {
     }
 }
 
-// MARK: - Weight Input Sheet
-struct WeightInputSheet: View {
+// MARK: - Weight Input Popup Card
+//
+// Custom popup card replacing the old `.sheet` modal. The iOS sheet's fixed
+// ~350ms slide-up animation + sequential keyboard slide produced a visible
+// "delay" before the user could type (especially in Low Power Mode). This
+// card drives its own spring (response: 0.32, damping: 0.85) and requests
+// keyboard focus on appear, so the card scales/fades in WHILE the keyboard
+// slides up — the two animations overlap instead of stacking.
+struct WeightInputPopupCard: View {
     @ObservedObject var weightService: WeightTrackingService
-    @Binding var autoFocus: Bool
-    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
+
     @Environment(\.colorScheme) private var colorScheme
     @State private var weightInput = ""
+    @State private var animateIn = false
     @FocusState private var isInputFocused: Bool
-    
-    // Match the WeightTrackerWidget color scheme (orange/yellow)
+
     private let gradientColors: [Color] = [.orange, .yellow]
-    
-    init(weightService: WeightTrackingService, autoFocus: Binding<Bool>) {
-        self.weightService = weightService
-        self._autoFocus = autoFocus
-    }
-    
+
     var body: some View {
-        VStack(spacing: 20) {
-            // Header
+        ZStack {
+            // Tappable dim backdrop
+            Color.black
+                .opacity(animateIn ? 0.5 : 0)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { close() }
+                .accessibilityHidden(true)
+
+            // Centered popup card
+            cardBody
+                .scaleEffect(animateIn ? 1 : 0.92)
+                .opacity(animateIn ? 1 : 0)
+                .padding(.horizontal, 20)
+        }
+        .onAppear {
+            if weightService.hasLoggedToday, let todayWeight = weightService.todayLog {
+                let displayWeight = weightService.usesLbs ? todayWeight.weightLbs : todayWeight.weightKg
+                weightInput = String(format: "%.1f", displayWeight)
+            }
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                animateIn = true
+            }
+            isInputFocused = true
+        }
+    }
+
+    private var cardBody: some View {
+        VStack(spacing: 16) {
             HStack {
                 Text("Log Weight")
-                    .font(.title2)
+                    .font(.title3)
                     .fontWeight(.bold)
-                
+                    .foregroundColor(.primary)
+
                 Spacer()
-                
-                Button(action: { dismiss() }) {
+
+                Button(action: close) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
+                        .font(.title3)
                         .foregroundColor(.secondary)
                 }
+                .accessibilityLabel("Close")
+                .accessibilityHint("Dismiss weight entry")
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            
-            // Weight input
-            HStack(spacing: 8) {
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 TextField("0.0", text: $weightInput)
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.center)
                     .focused($isInputFocused)
                     .frame(maxWidth: 200)
-                    .onAppear {
-                        // Focus immediately on appear
-                        DispatchQueue.main.async {
-                            isInputFocused = true
-                        }
-                    }
-                
+
                 Text(weightService.usesLbs ? "lbs" : "kg")
-                    .font(.title)
+                    .font(.title3)
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
             }
-            .padding(.vertical, 10)
-            
-            // Save button
+            .padding(.vertical, 4)
+
             Button(action: saveWeight) {
                 Text("Save")
                     .font(.headline)
@@ -437,21 +466,40 @@ struct WeightInputSheet: View {
             }
             .disabled(weightInput.isEmpty)
             .opacity(weightInput.isEmpty ? 0.5 : 1)
-            .padding(.horizontal, 20)
-            
-            Spacer()
+            .accessibilityLabel("Save weight")
+            .accessibilityHint("Logs the entered weight")
         }
-        .onAppear {
-            // Pre-fill with current weight if logged today
-            if weightService.hasLoggedToday, let todayWeight = weightService.todayLog {
-                let displayWeight = weightService.usesLbs ? todayWeight.weightLbs : todayWeight.weightKg
-                weightInput = String(format: "%.1f", displayWeight)
-            }
-            // Focus immediately - no delay
-            isInputFocused = true
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.cardBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [gradientColors[0].opacity(0.3), gradientColors[1].opacity(0.15)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.18), radius: 24, x: 0, y: 12)
+        .shadow(color: gradientColors[0].opacity(colorScheme == .dark ? 0.18 : 0.10), radius: 20, x: 0, y: 6)
+    }
+
+    private func close() {
+        isInputFocused = false
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            animateIn = false
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            onDismiss()
         }
     }
-    
+
     private func saveWeight() {
         guard let weight = Double(weightInput) else {
             // Invalid user input is a UX event, not a bug. Invariant 25.
@@ -461,12 +509,19 @@ struct WeightInputSheet: View {
 
         AppLogger.debug("[Widget] Saving weight: \(weight) \(weightService.usesLbs ? "lbs" : "kg")", category: .ui)
         HapticManager.success()
+        isInputFocused = false
+
+        // Animate the card out immediately for a snappy feel — the network
+        // write continues in the background and the .weightDidUpdate
+        // notification keeps the dashboard widget in sync.
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            animateIn = false
+        }
 
         Task {
             let success = await weightService.logWeight(weight)
             if success {
                 AppLogger.info("[Widget] Weight saved successfully, todayLog: \(weightService.todayLog != nil ? "SET" : "NIL"), hasLoggedToday: \(weightService.hasLoggedToday)", category: .ui)
-                try? await Task.sleep(nanoseconds: 200_000_000)
             } else {
                 // WeightTrackingService.logWeight already routed the real error
                 // through NetworkErrorClassifier with op/endpoint/startedAt/userId/pg_code
@@ -476,8 +531,8 @@ struct WeightInputSheet: View {
                 AppLogger.warning("[Widget] logWeight returned false — surface already reported by WeightTrackingService", category: .ui)
             }
             await MainActor.run {
-                AppLogger.debug("[Widget] Dismissing sheet, todayLog still: \(weightService.todayLog != nil ? "SET" : "NIL")", category: .ui)
-                dismiss()
+                AppLogger.debug("[Widget] Dismissing popup, todayLog still: \(weightService.todayLog != nil ? "SET" : "NIL")", category: .ui)
+                onDismiss()
             }
         }
     }

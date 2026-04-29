@@ -132,7 +132,7 @@ struct WorkoutTabView: View {
                 
             // These destinations are handled by ContentView + DashboardView/FriendsTabView
             // Don't handle or clear them here — let the correct tab consume them
-            case .friends, .friendRequests, .friendSearch, .challenges, .challengeCreation, .challengeInvite, .challengeDetail:
+            case .friends, .friendsActivity, .friendRequests, .friendSearch, .challenges, .challengeCreation, .challengeInvite, .challengeDetail:
                 break  // Handled by ContentView → FriendsTabView / DashboardView
             case .communityChallenge:
                 break  // Handled by ContentView (join sheet)

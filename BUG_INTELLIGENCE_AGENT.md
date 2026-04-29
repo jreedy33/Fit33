@@ -39,6 +39,7 @@
 
 6. **Every new top-level screen registers in `ScreenCodeMap.shared`** with its canonical Swift filename(s). Rage-shake reports populate `bug_reports.likely_source_files` from this map at submission time — wrong/missing entries = wrong file paths in CMS triage. Audit: if `View` enum gets a new case, `ScreenCodeMap` gets a new mapping IN THE SAME PR.
 7. **`BugReportStateSnapshot` providers stay current.** Phase 7 "cheat code" — runtime `@Published` values from every major service at shake time. New `ObservableObject` singleton in core flows → add a provider in `BugReportStateSnapshot+Providers.swift`. Without it, divergent-state bugs (widget shows 199, dashboard shows 190) surface as "could be anywhere" instead of being caught in one read.
+7a. **Shake user-facing UI is payload-quiet.** `BugReportView` / `ManualBugReportView` MUST NOT render `likely_source_files` (raw repo paths) or `state_snapshot` (service-name dumps) to the user — those are attached to `bug_reports` for triage but only surface in the admin CMS `/bug-intelligence` detail panel (server-side enrichment lives in `get_bug_intelligence_reports` admin action; UI in `ShakeEvidenceBlock` inside `bug-intelligence/page.tsx`). The user only sees the detected screen + a tap-to-annotate screenshot. The CMS detail panel for a `source='shake'` Claude report MUST render the linked `bug_reports.screenshot_base64` inline (not just a `screenshot_attached: bool` indicator) — the JPEG may already be marked up by the user via `ScreenshotAnnotatorView` (red-marker free-hand strokes composited into the image at submit time, scaled from on-screen canvas coords back to the image's native pixel space).
 
 ### 3. Server-side rollup + classification
 
@@ -155,8 +156,9 @@
 | `Fit33/SessionLogManager.swift` | Session lifecycle, screen tracking |
 | `Fit33/CrashReportingService.swift` | Uploads `crash_reports` with stacks + `additional_context` (file/line/function) + Phase 5 dSYM keys (`binary_uuid`, `binary_slide`); reportError denylist mirrors `bug_intel_noise_filter` |
 | `Fit33/ScreenCodeMap.swift` | Static screen → Swift file map; populates `bug_reports.likely_source_files` at shake |
-| `Fit33/BugReportService.swift`, `BugReportView.swift` | Shake/manual bug submission UI |
-| `Fit33/BugReportStateSnapshot.swift`, `+Providers.swift` | Phase 7 runtime state snapshot at shake time |
+| `Fit33/BugReportService.swift`, `BugReportView.swift` | Shake/manual bug submission UI (payload-quiet — see invariant 7a) |
+| `Fit33/ScreenshotAnnotatorView.swift` | Tap-to-annotate red-marker editor; composites strokes onto `screenshot_base64` before submit |
+| `Fit33/BugReportStateSnapshot.swift`, `+Providers.swift` | Phase 7 runtime state snapshot at shake time (CMS-only surface) |
 | `Fit33/PerformanceSignposts.swift` | Canonical `op` enum — single source of truth |
 | `Fit33Tests/PerformanceSignpostsCoverageTests.swift` | Prevents op string drift |
 

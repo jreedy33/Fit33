@@ -1737,7 +1737,35 @@ export async function POST(req: NextRequest) {
           .eq('fingerprint', fingerprint)
           .order('created_at', { ascending: false })
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        return NextResponse.json({ reports: data || [] })
+
+        // Attach the linked rage-shake `bug_reports` row to every report
+        // that has one. Lets the CMS detail panel show the user's
+        // description, expected behavior, the (possibly user-annotated)
+        // screenshot, the `likely_source_files` ScreenCodeMap returned,
+        // and the Phase 7 runtime state snapshot — all of which are
+        // captured by the iOS app but hidden from the user-facing UI.
+        const reports = (data || []) as Array<Record<string, unknown>>
+        const reportIds = reports.map((r) => String(r.id))
+        const linkedByReportId: Record<string, Record<string, unknown>> = {}
+        if (reportIds.length > 0) {
+          const { data: bugRows } = await admin.from('bug_reports')
+            .select(
+              'id, triage_report_id, description, expected_behavior, additional_info, ' +
+              'screen_name, severity, bug_category, likely_source_files, state_snapshot, ' +
+              'screenshot_base64, device_model, os_version, app_version, ' +
+              'reproduces_every_time, user_name, user_email, created_at',
+            )
+            .in('triage_report_id', reportIds)
+          for (const b of ((bugRows ?? []) as unknown as Array<Record<string, unknown>>)) {
+            const trId = b.triage_report_id ? String(b.triage_report_id) : null
+            if (trId) linkedByReportId[trId] = b
+          }
+        }
+        const enriched = reports.map((r) => ({
+          ...r,
+          linked_bug_report: linkedByReportId[String(r.id)] || null,
+        }))
+        return NextResponse.json({ reports: enriched })
       }
 
       // Cursor handoff export — bundles every report matching the filter

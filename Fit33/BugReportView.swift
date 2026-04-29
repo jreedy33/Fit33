@@ -27,6 +27,8 @@ struct BugReportView: View {
     // collected.
     @State private var capturedSnapshot: [String: Any]? = nil
     @State private var snapshotServiceCount: Int = 0
+    // Tap-to-annotate sheet — user circles the bug with a red marker.
+    @State private var showingAnnotator = false
 
     private var inputBackground: Color {
         colorScheme == .dark ? Color(white: 0.08) : Color.gray.opacity(0.05)
@@ -96,6 +98,13 @@ struct BugReportView: View {
             .sheet(isPresented: $showingLogPreview) {
                 SessionLogPreviewView()
             }
+            .fullScreenCover(isPresented: $showingAnnotator) {
+                if let base = shakeManager.capturedScreenshot {
+                    ScreenshotAnnotatorView(baseImage: base) { annotated in
+                        shakeManager.capturedScreenshot = annotated
+                    }
+                }
+            }
             .alert("Bug Report Submitted", isPresented: $showingSubmitConfirmation) {
                 Button("OK") {
                     shakeManager.clearScreenshot()
@@ -127,12 +136,15 @@ struct BugReportView: View {
         }
     }
 
-    // MARK: - Context Section (screen + likely files)
+    // MARK: - Context Section (screen only)
     //
-    // Shows the user which screen was detected and which source files Claude
-    // will focus on. `ScreenCodeMap` returns up to 4 file candidates; we
-    // display relative paths (e.g. `Fit33/DashboardView.swift`) so the
-    // chosen scope is transparent to the user.
+    // User-facing card. We deliberately ONLY show the detected screen here.
+    // The likely source files (`detectedFiles`) and the runtime state
+    // snapshot (`capturedSnapshot`) are still attached to the submitted
+    // report — they're consumed by the triage-shake-reports edge function
+    // and rendered in the admin CMS bug-intelligence detail panel. They
+    // stay hidden from the user because raw repo paths and service-name
+    // dumps don't add value for them.
     private var contextSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -155,45 +167,6 @@ struct BugReportView: View {
                         .fontWeight(.medium)
                 }
                 Spacer()
-            }
-
-            if !detectedFiles.isEmpty {
-                Divider()
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "swift")
-                        .foregroundColor(.orange)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Files Claude will review")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        ForEach(detectedFiles, id: \.self) { f in
-                            Text(f)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundColor(.primary)
-                        }
-                    }
-                    Spacer()
-                }
-            }
-            // Phase 7 / Cheat Code — indicate runtime state was captured.
-            // Shows the user their report is backed by concrete values,
-            // not just "it broke". Drives confidence AND lets support
-            // verify the state block at triage time.
-            if snapshotServiceCount > 0 {
-                Divider()
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "waveform.path.ecg")
-                        .foregroundColor(.green)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Runtime state captured")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(snapshotServiceCount) service\(snapshotServiceCount == 1 ? "" : "s") snapshotted — Claude will see exact values at the moment you shook.")
-                            .font(.caption)
-                            .foregroundColor(.primary)
-                    }
-                    Spacer()
-                }
             }
         }
         .padding()
@@ -266,6 +239,11 @@ struct BugReportView: View {
     }
     
     // MARK: - Screenshot Preview
+    //
+    // Tapping the captured screenshot opens `ScreenshotAnnotatorView` so
+    // the user can circle the buggy region with a red marker. The
+    // annotated image replaces `shakeManager.capturedScreenshot` and is
+    // what gets uploaded — admin CMS / bug-intelligence sees the marks.
     private var screenshotSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -274,19 +252,48 @@ struct BugReportView: View {
                 Text("Screenshot Captured")
                     .font(.headline)
                 Spacer()
+                if shakeManager.capturedScreenshot != nil {
+                    Label("Tap to mark", systemImage: "pencil.tip.crop.circle")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .accessibilityHidden(true)
+                }
             }
-            
+
             if let screenshot = shakeManager.capturedScreenshot {
-                Image(uiImage: screenshot)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxHeight: 200)
-                    .cornerRadius(CornerRadius.md)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: CornerRadius.md)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                Button {
+                    HapticManager.selectionChanged()
+                    showingAnnotator = true
+                } label: {
+                    ZStack(alignment: .bottomTrailing) {
+                        Image(uiImage: screenshot)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxHeight: 200)
+                            .cornerRadius(CornerRadius.md)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+
+                        HStack(spacing: 6) {
+                            Image(systemName: "pencil.tip")
+                            Text("Circle the bug")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.red.opacity(0.85))
+                        .cornerRadius(CornerRadius.sm)
+                        .padding(8)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Annotate screenshot")
+                .accessibilityHint("Opens an editor where you can circle the bug with a red marker")
             } else {
                 RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(inputBackground)
@@ -700,8 +707,10 @@ struct ManualBugReportView: View {
     // Photo picker
     @State private var selectedImage: UIImage?
     @State private var showingPhotoPicker = false
-    
-    
+    // Tap-to-annotate sheet for the manual flow.
+    @State private var showingAnnotator = false
+
+
     private var inputBackground: Color {
         colorScheme == .dark ? Color(white: 0.08) : Color.gray.opacity(0.1)
     }
@@ -777,6 +786,13 @@ struct ManualBugReportView: View {
             .sheet(isPresented: $showingLogPreview) {
                 SessionLogPreviewView()
             }
+            .fullScreenCover(isPresented: $showingAnnotator) {
+                if let base = selectedImage {
+                    ScreenshotAnnotatorView(baseImage: base) { annotated in
+                        selectedImage = annotated
+                    }
+                }
+            }
             .onAppear {
                 // Phase 7: snapshot runtime state the moment the sheet
                 // presents, for the same reason BugReportView does.
@@ -827,17 +843,40 @@ struct ManualBugReportView: View {
             
             if let screenshot = selectedImage {
                 ZStack(alignment: .topTrailing) {
-                    Image(uiImage: screenshot)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: 200)
-                        .cornerRadius(CornerRadius.md)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: CornerRadius.md)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
-                    
+                    Button {
+                        HapticManager.selectionChanged()
+                        showingAnnotator = true
+                    } label: {
+                        ZStack(alignment: .bottomTrailing) {
+                            Image(uiImage: screenshot)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxHeight: 200)
+                                .cornerRadius(CornerRadius.md)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: CornerRadius.md)
+                                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                )
+                                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+
+                            HStack(spacing: 6) {
+                                Image(systemName: "pencil.tip")
+                                Text("Circle the bug")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.red.opacity(0.85))
+                            .cornerRadius(CornerRadius.sm)
+                            .padding(8)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Annotate screenshot")
+                    .accessibilityHint("Opens an editor where you can circle the bug with a red marker")
+
                     // Remove button
                     Button(action: {
                         selectedImage = nil
@@ -848,6 +887,7 @@ struct ManualBugReportView: View {
                             .background(Circle().fill(.white))
                     }
                     .offset(x: 8, y: -8)
+                    .accessibilityLabel("Remove screenshot")
                 }
             } else {
                 Button(action: {

@@ -20,10 +20,23 @@ When editing a file, the matching scoped rule loads automatically. When reading/
   3. `docs/history/*_AGENT.md` — long-form historical context (sprint changelogs, dated decisions, migrations). Read ONLY when you need dated context. Treat as immutable archive.
 - **"Consult my agents"** = read the relevant `*_AGENT.md` in the repo root BEFORE making changes. Route via `ENGINEERING_TEAM.md` ownership matrix.
 - **After every task**, update docs at the right layer:
-  - If the change introduces a new rule-shaped invariant that applies to ONE file type (Swift / SQL / CMS) → add it to the matching scoped rule file.
-  - If the invariant applies to ALL agents (cross-cutting) → add it to `codingrules.mdc`.
-  - If the new fact is agent-specific need-to-know (e.g. a new canonical model / service ownership) → add to the current `*_AGENT.md`.
-  - Dated narrative / audit / migration notes → append to `docs/history/*_AGENT.md` (NOT the current agent file).
+ - If the change introduces a new rule-shaped invariant that applies to ONE file type (Swift / SQL / CMS) → add it to the matching scoped rule file.
+ - If the invariant applies to ALL agents (cross-cutting) → add it to `codingrules.mdc`.
+ - If the new fact is agent-specific need-to-know (e.g. a new canonical model / service ownership) → add to the current `*_AGENT.md`.
+ - Dated narrative / audit / migration notes → append to `docs/history/*_AGENT.md` (NOT the current agent file).
+- **MIRROR RULE — long-form → short-form sync (MANDATORY).** Any change to a root-level `*_AGENT.md` MUST be mirrored in the matching `.cursor/agents/<slug>.md` short-form descriptor in the same edit pass. The two files share an audience (the agent itself) but different surfaces (long-form = canonical playbook the agent reads on invocation; short-form = the descriptor Cursor reads to decide WHEN to invoke + what's in the agent's hard-invariants list). They drift if you only update one. The mapping (long-form → short-form):
+  - `QUALITY_PERFORMANCE_AGENT.md` ↔ `.cursor/agents/quality-performance.md`
+  - `PRODUCT_ENGINEER_AGENT.md` ↔ `.cursor/agents/product-engineer.md`
+  - `DATA_BACKEND_AGENT.md` ↔ `.cursor/agents/data-backend.md`
+  - `INFRA_SECURITY_AGENT.md` ↔ `.cursor/agents/infra-security.md`
+  - `SUPABASE_AGENT.md` ↔ `.cursor/agents/supabase-expert.md`
+  - `BUG_INTELLIGENCE_AGENT.md` ↔ `.cursor/agents/bug-intelligence.md`
+  - `FITNESS_EXPERT_AGENT.md` ↔ `.cursor/agents/fitness-expert.md`
+  - `DESIGN_AGENT.md` ↔ `.cursor/agents/lead-designer.md`
+  - `DESIGN_SYSTEM_AGENT.md` ↔ `.cursor/agents/design-system.md`
+  - `DEVICE_COMPATIBILITY_AGENT.md` ↔ `.cursor/agents/device-compatibility.md`
+  - `SUPPORT_AGENT.md` ↔ `.cursor/agents/support-knowledge.md`
+  Sync direction is one-way: the long-form is the canonical source. When you change an invariant number, add a new invariant, extract a section into another agent, or fix a contradiction, port the equivalent change to the short-form's "Hard invariants" section. The short-form's `description:` front-matter field also needs updating when the agent's responsibilities materially change. Note: `.cursor/agents/*.md` files are gitignored — the sync still happens in the same PR; it just doesn't show in `git status`. (The short-forms are also re-generated locally when you copy from `BUG_INTELLIGENCE_AGENT.md` style — keep them aligned.)
 - **Agent files**: `QUALITY_PERFORMANCE_AGENT.md`, `PRODUCT_ENGINEER_AGENT.md`, `DATA_BACKEND_AGENT.md`, `INFRA_SECURITY_AGENT.md`, `SUPABASE_AGENT.md`, `BUG_INTELLIGENCE_AGENT.md`, `FITNESS_EXPERT_AGENT.md`, `DESIGN_AGENT.md`, `DESIGN_SYSTEM_AGENT.md`, `DEVICE_COMPATIBILITY_AGENT.md`, `SUPPORT_AGENT.md`.
 
 ## General Principles

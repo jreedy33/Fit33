@@ -61,6 +61,32 @@ type Fingerprint = {
     latest_resolving_migration_id?: string | null
 }
 
+// User-supplied shake context attached server-side via
+// `get_bug_intelligence_reports` (route.ts joins `bug_reports` on
+// `triage_report_id`). Always null for crash/log-sourced reports.
+// `screenshot_base64` is the (possibly user-annotated) JPEG the iOS
+// app sent up — the user circled the bug with a red marker before
+// submitting; we render it inline so triagers see exactly what was
+// flagged.
+type LinkedBugReport = {
+    id: string
+    description: string
+    expected_behavior: string | null
+    additional_info: string | null
+    screen_name: string | null
+    severity: string | null
+    bug_category: string | null
+    likely_source_files: string[] | null
+    state_snapshot: Record<string, unknown> | null
+    screenshot_base64: string | null
+    device_model: string | null
+    os_version: string | null
+    app_version: string | null
+    reproduces_every_time: boolean | null
+    user_name: string | null
+    user_email: string | null
+    created_at: string
+}
 type Report = {
     id: string
     fingerprint: string
@@ -79,6 +105,7 @@ type Report = {
     pr_branch: string | null
     created_at: string
     trigger_reason: string
+    linked_bug_report?: LinkedBugReport | null
 }
 
 type Trend = {
@@ -2500,6 +2527,10 @@ function ReportCard({ r, onReview, onCreatePr }: {
                 <div style={{ fontSize: 11, color: 'var(--warning)', background: 'rgba(245, 158, 11, 0.12)', padding: '4px 8px', borderRadius: 4, marginBottom: 8 }}>
                     Invariant: {r.invariant_violated}
                 </div>
+            )}
+
+            {r.linked_bug_report && (
+                <ShakeEvidenceBlock bug={r.linked_bug_report} />
             )}
 
             {r.file_path && (

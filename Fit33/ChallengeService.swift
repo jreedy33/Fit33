@@ -1958,51 +1958,111 @@ class ChallengeService: ObservableObject {
     }
     
     /// Sync existing health data when a challenge is accepted
-    /// This ensures users get credit for progress already made today
+    /// This ensures users get credit for progress already made today.
+    ///
+    /// 2026-04-28 sync-triage Layer D — refactored to remove the
+    /// `activeChallenges.first(where:)` early-return that previously
+    /// caused this method to skip the `logProgress` call whenever the
+    /// in-line `fetchActiveChallenges()` hit its 1-second throttle. The
+    /// throttle was racing with the `handleParticipantStatusChange`
+    /// realtime handler's `throttledChallengeFetch()` (also fires the
+    /// instant the participant row flips to `accepted`), so on every
+    /// accept there was a real chance that `activeChallenges` was
+    /// stale at the moment we looked up the challenge → we returned
+    /// the warning "Could not find accepted challenge in active list"
+    /// and NEVER wrote a `challenge_daily_progress` row. Both
+    /// participants then saw "—" on the active-challenge widget +
+    /// home-screen widget until the next foreground HK sync. Canonical
+    /// incident 2026-04-28 (Joe ↔ Paul 10K Steps Daily Steps challenge
+    /// `4076da0d`). Fix: prefer `inviteDetails` (always present on the
+    /// accept path; the invite tile already had `challengeType` /
+    /// `targetUnit` / `dailyTarget` / `title`) so we have the data
+    /// independent of the active-challenges fetch outcome. Falls back
+    /// to `activeChallenges` only when `inviteDetails` is nil (defensive).
     private func syncExistingProgressOnAccept(challengeId: UUID, inviteDetails: ChallengeInvite?) async {
         AppLogger.debug("Syncing existing progress for newly accepted challenge...", category: .social)
-        
-        // First, refresh HealthKit data to ensure we have the latest
-        AppLogger.debug("Refreshing HealthKit data...", category: .social)
-        await HealthKitService.shared.syncAllData(force: true)
-        
-        // Also refresh Strava if connected
-        if StravaService.shared.isConnected {
-            AppLogger.debug("Refreshing Strava data...", category: .social)
-            await StravaService.shared.syncActivities(force: true)
-        }
-        
-        // Find the accepted challenge in our active list
-        guard let challenge = activeChallenges.first(where: { $0.challengeId == challengeId }) else {
-            AppLogger.warning("Could not find accepted challenge in active list", category: .social)
+
+        // Resolve `(challengeType, targetUnit, dailyTarget, title)` from the
+        // most reliable source available. `inviteDetails` is set by
+        // `respondToChallenge` from `pendingInvites.first { $0.challengeId == challengeId }`
+        // BEFORE the accept RPC runs, so it survives the post-accept fetch race.
+        let challengeType: String
+        let targetUnit: String
+        let dailyTarget: Int
+        let titleForLogs: String
+        if let invite = inviteDetails {
+            challengeType = invite.challengeType
+            targetUnit = invite.targetUnit
+            dailyTarget = invite.dailyTarget ?? 0
+            titleForLogs = invite.title
+        } else if let challenge = activeChallenges.first(where: { $0.challengeId == challengeId }) {
+            challengeType = challenge.challengeType
+            targetUnit = challenge.targetUnit
+            dailyTarget = challenge.dailyTarget ?? 0
+            titleForLogs = challenge.title
+        } else {
+            AppLogger.warning("syncExistingProgressOnAccept: no invite metadata AND not in activeChallenges (challenge: \(challengeId.uuidString.prefix(8))) — cannot backfill progress", category: .social)
             return
         }
-        
-        // Calculate progress from all available health data sources
-        let progressValue = await calculateTotalProgressFromAllSources(
-            challengeType: challenge.challengeType,
-            targetUnit: challenge.targetUnit
+
+        await backfillTodayProgressForChallenge(
+            challengeId: challengeId,
+            challengeType: challengeType,
+            targetUnit: targetUnit,
+            dailyTargetForTargetHitLog: dailyTarget,
+            titleForLogs: titleForLogs
         )
-        
-        if progressValue > 0 {
-            AppLogger.debug("Found existing progress: \(progressValue) \(challenge.targetUnit)", category: .social)
-            
-            let success = await logProgress(
-                challengeId: challengeId,
-                progressValue: progressValue,
-                source: "healthkit"
-            )
-            
-            if success {
-                AppLogger.info("Logged initial progress of \(progressValue) \(challenge.targetUnit) for '\(challenge.title)'", category: .social)
-                
-                // Check if this already meets the daily target
-                if progressValue >= (challenge.dailyTarget ?? 0) {
-                    AppLogger.info("User already met daily target! (\(progressValue)/\(challenge.dailyTarget ?? 0))", category: .social)
-                }
+    }
+
+    /// Backfill today's HealthKit + Strava progress to a single challenge id.
+    /// Public so `RealtimeService` can call it from the SENDER's side when
+    /// an opponent accepts (mirrors invariant 28b — both participants must
+    /// write a `challenge_daily_progress` row IMMEDIATELY at accept time so
+    /// neither active-challenge widget shows "—" while the opponent has
+    /// real local HK data).
+    ///
+    /// Independent of `fetchActiveChallenges()` throttle / state — the
+    /// caller passes in `(challengeType, targetUnit)` directly.
+    func backfillTodayProgressForChallenge(
+        challengeId: UUID,
+        challengeType: String,
+        targetUnit: String,
+        dailyTargetForTargetHitLog: Int = 0,
+        titleForLogs: String = ""
+    ) async {
+        // Refresh local sources first so progress reflects what the user
+        // actually did so far today, not a stale cached value.
+        AppLogger.debug("Refreshing HealthKit data for backfill (challenge: \(challengeId.uuidString.prefix(8)))...", category: .social)
+        await HealthKitService.shared.syncAllData(force: true)
+
+        if StravaService.shared.isConnected {
+            AppLogger.debug("Refreshing Strava data for backfill...", category: .social)
+            await StravaService.shared.syncActivities(force: true)
+        }
+
+        let progressValue = await calculateTotalProgressFromAllSources(
+            challengeType: challengeType,
+            targetUnit: targetUnit
+        )
+
+        guard progressValue > 0 else {
+            AppLogger.debug("No existing progress to backfill for \(challengeType) (challenge: \(challengeId.uuidString.prefix(8)))", category: .social)
+            return
+        }
+
+        AppLogger.debug("Backfilling \(progressValue) \(targetUnit) for challenge \(challengeId.uuidString.prefix(8)) ('\(titleForLogs)')", category: .social)
+
+        let success = await logProgress(
+            challengeId: challengeId,
+            progressValue: progressValue,
+            source: "healthkit"
+        )
+
+        if success {
+            AppLogger.info("Backfilled initial progress \(progressValue) \(targetUnit) for '\(titleForLogs)' (challenge: \(challengeId.uuidString.prefix(8)))", category: .social)
+            if dailyTargetForTargetHitLog > 0 && progressValue >= dailyTargetForTargetHitLog {
+                AppLogger.info("Backfill already meets daily target! (\(progressValue)/\(dailyTargetForTargetHitLog))", category: .social)
             }
-        } else {
-            AppLogger.debug("No existing progress to sync for this challenge type", category: .social)
         }
     }
     

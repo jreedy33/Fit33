@@ -247,8 +247,25 @@ final class FitbitService: ObservableObject {
         await syncAllData()
     }
     
-    /// Refresh the access token if expired
+    /// Single-flight wrapper. See `refreshTask` comment above for rationale.
+    /// Prevents the concurrent-replay race that otherwise calls `disconnect()`
+    /// when 2+ in-flight Fitbit API calls all try to refresh the same
+    /// access token simultaneously.
     private func refreshAccessToken() async throws {
+        if let inflight = refreshTask {
+            try await inflight.value
+            return
+        }
+        let task = Task<Void, Error> { [weak self] in
+            defer { self?.refreshTask = nil }
+            try await self?._performTokenRefresh()
+        }
+        refreshTask = task
+        try await task.value
+    }
+
+    /// Refresh the access token if expired
+    private func _performTokenRefresh() async throws {
         guard let refreshToken = refreshToken else {
             throw FitbitError.notConnected
         }
@@ -372,6 +389,16 @@ final class FitbitService: ObservableObject {
     /// Minimum time between syncs (5 minutes)
     private static let syncThrottleInterval: TimeInterval = 300
     private var isSyncing = false
+
+    /// Single-flight guard for `refreshAccessToken()`. See DATA_BACKEND_AGENT.md
+    /// invariant `4d-singleflight` for full rationale. Fitbit single-uses
+    /// refresh tokens (always rotates), so concurrent refresh callers all
+    /// sending the same `refresh_token` would result in the first POST
+    /// rotating successfully and every subsequent POST receiving a non-200,
+    /// which the existing path interprets as a refresh failure and calls
+    /// `disconnect()` — wiping tokens despite a still-valid grant. Coalesces
+    /// N concurrent refreshes into ONE network POST.
+    private var refreshTask: Task<Void, Error>?
     
     /// Sync all relevant data from Fitbit (throttled to prevent excessive API calls)
     func syncAllData(force: Bool = false) async {

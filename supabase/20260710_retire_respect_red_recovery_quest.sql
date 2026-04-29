@@ -1,0 +1,194 @@
+-- ============================================================================
+-- 20260710 — Retire `respect_red_recovery` quest (mutually-exclusive with slot 1)
+--
+-- Follow-up to 20260610 + 20260611 + 20260630 + 20260706 (PE invariant 19d
+-- watch-list). Eleventh retirement on the "no user-takeable lever today"
+-- principle, but THIS one fails for a slightly different reason than the
+-- previous ten:
+--
+--   * 20260610: passive overnight-sensor quests (locked by morning).
+--   * 20260611: phantom quests (no verifier anywhere).
+--   * 20260630: relative-to-others quests (locked by another user).
+--   * 20260706: locked-in by slot 1 set count (locked by your workout size).
+--   * 20260710 (this): MUTUALLY EXCLUSIVE WITH SLOT 1 (locked by the act
+--                      of completing slot 1 at all).
+--
+-- WHY (Joe, 2026-04-28 — Daily Goals dashboard screenshot, third pass):
+--   "daily goals contradict — can have a workout on a rest day"
+--
+--   The slate shipped:
+--     1. complete_workout       "Crush a Workout"  ✓ (Core Focus)
+--     2. respect_red_recovery   "Smart Rest"       0/1 (Chose mobility on
+--                                                       a red recovery day)
+--     3. log_water_8            "Hydration Station" ✓
+--
+--   The two workout-class quests are LITERALLY CONTRADICTORY in copy AND
+--   structurally INCOMPATIBLE in the verifier. Look at the verifier in
+--   `supabase/bundles/bundle_c_smart_adaptive_quests.sql` (lines 2868-2889
+--   inside `verify_wearable_quests_for_today`):
+--
+--     ELSIF v_quest.quest_key = 'respect_red_recovery' THEN
+--         IF v_readiness IS NOT NULL AND v_readiness.band = 'red' THEN
+--             SELECT EXISTS (
+--                 SELECT 1 FROM cardio_workouts
+--                 WHERE user_id = v_caller_id
+--                   AND COALESCE(activity_type, '') IN
+--                       ('walk','hike','yoga','stretch','mobility','foam_rolling')
+--                   AND (started_at AT TIME ZONE p_timezone)::DATE = v_today
+--             ) AND NOT EXISTS (
+--                 SELECT 1 FROM workouts          ← *** the killer ***
+--                 WHERE user_id = v_caller_id
+--                   AND date = v_today
+--             ) INTO v_recovery_workout_today;
+--             ...
+--
+--   The `NOT EXISTS workouts WHERE date = today` clause means: the moment
+--   the user logs ANY strength workout (which is what slot 1 — `complete_workout`
+--   — explicitly tells them to do), `respect_red_recovery` is permanently
+--   locked at "0/1 workout — Not yet" for the rest of the day. The user
+--   cannot do a second workout to fix it (FE invariant 18: no two full
+--   workouts/day).
+--
+--   Three structural problems compound:
+--
+--   (1) MUTUAL EXCLUSION WITH SLOT 1. This is even worse than the
+--       20260706 "exercise_sets_15" anti-pattern. Set Machine at least
+--       *could* complete on a workout — it just usually didn't. Smart
+--       Rest LITERALLY REQUIRES that the user violate slot 1's
+--       instruction. The two quests are incompatible by construction.
+--
+--   (2) CONTRADICTORY COPY. "Crush a Workout" + "Chose mobility on a red
+--       recovery day" is a coaching anti-signal. The user reads the slate
+--       as: "the system has no idea what it wants me to do today." Same
+--       trust-eroding shape as the 20260427 "Eat 1g protein today" copy
+--       bug (FE 18b) — when the slate's voice contradicts itself, every
+--       other quest on the slate becomes harder to take seriously.
+--
+--   (3) NO USER-TAKEABLE LEVER POST-SLOT-1. Per PE invariant 19d, ask:
+--       "if the user's only workout today finishes at 12pm with average
+--        effort, can THIS quest still progress this afternoon by an action
+--        under the user's sole control?" → No. The verifier explicitly
+--       excludes any day with a strength workout logged. Ship-blocker.
+--
+--   The replacement is ALREADY SHIPPED. `active_recovery_logged` (from
+--   migration 20260610, "Active Recovery: Log 15 min walk/yoga/stretch")
+--   is the canonical "did you also do something restorative today?" quest:
+--     * No band gate (actionable on red / yellow / green / unknown days).
+--     * No exclusion of strength workouts (a 30-min walk after your lift
+--       counts).
+--     * Already in `v_recovery_pool` for Layer 7 red-day elevation.
+--   The user can complete `complete_workout` (slot 1) AND `active_recovery_logged`
+--   (slot 2 or 3) in the same day with zero contradiction.
+--
+-- WHAT THIS MIGRATION DOES:
+--
+--   1. SOFT-disables the template (`is_active = FALSE`). Template stays
+--      on disk so historical `user_daily_quests` rows still resolve to a
+--      row for title/icon lookups (PE invariant 19d: never DELETE).
+--
+--   2. CLEANS UP today's not-yet-completed `user_daily_quests` rows so
+--      users staring at the bad quest right now (e.g. Joe in the
+--      screenshot — "Smart Rest · 0/1 workout") aren't stuck with it
+--      until midnight. Following the 20260611 / 20260630 / 20260706
+--      precedent: only TODAY's incomplete rows; preserve completed +
+--      historical rows for streak/audit.
+--
+-- BRIEF ↔ SLATE COORDINATION (PE invariant 25c + 25d, verified pre-ship):
+--   * `Fit33/DailyBriefEngine.swift::matchQuests` does NOT reference
+--     `respect_red_recovery` in any `DebtKind` target-key array. The
+--     `.recoveryNeeded` debt (red day) maps to active recovery quest keys
+--     (`active_recovery_logged`, `walk_when_red`, `evening_wind_down`,
+--     `stretch_session`) — none of which are affected here. Zero
+--     coordination break.
+--   * Server-side Layer 7 (Capacity Band Re-Ranker) `v_recovery_pool` in
+--     `get_daily_quests` v4 (20260703 line 193-196) is:
+--       ARRAY['active_recovery_logged', 'walk_when_red', 'evening_wind_down',
+--             'stretch_session']
+--     `respect_red_recovery` is NOT in this pool — it was never the
+--     red-day elevation candidate, and Layer 7 already correctly elevates
+--     `active_recovery_logged` instead. So this retirement does NOT
+--     reduce the slate's recovery-day coverage.
+--   * Server-side Layer 8 (Debt Booster): no debt kind targets
+--     `respect_red_recovery`. Untouched.
+--   * Server-side challenge-override block: no challenge type maps to
+--     `respect_red_recovery`. Untouched.
+--   * Eligibility pool (`_eligible_quests`): the `WHERE qt.is_active = TRUE`
+--     clause naturally drops the template once `is_active = FALSE`.
+--     Layer 7's red-day filter that drops `hard` / `very_hard` quests
+--     also doesn't apply (the template was `medium` difficulty anyway).
+--
+-- iOS notes:
+--   * `Fit33/DailyQuestService.swift` line 2074 — the `wearableKeys` set
+--     in `onReadinessRecomputed()` keeps `"respect_red_recovery"` as a
+--     never-fires fallback for backwards-compat with already-assigned
+--     rows (PE 19d). The `verify_wearable_quests_for_today` RPC's
+--     `IF v_readiness IS NOT NULL AND v_readiness.band = 'red'` guard
+--     short-circuits cheaply when no in-flight rows exist. Cleaning up
+--     the iOS reference later is doc-debt, not a ship blocker.
+--   * No `QuestKey` enum case — the key is referenced as a raw string,
+--     so no Swift enum cleanup is needed.
+--   * `DailyQuestViews.dynamicDescription` does not switch on
+--     `respect_red_recovery` (it's not in the `QuestKey` enum) — the
+--     server-side `description` column on the `user_daily_quests` row is
+--     the only display source, which the soft-disable preserves for any
+--     in-flight rows.
+--
+-- DESIGN INVARIANT (extends PE 19d / FE 20a-stuck):
+--   Every Daily Goal must be COMPATIBLE WITH SLOT 1. A quest whose
+--   verifier explicitly excludes the slot 1 outcome (e.g. "completes only
+--   if no strength workout today" + slot 1 = "complete a strength
+--   workout") is mutually exclusive with the slate's anchor and breaks
+--   the user's deterministic-lever contract by construction. When
+--   designing a new quest, ask: "is the user able to complete this quest
+--   in the same day they complete slot 1, by an action under their own
+--   control?" If no → reject the design. If the use case is "give the
+--   user a recovery-day option," seed `active_recovery_logged` instead —
+--   it is universally compatible.
+--
+-- Idempotent: re-running flips `is_active` back to FALSE (no-op) and the
+-- DELETE … WHERE is_completed = FALSE is harmless on re-run.
+-- ============================================================================
+
+BEGIN;
+
+-- 1. Soft-disable the template -------------------------------------------
+UPDATE quest_templates
+   SET is_active = FALSE
+ WHERE quest_key = 'respect_red_recovery';
+
+-- 2. Clean up today's in-flight rows so users see a fresh slate ----------
+-- Only DELETE incomplete rows; completed rows stay so XP / streak credit
+-- (if somehow earned today via the narrow recovery-cardio + no-strength
+-- path) is preserved. Date filter uses UTC ±1 day to cover every user
+-- timezone without a per-user lookup (same shape as the 20260619 catch-up
+-- block + 20260706 retirement migration).
+DELETE FROM user_daily_quests
+ WHERE quest_key = 'respect_red_recovery'
+   AND is_completed = FALSE
+   AND quest_date >= ((now() AT TIME ZONE 'UTC')::DATE - INTERVAL '1 day')
+   AND quest_date <= ((now() AT TIME ZONE 'UTC')::DATE + INTERVAL '1 day');
+
+COMMIT;
+
+-- ─── Verification ─────────────────────────────────────────────────────────
+-- SELECT quest_key, title, is_active
+--   FROM quest_templates
+--  WHERE quest_key = 'respect_red_recovery';
+-- Expected: 1 row with is_active = FALSE.
+--
+-- SELECT COUNT(*) FROM user_daily_quests
+--  WHERE quest_key = 'respect_red_recovery'
+--    AND quest_date = current_date
+--    AND is_completed = FALSE;
+-- Expected: 0 (post-cleanup).
+--
+-- Brief↔slate coordination smoke test (run after iOS refetch on a
+-- wearable-connected red-recovery user):
+-- SELECT q.quest_key, q.is_completed
+--   FROM user_daily_quests q
+--  WHERE q.user_id = auth.uid()
+--    AND q.quest_date = current_date
+--  ORDER BY q.created_at;
+-- Expected: 3 rows. Slot 1 = complete_workout (or complete_program_day).
+-- Slot 2 or 3 may be active_recovery_logged on a red day (Layer 7
+-- elevation). NEVER respect_red_recovery.

@@ -79,6 +79,22 @@ final class OuraService: ObservableObject {
     private static let syncThrottleInterval: TimeInterval = 300
     private var isSyncing = false
 
+    // MARK: - Refresh-token single-flight guard
+    //
+    // 2026-04-28 sync-triage Layer C — mirrors WhoopService. `syncAllData(
+    // force: true)` is invoked from multiple foreground call sites in
+    // parallel, and within one run a `withTaskGroup` fans out fetches that
+    // each call `apiRequest` → `ensureValidToken` → `refreshAccessToken`.
+    // Without coalescing, ≥10 concurrent POSTs to Oura's `/v2/oauth/token`
+    // race with the same `refresh_token`. Oura, like WHOOP, single-uses
+    // refresh tokens — first POST rotates, the rest get HTTP 400, and the
+    // 400 branch in `_performTokenRefresh` calls `disconnect()`. Result:
+    // user wakes up signed out of Oura even though their grant is still
+    // valid. Single-flight wrapper collapses N concurrent refreshes into
+    // ONE network call; subsequent callers re-read the freshly-rotated
+    // tokens from keychain on success.
+    private var refreshTask: Task<Void, Error>?
+
     // MARK: - Initialization
 
     private init() {
@@ -235,7 +251,23 @@ final class OuraService: ObservableObject {
         await syncAllData()
     }
 
+    /// Single-flight wrapper. See `refreshTask` comment above for rationale.
+    /// Prevents the concurrent-replay race that otherwise calls `disconnect()`
+    /// on every cold start when 5+ fetches refresh in parallel.
     private func refreshAccessToken() async throws {
+        if let inflight = refreshTask {
+            try await inflight.value
+            return
+        }
+        let task = Task<Void, Error> { [weak self] in
+            defer { self?.refreshTask = nil }
+            try await self?._performTokenRefresh()
+        }
+        refreshTask = task
+        try await task.value
+    }
+
+    private func _performTokenRefresh() async throws {
         guard let currentRefreshToken = refreshToken else {
             // Disambiguate transient keychain-locked nil from a genuinely
             // wiped refresh token by probing `accessToken` at this exact

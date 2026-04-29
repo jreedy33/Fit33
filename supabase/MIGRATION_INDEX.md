@@ -639,6 +639,25 @@ re-run.
 
 ---
 
+## Daily Goals Coherence 2026-04-28 — Retire `respect_red_recovery`
+
+> User report (2026-04-28): "daily goals contradict — can have a workout on a rest day". Screenshot showed the slate serving BOTH `complete_workout` "Crush a Workout" (✓ Late night Core Focus workout) AND `respect_red_recovery` "Smart Rest" (0/1 — "Chose mobility on a red recovery day"). The two quests are mutually exclusive by construction: the verifier in `verify_wearable_quests_for_today` requires `NOT EXISTS (SELECT 1 FROM workouts WHERE date = today)` for `respect_red_recovery` to complete, while `complete_workout` requires `EXISTS workouts WHERE date = today`. Once slot 1 finishes, `respect_red_recovery` is permanently locked at 0/1 with zero recoverable path (FE invariant 18: no two full workouts/day). Same anti-pattern family as 20260706 retired `exercise_sets_15` / `exercise_sets_25`, but worse: `exercise_sets_15` *could* complete on a workout that happened to hit 15 sets; `respect_red_recovery` is impossible by design. Eleventh retirement on the PE 19d watch-list — extends the rule from "no quest gated on slot-1 completion" to "no quest mutually exclusive with slot-1 completion."
+
+| # | File | Status | What it does |
+|---|------|--------|--------------|
+| 141 | `20260710_retire_respect_red_recovery_quest.sql` | ✅ Deployed (2026-04-28) | (User feedback 2026-04-28 — Daily Goals dashboard screenshot, eleventh PE 19d retirement) Soft-disables `respect_red_recovery` "Smart Rest" (Chose mobility on a red recovery day) by setting `is_active = FALSE`. The verifier (`supabase/bundles/bundle_c_smart_adaptive_quests.sql` lines 2868-2889) requires (a) red readiness band, (b) recovery-flavored cardio logged today, AND (c) `NOT EXISTS workouts WHERE date = today` — the `NOT EXISTS workouts` clause makes the quest mutually exclusive with `complete_workout` (slot 1 anchor) by construction. Same anti-pattern family as 20260706 (`exercise_sets_15` / `exercise_sets_25`) but worse: literally impossible to complete on a day the user follows slot 1's instruction. Replacement is already shipped: `active_recovery_logged` "Active Recovery: Log 15 min walk/yoga/stretch" (from 20260610) has no band gate AND no exclusion of strength workouts, so a user can complete BOTH `complete_workout` AND `active_recovery_logged` on the same day with zero contradiction. Layer 7's `v_recovery_pool` in `get_daily_quests` v4 already elevates `active_recovery_logged` on red days — this retirement does NOT reduce red-day recovery coverage. Cleanup pass: `DELETE FROM user_daily_quests WHERE quest_key = 'respect_red_recovery' AND is_completed = FALSE AND quest_date BETWEEN today-1 AND today+1` so users (e.g. Joe in the screenshot) aren't stuck with the broken quest until midnight; completed + historical rows preserved for streak/audit. iOS notes: `Fit33/DailyQuestService.swift` line 2074 keeps the key in the `wearableKeys` set for backwards-compat (PE 19d) — the verifier short-circuits cheaply via `IF v_readiness IS NOT NULL` when no in-flight rows exist; cleanup is doc-debt. No `QuestKey` enum case to remove (raw-string only). `DailyBriefEngine.matchQuests` does not reference `respect_red_recovery` in any `DebtKind` array — zero brief↔slate coordination break. Idempotent. |
+
+**Behavior contract after this lands**:
+- Red-recovery user gets the slate `[complete_workout, ?, active_recovery_logged]` instead of `[complete_workout, ?, respect_red_recovery]`. Both workout-class quests can complete in the same day.
+- The "Smart Rest" copy never reappears on a slate that also says "Crush a Workout" — voice consistency restored.
+- Existing in-flight `respect_red_recovery` rows get cleaned up at deploy time so users see the new slate on their next refresh.
+
+**Deploy order**: standalone — no dependency on prior migrations. Re-running flips `is_active = FALSE` (no-op) and the cleanup `DELETE … WHERE is_completed = FALSE` is idempotent.
+
+**No paired iOS ship change required** — the eligibility pool's `WHERE qt.is_active = TRUE` clause naturally drops the template once the migration runs. Existing iOS `wearableKeys` reference is preserved for backwards-compat with already-completed historical rows.
+
+---
+
 ## Legacy / Bulk Ledger (Q2-85, Sprint 8 — 2026-04-27)
 
 This section documents `supabase/*.sql` files that are **intentionally not in

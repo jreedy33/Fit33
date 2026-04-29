@@ -1069,7 +1069,27 @@ struct Fit33App: App {
                             // the fallback was rescuing the carousel — the
                             // user sat on stale `@Published` arrays.
                             //
-                            // Cost analysis: 9 RPCs in parallel, all
+                            // 2026-04-28 sync-triage Layer A.2 — promoted
+                            // `ChallengeService.fetchActiveChallenges()`
+                            // into this fan-out (slot s10). Previously the
+                            // 1v1 active widget on the dashboard AND the
+                            // home-screen widget were kept fresh ONLY
+                            // indirectly — through realtime
+                            // `OWN_DAILY_PROGRESS` / opponent UPDATE events
+                            // triggering `throttledChallengeFetch()`. That
+                            // chain breaks whenever there's no fresh HK
+                            // data to push during HealthData sync (no
+                            // event = no refetch) OR an event is missed
+                            // during the iOS-killed-socket window. Other
+                            // widget-feeding services (group / private /
+                            // community) were already explicit here; 1v1
+                            // active was the lone gap. `fetchActiveChallenges`
+                            // → `cacheActiveChallenges` → `ActiveChallengeWidgetBridge.publish`
+                            // → `WidgetCenter.reloadAllTimelines` is the
+                            // canonical foreground refresh path for both
+                            // surfaces.
+                            //
+                            // Cost analysis: 10 RPCs in parallel, all
                             // already-coalesced via `RequestCoalescer` and
                             // each guarded by `SupabaseManager.isAuthenticated`
                             // (Data invariant 26). Returning users hit the
@@ -1077,26 +1097,29 @@ struct Fit33App: App {
                             // so most of these will short-circuit. The
                             // remaining roundtrip (one per pending surface,
                             // server-side `SECURITY DEFINER` RPCs) is the
-                            // worst-case 9× ~80ms ≈ <1s of parallel work
-                            // for ironclad reliability across all four
-                            // affected surfaces (friend requests,
-                            // challenge invites, private invites, group
-                            // invites, activity feed, community challenges,
-                            // private challenges, received workouts,
-                            // sent challenges).
+                            // worst-case 10× ~80ms ≈ <1s of parallel work
+                            // for ironclad reliability across every
+                            // widget-feeding surface (friend requests,
+                            // 1v1 invites, 1v1 sent, 1v1 active, group
+                            // active, private invites, private active,
+                            // community active, activity feed, received
+                            // workouts).
                             //
-                            // Carousel data sources covered (one fetch
-                            // per `@Published` the carousel reads — see
-                            // `DashboardModels.DashboardNotificationCarousel`):
-                            //   FriendService.pendingRequests   ← s1
-                            //   ChallengeService.pendingInvites ← s2
+                            // Carousel + widget data sources covered
+                            // (one fetch per `@Published` the dashboard
+                            // reads — see `DashboardModels.DashboardNotificationCarousel`
+                            // for carousel sources, `DashboardChallengesWrapper`
+                            // for the active-challenge widget):
+                            //   FriendService.pendingRequests          ← s1
+                            //   ChallengeService.pendingInvites        ← s2
                             //   ChallengeService.pendingSentChallenges ← s3
-                            //   ChallengeService.activeGroupChallenges ← s4 (group invites)
+                            //   ChallengeService.activeGroupChallenges ← s4 (group active + invites)
                             //   PrivateChallengeService.pendingInvites ← s5
                             //   PrivateChallengeService.myChallenges   ← s6
                             //   CommunityChallengeService.myChallenges ← s7
-                            //   ActivityFeedService.activities          ← s8
-                            //   FriendService.receivedWorkouts          ← s9
+                            //   ActivityFeedService.activities         ← s8
+                            //   FriendService.receivedWorkouts         ← s9
+                            //   ChallengeService.activeChallenges      ← s10 (1v1 widget + home-screen widget)
                             //
                             // s9 routes through `checkForNewWorkouts` (not
                             // bare `fetchReceivedWorkouts`) so the
@@ -1113,7 +1136,8 @@ struct Fit33App: App {
                             async let s7: () = CommunityChallengeService.shared.fetchMyChallenges()
                             async let s8: () = ActivityFeedService.shared.fetchFeed()
                             async let s9: () = FriendService.shared.checkForNewWorkouts()
-                            _ = await (s1, s2, s3, s4, s5, s6, s7, s8, s9)
+                            async let s10: () = ChallengeService.shared.fetchActiveChallenges()
+                            _ = await (s1, s2, s3, s4, s5, s6, s7, s8, s9, s10)
                             
                             // Priority 3: Health sync FIRST so HealthKit values are fresh
                             // (must run BEFORE community/private refresh so leaderboard data is current)

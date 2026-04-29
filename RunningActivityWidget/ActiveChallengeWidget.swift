@@ -26,12 +26,38 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: ChallengePickerIntent, in context: Context) async -> ActiveChallengeEntry {
-        // `snapshot` is invoked by iOS for the widget gallery + Add-Widget
-        // preview. iOS gives this path a hard ~5s budget AND retries
-        // aggressively if it stalls — so we deliberately keep it
-        // sync/cache-only (no Supabase call) and let the timeline path
-        // do the network pull on the user's home screen instead.
-        Self.entry(for: configuration)
+        // `snapshot` powers the widget gallery preview AND the live edit-
+        // sheet preview. iOS gives this path a soft ~5s budget so we
+        // keep network work tightly bounded here.
+        //
+        // Bug-intel 2026-04-28 — picker dropdown reflected the user's
+        // just-selected challenge but the preview tile kept showing the
+        // PREVIOUS challenge (e.g. user picked "vs Manuel", picker said
+        // "vs Manuel", preview kept showing "vs Paul"). Root cause: the
+        // cache may not yet contain the just-selected entity. The picker
+        // dropdown is populated by `ChallengeQuery.suggestedEntities`
+        // which transparently does a 3s Supabase fallback pull when the
+        // App Group cache is empty — so the dropdown sees Manuel even
+        // when the cache doesn't. Snapshot was cache-only, so the
+        // resolve() call fell through to `read()` (the bridge's
+        // urgency-sorted "best pick" = Paul) and the preview rendered
+        // the wrong challenge.
+        //
+        // Fix: when a SPECIFIC challenge is picked (not the Auto sentinel
+        // and not nil) AND the cache doesn't actually contain that
+        // challenge ID yet, do a single 3s direct Supabase pull so the
+        // preview reflects the actual selection. Auto-pick + nil paths
+        // stay cache-only — `read()` is always populated from a recent
+        // main-app publish, so they don't need the network round-trip.
+        let pickedId = configuration.challenge?.id
+        let needsPull = pickedId.map { id in
+            id != ChallengeEntity.autoPickID
+                && ActiveChallengeWidgetSnapshot.readAll().first(where: { $0.challengeId == id }) == nil
+        } ?? false
+        if needsPull {
+            await Self.pullAndMergeIfPossible(timeoutSeconds: 3.0)
+        }
+        return Self.entry(for: configuration)
     }
 
     func timeline(for configuration: ChallengePickerIntent, in context: Context) async -> Timeline<ActiveChallengeEntry> {

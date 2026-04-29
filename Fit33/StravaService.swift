@@ -52,6 +52,20 @@ final class StravaService: ObservableObject {
     /// foreground events don't double-fire the API call.
     private var isSyncing = false
 
+    /// Single-flight guard for `refreshAccessToken()`. See DATA_BACKEND_AGENT.md
+    /// invariant `4d-singleflight` for full rationale. Strava single-uses
+    /// refresh tokens (always rotates), so concurrent refresh callers all
+    /// sending the same `refresh_token` would result in the first POST
+    /// rotating successfully and every subsequent POST receiving HTTP 400
+    /// `invalid_grant` — which the existing code path interprets as a
+    /// real revoke and calls `disconnect()`. With ≥2 simultaneous Strava
+    /// `apiRequest` calls during a foreground sync (the activities-list
+    /// fetch + per-activity detail enrichment + the webhook-triggered
+    /// `syncActivities(daysBack: 1)`), the race fires whenever the
+    /// access token enters its 5-minute pre-expiry window. Coalesces N
+    /// concurrent refreshes into ONE network POST.
+    private var refreshTask: Task<Void, Error>?
+
     /// 60-day inactivity guard — when the user hasn't foregrounded the app
     /// in this long AND token refresh fails, we treat the integration as
     /// abandoned and clear keychain. Until then we keep retrying, so the
@@ -274,8 +288,25 @@ final class StravaService: ObservableObject {
         await syncActivities()
     }
     
-    /// Refresh the access token if expired
+    /// Single-flight wrapper. See `refreshTask` comment above for rationale.
+    /// Prevents the concurrent-replay race that otherwise calls `disconnect()`
+    /// when 2+ in-flight Strava API calls all try to refresh the same
+    /// access token simultaneously.
     private func refreshAccessToken() async throws {
+        if let inflight = refreshTask {
+            try await inflight.value
+            return
+        }
+        let task = Task<Void, Error> { [weak self] in
+            defer { self?.refreshTask = nil }
+            try await self?._performTokenRefresh()
+        }
+        refreshTask = task
+        try await task.value
+    }
+
+    /// Refresh the access token if expired
+    private func _performTokenRefresh() async throws {
         guard let refreshToken = refreshToken else {
             throw StravaError.notConnected
         }

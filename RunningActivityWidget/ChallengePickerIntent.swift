@@ -13,7 +13,36 @@ import AppIntents
 import WidgetKit
 
 /// One row in the widget configuration's "Challenge" dropdown.
+///
+/// Equality is keyed to `id` ONLY (not the synthesized all-fields hash).
+/// Bug-intel 2026-04-28 — auto-Hashable hashed `opponentName + title +
+/// typeEmoji` too, so a tiny `displayTitle` change between cache snapshots
+/// (e.g. server tweaked the challenge title, or a fresh pull stamped a
+/// slightly different formatting) made iOS treat the same entity as
+/// "different" for picker selection-tracking, causing the dropdown to
+/// visibly drop the user's selection mid-edit.
 struct ChallengeEntity: AppEntity, Identifiable, Hashable {
+    /// Stable sentinel ID used by the "Auto-pick" picker option. When
+    /// the widget configuration carries this ID (or `nil`), the timeline
+    /// resolves to whatever the bridge most recently wrote as the
+    /// urgency-sorted "best pick". Identity NEVER changes regardless of
+    /// what's in the App Group cache — this is what fixes the picker
+    /// visibly flipping between Paul and Manuel as the auto-pick rotated
+    /// underneath the user's selection.
+    static let autoPickID = "fit33.widget.challenge.autopick.v1"
+
+    /// Single shared sentinel entity surfaced as the first option in the
+    /// dropdown AND returned from `defaultResult()` so iOS's "Reset"
+    /// button reverts to a stable Auto value instead of snapping back
+    /// to whatever specific challenge happens to be the current
+    /// auto-pick.
+    static let autoPick = ChallengeEntity(
+        id: autoPickID,
+        opponentName: "Auto-pick",
+        title: "Most urgent challenge",
+        typeEmoji: "🏆"
+    )
+
     let id: String
     let opponentName: String
     let title: String
@@ -25,33 +54,69 @@ struct ChallengeEntity: AppEntity, Identifiable, Hashable {
     static var defaultQuery = ChallengeQuery()
 
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(
+        if id == ChallengeEntity.autoPickID {
+            return DisplayRepresentation(
+                title: "🏆 Auto-pick",
+                subtitle: "Most urgent challenge"
+            )
+        }
+        return DisplayRepresentation(
             title: "\(typeEmoji) vs \(opponentName)",
             subtitle: "\(title)"
         )
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: ChallengeEntity, rhs: ChallengeEntity) -> Bool {
+        lhs.id == rhs.id
     }
 }
 
 struct ChallengeQuery: EntityQuery {
     func entities(for identifiers: [ChallengeEntity.ID]) async throws -> [ChallengeEntity] {
-        let all = await Self.readAllWithFallback()
+        var results: [ChallengeEntity] = []
         let wanted = Set(identifiers)
-        return all
-            .filter { wanted.contains($0.challengeId) }
-            .map(Self.entity(from:))
+        // The Auto-pick sentinel never appears in the App Group cache —
+        // it's a virtual entity. Materialize it directly when iOS asks
+        // for it so the picker can render the user's "Auto" selection
+        // instead of falling back to defaultResult() (which would also
+        // return Auto, but iOS's selection-tracking gets confused when
+        // entities(for:) returns empty for a known-selected ID).
+        if wanted.contains(ChallengeEntity.autoPickID) {
+            results.append(.autoPick)
+        }
+        let all = await Self.readAllWithFallback()
+        results.append(contentsOf:
+            all.filter { wanted.contains($0.challengeId) }
+                .map(Self.entity(from:))
+        )
+        return results
     }
 
     func suggestedEntities() async throws -> [ChallengeEntity] {
-        await Self.readAllWithFallback().map(Self.entity(from:))
+        // Auto-pick lives at the top of the dropdown so users always
+        // have a "let the widget choose" option that's stable across
+        // cache rotations. The specific challenges follow in the order
+        // the bridge published them (urgency-first).
+        let challenges = await Self.readAllWithFallback().map(Self.entity(from:))
+        return [.autoPick] + challenges
     }
 
     func defaultResult() async -> ChallengeEntity? {
-        // Default to the auto-pick (urgency-first) so users get something
-        // sensible the moment they install the widget.
-        if let pick = ActiveChallengeWidgetSnapshot.read() {
-            return Self.entity(from: pick)
-        }
-        return await Self.readAllWithFallback().first.map(Self.entity(from:))
+        // Always return the Auto-pick sentinel. Its identity is FIXED
+        // across timeline ticks, so iOS's "Reset" button reverts to a
+        // stable "auto" value instead of flipping between specific
+        // challenges as the bridge's urgency-sorted "best pick" rotates.
+        // The actual challenge resolution happens at render time in
+        // `ActiveChallengeProvider.entry(for:)` via
+        // `ActiveChallengeWidgetSnapshot.resolve(challengeId:)`, which
+        // already falls back to `read()` (the auto-pick) for any
+        // unknown ID — so the sentinel "just works" without further
+        // changes to the timeline path.
+        .autoPick
     }
 
     /// Cache-first read with a direct-Supabase fallback when the App Group

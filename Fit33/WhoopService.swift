@@ -79,6 +79,32 @@ final class WhoopService: ObservableObject {
     private static let syncThrottleInterval: TimeInterval = 300
     private var isSyncing = false
 
+    // MARK: - Refresh-token single-flight guard
+    //
+    // 2026-04-28 sync-triage Layer C — root cause of "I have to reconnect WHOOP
+    // almost every login". `syncAllData(force: true)` is invoked from THREE
+    // call sites in parallel on every cold start (`Fit33App.scenePhase
+    // .active` ✕ `MainTabView` tab return ✕ `BackgroundChallengeSyncService.
+    // performSyncBody`). Inside one `syncAllData`, five fetches (`fetchRecovery
+    // /fetchCycles/fetchSleep/fetchWorkouts/fetchBodyMeasurements`) fire as a
+    // `withTaskGroup`. Every fetch independently calls `apiRequest` →
+    // `ensureValidToken` → `refreshAccessToken` whenever the access token is
+    // within its 5-minute pre-expiry window. With no coalescing, ≥10 in-flight
+    // `apiRequest` calls each fire their own POST `/oauth/token` with the SAME
+    // `refresh_token`, but WHOOP's OAuth server enforces single-use refresh
+    // tokens: the first POST succeeds (rotating to RT_2), every subsequent
+    // POST gets HTTP 400 `invalid_grant`. The 400 branch in
+    // `refreshAccessToken` calls `disconnect()` — every single-process race
+    // permanently wipes the user's tokens, forcing a manual reconnect on next
+    // launch. Same race for Oura (mirrored fix in `OuraService`).
+    //
+    // Solution: collapse all concurrent refresh attempts into a single
+    // shared `Task`. The first caller spawns the actual network refresh; every
+    // subsequent caller `await`s the same Task and re-reads `accessToken` /
+    // `refreshToken` from keychain on success. Zero extra network traffic,
+    // zero replay rejections, zero false disconnects.
+    private var refreshTask: Task<Void, Error>?
+
     // MARK: - Initialization
 
     private init() {
@@ -251,7 +277,27 @@ final class WhoopService: ObservableObject {
         await syncAllData()
     }
 
+    /// Single-flight wrapper around `_performTokenRefresh`. Concurrent
+    /// callers (the 5 fan-out fetches inside `syncAllData`, plus parallel
+    /// `syncAllData(force: true)` invocations from app foreground / tab
+    /// return / BGTask) share ONE in-flight refresh — preventing the
+    /// HTTP 400 `invalid_grant` replay race that previously called
+    /// `disconnect()` on every cold start. See the `refreshTask` comment
+    /// above for full rationale.
     private func refreshAccessToken() async throws {
+        if let inflight = refreshTask {
+            try await inflight.value
+            return
+        }
+        let task = Task<Void, Error> { [weak self] in
+            defer { self?.refreshTask = nil }
+            try await self?._performTokenRefresh()
+        }
+        refreshTask = task
+        try await task.value
+    }
+
+    private func _performTokenRefresh() async throws {
         guard let currentRefreshToken = refreshToken else {
             // Disambiguate "keychain transiently locked" (BGTask wake on a
             // locked device — both reads return nil) from "refresh token

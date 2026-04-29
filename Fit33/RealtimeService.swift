@@ -341,9 +341,23 @@ class RealtimeService: ObservableObject {
         // 2026-04-28 (Layer B) — the original (Phase 3+4) resync only
         // hit 4 surfaces; under the dead-socket scenario, every social
         // service is at risk simultaneously, so the resync now covers
-        // the same 9 surfaces as the foreground social re-sync in
+        // the same 10 surfaces as the foreground social re-sync in
         // `Fit33App.scenePhase == .active`. `connect()` becomes the
         // single canonical "everything social, refreshed" entry point.
+        //
+        // 2026-04-28 (Layer B.2) — added 1v1 active challenges
+        // (`ChallengeService.fetchActiveChallenges`) to the resync. The
+        // previous 9-surface list excluded 1v1 active, leaving the
+        // dashboard's `DashboardChallengesWrapper` widget AND the
+        // home-screen `ActiveChallengeWidget` dependent on opponent
+        // realtime events firing post-reconnect. After a stale
+        // dead-socket window, missed events between disconnect and
+        // re-subscribe never arrive — without this explicit fetch the
+        // widgets sat stale until the user logged HK data themselves.
+        // `fetchActiveChallenges` triggers
+        // `cacheActiveChallenges` → `ActiveChallengeWidgetBridge.publish`,
+        // which writes the App Group payload + reloads widget timelines
+        // in one pass.
         //
         // We detach because `connect()` is awaited from the main
         // foreground pipeline and we don't want to extend that critical
@@ -360,6 +374,12 @@ class RealtimeService: ObservableObject {
             // 1v1 challenge cards I sent (so the sender carousel updates
             // when the opponent accepts)
             await ChallengeService.shared.fetchPendingSentChallenges()
+            // 1v1 active challenges — drives `DashboardChallengesWrapper`
+            // active-challenge widget AND the home-screen widget (via
+            // `ActiveChallengeWidgetBridge.publish`). Internal 1s
+            // throttle + RequestCoalescer keep this cheap when the
+            // foreground fan-out already ran it.
+            await ChallengeService.shared.fetchActiveChallenges()
             // Group challenge invites (`isMyInvitePending` filter on
             // `activeGroupChallenges` drives the group invite card)
             await ChallengeService.shared.fetchActiveGroupChallenges()
@@ -384,6 +404,7 @@ class RealtimeService: ObservableObject {
             let frCount = await FriendService.shared.pendingRequests.count
             let ciCount = await ChallengeService.shared.pendingInvites.count
             let csCount = await ChallengeService.shared.pendingSentChallenges.count
+            let caCount = await ChallengeService.shared.activeChallenges.count
             let cgCount = await ChallengeService.shared.activeGroupChallenges.count
             let pcCount = await PrivateChallengeService.shared.pendingInvites.count
             let pmCount = await PrivateChallengeService.shared.myChallenges.count
@@ -391,7 +412,7 @@ class RealtimeService: ObservableObject {
             let afCount = await ActivityFeedService.shared.activities.count
             let rwCount = await FriendService.shared.receivedWorkouts.count
             AppLogger.debug(
-                "[REALTIME] Post-connect canonical resync complete (friend req: \(frCount), 1v1 inv: \(ciCount), 1v1 sent: \(csCount), group: \(cgCount), priv inv: \(pcCount), priv mine: \(pmCount), comm mine: \(cmCount), feed: \(afCount), recv workouts: \(rwCount))",
+                "[REALTIME] Post-connect canonical resync complete (friend req: \(frCount), 1v1 inv: \(ciCount), 1v1 sent: \(csCount), 1v1 active: \(caCount), group: \(cgCount), priv inv: \(pcCount), priv mine: \(pmCount), comm mine: \(cmCount), feed: \(afCount), recv workouts: \(rwCount))",
                 category: .network
             )
         }
@@ -1055,6 +1076,38 @@ class RealtimeService: ObservableObject {
                             details: "✅ Opponent accepted! Refreshing all lists...")
             await ChallengeService.shared.fetchPendingSentChallenges()  // Remove from sent
             await throttledChallengeFetch()  // Add to active (1v1 + group)
+
+            // 2026-04-28 sync-triage Layer D — back-fill the SENDER's
+            // own `challenge_daily_progress` row the instant the
+            // challenge becomes active. Without this, only the
+            // ACCEPTING side (`ChallengeService.respondToChallenge`)
+            // would write a row; the sender's row never landed until
+            // their next foreground HK sync, leaving BOTH active-
+            // challenge widgets ("opponent: —" on each side) stale
+            // for hours despite both clients having real HK data.
+            // Canonical incident: Joe ↔ Paul 10K Steps Daily Steps
+            // challenge `4076da0d` — Paul (sender) showed "Joe — no
+            // data" on his home-screen widget; Joe showed "Paul —"
+            // in the in-app widget; DB had ZERO rows in
+            // `challenge_daily_progress` for the new challenge_id.
+            // We look up the just-activated challenge from the
+            // freshly-refetched `activeChallenges`; if the throttle
+            // raced and we don't have it yet, we still return — the
+            // sender's regular foreground HK sync will eventually
+            // catch it. RequestCoalescer + 1s `fetchMinInterval`
+            // dedupe any duplicate fetch calls.
+            if let challengeUUID = UUID(uuidString: challengeId),
+               let challenge = await MainActor.run(body: { ChallengeService.shared.activeChallenges.first(where: { $0.challengeId == challengeUUID }) }) {
+                logRealtimeEvent(type: "SENDER_BACKFILL", source: "challenge_participants",
+                                details: "Backfilling sender progress for activated challenge \(challengeId.prefix(8))")
+                await ChallengeService.shared.backfillTodayProgressForChallenge(
+                    challengeId: challengeUUID,
+                    challengeType: challenge.challengeType,
+                    targetUnit: challenge.targetUnit,
+                    dailyTargetForTargetHitLog: challenge.dailyTarget ?? 0,
+                    titleForLogs: challenge.title
+                )
+            }
             HapticManager.notification(.success)
         } else if oldStatus == "pending" && newStatus == "declined" {
             AppLogger.debug("Opponent DECLINED my challenge - removing from sent", category: .network)

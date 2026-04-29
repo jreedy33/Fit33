@@ -44,6 +44,7 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 | Staff Device Compatibility | `DEVICE_COMPATIBILITY_AGENT.md` | Responsive layout, iPad, Apple Watch planning | "How it fits every screen" |
 | Staff Supabase Database Expert | `SUPABASE_AGENT.md` | Table relationships, migration safety, data integrity | "How the database stays clean" |
 | Staff Support & Knowledge | `SUPPORT_AGENT.md` | User-facing knowledge, FAQ, pain points | "How users understand the app" |
+| Staff Monetization & Finance | `MONETIZATION_AGENT.md` | Revenue strategy, premium conversion, IAP plumbing, ad inventory, CMS `/revenue` tab | "How the app makes money — sustainably" |
 
 ---
 
@@ -67,7 +68,26 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 | Admin CMS vulnerability | Infra & Security | — |
 | New database table | Supabase Expert | Data (implementation), Infra (RLS) |
 | Perf optimization | Quality & Performance | — |
-| StoreKit integration | Product Engineer | Infra (receipt validation) |
+| StoreKit integration | Monetization | Product Engineer (Swift impl), Infra (receipt validation) |
+| Pricing decision (monthly / yearly / lifetime / intro / promo) | Monetization | — |
+| Paywall placement / copy / surface | Monetization | Lead Designer (visual), Support (copy) |
+| Free vs Premium-gate vs Ad-gate decision on a feature | Monetization | Owning agent (feature-specific) |
+| Ad cadence / placement / surface | Monetization | Quality & Performance (perf impact) |
+| App Store Server Notifications v2 webhook | Monetization | Infra & Security (auth + crypto), Supabase Expert (schema) |
+| `subscriptions` / `iap_receipts` / `subscription_grants` schema | Monetization | Supabase Expert (writes SQL), Data Backend (DTOs) |
+| Refund / chargeback / comp-grant flow | Monetization | Support (user comms) |
+| Churn-save / win-back offer (Apple Promotional Offer JWS) | Monetization | Infra (JWS signing key) |
+| Paywall A/B experiment | Monetization | Quality & Performance (rollout safety), Data Backend (cohort math) |
+| AdMob account config / mediation | Monetization | — |
+| ATT prompt timing | Monetization | Product Engineer (call-site placement) |
+| App Store Review 3.1.x rejection | Monetization | Infra (if 3.1.3+ multiplatform) |
+| COPPA / GDPR-K (under-13 ad policy) | Monetization | Infra & Security |
+| Competitor pricing matrix refresh | Monetization | — |
+| `iapPurchase` op + classifier wiring in StoreKitManager | Monetization | Bug Intelligence (op registration) |
+| CMS `/revenue` Overview / Subscribers / Transactions / Grants / Experiments | Monetization | Infra (audit log + role gating) |
+| Per-user grant / revoke / extend / refund-ack action | Monetization | Infra (admin role check) |
+| Privacy manifest ad-tracking domains | Monetization | Infra & Security |
+| EU DMA / US Epic web payment link disclosure | Monetization | Infra & Security (legal review) |
 | Exercise pairing / substitution | Fitness Expert | Product Engineer |
 | Program split recommendations | Fitness Expert | Data |
 | Workout sorting / ordering | Fitness Expert | Product Engineer |
@@ -132,6 +152,11 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 | `OrientationManager.swift` | Device Compatibility | Product Engineer | Device detection |
 | `FAQ_PLAN.md` | Support | All | FAQ content plan |
 | `Website/help-center.html` | Support | Infra (deploy) | Public help center |
+| `StoreKitManager.swift` | Monetization | Product Engineer | StoreKit 2 wrapper + entitlement refresh |
+| `PremiumUpgradeView.swift` | Monetization | Lead Designer | Paywall sheet + 14-feature gates |
+| `AdManager.swift` | Monetization | Quality & Performance | AdMob lifecycle + cadence + ATT |
+| `PremiumManager` (in `UserManager.swift`) | Monetization | Product Engineer | Gate-check API surface |
+| `admin-cms/src/app/revenue/**` | Monetization | Infra (audit + role gating) | CMS Revenue tab |
 
 ---
 
@@ -194,6 +219,7 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 - Exercise / workout / program logic → Fitness Expert
 - Layout / device / iPad / Watch planning → Device Compatibility
 - User questions / FAQ / pain points → Support & Knowledge
+- Pricing / paywall / IAP / ads / refunds / `/revenue` CMS tab → Monetization & Finance
 
 ---
 

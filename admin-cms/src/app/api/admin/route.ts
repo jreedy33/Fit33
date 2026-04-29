@@ -46,6 +46,17 @@ const WRITE_ACTIONS = new Set([
   // `bug_intel_baseline_snapshots`. Read-only tracker query is classified
   // as read.
   'snapshot_bug_intel_baseline',
+  // Monetization — every revenue-tab mutation MUST be audit-logged per
+  // MONETIZATION_AGENT invariant 30. These actions are stubs until the
+  // `subscriptions` / `subscription_grants` schema deploys (Phase 1a);
+  // their handlers return a "schema not deployed" envelope today, but
+  // the audit-log + rate-limit envelope is correct from day 0 so the
+  // CMS UI can wire them up safely.
+  'grant_premium_to_user',
+  'revoke_premium_from_user',
+  'extend_trial',
+  'mark_refund_acknowledged',
+  'update_subscription_note',
 ])
 const BULK_ACTIONS = new Set([
   'bulk_update_bug_reports', 'bulk_update_crash_reports',
@@ -3705,6 +3716,106 @@ export async function POST(req: NextRequest) {
           timezone_counts: tzCounts,
           top_timezones: cityData.slice(0, 30),
         })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // MONETIZATION — REVENUE TAB
+      // ═══════════════════════════════════════════════════
+      // Owner: MONETIZATION_AGENT.md (invariants 27–30).
+      // The `subscriptions` / `iap_receipts` / `subscription_grants` /
+      // `revenue_daily_rollup` tables are NOT YET DEPLOYED — Phase 1a in
+      // the agent's roadmap is the schema build + ASSN webhook. Until
+      // those ship, these handlers return `{ schema_deployed: false, ... }`
+      // so the `/revenue` UI can render the agent's roadmap inline
+      // instead of a broken page (no fake / mock numbers — that violates
+      // codingrules "no fake-data in dev or prod"; this returns honest
+      // status + the live signals we DO have today: AdMob session
+      // events from `dev_session_logs`).
+      //
+      // When Phase 1 ships, replace each handler body with the real RPC
+      // call (e.g. `admin.rpc('get_revenue_overview')`). The action names
+      // and response shapes are stable contracts the CMS UI depends on.
+      case 'get_revenue_overview': {
+        // Detect whether the subscriptions schema has been deployed yet.
+        // We probe `revenue_daily_rollup` because it's the table the
+        // overview cards read from. PostgREST returns a 42P01 error for
+        // missing tables which surfaces here as `error.code === 'PGRST205'`
+        // or a 404-equivalent. Either way we treat it as "not deployed."
+        const probe = await admin
+          .from('revenue_daily_rollup')
+          .select('snapshot_date', { head: true, count: 'exact' })
+          .limit(1)
+
+        const schemaDeployed = !probe.error
+
+        if (!schemaDeployed) {
+          // Phase 0 signals we DO have today (no fake data — these are real):
+          // AdMob impressions / loads / clicks from `dev_session_logs.entries[]`
+          // (the only revenue-adjacent live data point until IAP schema lands).
+          const adProbe = await admin
+            .from('dev_session_logs')
+            .select('id', { head: true, count: 'exact' })
+            .gte('logged_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+
+          return NextResponse.json({
+            schema_deployed: false,
+            phase: 'pre-1a',
+            message: 'Subscription schema not yet deployed. See MONETIZATION_AGENT.md Phase 1a.',
+            live_signals_available: {
+              ad_session_log_rows_7d: adProbe.count || 0,
+            },
+            roadmap: [
+              { phase: '1a', deliverable: 'subscriptions + iap_receipts + subscription_grants migration; user_profiles.subscription_tier column' },
+              { phase: '1b', deliverable: 'assn-webhook edge function + App Store Connect URL registration (sandbox + prod)' },
+              { phase: '1c', deliverable: 'PremiumManager.updateFromStoreKit becomes real (server-flag derivation)' },
+              { phase: '1d', deliverable: 'iapPurchase op + NetworkErrorClassifier wiring in StoreKitManager' },
+              { phase: '2',  deliverable: '/revenue Overview live with real MRR/ARR/active/trial/churn from revenue_daily_rollup' },
+              { phase: '3',  deliverable: '/revenue/subscribers + /revenue/transactions + /revenue/users/[id] panel' },
+              { phase: '4',  deliverable: '/revenue/grants audit log + comp/refund/extend admin actions' },
+              { phase: '5',  deliverable: 'paywall_experiments schema + assignment RPC + /revenue/experiments UI' },
+              { phase: '6',  deliverable: 'Churn-save flow — manageSubscriptionsSheet interception + issue-promotional-offer edge function' },
+              { phase: '7',  deliverable: 'Family-Sharing UX polish + ASSN FAMILY_SHARED event coverage' },
+              { phase: '8',  deliverable: 'Web payment link disclosure (US, post-Epic) — gated to MRR > $50K/mo' },
+            ],
+          })
+        }
+
+        // Phase 2+ — schema is live. Read the rollup directly. The RPC name
+        // `get_revenue_overview` will be the canonical aggregator when Phase 1
+        // ships; until then the inline aggregation here is the contract.
+        const today = new Date().toISOString().slice(0, 10)
+        const { data: rollup } = await admin
+          .from('revenue_daily_rollup')
+          .select('*')
+          .order('snapshot_date', { ascending: false })
+          .limit(30)
+
+        return NextResponse.json({
+          schema_deployed: true,
+          phase: '2+',
+          today_iso: today,
+          rollup_30d: rollup || [],
+        })
+      }
+
+      // Stubs for the per-user mutation actions. These intentionally fail
+      // closed today — calling them returns 503 + "schema not deployed",
+      // which is the correct behavior until Phase 1a ships. The
+      // `WRITE_ACTIONS` registration above ensures every attempted call
+      // is rate-limited + audit-logged regardless of the stub return.
+      case 'grant_premium_to_user':
+      case 'revoke_premium_from_user':
+      case 'extend_trial':
+      case 'mark_refund_acknowledged':
+      case 'update_subscription_note': {
+        return NextResponse.json(
+          {
+            error: 'Subscription schema not yet deployed. See MONETIZATION_AGENT.md Phase 1a.',
+            schema_deployed: false,
+            action,
+          },
+          { status: 503 },
+        )
       }
 
       default:

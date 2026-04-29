@@ -19,6 +19,7 @@ const navItems = [
   { href: '/dev-logs', label: 'Dev Logs', icon: '🔬' },
   { href: '/bug-intelligence', label: 'Bug Intelligence', icon: '🧬' },
   { href: '/crashes', label: 'Crashes & Bugs', icon: '🐛' },
+  { href: '/revenue', label: 'Revenue', icon: '💰' },
   { href: '/faq', label: 'FAQ Manager', icon: '❓' },
 ]
 

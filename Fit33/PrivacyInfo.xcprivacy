@@ -3,9 +3,16 @@
 <plist version="1.0">
 <dict>
 	<key>NSPrivacyTracking</key>
-	<false/>
+	<true/>
 	<key>NSPrivacyTrackingDomains</key>
-	<array/>
+	<array>
+		<string>googleads.g.doubleclick.net</string>
+		<string>googleadservices.com</string>
+		<string>www.googleadservices.com</string>
+		<string>adservice.google.com</string>
+		<string>pagead2.googlesyndication.com</string>
+		<string>googlesyndication.com</string>
+	</array>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>

@@ -63,13 +63,21 @@ class StoreKitManager: ObservableObject {
     // MARK: - Load Products
     
     func loadProducts() async {
+        let startedAt = Date()
         do {
             let ids = ProductID.allCases.map(\.rawValue)
             let storeProducts = try await Product.products(for: Set(ids))
             products = storeProducts.sorted { $0.price < $1.price }
             AppLogger.info("StoreKit loaded \(products.count) products", category: .general)
         } catch {
-            AppLogger.error("StoreKit failed to load products: \(error.localizedDescription)", category: .general)
+            NetworkErrorClassifier.log(
+                error,
+                context: "Loading StoreKit products",
+                category: .general,
+                op: PerformanceSignposts.Op.iapLoadProducts.rawValue,
+                endpoint: "storekit:Product.products",
+                startedAt: startedAt
+            )
         }
     }
     
@@ -77,10 +85,11 @@ class StoreKitManager: ObservableObject {
     
     func purchase(_ product: Product) async -> Bool {
         purchaseState = .purchasing
-        
+        let startedAt = Date()
+
         do {
             let result = try await product.purchase()
-            
+
             switch result {
             case .success(let verification):
                 let transaction = try Self.checkVerified(verification)
@@ -89,24 +98,35 @@ class StoreKitManager: ObservableObject {
                 purchaseState = .purchased
                 AppLogger.info("StoreKit purchase successful: \(product.id)", category: .general)
                 return true
-                
+
             case .userCancelled:
                 purchaseState = .cancelled
                 AppLogger.info("StoreKit purchase cancelled by user", category: .general)
                 return false
-                
+
             case .pending:
                 purchaseState = .idle
                 AppLogger.info("StoreKit purchase pending (Ask to Buy / SCA)", category: .general)
                 return false
-                
+
             @unknown default:
                 purchaseState = .idle
                 return false
             }
         } catch {
             purchaseState = .failed(error.localizedDescription)
-            AppLogger.error("StoreKit purchase error: \(error.localizedDescription)", category: .general)
+            // Verification failures (Apple-signed JWS rejected) and real
+            // network malfunctions go to .error; transient network /
+            // user-cancelled-as-thrown / Ask-to-Buy pending stay below.
+            // Per MONETIZATION_AGENT invariants 32–33.
+            NetworkErrorClassifier.log(
+                error,
+                context: "StoreKit purchase \(product.id)",
+                category: .general,
+                op: PerformanceSignposts.Op.iapPurchase.rawValue,
+                endpoint: "storekit:Product.purchase",
+                startedAt: startedAt
+            )
             return false
         }
     }
@@ -114,12 +134,20 @@ class StoreKitManager: ObservableObject {
     // MARK: - Restore Purchases
     
     func restorePurchases() async {
+        let startedAt = Date()
         do {
             try await AppStore.sync()
             await updatePurchasedProducts()
             AppLogger.info("StoreKit purchases restored", category: .general)
         } catch {
-            AppLogger.error("StoreKit restore failed: \(error.localizedDescription)", category: .general)
+            NetworkErrorClassifier.log(
+                error,
+                context: "Restoring StoreKit purchases",
+                category: .general,
+                op: PerformanceSignposts.Op.iapRestore.rawValue,
+                endpoint: "storekit:AppStore.sync",
+                startedAt: startedAt
+            )
             purchaseState = .failed("Could not restore purchases. Please try again.")
         }
     }
@@ -129,12 +157,25 @@ class StoreKitManager: ObservableObject {
     private func listenForTransactions() -> Task<Void, Error> {
         Task.detached { [weak self] in
             for await result in Transaction.updates {
+                let startedAt = Date()
                 do {
                     let transaction = try Self.checkVerified(result)
                     await transaction.finish()
                     await self?.updatePurchasedProducts()
                 } catch {
-                    AppLogger.error("StoreKit transaction verification failed: \(error.localizedDescription)", category: .general)
+                    // Verification failure on a Transaction.updates entry
+                    // is rare but real (revoked + replayed transaction).
+                    // Route through classifier so a sandbox flap doesn't
+                    // generate a fingerprint per user. Per MONETIZATION
+                    // invariant 32.
+                    NetworkErrorClassifier.log(
+                        error,
+                        context: "StoreKit Transaction.updates verification",
+                        category: .general,
+                        op: PerformanceSignposts.Op.iapEntitlementRefresh.rawValue,
+                        endpoint: "storekit:Transaction.updates",
+                        startedAt: startedAt
+                    )
                 }
             }
         }

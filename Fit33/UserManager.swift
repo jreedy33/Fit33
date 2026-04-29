@@ -503,6 +503,29 @@ class UserManager: ObservableObject {
             #if DEBUG
             AppLogger.info("[STREAK] Within rest window (\(transition.daysSinceLastWorkout) ≤ \(transition.maxAllowedGap)) - streak now: \(user.currentStreak)", category: .general)
             #endif
+
+            // 2026-04-29 — League Redesign Plan §C1.
+            // Award league points when the streak crosses a milestone
+            // threshold. Each threshold is once-per-user-lifetime — guarded
+            // by `WeeklyLeagueService.canAwardPoints` which writes the
+            // milestone key to the cap ledger. The streak transition's
+            // `.incremented(newValue)` is the only path that crosses a new
+            // milestone (`.broken` resets to 1 — never crosses 7/30/100).
+            let crossedMilestone: LeaguePointSource? = {
+                switch newValue {
+                case 7: return .streakMilestone7
+                case 30: return .streakMilestone30
+                case 100: return .streakMilestone100
+                default: return nil
+                }
+            }()
+            if let source = crossedMilestone {
+                Task { @MainActor in
+                    if WeeklyLeagueService.shared.canAwardPoints(source: source) {
+                        await WeeklyLeagueService.shared.addPoints(source: source)
+                    }
+                }
+            }
         case .broken(let previous):
             user.currentStreak = 1
             #if DEBUG
@@ -669,21 +692,21 @@ class UserManager: ObservableObject {
 
     func addXP(_ points: Int32) {
         guard let user = currentUser else { return }
-        let oldLevel = getLevel()
         user.xp += points
-        let newLevel = getLevel()
-        
+
         do {
             try viewContext.save()
-            
-            // Trigger level-up celebration
-            if newLevel > oldLevel {
-                newLevelReached = newLevel
-                showLevelUpCelebration = true
-                HapticManager.notification(.success)
-                awardAchievement(type: "level_\(newLevel)")
-            }
-            
+
+            // 2026-04-29 — League Redesign Plan §B1 / §B2.
+            // The legacy "level-up at every 100 XP" celebration is gone.
+            // XP keeps incrementing silently for back-compat (per-workout
+            // chip, friend feed history) but no longer drives a celebration
+            // overlay or `level_N` achievement award. Tier promotions
+            // (Monday rollup) own the celebration surface now via
+            // `TierPromotionOverlay`. `showLevelUpCelebration` /
+            // `newLevelReached` remain on the type only as dead-letter
+            // fields until the Sprint 1 migration card ships.
+
             // Auto-sync XP and level to cloud (debounced)
             scheduleDebouncedCloudSync()
         } catch {
@@ -794,7 +817,7 @@ class UserManager: ObservableObject {
             // Award league points for workout completion (+50 pts)
             Task {
                 await WeeklyLeagueService.shared.addPoints(source: .workout)
-                
+
                 // Update daily quest progress for workout completion
                 let exercises = workout.exercises?.allObjects as? [WorkoutExercise] ?? []
                 let totalSets = exercises.reduce(0) { total, ex in
@@ -802,6 +825,27 @@ class UserManager: ObservableObject {
                 }
                 let durationSeconds = Int(workout.duration)
                 await DailyQuestService.shared.onWorkoutCompleted(durationSeconds: durationSeconds, totalSets: totalSets)
+
+                // 2026-04-29 — League Redesign Plan §C1.
+                // "Tried new exercise" — +10 pts the first lifetime time the
+                // user logs a given exercise. Cap-ledger key is
+                // `new_exercise:<lowercased exercise name>` (lifetime, once
+                // per user). The Core Data `WorkoutExercise.id` is per-row
+                // not per-catalog-entry, so two Bench Press sessions would
+                // have different ids; we use the canonical exercise NAME
+                // instead so "I've already done bench press" stays
+                // de-duped across sessions.
+                await MainActor.run {
+                    for ex in exercises {
+                        let attribution = (ex.name ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !attribution.isEmpty else { continue }
+                        if WeeklyLeagueService.shared.canAwardPoints(source: .newExerciseTried, attribution: attribution) {
+                            Task {
+                                await WeeklyLeagueService.shared.addPoints(source: .newExerciseTried)
+                            }
+                        }
+                    }
+                }
 
                 // Full set of trained muscle groups (every entry on every
                 // exercise, not just the primary). Used twice below: once to
@@ -924,6 +968,17 @@ class UserManager: ObservableObject {
         Task {
             // League points (+50) — parity with strength workouts.
             await WeeklyLeagueService.shared.addPoints(source: .workout)
+
+            // 2026-04-29 — League Redesign Plan §C1.
+            // Cardio bonus: +50 league points for any cardio session of at
+            // least 15 minutes. Stacks ON TOP of the +50 strength-parity
+            // award above. No daily / weekly cap (the workout ceiling is
+            // implicit — users can't stack arbitrary "cardio sessions" in
+            // a day without doing actual cardio). Captured by HK / Strava
+            // / manual-entry call sites that all funnel through here.
+            if durationSeconds >= 15 * 60 {
+                await WeeklyLeagueService.shared.addPoints(source: .cardioSession)
+            }
 
             // Daily quest progression. Cardio has no sets, so pass 0.
             await DailyQuestService.shared.onWorkoutCompleted(
@@ -1064,15 +1119,47 @@ class UserManager: ObservableObject {
 }
 
 // MARK: - Premium Manager
+//
+// Source-of-truth for premium entitlement. Today (Phase 1c, 2026-04-29):
+//   - `isPremiumUser` defaults to `true` on every launch (all features
+//     available in dev / staging / TestFlight). The Settings "Free User
+//     Mode" toggle flips it for QA testing.
+//   - `serverEntitlement` is the SERVER's view of entitlement, refreshed
+//     via `get_my_subscription_state()` RPC after every StoreKit
+//     transaction event. Until the paywall ships, it does NOT mutate
+//     `isPremiumUser` — we only LOG when client and server disagree so
+//     we can spot the gap in `dev_session_logs` before the cutover.
+//   - When the paywall ships (Phase 2 — MONETIZATION_AGENT roadmap), a
+//     follow-up commit derives `isPremiumUser` from `serverEntitlement`
+//     and removes the hardcoded default.
+//
+// Defensive contract: `refreshFromServer()` is safe to call before the
+// Phase 1a schema migration deploys. RPC failures (function-not-found,
+// network-down, not-authenticated) leave `serverEntitlement` at
+// `.unknown` and `isPremiumUser` at its prior value — never lock anyone
+// out by accident.
+
+enum SubscriptionEntitlement: Equatable {
+    case unknown                                                       // No server check yet, or RPC failed
+    case free
+    case premium(tier: String, source: String, expiresAt: Date?)       // tier ∈ {pro_monthly, pro_yearly, pro_lifetime, comp}
+}
+
 class PremiumManager: ObservableObject {
     static let shared = PremiumManager()
-    
+
     @Published var isPremiumUser: Bool = true {
         didSet {
             UserDefaults.standard.set(isPremiumUser, forKey: "isPremiumUser")
         }
     }
-    
+
+    /// Server's view of the user's entitlement (set by `refreshFromServer`).
+    /// Phase 1c: read-only / observability. Future commit derives
+    /// `isPremiumUser` from this value once paywall ships.
+    @Published private(set) var serverEntitlement: SubscriptionEntitlement = .unknown
+    @Published private(set) var lastServerCheckAt: Date?
+
     private init() {
         // Always start as premium — all features available.
         // The Settings "Free User Mode" toggle can temporarily switch to free for testing,
@@ -1080,12 +1167,88 @@ class PremiumManager: ObservableObject {
         self.isPremiumUser = true
         UserDefaults.standard.set(true, forKey: "isPremiumUser")
     }
-    
+
     /// Called by StoreKitManager when entitlement status changes.
-    /// Currently a no-op: app always runs as premium.
-    /// Re-enable when subscription billing goes live.
+    /// Currently a no-op for `isPremiumUser` (always-true default), but
+    /// also kicks off a server refresh so `serverEntitlement` tracks
+    /// the App Store Server Notifications v2 webhook's view.
+    /// MONETIZATION_AGENT invariant 1.
     func updateFromStoreKit(hasSubscription: Bool) {
-        // No-op: premium is always true until billing is live
+        // Phase 1c: still no-op for `isPremiumUser` (paywall hasn't shipped).
+        // Server-driven refresh is best-effort, fire-and-forget.
+        Task { await self.refreshFromServer() }
+    }
+
+    /// Pull the server's view of entitlement via `get_my_subscription_state`
+    /// RPC. Defensive: if the RPC doesn't exist yet (Phase 1a schema not
+    /// deployed), or auth is missing, or the network flapped — set
+    /// `serverEntitlement = .unknown` and DO NOT mutate `isPremiumUser`.
+    /// MONETIZATION_AGENT invariant 1.
+    @MainActor
+    func refreshFromServer() async {
+        guard SupabaseManager.shared.isAuthenticated else {
+            self.serverEntitlement = .unknown
+            return
+        }
+        let startedAt = Date()
+        do {
+            let response: SubscriptionStateResponse = try await SupabaseManager.shared.client
+                .rpc("get_my_subscription_state")
+                .execute()
+                .value
+
+            self.lastServerCheckAt = Date()
+
+            guard response.success == true else {
+                self.serverEntitlement = .unknown
+                return
+            }
+
+            if response.is_premium == true {
+                let expiresAt = Self.parseISO(response.expires_at)
+                self.serverEntitlement = .premium(
+                    tier: response.tier ?? "unknown",
+                    source: response.source ?? "subscription",
+                    expiresAt: expiresAt
+                )
+            } else {
+                self.serverEntitlement = .free
+            }
+
+            // Observability — log when client and server disagree so
+            // we can spot the gap before the paywall cutover.
+            let serverIsPremium = (self.serverEntitlement != .free && self.serverEntitlement != .unknown)
+            if self.isPremiumUser != serverIsPremium {
+                AppLogger.info(
+                    "PremiumManager client/server divergence: client=\(self.isPremiumUser) server=\(serverIsPremium) tier=\(response.tier ?? "-") source=\(response.source ?? "-")",
+                    category: .general
+                )
+            }
+        } catch {
+            // RPC missing / network flapped / not authenticated → leave
+            // `serverEntitlement = .unknown` and don't mutate isPremiumUser.
+            // Use the classifier so a sandbox 404 / RPC-not-deployed-yet
+            // doesn't generate a fingerprint per launch.
+            NetworkErrorClassifier.log(
+                error,
+                context: "Refreshing premium entitlement from server",
+                category: .general,
+                op: PerformanceSignposts.Op.iapEntitlementRefresh.rawValue,
+                endpoint: "rpc:get_my_subscription_state",
+                startedAt: startedAt
+            )
+            self.serverEntitlement = .unknown
+        }
+    }
+
+    private static func parseISO(_ iso: String?) -> Date? {
+        guard let iso = iso else { return nil }
+        return ISO8601DateFormatter().date(from: iso)
+            ?? {
+                let f = ISO8601DateFormatter()
+                f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                return f.date(from: iso)
+            }()
     }
     
     // MARK: - Premium Feature Checks
@@ -1165,6 +1328,20 @@ class PremiumManager: ObservableObject {
         return isPremiumUser ? "Premium User" : "Free User"
     }
     
+    /// DTO for `get_my_subscription_state()` RPC response. Phase 1c.
+    /// Snake_case mirrors the JSONB the SECURITY DEFINER RPC returns.
+    /// All optional because pre-schema-deploy callers may decode `nil`.
+    private struct SubscriptionStateResponse: Decodable {
+        let success: Bool?
+        // swiftlint:disable identifier_name
+        let is_premium: Bool?
+        let tier: String?
+        let source: String?
+        let expires_at: String?
+        let reason: String?
+        // swiftlint:enable identifier_name
+    }
+
     /// Get current status color
     var statusColor: Color {
         return isPremiumUser ? .green : .orange

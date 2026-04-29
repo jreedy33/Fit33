@@ -45,12 +45,25 @@ class AdManager: NSObject, ObservableObject {
     private var onAdDismissed: (() -> Void)?
     private var onRewardEarned: (() -> Void)?
     private var isSDKInitialized = false
-    
+
     /// Whether ATT authorization has been resolved (granted or denied)
     private var attResolved = false
-    
+
     /// Tracks whether the currently presenting ad is a rewarded video (vs interstitial)
     private var isShowingRewardedAd = false
+
+    /// Timestamp of the most recent interstitial presented to this user.
+    /// MONETIZATION_AGENT invariant 15 caps interstitial cadence at 1 per
+    /// 60 seconds — higher cadence drops ad-revenue LTV (well-documented
+    /// industry curve) and increases uninstall rate.
+    private var lastInterstitialShownAt: Date?
+    private let interstitialMinIntervalSeconds: TimeInterval = 60
+
+    /// Number of completed workouts below which we skip ALL ads.
+    /// MONETIZATION_AGENT invariant 11 + 16: new-user activation matters
+    /// more than short-term ad revenue. The free-trial / paywall surfaces
+    /// also stay quiet during this window.
+    private let activationFreeWorkoutCount = 3
     
     // Interstitial Ad Unit IDs
     // Test ID: ca-app-pub-3940256099942544/4411468910 (use during development)
@@ -146,16 +159,26 @@ class AdManager: NSObject, ObservableObject {
             if !isSDKInitialized { initializeSDK() }
             return
         }
-        
+
         guard !PremiumManager.shared.isPremiumUser else {
             AppLogger.debug("Premium user, skipping ATT request", category: .general)
             attResolved = true
             return
         }
-        
+
         guard adsEnabled else {
             AppLogger.debug("Ads disabled, skipping ATT request", category: .general)
             attResolved = true
+            return
+        }
+
+        // Under-13 users: never prompt ATT (COPPA / GDPR-K). All ads served
+        // to them will be non-personalized (`npa: 1`) via `makeAdRequest()`.
+        // MONETIZATION_AGENT invariant 18.
+        if isUnder13 {
+            AppLogger.debug("Under-13 user — skipping ATT prompt (COPPA / GDPR-K)", category: .general)
+            attResolved = true
+            initializeSDK()
             return
         }
         
@@ -233,8 +256,8 @@ class AdManager: NSObject, ObservableObject {
         
         AppLogger.debug("Loading interstitial ad...", category: .general)
         adLoadStartTime = Date()
-        
-        InterstitialAd.load(with: adUnitID, request: Request()) { [weak self] ad, error in
+
+        InterstitialAd.load(with: adUnitID, request: makeAdRequest()) { [weak self] ad, error in
             let loadTime = Int((Date().timeIntervalSince(self?.adLoadStartTime ?? Date())) * 1000)
             
             if let error = error {
@@ -287,37 +310,115 @@ class AdManager: NSObject, ObservableObject {
         SessionLogManager.shared.logAdShow(adUnitId: adUnitID, placement: "rest_timer")
         self.onAdDismissed = completion
         self.adStartTime = Date()
-        
+        // Cooldown timestamp — invariant 15. Stamp at present-time (not
+        // dismiss-time) so a long-watched ad doesn't allow a back-to-back
+        // interstitial when the user fast-finishes the next set.
+        self.lastInterstitialShownAt = Date()
+
         DispatchQueue.main.async {
             self.isShowingAd = true
             interstitialAd.present(from: viewController)
         }
     }
     
-    /// Check if an ad should be shown (for free users with ads enabled)
+    /// Check if an ad should be shown (for free users with ads enabled).
+    /// Layered gates (in order):
+    ///   1. Premium users — never (invariant 14).
+    ///   2. Settings toggle off — never.
+    ///   3. Onboarding incomplete OR < 3 workouts — never (invariants 11, 16).
+    ///   4. Cooldown — at most 1 interstitial per 60s (invariant 15).
+    ///   5. Ad not loaded yet — false (kicks off background load for next call).
     func shouldShowAd() -> Bool {
-        // Premium users never see ads
         if PremiumManager.shared.isPremiumUser {
             AppLogger.debug("Premium user - no ads", category: .general)
             return false
         }
-        
-        AppLogger.debug("shouldShowAd check: adsEnabled=\(adsEnabled), isAdReady=\(isAdReady), isSDKInitialized=\(isSDKInitialized)", category: .general)
+
         if !adsEnabled {
             AppLogger.debug("Ads are disabled in settings", category: .general)
             return false
         }
+
+        // Activation window: skip ads during onboarding and the first
+        // few workouts. Children-under-13 are also blocked here as
+        // belt-and-suspenders even though `loadInterstitialAd` already
+        // gates on `npa` for them; refusing to show interstitials at all
+        // to under-13 keeps the experience inside the Apple Kids /
+        // COPPA-safe envelope (MONETIZATION_AGENT invariant 18).
+        if isUnder13 {
+            AppLogger.debug("Under-13 user - skipping ads (COPPA / GDPR-K)", category: .general)
+            return false
+        }
+        if !UserManager.shared.hasCompletedOnboarding {
+            AppLogger.debug("Onboarding incomplete - skipping ads", category: .general)
+            return false
+        }
+        if currentTotalWorkouts < activationFreeWorkoutCount {
+            AppLogger.debug("Activation window (\(currentTotalWorkouts)/\(activationFreeWorkoutCount) workouts) - skipping ads", category: .general)
+            return false
+        }
+
+        // Cooldown — invariant 15.
+        if let last = lastInterstitialShownAt {
+            let elapsed = Date().timeIntervalSince(last)
+            if elapsed < interstitialMinIntervalSeconds {
+                let remaining = Int(interstitialMinIntervalSeconds - elapsed)
+                AppLogger.debug("Interstitial cooldown active (\(remaining)s remaining)", category: .general)
+                return false
+            }
+        }
+
         if !isAdReady {
             AppLogger.debug("Ad not ready - will load in background for next time", category: .general)
-            // Load in background - don't block the current check
             Task.detached(priority: .background) {
                 await MainActor.run {
                     self.loadInterstitialAd()
                 }
             }
-            return false // Not ready now, but will be for next exercise
+            return false
         }
         return true
+    }
+
+    // MARK: - Activation / COPPA Helpers
+    //
+    // Read freshly from UserManager every call. Cheap (in-memory @Published
+    // singleton). MONETIZATION_AGENT invariants 11, 16, 18.
+
+    private var currentTotalWorkouts: Int {
+        Int(UserManager.shared.currentUser?.totalWorkouts ?? 0)
+    }
+
+    private var currentUserAge: Int {
+        Int(UserManager.shared.currentUser?.age ?? 0)
+    }
+
+    /// `true` when we know the user's age and they're under 13. `age == 0`
+    /// is the "unknown" sentinel — treated as "not under 13" (most users
+    /// are adults; the onboarding flow collects age explicitly). If we
+    /// ever start letting under-13 accounts through (we don't today —
+    /// onboarding age-gates), flip this to fail-closed.
+    private var isUnder13: Bool {
+        let age = currentUserAge
+        return age > 0 && age < 13
+    }
+
+    /// Build a `Request` with `npa: 1` (non-personalized ads) when:
+    ///   - the user is under 13 (COPPA / GDPR-K), OR
+    ///   - ATT authorization is denied / restricted / not yet determined.
+    /// Otherwise return a vanilla `Request()` (personalized).
+    /// MONETIZATION_AGENT invariants 18–19.
+    private func makeAdRequest() -> Request {
+        let request = Request()
+        let attStatus = ATTrackingManager.trackingAuthorizationStatus
+        let attAllowsPersonalized = (attStatus == .authorized)
+        let needsNpa = isUnder13 || !attAllowsPersonalized
+        if needsNpa {
+            let extras = Extras()
+            extras.additionalParameters = ["npa": "1"]
+            request.register(extras)
+        }
+        return request
     }
     
     // MARK: - Rewarded Ad Methods
@@ -334,8 +435,8 @@ class AdManager: NSObject, ObservableObject {
         }
         
         AppLogger.debug("Loading rewarded ad...", category: .general)
-        
-        RewardedAd.load(with: rewardedAdUnitID, request: Request()) { [weak self] ad, error in
+
+        RewardedAd.load(with: rewardedAdUnitID, request: makeAdRequest()) { [weak self] ad, error in
             if let error = error {
                 AppLogger.error("Failed to load rewarded ad: \(error.localizedDescription)", category: .general)
                 SessionLogManager.shared.logAdLoad(success: false, adUnitId: self?.rewardedAdUnitID ?? "", loadTimeMs: 0, error: error.localizedDescription)

@@ -124,6 +124,19 @@ enum PerformanceSignposts {
         // were AppLogger.error'ing transient 401s mid-foreground refresh.)
         case foodSearch               = "food.search"
         case foodDetails              = "food.details"
+
+        // Monetization / In-App Purchase (Phase 1d — added 2026-04-29 per
+        // MONETIZATION_AGENT.md invariants 32–33 + BUG_INTELLIGENCE_AGENT
+        // invariants 1–2. StoreKit transactions are async network calls —
+        // a sandbox outage or transient App Store flap would otherwise
+        // generate a fingerprint per occurrence. Routing IAP catches
+        // through NetworkErrorClassifier.log(op:) with these registered
+        // ops collapses them to one fingerprint per call site.)
+        case iapLoadProducts          = "iap.load_products"
+        case iapPurchase              = "iap.purchase"
+        case iapRestore               = "iap.restore"
+        case iapEntitlementRefresh    = "iap.entitlement_refresh"
+        case iapServerVerify          = "iap.server_verify"
     }
 
     // MARK: Thresholds

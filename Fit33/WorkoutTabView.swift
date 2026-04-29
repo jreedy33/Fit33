@@ -1137,7 +1137,18 @@ struct WorkoutHomeView: View {
             await MainActor.run {
                 self.cardioWorkoutsThisWeek = cardioWorkouts
             }
+        } catch is CancellationError {
+            // Tab switch (Workout → Friends, etc.) cancelled the
+            // in-flight cardio_workouts query. Bug-intel was
+            // mis-classifying these as real warnings — same
+            // CancellationError / URLError.cancelled drain we already
+            // applied to ContactsService + PrivateChallengeService chat.
+            AppLogger.debug("[GOALS] loadCardioWorkoutsThisWeek cancelled (tab switch)", category: .workout)
         } catch {
+            if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled {
+                AppLogger.debug("[GOALS] cardio_workouts request cancelled (URLSession)", category: .workout)
+                return
+            }
             AppLogger.warning("⚠️ [GOALS] Failed to load cardio workouts: \(error)", category: .workout)
         }
     }

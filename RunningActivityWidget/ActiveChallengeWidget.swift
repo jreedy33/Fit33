@@ -732,7 +732,12 @@ struct ActiveChallengeWidgetEntryView: View {
         .overlay(alignment: .topLeading) {
             if let smack = entry.smackTalk {
                 SmackShoutBubble(smack: smack, compact: compactBubble)
-                    .offset(x: compactBubble ? 14 : 22, y: compactBubble ? -4 : -8)
+                    // Sit just below the widget's top edge so the bubble
+                    // doesn't clip on the rounded corner, with the tail
+                    // angled down-left at the type-emoji icon below.
+                    // Slight +x keeps the bubble's left edge clear of
+                    // the widget's leading inset.
+                    .offset(x: compactBubble ? 8 : 16, y: compactBubble ? 4 : 6)
                     .accessibilityLabel("\(smack.senderFirstName) is talking smack: \(smack.reactionText)")
             }
         }
@@ -1465,8 +1470,14 @@ private struct ShoutBubbleShape: Shape {
 
 /// Capsule speech bubble carrying the smack copy. Mirrors the in-app
 /// `ChallengeReactionsView.reactionBubble` gradient + look so the
-/// widget surface reads as the same component. `compact: true` for
-/// systemSmall (slightly smaller fonts + tighter padding).
+/// widget surface reads as the same component. Single-line layout
+/// (emoji + text) keeps the bubble compact so the widget's
+/// "vs Opponent · Nd left" header row stays visible underneath it.
+/// Sender attribution is intentionally NOT rendered inside the
+/// bubble — push notification banner + opening the app already
+/// answers "who said this?", and dropping it lets the bubble breathe
+/// at small sizes without 2-line layouts. `compact: true` =
+/// systemSmall (smaller fonts + tighter padding).
 private struct SmackShoutBubble: View {
     let smack: ActiveChallengeWidgetSnapshot.WidgetSmackTalk
     let compact: Bool
@@ -1477,30 +1488,23 @@ private struct SmackShoutBubble: View {
         smack.isCompetition ? [.orange, .red] : [.blue, .cyan]
     }
 
-    private var emojiSize: CGFloat { compact ? 13 : 15 }
-    private var textSize: CGFloat { compact ? 11 : 13 }
-    private var senderSize: CGFloat { compact ? 8 : 10 }
-    private var hPadding: CGFloat { compact ? 9 : 12 }
-    private var vPadding: CGFloat { compact ? 5 : 7 }
-    private var tailLength: CGFloat { compact ? 7 : 9 }
-    private var cornerRadius: CGFloat { compact ? 12 : 14 }
-    private var maxBubbleWidth: CGFloat { compact ? 130 : 220 }
+    private var emojiSize: CGFloat { compact ? 11 : 13 }
+    private var textSize: CGFloat { compact ? 10 : 12 }
+    private var hPadding: CGFloat { compact ? 8 : 10 }
+    private var vPadding: CGFloat { compact ? 4 : 5 }
+    private var tailLength: CGFloat { compact ? 5 : 6 }
+    private var cornerRadius: CGFloat { compact ? 10 : 12 }
+    private var maxBubbleWidth: CGFloat { compact ? 120 : 200 }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 5) {
+        HStack(spacing: 5) {
             Text(smack.reactionEmoji)
                 .font(.system(size: emojiSize))
-            VStack(alignment: .leading, spacing: 0) {
-                Text(smack.reactionText)
-                    .font(.system(size: textSize, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text("— \(smack.senderFirstName)")
-                    .font(.system(size: senderSize, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .lineLimit(1)
-            }
+            Text(smack.reactionText)
+                .font(.system(size: textSize, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
         }
         .padding(.horizontal, hPadding)
         .padding(.top, vPadding)
@@ -1516,9 +1520,9 @@ private struct SmackShoutBubble: View {
                 tailLength: tailLength
             )
             .fill(LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing))
-            .shadow(color: .black.opacity(0.32), radius: 4, x: 0, y: 2)
+            .shadow(color: .black.opacity(0.30), radius: 3, x: 0, y: 2)
         )
-        // Subtle lean — sells the "yelling" energy without the comic-
+        // Subtle lean — adds the "yelling" energy without the comic-
         // book wackiness of a heavy rotation. The tail's leftward
         // lean (set on `ShoutBubbleShape`) carries the rest.
         .rotationEffect(.degrees(-3))

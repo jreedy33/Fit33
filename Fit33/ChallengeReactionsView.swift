@@ -263,7 +263,6 @@ struct ReactionPickerSheet: View {
     @State private var selectedReaction: ReactionPreset?
     @State private var isSending = false
     @State private var sentConfirmation = false
-    @State private var remainingToday: Int = 5
     @State private var animateEmoji = false
     
     private var mode: ChallengeMode { challenge.mode }
@@ -290,9 +289,6 @@ struct ReactionPickerSheet: View {
                     
                     // Reaction grid
                     reactionGrid
-                    
-                    // Daily limit indicator
-                    dailyLimitBadge
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.bottom, 30)
@@ -320,10 +316,6 @@ struct ReactionPickerSheet: View {
                 if sentConfirmation, let reaction = selectedReaction {
                     sentOverlay(reaction: reaction)
                 }
-            }
-            .task {
-                let usedToday = await ChallengeService.shared.getReactionCountToday(challengeId: challenge.challengeId)
-                remainingToday = 5 - usedToday
             }
         }
     }
@@ -366,7 +358,7 @@ struct ReactionPickerSheet: View {
     
     private func reactionCard(_ preset: ReactionPreset) -> some View {
         Button {
-            guard !isSending && remainingToday > 0 else { return }
+            guard !isSending else { return }
             sendReaction(preset)
         } label: {
             HStack(spacing: 8) {
@@ -401,30 +393,7 @@ struct ReactionPickerSheet: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(isSending || remainingToday <= 0)
-        .opacity(remainingToday <= 0 ? 0.5 : 1)
-    }
-    
-    // MARK: - Daily Limit Badge
-    
-    private var dailyLimitBadge: some View {
-        HStack(spacing: 6) {
-            Image(systemName: remainingToday > 0 ? "bolt.fill" : "bolt.slash.fill")
-                .font(.caption)
-                .foregroundColor(remainingToday > 0 ? themeColor : .secondary)
-            
-            Text(remainingToday > 0
-                 ? "\(remainingToday) \(isCompetition ? "battle cries" : "power ups") left today"
-                 : "All fired up for today! Come back tomorrow 🔄")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(.vertical, Spacing.xs)
-        .padding(.horizontal, 14)
-        .background(
-            Capsule()
-                .fill(themeColor.opacity(0.1))
-        )
+        .disabled(isSending)
     }
     
     // MARK: - Send Reaction
@@ -445,12 +414,12 @@ struct ReactionPickerSheet: View {
                 isSending = false
                 
                 if result.success {
-                    if let remaining = result.remaining {
-                        remainingToday = remaining
-                    } else {
-                        remainingToday = max(0, remainingToday - 1)
-                    }
-                    
+                    // 5/day rate-limit was lifted in migration
+                    // `20260722_remove_smack_rate_limit.sql`. Server still
+                    // returns `remaining_today` (sentinel = 999) for
+                    // decoder back-compat; we deliberately ignore it
+                    // here — no badge, no gating.
+
                     // Show sent confirmation
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                         sentConfirmation = true

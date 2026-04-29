@@ -1387,7 +1387,18 @@ class PrivateChallengeService: ObservableObject {
                 .value
             
             return messages
+        } catch is CancellationError {
+            // Tab switch / view disappear cancelled the in-flight RPC.
+            // Same drain as ContactsService — must NOT classify as a real
+            // error or bug-intel will fingerprint every navigation away
+            // from a private-challenge chat as a crash-class event.
+            AppLogger.debug("[Social] fetchMessages cancelled (tab switch / view disappear)", category: .social)
+            return []
         } catch {
+            if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled {
+                AppLogger.debug("[Social] Private challenge messages request cancelled (URLSession)", category: .social)
+                return []
+            }
             AppLogger.error("Error fetching private challenge messages: \(error.localizedDescription)", category: .social)
             return []
         }

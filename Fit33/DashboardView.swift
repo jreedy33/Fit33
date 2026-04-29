@@ -204,6 +204,11 @@ struct DashboardView: View {
                     .id("top")
                     
                     LazyVStack(spacing: 0) {
+                    // Custom header with title and profile icon
+                    customHeaderView
+                        .padding(.top, 0)
+                        .padding(.bottom, 16)
+                    
                     DashboardNotificationBannerWrapper()
 
                     // Sprint 2 Q2-34 — shows when a workout save failed offline and is queued for retry.
@@ -306,35 +311,6 @@ struct DashboardView: View {
                 }
                 .scrollContentBackground(.hidden)
                 .contentMargins(.top, 0, for: .scrollContent)
-                // Pinned dashboard header — sits in the top safe-area inset so
-                // the scrollable content (orbs background + cards) slides
-                // BEHIND it instead of being pushed below. The hard 1pt
-                // divider gives a clean visual seam between the header and
-                // the scrolling content as it disappears underneath.
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    // Pinned header with a SOLID system background that
-                    // extends up into the status-bar safe area. The solid
-                    // background is what blocks the scrolling cards from
-                    // bleeding through — the cards still scroll behind the
-                    // hard divider line, they just can't be seen anymore.
-                    // No frosted-glass material, no transparent tint —
-                    // straight system background so the top of the screen
-                    // reads as a clean header zone (status bar +
-                    // logo/profile) above the scrolling dashboard body.
-                    VStack(spacing: 0) {
-                        customHeaderView
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.top, 0)
-                            .padding(.bottom, 8)
-                        Rectangle()
-                            .fill(Color.primary.opacity(colorScheme == .dark ? 0.18 : 0.12))
-                            .frame(height: 0.5)
-                    }
-                    .background(
-                        Color(.systemBackground)
-                            .ignoresSafeArea(edges: .top)
-                    )
-                }
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
                 }

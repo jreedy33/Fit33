@@ -710,9 +710,17 @@ struct FriendsListView: View {
                     if searchText.isEmpty {
                         contactSuggestionsSection
                     } else {
-                        // Always show filtered contact suggestions first
+                        // Always show filtered contact suggestions first.
+                        // Exclude existing friends and blocked users so they don't appear with an "Add" affordance.
+                        // Cached SuggestedFriend.isFriend from ContactsService is always false (see findMatchingUsersDirect),
+                        // so we must cross-reference friendService.friends to know who's already a friend.
                         let query = searchText.lowercased()
+                        let existingFriendIds = Set(friendService.friends.map { $0.friendId })
+                        let blockedIds = friendService.blockedUserIds
                         let filteredContacts = contactsService.suggestedFriends.filter { contact in
+                            guard !existingFriendIds.contains(contact.userId) else { return false }
+                            guard !contact.isFriend else { return false }
+                            guard !blockedIds.contains(contact.userId) else { return false }
                             let name = (contact.name ?? "").lowercased()
                             let user = (contact.username ?? "").lowercased()
                             return name.contains(query) || user.contains(query)

@@ -68,7 +68,7 @@ struct OuraSettingsView: View {
                 }
 
                 Button {
-                    ouraService.disconnect()
+                    ouraService.disconnect(reason: "user_tap")
                 } label: {
                     Text("Disconnect")
                         .font(.ds_labelLarge)

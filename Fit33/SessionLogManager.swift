@@ -852,6 +852,7 @@ final class SessionLogManager: ObservableObject {
         case challengeDetail = "S961"
         case challengeCreation = "S962"
         case challengeFlowStart = "S963"
+        case sendWorkoutToFriend = "S964"
 
         // ═══════════════════════════════════════════════════════════
         // UNKNOWN / FALLBACK
@@ -957,6 +958,7 @@ final class SessionLogManager: ObservableObject {
             case .challengeDetail: return "Challenge Detail"
             case .challengeCreation: return "Challenge Creation"
             case .challengeFlowStart: return "Challenge Flow Start"
+            case .sendWorkoutToFriend: return "Send Workout To Friend"
             case .unknown: return "Unknown"
             }
         }

@@ -59,6 +59,7 @@
 		7C0C42202F09DB7200F02E84 /* LearningEngineDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C421F2F09DB7200F02E84 /* LearningEngineDebugView.swift */; };
 		7C0C426A2F16E22700F02E84 /* ExerciseNameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42692F16E22700F02E84 /* ExerciseNameCache.swift */; };
 		7C0C427C2F1833C100F02E84 /* FriendProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C427B2F1833C100F02E84 /* FriendProfileView.swift */; };
+		7C9A7F022F5E281C00B5C928 /* SendWorkoutToFriendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */; };
 		7C0C427E2F1833CB00F02E84 /* FriendService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C427D2F1833CB00F02E84 /* FriendService.swift */; };
 		7C0C42802F1833DA00F02E84 /* FriendsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C427F2F1833DA00F02E84 /* FriendsListView.swift */; };
 		7C0C42822F18340100F02E84 /* SharedWorkoutPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42812F18340100F02E84 /* SharedWorkoutPreviewView.swift */; };
@@ -242,6 +243,7 @@
 		7CAA1F872F4255EE008200B9 /* ExerciseBundleEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1F862F4255EE008200B9 /* ExerciseBundleEngine.swift */; };
 		7CAA1FA12F4AAAA0008200B9 /* SystemMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FA02F4AAAA0008200B9 /* SystemMetrics.swift */; };
 		7CAA1FA32F4AAAA0008200B9 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FA22F4AAAA0008200B9 /* KeychainHelper.swift */; };
+		7CADB1A12F4AAAB0008200B9 /* OAuthAuditLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CADB1A02F4AAAB0008200B9 /* OAuthAuditLog.swift */; };
 		7CAA1FAD2F428889008200B9 /* CommunityChallengeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FAC2F428889008200B9 /* CommunityChallengeViews.swift */; };
 		7CAA1FAF2F428898008200B9 /* CommunityChallengeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FAE2F428898008200B9 /* CommunityChallengeService.swift */; };
 		7CAA1FB12F428A75008200B9 /* SmartMealPlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CAA1FB02F428A75008200B9 /* SmartMealPlannerView.swift */; };
@@ -499,6 +501,7 @@
 		7C0C42692F16E22700F02E84 /* ExerciseNameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseNameCache.swift; sourceTree = "<group>"; };
 		7C0C42792F182C6500F02E84 /* AppPerformanceSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPerformanceSystem.swift; sourceTree = "<group>"; };
 		7C0C427B2F1833C100F02E84 /* FriendProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendProfileView.swift; sourceTree = "<group>"; };
+		7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendWorkoutToFriendView.swift; sourceTree = "<group>"; };
 		7C0C427D2F1833CB00F02E84 /* FriendService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendService.swift; sourceTree = "<group>"; };
 		7C0C427F2F1833DA00F02E84 /* FriendsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsListView.swift; sourceTree = "<group>"; };
 		7C0C42812F18340100F02E84 /* SharedWorkoutPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedWorkoutPreviewView.swift; sourceTree = "<group>"; };
@@ -685,6 +688,7 @@
 		7CAA1F862F4255EE008200B9 /* ExerciseBundleEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseBundleEngine.swift; sourceTree = "<group>"; };
 		7CAA1FA02F4AAAA0008200B9 /* SystemMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMetrics.swift; sourceTree = "<group>"; };
 		7CAA1FA22F4AAAA0008200B9 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		7CADB1A02F4AAAB0008200B9 /* OAuthAuditLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthAuditLog.swift; sourceTree = "<group>"; };
 		7CAA1FAC2F428889008200B9 /* CommunityChallengeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityChallengeViews.swift; sourceTree = "<group>"; };
 		7CAA1FAE2F428898008200B9 /* CommunityChallengeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityChallengeService.swift; sourceTree = "<group>"; };
 		7CAA1FB02F428A75008200B9 /* SmartMealPlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartMealPlannerView.swift; sourceTree = "<group>"; };
@@ -856,7 +860,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		7C8CF1442F9EB628007CD766 /* Exceptions for "Fit33Watch Watch App" folder in "Fit33Watch Watch App" target */ = {
+		7C8CF1442F9EB628007CD766 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -866,40 +870,9 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		7C6DE4152F5DEB0800BCA276 /* Fit33Tests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = Fit33Tests;
-			sourceTree = "<group>";
-		};
-		7C8161292EF86FC7007556A7 /* RunningActivityWidget */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = RunningActivityWidget;
-			sourceTree = "<group>";
-		};
-		7C8CF11D2F9EB401007CD766 /* Fit33Watch Watch App */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				7C8CF1442F9EB628007CD766 /* Exceptions for "Fit33Watch Watch App" folder in "Fit33Watch Watch App" target */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = "Fit33Watch Watch App";
-			sourceTree = "<group>";
-		};
+		7C6DE4152F5DEB0800BCA276 /* Fit33Tests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Fit33Tests; sourceTree = "<group>"; };
+		7C8161292EF86FC7007556A7 /* RunningActivityWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = RunningActivityWidget; sourceTree = "<group>"; };
+		7C8CF11D2F9EB401007CD766 /* Fit33Watch Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (7C8CF1442F9EB628007CD766 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "Fit33Watch Watch App"; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1144,6 +1117,7 @@
 				B1234567890123456789A008 /* IntelligentWorkoutGenerator.swift */,
 				7CAA1FA22F4AAAA0008200B9 /* KeychainHelper.swift */,
 				7C0C421F2F09DB7200F02E84 /* LearningEngineDebugView.swift */,
+				7CADB1A02F4AAAB0008200B9 /* OAuthAuditLog.swift */,
 				7C6DE37E2F5BE05500BCA276 /* LevelUpCelebrationOverlay.swift */,
 				7C0C41CD2F00A63D00F02E84 /* LimitationFilterEngine.swift */,
 				7C0C41CF2F00B0A900F02E84 /* LimitationRuleTables.swift */,
@@ -1264,6 +1238,7 @@
 				7CAFD5722EE233A000920F0D /* ScreenCodeMap.swift */,
 				7C1B0A382F4F74520094AF68 /* Secrets.swift */,
 				6E4042F3898D77AA0F43BE33 /* SelectAllTextField.swift */,
+				7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */,
 				7C6DE40E2F5DEAA700BCA276 /* ServiceProtocols.swift */,
 				7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */,
 				7C590B8F2ED2D1DB002BD2B0 /* SettingsView.swift */,
@@ -1698,6 +1673,7 @@
 				7CAA0420202604200A000001 /* RequestCoalescer.swift in Sources */,
 				7CAA1FA12F4AAAA0008200B9 /* SystemMetrics.swift in Sources */,
 				7CAA1FA32F4AAAA0008200B9 /* KeychainHelper.swift in Sources */,
+				7CADB1A12F4AAAB0008200B9 /* OAuthAuditLog.swift in Sources */,
 				7CACB5792F2E9717003A7C91 /* ChallengeSetupView.swift in Sources */,
 				7C98FAC22EEBCDA9001AE1F3 /* WorkoutCalorieCalculator.swift in Sources */,
 				7CB08C612ED69E4D00236ECB /* WorkoutManager.swift in Sources */,
@@ -1839,6 +1815,7 @@
 				7CEBB69E2F7700EE003415D0 /* WhoopSettingsView.swift in Sources */,
 				7CAFD5602EE10EA700920F0D /* VideoPreloadManager.swift in Sources */,
 				7C0C42822F18340100F02E84 /* SharedWorkoutPreviewView.swift in Sources */,
+				7C9A7F022F5E281C00B5C928 /* SendWorkoutToFriendView.swift in Sources */,
 				7C792ACC2F2ABA150048A97E /* OrientationManager.swift in Sources */,
 				7C792AFC2F2C23AC0048A97E /* ReceivedWorkoutPreviewWidget.swift in Sources */,
 				7C558B162ED4D3AD00A01E1F /* ContentView.swift in Sources */,

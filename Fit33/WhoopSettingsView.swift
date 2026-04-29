@@ -74,7 +74,7 @@ struct WhoopSettingsView: View {
                 }
 
                 Button {
-                    whoopService.disconnect()
+                    whoopService.disconnect(reason: "user_tap")
                 } label: {
                     Text("Disconnect")
                         .font(.ds_labelLarge)

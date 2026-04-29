@@ -78,19 +78,29 @@ struct ChallengeEntity: AppEntity, Identifiable, Hashable {
 struct ChallengeQuery: EntityQuery {
     func entities(for identifiers: [ChallengeEntity.ID]) async throws -> [ChallengeEntity] {
         var results: [ChallengeEntity] = []
-        let wanted = Set(identifiers)
+        // Case-insensitive identifier set (2026-04-28 picker-flip fix).
+        // Apple's `Foundation.UUID.uuidString` is UPPERCASE; Postgres
+        // is lowercase. Configurations saved before the bridge's
+        // lowercase normalization shipped still carry uppercase IDs in
+        // `configuration.challenge.id`; the cache after the fix is
+        // lowercase. Match in lowercase space so iOS rehydrates the
+        // user's saved selection regardless of which case the cache
+        // currently holds. Sentinel ID (`fit33.widget.challenge.autopick.v1`)
+        // is already all lowercase, so this transformation is a no-op
+        // for the Auto-pick path.
+        let wanted = Set(identifiers.map { $0.lowercased() })
         // The Auto-pick sentinel never appears in the App Group cache —
         // it's a virtual entity. Materialize it directly when iOS asks
         // for it so the picker can render the user's "Auto" selection
         // instead of falling back to defaultResult() (which would also
         // return Auto, but iOS's selection-tracking gets confused when
         // entities(for:) returns empty for a known-selected ID).
-        if wanted.contains(ChallengeEntity.autoPickID) {
+        if wanted.contains(ChallengeEntity.autoPickID.lowercased()) {
             results.append(.autoPick)
         }
         let all = await Self.readAllWithFallback()
         results.append(contentsOf:
-            all.filter { wanted.contains($0.challengeId) }
+            all.filter { wanted.contains($0.challengeId.lowercased()) }
                 .map(Self.entity(from:))
         )
         return results
@@ -152,8 +162,14 @@ struct ChallengeQuery: EntityQuery {
     }
 
     private static func entity(from challenge: ActiveChallengeWidgetSnapshot.WidgetActiveChallenge) -> ChallengeEntity {
+        // Always emit lowercase IDs (2026-04-28 picker-flip fix). Mirrors
+        // the bridge's lowercased write so the picker's stored selection
+        // is in canonical form regardless of which writer last touched
+        // the cache. Defense-in-depth — if a future refactor accidentally
+        // re-introduces an uppercase write path, the picker entity ID
+        // stays canonical and the round-trip lookup keeps working.
         ChallengeEntity(
-            id: challenge.challengeId,
+            id: challenge.challengeId.lowercased(),
             opponentName: challenge.opponentFirstName,
             title: challenge.displayTitle,
             typeEmoji: ChallengeWidgetPalette.emoji(for: challenge.challengeType)

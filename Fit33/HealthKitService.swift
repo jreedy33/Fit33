@@ -239,6 +239,35 @@ final class HealthKitService: ObservableObject {
         }
     }
     
+    // MARK: - Refresh Today's Stats Only
+    //
+    // Lightweight refresh of TODAY's HK counters (steps, active energy,
+    // distance). Does NOT run the full `syncAllData` TaskGroup, does NOT
+    // chain into `ChallengeService.syncHealthKitDataToChallenges()`, does
+    // NOT touch `RequestCoalescer`.
+    //
+    // This MUST exist as a separate entry point because
+    // `syncAllData(force:)` chains into
+    // `ChallengeService.syncHealthKitDataToChallenges()` which itself
+    // calls `syncAllData(force: true)`. With `RequestCoalescer.coalesceVoid`
+    // keyed by `"HealthKit.syncAllData.force=true"`, the inner call JOINS
+    // the outer (still-in-flight) Task and DEADLOCKS — the outer awaits
+    // the inner, the inner awaits the outer's `.value`. The Task system
+    // does not detect this; the chain hangs until the parent Task is
+    // cancelled (e.g. the user navigates away). Canonical incident
+    // 2026-04-28 — `ChallengeService.backfillTodayProgressForChallenge`
+    // (challenge accept backfill) called `syncAllData(force: true)` from
+    // both the `respondToChallenge` accept path and the
+    // `RealtimeService.handleAllParticipantUpdates` "opponent accepted"
+    // branch (Paul's side). Both deadlocked, both eventually unwound when
+    // Joe navigated away from the challenge detail view, so Paul's progress
+    // appeared but with a multi-second delay instead of instantly.
+    nonisolated func refreshTodayStats() async {
+        let authorized = await MainActor.run { isAuthorized }
+        guard authorized else { return }
+        await syncTodayStats(authorized: true)
+    }
+
     // MARK: - Sync Today's Stats
     
     nonisolated private func syncTodayStats(authorized: Bool) async {

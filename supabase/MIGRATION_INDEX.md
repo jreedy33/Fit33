@@ -656,6 +656,27 @@ re-run.
 
 **No paired iOS ship change required** — the eligibility pool's `WHERE qt.is_active = TRUE` clause naturally drops the template once the migration runs. Existing iOS `wearableKeys` reference is preserved for backwards-compat with already-completed historical rows.
 
+## Realtime Widget Server Pull 2026-04-28 — Phase 8a (Caller Profile Photo URL)
+
+> User report (2026-04-28): "make sure the homescreen widget pulls both user profile photo" — the home-screen `ActiveChallengeWidget` was rendering gradient-initials placeholders for the caller's own avatar AND the opponent's avatar whenever the iPhone main app hadn't been foregrounded recently (e.g. user installed the widget before ever opening Fit33, OR the device had been killed for hours). The opponent URL had been on the wire since Phase 2a (`20260620_…`); the caller's was completely absent because the RPC computed every other "my_*" column from `challenge_participants` and never joined back to `user_profiles` for the caller. Closes Phase 8a of the Realtime Widget Server Pull sprint by extending the RPC and shipping a new widget-side photo downloader (`RunningActivityWidget/WidgetPhotoFetcher.swift`).
+
+| # | File | Status | What it does |
+|---|------|--------|--------------|
+| 142 | `20260711_get_active_challenges_my_profile_photo.sql` | ✅ Deployed (2026-04-28) | Adds a single `my_profile_photo_url TEXT` column to the `RETURNS TABLE` of `get_active_challenges(p_timezone TEXT)`. Body now SELECTs `profile_photo_url` from `user_profiles` for `auth.uid()` into `v_my_photo_url` ONCE upfront (cheap PK lookup) and repeats it on every result row — same TEXT pointer, no per-row cost. Privacy: deliberately does NOT honor `privacy_hide_photo` for the caller's own photo (the flag is for opponents viewing this user, not for the user's own widget — mirrors the in-app `ProfileView` posture). DROP-all-overloads loop runs first per Supabase invariant 12 against the 1-arg shape from `20260620_…`. Trailing audit `DO $$` block fails loud if (a) more than one definition of `get_active_challenges` exists, (b) the new column is missing from `pg_get_function_result(oid)`, (c) `v_my_photo_url` is missing from `prosrc`, OR (d) the Phase 2a `my_last_progress_at` / `opponent_last_progress_at` columns regressed (additive-only contract). Idempotent. |
+
+**Paired iOS code changes (NOT migrations — shipped in the same commit as #142)**:
+- #142 (companion A): `RunningActivityWidget/WidgetSupabaseFetcher.swift` — adds `my_profile_photo_url` to the private `GetActiveChallengesRow` decoder (Optional `String?` for forward-compat with payloads missing the key), wraps the public return in a new `ActiveChallengesPullResult` struct that surfaces both the `[WidgetActiveChallenge]` list AND the caller's `myProfilePhotoURL` lifted from the first row. Single call site (`ActiveChallengeProvider.pullAndMergeIfPossible`) updated to consume the new shape.
+- #142 (companion B): `RunningActivityWidget/WidgetPhotoFetcher.swift` (new file) — owns photo hydration. `ensureCached(userPhotoURL:opponents:perImageTimeout:)` skips the user photo when `widget_user_photo.jpg` already exists in the App Group container (bridge already wrote it), then downloads remaining opponent photos in a `withTaskGroup` (parallel, deduped by opponentId). Resize parity with `Fit33/ActiveChallengeWidgetBridge.swift`: 240pt long side, JPEG @0.8 quality, written atomically. Filename contract: `widget_user_photo.jpg` / `widget_opponent_<opponentId>.jpg` — IDENTICAL to the bridge so the widget render path's filename-based lookup picks up either writer transparently. Returns a `WrittenPhotos { didWriteUserPhoto, didWriteOpponentByID }` ledger so the caller can stamp flags.
+- #142 (companion C): `RunningActivityWidget/ActiveChallengeWidget.swift` — `pullAndMergeIfPossible` now (a) consumes `ActiveChallengesPullResult`, (b) builds a `[OpponentInput]` from `fresh.opponentPhotoUrl` per challenge, (c) `await`s `WidgetPhotoFetcher.ensureCached(...)` AFTER `mergeFreshWithCache` and BEFORE the HK overlay, (d) calls a new private `applyPhotoFlagUpdates(_:written:)` helper that stamps `hasUserPhoto` / `hasOpponentPhoto = true` on each merged row when this pass wrote a fresh avatar. The render path resolves photos by filename existence, so the flags are bookkeeping only — kept honest so the bridge's next `publish()` sees a coherent state.
+
+**Behavior contract after this lands**:
+- Widget on cold-install (user added widget pre-app-open) renders the user's actual avatar within the first timeline tick (10–20 min) instead of gradient-initials forever.
+- Widget after a long background period (iPhone killed for hours) re-hydrates avatars on its next pull without waiting for the main app to foreground.
+- Once the bridge runs (next main-app foreground), it overwrites the same files from its in-memory caches — no race, no flicker.
+- RPC payload size grows by exactly one TEXT pointer per row (~50–100 bytes).
+
+**Deploy order**: standalone — no dependency on prior migrations except the existing `get_active_challenges` (`20260620_…`). Re-running re-creates the function with the same shape (idempotent).
+
 ---
 
 ## Legacy / Bulk Ledger (Q2-85, Sprint 8 — 2026-04-27)

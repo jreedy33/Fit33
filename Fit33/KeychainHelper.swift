@@ -36,20 +36,51 @@ struct KeychainHelper {
     }
     
     static func load(key: String) -> String? {
+        loadWithStatus(key: key).value
+    }
+
+    /// Diagnostic variant — surfaces the raw `OSStatus` from
+    /// `SecItemCopyMatching` so callers can distinguish:
+    /// • `errSecSuccess` (0) — value present
+    /// • `errSecItemNotFound` (-25300) — really wiped (uninstall, explicit delete)
+    /// • `errSecInteractionNotAllowed` (-25308) — keychain locked (BGTask wake on locked device)
+    /// • `errSecAuthFailed` / others — provisioning / entitlements problem
+    /// Used by `WhoopService` + `OuraService` to log structured connect/disconnect
+    /// audit entries so we can tell, after the fact, exactly why an OAuth token
+    /// "disappeared" between sessions (real wipe vs transient lock vs entitlement
+    /// glitch).
+    static func loadWithStatus(key: String) -> (value: String?, status: OSStatus) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
-        
+
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        
-        guard status == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+
+        if status == errSecSuccess, let data = result as? Data {
+            return (String(data: data, encoding: .utf8), status)
+        }
+        return (nil, status)
     }
-    
+
+    /// Human-readable label for an `OSStatus` returned by `SecItemCopyMatching`.
+    /// Used in OAuth audit logs — keeps the persisted breadcrumb string short
+    /// and grep-friendly.
+    static func statusLabel(_ status: OSStatus) -> String {
+        switch status {
+        case errSecSuccess: return "ok(\(status))"
+        case errSecItemNotFound: return "notFound(\(status))"
+        case errSecInteractionNotAllowed: return "locked(\(status))"
+        case errSecAuthFailed: return "authFailed(\(status))"
+        case errSecMissingEntitlement: return "missingEntitlement(\(status))"
+        case errSecParam: return "badParam(\(status))"
+        default: return "other(\(status))"
+        }
+    }
+
     static func delete(key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

@@ -49,10 +49,15 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
         // preview reflects the actual selection. Auto-pick + nil paths
         // stay cache-only — `read()` is always populated from a recent
         // main-app publish, so they don't need the network round-trip.
-        let pickedId = configuration.challenge?.id
+        // Case-insensitive lookup (2026-04-28 picker-flip fix) — see
+        // `ActiveChallengeWidgetSnapshot.resolve` for the full rationale.
+        // tl;dr: legacy `configuration.challenge.id` may be uppercase
+        // while the cache is now lowercase; comparing in lowercase
+        // space keeps "is this challenge already cached?" honest.
+        let pickedId = configuration.challenge?.id.lowercased()
         let needsPull = pickedId.map { id in
-            id != ChallengeEntity.autoPickID
-                && ActiveChallengeWidgetSnapshot.readAll().first(where: { $0.challengeId == id }) == nil
+            id != ChallengeEntity.autoPickID.lowercased()
+                && ActiveChallengeWidgetSnapshot.readAll().first(where: { $0.challengeId.lowercased() == id }) == nil
         } ?? false
         if needsPull {
             await Self.pullAndMergeIfPossible(timeoutSeconds: 3.0)
@@ -226,9 +231,9 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
         let cachedById = Dictionary(uniqueKeysWithValues: cached.map { ($0.challengeId, $0) })
         let cachedDisplayName = cached.first?.myDisplayName
 
-        let fresh: [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge]
+        let pullResult: WidgetSupabaseFetcher.ActiveChallengesPullResult
         do {
-            fresh = try await WidgetSupabaseFetcher.fetchActiveChallenges(
+            pullResult = try await WidgetSupabaseFetcher.fetchActiveChallenges(
                 timeout: timeoutSeconds,
                 userDisplayName: cachedDisplayName
             )
@@ -257,12 +262,43 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
             return .failed(error)
         }
 
+        let fresh = pullResult.challenges
+
         // Hash-gate the App Group write — most ticks the data is
         // identical to last time (same hour, neither user logged
         // anything new), and re-writing the same bytes on every tick
         // would still trigger Darwin observers in the main app
         // (Phase 5) and waste their reload budget.
         var merged = mergeFreshWithCache(fresh: fresh, cachedById: cachedById, cachedDisplayName: cachedDisplayName)
+
+        // Phase 8a (2026-04-28): widget-side avatar pull. The main app's
+        // bridge writes user + opponent photos into the App Group from
+        // its in-memory caches, but on a cold widget process (user
+        // installs the widget before opening the app, OR the iPhone
+        // has been killed for hours) those caches are empty. The
+        // home-screen widget then renders gradient-initials forever.
+        // Hydrate directly from Supabase Storage URLs surfaced by the
+        // RPC — caller's own photo via `my_profile_photo_url` and each
+        // opponent's via `opponent_photo_url`. Each download is
+        // skipped when the file already exists (bridge or prior tick
+        // already cached it), bounded to 3s per image, so the worst-
+        // case latency budget for N opponents is `3s * (1 + N)` of
+        // PARALLEL work — well inside iOS's per-tick envelope. After
+        // the pass we stamp `hasUserPhoto` / `hasOpponentPhoto` on
+        // the merged rows so the on-disk cache reflects reality even
+        // before the bridge takes over.
+        let myPhotoURL = pullResult.myProfilePhotoURL.flatMap { URL(string: $0) }
+        let opponents: [WidgetPhotoFetcher.OpponentInput] = fresh.map { row in
+            WidgetPhotoFetcher.OpponentInput(
+                opponentId: row.opponentId,
+                photoURL: row.opponentPhotoUrl.flatMap { URL(string: $0) }
+            )
+        }
+        let written = await WidgetPhotoFetcher.ensureCached(
+            userPhotoURL: myPhotoURL,
+            opponents: opponents
+        )
+        merged = applyPhotoFlagUpdates(merged, written: written)
 
         // Phase 7c (2026-04-26): widget-side HealthKit overlay. For
         // step-typed challenges, READ today's cumulative step count
@@ -451,6 +487,62 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
             } catch {
                 log.debug("Widget push failed (non-fatal): \(String(describing: error), privacy: .public)")
             }
+        }
+    }
+
+    /// Phase 8a (2026-04-28): stamps `hasUserPhoto` / `hasOpponentPhoto`
+    /// on each merged row when this pull just wrote a fresh avatar to
+    /// the App Group container. Pure post-processing — no I/O.
+    ///
+    /// The widget render path resolves photos by FILENAME existence
+    /// (`ActiveChallengeWidgetSnapshot.userPhoto()` / `.opponentPhoto`),
+    /// not by these flags, so visually nothing changes either way.
+    /// We still keep the flags honest because:
+    ///   1. `mergeFreshWithCache` carries them forward into the next
+    ///      pull's cache; leaving them stale-false would force the
+    ///      same download every tick (the file-exists short-circuit
+    ///      in `WidgetPhotoFetcher` saves the network hop, but flag
+    ///      bookkeeping costs nothing).
+    ///   2. The bridge inspects them on its next `publish()` to
+    ///      decide whether to re-encode the payload — see Phase 5.
+    private static func applyPhotoFlagUpdates(
+        _ rows: [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge],
+        written: WidgetPhotoFetcher.WrittenPhotos
+    ) -> [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge] {
+        guard written.didWriteUserPhoto || !written.didWriteOpponentByID.isEmpty else {
+            return rows
+        }
+        return rows.map { row in
+            let newHasUserPhoto = row.hasUserPhoto || written.didWriteUserPhoto
+            let newHasOpponentPhoto = row.hasOpponentPhoto
+                || (written.didWriteOpponentByID[row.opponentId] ?? false)
+            if newHasUserPhoto == row.hasUserPhoto && newHasOpponentPhoto == row.hasOpponentPhoto {
+                return row
+            }
+            return ActiveChallengeWidgetSnapshot.WidgetActiveChallenge(
+                challengeId: row.challengeId,
+                challengeType: row.challengeType,
+                displayTitle: row.displayTitle,
+                mode: row.mode,
+                targetUnit: row.targetUnit,
+                dailyTarget: row.dailyTarget,
+                daysRemaining: row.daysRemaining,
+                durationDays: row.durationDays,
+                myTodayProgress: row.myTodayProgress,
+                opponentTodayProgress: row.opponentTodayProgress,
+                opponentId: row.opponentId,
+                opponentName: row.opponentName,
+                opponentPhotoUrl: row.opponentPhotoUrl,
+                opponentIsVerified: row.opponentIsVerified,
+                opponentIsGoldVerified: row.opponentIsGoldVerified,
+                myCurrentStreak: row.myCurrentStreak,
+                amWinningToday: row.amWinningToday,
+                myDisplayName: row.myDisplayName,
+                hasUserPhoto: newHasUserPhoto,
+                hasOpponentPhoto: newHasOpponentPhoto,
+                myLastProgressAt: row.myLastProgressAt,
+                opponentLastProgressAt: row.opponentLastProgressAt
+            )
         }
     }
 
@@ -836,7 +928,7 @@ private struct CompetitionRow: View {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 10))
                             .foregroundStyle(.yellow)
-                            .offset(y: -9)
+                            .offset(y: -13)
                     }
                 }
                 VStack(alignment: .leading, spacing: 0) {
@@ -936,7 +1028,7 @@ private struct CompetitionRow: View {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 10))
                             .foregroundStyle(.yellow)
-                            .offset(y: -9)
+                            .offset(y: -13)
                     }
                 }
             }
@@ -1188,7 +1280,7 @@ private struct CompactSideColumn: View {
                     Image(systemName: "crown.fill")
                         .font(.system(size: 9))
                         .foregroundStyle(.yellow)
-                        .offset(y: -8)
+                        .offset(y: -12)
                 }
             }
             Text(label)

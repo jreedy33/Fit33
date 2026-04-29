@@ -653,6 +653,23 @@ struct Fit33App: App {
                     let authMs = Int((CFAbsoluteTimeGetCurrent() - authStart) * 1000)
                     PerformanceSignposts.end(authState, slowThresholdMs: 2_000)
                     AppLogger.info("[STARTUP] checkAuthOnly completed in \(authMs)ms", category: .performance)
+
+                    // 2026-04-28 OAuth-disconnect post-mortem: dump the
+                    // persistent `OAuthAuditLog` once per cold start.
+                    // Captures every WHOOP/Oura/Strava/Fitbit lifecycle
+                    // event from the previous session(s) — connect,
+                    // disconnect-with-reason, refresh success/failure,
+                    // keychain probe outcomes — so the FIRST session log
+                    // after a "WHOOP just disconnected" report contains
+                    // the breadcrumb trail that explains why. Only logs
+                    // when entries exist; silent otherwise.
+                    let auditLines = OAuthAuditLog.dump()
+                    if !auditLines.isEmpty {
+                        AppLogger.info("[OAUTH_AUDIT] Replaying \(auditLines.count) prior breadcrumb(s) from persistent ring buffer:", category: .auth)
+                        for line in auditLines.prefix(20) {
+                            AppLogger.info("[OAUTH_AUDIT] \(line)", category: .auth)
+                        }
+                    }
                     
                     // UI-critical post-auth work (keep minimal — limitations RPC was ~1s+ and blocked first-frame interactivity)
                     if supabaseManager.isAuthenticated {

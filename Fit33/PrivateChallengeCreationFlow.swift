@@ -15,6 +15,7 @@ struct PrivateChallengeCreationFlow: View {
     @EnvironmentObject var userManager: UserManager
     @ObservedObject private var friendService = FriendService.shared
     @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
+    @ObservedObject private var rankingService = FriendRankingService.shared
     
     enum FlowStep: CaseIterable {
         case naming          // Name + emoji
@@ -67,6 +68,40 @@ struct PrivateChallengeCreationFlow: View {
             return name.localizedCaseInsensitiveContains(searchText) ||
                    username.localizedCaseInsensitiveContains(searchText)
         }
+    }
+    
+    // MARK: - Top friends highlight (mirrors FriendsListView.topFriendsHighlight)
+    
+    /// Top 3 most engaged friends sourced from FriendRankingService.
+    private var highlightMostEngaged: [Friend] {
+        let rankedTop = rankingService.rankedFriends.prefix(3)
+        return rankedTop.compactMap { ranked in
+            friendService.friends.first { $0.friendId == ranked.friendId }
+        }
+    }
+    
+    /// Top 3 newest-added friends, excluding any already shown in row 1.
+    private var highlightNewestAdded: [Friend] {
+        let engagedIds = Set(highlightMostEngaged.map(\.friendId))
+        let sorted = friendService.friends.sorted(by: { $0.friendsSince > $1.friendsSince })
+        return Array(sorted.filter { !engagedIds.contains($0.friendId) }.prefix(3))
+    }
+    
+    /// Whether to show the 3×2 highlight at all — match FriendsListView's
+    /// "only when at least 3 friends" gate.
+    private var showFloatingHeads: Bool {
+        friendService.friends.count >= 3 && !highlightMostEngaged.isEmpty
+    }
+    
+    /// Friends to render in the scrollable list below the highlight, with
+    /// search applied. Excludes the 6 highlighted friends so they aren't
+    /// duplicated.
+    private var inviteListFriends: [Friend] {
+        let highlightIds: Set<UUID> = showFloatingHeads
+            ? Set(highlightMostEngaged.map(\.friendId) + highlightNewestAdded.map(\.friendId))
+            : []
+        let base = filteredFriends.filter { !highlightIds.contains($0.friendId) }
+        return base
     }
     
     var body: some View {
@@ -144,6 +179,9 @@ struct PrivateChallengeCreationFlow: View {
             .onAppear {
                 Task {
                     await friendService.fetchFriends()
+                    // Powers the 3×2 "top friends" highlight on the invite step
+                    // (mirrors FriendsListView).
+                    await rankingService.fetchRankedFriends()
                 }
             }
         }
@@ -739,31 +777,7 @@ struct PrivateChallengeCreationFlow: View {
                     .foregroundColor(.purple)
             }
             
-            // Search bar
-            HStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.white.opacity(0.5))
-                    .font(.ds_bodyRegular)
-                
-                TextField("Search friends", text: $searchText)
-                    .font(.body)
-                    .foregroundColor(.white)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                
-                if !searchText.isEmpty {
-                    Button(action: { searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-                }
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.sm)
-            .background(Color.white.opacity(0.1))
-            .cornerRadius(CornerRadius.md)
-            
-            // Friends list
+            // Empty state — keeps "no friends yet" copy in place.
             if friendService.friends.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "person.2.slash")
@@ -779,13 +793,127 @@ struct PrivateChallengeCreationFlow: View {
                 }
                 .padding(.vertical, Spacing.lg)
             } else {
-                LazyVStack(spacing: 10) {
-                    ForEach(filteredFriends) { friend in
-                        friendInviteRow(friend: friend)
+                // 3×2 top friends highlight — mirrors FriendsListView.
+                if showFloatingHeads {
+                    topFriendsInviteHighlight
+                }
+                
+                // Search bar
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.white.opacity(0.5))
+                        .font(.ds_bodyRegular)
+                    
+                    TextField("Search friends", text: $searchText)
+                        .font(.body)
+                        .foregroundColor(.white)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+                    }
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(CornerRadius.md)
+                
+                // Scrollable friends list (excludes the 6 already highlighted).
+                if !inviteListFriends.isEmpty {
+                    LazyVStack(spacing: 10) {
+                        ForEach(inviteListFriends) { friend in
+                            friendInviteRow(friend: friend)
+                        }
+                    }
+                } else if !searchText.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.ds_heading2)
+                            .foregroundColor(.white.opacity(0.4))
+                        Text("No friends matching \"\(searchText)\"")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.lg)
+                }
+            }
+        }
+    }
+    
+    /// 3×2 grid of top friends. Tapping a bubble toggles invite selection.
+    private var topFriendsInviteHighlight: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                ForEach(highlightMostEngaged) { friend in
+                    inviteFriendBubble(friend: friend)
+                }
+                if highlightMostEngaged.count < 3 {
+                    ForEach(0..<(3 - highlightMostEngaged.count), id: \.self) { _ in
+                        Color.clear.frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            
+            if !highlightNewestAdded.isEmpty {
+                HStack(spacing: 12) {
+                    ForEach(highlightNewestAdded) { friend in
+                        inviteFriendBubble(friend: friend)
+                    }
+                    if highlightNewestAdded.count < 3 {
+                        ForEach(0..<(3 - highlightNewestAdded.count), id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
                     }
                 }
             }
         }
+    }
+    
+    /// Single bubble used in the 3×2 highlight. Mirrors FriendsListView's
+    /// `TopFriendCard` look but adds tap-to-toggle invite behavior.
+    private func inviteFriendBubble(friend: Friend) -> some View {
+        let isSelected = selectedFriends.contains(where: { $0.friendId == friend.friendId })
+        return Button(action: { toggleFriend(friend) }) {
+            VStack(spacing: 8) {
+                ZStack(alignment: .bottomTrailing) {
+                    CachedFriendPhoto(
+                        friendId: friend.friendId.uuidString,
+                        photoUrl: friend.profilePhotoUrl,
+                        name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                        size: 60,
+                        showGradientRing: isSelected,
+                        gradientColors: [.purple, .pink]
+                    )
+                    .scaleEffect(isSelected ? 1.05 : 1.0)
+                    
+                    if isSelected {
+                        ZStack {
+                            Circle()
+                                .fill(Color(white: 0.1))
+                                .frame(width: 22, height: 22)
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.ds_bodyRegular)
+                                .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        }
+                        .offset(x: 4, y: 4)
+                    }
+                }
+                
+                Text(friend.friendName?.components(separatedBy: " ").first ?? friend.friendUsername ?? "Friend")
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .bold : .semibold)
+                    .foregroundColor(isSelected ? .purple : .white)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        }
+        .buttonStyle(.plain)
     }
     
     private func friendInviteRow(friend: Friend) -> some View {

@@ -692,6 +692,32 @@ class ChallengeService: ObservableObject {
         }
     }
 
+    /// Bypass the `fetchMinInterval` throttle for callers that absolutely
+    /// need a fresh `activeChallenges` snapshot. `RequestCoalescer` still
+    /// dedupes concurrent in-flight fetches so this is no more expensive
+    /// than a regular fetch when a fetch is already in progress. Use
+    /// sparingly — most callers should use `fetchActiveChallenges()`.
+    ///
+    /// Canonical caller: `RealtimeService.handleAllParticipantUpdates`
+    /// "opponent ACCEPTED" branch on the SENDER's device. The branch fires
+    /// `await throttledChallengeFetch()` (3s throttle) followed by an
+    /// `activeChallenges.first(where:)` lookup. On a freshly-foregrounded
+    /// app, the throttle frequently bails (a previous fetch ran <3s ago
+    /// during the foreground 10-fan-out), so `activeChallenges` does not
+    /// contain the just-activated challenge and the sender-side accept-time
+    /// backfill is silently skipped. Without this method, Paul's progress
+    /// row never lands until his next foreground HK sync — symptom:
+    /// "Paul's app shows '—' steps for hours after Joe accepts the
+    /// challenge" (canonical incident 2026-04-28, 10K Club challenge
+    /// `742c0bd0`).
+    func forceFetchActiveChallenges() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        lastActiveFetchTime = Date()
+        await RequestCoalescer.shared.coalesceVoid(key: "fetchActiveChallenges") { [weak self] in
+            await self?._fetchActiveChallengesBody()
+        }
+    }
+
     private func _fetchActiveChallengesBody() async {
         do {
             struct TimezoneParams: Encodable {
@@ -2032,8 +2058,23 @@ class ChallengeService: ObservableObject {
     ) async {
         // Refresh local sources first so progress reflects what the user
         // actually did so far today, not a stale cached value.
+        //
+        // 2026-04-28 deadlock fix — `syncAllData(force: true)` is FORBIDDEN
+        // here. Its body chains into `ChallengeService.syncHealthKitDataToChallenges()`
+        // which itself calls `syncAllData(force: true)`; the
+        // `RequestCoalescer` join then deadlocks (outer Task awaits inner;
+        // inner awaits outer's `.value`). Symptom: `backfillTodayProgressForChallenge`
+        // silently hangs at the first `await`, NEVER reaches
+        // `calculateTotalProgressFromAllSources` or `logProgress`, and the
+        // accept-time progress row is never written. Both Joe (accepter)
+        // and Paul (sender) saw this — Paul's "0 steps" widget on the
+        // 10K Club challenge eventually resolved only when Joe navigated
+        // away from the challenge detail view and the parent Task was
+        // cancelled, breaking the deadlock and letting a different code
+        // path catch up. Use the lightweight `refreshTodayStats()` which
+        // bypasses both the chained sync and the coalescer.
         AppLogger.debug("Refreshing HealthKit data for backfill (challenge: \(challengeId.uuidString.prefix(8)))...", category: .social)
-        await HealthKitService.shared.syncAllData(force: true)
+        await HealthKitService.shared.refreshTodayStats()
 
         if StravaService.shared.isConnected {
             AppLogger.debug("Refreshing Strava data for backfill...", category: .social)
@@ -2360,8 +2401,21 @@ class ChallengeService: ObservableObject {
         // `todayCalories` reflect the current local day before we push. Dawn
         // bug (2026-04-24): without this, the @Published cache can still hold
         // yesterday's EoD total and the server's GREATEST() clause pins the
-        // ghost until midnight. Coalescer makes concurrent force-refreshes free.
-        await HealthKitService.shared.syncAllData(force: true)
+        // ghost until midnight.
+        //
+        // 2026-04-28 deadlock fix — MUST call `refreshTodayStats()` here, NOT
+        // `syncAllData(force: true)`. The full sync path itself chains into
+        // THIS function (`syncHealthKitDataToChallenges()`), and
+        // `RequestCoalescer.coalesceVoid` keyed by
+        // `"HealthKit.syncAllData.force=true"` joins concurrent callers to
+        // the SAME in-flight Task. So outside callers of `syncAllData(force:
+        // true)` whose body reaches this line would re-enter the coalescer
+        // and DEADLOCK (outer Task awaits inner; inner awaits outer's
+        // `.value`). The lightweight `refreshTodayStats()` reads only today's
+        // counters — exactly what we need — and bypasses both the TaskGroup
+        // and the coalescer. See `HealthKitService.refreshTodayStats` doc
+        // comment for the canonical incident.
+        await HealthKitService.shared.refreshTodayStats()
 
         let healthKit = HealthKitService.shared
 

@@ -19,20 +19,33 @@ struct CustomWorkoutBuilderView: View {
         case build          // Default: multi-select to build a workout
         case replace(Exercise, (Exercise) -> Void)  // Single-select to replace an exercise
         case addToWorkout([Exercise], (Exercise) -> Void)  // Single-select to add to active workout
+        // Multi-select picker for "send to friend" / similar flows. Recycles every
+        // build-mode affordance (poster-ring cards, recommended filter, suggested
+        // swaps, search) but commits the selection through a toolbar "Done (N)"
+        // button instead of starting a workout via the floating GO button.
+        // `initialSelection` is restored on `.onAppear` so the user sees their
+        // already-picked exercises checked.
+        case pickMultiple([Exercise], ([Exercise]) -> Void)
         
         var title: String {
             switch self {
             case .build: return "Build Workout"
             case .replace: return "Replace Exercise"
             case .addToWorkout: return "Add Exercise"
+            case .pickMultiple: return "Add Exercises"
             }
         }
         
         var isSingleSelect: Bool {
             switch self {
-            case .build: return false
+            case .build, .pickMultiple: return false
             case .replace, .addToWorkout: return true
             }
+        }
+        
+        var isPickMultiple: Bool {
+            if case .pickMultiple = self { return true }
+            return false
         }
     }
     
@@ -51,6 +64,13 @@ struct CustomWorkoutBuilderView: View {
     // Initializer for add to workout mode
     init(currentExercises: [Exercise] = [], onAddExercise: @escaping (Exercise) -> Void) {
         self.mode = .addToWorkout(currentExercises, onAddExercise)
+    }
+    
+    // Initializer for multi-select picker mode (e.g. send-to-friend). Pre-fills
+    // `selectedExercises` from `initialSelection` and commits via the toolbar
+    // "Done (N)" button by calling `onConfirm`.
+    init(initialSelection: [Exercise], onConfirm: @escaping ([Exercise]) -> Void) {
+        self.mode = .pickMultiple(initialSelection, onConfirm)
     }
     
     @State private var exercises: [Exercise] = []
@@ -89,6 +109,11 @@ struct CustomWorkoutBuilderView: View {
     @State private var overdueMuscleLabel: String = ""
     @State private var hasComputedOverdueSuggestions = false
     private let overdueScrollHideThreshold: CGFloat = -60
+    
+    // `.pickMultiple` mode: track whether we've restored `initialSelection` on
+    // first appear. Without this guard a tab-back / scenePhase wakeup could
+    // re-overwrite the user's in-flight edits.
+    @State private var hasRestoredPickMultipleSelection = false
     
     private var replacingExercise: Exercise? {
         if case .replace(let exercise, _) = mode { return exercise }
@@ -717,13 +742,27 @@ struct CustomWorkoutBuilderView: View {
                         }
                     }
                     
+                    // `.pickMultiple`: restore the caller's `initialSelection`
+                    // exactly once so a tab-back / scenePhase wakeup doesn't
+                    // trample in-flight edits.
+                    if case let .pickMultiple(initialSelection, _) = mode,
+                       !hasRestoredPickMultipleSelection {
+                        selectedExercises = initialSelection
+                        hasRestoredPickMultipleSelection = true
+                    }
+                    
                     // Load exercises from cache/Core Data (cloud sync handles population)
                     loadExercises()
                     // ⚡️ Initialize cached results and filter cache immediately
                     lastFilterKey = "" // Force rebuild
                     updateFilteredExercises()
                     forceRenderID = UUID()
-                    workoutManager.isOnCustomWorkoutBuilder = true
+                    // `.pickMultiple` is rented out to social/share flows; it
+                    // must NOT touch workoutManager state (those flags are
+                    // reserved for the actual workout-tab build flow).
+                    if !mode.isPickMultiple {
+                        workoutManager.isOnCustomWorkoutBuilder = true
+                    }
                     
                     // Load suggested swaps for replace mode
                     if let replacing = replacingExercise {
@@ -761,12 +800,16 @@ struct CustomWorkoutBuilderView: View {
                         workoutManager.exerciseToAddToCustomWorkout = nil
                     }
                     
-                    workoutManager.selectedCustomWorkoutExercises = selectedExercises
+                    if !mode.isPickMultiple {
+                        workoutManager.selectedCustomWorkoutExercises = selectedExercises
+                    }
                 }
                 .onDisappear {
-                    workoutManager.isOnCustomWorkoutBuilder = false
-                    workoutManager.selectedCustomWorkoutExercises = []
-                    workoutManager.shouldNavigateToCustomWorkoutBuilder = false
+                    if !mode.isPickMultiple {
+                        workoutManager.isOnCustomWorkoutBuilder = false
+                        workoutManager.selectedCustomWorkoutExercises = []
+                        workoutManager.shouldNavigateToCustomWorkoutBuilder = false
+                    }
                 }
                 // 🔄 Reload when exercises become ready after sync
                 .onChange(of: exerciseLibrary.isExercisesReady) { _, isReady in
@@ -840,7 +883,9 @@ struct CustomWorkoutBuilderView: View {
                     forceRenderID = UUID()
                 }
                 .onChange(of: selectedExercises) { _, newValue in
-                    workoutManager.selectedCustomWorkoutExercises = newValue
+                    if !mode.isPickMultiple {
+                        workoutManager.selectedCustomWorkoutExercises = newValue
+                    }
                     // Refresh the overdue strip so a row the user just
                     // selected drops out and the next candidate slides in.
                     // No network / Core Data work — `applyOverdueBucket`
@@ -851,6 +896,9 @@ struct CustomWorkoutBuilderView: View {
                     }
                 }
                 .onChange(of: workoutManager.shouldStartCustomWorkout) { _, shouldStart in
+                    // `.pickMultiple` is rented out to social flows; never
+                    // hijack it into the workout-tab "start workout" path.
+                    guard !mode.isPickMultiple else { return }
                     if shouldStart && !selectedExercises.isEmpty {
                         startCustomWorkout()
                         workoutManager.shouldStartCustomWorkout = false
@@ -887,7 +935,22 @@ struct CustomWorkoutBuilderView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                if !mode.isSingleSelect {
+                // `.pickMultiple` (send-to-friend) commits via "Done (N)";
+                // `.build` shows the "+" custom-exercise affordance; single-
+                // select modes (`.replace` / `.addToWorkout`) show nothing.
+                if case let .pickMultiple(_, onConfirm) = mode {
+                    Button(action: {
+                        HapticManager.impact(.medium)
+                        onConfirm(selectedExercises)
+                        dismiss()
+                    }) {
+                        Text(selectedExercises.isEmpty ? "Done" : "Done (\(selectedExercises.count))")
+                            .font(.ds_labelLarge)
+                            .foregroundColor(.primary)
+                    }
+                    .accessibilityLabel("Done")
+                    .accessibilityHint("Confirm the selected exercises and return")
+                } else if !mode.isSingleSelect {
                     Button(action: {
                         HapticManager.impact(.medium)
                         showingAddExercise = true
@@ -895,6 +958,7 @@ struct CustomWorkoutBuilderView: View {
                         Image(systemName: "plus")
                             .foregroundColor(.white)
                     }
+                    .accessibilityLabel("Add custom exercise")
                 }
             }
         }

@@ -171,9 +171,24 @@ enum ActiveChallengeWidgetSnapshot {
     /// configuration choice. Falls back to the auto-pick when no id is
     /// provided OR when the chosen one no longer exists (e.g. challenge
     /// just ended).
+    ///
+    /// Lookup is case-insensitive (2026-04-28 picker-flip fix): Apple's
+    /// `Foundation.UUID.uuidString` returns UPPERCASE while the widget
+    /// extension's direct Postgres pull writes lowercase. When the two
+    /// writers (bridge ↔ widget pull) raced, the cache flipped case
+    /// between ticks, the picker's stored `configuration.challenge.id`
+    /// stopped matching, and the widget snapped to the bridge's
+    /// best-pick fallback — visibly resetting the user's selection
+    /// every cache rotation. Bridge writes are now lowercase
+    /// (`ActiveChallengeWidgetBridge.publish`), but already-persisted
+    /// `configuration.challenge.id` values from before the fix may
+    /// still be uppercase, so we normalize at the lookup edge to make
+    /// the migration invisible. Once the user re-saves the widget
+    /// configuration after this ships, the stored ID will be lowercase
+    /// and the case-fold here is a no-op.
     static func resolve(challengeId: String?) -> WidgetActiveChallenge? {
-        if let id = challengeId,
-           let match = readAll().first(where: { $0.challengeId == id }) {
+        if let id = challengeId?.lowercased(),
+           let match = readAll().first(where: { $0.challengeId.lowercased() == id }) {
             return match
         }
         return read()

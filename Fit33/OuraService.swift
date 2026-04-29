@@ -98,7 +98,29 @@ final class OuraService: ObservableObject {
     // MARK: - Initialization
 
     private init() {
-        isConnected = accessToken != nil
+        // Mirrors `WhoopService.init()` keychain-probe logging — see the
+        // matching doc comment there. Captures `OSStatus` per token slot
+        // so we can later distinguish a real wipe from a transient lock.
+        let atProbe = KeychainHelper.loadWithStatus(key: "oura_access_token")
+        let rtProbe = KeychainHelper.loadWithStatus(key: "oura_refresh_token")
+        let exProbe = KeychainHelper.loadWithStatus(key: "oura_token_expires_at")
+        isConnected = atProbe.value != nil
+
+        AppLogger.info(
+            "[OURA] init() keychain probe → AT=\(KeychainHelper.statusLabel(atProbe.status)) RT=\(KeychainHelper.statusLabel(rtProbe.status)) EX=\(KeychainHelper.statusLabel(exProbe.status)) → isConnected=\(isConnected)",
+            category: .auth
+        )
+        OAuthAuditLog.record(
+            service: "oura",
+            event: .keychainProbe,
+            reason: "init",
+            details: [
+                "at_status": KeychainHelper.statusLabel(atProbe.status),
+                "rt_status": KeychainHelper.statusLabel(rtProbe.status),
+                "ex_status": KeychainHelper.statusLabel(exProbe.status),
+                "is_connected": String(isConnected)
+            ]
+        )
 
         if isConnected {
             loadCachedDataIfNeeded()
@@ -111,10 +133,31 @@ final class OuraService: ObservableObject {
     /// `Fit33App.onChange(scenePhase: .active)` so the dashboard Oura widget
     /// reliably appears on every cold start / resume when Oura is connected.
     func refreshConnectionState() {
-        let nowConnected = accessToken != nil
+        let probe = KeychainHelper.loadWithStatus(key: "oura_access_token")
+        let nowConnected = probe.value != nil
         if nowConnected != isConnected {
-            AppLogger.info("[OURA] Connection state changed on foreground: \(isConnected) → \(nowConnected)", category: .auth)
+            AppLogger.info("[OURA] Connection state changed on foreground: \(isConnected) → \(nowConnected) (keychain=\(KeychainHelper.statusLabel(probe.status)))", category: .auth)
+            OAuthAuditLog.record(
+                service: "oura",
+                event: .stateTransition,
+                reason: "scenePhase_active",
+                details: [
+                    "from": String(isConnected),
+                    "to": String(nowConnected),
+                    "at_status": KeychainHelper.statusLabel(probe.status)
+                ]
+            )
             isConnected = nowConnected
+        } else {
+            OAuthAuditLog.record(
+                service: "oura",
+                event: .keychainProbe,
+                reason: "scenePhase_active_steady",
+                details: [
+                    "at_status": KeychainHelper.statusLabel(probe.status),
+                    "is_connected": String(isConnected)
+                ]
+            )
         }
         if isConnected {
             loadCachedDataIfNeeded()
@@ -238,6 +281,15 @@ final class OuraService: ObservableObject {
         isConnected = true
 
         AppLogger.info("[OURA] Connected successfully (token expires in \(tokenResponse.expiresIn ?? 86400)s)", category: .health)
+        OAuthAuditLog.record(
+            service: "oura",
+            event: .connect,
+            reason: "oauth_callback",
+            details: [
+                "expires_in": String(tokenResponse.expiresIn ?? 86400),
+                "rt_present": String(tokenResponse.refreshToken?.isEmpty == false)
+            ]
+        )
 
         Task {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "oura", isConnected: true)
@@ -268,6 +320,18 @@ final class OuraService: ObservableObject {
     }
 
     private func _performTokenRefresh() async throws {
+        let atProbe = KeychainHelper.loadWithStatus(key: "oura_access_token")
+        let rtProbe = KeychainHelper.loadWithStatus(key: "oura_refresh_token")
+        OAuthAuditLog.record(
+            service: "oura",
+            event: .keychainProbe,
+            reason: "refresh_enter",
+            details: [
+                "at_status": KeychainHelper.statusLabel(atProbe.status),
+                "rt_status": KeychainHelper.statusLabel(rtProbe.status)
+            ]
+        )
+
         guard let currentRefreshToken = refreshToken else {
             // Disambiguate transient keychain-locked nil from a genuinely
             // wiped refresh token by probing `accessToken` at this exact
@@ -282,10 +346,16 @@ final class OuraService: ObservableObject {
             let keychainReadable = KeychainHelper.load(key: "oura_access_token") != nil
             if keychainReadable {
                 AppLogger.error("[OURA] Refresh token wiped (keychain readable, accessToken present, refreshToken missing) — disconnecting so user sees reconnect prompt", category: .auth)
-                disconnect()
+                disconnect(reason: "rt_wiped_keychain_readable")
                 errorMessage = "Oura needs to be reconnected. Tap Connect Oura to sign in again."
             } else {
                 AppLogger.warning("[OURA] refreshAccessToken: keychain unreadable (likely locked on BGTask wake) — throwing, NOT disconnecting", category: .auth)
+                OAuthAuditLog.record(
+                    service: "oura",
+                    event: .refreshFailure,
+                    reason: "keychain_locked_no_rt",
+                    details: ["at_status": KeychainHelper.statusLabel(atProbe.status)]
+                )
             }
             throw OuraError.notConnected
         }
@@ -310,8 +380,12 @@ final class OuraService: ObservableObject {
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            if let errorBody = String(data: data, encoding: .utf8) {
-                AppLogger.error("[OURA] Token refresh failed (HTTP \(status)): \(errorBody.prefix(300))", category: .auth)
+            let errorBody: String
+            if let body = String(data: data, encoding: .utf8) {
+                errorBody = String(body.prefix(300))
+                AppLogger.error("[OURA] Token refresh failed (HTTP \(status)): \(errorBody)", category: .auth)
+            } else {
+                errorBody = "<binary>"
             }
             // Only disconnect on PERMANENT failures (refresh token actually
             // revoked / invalidated). 5xx, 429, and other transient statuses
@@ -321,9 +395,21 @@ final class OuraService: ObservableObject {
             // why is Oura disconnected again". Mirror of WhoopService.
             if (400...403).contains(status) {
                 AppLogger.error("[OURA] Refresh token rejected (HTTP \(status)) — disconnecting", category: .auth)
-                disconnect()
+                OAuthAuditLog.record(
+                    service: "oura",
+                    event: .refreshFailure,
+                    reason: "http_\(status)",
+                    details: ["body_prefix": errorBody]
+                )
+                disconnect(reason: "refresh_http_\(status)")
             } else {
                 AppLogger.warning("[OURA] Token refresh transient failure (HTTP \(status)) — keeping tokens, will retry", category: .auth)
+                OAuthAuditLog.record(
+                    service: "oura",
+                    event: .refreshFailure,
+                    reason: "http_\(status)_transient",
+                    details: ["body_prefix": errorBody]
+                )
             }
             throw OuraError.tokenRefreshFailed
         }
@@ -341,12 +427,22 @@ final class OuraService: ObservableObject {
         // disconnects + reconnects. Only overwrite when the server actually
         // sent a replacement. Mirrors the `exchangeCodeForTokens` defensive
         // pattern already used on the initial-authorization path.
-        if let rotated = tokenResponse.refreshToken, !rotated.isEmpty {
-            refreshToken = rotated
+        let rotated = (tokenResponse.refreshToken?.isEmpty == false)
+        if let r = tokenResponse.refreshToken, !r.isEmpty {
+            refreshToken = r
         }
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 86400))
 
-        AppLogger.debug("[OURA] Token refreshed (expires in \(tokenResponse.expiresIn ?? 86400)s)", category: .health)
+        AppLogger.debug("[OURA] Token refreshed (expires in \(tokenResponse.expiresIn ?? 86400)s, rotated_rt=\(rotated))", category: .health)
+        OAuthAuditLog.record(
+            service: "oura",
+            event: .refreshSuccess,
+            reason: "http_200",
+            details: [
+                "expires_in": String(tokenResponse.expiresIn ?? 86400),
+                "rotated_rt": String(rotated)
+            ]
+        )
     }
 
     private func ensureValidToken() async throws -> String {
@@ -578,7 +674,14 @@ final class OuraService: ObservableObject {
 
     // MARK: - Disconnect
 
-    func disconnect() {
+    /// Wipes every cached Oura value and tells Supabase the user is no
+    /// longer connected. ALL callers MUST pass a `reason` — see
+    /// `WhoopService.disconnect(reason:)` for the rationale (audit log
+    /// post-mortem of "Oura disconnected again" reports).
+    func disconnect(reason: String = "unspecified") {
+        let preAt = KeychainHelper.loadWithStatus(key: "oura_access_token")
+        let preRt = KeychainHelper.loadWithStatus(key: "oura_refresh_token")
+
         accessToken = nil
         refreshToken = nil
         tokenExpiresAt = nil
@@ -602,7 +705,17 @@ final class OuraService: ObservableObject {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "oura", isConnected: false)
         }
 
-        AppLogger.debug("[OURA] Disconnected", category: .health)
+        AppLogger.error("[OURA] Disconnected — reason=\(reason) pre_at=\(KeychainHelper.statusLabel(preAt.status)) pre_rt=\(KeychainHelper.statusLabel(preRt.status))", category: .auth)
+        OAuthAuditLog.record(
+            service: "oura",
+            event: .disconnect,
+            reason: reason,
+            details: [
+                "pre_at_status": KeychainHelper.statusLabel(preAt.status),
+                "pre_rt_status": KeychainHelper.statusLabel(preRt.status)
+            ],
+            captureStack: true
+        )
     }
 
     // MARK: - Readiness Level

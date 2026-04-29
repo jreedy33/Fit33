@@ -14,6 +14,7 @@ struct ChallengeFlowStartView: View {
     @EnvironmentObject var userManager: UserManager
     @ObservedObject private var friendService = FriendService.shared
     @ObservedObject private var contactsService = ContactsService.shared
+    @ObservedObject private var rankingService = FriendRankingService.shared
     
     /// When set, the friend is auto-selected and the flow starts at mode selection
     var preSelectedFriend: Friend? = nil
@@ -46,8 +47,6 @@ struct ChallengeFlowStartView: View {
     @State private var customDurationText = ""
     @FocusState private var durationFieldFocused: Bool
     @State private var searchText = ""
-    @State private var topFriendsPage = 0 // 0: Most engaged, 1: Newest added
-    @State private var friendSwipeDragOffset: CGFloat = 0
     @State private var loadingFriendRequests: Set<UUID> = []
     @State private var sentFriendRequests: Set<UUID> = []
     @State private var showingQRScanner = false
@@ -314,9 +313,11 @@ struct ChallengeFlowStartView: View {
                 }
             }
             
-            // Always refresh friends list
+            // Always refresh friends list + ranked friends so the
+            // 3×2 highlight grid mirrors the Friends tab "most engaged" data.
             Task {
                 await friendService.fetchFriends()
+                await rankingService.fetchRankedFriends()
             }
         }
         .onChange(of: customTarget) { _, newValue in
@@ -713,17 +714,25 @@ struct ChallengeFlowStartView: View {
     }
     
     private var friendSelectionCard: some View {
-        // Page 0: Top 3 most interacted with
-        let mostEngaged = Array(friendService.friends.sorted(by: { $0.totalWorkoutsShared > $1.totalWorkoutsShared }).prefix(3))
-        let mostEngagedIds = Set(mostEngaged.map(\.friendId))
+        // Mirror the Friends tab "top friends" highlight (FriendsListView.topFriendsHighlight):
+        // Row 1 = 3 most engaged via FriendRankingService, Row 2 = 3 newest added (excluding overlap).
+        let rankedTop = Array(rankingService.rankedFriends.prefix(3))
+        let mostEngagedIds = Set(rankedTop.map(\.friendId))
+        let mostEngaged: [Friend] = rankedTop.compactMap { ranked in
+            friendService.friends.first { $0.friendId == ranked.friendId }
+        }
         
-        // Page 1: Newest added — skip anyone already on page 0
         let newestAdded: [Friend] = {
             let sorted = friendService.friends.sorted(by: { $0.friendsSince > $1.friendsSince })
             return Array(sorted.filter { !mostEngagedIds.contains($0.friendId) }.prefix(3))
         }()
         
-        let floatingHeadIds = Set(mostEngaged.map(\.friendId) + newestAdded.map(\.friendId))
+        // Only show the 3×2 highlight when we have enough friends to populate at
+        // least the first row — matches FriendsListView behavior.
+        let showFloatingHeads = friendService.friends.count >= 3 && !mostEngaged.isEmpty
+        let floatingHeadIds = showFloatingHeads
+            ? Set(mostEngaged.map(\.friendId) + newestAdded.map(\.friendId))
+            : Set<UUID>()
         let listFriends = filteredFriends.filter { !floatingHeadIds.contains($0.friendId) }
         
         // Check if we're in invite mode (showing suggested contacts, not accepted friends)
@@ -805,65 +814,42 @@ struct ChallengeFlowStartView: View {
                     .foregroundColor(.white.opacity(0.7))
             } else {
                 VStack(spacing: 16) {
-                    // Swipeable top friends
-                    GeometryReader { geometry in
-                        let cardWidth = geometry.size.width
-                        
-                        HStack(spacing: 0) {
+                    // 3×2 highlight grid — mirrors FriendsListView.topFriendsHighlight.
+                    // Row 1: most engaged (FriendRankingService). Row 2: newest added.
+                    if showFloatingHeads {
+                        VStack(spacing: 12) {
                             HStack(spacing: 12) {
                                 ForEach(mostEngaged) { friend in
                                     TopFriendBubble(friend: friend, isSelected: isFriendSelected(friend)) {
                                         toggleFriendSelection(friend)
                                     }
                                 }
+                                if mostEngaged.count < 3 {
+                                    ForEach(0..<(3 - mostEngaged.count), id: \.self) { _ in
+                                        Color.clear.frame(maxWidth: .infinity)
+                                    }
+                                }
                             }
-                            .frame(width: cardWidth)
                             
-                            HStack(spacing: 12) {
-                                ForEach(newestAdded) { friend in
-                                    TopFriendBubble(friend: friend, isSelected: isFriendSelected(friend)) {
-                                        toggleFriendSelection(friend)
+                            if !newestAdded.isEmpty {
+                                HStack(spacing: 12) {
+                                    ForEach(newestAdded) { friend in
+                                        TopFriendBubble(friend: friend, isSelected: isFriendSelected(friend)) {
+                                            toggleFriendSelection(friend)
+                                        }
+                                    }
+                                    if newestAdded.count < 3 {
+                                        ForEach(0..<(3 - newestAdded.count), id: \.self) { _ in
+                                            Color.clear.frame(maxWidth: .infinity)
+                                        }
                                     }
                                 }
                             }
-                            .frame(width: cardWidth)
                         }
-                        .offset(x: -CGFloat(topFriendsPage) * cardWidth + friendSwipeDragOffset)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1), value: topFriendsPage)
                     }
-                    .frame(height: 90)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 10)
-                            .onChanged { value in
-                                friendSwipeDragOffset = value.translation.width
-                            }
-                            .onEnded { value in
-                                let horizontalAmount = value.translation.width
-                                let velocity = value.predictedEndTranslation.width - value.translation.width
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.75, blendDuration: 0.1)) {
-                                    friendSwipeDragOffset = 0
-                                    if (horizontalAmount < -30 || velocity < -100) && topFriendsPage == 0 {
-                                        topFriendsPage = 1
-                                    } else if (horizontalAmount > 30 || velocity > 100) && topFriendsPage == 1 {
-                                        topFriendsPage = 0
-                                    }
-                                }
-                                HapticManager.impact(.light)
-                            }
-                    )
                     
-                    // Page indicator (dash and dot style)
-                    HStack(spacing: 6) {
-                        Capsule()
-                            .fill(topFriendsPage == 0 ? Color.blue : Color.white.opacity(0.3))
-                            .frame(width: topFriendsPage == 0 ? 20 : 8, height: 6)
-                            .animation(.easeOut(duration: 0.2), value: topFriendsPage)
-                        Capsule()
-                            .fill(topFriendsPage == 1 ? Color.blue : Color.white.opacity(0.3))
-                            .frame(width: topFriendsPage == 1 ? 20 : 8, height: 6)
-                            .animation(.easeOut(duration: 0.2), value: topFriendsPage)
-                    }
+                    // Inline search bar — was previously only present in invite mode.
+                    inlineFriendSearchBar
                     
                     // Friends list
                     if !listFriends.isEmpty {
@@ -878,10 +864,48 @@ struct ChallengeFlowStartView: View {
                                 )
                             }
                         }
+                    } else if !searchText.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.ds_heading2)
+                                .foregroundColor(.white.opacity(0.4))
+                            Text("No friends matching \"\(searchText)\"")
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.lg)
                     }
                 }
             }
         }
+    }
+    
+    /// Search bar used inline above the scrollable friends list (when the user
+    /// already has friends, so the pinned `inviteHeader` search is not shown).
+    private var inlineFriendSearchBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.white.opacity(0.5))
+                .font(.ds_bodyRegular)
+            
+            TextField("Search friends", text: $searchText)
+                .font(.body)
+                .foregroundColor(.white)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            
+            if !searchText.isEmpty {
+                Button(action: { searchText = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.white.opacity(0.5))
+                }
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Color.white.opacity(0.1))
+        .cornerRadius(CornerRadius.md)
     }
     
     // MARK: - Group vs Separate Screen

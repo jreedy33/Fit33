@@ -1087,26 +1087,49 @@ class RealtimeService: ObservableObject {
             // for hours despite both clients having real HK data.
             // Canonical incident: Joe ↔ Paul 10K Steps Daily Steps
             // challenge `4076da0d` — Paul (sender) showed "Joe — no
-            // data" on his home-screen widget; Joe showed "Paul —"
-            // in the in-app widget; DB had ZERO rows in
-            // `challenge_daily_progress` for the new challenge_id.
-            // We look up the just-activated challenge from the
-            // freshly-refetched `activeChallenges`; if the throttle
-            // raced and we don't have it yet, we still return — the
-            // sender's regular foreground HK sync will eventually
-            // catch it. RequestCoalescer + 1s `fetchMinInterval`
-            // dedupe any duplicate fetch calls.
-            if let challengeUUID = UUID(uuidString: challengeId),
-               let challenge = await MainActor.run(body: { ChallengeService.shared.activeChallenges.first(where: { $0.challengeId == challengeUUID }) }) {
-                logRealtimeEvent(type: "SENDER_BACKFILL", source: "challenge_participants",
-                                details: "Backfilling sender progress for activated challenge \(challengeId.prefix(8))")
-                await ChallengeService.shared.backfillTodayProgressForChallenge(
-                    challengeId: challengeUUID,
-                    challengeType: challenge.challengeType,
-                    targetUnit: challenge.targetUnit,
-                    dailyTargetForTargetHitLog: challenge.dailyTarget ?? 0,
-                    titleForLogs: challenge.title
-                )
+            // data" on his home-screen widget.
+            //
+            // 2026-04-28 hardening — the previous version required
+            // `activeChallenges.first(where:)` to succeed on the first
+            // try, but `throttledChallengeFetch()` above has a 3s
+            // throttle that frequently bails on a freshly-foregrounded
+            // app (the foreground 10-fan-out just ran <3s earlier).
+            // When the throttle wins, the lookup miss caused the
+            // SENDER backfill to silently skip — symptom: 10K Club
+            // challenge `742c0bd0` showed Paul's "0 steps" widget for
+            // multiple seconds after Joe accepted, only resolving when
+            // a separate code path eventually wrote the row. Recovery:
+            // on miss, call `forceFetchActiveChallenges()` (bypasses
+            // throttle; RequestCoalescer dedupes any in-flight fetch)
+            // and retry the lookup ONCE. If the second lookup still
+            // fails the challenge truly isn't visible to this user
+            // (RLS / type filter mismatch) and we accept the miss.
+            if let challengeUUID = UUID(uuidString: challengeId) {
+                var challenge = await MainActor.run(body: {
+                    ChallengeService.shared.activeChallenges.first(where: { $0.challengeId == challengeUUID })
+                })
+                if challenge == nil {
+                    logRealtimeEvent(type: "SENDER_BACKFILL_RETRY", source: "challenge_participants",
+                                    details: "Lookup miss for \(challengeId.prefix(8)) — forcing non-throttled refetch")
+                    await ChallengeService.shared.forceFetchActiveChallenges()
+                    challenge = await MainActor.run(body: {
+                        ChallengeService.shared.activeChallenges.first(where: { $0.challengeId == challengeUUID })
+                    })
+                }
+                if let challenge = challenge {
+                    logRealtimeEvent(type: "SENDER_BACKFILL", source: "challenge_participants",
+                                    details: "Backfilling sender progress for activated challenge \(challengeId.prefix(8))")
+                    await ChallengeService.shared.backfillTodayProgressForChallenge(
+                        challengeId: challengeUUID,
+                        challengeType: challenge.challengeType,
+                        targetUnit: challenge.targetUnit,
+                        dailyTargetForTargetHitLog: challenge.dailyTarget ?? 0,
+                        titleForLogs: challenge.title
+                    )
+                } else {
+                    logRealtimeEvent(type: "SENDER_BACKFILL_MISS", source: "challenge_participants",
+                                    details: "Challenge \(challengeId.prefix(8)) not in activeChallenges after force-refetch — skipping sender backfill")
+                }
             }
             HapticManager.notification(.success)
         } else if oldStatus == "pending" && newStatus == "declined" {

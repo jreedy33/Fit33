@@ -332,6 +332,14 @@ enum ScreenCodeMap {
             "Fit33/ChallengeService.swift",
             "Fit33/ChallengeCreationFlow.swift",
         ],
+        "send workout to friend": [
+            "Fit33/SendWorkoutToFriendView.swift",
+            "Fit33/CustomWorkoutBuilderView.swift",
+            "Fit33/SharedWorkoutPreviewView.swift",
+            "Fit33/FriendService.swift",
+            "Fit33/FriendProfileView.swift",
+            "Fit33/ExerciseCardRow.swift",
+        ],
 
         // ═══════════════════════════════════════════════════════════
         // PROFILE / SETTINGS

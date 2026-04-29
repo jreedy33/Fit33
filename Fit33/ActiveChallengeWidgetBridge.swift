@@ -176,23 +176,48 @@ enum ActiveChallengeWidgetBridge {
             ProfilePhotoCache.shared.cachedImage,
             named: userPhotoFilename
         )
-        var hasOpponentPhotoById: [String: Bool] = [:]
-        let validOpponentIds: [String] = active.map { $0.opponentId.uuidString }
+        // UUID case-normalization (2026-04-28 picker-flip fix): Apple's
+        // `Foundation.UUID.uuidString` returns UPPERCASE while Postgres /
+        // PostgREST returns lowercase. The widget extension's direct
+        // server pull (`WidgetSupabaseFetcher.toWidgetActiveChallenge`)
+        // writes lowercase to the same App Group keys we write here —
+        // so before this normalization, every bridge↔widget-pull cache
+        // flip changed the case of `challengeId` / `opponentId` strings,
+        // and the picker's stored `configuration.challenge.id` (selected
+        // against ONE case) stopped matching `readAll()` (now in the
+        // OTHER case). `resolve()` then fell through to `read()` (the
+        // best-pick fallback) and the widget visibly snapped to a
+        // DIFFERENT specific challenge instead of the user's pick.
+        //
+        // Cache-boundary contract: anything that escapes the main-app
+        // process into the App Group container — payload `challengeId`
+        // / `opponentId`, photo filenames, the file cleanup keep-list —
+        // MUST be lowercased. In-memory Swift-side caches that other
+        // main-app call sites also touch (notably `FriendPhotoCache`,
+        // which is keyed by `UUID.uuidString` from `ChallengeService.
+        // preloadPhotos` and many other callers) stay UPPERCASE so we
+        // don't ripple-edit the entire app for a widget-only fix.
+        var hasOpponentPhotoById: [String: Bool] = [:] // key: lowercase
+        let validOpponentIds: [String] = active.map { $0.opponentId.uuidString.lowercased() }
         for challenge in active {
-            let id = challenge.opponentId.uuidString
+            // UPPERCASE key for the in-memory FriendPhotoCache (canonical
+            // Swift-side form). LOWERCASE for everything that writes to
+            // the App Group container.
+            let memoryKey = challenge.opponentId.uuidString
+            let appGroupKey = memoryKey.lowercased()
             let written = writeSharedPhoto(
-                FriendPhotoCache.shared.getImage(for: id),
-                named: opponentPhotoFilename(opponentId: id)
+                FriendPhotoCache.shared.getImage(for: memoryKey),
+                named: opponentPhotoFilename(opponentId: appGroupKey)
             )
-            hasOpponentPhotoById[id] = written
+            hasOpponentPhotoById[appGroupKey] = written
         }
         cleanStaleOpponentPhotos(keepingOpponentIds: validOpponentIds)
 
         let myName = UserManager.shared.currentUser?.name
         let payloads: [WidgetActiveChallenge] = active.map { challenge in
-            let oppId = challenge.opponentId.uuidString
+            let oppId = challenge.opponentId.uuidString.lowercased()
             return WidgetActiveChallenge(
-                challengeId: challenge.challengeId.uuidString,
+                challengeId: challenge.challengeId.uuidString.lowercased(),
                 challengeType: challenge.challengeType,
                 displayTitle: challenge.displayTitle,
                 mode: challenge.mode == .accountability ? "accountability" : "competition",
@@ -216,7 +241,11 @@ enum ActiveChallengeWidgetBridge {
                 opponentLastProgressAt: challenge.opponentLastProgressAt
             )
         }
-        let chosenPayload = payloads.first { $0.challengeId == chosen.challengeId.uuidString } ?? payloads[0]
+        // Lowercased lookup — `payloads` now stores lowercased IDs (see
+        // case-normalization comment above). Without this, we'd fall
+        // through to `payloads[0]` and the chosen-key would silently
+        // disagree with the list-key for the same logical challenge.
+        let chosenPayload = payloads.first { $0.challengeId == chosen.challengeId.uuidString.lowercased() } ?? payloads[0]
 
         do {
             let encoder = JSONEncoder()

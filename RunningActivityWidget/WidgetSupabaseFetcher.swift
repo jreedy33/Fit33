@@ -118,9 +118,24 @@ enum WidgetSupabaseFetcher {
 
     // MARK: - Public API
 
+    /// Result bundle from a single `get_active_challenges` round-trip.
+    /// Phase 8a (2026-04-28): widens the previous `[WidgetActiveChallenge]`
+    /// return to also surface the caller's own `profile_photo_url` so the
+    /// timeline provider can hand both URLs to `WidgetPhotoFetcher` and
+    /// hydrate the App Group photo cache without waiting for the main
+    /// app's `ActiveChallengeWidgetBridge.publish()` to mirror them.
+    struct ActiveChallengesPullResult {
+        let challenges: [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge]
+        /// The caller's own avatar URL, lifted from the new
+        /// `my_profile_photo_url` RPC column. Same value on every row,
+        /// so we capture it from the first row and drop it. NULL when
+        /// the user has never uploaded a photo.
+        let myProfilePhotoURL: String?
+    }
+
     /// Single round-trip pull of the caller's active 1v1 challenges,
-    /// returning the slim widget payload directly (already mapped from
-    /// the `get_active_challenges` RPC response).
+    /// returning the slim widget payload + the caller's profile photo
+    /// URL (Phase 8a, 2026-04-28).
     ///
     /// - Parameters:
     ///   - timezone: IANA tz id, e.g. `"America/New_York"`. Drives the
@@ -134,14 +149,16 @@ enum WidgetSupabaseFetcher {
     ///     lives in the main-app process), so the timeline provider
     ///     pulls the last-known name out of the App Group snapshot
     ///     and threads it through here. Falls back to nil.
-    /// - Returns: One payload per active 1v1 challenge, already in the
-    ///   "best pick first" order the widget UI expects (matches the
-    ///   sort `ActiveChallengeWidgetBridge.publish` uses).
+    /// - Returns: An `ActiveChallengesPullResult` with one challenge
+    ///   payload per active 1v1 (already in "best pick first" order
+    ///   matching `ActiveChallengeWidgetBridge.publish`) plus the
+    ///   caller's `my_profile_photo_url` (NULL when the user has no
+    ///   active challenges OR has never uploaded a photo).
     static func fetchActiveChallenges(
         timezone: String = TimeZone.current.identifier,
         timeout: TimeInterval = 8.0,
         userDisplayName: String? = nil
-    ) async throws -> [ActiveChallengeWidgetSnapshot.WidgetActiveChallenge] {
+    ) async throws -> ActiveChallengesPullResult {
         let token = try readSessionAccessToken()
         let rows = try await postRPC(
             name: "get_active_challenges",
@@ -161,7 +178,16 @@ enum WidgetSupabaseFetcher {
             return (lhs.my_today_progress + lhs.opponent_today_progress)
                 > (rhs.my_today_progress + rhs.opponent_today_progress)
         })
-        return sorted.map { $0.toWidgetActiveChallenge(userDisplayName: userDisplayName) }
+        // Caller's photo URL is the same on every row by construction
+        // (the RPC repeats `v_my_photo_url` for every result). Capture
+        // it once from the first row; falls back to nil when the user
+        // has zero active challenges (empty rows = no first row to
+        // read from).
+        let myPhotoURL = sorted.first?.my_profile_photo_url
+        return ActiveChallengesPullResult(
+            challenges: sorted.map { $0.toWidgetActiveChallenge(userDisplayName: userDisplayName) },
+            myProfilePhotoURL: myPhotoURL
+        )
     }
 
     /// Pushes a step-count progress value for a challenge directly from
@@ -488,6 +514,11 @@ private struct GetActiveChallengesRow: Decodable {
     let opponent_is_gold_verified: Bool?
     let my_last_progress_at: Date?
     let opponent_last_progress_at: Date?
+    /// Phase 8a (2026-04-28): caller's own profile photo URL, repeated
+    /// on every row by the RPC (single PK lookup at the top of the
+    /// function body). `decodeIfPresent` keeps decoding compatible
+    /// with older RPC versions still deployed elsewhere.
+    let my_profile_photo_url: String?
 
     /// `WidgetActiveChallenge.displayTitle` does the emoji stripping +
     /// "10000 → 10K" formatting in the main app. Mirrors that here so

@@ -108,7 +108,36 @@ final class WhoopService: ObservableObject {
     // MARK: - Initialization
 
     private init() {
-        isConnected = accessToken != nil
+        // Snapshot keychain state at the EXACT moment of singleton init.
+        // Logs `OSStatus` for each token slot so we can distinguish:
+        //   • notFound (-25300) → entry really gone (uninstall, explicit
+        //     disconnect, or deleted by an earlier process)
+        //   • locked (-25308) → device-still-locked race on BGTask wake
+        //   • missingEntitlement → provisioning glitch on rebuild
+        //   • ok(0) → entry present
+        // Without this we cannot tell, on the next "WHOOP just disconnected"
+        // report, whether the token was wiped (real disconnect) vs the
+        // keychain was transiently unreadable (we should retry, not flip UI).
+        let atProbe = KeychainHelper.loadWithStatus(key: "whoop_access_token")
+        let rtProbe = KeychainHelper.loadWithStatus(key: "whoop_refresh_token")
+        let exProbe = KeychainHelper.loadWithStatus(key: "whoop_token_expires_at")
+        isConnected = atProbe.value != nil
+
+        AppLogger.info(
+            "[WHOOP] init() keychain probe → AT=\(KeychainHelper.statusLabel(atProbe.status)) RT=\(KeychainHelper.statusLabel(rtProbe.status)) EX=\(KeychainHelper.statusLabel(exProbe.status)) → isConnected=\(isConnected)",
+            category: .auth
+        )
+        OAuthAuditLog.record(
+            service: "whoop",
+            event: .keychainProbe,
+            reason: "init",
+            details: [
+                "at_status": KeychainHelper.statusLabel(atProbe.status),
+                "rt_status": KeychainHelper.statusLabel(rtProbe.status),
+                "ex_status": KeychainHelper.statusLabel(exProbe.status),
+                "is_connected": String(isConnected)
+            ]
+        )
 
         if isConnected {
             loadCachedDataIfNeeded()
@@ -124,10 +153,35 @@ final class WhoopService: ObservableObject {
     /// Called from `Fit33App.onChange(scenePhase: .active)` so the widget
     /// reliably appears on every cold start / resume when WHOOP is connected.
     func refreshConnectionState() {
-        let nowConnected = accessToken != nil
+        let probe = KeychainHelper.loadWithStatus(key: "whoop_access_token")
+        let nowConnected = probe.value != nil
         if nowConnected != isConnected {
-            AppLogger.info("[WHOOP] Connection state changed on foreground: \(isConnected) → \(nowConnected)", category: .auth)
+            AppLogger.info("[WHOOP] Connection state changed on foreground: \(isConnected) → \(nowConnected) (keychain=\(KeychainHelper.statusLabel(probe.status)))", category: .auth)
+            OAuthAuditLog.record(
+                service: "whoop",
+                event: .stateTransition,
+                reason: "scenePhase_active",
+                details: [
+                    "from": String(isConnected),
+                    "to": String(nowConnected),
+                    "at_status": KeychainHelper.statusLabel(probe.status)
+                ]
+            )
             isConnected = nowConnected
+        } else {
+            // Even when the bool didn't flip, log the keychain status so
+            // we can correlate "everything's fine" probes against the
+            // surrounding error trail. Cheap (one keychain read) and
+            // emitted at most once per foreground.
+            OAuthAuditLog.record(
+                service: "whoop",
+                event: .keychainProbe,
+                reason: "scenePhase_active_steady",
+                details: [
+                    "at_status": KeychainHelper.statusLabel(probe.status),
+                    "is_connected": String(isConnected)
+                ]
+            )
         }
         if isConnected {
             loadCachedDataIfNeeded()
@@ -264,6 +318,15 @@ final class WhoopService: ObservableObject {
         isConnected = true
 
         AppLogger.info("[WHOOP] Connected successfully (token expires in \(tokenResponse.expiresIn ?? 3600)s)", category: .health)
+        OAuthAuditLog.record(
+            service: "whoop",
+            event: .connect,
+            reason: "oauth_callback",
+            details: [
+                "expires_in": String(tokenResponse.expiresIn ?? 3600),
+                "rt_present": String(tokenResponse.refreshToken?.isEmpty == false)
+            ]
+        )
 
         Task {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "whoop", isConnected: true)
@@ -298,6 +361,22 @@ final class WhoopService: ObservableObject {
     }
 
     private func _performTokenRefresh() async throws {
+        // Audit-log entry to the refresh path itself — even before we know
+        // the outcome. Pairs with `refreshSuccess` / `refreshFailure`
+        // entries below so the persistent breadcrumb shows EVERY refresh
+        // attempt regardless of how it ended.
+        let atProbe = KeychainHelper.loadWithStatus(key: "whoop_access_token")
+        let rtProbe = KeychainHelper.loadWithStatus(key: "whoop_refresh_token")
+        OAuthAuditLog.record(
+            service: "whoop",
+            event: .keychainProbe,
+            reason: "refresh_enter",
+            details: [
+                "at_status": KeychainHelper.statusLabel(atProbe.status),
+                "rt_status": KeychainHelper.statusLabel(rtProbe.status)
+            ]
+        )
+
         guard let currentRefreshToken = refreshToken else {
             // Disambiguate "keychain transiently locked" (BGTask wake on a
             // locked device — both reads return nil) from "refresh token
@@ -322,10 +401,16 @@ final class WhoopService: ObservableObject {
             let keychainReadable = KeychainHelper.load(key: "whoop_access_token") != nil
             if keychainReadable {
                 AppLogger.error("[WHOOP] Refresh token wiped (keychain readable, accessToken present, refreshToken missing) — disconnecting so user sees reconnect prompt", category: .auth)
-                disconnect()
+                disconnect(reason: "rt_wiped_keychain_readable")
                 errorMessage = "WHOOP needs to be reconnected. Tap Connect WHOOP to sign in again."
             } else {
                 AppLogger.warning("[WHOOP] refreshAccessToken: keychain unreadable (likely locked on BGTask wake) — throwing, NOT disconnecting", category: .auth)
+                OAuthAuditLog.record(
+                    service: "whoop",
+                    event: .refreshFailure,
+                    reason: "keychain_locked_no_rt",
+                    details: ["at_status": KeychainHelper.statusLabel(atProbe.status)]
+                )
             }
             throw WhoopError.notConnected
         }
@@ -350,8 +435,12 @@ final class WhoopService: ObservableObject {
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            if let errorBody = String(data: data, encoding: .utf8) {
-                AppLogger.error("[WHOOP] Token refresh failed (HTTP \(status)): \(errorBody.prefix(300))", category: .auth)
+            let errorBody: String
+            if let body = String(data: data, encoding: .utf8) {
+                errorBody = String(body.prefix(300))
+                AppLogger.error("[WHOOP] Token refresh failed (HTTP \(status)): \(errorBody)", category: .auth)
+            } else {
+                errorBody = "<binary>"
             }
             // Only disconnect on PERMANENT failures (refresh token actually
             // revoked / invalidated by the server). 5xx, 429, and other
@@ -361,9 +450,21 @@ final class WhoopService: ObservableObject {
             // behind "I haven't deleted the app, why am I disconnected again".
             if (400...403).contains(status) {
                 AppLogger.error("[WHOOP] Refresh token rejected (HTTP \(status)) — disconnecting", category: .auth)
-                disconnect()
+                OAuthAuditLog.record(
+                    service: "whoop",
+                    event: .refreshFailure,
+                    reason: "http_\(status)",
+                    details: ["body_prefix": errorBody]
+                )
+                disconnect(reason: "refresh_http_\(status)")
             } else {
                 AppLogger.warning("[WHOOP] Token refresh transient failure (HTTP \(status)) — keeping tokens, will retry", category: .auth)
+                OAuthAuditLog.record(
+                    service: "whoop",
+                    event: .refreshFailure,
+                    reason: "http_\(status)_transient",
+                    details: ["body_prefix": errorBody]
+                )
             }
             throw WhoopError.tokenRefreshFailed
         }
@@ -381,12 +482,22 @@ final class WhoopService: ObservableObject {
         // user disconnected + reconnected manually. Only overwrite when the
         // server actually sent a new one. Mirrors the `exchangeCodeForTokens`
         // defensive pattern.
-        if let rotated = tokenResponse.refreshToken, !rotated.isEmpty {
-            refreshToken = rotated
+        let rotated = (tokenResponse.refreshToken?.isEmpty == false)
+        if let r = tokenResponse.refreshToken, !r.isEmpty {
+            refreshToken = r
         }
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 3600))
 
-        AppLogger.debug("[WHOOP] Token refreshed (expires in \(tokenResponse.expiresIn ?? 3600)s)", category: .health)
+        AppLogger.debug("[WHOOP] Token refreshed (expires in \(tokenResponse.expiresIn ?? 3600)s, rotated_rt=\(rotated))", category: .health)
+        OAuthAuditLog.record(
+            service: "whoop",
+            event: .refreshSuccess,
+            reason: "http_200",
+            details: [
+                "expires_in": String(tokenResponse.expiresIn ?? 3600),
+                "rotated_rt": String(rotated)
+            ]
+        )
     }
 
     private func ensureValidToken() async throws -> String {
@@ -638,7 +749,23 @@ final class WhoopService: ObservableObject {
 
     // MARK: - Disconnect
 
-    func disconnect() {
+    /// Wipes every cached WHOOP value and tells Supabase the user is no
+    /// longer connected. ALL callers MUST pass a `reason` — the audit log
+    /// keys off it so a post-mortem reads "WHOOP disconnect at 03:47:23
+    /// reason=refresh_http_400" instead of "WHOOP disconnect — somewhere?"
+    /// (the previous logs gave us the second, which is what made the
+    /// recurring "I have to reconnect again" reports unreviewable).
+    ///
+    /// - Parameter reason: short snake_case label, e.g. `user_tap`,
+    ///   `refresh_http_400`, `rt_wiped_keychain_readable`. Becomes the
+    ///   audit-log `reason` column.
+    func disconnect(reason: String = "unspecified") {
+        // Snapshot keychain state BEFORE we wipe it so the audit log
+        // captures the real state at the moment of disconnect (e.g.
+        // tokens were already gone vs we're the ones deleting them).
+        let preAt = KeychainHelper.loadWithStatus(key: "whoop_access_token")
+        let preRt = KeychainHelper.loadWithStatus(key: "whoop_refresh_token")
+
         accessToken = nil
         refreshToken = nil
         tokenExpiresAt = nil
@@ -671,7 +798,17 @@ final class WhoopService: ObservableObject {
             await ReadinessService.shared.recompute(force: true)
         }
 
-        AppLogger.debug("[WHOOP] Disconnected", category: .health)
+        AppLogger.error("[WHOOP] Disconnected — reason=\(reason) pre_at=\(KeychainHelper.statusLabel(preAt.status)) pre_rt=\(KeychainHelper.statusLabel(preRt.status))", category: .auth)
+        OAuthAuditLog.record(
+            service: "whoop",
+            event: .disconnect,
+            reason: reason,
+            details: [
+                "pre_at_status": KeychainHelper.statusLabel(preAt.status),
+                "pre_rt_status": KeychainHelper.statusLabel(preRt.status)
+            ],
+            captureStack: true
+        )
     }
 
     // MARK: - Recovery Level

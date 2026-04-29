@@ -905,6 +905,25 @@ class CommunityChallengeService: ObservableObject {
             #endif
             HapticManager.notification(.success)
             await fetchMyChallenges()
+            // 2026-04-28 join-time backfill — `community_challenge_daily_progress`
+            // is normally populated by the SERVER-SIDE trigger that fans out
+            // from `challenge_daily_progress` (1v1) writes (`source =
+            // "fanout:challenge_daily_progress"`). The trigger only fires
+            // for community challenges the user is a member of AT THE TIME
+            // of the 1v1 write — so a user who joins a community AFTER
+            // their app has already pushed today's 1v1 progress will show
+            // "—" on the leaderboard until their NEXT foreground sync
+            // forces a fresh 1v1 write. Canonical incident 2026-04-28:
+            // Manuel joined "10K Steps Daily" community at 03:16 UTC; his
+            // app had already written 6,254 steps to `challenge_daily_progress`
+            // for the 1v1 vs Joe at 02:31 UTC; fanout didn't replay → his
+            // app showed in the community leaderboard with "—" today,
+            // even though Joe ↔ Manuel 1v1 widget showed 6,254 steps. Fix:
+            // immediately push today's HK steps directly via
+            // `log_community_challenge_progress` so the row lands without
+            // waiting on a 1v1 trigger. Works for users with NO 1v1
+            // challenge at all (HK is the source of truth).
+            await syncAllTrackingToCommunityChallenges()
             PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "community_challenge_joined")
             return id
         } catch {
@@ -939,6 +958,11 @@ class CommunityChallengeService: ObservableObject {
             HapticManager.notification(.success)
             await fetchMyChallenges()
             await fetchDiscoverableChallenges()
+            // 2026-04-28 join-time backfill — see `joinChallenge(code:slug:)` for
+            // the canonical rationale. Same fanout-only-fires-for-current-members
+            // gap applies to the friend-gated path; without this, leaderboard
+            // shows "—" for the joiner until their next foreground 1v1 sync.
+            await syncAllTrackingToCommunityChallenges()
             PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "community_challenge_friend_joined")
             return id
         } catch {

@@ -665,6 +665,30 @@ extension NewOnboardingView {
     }
     
     /// Attempt signUp; if the auth user already exists (from a prior partial failure), sign in instead.
+    ///
+    /// Two distinct failure modes hide behind the single GoTrue
+    /// "User already registered" response:
+    ///
+    ///   1. **Recoverable partial signup** — the auth.users row was created
+    ///      in a previous attempt but profile creation failed. The password
+    ///      typed NOW matches the password attached to that row, so signing
+    ///      in succeeds and we patch the missing profile.
+    ///
+    ///   2. **Zombie auth.users row** — the user previously had an account,
+    ///      "deleted" it, but the trigger
+    ///      `delete_auth_user_on_profile_delete` never fired (or wasn't
+    ///      installed at the time), leaving an orphaned auth.users row with
+    ///      no profile. The password typed NOW is for a NEW account they're
+    ///      trying to create — it doesn't match the orphan's password — so
+    ///      sign-in fails with "Invalid login credentials" and the user is
+    ///      stranded with a cryptic error.
+    ///
+    /// This function distinguishes those two cases on the sign-in failure
+    /// path so the user gets actionable copy instead of "Invalid login
+    /// credentials" out of nowhere. (Real-world incident:
+    /// `joereedis@icloud.com`, 2026-04-29 — auth row was a zombie from a
+    /// pre-trigger-fix deletion; user had no idea the email was taken
+    /// because it didn't appear in the visible Users list.)
     func signUpOrRecoverExistingAccount() async throws {
         do {
             try await supabaseManager.signUp(
@@ -681,8 +705,38 @@ extension NewOnboardingView {
             
             guard isAlreadyRegistered else { throw error }
             
-            AppLogger.info("Auth user already exists (prior partial signup) — recovering via sign-in", category: .auth)
-            try await supabaseManager.signIn(email: email, password: password)
+            AppLogger.info("Auth user already exists — attempting recovery via sign-in", category: .auth)
+            do {
+                try await supabaseManager.signIn(email: email, password: password)
+            } catch let signInError {
+                let signInDesc = signInError.localizedDescription.lowercased()
+                let isWrongPassword = signInDesc.contains("invalid login credentials")
+                    || signInDesc.contains("invalid_credentials")
+                    || signInDesc.contains("wrong password")
+                if isWrongPassword {
+                    // Case 2: zombie auth row OR user trying to sign up with
+                    // an email that already has a real account at a different
+                    // password. Either way, surfacing "Invalid login
+                    // credentials" is actively misleading — they're not
+                    // signing in, they're signing UP. Surface a copy that
+                    // matches their mental model and routes them to the
+                    // right place.
+                    AppLogger.warning(
+                        "Sign-up recovery failed — auth row exists but typed password doesn't match. " +
+                        "Likely a zombie row from a pre-trigger-fix deletion or a real prior account.",
+                        category: .auth
+                    )
+                    throw NSError(domain: "Onboarding", code: 409, userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "An account already exists for \(email). " +
+                            "Tap \"Already have an account? Sign in\" and use that password, " +
+                            "or use \"Forgot password?\" to reset it. " +
+                            "If this email was previously deleted, contact support."
+                    ])
+                }
+                // Other sign-in errors (network, rate-limit) — bubble up.
+                throw signInError
+            }
             
             guard let userId = supabaseManager.currentUser?.id else {
                 throw NSError(domain: "Onboarding", code: 1, userInfo: [
@@ -690,7 +744,8 @@ extension NewOnboardingView {
                 ])
             }
             
-            // Ensure the profile row exists (it may have been the part that failed last time)
+            // Case 1: recoverable partial signup. Ensure the profile row
+            // exists (it may have been the part that failed last time).
             AppLogger.debug("Ensuring profile exists for recovered user \(userId.uuidString.prefix(8))...", category: .auth)
             try? await supabaseManager.ensureProfileExists(
                 userId: userId,

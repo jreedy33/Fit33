@@ -543,6 +543,31 @@ struct PersistenceController {
             UserDefaults.standard.removeObject(forKey: key)
         }
         
+        // Per-user keys that don't fit any of the prefix sweeps below.
+        //
+        // Why this list matters: `StartupCachePreloader.swift` re-reads many
+        // of these UserDefaults keys at process boot BEFORE auth resolves,
+        // pre-decodes them, and hands them to singletons that paint to
+        // first-frame UI. Anything we leave behind here will flash on the
+        // NEXT user's screen until network refresh corrects it (see Friends-
+        // tab leak for `joe@test.com`, 2026-04-29 — @jreedy + Manuel
+        // momentarily appeared as friends because `fit33_cached_friends`
+        // wasn't being cleared).
+        let perUserExplicitKeys = [
+            "last_food_log_date",            // NotificationManager streak/comeback reminders
+            "phone_verified_check_done",     // DashboardView one-shot flag
+            "inbody_last_sync",              // InBodyService
+            "healthkit_last_sync",           // HealthKitService (HK token belongs to device,
+                                             // but "last sync" timestamp is per-user)
+            "current_streak",                // NotificationManager — per-user stat
+            "total_workouts",                // NotificationManager — per-user stat
+            "last_workout_date",             // NotificationManager — per-user stat
+            "fit33_friends_cache_date"       // FriendService cache freshness (paired with fit33_cached_friends)
+        ]
+        for key in perUserExplicitKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+
         // Also clear any keys with dynamic prefixes
         let allKeys = UserDefaults.standard.dictionaryRepresentation().keys
         for key in allKeys {
@@ -554,6 +579,23 @@ struct PersistenceController {
                key.hasPrefix("smart_") ||
                key.hasPrefix("generated") ||
                key.hasPrefix("active") ||
+               // Social caches (FriendService / FriendRankingService / blocked list).
+               // These are pre-decoded at process boot by `StartupCachePreloader`
+               // before auth resolves — leaving them stranded after sign-out leaks
+               // the previous user's friend list to the next user's first frame.
+               key.hasPrefix("fit33_") ||
+               // Private + community challenges (also pre-decoded at boot).
+               key.hasPrefix("private_") ||
+               key.hasPrefix("community_") ||
+               // Wearable account caches — per-user wearable account, must die
+               // with the Fit33 session so a new Fit33 user can't see the
+               // previous user's WHOOP/Oura/Strava/Fitbit profile.
+               // (Keychain tokens for WHOOP/Oura are handled separately by
+               // their respective services.)
+               key.hasPrefix("whoop_") ||
+               key.hasPrefix("oura_") ||
+               key.hasPrefix("strava_") ||
+               key.hasPrefix("fitbit_") ||
                (key.hasPrefix("user_") && key != "user_manually_signed_out") {
                 UserDefaults.standard.removeObject(forKey: key)
             }
@@ -567,6 +609,12 @@ struct PersistenceController {
         
         // 4. Clear profile photo cache - critical for multi-user scenarios
         ProfilePhotoCache.shared.clearCache()
+        // Friend photo cache lives on disk (`Caches/friend_photos/<id>.jpg`)
+        // and is keyed by friend UUID. If User B happens to have any friend
+        // whose UUID collides with a friend of User A, B would briefly see
+        // A's friend's photo. Same multi-user privacy contract as the
+        // ProfilePhotoCache clear above.
+        FriendPhotoCache.shared.clearCache()
         AppLogger.debug("🗑️ Profile photo cache cleared", category: .general)
         
         // 5. Clear singleton service in-memory state

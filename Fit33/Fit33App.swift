@@ -73,8 +73,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     /// Silent push entry point (aps.content-available = 1). iOS invokes this
     /// when a background-priority APNs payload arrives, giving us ~30s to do
     /// work before we MUST call `completionHandler(_:)`. See `SilentPushHandler`
-    /// for routing; currently handles `type: "challenge_wake"` from the
-    /// `wake-challenge-opponents` edge function.
+    /// for routing; currently handles `challenge_wake` (HK flush),
+    /// `strava_activity_new` (recap re-sync) and `challenge_reaction`
+    /// (smack-talk widget shout-bubble paint via `SmackTalkWidgetBridge`).
     func application(
         _ application: UIApplication,
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
@@ -927,6 +928,14 @@ struct Fit33App: App {
                         // ═══ IMMEDIATE (main thread, sync) ═══
                         NotificationManager.shared.performSmartCheck()
                         NotificationManager.shared.clearBadge() // Clear app icon badge immediately on open
+                        // Smack-talk widget shout bubble is "show until the
+                        // user opens the app" — wipe the slot the moment
+                        // we go active so the comic-book "Do better!"
+                        // yelling out of the type emoji disappears from
+                        // the home-screen widget. Runs on every foreground
+                        // (cheap — App Group write + WidgetCenter reload
+                        // only when there's actually a payload to clear).
+                        SmackTalkWidgetBridge.clear()
                         WorkoutManager.shared.checkWorkoutStateOnForeground()
                         HealthKitManager.shared.checkAuthorizationStatus()
                         HealthKitService.shared.checkAuthorizationStatus()

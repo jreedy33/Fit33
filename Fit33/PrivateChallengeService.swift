@@ -774,14 +774,30 @@ class PrivateChallengeService: ObservableObject {
     }
     
     // MARK: - Invite User
-    
-    func inviteUser(challengeId: UUID, userId: UUID) async -> UUID? {
+
+    /// Outcome of an `inviteUser` call. The two non-error cases ride the
+    /// SAME UI affordance (green "Sent" badge) — `alreadyInvited` is the
+    /// idempotent-resend response from `invite_to_private_challenge` when
+    /// the invitee already has a `pending` invite for this challenge.
+    /// Surfacing it as a real failure ("⚠️ Error" badge) was misleading
+    /// (canonical incident: Manuel tapped Invite for Andre twice within 20
+    /// min on 2026-04-29 — second tap painted as a hard error even though
+    /// the original pending invite was perfectly valid).
+    enum InviteOutcome {
+        case sent(UUID)
+        case alreadyInvited
+        case alreadyMember
+        case notAllowed(String)
+        case failed(String)
+    }
+
+    func inviteUser(challengeId: UUID, userId: UUID) async -> InviteOutcome {
         do {
             struct InviteParams: Encodable {
                 let p_challenge_id: String
                 let p_invited_user_id: String
             }
-            
+
             let inviteId: UUID = try await SupabaseManager.shared.supabaseClient
                 .rpc("invite_to_private_challenge", params: InviteParams(
                     p_challenge_id: challengeId.uuidString,
@@ -789,16 +805,67 @@ class PrivateChallengeService: ObservableObject {
                 ))
                 .execute()
                 .value
-            
+
             #if DEBUG
             AppLogger.info("Successfully invited user \(userId) to \(challengeId)", category: .social)
             #endif
             HapticManager.notification(.success)
-            return inviteId
+            return .sent(inviteId)
         } catch {
+            // Server's `invite_to_private_challenge` RPC raises typed
+            // exceptions (see `supabase/fix_private_challenge_invite.sql`).
+            // Translate the canonical messages into structured outcomes so
+            // the UI can show the right copy + the right badge instead of
+            // a generic "⚠️ Error".
+            let desc = error.localizedDescription.lowercased()
+            if desc.contains("already has a pending invite") {
+                AppLogger.debug("inviteUser idempotent: already pending for \(userId) on \(challengeId)", category: .social)
+                return .alreadyInvited
+            }
+            if desc.contains("already a member") {
+                AppLogger.debug("inviteUser: \(userId) is already a member of \(challengeId)", category: .social)
+                return .alreadyMember
+            }
+            if desc.contains("only admins can invite")
+                || desc.contains("not a member of this challenge")
+                || desc.contains("challenge is full")
+            {
+                AppLogger.warning("inviteUser blocked by RPC policy: \(error.localizedDescription)", category: .social)
+                return .notAllowed(error.localizedDescription)
+            }
             AppLogger.error("Error inviting user to private challenge: \(error.localizedDescription)", category: .social)
             HapticManager.notification(.error)
-            return nil
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// Returns the set of `invited_user_id`s that currently have a
+    /// `pending` invite to this challenge created by the current user.
+    /// Used by `PrivateChallengeInviteView` to pre-paint already-invited
+    /// friends in the "Sent" state on sheet open, so the user never sees
+    /// an "Invite" button for someone who's already been invited (which
+    /// would lead to the duplicate-tap error path that produced the
+    /// 2026-04-29 Manuel × Andre incident).
+    func fetchPendingInviteeIds(challengeId: UUID) async -> Set<UUID> {
+        struct InviteRow: Decodable { let invited_user_id: UUID }
+        guard let me = SupabaseManager.shared.currentUser?.id else { return [] }
+        do {
+            let rows: [InviteRow] = try await SupabaseManager.shared.supabaseClient
+                .from("private_challenge_invites")
+                .select("invited_user_id")
+                .eq("challenge_id", value: challengeId.uuidString)
+                .eq("invited_by", value: me.uuidString)
+                .eq("status", value: "pending")
+                .execute()
+                .value
+            return Set(rows.map { $0.invited_user_id })
+        } catch {
+            // RLS or schema drift — fall through silently so the user can
+            // still tap Invite. Worst case is we re-show the duplicate
+            // path and the error message gets translated into the
+            // alreadyInvited outcome above.
+            AppLogger.warning("fetchPendingInviteeIds failed (will re-prompt): \(error.localizedDescription)", category: .social)
+            return []
         }
     }
     

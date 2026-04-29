@@ -112,7 +112,19 @@ struct PrivateChallengeInviteView: View {
                 }
             }
             .onAppear {
-                Task { await friendService.fetchFriends() }
+                Task {
+                    await friendService.fetchFriends()
+                    // Pre-paint friends who already have a pending invite to
+                    // this challenge in the "Sent" state — without this, an
+                    // already-invited friend (e.g., from a previous open of
+                    // this same sheet) shows the regular "Invite" button,
+                    // the user taps it expecting a fresh invite, and the
+                    // server idempotent-rejects with "User already has a
+                    // pending invite" → orange "⚠️ Error". 2026-04-29
+                    // Manuel × Andre was the canonical incident for this.
+                    let alreadyPending = await service.fetchPendingInviteeIds(challengeId: challengeId)
+                    await MainActor.run { invitedFriends.formUnion(alreadyPending) }
+                }
             }
             // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
             .trackScreen(.privateChallengeInvite)
@@ -158,16 +170,26 @@ struct PrivateChallengeInviteView: View {
                 HapticManager.impact(.medium)
                 
                 Task {
-                    let inviteId = await service.inviteUser(
+                    let outcome = await service.inviteUser(
                         challengeId: challengeId,
                         userId: friend.friendId
                     )
-                    
+
                     await MainActor.run {
                         invitingFriends.remove(friend.friendId)
-                        if inviteId != nil {
+                        // `.sent` and `.alreadyInvited` both map to the
+                        // green "Sent" badge — from the user's POV the
+                        // outcome is identical (a pending invite exists
+                        // for this friend on this challenge), so the UI
+                        // should be identical too. `.alreadyMember`
+                        // similarly means "they're already in" — no
+                        // action needed; show as "Sent" so the user
+                        // doesn't keep tapping. Real failures
+                        // (.notAllowed / .failed) keep the Error badge.
+                        switch outcome {
+                        case .sent, .alreadyInvited, .alreadyMember:
                             invitedFriends.insert(friend.friendId)
-                        } else {
+                        case .notAllowed, .failed:
                             inviteErrors.insert(friend.friendId)
                         }
                     }

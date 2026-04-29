@@ -3,10 +3,16 @@
 //  Fit33
 //
 //  Routes incoming silent APNs pushes (aps.content-available = 1) to the
-//  right subsystem. Today we only handle `type: "challenge_wake"`, which
-//  arrives via the `wake-challenge-opponents` edge function and asks our
-//  app to read the latest HealthKit / meal / hydration data and push it
-//  to Supabase so opponents see fresh numbers.
+//  right subsystem. Currently handles:
+//    • `challenge_wake` — `wake-challenge-opponents` edge function asking
+//      this device to flush HealthKit / meal / hydration data so the
+//      opponent sees fresh numbers.
+//    • `strava_activity_new` — `strava-webhook` signaling a new Strava
+//      activity for this user; we re-sync to update the recap card.
+//    • `challenge_reaction` — visible-alert push that ALSO carries
+//      `content-available: 1` so the home-screen Active Challenge widget
+//      can paint the comic-book "Do better!" shout bubble before the
+//      user opens the app. See `SmackTalkWidgetBridge`.
 //
 //  Silent pushes get ~30s of background execution time — we aim to finish
 //  in under ~25s and call the iOS completion handler so the app doesn't

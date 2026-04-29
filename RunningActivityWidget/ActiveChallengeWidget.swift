@@ -184,12 +184,26 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
         let opponentPhoto: UIImage? = resolved.flatMap {
             ActiveChallengeWidgetSnapshot.opponentPhoto(opponentId: $0.opponentId)
         }
+        // Pending-smack lookup: only paint the shout bubble when the
+        // unread smack actually belongs to the challenge currently
+        // being rendered. The bridge writes lowercased UUIDs (App Group
+        // contract) so the comparison is stable; uppercased configs from
+        // pre-2026-04-28 picker selections still match because both
+        // sides flow through the same lowercase normalization.
+        let smack: ActiveChallengeWidgetSnapshot.WidgetSmackTalk? = {
+            guard let challenge = resolved,
+                  let pending = ActiveChallengeWidgetSnapshot.readSmackTalk(),
+                  pending.challengeId.lowercased() == challenge.challengeId.lowercased()
+            else { return nil }
+            return pending
+        }()
         return ActiveChallengeEntry(
             date: Date(),
             challenge: resolved,
             userPhoto: ActiveChallengeWidgetSnapshot.userPhoto(),
             opponentPhoto: opponentPhoto,
-            style: configuration.style
+            style: configuration.style,
+            smackTalk: smack
         )
     }
 
@@ -665,6 +679,12 @@ struct ActiveChallengeEntry: TimelineEntry {
     let userPhoto: UIImage?
     let opponentPhoto: UIImage?
     let style: WidgetBackgroundStyle
+    /// Most recent unread smack-talk reaction for `challenge`. Painted
+    /// as a comic-book shout bubble yelling out of the type-emoji icon
+    /// ("Do better!"). `nil` whenever the user has no pending smack OR
+    /// the pending smack belongs to a different challenge than the one
+    /// currently rendered (filtering happens in `entry(for:)`).
+    var smackTalk: ActiveChallengeWidgetSnapshot.WidgetSmackTalk? = nil
 }
 
 // MARK: - Entry View
@@ -672,6 +692,8 @@ struct ActiveChallengeEntry: TimelineEntry {
 struct ActiveChallengeWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
     var entry: ActiveChallengeProvider.Entry
+
+    private var compactBubble: Bool { family == .systemSmall }
 
     var body: some View {
         Group {
@@ -695,6 +717,25 @@ struct ActiveChallengeWidgetEntryView: View {
         }
         .padding(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Smack-talk speech bubble yelling out of the type-emoji icon
+        // ("Do better!" — Joe). Mirrors the in-app reaction capsule's
+        // gradient + rounded-pill silhouette so the home-screen
+        // surface reads as the same component as the in-app feed,
+        // with a small downward tail anchored at the bottom-left of
+        // the bubble pointing back at the icon. Free to overlap the
+        // user's avatar / "You" label / score column — the smack is
+        // the loudest thing on the card the moment it lands and the
+        // user can read the suppressed numbers fine on the next
+        // refresh after they open the app to clear it. Static
+        // layout — widgets re-render only on timeline ticks, so
+        // animation would no-op.
+        .overlay(alignment: .topLeading) {
+            if let smack = entry.smackTalk {
+                SmackShoutBubble(smack: smack, compact: compactBubble)
+                    .offset(x: compactBubble ? 14 : 22, y: compactBubble ? -4 : -8)
+                    .accessibilityLabel("\(smack.senderFirstName) is talking smack: \(smack.reactionText)")
+            }
+        }
         .containerBackground(for: .widget) {
             ChallengeWidgetBackground(typeKey: entry.challenge?.challengeType, style: entry.style)
         }
@@ -1333,6 +1374,157 @@ private struct ChallengeEmptyState: View {
     }
 }
 
+// MARK: - Smack-talk shout bubble
+//
+// Sleek speech bubble with a downward-pointing tail anchored at the
+// bottom-left of the capsule so the type-emoji icon below visually
+// reads as the speaker. Mirrors the in-app reaction capsule's
+// gradient + rounded-pill look (orange→red for trash talk,
+// blue→cyan for cheers) so the home-screen surface and the
+// `ChallengeReactionsView.reactionBubble` are clearly the same
+// component. Vanishes the moment the user opens the app — see
+// `SmackTalkWidgetBridge.clear()` wired into `Fit33App`'s
+// scenePhase `.active` observer.
+
+/// Rounded-rectangle bubble + small triangular tail at the bottom-
+/// left, leaning toward the type-emoji icon. The tail tip / base
+/// positions are normalized (0..1 of bubble width) so a layout
+/// tweak doesn't require re-doing the geometry. Tail leans LEFT
+/// because the icon sits to the bottom-left of the bubble in the
+/// widget overlay anchor — the lean sells the "icon is yelling"
+/// affordance even when the tail can't physically reach the icon.
+private struct ShoutBubbleShape: Shape {
+    var cornerRadius: CGFloat = 14
+    /// X position of the tail TIP (the pointed end), in fractions of
+    /// bubble width. Smaller = closer to the bubble's left edge.
+    var tailTipX: CGFloat = 0.04
+    /// X positions of the tail BASE (where it attaches to the bubble),
+    /// in fractions of bubble width. Lean is `tailTipX < tailBaseLeftX`.
+    var tailBaseLeftX: CGFloat = 0.10
+    var tailBaseRightX: CGFloat = 0.22
+    /// Vertical extent of the tail below the bubble body.
+    var tailLength: CGFloat = 8
+
+    func path(in rect: CGRect) -> Path {
+        let bubbleHeight = max(rect.height - tailLength, rect.height * 0.5)
+        let r = min(cornerRadius, bubbleHeight / 2, rect.width / 2)
+        let bubbleBottom = rect.minY + bubbleHeight
+        let tipX = rect.minX + rect.width * tailTipX
+        let baseLeft = max(rect.minX + r + 1, rect.minX + rect.width * tailBaseLeftX)
+        let baseRight = max(baseLeft + 4, min(rect.maxX - r - 1, rect.minX + rect.width * tailBaseRightX))
+
+        var path = Path()
+        // Top edge
+        path.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        // Top-right corner
+        path.addArc(
+            center: CGPoint(x: rect.maxX - r, y: rect.minY + r),
+            radius: r,
+            startAngle: .degrees(270),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+        // Right edge
+        path.addLine(to: CGPoint(x: rect.maxX, y: bubbleBottom - r))
+        // Bottom-right corner
+        path.addArc(
+            center: CGPoint(x: rect.maxX - r, y: bubbleBottom - r),
+            radius: r,
+            startAngle: .degrees(0),
+            endAngle: .degrees(90),
+            clockwise: false
+        )
+        // Bottom edge → tail base right → tail tip → tail base left
+        path.addLine(to: CGPoint(x: baseRight, y: bubbleBottom))
+        path.addLine(to: CGPoint(x: tipX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: baseLeft, y: bubbleBottom))
+        // Bottom edge continued → bottom-left corner
+        path.addLine(to: CGPoint(x: rect.minX + r, y: bubbleBottom))
+        path.addArc(
+            center: CGPoint(x: rect.minX + r, y: bubbleBottom - r),
+            radius: r,
+            startAngle: .degrees(90),
+            endAngle: .degrees(180),
+            clockwise: false
+        )
+        // Left edge
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        // Top-left corner
+        path.addArc(
+            center: CGPoint(x: rect.minX + r, y: rect.minY + r),
+            radius: r,
+            startAngle: .degrees(180),
+            endAngle: .degrees(270),
+            clockwise: false
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Capsule speech bubble carrying the smack copy. Mirrors the in-app
+/// `ChallengeReactionsView.reactionBubble` gradient + look so the
+/// widget surface reads as the same component. `compact: true` for
+/// systemSmall (slightly smaller fonts + tighter padding).
+private struct SmackShoutBubble: View {
+    let smack: ActiveChallengeWidgetSnapshot.WidgetSmackTalk
+    let compact: Bool
+
+    /// Mirrors the in-app `ChallengeReactionsView.themeGradient` —
+    /// orange→red for trash talk, blue→cyan for accountability cheers.
+    private var gradient: [Color] {
+        smack.isCompetition ? [.orange, .red] : [.blue, .cyan]
+    }
+
+    private var emojiSize: CGFloat { compact ? 13 : 15 }
+    private var textSize: CGFloat { compact ? 11 : 13 }
+    private var senderSize: CGFloat { compact ? 8 : 10 }
+    private var hPadding: CGFloat { compact ? 9 : 12 }
+    private var vPadding: CGFloat { compact ? 5 : 7 }
+    private var tailLength: CGFloat { compact ? 7 : 9 }
+    private var cornerRadius: CGFloat { compact ? 12 : 14 }
+    private var maxBubbleWidth: CGFloat { compact ? 130 : 220 }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 5) {
+            Text(smack.reactionEmoji)
+                .font(.system(size: emojiSize))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(smack.reactionText)
+                    .font(.system(size: textSize, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text("— \(smack.senderFirstName)")
+                    .font(.system(size: senderSize, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, hPadding)
+        .padding(.top, vPadding)
+        // Reserve vertical space for the tail to extend below the bubble
+        // body — `ShoutBubbleShape` reads `rect.height - tailLength` as
+        // the bubble portion and uses the remaining `tailLength` for
+        // the tail.
+        .padding(.bottom, vPadding + tailLength)
+        .frame(maxWidth: maxBubbleWidth, alignment: .leading)
+        .background(
+            ShoutBubbleShape(
+                cornerRadius: cornerRadius,
+                tailLength: tailLength
+            )
+            .fill(LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing))
+            .shadow(color: .black.opacity(0.32), radius: 4, x: 0, y: 2)
+        )
+        // Subtle lean — sells the "yelling" energy without the comic-
+        // book wackiness of a heavy rotation. The tail's leftward
+        // lean (set on `ShoutBubbleShape`) carries the rest.
+        .rotationEffect(.degrees(-3))
+    }
+}
+
 // MARK: - Reusable bits
 
 /// Tap target wired to `RefreshChallengeIntent`. Renders an SF Symbol
@@ -1498,12 +1690,22 @@ struct ActiveChallengeWidget: Widget {
 
 // MARK: - Previews
 
+private let previewSmackTalk = ActiveChallengeWidgetSnapshot.WidgetSmackTalk(
+    challengeId: ActiveChallengeWidgetSnapshot.placeholder.challengeId,
+    senderFirstName: "Alex",
+    reactionEmoji: "📢",
+    reactionText: "Do better!",
+    reactionCategory: "trash_talk",
+    receivedAt: Date()
+)
+
 #Preview(as: .systemMedium) {
     ActiveChallengeWidget()
 } timeline: {
     ActiveChallengeEntry(date: .now, challenge: ActiveChallengeWidgetSnapshot.placeholder, userPhoto: nil, opponentPhoto: nil, style: .color)
-    ActiveChallengeEntry(date: .now, challenge: ActiveChallengeWidgetSnapshot.placeholder, userPhoto: nil, opponentPhoto: nil, style: .dark)
-    ActiveChallengeEntry(date: .now, challenge: ActiveChallengeWidgetSnapshot.placeholder, userPhoto: nil, opponentPhoto: nil, style: .light)
+    ActiveChallengeEntry(date: .now, challenge: ActiveChallengeWidgetSnapshot.placeholder, userPhoto: nil, opponentPhoto: nil, style: .color, smackTalk: previewSmackTalk)
+    ActiveChallengeEntry(date: .now, challenge: ActiveChallengeWidgetSnapshot.placeholder, userPhoto: nil, opponentPhoto: nil, style: .dark, smackTalk: previewSmackTalk)
+    ActiveChallengeEntry(date: .now, challenge: ActiveChallengeWidgetSnapshot.placeholder, userPhoto: nil, opponentPhoto: nil, style: .light, smackTalk: previewSmackTalk)
     ActiveChallengeEntry(date: .now, challenge: nil, userPhoto: nil, opponentPhoto: nil, style: .color)
 }
 
@@ -1511,4 +1713,5 @@ struct ActiveChallengeWidget: Widget {
     ActiveChallengeWidget()
 } timeline: {
     ActiveChallengeEntry(date: .now, challenge: ActiveChallengeWidgetSnapshot.placeholder, userPhoto: nil, opponentPhoto: nil, style: .color)
+    ActiveChallengeEntry(date: .now, challenge: ActiveChallengeWidgetSnapshot.placeholder, userPhoto: nil, opponentPhoto: nil, style: .color, smackTalk: previewSmackTalk)
 }

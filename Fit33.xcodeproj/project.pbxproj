@@ -210,6 +210,7 @@
 		7C8CEFC12FA10001007CD766 /* PhoneToWatchSyncBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEFC02FA10001007CD766 /* PhoneToWatchSyncBridge.swift */; };
 		7C8CEFD12FA20001007CD766 /* PhoneToWatchLiveWorkoutBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEFD02FA20001007CD766 /* PhoneToWatchLiveWorkoutBridge.swift */; };
 		7C8CF10D2F9EB22C007CD766 /* ActiveChallengeWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF10C2F9EB22C007CD766 /* ActiveChallengeWidgetBridge.swift */; };
+		6B34AAC21F1750658795CF35 /* SmackTalkWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8689D6E7E65D34B42C3F6179 /* SmackTalkWidgetBridge.swift */; };
 		7C8CF10F2F9EB239007CD766 /* DailyGoalsWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF10E2F9EB239007CD766 /* DailyGoalsWidgetBridge.swift */; };
 		7C8CF1262F9EB404007CD766 /* Fit33Watch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 7C8CF11C2F9EB401007CD766 /* Fit33Watch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7C8CF1482F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */; };
@@ -658,6 +659,7 @@
 		7C8CEFC02FA10001007CD766 /* PhoneToWatchSyncBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneToWatchSyncBridge.swift; sourceTree = "<group>"; };
 		7C8CEFD02FA20001007CD766 /* PhoneToWatchLiveWorkoutBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneToWatchLiveWorkoutBridge.swift; sourceTree = "<group>"; };
 		7C8CF10C2F9EB22C007CD766 /* ActiveChallengeWidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveChallengeWidgetBridge.swift; sourceTree = "<group>"; };
+		8689D6E7E65D34B42C3F6179 /* SmackTalkWidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmackTalkWidgetBridge.swift; sourceTree = "<group>"; };
 		7C8CF10E2F9EB239007CD766 /* DailyGoalsWidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyGoalsWidgetBridge.swift; sourceTree = "<group>"; };
 		7C8CF11C2F9EB401007CD766 /* Fit33Watch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Fit33Watch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveChallengeWidgetSnapshot.swift; sourceTree = "<group>"; };
@@ -953,6 +955,7 @@
 				7C8CF97D2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift */,
 				7C6DE3822F5BE06300BCA276 /* AchievementsView.swift */,
 				7C8CF10C2F9EB22C007CD766 /* ActiveChallengeWidgetBridge.swift */,
+				8689D6E7E65D34B42C3F6179 /* SmackTalkWidgetBridge.swift */,
 				7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */,
 				A12345678901234567890221 /* ActiveWorkoutView.swift */,
 				7C8CF46F2F9FA437007CD766 /* DailyBriefEngine.swift */,
@@ -1842,6 +1845,7 @@
 				7C0C41E82F09A13500F02E84 /* VideoPlaybackEngine.swift in Sources */,
 				7C8EB1C62F2913AB007BFA55 /* WelcomeTutorialView.swift in Sources */,
 				7C8CF10D2F9EB22C007CD766 /* ActiveChallengeWidgetBridge.swift in Sources */,
+				6B34AAC21F1750658795CF35 /* SmackTalkWidgetBridge.swift in Sources */,
 				7C8CEA742F9A75B1007CD766 /* PerformanceSignposts.swift in Sources */,
 				7C0C42202F09DB7200F02E84 /* LearningEngineDebugView.swift in Sources */,
 				B1234567890123456789A007 /* IntelligentWorkoutGenerator.swift in Sources */,

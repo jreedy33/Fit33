@@ -43,7 +43,8 @@
 --   * No call-site changes — the existing
 --     `SaveWorkoutUpdate(status: "saved", saved_to_favorites: true)`
 --     payload now passes the constraint.
--- Resolves: 69b01dea71a762f9bad04de646cfd120, eb041521…
+-- Resolves: 69b01dea71a762f9bad04de646cfd120
+-- Resolves: eb0415219fce90b5c4013b00abf2674a
 
 BEGIN;
 

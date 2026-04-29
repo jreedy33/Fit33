@@ -6,7 +6,8 @@
     "dev": "next dev -p 3099",
     "build": "next build",
     "start": "next start -p 3099",
-    "lint": "next lint"
+    "lint": "next lint",
+    "admin:audit": "node --env-file=.env.local scripts/admin-audit.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

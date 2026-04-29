@@ -74,7 +74,14 @@ export async function POST(req: NextRequest) {
     if (!parsed.ok) return parsed.response
     const { email, password } = parsed.data
 
+    // 2026-04-29 lockout post-mortem: the client always sees a generic
+    // "Invalid credentials" (intentional — prevents account enumeration), but
+    // the server logs the exact reason so we can debug a stuck CEO without
+    // having to resort to running `npm run admin:audit` blind. The two log
+    // lines below are the ONLY place the failure mode is distinguished. Do
+    // not surface either of these reasons in the API response.
     if (!isAdminEmail(email)) {
+      console.warn(`[auth/login] reject reason=NOT_ALLOWLISTED email=${email} ip=${ip}`)
       recordFailedAttempt(ip)
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
     }
@@ -87,6 +94,12 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error || !data.session) {
+      // Supabase deliberately returns the same error code for "user does not
+      // exist" and "wrong password" — we just propagate the message it gave
+      // us so /var/log shows e.g. "Invalid login credentials" vs
+      // "Email not confirmed". Run `npm run admin:audit` if you need to know
+      // whether the user row actually exists.
+      console.warn(`[auth/login] reject reason=SUPABASE_AUTH_FAILED email=${email} ip=${ip} supabase_error=${error?.message ?? 'no_session_returned'}`)
       recordFailedAttempt(ip)
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
     }

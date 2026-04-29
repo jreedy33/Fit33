@@ -53,6 +53,9 @@ Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal), plus sc
 22. **Admin session tokens are httpOnly Secure SameSite=Strict cookies.** Never write a client-readable cookie for auth state. The one path middleware skips (`/`) is a server component that reads cookies via `next/headers` + `cookies()` + `redirect()`. Never add `document.cookie.includes(...)` back. Canonical implementation: `admin-cms/src/lib/auth-cookies.ts` (`COOKIE_OPTIONS`).
 23. **CSP is set ONLY in `admin-cms/src/middleware.ts`.** Sprint 5 (Q2-20) moved to per-request nonce + `strict-dynamic`; `next.config.ts` intentionally omits `Content-Security-Policy`. When adding a new external media domain (e.g. an R2 bucket in `media-src`) update middleware only. Never re-introduce a static CSP header in `next.config.ts` — two sources fight and silently regress to `'unsafe-inline'`.
 24. **R2 video URLs are raw filenames.** Never `encodeURIComponent` on filenames — they contain parentheses `(male)` / `(Dumbbell)` that break.
+24a. **Login error responses MUST stay generic.** `/api/auth/login` returns `Invalid credentials` for BOTH "email not in `ADMIN_EMAILS` allowlist" AND "Supabase rejected password" — anti account-enumeration. Differentiate failure modes ONLY in server-side `console.warn('[auth/login] reject reason=...')` logs (visible in Vercel Logs). Canonical: `admin-cms/src/app/api/auth/login/route.ts`. Never leak the distinction to the client response, even on private deployments — the generic-error invariant is what makes brute-forcing emails uneconomical.
+24b. **`ADMIN_EMAILS` ↔ Supabase user drift is detectable BEFORE lockout.** The CEO-lockout class on 2026-04-29 was: allowlist had `joe@doublethr33s.com`, but no `auth.users` row existed at that email. Run `npm run admin:audit` (script: `admin-cms/scripts/admin-audit.mjs`) from `admin-cms/` to verify every allowlist entry resolves to a Supabase user with verified TOTP. Run it whenever you add/remove admins, rotate keys, or change Supabase projects. The admin-gated `GET /api/admin/health` endpoint surfaces the same audit JSON in-CMS once logged in — NEVER make it public, it enumerates the admin allowlist.
+24c. **Adding an email to `ADMIN_EMAILS` REQUIRES creating the matching Supabase auth user in the same change.** Use the admin REST endpoint (`POST /auth/v1/admin/users`) or follow `admin-cms/RECOVERY.md`. Allowlist drift is silent — the login route returns the same generic error for "no such user" as it does for "wrong password". A future agent MUST be able to discover the missing-user mode by reading server logs (`reason=SUPABASE_AUTH_FAILED supabase_error=...`) or running the audit script.
 
 ### App Store compliance (social apps)
 25. **User blocking** — `get_blocked_users()` RPC + `BlockedUsersView` in Settings → Privacy & Security, reachable in ≤3 taps from any profile.
@@ -102,8 +105,8 @@ Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal), plus sc
 | Supabase URL + anon key hardcoded | `SupabaseManager.swift:25-26`, `FoodDatabaseService.swift:265-268` | Move to `Secrets.swift` via `AppConfig` |
 | Dev menu password in git | `AppConfig.swift:88` | Remove; use `#if DEBUG` gating only |
 | No ATT prompt | `AdManager.swift` | Add ATT flow before AdMob init |
-| Admin session in sessionStorage (XSS risk remnants) | `admin-cms/src/lib/auth.ts` | Verify httpOnly everywhere |
-| Admin MFA | `admin-cms/src/app/api/auth/login/route.ts` | Enable Supabase MFA (TOTP) |
+| Admin session in sessionStorage (XSS risk remnants) | `admin-cms/src/lib/auth.ts` | Done — invariant 22 (httpOnly Secure SameSite=Strict) |
+| Admin MFA | `admin-cms/src/app/api/auth/login/route.ts` | Done — Sprint 9 Q2-87 (mandatory TOTP) + Q2-92 (30-day trust-this-device cookie). Lockout-recovery runbook: `admin-cms/RECOVERY.md`. Drift detector: `npm run admin:audit`. |
 | Admin rate limits | `admin-cms/src/app/api/admin/route.ts` | Per-endpoint |
 | Admin audit log | — | `admin_audit_log` table (done — keep using `logAdminAction` with `details JSONB`) |
 | Supabase email verification | Auth > Settings | Enable "Confirm email" |

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isAdminEmail } from '@/lib/auth'
 import { parseJson, loginSchema } from '@/lib/validation'
+import { setAuthCookies } from '@/lib/auth-cookies'
+import { isMfaTrustedForUser } from '@/lib/mfa-trust'
 
 const loginAttempts = new Map<string, { count: number; firstAttempt: number; lockedUntil: number }>()
 const MAX_ATTEMPTS = 5
@@ -112,6 +114,28 @@ export async function POST(req: NextRequest) {
     const pendingTotp = factors?.totp?.find(f => f.status !== 'verified')
 
     if (verifiedTotp) {
+      // Q2-92 (Sprint 9, 2026-04-29): "Trust this device for 30 days" — if the
+      // browser presents a valid HMAC-signed `admin_mfa_trust` cookie tied to
+      // THIS user's UUID, skip the TOTP prompt and set auth cookies directly.
+      // The trust cookie is only ever issued by /api/auth/verify-mfa after a
+      // successful 6-digit code entry, so the cookie's existence proves this
+      // browser was once paired with a verified second factor for this admin.
+      // Stealing the cookie alone doesn't help an attacker — they'd also need
+      // the password (and the cookie is httpOnly + SameSite=Strict). This
+      // matches GitHub / Google's "remember this device" UX.
+      if (data.user?.id && isMfaTrustedForUser(req, data.user.id)) {
+        const response = NextResponse.json({
+          mfa_skipped: true,
+          user: { id: data.user.id, email: data.user.email },
+        })
+        setAuthCookies(response, {
+          accessToken: data.session.access_token,
+          refreshToken: data.session.refresh_token,
+          expiresAt: data.session.expires_at ?? 0,
+        })
+        return response
+      }
+
       return NextResponse.json({
         mfa_required: true,
         factor_id: verifiedTotp.id,

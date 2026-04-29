@@ -49,6 +49,14 @@ export default function LoginPage() {
                 return
             }
 
+            if (data.mfa_skipped) {
+                // Q2-92: server recognized a valid 30-day "trust this device"
+                // cookie for this admin and set auth cookies directly. Skip
+                // the 6-digit code step.
+                router.push('/dashboard')
+                return
+            }
+
             if (data.mfa_required) {
                 setMfaState({
                     factor_id: data.factor_id,

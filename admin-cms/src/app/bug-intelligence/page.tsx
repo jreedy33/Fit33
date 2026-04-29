@@ -37,6 +37,10 @@ type Fingerprint = {
     endpoint?: string | null
     is_classified?: boolean | null
     structural_fingerprint?: string | null
+    // Phase 13 (2026-04-29) — md5(op||'|'||error_class), no source. Lets the
+    // CMS collapse crash↔log twins of the same root cause. NULL when op or
+    // real error_class isn't yet derivable.
+    root_cause_fingerprint?: string | null
     fixed_in_build?: string | null
     regressed_after_fix?: boolean | null
     auto_resolved_at?: string | null
@@ -150,6 +154,13 @@ type ExportFingerprint = {
     endpoint?: string | null
     is_classified?: boolean | null
     structural_fingerprint?: string | null
+    // Phase 13 (2026-04-29) — source-less root_cause_fingerprint
+    // (`md5(op||'|'||error_class)`). Used by the export formatter as the
+    // FIRST-CHOICE dedup key so crash↔log twins of the same root cause
+    // collapse into one canonical report. NULL on legacy fingerprints
+    // (op or real error_class missing) — formatter falls back to
+    // structural_fingerprint then raw fingerprint.
+    root_cause_fingerprint?: string | null
     // Phase 9 regression alert: `fixed_in_build` is stamped by admin triage
     // when a PR ships; `regressed_after_fix` is auto-flipped by the rollup
     // when new activity shows up on a build > fixed_in_build.
@@ -365,44 +376,59 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
     const L: string[] = []
 
     // Phase 10 (2026-04-24) — structural dedupe.
+    // Phase 13 (2026-04-29) — extended to collapse crash↔log twins.
     //
     // Claude's triage pipeline writes ONE `bug_reports` row per raw sample,
     // so a single structural_fingerprint like `2b8eafe6` (main-thread
-    // watchdog freeze) accumulates 6+ reports with different titles
-    // ("Main Thread Watchdog Freezes", "Main Thread Frozen During App
-    // Initialization", "UI Unresponsive - Main Thread Blocking", etc).
-    // Before this dedupe, each export inflated the same root cause into 6
-    // CRITICAL entries, drowning the real signal.
+    // watchdog freeze) accumulates 6+ reports with different titles. The
+    // Phase-13 noise observed in the 2026-04-29T04:13 export was the next
+    // layer: SEPARATE structural_fingerprints for the crash sample and
+    // the log sample of the same call site (e.g. `14b58e6a` HK sleep
+    // crash + `9dd27552` HK sleep "log version") because
+    // `structural_fingerprint = md5(source||op||class)` differentiates
+    // 'log' vs 'crash'. `root_cause_fingerprint = md5(op||class)` strips
+    // source and collapses them into one canonical report.
     //
-    // Dedupe strategy:
-    //   1. Group bundles by `structural_fingerprint` when available
-    //      (Phase 9 rollup sets this for classified events), else by
-    //      the raw `fingerprint` hash (legacy pre-Phase-9).
-    //   2. Keep the highest-confidence + highest-severity report as the
-    //      canonical representative of each cluster.
-    //   3. Collapse variant titles into a single "Also triaged as:" list
-    //      rendered inside the report body so reviewers can see what
-    //      Claude called the same root cause from different angles.
-    //   4. Bundles with NO structural_fingerprint AND NO raw fingerprint
-    //      (malformed) pass through untouched — never silently drop data.
+    // Dedupe strategy (key selection, in priority order):
+    //   1. `root_cause_fingerprint` — collapses crash↔log twins of the
+    //      same call site (Phase 13).
+    //   2. `structural_fingerprint` — collapses variant-title triages of
+    //      the same source channel (Phase 10).
+    //   3. Raw `fingerprint` hash — legacy pre-classifier path.
+    //   4. Synthetic `orphan:${report.id}` — never silently merge orphans.
+    //
+    // Then keep the highest-confidence + highest-severity report as the
+    // canonical representative of each cluster. Variant titles + sibling
+    // fingerprint hashes surface inside the canonical report body.
     type Cluster = {
         canonical: BugIntelExportBundle
         variants: BugIntelExportBundle[]
         key: string  // the groupBy key used (for debugging)
+        keySource: 'root_cause' | 'structural' | 'fingerprint' | 'orphan'
     }
     const SEVERITY_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 }
     const clusters = new Map<string, Cluster>()
     for (const b of ex.bundles) {
-        // Prefer structural_fingerprint (Phase 9 classified grouping).
-        // Fallback: raw fingerprint hash (pre-Phase-9 or unclassified).
-        // Last resort: synthesize a unique key from report.id so orphans
-        // don't collapse with each other.
-        const key = b.fingerprint?.structural_fingerprint
-            || b.report.fingerprint
-            || `orphan:${b.report.id}`
+        // Priority order: root_cause > structural > raw fp > orphan.
+        // See block-level comment above for rationale.
+        let key: string
+        let keySource: Cluster['keySource']
+        if (b.fingerprint?.root_cause_fingerprint) {
+            key = `rc:${b.fingerprint.root_cause_fingerprint}`
+            keySource = 'root_cause'
+        } else if (b.fingerprint?.structural_fingerprint) {
+            key = `sf:${b.fingerprint.structural_fingerprint}`
+            keySource = 'structural'
+        } else if (b.report.fingerprint) {
+            key = `fp:${b.report.fingerprint}`
+            keySource = 'fingerprint'
+        } else {
+            key = `orphan:${b.report.id}`
+            keySource = 'orphan'
+        }
         const existing = clusters.get(key)
         if (!existing) {
-            clusters.set(key, { canonical: b, variants: [], key })
+            clusters.set(key, { canonical: b, variants: [], key, keySource })
             continue
         }
         // Decide which bundle should be canonical. Prefer higher severity,
@@ -450,16 +476,35 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
             return a.key.localeCompare(b.key)
         })
         .map(c => c.canonical)
-    // Index variant titles so the per-report renderer can surface them.
+    // Index variant titles + sibling-fingerprint metadata so the per-report
+    // renderer can surface them. Phase 13: track sibling fingerprints +
+    // their source (crash/log) so the canonical report can announce
+    // "+N siblings (crash:1, log:2): 9dd27552 / 14b58e6a / a275f4b0" without
+    // silently hiding the dropped FPs from the reviewer.
     const variantTitles = new Map<string, string[]>()
+    const variantFingerprints = new Map<string, Array<{ fp: string; source: string }>>()
+    let crossSourceTwins = 0  // Phase 13 — collapsed because of crash↔log twin dedup
     for (const c of clusters.values()) {
         if (c.variants.length === 0) continue
         const canonicalTitle = c.canonical.report.title
-        const uniq = new Set<string>()
+        const uniqTitles = new Set<string>()
+        const fps: Array<{ fp: string; source: string }> = []
+        const sources = new Set<string>([c.canonical.fingerprint?.source || ''])
         for (const v of c.variants) {
-            if (v.report.title && v.report.title !== canonicalTitle) uniq.add(v.report.title)
+            if (v.report.title && v.report.title !== canonicalTitle) uniqTitles.add(v.report.title)
+            const vfp = v.report.fingerprint
+            const vsrc = v.fingerprint?.source || 'unknown'
+            if (vfp) fps.push({ fp: vfp, source: vsrc })
+            sources.add(vsrc)
         }
-        if (uniq.size > 0) variantTitles.set(c.canonical.report.id, Array.from(uniq))
+        if (uniqTitles.size > 0) variantTitles.set(c.canonical.report.id, Array.from(uniqTitles))
+        if (fps.length > 0) variantFingerprints.set(c.canonical.report.id, fps)
+        // Crash↔log twin: a single cluster keyed by root_cause spans
+        // BOTH a 'crash' and a 'log' source. Counting these surfaces
+        // the Phase 13 win in the export header.
+        if (c.keySource === 'root_cause' && sources.has('crash') && sources.has('log')) {
+            crossSourceTwins += 1
+        }
     }
     const totalRaw = ex.bundle_count
     const total = dedupedBundles.length
@@ -515,11 +560,14 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
     if (duplicatesCollapsed > 0) {
         // Phase 10 — tell the reader when we collapsed variant titles so
         // they can correlate with the CMS dashboard (which still shows
-        // every triage row). The expected delta for a healthy pipeline is
-        // 0 (every structural_fingerprint unique) — a large number means
-        // Claude is re-triaging the same root cause with different labels,
-        // which is a signal to tighten the triage prompt.
-        L.push(`Collapsed: \`${duplicatesCollapsed}\` duplicate triage rows merged into their canonical structural_fingerprint (raw count was **${totalRaw}**).`)
+        // every triage row). Phase 13 — also surface crash↔log twin
+        // collapses (root_cause_fingerprint match across sources). When
+        // crossSourceTwins > 0 the export saved a reviewer from looking
+        // at the same bug twice in two source channels.
+        const twinsSuffix = crossSourceTwins > 0
+            ? ` · \`${crossSourceTwins}\` crash↔log twin${crossSourceTwins === 1 ? '' : 's'} merged via root_cause_fingerprint`
+            : ''
+        L.push(`Collapsed: \`${duplicatesCollapsed}\` duplicate triage rows merged into their canonical fingerprint (raw count was **${totalRaw}**)${twinsSuffix}.`)
     }
     L.push('')
 
@@ -608,6 +656,68 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         L.push(`- \`${owner}\`: ${n}`)
     }
     L.push('')
+
+    // Phase 13 (2026-04-29) — themes block. Dedupes pain_point_candidate
+    // and suggested_todo across all canonical reports, surfacing each
+    // unique value ONCE alongside the fingerprints it covers. The
+    // 2026-04-29T04:13 export had the same "Daily quests fail to load"
+    // pain candidate repeated 4× across the bonus_claimed quartet — even
+    // after Phase 13's root_cause_fingerprint collapse, cross-cluster
+    // theme repetition still happens when distinct root causes manifest
+    // with the same user-facing symptom. This block makes that visible
+    // upfront so reviewers don't read the same recommendation 5×.
+    //
+    // Implementation: case-insensitive, whitespace-collapsed string match.
+    // Anything matched ≥2× surfaces here. One-off pain points stay
+    // per-report only (no value in promoting them).
+    type Theme = { canonical: string; fps: Set<string>; firstFP: string }
+    const normalizeTheme = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
+    const painThemes = new Map<string, Theme>()
+    const todoThemes = new Map<string, Theme>()
+    for (const b of dedupedBundles) {
+        const fp8 = b.report.fingerprint.slice(0, 8)
+        const pp = b.report.pain_point_candidate?.trim()
+        if (pp) {
+            const k = normalizeTheme(pp)
+            if (!painThemes.has(k)) painThemes.set(k, { canonical: pp, fps: new Set([fp8]), firstFP: fp8 })
+            else painThemes.get(k)!.fps.add(fp8)
+        }
+        const td = b.report.suggested_todo?.trim()
+        if (td) {
+            const k = normalizeTheme(td)
+            if (!todoThemes.has(k)) todoThemes.set(k, { canonical: td, fps: new Set([fp8]), firstFP: fp8 })
+            else todoThemes.get(k)!.fps.add(fp8)
+        }
+    }
+    const repeatedPains = Array.from(painThemes.values())
+        .filter(t => t.fps.size >= 2)
+        .sort((a, b) => b.fps.size - a.fps.size)
+    const repeatedTodos = Array.from(todoThemes.values())
+        .filter(t => t.fps.size >= 2)
+        .sort((a, b) => b.fps.size - a.fps.size)
+    if (repeatedPains.length > 0 || repeatedTodos.length > 0) {
+        L.push(`## Themes (cross-fingerprint patterns)`)
+        L.push('')
+        L.push(`Pain points / TODOs that repeat across ≥2 distinct root causes — surfacing here so the same recommendation doesn't appear N× in the per-report bodies. Each line lists the fingerprints (first 8 chars) of the clusters that share the theme.`)
+        L.push('')
+        if (repeatedPains.length > 0) {
+            L.push(`**Pain points (recurring):**`)
+            for (const t of repeatedPains) {
+                const fpList = Array.from(t.fps).sort().map(f => `\`${f}\``).join(' / ')
+                L.push(`- _(${t.fps.size} clusters: ${fpList})_ ${t.canonical.slice(0, 280)}${t.canonical.length > 280 ? '…' : ''}`)
+            }
+            L.push('')
+        }
+        if (repeatedTodos.length > 0) {
+            L.push(`**Suggested TODOs (recurring):**`)
+            for (const t of repeatedTodos) {
+                const fpList = Array.from(t.fps).sort().map(f => `\`${f}\``).join(' / ')
+                L.push(`- _(${t.fps.size} clusters: ${fpList})_ ${t.canonical.slice(0, 280)}${t.canonical.length > 280 ? '…' : ''}`)
+            }
+            L.push('')
+        }
+    }
+
     L.push(`---`)
     L.push('')
 
@@ -636,6 +746,20 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         if (aliases && aliases.length > 0) {
             L.push(`- **Also triaged as** (${aliases.length} variant${aliases.length === 1 ? '' : 's'}): ${aliases.map(t => `"${t}"`).join(' · ')}`)
         }
+        // Phase 13 — sibling fingerprint hashes + their source channels.
+        // Lets the reviewer audit the collapse decision and re-find the
+        // dropped reports in the CMS dashboard if needed. Format:
+        //   "+2 sibling fingerprints (crash:1 · log:1): `9dd27552` (log) · `…`"
+        const siblings = variantFingerprints.get(r.id)
+        if (siblings && siblings.length > 0) {
+            const bySource = new Map<string, number>()
+            for (const s of siblings) bySource.set(s.source, (bySource.get(s.source) ?? 0) + 1)
+            const counts = Array.from(bySource.entries())
+                .map(([src, n]) => `${src}:${n}`).join(' · ')
+            const fpList = siblings.slice(0, 4).map(s => `\`${s.fp.slice(0, 8)}\` (${s.source})`).join(' · ')
+            const more = siblings.length > 4 ? ` (+${siblings.length - 4} more)` : ''
+            L.push(`- **Collapsed siblings** (${siblings.length} · ${counts}): ${fpList}${more}`)
+        }
         L.push('')
 
         // Phase 9 — structural fingerprint block. Put the classified root
@@ -651,6 +775,10 @@ function formatExportAsMarkdown(ex: BugIntelExport): string {
         if (typeof f?.nsurl_code === 'number') structBits.push(`nsurl=\`${f.nsurl_code}\``)
         if (f?.endpoint) structBits.push(`endpoint=\`${f.endpoint}\``)
         if (f?.structural_fingerprint) structBits.push(`struct=\`${f.structural_fingerprint.slice(0, 8)}\``)
+        // Phase 13 — surface root_cause_fingerprint when it differs from
+        // structural_fingerprint. Two reports sharing this hash are the
+        // same root cause across crash↔log channels.
+        if (f?.root_cause_fingerprint) structBits.push(`root_cause=\`${f.root_cause_fingerprint.slice(0, 8)}\``)
         if (structBits.length > 0) {
             L.push(`- **Root cause fields**: ${structBits.join(' · ')}`)
         }

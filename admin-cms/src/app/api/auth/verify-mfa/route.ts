@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isAdminEmail } from '@/lib/auth'
 import { setAuthCookies } from '@/lib/auth-cookies'
+import { setMfaTrustCookie } from '@/lib/mfa-trust'
 import { parseJson, verifyMfaSchema } from '@/lib/validation'
 
 export async function POST(req: NextRequest) {
@@ -45,6 +46,13 @@ export async function POST(req: NextRequest) {
       refreshToken: verify.refresh_token ?? temp_refresh,
       expiresAt: temp_expires ?? 0,
     })
+
+    // Q2-92 (Sprint 9, 2026-04-29): issue the 30-day "trust this device"
+    // cookie tied to this admin's user ID. On the next login, if the password
+    // succeeds AND this signed cookie is still valid for the same UUID, the
+    // login route will skip the TOTP prompt entirely. Verifying again resets
+    // the 30-day clock. See `lib/mfa-trust.ts` for the threat model.
+    setMfaTrustCookie(response, user.user.id)
 
     return response
   } catch {

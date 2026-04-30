@@ -234,6 +234,16 @@ class ExerciseHistoryService: ObservableObject {
     private var recentSessionsCache: [String: [ExerciseSessionSummary]] = [:]
     private var inFlightSessionTasks: [String: Task<[ExerciseSessionSummary], Never>] = [:]
 
+    // Strict-id-match cache for the "Previous Max" tile row. Keyed by `exercise.id`
+    // (canonical Core Data UUID, mirrors `exercise_performance_history.exercise_id`
+    // added in migration #164). Used by `fetchRecentSessions(forExerciseId:limit:)`
+    // — the read entrypoint guarantees the rendered history corresponds to the EXACT
+    // exercise the user is looking at, not a name-collision sibling. Cleared on
+    // `clearCache()` and after every successful `saveExercisePerformance` call that
+    // carries an `exerciseId`.
+    private var recentSessionsByIdCache: [UUID: [ExerciseSessionSummary]] = [:]
+    private var inFlightSessionTasksById: [UUID: Task<[ExerciseSessionSummary], Never>] = [:]
+
     // ⚡️ PERF: Deduplicate concurrent batch fetches (warmup + preview fire simultaneously)
     private var inFlightBatchTask: Task<[String: [PreviousSetInfo]], Never>?
     private var inFlightBatchKey: Set<String>?
@@ -414,8 +424,16 @@ class ExerciseHistoryService: ObservableObject {
     
     // MARK: - Save Exercise Performance
     
-    /// Save exercise performance after a workout is completed
+    /// Save exercise performance after a workout is completed.
+    ///
+    /// `exerciseId` (added 2026-04-29, migration #164) lets the active-workout
+    /// "Previous Max" tile row filter history by EXACT exercise identity instead
+    /// of by name — fixes the cross-pollination bug where a card for an exercise
+    /// the user has never trained rendered "Previous Max: <weight>" because some
+    /// other exercise in their catalog happened to share `.name`. Always pass
+    /// `exercise.id` from the active-workout completion path.
     func saveExercisePerformance(
+        exerciseId: UUID? = nil,
         exerciseName: String,
         exerciseCategory: String?,
         workoutId: UUID?,
@@ -458,7 +476,7 @@ class ExerciseHistoryService: ObservableObject {
         
         // Create performance record
         let performanceId = UUID()
-        let performanceData: [String: AnyJSON] = [
+        var performanceData: [String: AnyJSON] = [
             "id": .string(performanceId.uuidString),
             "user_id": .string(userId.uuidString),
             "exercise_name": .string(exerciseName),
@@ -477,6 +495,10 @@ class ExerciseHistoryService: ObservableObject {
             "had_failure_set": .bool(hadFailure),
             "had_dropset": .bool(hadDropset)
         ]
+        // exercise_id wired through by migration #164 — see method docstring.
+        if let exerciseId = exerciseId {
+            performanceData["exercise_id"] = .string(exerciseId.uuidString)
+        }
         
         // Insert performance record
         AppLogger.debug("💾 [ExerciseHistory] Inserting into exercise_performance_history...", category: .workout)
@@ -509,6 +531,11 @@ class ExerciseHistoryService: ObservableObject {
                 "set_type": .string(set.setType.rawValue),
                 "rest_time_seconds": .integer(Int(set.restTime))
             ]
+            // Mirror exercise_id onto the per-set row (migration #164) so
+            // future per-set lookups by id never need a perf-row join.
+            if let exerciseId = exerciseId {
+                setData["exercise_id"] = .string(exerciseId.uuidString)
+            }
             // Wall-clock per-set timestamp drives the pacing analysis in the
             // workout intelligence pipeline (#156). NULL for legacy / lost
             // timestamps; pipeline falls back to a (duration / sets) proxy.
@@ -548,6 +575,9 @@ class ExerciseHistoryService: ObservableObject {
         await MainActor.run {
             self.previousSetsCache.removeValue(forKey: exerciseName)
             self.recentSessionsCache.removeValue(forKey: exerciseName)
+            if let exerciseId = exerciseId {
+                self.recentSessionsByIdCache.removeValue(forKey: exerciseId)
+            }
         }
     }
     
@@ -757,6 +787,89 @@ class ExerciseHistoryService: ObservableObject {
     /// Used by ExerciseCard tile row. Cached by exercise name (deduplicates
     /// concurrent calls). Returns [] for first-time exercises and caches the
     /// empty result to avoid hammering Supabase.
+    /// STRICT-ID read for the active-workout "Previous Max" tile row
+    /// (`RecentSessionsTilesRow`). Returns ONLY rows whose
+    /// `exercise_performance_history.exercise_id` matches `exerciseId`. Rows
+    /// where `exercise_id IS NULL` (legacy data the migration #164 backfill
+    /// couldn't unambiguously resolve, OR future data written by an older
+    /// app build) are NOT returned — that's the whole point of this read
+    /// path. If the user's history for this exercise hasn't been resolved
+    /// to an id yet, the tile row hides and prompts a fresh session.
+    /// Filters out empty / zero-data rows defensively (`total_sets > 0`).
+    func fetchRecentSessions(forExerciseId exerciseId: UUID, limit: Int = 2) async -> [ExerciseSessionSummary] {
+        if let cached = recentSessionsByIdCache[exerciseId] {
+            return Array(cached.prefix(limit))
+        }
+        if let inFlight = inFlightSessionTasksById[exerciseId] {
+            return Array((await inFlight.value).prefix(limit))
+        }
+        guard let userId = SupabaseManager.shared.currentUser?.id else {
+            AppLogger.warning("⚠️ [ExerciseHistory] No authenticated user for recent sessions (by id)", category: .workout)
+            return []
+        }
+
+        let task = Task<[ExerciseSessionSummary], Never> { [weak self] in
+            guard let self = self else { return [] }
+            struct Row: Decodable {
+                let workout_date: String?
+                let avg_weight: Double?
+                let max_weight: Double?
+                let total_sets: Int?
+                let total_reps: Int?
+            }
+            do {
+                let rows: [Row] = try await self.supabase
+                    .from("exercise_performance_history")
+                    .select("workout_date, avg_weight, max_weight, total_sets, total_reps")
+                    .eq("user_id", value: userId.uuidString)
+                    .eq("exercise_id", value: exerciseId.uuidString)
+                    .gt("total_sets", value: 0)
+                    .order("workout_date", ascending: false)
+                    .limit(limit)
+                    .execute()
+                    .value
+
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let isoFallback = ISO8601DateFormatter()
+                let dateOnly = DateFormatter()
+                dateOnly.dateFormat = "yyyy-MM-dd"
+                dateOnly.timeZone = TimeZone(identifier: "UTC")
+
+                let summaries: [ExerciseSessionSummary] = rows.compactMap { row in
+                    guard let raw = row.workout_date else { return nil }
+                    let date = iso.date(from: raw)
+                        ?? isoFallback.date(from: raw)
+                        ?? dateOnly.date(from: raw)
+                    guard let parsed = date else { return nil }
+                    return ExerciseSessionSummary(
+                        workoutDate: parsed,
+                        avgWeight: row.avg_weight ?? 0,
+                        totalSets: row.total_sets ?? 0,
+                        totalReps: row.total_reps ?? 0,
+                        maxWeight: row.max_weight ?? 0
+                    )
+                }
+
+                await MainActor.run {
+                    self.recentSessionsByIdCache[exerciseId] = summaries
+                    self.inFlightSessionTasksById[exerciseId] = nil
+                }
+                return summaries
+            } catch {
+                AppLogger.error("❌ [ExerciseHistory] Recent sessions (by id) fetch failed for \(exerciseId.uuidString): \(error)", category: .workout)
+                await MainActor.run {
+                    self.inFlightSessionTasksById[exerciseId] = nil
+                }
+                return []
+            }
+        }
+        await MainActor.run {
+            self.inFlightSessionTasksById[exerciseId] = task
+        }
+        return Array((await task.value).prefix(limit))
+    }
+
     func fetchRecentSessions(for exerciseName: String, limit: Int = 2) async -> [ExerciseSessionSummary] {
         if let cached = recentSessionsCache[exerciseName] {
             return Array(cached.prefix(limit))
@@ -838,6 +951,7 @@ class ExerciseHistoryService: ObservableObject {
         previousSetsCache.removeAll()
         personalRecordsCache.removeAll()
         recentSessionsCache.removeAll()
+        recentSessionsByIdCache.removeAll()
     }
 }
 

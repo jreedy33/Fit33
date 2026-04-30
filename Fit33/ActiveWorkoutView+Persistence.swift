@@ -330,6 +330,7 @@ extension ActiveWorkoutView {
             
             do {
                 try await ExerciseHistoryService.shared.saveExercisePerformance(
+                    exerciseId: exercise.id,
                     exerciseName: exercise.name ?? "Exercise",
                     exerciseCategory: exercise.category,
                     workoutId: workout.id,

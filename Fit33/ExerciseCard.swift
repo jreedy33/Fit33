@@ -80,6 +80,21 @@ struct ExerciseCard: View {
         .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
         .shadow(color: isActiveCard ? Color(red: 0.0, green: 0.7, blue: 1.0).opacity(0.25) : .clear, radius: 16, x: 0, y: 0)
         .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        // Plain `.onTapGesture` (NOT `.simultaneousGesture`) so the embedded
+        // `Menu` ("..." actions) and `Button`s (shuffle / favorite) cleanly
+        // absorb their own taps without ALSO firing this card-level focus
+        // change. A previous `.simultaneousGesture` here caused the menu items
+        // to flicker on open: tapping the "..." would simultaneously open the
+        // Menu AND toggle `isActiveCard`, which animated the card's shadow /
+        // accent and triggered `scrollProxy.scrollTo(...)` in the parent — all
+        // happening UNDERNEATH the just-presented Menu, which jittered the
+        // menu's anchor and made the rows visibly flash on appearance
+        // (2026-04-29).
+        //
+        // Menu tap reliability is preserved by the `Color.clear` 44pt overlay
+        // on the Menu's label (see below) — that's the real fix for "menu
+        // doesn't always open on first tap"; the simultaneousGesture was a
+        // redundant addition that has now been reverted.
         .onTapGesture {
             HapticManager.selectionChanged()
             onFocusChanged?(true)
@@ -196,21 +211,27 @@ struct ExerciseCard: View {
         exercise.name ?? "Exercise"
     }
 
-    /// Lazy-load the "last 3 sessions" tile row. Reads through
-    /// `ExerciseHistoryService.shared.recentSessionsCache`, so siblings sharing
-    /// the same exercise name (rare in a single workout) and replays of the
-    /// same active workout are both free.
+    /// Lazy-load the "last 2 sessions" tile row.
+    ///
+    /// Reads through `ExerciseHistoryService.shared.recentSessionsByIdCache` —
+    /// strict-id match against `exercise_performance_history.exercise_id`
+    /// (migration #164). The id-based read guarantees the rendered history
+    /// belongs to THIS specific exercise and not a name-collision sibling.
+    /// If `exercise.id` is missing OR no id-tagged history exists yet, the
+    /// tile row hides — never falls back to name-based matching, which is
+    /// the user-visible bug this read path replaces (2026-04-29).
     private func loadRecentSessionsIfNeeded() {
         guard !didLoadRecentSessions else { return }
         guard !exercise.isFault else { return }
+        guard let exerciseUUID = exercise.id else { return }
         let name = exerciseName
         guard !name.isEmpty, name != "Exercise" else { return }
         didLoadRecentSessions = true
         Task { @MainActor in
-            let summaries = await ExerciseHistoryService.shared.fetchRecentSessions(for: name, limit: 2)
+            let summaries = await ExerciseHistoryService.shared.fetchRecentSessions(forExerciseId: exerciseUUID, limit: 2)
             guard !Task.isCancelled else { return }
             // Guard against the exercise having been swapped while the fetch was in flight.
-            guard exerciseName == name else { return }
+            guard exercise.id == exerciseUUID else { return }
             withAnimation(.easeInOut(duration: 0.2)) {
                 self.recentSessions = summaries
             }
@@ -459,20 +480,25 @@ struct ExerciseCard: View {
                         Label("Add Rest Timer", systemImage: "timer")
                     }
                 } label: {
-                    // Apple HIG: minimum 44pt tap target. The previous 36pt circle
-                    // was below this threshold and caused tapping the ellipsis to
-                    // feel unreliable. Visual circle stays 36pt; hit area expands
-                    // via outer 44pt frame + Rectangle contentShape so taps anywhere
-                    // in the icon column register on the first try.
-                    Image(systemName: "ellipsis")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .frame(width: 36, height: 36)
-                        .background(
-                            Circle()
-                                .fill(Color(.systemGray6))
-                        )
+                    // Apple HIG: minimum 44pt tap target. Use `Color.clear` as
+                    // the layout claim so SwiftUI's hit-testing geometry matches
+                    // the visible 44pt rectangle EXACTLY (a chained `.frame()`
+                    // after a `.background()` previously left the contentShape
+                    // ambiguous for the Menu's gesture recognizer, causing
+                    // "tap doesn't always register" — 2026-04-29). Visual
+                    // circle stays 36pt via the overlay.
+                    Color.clear
                         .frame(width: 44, height: 44)
+                        .overlay(
+                            Image(systemName: "ellipsis")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .frame(width: 36, height: 36)
+                                .background(
+                                    Circle()
+                                        .fill(Color(.systemGray6))
+                                )
+                        )
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Exercise actions")

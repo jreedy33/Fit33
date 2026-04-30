@@ -4438,6 +4438,54 @@ export async function POST(req: NextRequest) {
       }
 
 
+      // ─────────────────────────────────────────────────────────────
+      // Catalog correction proposals queue (migration #157)
+      // ─────────────────────────────────────────────────────────────
+
+      case 'list_correction_proposals': {
+        const { status, exerciseId, limit, offset } = params
+        const lim = safeLimit(limit, 100)
+        const off = typeof offset === 'number' && offset >= 0 ? offset : 0
+
+        let q = admin.from('exercise_correction_proposals')
+          .select(
+            'id, exercise_id, exercise_name, field_name, operation, proposed_value, ' +
+            'evidence, confidence, sister_corroborated, name_corroborated, multi_report_count, ' +
+            'status, applied_correction_id, rejected_reason, source_report_id, proposed_at, decided_at',
+            { count: 'exact' },
+          )
+          .order('proposed_at', { ascending: false })
+          .range(off, off + lim - 1)
+
+        if (typeof status === 'string' && status.length > 0) {
+          q = q.eq('status', status)
+        }
+        if (typeof exerciseId === 'string' && exerciseId.length > 0) {
+          q = q.eq('exercise_id', exerciseId)
+        }
+
+        const { data, error, count } = await q
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ rows: data || [], total: count ?? 0 })
+      }
+
+      case 'get_correction_proposal_stats': {
+        const { data, error } = await admin
+          .from('exercise_correction_proposals')
+          .select('status')
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        const counts: Record<string, number> = {
+          pending: 0, applied: 0, rejected: 0, superseded: 0, blocked_core_exercise: 0,
+        }
+        for (const r of data || []) {
+          const s = (r as { status?: string }).status || 'unknown'
+          counts[s] = (counts[s] || 0) + 1
+        }
+        return NextResponse.json({ counts, total: (data || []).length })
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
     }

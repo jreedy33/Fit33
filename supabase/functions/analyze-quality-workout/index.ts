@@ -272,6 +272,21 @@ UNACCEPTABLE corrections (NEVER do these):
   - operation='set' on muscle arrays — use add/remove instead.
   - Anything for a sub-classification you're <100% sure about.
 
+CANONICAL MUSCLE NAMES — use these short forms ONLY (not the long anatomical
+names). The catalog short forms are: 'Lats' (NOT 'Latissimus Dorsi'),
+'Chest' (NOT 'Pectorals'), 'Quads' (NOT 'Quadriceps'), 'Traps' (NOT 'Trapezius').
+Other accepted muscle names: Abs, Back, Biceps, Calves, Core, Forearms,
+Front Delts, Full Body, Glutes, Hamstrings, Hip Flexors, Hips, Inner Thighs,
+Lower Abs, Lower Back, Lower Chest, Neck, Obliques, Rear Delts,
+Rotator Cuff, Shoulders, Side Delts, Triceps, Upper Back. Use exactly
+those strings — anything else (including alternative casing) will fail
+the corroboration gate.
+
+If you see an existing exercise tagged with a long-form name (e.g.
+'Latissimus Dorsi'), DO NOT propose a 'remove' for it — that's a
+taxonomy normalization issue handled by a different pipeline, not a
+catalog correction. Skip it.
+
 # PAIRING FINDINGS
 
 Emit pairingFindings for any noteworthy pairing — synergistic OR mistake. These

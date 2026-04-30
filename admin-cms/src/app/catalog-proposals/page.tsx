@@ -204,7 +204,7 @@ export default function CatalogProposalsPage() {
 
               <div className="space-y-2">
                 {group.map((p) => (
-                  <ProposalCard key={p.id} p={p} />
+                  <ProposalCard key={p.id} p={p} onChanged={() => void load()} />
                 ))}
               </div>
             </div>
@@ -236,11 +236,64 @@ export default function CatalogProposalsPage() {
 
 // ─── ProposalCard ─────────────────────────────────────────────────────────────
 
-function ProposalCard({ p }: { p: ProposalRow }) {
+function ProposalCard({ p, onChanged }: { p: ProposalRow; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
   const gates: string[] = []
   if (p.sister_corroborated) gates.push('SISTER')
   if (p.name_corroborated) gates.push('NAME')
   if (p.multi_report_count >= 2) gates.push(`MULTI×${p.multi_report_count}`)
+
+  const decidable = p.status === 'pending' || p.status === 'blocked_core_exercise'
+  const isCoreOverride = p.status === 'blocked_core_exercise' && p.operation === 'remove'
+
+  const approve = async () => {
+    if (!decidable) return
+    if (isCoreOverride) {
+      const ok = window.confirm(
+        `OVERRIDE the core-exercise lockout for "${p.exercise_name}"?\n\n` +
+        `Field:     ${p.field_name}\n` +
+        `Operation: ${p.operation}\n` +
+        `Value:     ${JSON.stringify(p.proposed_value)}\n\n` +
+        `This will permanently change a canonical exercise.`,
+      )
+      if (!ok) return
+    }
+    setBusy(true); setErr(null)
+    try {
+      const res = await adminApi('admin_apply_correction_proposal', { proposalId: p.id }) as {
+        result?: { success?: boolean; error?: string }
+      }
+      if (!res?.result?.success) {
+        setErr(res?.result?.error || 'Apply failed')
+      } else {
+        onChanged()
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Apply failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const reject = async () => {
+    if (!decidable) return
+    const reason = window.prompt(
+      `Reject this proposal for "${p.exercise_name}"?\nOptional reason:`,
+      'manual_admin_reject',
+    )
+    if (reason === null) return
+    setBusy(true); setErr(null)
+    try {
+      await adminApi('admin_reject_correction_proposal', { proposalId: p.id, reason })
+      onChanged()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Reject failed')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="border border-neutral-800 rounded-md p-3 bg-neutral-900/40">
@@ -280,12 +333,34 @@ function ProposalCard({ p }: { p: ProposalRow }) {
         {p.source_report_id && (
           <a
             href={`/workout-intelligence/${p.source_report_id}`}
-            className="ml-auto text-blue-400 hover:underline"
+            className="text-blue-400 hover:underline"
           >
             View source report →
           </a>
         )}
+
+        {decidable && (
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={approve}
+              disabled={busy}
+              className={`btn btn-sm ${isCoreOverride ? 'btn-warning' : 'btn-success'}`}
+              title={isCoreOverride ? 'Override core-exercise lockout' : 'Approve and apply'}
+            >
+              {busy ? '…' : isCoreOverride ? 'Override' : 'Approve'}
+            </button>
+            <button
+              onClick={reject}
+              disabled={busy}
+              className="btn btn-sm btn-danger"
+            >
+              Reject
+            </button>
+          </div>
+        )}
       </div>
+
+      {err && <div className="alert alert-error mt-2 text-xs">{err}</div>}
     </div>
   )
 }

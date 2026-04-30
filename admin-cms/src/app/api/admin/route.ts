@@ -4486,6 +4486,31 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ counts, total: (data || []).length })
       }
 
+      case 'admin_apply_correction_proposal': {
+        const { proposalId } = params
+        if (typeof proposalId !== 'string' || proposalId.length === 0) {
+          return NextResponse.json({ error: 'proposalId required' }, { status: 400 })
+        }
+        const { data, error } = await admin.rpc('admin_apply_correction_proposal', {
+          p_proposal_id: proposalId,
+        })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ result: data })
+      }
+
+      case 'admin_reject_correction_proposal': {
+        const { proposalId, reason } = params
+        if (typeof proposalId !== 'string' || proposalId.length === 0) {
+          return NextResponse.json({ error: 'proposalId required' }, { status: 400 })
+        }
+        const { data, error } = await admin.rpc('admin_reject_correction_proposal', {
+          p_proposal_id: proposalId,
+          p_reason: typeof reason === 'string' ? reason : 'manual_admin_reject',
+        })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ result: data })
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
     }

@@ -16,6 +16,7 @@ const navItems = [
   { href: '/moderation', label: 'Moderation', icon: '🛡️' },
   { href: '/audit', label: 'Audit Log', icon: '📋' },
   { href: '/insights', label: 'AI Insights', icon: '🧠' },
+  { href: '/workout-intelligence', label: 'Workout Intelligence', icon: '🏋️' },
   { href: '/dev-logs', label: 'Dev Logs', icon: '🔬' },
   { href: '/bug-intelligence', label: 'Bug Intelligence', icon: '🧬' },
   { href: '/crashes', label: 'Crashes & Bugs', icon: '🐛' },

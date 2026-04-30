@@ -4172,6 +4172,272 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ schema_deployed: true, note_id: data.id, created_at: data.created_at })
       }
 
+
+      // ═══════════════════════════════════════════════════
+      // WORKOUT INTELLIGENCE — Claude post-workout analysis
+      // (read-only; auto-apply happens in edge function)
+      // ═══════════════════════════════════════════════════
+
+      case 'get_workout_intel_stats': {
+        const now = Date.now()
+        const since7d = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString()
+        const since24h = new Date(now - 24 * 60 * 60 * 1000).toISOString()
+
+        const [totalRes, last7dRes, last24hRes, completeRes, suspiciousRes, lostRes] = await Promise.all([
+          admin.from('ai_workout_reports').select('id', { count: 'exact', head: true }),
+          admin.from('ai_workout_reports').select('id', { count: 'exact', head: true }).gte('enqueued_at', since7d),
+          admin.from('ai_workout_reports').select('id', { count: 'exact', head: true }).gte('enqueued_at', since24h),
+          admin.from('ai_workout_reports').select('id', { count: 'exact', head: true })
+            .gte('enqueued_at', since7d).eq('status', 'complete'),
+          admin.from('ai_workout_reports').select('id', { count: 'exact', head: true })
+            .gte('enqueued_at', since7d).eq('is_suspicious', true),
+          admin.from('ai_workout_reports').select('id', { count: 'exact', head: true })
+            .gte('enqueued_at', since7d).eq('is_lost_session', true),
+        ])
+
+        const total = totalRes.count || 0
+        const last7d = last7dRes.count || 0
+        const last24hCount = last24hRes.count || 0
+        const denom = Math.max(1, last7d) // avoid div-by-zero — pcts read 0% when no rows
+        const completePct = ((completeRes.count || 0) / denom) * 100
+        const suspiciousPct = ((suspiciousRes.count || 0) / denom) * 100
+        const lostSessionPct = ((lostRes.count || 0) / denom) * 100
+
+        return NextResponse.json({
+          total, last7d, last24hCount,
+          completePct, suspiciousPct, lostSessionPct,
+        })
+      }
+
+      case 'list_workout_intel_reports': {
+        const { page = 0, limit, status, userId, dateFrom, dateTo } = params
+        const lim = safeLimit(limit, 200)
+        const pg = Math.max(0, Number(page) || 0)
+
+        let q = admin.from('ai_workout_reports')
+          .select(
+            'id, user_id, workout_id, quality_score, quality_band, status, ' +
+            'is_suspicious, is_lost_session, enqueued_at, analyzed_at, ' +
+            'summary_md, error_message, report_jsonb',
+            { count: 'exact' },
+          )
+          .order('enqueued_at', { ascending: false })
+          .range(pg * lim, (pg + 1) * lim - 1)
+
+        // status filter — 'suspicious' / 'lost_session' are flag-based, others are status-based.
+        if (status === 'suspicious') q = q.eq('is_suspicious', true)
+        else if (status === 'lost_session') q = q.eq('is_lost_session', true)
+        else if (status && typeof status === 'string') q = q.eq('status', status)
+
+        if (userId && typeof userId === 'string' && userId.trim()) {
+          const v = userId.trim()
+          // Treat anything that looks like a UUID as user_id; otherwise resolve email → user_id.
+          const isUuid = /^[0-9a-fA-F-]{36}$/.test(v)
+          if (isUuid) {
+            q = q.eq('user_id', v)
+          } else {
+            const { data: prof } = await admin.from('user_profiles')
+              .select('id')
+              .ilike('email', `%${sanitizeSearch(v)}%`)
+              .limit(50)
+            const ids = (prof || []).map((p: { id: string }) => p.id)
+            if (ids.length === 0) {
+              return NextResponse.json({ rows: [], total: 0 })
+            }
+            q = q.in('user_id', ids)
+          }
+        }
+
+        if (dateFrom && typeof dateFrom === 'string') q = q.gte('enqueued_at', dateFrom)
+        if (dateTo && typeof dateTo === 'string') q = q.lte('enqueued_at', dateTo)
+
+        const { data: reports, error, count } = await q
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        const list = (reports || []) as unknown as Array<Record<string, unknown>>
+
+        // Batch joins
+        const userIds = Array.from(new Set(list.map(r => r.user_id as string).filter(Boolean)))
+        const workoutIds = Array.from(new Set(list.map(r => r.workout_id as string).filter(Boolean)))
+
+        const [usersRes, workoutsRes, correctionsRes] = await Promise.all([
+          userIds.length
+            ? admin.from('user_profiles').select('id, name, email, username').in('id', userIds)
+            : Promise.resolve({ data: [] as Array<{ id: string; name: string | null; email: string | null; username: string | null }> }),
+          workoutIds.length
+            ? admin.from('workout_history').select('id, name, date').in('id', workoutIds)
+            : Promise.resolve({ data: [] as Array<{ id: string; name: string | null; date: string | null }> }),
+          // Correction counts grouped by source_report_id (batch lookup)
+          list.length
+            ? admin.from('exercise_corrections').select('source_report_id').in('source_report_id', list.map(r => r.id as string))
+            : Promise.resolve({ data: [] as Array<{ source_report_id: string }> }),
+        ])
+
+        const usersById = new Map((usersRes.data || []).map(u => [u.id, u]))
+        const workoutsById = new Map((workoutsRes.data || []).map(w => [w.id, w]))
+        const correctionCountByReport = new Map<string, number>()
+        for (const row of correctionsRes.data || []) {
+          if (row.source_report_id) {
+            correctionCountByReport.set(row.source_report_id, (correctionCountByReport.get(row.source_report_id) || 0) + 1)
+          }
+        }
+
+        const rows = list.map(r => {
+          const j = (r.report_jsonb as Record<string, unknown> | null) || {}
+          const flags = Array.isArray(j.redFlags) ? (j.redFlags as Array<{ severity?: string }>) : []
+          const counts = { info: 0, warn: 0, block: 0 }
+          for (const f of flags) {
+            const sev = String(f.severity || 'info')
+            if (sev === 'block') counts.block++
+            else if (sev === 'warn') counts.warn++
+            else counts.info++
+          }
+          const u = usersById.get(r.user_id as string) as { name: string | null; email: string | null; username: string | null } | undefined
+          const w = workoutsById.get(r.workout_id as string) as { name: string | null; date: string | null } | undefined
+          // Strip the heavy report_jsonb field from the list response — only
+          // the summary fields are needed at row-level. The detail page
+          // re-fetches the full row.
+          const { report_jsonb: _omit, ...rest } = r // eslint-disable-line @typescript-eslint/no-unused-vars
+          return {
+            ...rest,
+            user_name: u?.name || u?.username || null,
+            user_email: u?.email || null,
+            workout_name: w?.name || null,
+            workout_date: w?.date || null,
+            split_family: typeof j.splitFamily === 'string' ? j.splitFamily : null,
+            red_flag_counts: counts,
+            correction_count: correctionCountByReport.get(r.id as string) || 0,
+          }
+        })
+
+        return NextResponse.json({ rows, total: count || 0 })
+      }
+
+      case 'get_workout_intel_report': {
+        const { id } = params
+        if (!id || typeof id !== 'string') {
+          return NextResponse.json({ error: 'id is required' }, { status: 400 })
+        }
+
+        const { data: report, error } = await admin.from('ai_workout_reports')
+          .select('*')
+          .eq('id', id)
+          .single()
+
+        if (error || !report) {
+          return NextResponse.json({ error: error?.message || 'not found' }, { status: 404 })
+        }
+
+        const [workoutRes, userRes, correctionsRes] = await Promise.all([
+          admin.from('workout_history').select('id, name, date').eq('id', report.workout_id).maybeSingle(),
+          admin.from('user_profiles').select('id, name, email, username').eq('id', report.user_id).maybeSingle(),
+          admin.from('exercise_corrections')
+            .select('id, exercise_id, exercise_name, field_name, previous_value, new_value, evidence, confidence, applied_at')
+            .eq('source_report_id', id)
+            .order('applied_at', { ascending: false }),
+        ])
+
+        return NextResponse.json({
+          report,
+          workout: workoutRes.data || null,
+          user: userRes.data || null,
+          corrections: correctionsRes.data || [],
+        })
+      }
+
+      case 'get_exercise_corrections': {
+        const { exerciseId, limit } = params
+        if (!exerciseId || typeof exerciseId !== 'string') {
+          return NextResponse.json({ error: 'exerciseId is required' }, { status: 400 })
+        }
+        const lim = safeLimit(limit, 200)
+
+        const { data, error } = await admin.from('exercise_corrections')
+          .select('id, exercise_id, exercise_name, field_name, previous_value, new_value, evidence, confidence, source_report_id, applied_at')
+          .eq('exercise_id', exerciseId)
+          .order('applied_at', { ascending: false })
+          .limit(lim)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ rows: data || [] })
+      }
+
+      case 'get_exercise_pairing_signals': {
+        const { exerciseId, limit } = params
+        if (!exerciseId || typeof exerciseId !== 'string') {
+          return NextResponse.json({ error: 'exerciseId is required' }, { status: 400 })
+        }
+        const lim = safeLimit(limit, 20)
+
+        // Fetch synergistic + negative separately so we can return a balanced top-N each.
+        const baseSelect =
+          'exercise_a_id, exercise_b_id, exercise_a_name, exercise_b_name, ' +
+          'signal_type, co_occurrence_count, avg_pairing_quality, reason_codes, last_seen_at'
+
+        const [synA, synB, negA, negB] = await Promise.all([
+          admin.from('pairing_signals').select(baseSelect)
+            .eq('signal_type', 'synergistic').eq('exercise_a_id', exerciseId)
+            .order('co_occurrence_count', { ascending: false }).limit(lim),
+          admin.from('pairing_signals').select(baseSelect)
+            .eq('signal_type', 'synergistic').eq('exercise_b_id', exerciseId)
+            .order('co_occurrence_count', { ascending: false }).limit(lim),
+          admin.from('pairing_signals').select(baseSelect)
+            .eq('signal_type', 'negative').eq('exercise_a_id', exerciseId)
+            .order('co_occurrence_count', { ascending: false }).limit(lim),
+          admin.from('pairing_signals').select(baseSelect)
+            .eq('signal_type', 'negative').eq('exercise_b_id', exerciseId)
+            .order('co_occurrence_count', { ascending: false }).limit(lim),
+        ])
+
+        type Row = {
+          exercise_a_id: string; exercise_b_id: string
+          exercise_a_name: string; exercise_b_name: string
+          signal_type: string; co_occurrence_count: number
+          avg_pairing_quality: number | null; reason_codes: string[] | null
+          last_seen_at: string
+        }
+
+        // De-dup A∪B by the unordered pair {a_id, b_id}, prefer the row with the
+        // higher co_occurrence_count if both directions returned.
+        function merge(a: Row[], b: Row[]): Row[] {
+          const seen = new Map<string, Row>()
+          for (const r of [...(a || []), ...(b || [])]) {
+            const key = [r.exercise_a_id, r.exercise_b_id].sort().join('|')
+            const prev = seen.get(key)
+            if (!prev || (r.co_occurrence_count || 0) > (prev.co_occurrence_count || 0)) {
+              seen.set(key, r)
+            }
+          }
+          return Array.from(seen.values())
+            .sort((x, y) => (y.co_occurrence_count || 0) - (x.co_occurrence_count || 0))
+            .slice(0, lim)
+        }
+
+        const synergistic = merge((synA.data || []) as unknown as Row[], (synB.data || []) as unknown as Row[])
+        const negative = merge((negA.data || []) as unknown as Row[], (negB.data || []) as unknown as Row[])
+
+        // Annotate the "other" exercise (the one that ISN'T the requested
+        // exerciseId) so the UI can render a single column.
+        function annotate(rows: Row[]) {
+          return rows.map(r => {
+            const isA = r.exercise_a_id === exerciseId
+            return {
+              ...r,
+              partner_id: isA ? r.exercise_b_id : r.exercise_a_id,
+              partner_name: isA ? r.exercise_b_name : r.exercise_a_name,
+            }
+          })
+        }
+
+        return NextResponse.json({
+          synergistic: annotate(synergistic),
+          negative: annotate(negative),
+        })
+      }
+
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
     }

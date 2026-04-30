@@ -9,6 +9,26 @@ const R2_BASE = 'https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev'
 type Exercise = Record<string, unknown>
 type Suggestions = Record<string, string[]>
 
+type CorrectionRow = {
+  id: string
+  field_name: string
+  previous_value: unknown
+  new_value: unknown
+  evidence: string | null
+  confidence: number | null
+  source_report_id: string | null
+  applied_at: string
+}
+type PairingRow = {
+  partner_id: string | null
+  partner_name: string | null
+  signal_type: string
+  co_occurrence_count: number
+  avg_pairing_quality: number | null
+  reason_codes: string[] | null
+  last_seen_at: string
+}
+
 async function adminAction(action: string, params: Record<string, unknown> = {}) {
   const res = await fetch('/api/admin', {
     method: 'POST',
@@ -128,6 +148,11 @@ export default function ExerciseDetailPage() {
   const [saveMsg, setSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [suggestions, setSuggestions] = useState<Suggestions>({})
   const [navIds, setNavIds] = useState<string[]>([])
+  const [corrections, setCorrections] = useState<CorrectionRow[]>([])
+  const [pairings, setPairings] = useState<{ synergistic: PairingRow[]; negative: PairingRow[] }>({ synergistic: [], negative: [] })
+  const [correctionsLoading, setCorrectionsLoading] = useState(true)
+  const [pairingsLoading, setPairingsLoading] = useState(true)
+  const [expandedCorrectionId, setExpandedCorrectionId] = useState<string | null>(null)
 
   const loadExercise = useCallback(async () => {
     setLoading(true)
@@ -143,6 +168,20 @@ export default function ExerciseDetailPage() {
 
   useEffect(() => { loadExercise() }, [loadExercise])
   useEffect(() => { loadSuggestions() }, [loadSuggestions])
+  const loadCorrections = useCallback(async () => {
+    setCorrectionsLoading(true)
+    const data = await adminAction('get_exercise_corrections', { exerciseId, limit: 100 })
+    if (!data.error) setCorrections((data.rows || []) as CorrectionRow[])
+    setCorrectionsLoading(false)
+  }, [exerciseId])
+  const loadPairings = useCallback(async () => {
+    setPairingsLoading(true)
+    const data = await adminAction('get_exercise_pairing_signals', { exerciseId, limit: 5 })
+    if (!data.error) setPairings({ synergistic: (data.synergistic || []) as PairingRow[], negative: (data.negative || []) as PairingRow[] })
+    setPairingsLoading(false)
+  }, [exerciseId])
+  useEffect(() => { loadCorrections() }, [loadCorrections])
+  useEffect(() => { loadPairings() }, [loadPairings])
   useEffect(() => {
     try { const ids = JSON.parse(sessionStorage.getItem('exerciseIds') || '[]'); setNavIds(ids) } catch { /* */ }
   }, [])
@@ -338,6 +377,84 @@ export default function ExerciseDetailPage() {
           </div>
         </div>
 
+        {/* AI Corrections + Pairing Signals (read-only audit trail) */}
+        <div style={{ marginTop: 24, paddingTop: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8, paddingLeft: 2 }}>
+            AI Corrections
+          </div>
+          <div className="card" style={{ marginBottom: 16, padding: 0, overflow: 'hidden' }}>
+            {correctionsLoading ? (
+              <div style={{ padding: 18, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>
+            ) : corrections.length === 0 ? (
+              <div style={{ padding: 18, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
+                No corrections applied yet.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>When</th><th>Field</th><th>Previous → New</th><th>Evidence</th><th>Confidence</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {corrections.map(c => {
+                      const isOpen = expandedCorrectionId === c.id
+                      const ev = c.evidence || ''
+                      const truncated = ev.length > 80 ? ev.slice(0, 80) + '…' : ev
+                      return (
+                        <tr key={c.id} onClick={() => setExpandedCorrectionId(isOpen ? null : c.id)} style={{ cursor: ev.length > 80 ? 'pointer' : 'default' }}>
+                          <td className="text-sm align-top" style={{ color: 'var(--text-secondary)' }}>
+                            <div>{correctionTimeAgo(c.applied_at)}</div>
+                          </td>
+                          <td className="align-top"><span className="badge badge-info">{c.field_name}</span></td>
+                          <td className="text-sm align-top" style={{ color: 'var(--text-primary)' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>{formatCorrectionValue(c.previous_value)}</span>
+                            <span style={{ margin: '0 6px', color: 'var(--text-muted)' }}>→</span>
+                            <span>{formatCorrectionValue(c.new_value)}</span>
+                          </td>
+                          <td className="text-sm align-top" style={{ color: 'var(--text-secondary)', maxWidth: 360 }}>
+                            {isOpen ? ev : truncated || '—'}
+                          </td>
+                          <td className="text-sm align-top" style={{ color: 'var(--text-secondary)' }}>
+                            {c.confidence != null ? c.confidence.toFixed(2) : '—'}
+                          </td>
+                          <td className="align-top">
+                            {c.source_report_id ? (
+                              <a className="btn btn-ghost" style={{ fontSize: 11, padding: '4px 8px' }}
+                                onClick={e => e.stopPropagation()}
+                                href={`/workout-intelligence/${c.source_report_id}`}>
+                                Source →
+                              </a>
+                            ) : null}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8, paddingLeft: 2 }}>
+            Pairing Signals
+          </div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            {pairingsLoading ? (
+              <div style={{ padding: 18, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>
+            ) : pairings.synergistic.length === 0 && pairings.negative.length === 0 ? (
+              <div style={{ padding: 6, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
+                No pairing signals captured yet.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                <PairingsList title="Top synergistic" tone="good" rows={pairings.synergistic} />
+                <PairingsList title="Top negative" tone="bad" rows={pairings.negative} />
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Unsaved bar */}
         {hasChanges && (
           <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', padding: '10px 28px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, zIndex: 50 }}>
@@ -511,6 +628,77 @@ function FieldEditor({ field, value, displayValue, onChange, isEdited, suggestio
     <div>
       <div style={lbl}>{field.label}{isEdited && '*'}</div>
       <input type="text" value={displayValue} onChange={e => onChange(e.target.value)} style={{ fontSize: 13, padding: '6px 8px' }} />
+    </div>
+  )
+}
+
+
+// ─── AI Corrections / Pairing helpers (added by workout-intel feature) ───────
+
+function correctionTimeAgo(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return '—'
+  const diff = Date.now() - t
+  if (diff < 0) return 'just now'
+  const sec = Math.floor(diff / 1000)
+  if (sec < 60) return sec <= 5 ? 'just now' : `${sec}s ago`
+  const m = Math.floor(sec / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d}d ago`
+  return `${Math.floor(d / 30)}mo ago`
+}
+
+function formatCorrectionValue(v: unknown): string {
+  if (v === null || v === undefined) return '∅'
+  if (typeof v === 'boolean') return v ? '✅' : '❌'
+  if (Array.isArray(v)) return v.length ? v.map(x => String(x)).join(', ') : '[]'
+  if (typeof v === 'object') {
+    try { return JSON.stringify(v) } catch { return String(v) }
+  }
+  return String(v)
+}
+
+function PairingsList({ title, tone, rows }: { title: string; tone: 'good' | 'bad'; rows: PairingRow[] }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+        <span className={tone === 'good' ? 'badge badge-success' : 'badge badge-danger'}>{title}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>top {rows.length}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>None.</div>
+      ) : (
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          {rows.map((r, i) => (
+            <li
+              key={`${r.partner_id || i}-${i}`}
+              style={{
+                padding: '8px 0',
+                borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none',
+                fontSize: 13,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <a
+                  href={r.partner_id ? `/exercises/${r.partner_id}` : '#'}
+                  style={{ color: 'var(--text-primary)', fontWeight: 500, textDecoration: 'none', flex: 1, minWidth: 0 }}
+                >
+                  {r.partner_name || (r.partner_id ? r.partner_id.slice(0, 8) : '—')}
+                </a>
+                <span style={{ color: 'var(--text-muted)', fontSize: 11, flexShrink: 0 }}>×{r.co_occurrence_count}</span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                {r.avg_pairing_quality != null && <>q={r.avg_pairing_quality.toFixed(2)} · </>}
+                {(r.reason_codes || []).slice(0, 3).join(', ') || 'no codes'}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

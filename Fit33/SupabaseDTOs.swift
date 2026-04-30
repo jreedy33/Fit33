@@ -650,6 +650,11 @@ struct WorkoutHistoryDTO: Codable {
     // server recomputes after insert via fire-and-forget RPC call.
     let qualityScore: Int?
     let qualityBand: String?
+    // Origin classification (migration #156 — 20260725_workout_intelligence.sql).
+    // One of: 'auto_gen' | 'custom' | 'program' | 'friend_workout' | 'cardio'.
+    // The intelligence pipeline conditions analysis on this (auto_gen workouts
+    // get the programmed-vs-executed diff; custom workouts skip it).
+    let workoutType: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, date, duration, notes, exercises
@@ -662,6 +667,37 @@ struct WorkoutHistoryDTO: Codable {
         case caloriesBurned = "calories_burned"
         case qualityScore = "quality_score"
         case qualityBand = "quality_band"
+        case workoutType = "workout_type"
+    }
+}
+
+/// Per-swap audit row written to `workout_swap_events` AFTER finishWorkout
+/// completes (we only have a stable workout_id at that point). Captured
+/// in-flight on `WorkoutManager.pendingSwapEvents` and flushed in a single
+/// batch insert.
+struct WorkoutSwapEventDTO: Codable {
+    let userId: String
+    let workoutId: String
+    let swapIndex: Int                 // 1, 2, 3+ (FE invariant 25 tier)
+    let originalExerciseId: String?
+    let originalExerciseName: String
+    let replacementExerciseId: String?
+    let replacementExerciseName: String
+    let pickedRank: Int?               // 0 = top algorithmic suggestion; NULL = unknown
+    let swapSource: String             // 'quick_swap' | 'smart_swap' | 'search' | 'random'
+    let completedReplacement: Bool?    // populated post-workout
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case workoutId = "workout_id"
+        case swapIndex = "swap_index"
+        case originalExerciseId = "original_exercise_id"
+        case originalExerciseName = "original_exercise_name"
+        case replacementExerciseId = "replacement_exercise_id"
+        case replacementExerciseName = "replacement_exercise_name"
+        case pickedRank = "picked_rank"
+        case swapSource = "swap_source"
+        case completedReplacement = "completed_replacement"
     }
 }
 

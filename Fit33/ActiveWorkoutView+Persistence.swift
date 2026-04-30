@@ -48,6 +48,7 @@ extension ActiveWorkoutView {
                 workoutSet.weight = setData.weight  // Double - preserves decimals like 187.5
                 workoutSet.reps = Int16(setData.reps)
                 workoutSet.isCompleted = setData.isCompleted
+                workoutSet.completedAt = setData.completedAt  // wall-clock for pacing analysis (#156)
                 workoutSet.restTime = Int32(setData.restTime)
                 workoutSet.setType = setData.setType.rawValue  // Save set type (Warmup, Dropset, Failure, etc.)
                 workoutSet.workoutExercise = workoutExercise

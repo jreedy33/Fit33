@@ -155,6 +155,16 @@ extension ActiveWorkoutView {
         let capturedWorkout = workout
         let capturedElapsedTime = elapsedTime
 
+        // #156: stamp `completedReplacement` on each pending swap event by
+        // checking whether the replacement exercise has any completed sets.
+        // Done before the cloud upload Task captures `pendingSwapEvents`.
+        for i in workoutManager.pendingSwapEvents.indices {
+            let evt = workoutManager.pendingSwapEvents[i]
+            let replacementId = evt.replacementExerciseId?.uuidString ?? ""
+            let sets = capturedSetsData[replacementId] ?? []
+            workoutManager.pendingSwapEvents[i].completedReplacement = sets.contains { $0.isCompleted }
+        }
+
         // Migration #154: score the workout BEFORE clearing transient data.
         // The result is stashed on WorkoutManager so the Done-button path
         // (collaborative engine corpus gate) and the cloud upsert below
@@ -391,7 +401,27 @@ extension ActiveWorkoutView {
         let newExerciseId = newExercise.id?.uuidString ?? ""
         let oldExerciseName = oldExercise.name ?? "Unknown"
         let newExerciseName = newExercise.name ?? "Unknown"
-        
+
+        // Workout intelligence audit (#156). Captured locally; flushed to
+        // `workout_swap_events` post-finishWorkout when we have a stable
+        // workout_id. shuffleCount is global swap counter; we surface it as
+        // `swap_index` for FE-invariant-25 tier inference (1-2 = equipment
+        // variant, 3+ = complementary). picked_rank = 0 because
+        // `ExerciseCard.shuffleToSimilarExercise` always accepts the
+        // `getQuickSwap` top suggestion (no menu). When the
+        // `SmartExerciseSwapView` menu becomes the active path, threading
+        // an explicit pickedRank through the closure chain is the V2 fix.
+        workoutManager.pendingSwapEvents.append(WorkoutManager.PendingSwapEvent(
+            originalExerciseId: oldExercise.id,
+            originalExerciseName: oldExerciseName,
+            replacementExerciseId: newExercise.id,
+            replacementExerciseName: newExerciseName,
+            swapIndex: shuffleCount,
+            pickedRank: 0,
+            swapSource: "quick_swap",
+            completedReplacement: nil
+        ))
+
         // Log swap for dev session analytics
         if AdvancedSessionLogger.isActive {
             Task { @MainActor in

@@ -4795,6 +4795,18 @@ class SupabaseManager: ObservableObject {
         }
         let rate = totalPlanned > 0 ? Double(totalCompleted) / Double(totalPlanned) : 1.0
 
+        // Origin classification (#156). Programmed workouts come from
+        // SmartProgram → 'program'; auto-gen has the marker prefix in name;
+        // everything else is custom. Cardio detection is V2 (we don't have
+        // a clean signal yet — workouts that consist only of duration_based
+        // exercises could be inferred but that's noisy).
+        let inferredWorkoutType: String = {
+            if WorkoutManager.shared.currentSmartProgramId != nil { return "program" }
+            let name = (workout.name ?? "").lowercased()
+            if name.hasPrefix("auto") || name.hasPrefix("quick") { return "auto_gen" }
+            return "custom"
+        }()
+
         let workoutDTO = WorkoutHistoryDTO(
             id: workoutId,
             userId: userId.uuidString,
@@ -4810,7 +4822,8 @@ class SupabaseManager: ObservableObject {
             totalSetsCompleted: totalCompleted,
             caloriesBurned: workout.caloriesBurned > 0 ? workout.caloriesBurned : nil,
             qualityScore: quality?.score,
-            qualityBand: quality?.band.rawValue
+            qualityBand: quality?.band.rawValue,
+            workoutType: inferredWorkoutType
         )
         
         try await client
@@ -4832,6 +4845,53 @@ class SupabaseManager: ObservableObject {
             } catch {
                 AppLogger.warning("[QUALITY] score_workout_quality RPC failed (non-fatal): \(error.localizedDescription)", category: .network)
             }
+        }
+
+        // Migration #156: enqueue the workout for Claude analysis. The RPC
+        // only enqueues if the workout has a quality_score (it does, after
+        // the score RPC above settles — small race is fine because the
+        // pending row gets picked up by the next cron run). Lost-session
+        // workouts (60-69) are also enqueued but flagged is_lost_session.
+        Task { [client] in
+            do {
+                _ = try await client
+                    .rpc("enqueue_quality_workout_for_analysis", params: ["p_workout_id": workoutId])
+                    .execute()
+                AppLogger.debug("[INTEL] Workout enqueued for analysis: \(workoutId.prefix(8))", category: .network)
+            } catch {
+                AppLogger.warning("[INTEL] enqueue RPC failed (non-fatal): \(error.localizedDescription)", category: .network)
+            }
+        }
+
+        // Migration #156: flush in-flight swap audit rows now that we have
+        // a stable workout_id. WorkoutManager captured these during the
+        // workout but couldn't write them earlier (FK to workout_history).
+        let pending = WorkoutManager.shared.pendingSwapEvents
+        if !pending.isEmpty {
+            Task { [client, userId] in
+                let rows = pending.map { evt in
+                    WorkoutSwapEventDTO(
+                        userId: userId.uuidString,
+                        workoutId: workoutId,
+                        swapIndex: evt.swapIndex,
+                        originalExerciseId: evt.originalExerciseId?.uuidString,
+                        originalExerciseName: evt.originalExerciseName,
+                        replacementExerciseId: evt.replacementExerciseId?.uuidString,
+                        replacementExerciseName: evt.replacementExerciseName,
+                        pickedRank: evt.pickedRank,
+                        swapSource: evt.swapSource,
+                        completedReplacement: evt.completedReplacement
+                    )
+                }
+                do {
+                    try await client.from("workout_swap_events").insert(rows).execute()
+                    AppLogger.info("[SWAP AUDIT] Flushed \(rows.count) swap events for workout \(workoutId.prefix(8))", category: .network)
+                } catch {
+                    AppLogger.warning("[SWAP AUDIT] Failed to flush swap events (non-fatal): \(error.localizedDescription)", category: .network)
+                }
+            }
+            // Clear after the Task captures the array.
+            await MainActor.run { WorkoutManager.shared.pendingSwapEvents.removeAll() }
         }
     }
 

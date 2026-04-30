@@ -53,6 +53,23 @@ class WorkoutManager: ObservableObject {
     /// `cancelWorkout()` and at the end of `finishWorkout()`.
     @Published var lastWorkoutQuality: WorkoutQualityResult? = nil
 
+    /// In-flight swap audit rows captured during the active workout.
+    /// Flushed to `workout_swap_events` after `saveWorkoutToCloud` returns
+    /// (we only have a stable workout_id at that point — the table FKs to
+    /// `workout_history.id`). Cleared on `cancelWorkout()` and after flush.
+    @Published var pendingSwapEvents: [PendingSwapEvent] = []
+
+    struct PendingSwapEvent {
+        let originalExerciseId: UUID?
+        let originalExerciseName: String
+        let replacementExerciseId: UUID?
+        let replacementExerciseName: String
+        let swapIndex: Int                 // 1, 2, 3+ (FE invariant 25)
+        let pickedRank: Int?               // 0 = top algorithmic suggestion
+        let swapSource: String             // 'quick_swap' | 'smart_swap' | 'search' | 'random'
+        var completedReplacement: Bool?    // updated post-workout
+    }
+
     // Workout generator selections state
     @Published var generatorSelections: (bodyParts: Set<String>, equipment: Set<String>, surpriseMe: Bool)? = nil
     @Published var shouldTriggerWorkoutGeneration: Bool = false
@@ -1233,6 +1250,7 @@ class WorkoutManager: ObservableObject {
         workoutStartTime = nil
         workoutInsights = nil
         lastWorkoutQuality = nil
+        pendingSwapEvents.removeAll()
         currentProgramDayNumber = nil
         currentProgramDayFocus = nil
         currentSmartProgramId = nil

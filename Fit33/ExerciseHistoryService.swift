@@ -495,7 +495,7 @@ class ExerciseHistoryService: ObservableObject {
         AppLogger.debug("💾 [ExerciseHistory] Inserting \(completedSets.count) sets into exercise_set_history...", category: .workout)
         for (index, set) in completedSets.enumerated() {
             let weightKg = (set.weight * 0.453592 * 10).rounded() / 10
-            let setData: [String: AnyJSON] = [
+            var setData: [String: AnyJSON] = [
                 "performance_id": .string(performanceId.uuidString),
                 "user_id": .string(userId.uuidString),
                 "exercise_name": .string(exerciseName),
@@ -509,6 +509,14 @@ class ExerciseHistoryService: ObservableObject {
                 "set_type": .string(set.setType.rawValue),
                 "rest_time_seconds": .integer(Int(set.restTime))
             ]
+            // Wall-clock per-set timestamp drives the pacing analysis in the
+            // workout intelligence pipeline (#156). NULL for legacy / lost
+            // timestamps; pipeline falls back to a (duration / sets) proxy.
+            if let completedAt = set.completedAt {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                setData["completed_at"] = .string(formatter.string(from: completedAt))
+            }
             
             do {
                 try await supabase

@@ -109,7 +109,19 @@ class WorkoutSetData: ObservableObject, Identifiable {
     @Published var weight: Double = 0       // Always stored in lbs
     @Published var weightKg: Double = 0     // Always stored in kg
     @Published var reps: Int = 0
-    @Published var isCompleted: Bool = false
+    @Published var isCompleted: Bool = false {
+        didSet {
+            // Capture wall-clock at moment-of-completion so the analysis
+            // pipeline can derive set-pacing without reverse-engineering
+            // (workout.duration / completed_sets). Cleared on uncheck.
+            if isCompleted {
+                if completedAt == nil { completedAt = Date() }
+            } else {
+                completedAt = nil
+            }
+        }
+    }
+    @Published var completedAt: Date? = nil
     @Published var setType: SetType = .normal
     @Published var restTime: TimeInterval = 0
     

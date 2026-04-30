@@ -259,8 +259,8 @@ export default function WorkoutIntelDetailPage() {
                     </span>
                     {p.code && <span className="badge badge-neutral">{p.code}</span>}
                   </div>
-                  <div style={{ color: 'var(--text-primary)' }}>{(p.exercises || []).join(' + ') || '—'}</div>
-                  {p.note && <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{p.note}</div>}
+                  <div style={{ color: 'var(--text-primary)' }}>{(p.exercises || []).map(safeText).join(' + ') || '—'}</div>
+                  {p.note && <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{safeText(p.note)}</div>}
                 </li>
               ))}
             </ul>
@@ -280,9 +280,9 @@ export default function WorkoutIntelDetailPage() {
             <SimpleTable
               headers={['Exercise', 'Kind', 'Delta', 'Trigger met', 'Safe']}
               rows={(j.progressionEvidence || []).map(p => [
-                p.exerciseName || '—',
-                p.kind || '—',
-                String(p.delta ?? '—'),
+                safeText(p.exerciseName) || '—',
+                safeText(p.kind) || '—',
+                safeText(p.delta) || '—',
                 p.triggerMet ? '✅' : '❌',
                 p.progressionSafe ? '✅' : '❌',
               ])}
@@ -298,10 +298,10 @@ export default function WorkoutIntelDetailPage() {
             <SimpleTable
               headers={['Event', 'Class', 'Intent', 'Original → Replacement', 'Completed']}
               rows={(j.swapInsights || []).map(s => [
-                s.swapEventId ? s.swapEventId.slice(0, 8) : '—',
-                s.swapClass || '—',
-                s.swapIntent || '—',
-                `${s.original || '?'} → ${s.replacement || '?'}`,
+                typeof s.swapEventId === 'string' && s.swapEventId.length >= 8 ? s.swapEventId.slice(0, 8) : '—',
+                safeText(s.swapClass) || '—',
+                safeText(s.swapIntent) || '—',
+                `${safeText(s.original) || '?'} → ${safeText(s.replacement) || '?'}`,
                 s.completedReplacement === true ? '✅' : s.completedReplacement === false ? '❌' : '—',
               ])}
             />
@@ -329,9 +329,9 @@ export default function WorkoutIntelDetailPage() {
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className={severityBadgeClass(f.severity)}>{f.severity || 'info'}</span>
-                    {f.code && <span className="badge badge-neutral">{f.code}</span>}
+                    {f.code && <span className="badge badge-neutral">{safeText(f.code)}</span>}
                   </div>
-                  <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{f.evidence || '—'}</div>
+                  <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{safeText(f.evidence) || '—'}</div>
                 </div>
               ))}
             </div>
@@ -350,7 +350,7 @@ export default function WorkoutIntelDetailPage() {
                 <KV label="Sets Δ" value={String(j.programmedVsExecuted.setCountDelta ?? '—')} />
               </div>
               {j.programmedVsExecuted.summary && (
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{j.programmedVsExecuted.summary}</p>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{safeText(j.programmedVsExecuted.summary)}</p>
               )}
             </>
           )}
@@ -439,11 +439,24 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{children}</p>
 }
 
-function KV({ label, value }: { label: string; value: string }) {
+// Defensive coercion — Claude sometimes returns objects where strings are
+// expected. Render as JSON string instead of crashing with React error #31.
+function safeText(v: unknown): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (Array.isArray(v)) return v.length ? v.map(x => safeText(x)).join(', ') : '—'
+  if (typeof v === 'object') {
+    try { return JSON.stringify(v) } catch { return '[object]' }
+  }
+  return String(v)
+}
+
+function KV({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="card" style={{ padding: 12 }}>
       <div className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{label}</div>
-      <div className="text-sm font-semibold mt-1 truncate" style={{ color: 'var(--text-primary)' }}>{value}</div>
+      <div className="text-sm font-semibold mt-1 truncate" style={{ color: 'var(--text-primary)' }}>{safeText(value)}</div>
     </div>
   )
 }
@@ -475,23 +488,70 @@ function VolumeBalanceBars({ data }: { data: VolumeBalance | undefined }) {
 
 function PacingBlock({ pacing, primaryGoal }: { pacing: PacingProfile | undefined; primaryGoal: string | undefined }) {
   if (!pacing) return <Empty>Pacing data not available.</Empty>
+
+  // Pacing shape (post-#160 prompt):
+  //   avgRestSec        — single number (preferred)
+  //   restPerExerciseSec — per-exercise dict (optional)
+  // Legacy reports (#156-#159 era) used avgRestPerExerciseSec as the dict.
+  // Accept all three shapes here.
+  const pacingAny = pacing as unknown as Record<string, unknown>
+  const restDict: Record<string, unknown> | null = (() => {
+    const candidates = [pacingAny.restPerExerciseSec, pacingAny.avgRestPerExerciseSec]
+    for (const c of candidates) {
+      if (c && typeof c === 'object' && !Array.isArray(c)) return c as Record<string, unknown>
+    }
+    return null
+  })()
+
+  const avgRestValue: number | null = (() => {
+    // Preferred path: single avgRestSec.
+    const single = pacingAny.avgRestSec ?? pacingAny.avgRestPerExerciseSec
+    if (typeof single === 'number' && Number.isFinite(single)) return single
+    if (typeof single === 'string') {
+      const n = Number(single)
+      if (Number.isFinite(n)) return n
+    }
+    // Fallback: average the dict values.
+    if (restDict) {
+      const nums = Object.values(restDict)
+        .map(v => (typeof v === 'number' ? v : Number(v)))
+        .filter(n => Number.isFinite(n))
+      if (nums.length > 0) return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length)
+    }
+    return null
+  })()
+
+  // Per-exercise table — prefer canonical perExercise[]; fall back to dict.
+  const perExerciseFromDict: Array<{ exerciseName: string; avgRestSec: number; setCount?: number }> = (() => {
+    if (restDict && (!pacing.perExercise || pacing.perExercise.length === 0)) {
+      return Object.entries(restDict)
+        .map(([name, v]) => ({
+          exerciseName: name,
+          avgRestSec: typeof v === 'number' ? v : Number(v),
+        }))
+        .filter(r => Number.isFinite(r.avgRestSec))
+    }
+    return []
+  })()
+  const perExercise = (pacing.perExercise && pacing.perExercise.length > 0) ? pacing.perExercise : perExerciseFromDict
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         {pacing.inferredIntent && (
-          <span className="badge badge-info">intent: {pacing.inferredIntent}</span>
+          <span className="badge badge-info">intent: {String(pacing.inferredIntent)}</span>
         )}
         {primaryGoal && (
-          <span className="badge badge-neutral">goal: {primaryGoal}</span>
+          <span className="badge badge-neutral">goal: {String(primaryGoal)}</span>
         )}
         {pacing.intentMatchesGoal !== undefined && (
           <span className={pacing.intentMatchesGoal ? 'badge badge-success' : 'badge badge-warning'}>
             {pacing.intentMatchesGoal ? '✅ matches goal' : '⚠️ mismatch'}
           </span>
         )}
-        {pacing.avgRestPerExerciseSec !== undefined && (
+        {avgRestValue !== null && (
           <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Avg rest: <span style={{ color: 'var(--text-primary)' }}>{pacing.avgRestPerExerciseSec}s</span>
+            Avg rest: <span style={{ color: 'var(--text-primary)' }}>{avgRestValue}s</span>
           </span>
         )}
       </div>
@@ -501,10 +561,14 @@ function PacingBlock({ pacing, primaryGoal }: { pacing: PacingProfile | undefine
           <VolumeBalanceBars data={pacing.restBuckets} />
         </div>
       )}
-      {pacing.perExercise && pacing.perExercise.length > 0 && (
+      {perExercise.length > 0 && (
         <SimpleTable
           headers={['Exercise', 'Avg rest', 'Sets']}
-          rows={pacing.perExercise.map(p => [p.exerciseName, p.avgRestSec ? `${p.avgRestSec}s` : '—', String(p.setCount ?? '—')])}
+          rows={perExercise.map(p => [
+            String(p.exerciseName ?? '—'),
+            p.avgRestSec ? `${p.avgRestSec}s` : '—',
+            String(p.setCount ?? '—'),
+          ])}
         />
       )}
     </div>

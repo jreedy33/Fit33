@@ -159,7 +159,8 @@ Paraphrased from FITNESS_EXPERT_AGENT.md. Every violation observed becomes a red
     }
   ],
   "pacingProfile": {
-    "avgRestPerExerciseSec": { "<exerciseName>": <int> },
+    "avgRestSec": <int>,                            // single workout-wide average (REQUIRED)
+    "restPerExerciseSec": { "<exerciseName>": <int> }, // per-exercise breakdown (optional)
     "restBuckets": { "rushed": <int>, "normal": <int>, "dawdled": <int> },
     "inferredIntent": "strength|hypertrophy|endurance|circuit|mixed",
     "intentMatchesGoal": <bool>
@@ -676,6 +677,28 @@ async function processWorkout(
 
     // 7. Upsert pairing signals.
     const pairingSignalsUpserted = await upsertPairingSignals(supabase, parsed, ctx);
+
+    // 8. Refresh per-user training profile (fire-and-forget).
+    //    No-op for users with <4 completed reports (the RPC guards that).
+    //    A failure here MUST NOT fail the report — profile is auxiliary.
+    try {
+        const { data, error } = await supabase.rpc("refresh_user_training_profile", {
+            p_user_id: row.user_id,
+        });
+        if (error) {
+            console.warn(
+                `analyze-quality-workout: refresh_user_training_profile error for user ${row.user_id}:`,
+                error,
+            );
+        } else if (data && (data as { refreshed?: boolean }).refreshed) {
+            console.log(
+                `analyze-quality-workout: profile refreshed for user ${row.user_id} ` +
+                `(intent=${(data as { inferred_intent?: string }).inferred_intent})`,
+            );
+        }
+    } catch (e) {
+        console.warn("refresh_user_training_profile threw (non-fatal)", e);
+    }
 
     return {
         reportId: row.id,

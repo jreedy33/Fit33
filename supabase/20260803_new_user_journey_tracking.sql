@@ -891,6 +891,12 @@ BEGIN
         RETURN jsonb_build_object('success', FALSE, 'reason', 'config_incomplete', 'pending', v_pending);
     END IF;
 
+    -- timeout_milliseconds := 60000 (60s) — the edge function calls Anthropic
+    -- Claude (Sonnet, max_tokens=8192) which routinely takes 10-30s. The
+    -- pg_net default of 5000ms surfaces a misleading "Timeout of 5000 ms"
+    -- error in net._http_response even though the function itself completes
+    -- successfully and writes the report. 60s gives Claude breathing room +
+    -- ~25s slack for cold starts.
     SELECT net.http_post(
         url     := v_supabase_url || '/functions/v1/generate-new-user-report',
         headers := jsonb_build_object(
@@ -898,7 +904,8 @@ BEGIN
             'Authorization', 'Bearer ' || v_service_key,
             'x-cron-key',    COALESCE(v_cron_key, '')
         ),
-        body    := jsonb_build_object('source', 'cron', 'pending', v_pending)
+        body    := jsonb_build_object('source', 'cron', 'pending', v_pending),
+        timeout_milliseconds := 60000
     ) INTO v_request_id;
 
     RETURN jsonb_build_object('success', TRUE, 'request_id', v_request_id, 'pending', v_pending);

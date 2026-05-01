@@ -624,6 +624,44 @@ struct MainTabView: View {
             deepLinkManager.showPrivateJoinSheet = true
             deepLinkManager.pendingDestination = nil
             AppLogger.debug("[DEEPLINK] Showing private challenge join sheet for code: \(code)", category: .ui)
+
+        // ── Smart Notification Engine destinations (2026-08-01) ─────────
+        case .leagues:
+            // League widget lives on Stats tab (tab 4 — same as personalRecord).
+            selectedTab = 4
+            deepLinkManager.pendingDestination = nil
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                NotificationCenter.default.post(name: .scrollToWidget, object: "leagueWidget")
+            }
+            AppLogger.debug("[DEEPLINK] Switched to Stats tab → scrolling to League widget", category: .ui)
+
+        case .readinessDetail:
+            // Land on Home tab; the wrapper presents `ReadinessDrillDownSheet`
+            // locally via .sheet() (PE invariant 25d — sheets must own their
+            // presentation context). The dashboard wrapper subscribes to a
+            // `showReadinessDetail` flag set here.
+            selectedTab = 0
+            deepLinkManager.pendingDashboardRoute = "ReadinessDetail"
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Switched to Home tab → opening readiness drill-down", category: .ui)
+
+        case .smackTalk(let challengeId):
+            // Smack-talk composer is hosted by the challenge detail view —
+            // route to challenge detail with a "open composer" flag.
+            selectedTab = 0
+            deepLinkManager.pendingDashboardRoute = "ChallengeDetail:\(challengeId):smackTalk"
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Switched to Home tab → smack-talk composer for: \(challengeId)", category: .ui)
+
+        case .mealLogger(let mealType):
+            // Alias of addFood when meal type provided, or mealsTab landing.
+            selectedTab = 3
+            if let mealType = mealType {
+                deepLinkManager.pendingMealType = mealType
+            }
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Switched to Meals tab for meal logger (\(mealType ?? "any"))", category: .ui)
         }
     }
     

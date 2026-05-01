@@ -1843,7 +1843,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             }
             AppLogger.debug("Private challenge message — opening detail", category: .general)
             
-        case "challenge_accepted", "challenge_progress", "challenge_completed":
+        case "challenge_accepted", "challenge_progress", "challenge_completed", "challenge_update":
+            // 2026-08-01: `challenge_update` was in `knownNotificationTypes` but
+            // had no specific case — fell through to default and lost the
+            // `challenge_id` deep-link. Routed identically to `challenge_progress`
+            // since the user intent ("see what changed in this challenge") is
+            // the same.
             await ChallengeService.shared.fetchPendingSentChallenges()
             await ChallengeService.shared.fetchActiveChallenges()
             await ChallengeService.shared.fetchActiveGroupChallenges()  // Group challenge may have been activated
@@ -1856,7 +1861,31 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 DeepLinkManager.shared.pendingDestination = .dashboard
                 AppLogger.debug("Challenge \(type) — opening dashboard with active widget", category: .general)
             }
-            
+
+        // 2026-08-01: `challenge_declined` was refreshed in willPresent but
+        // had no specific tap-routing case. The sender wants to see WHO
+        // declined — route them to the challenge invite list (where the
+        // declined badge will surface) rather than dashboard.
+        case "challenge_declined":
+            await ChallengeService.shared.fetchPendingSentChallenges()
+            await ChallengeService.shared.fetchActiveChallenges()
+            DeepLinkManager.shared.pendingDestination = .challenges
+            AppLogger.debug("Challenge declined — opening challenges list", category: .general)
+
+        // 2026-08-01: `challenge_reaction` ("smack talk") had no tap-routing
+        // before — defaulted to dashboard. Now routes to the smack-talk
+        // composer on the specific challenge so the recipient can clap back
+        // in one tap (this is the user's example: "talk smack > opens to
+        // smack talk menu").
+        case "challenge_reaction":
+            await ChallengeService.shared.fetchActiveChallenges()
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .smackTalk(challengeId: challengeId)
+                AppLogger.debug("Smack reaction — opening smack-talk composer: \(challengeId)", category: .general)
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+            }
+
         case "challenge_cancelled":
             await ChallengeService.shared.fetchActiveChallenges()
             await ChallengeService.shared.fetchPendingInvites()
@@ -1944,6 +1973,63 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 AppLogger.debug("Engagement nudge tapped without challenge_id — falling back to dashboard", category: .general)
             }
 
+        // ── Smart Notification Engine Phase 3 trigger types (2026-08-01) ──
+        //
+        // These are the new orchestrator-driven intent types (see
+        // `notification_intents` table, migration 20260802). Adding a new
+        // server intent_kind requires (a) a route here, (b) an entry in
+        // `knownNotificationTypes` below, and (c) a NotificationCategory
+        // membership (see `NotificationCategory.notifications`).
+
+        case "league_started", "league_promoted", "league_demoted":
+            DeepLinkManager.shared.pendingDestination = .leagues
+            AppLogger.debug("League event \(type) — opening leagues tab", category: .general)
+
+        case "rivalry_behind", "rivalry_lead", "comeback_window":
+            await ChallengeService.shared.fetchActiveChallenges()
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .smackTalk(challengeId: challengeId)
+                AppLogger.debug("Rivalry alert \(type) — opening smack-talk for: \(challengeId)", category: .general)
+            } else {
+                DeepLinkManager.shared.pendingDestination = .dashboard
+            }
+
+        case "recovery_alert", "recovery_yellow", "recovery_pr_opportunity":
+            DeepLinkManager.shared.pendingDestination = .readinessDetail
+            AppLogger.debug("Recovery alert \(type) — opening readiness detail", category: .general)
+
+        case "sleep_debt", "sleep_low":
+            DeepLinkManager.shared.pendingDestination = .readinessDetail
+            AppLogger.debug("Sleep alert \(type) — opening readiness detail", category: .general)
+
+        case "hydration_pace", "hydration_reminder":
+            DeepLinkManager.shared.pendingDestination = .hydration
+            AppLogger.debug("Hydration alert \(type) — opening hydration widget", category: .general)
+
+        case "streak_risk":
+            DeepLinkManager.shared.pendingDestination = .dashboard
+            AppLogger.debug("Streak risk — opening dashboard (quests widget)", category: .general)
+
+        case "friend_workout_match":
+            DeepLinkManager.shared.pendingDestination = .workout
+            AppLogger.debug("Friend workout match — opening workout tab", category: .general)
+
+        case "pr_opportunity", "overdue_muscle_group":
+            DeepLinkManager.shared.pendingDestination = .workout
+            AppLogger.debug("Workout opportunity \(type) — opening workout tab", category: .general)
+
+        case "strava_celebration":
+            DeepLinkManager.shared.pendingDestination = .dashboard
+            AppLogger.debug("Strava celebration — opening dashboard recap", category: .general)
+
+        case "morning_kickstart":
+            DeepLinkManager.shared.pendingDestination = .dashboard
+            AppLogger.debug("Morning kickstart — opening dashboard", category: .general)
+
+        case "meal_reminder", "protein_deficit", "breakfast_reminder":
+            DeepLinkManager.shared.pendingDestination = .mealsTab
+            AppLogger.debug("Meal alert \(type) — opening meals tab", category: .general)
+
         default:
             // Sprint 2 Q2-36 — hard allowlist. Anything not in
             // `NotificationManager.knownNotificationTypes` is a server drift
@@ -1974,7 +2060,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // 1v1 / group challenges
         "challenge_invite", "group_challenge_invite", "group_challenge_started",
         "challenge_accepted", "challenge_progress", "challenge_completed",
-        "challenge_cancelled", "challenge_update", "challenge_reaction",
+        "challenge_cancelled", "challenge_declined", "challenge_update",
+        "challenge_reaction",
         // Activity-feed reactions (friends ❤️ your workout / meal / weight log)
         "activity_reaction",
         // Realtime Widget Server Pull, Phase 7c (2026-04-26): server
@@ -1997,7 +2084,23 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         "weight_reminder",
         // Workout reminders
         "daily_workout_reminder", "streak_protection", "comeback_reminder",
-        "workout_complete"
+        "workout_complete",
+
+        // ── Smart Notification Engine Phase 3 trigger types (2026-08-01) ──
+        // Server-orchestrated personalized intents. See `notification_intents`
+        // (migration 20260802) and `handleNotificationType` switch above.
+        // Adding a new server intent_kind requires: (a) tap-routing case
+        // above, (b) entry here, (c) NotificationCategory membership.
+        "league_started", "league_promoted", "league_demoted",
+        "rivalry_behind", "rivalry_lead", "comeback_window",
+        "recovery_alert", "recovery_yellow", "recovery_pr_opportunity",
+        "sleep_debt", "sleep_low",
+        "hydration_pace", "hydration_reminder",
+        "streak_risk",
+        "friend_workout_match", "pr_opportunity", "overdue_muscle_group",
+        "strava_celebration",
+        "morning_kickstart",
+        "meal_reminder", "protein_deficit", "breakfast_reminder"
     ]
 
     /// Handle local notification categories (fallback when no userInfo type)

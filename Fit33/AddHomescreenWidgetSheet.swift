@@ -23,10 +23,19 @@
 //      preview makes the purpose self-evident; no marketing-style
 //      hero blurb required.
 //    • Slimmed numbered-step rows from 32pt accent circles to a
-//      single flat "01 ·" prefix in the challenge's type color. Less
-//      visual noise per step → easier to scan five steps at once.
+//      single flat "01" prefix in the challenge's type color.
 //    • Replaced the heavy yellow "Pro tip" card with a single inline
 //      tip line at the bottom. Same information, ~70% less ink.
+//
+//  Branding canon (DESIGN_AGENT.md / DESIGN_SYSTEM_AGENT.md):
+//    • Preview uses `.sleekCard(cornerRadius: .xl)` — the canonical
+//      widget-card treatment (matches dashboard widgets / challenge
+//      cards). Type-color accent so the card brand-matches whichever
+//      challenge the user opened (steps=green, lift=purple, etc.).
+//    • Section labels use the side-panel canon (`ds_labelSmall`
+//      uppercase secondary).
+//    • All typography routes through `Font.ds_*` tokens — no inline
+//      `.system(size:)` or SwiftUI semantic styles in this file.
 //
 
 import SwiftUI
@@ -83,6 +92,8 @@ struct AddHomescreenWidgetSheet: View {
 
     /// Mirrors the widget's actual layout in miniature so the user
     /// pattern-matches the moment they see it on their home screen.
+    /// Uses `.sleekCard()` — the canonical premium widget-card per
+    /// `DESIGN_AGENT.md` invariant #9.
     private var previewCard: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             sectionLabel("Preview")
@@ -95,15 +106,7 @@ struct AddHomescreenWidgetSheet: View {
                 }
             }
             .padding(Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
-                    .fill(Color.cardBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
-                    .stroke(accentColor.opacity(colorScheme == .dark ? 0.25 : 0.18), lineWidth: 1)
-            )
-            .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.18 : 0.10), radius: 14, x: 0, y: 6)
+            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
         }
     }
 
@@ -123,24 +126,22 @@ struct AddHomescreenWidgetSheet: View {
             // Title row — type emoji + name + days remaining
             HStack(spacing: Spacing.xs) {
                 Text(resolvedType.emoji)
-                    .font(.system(size: 22))
+                    .font(.ds_heading2)
                 Text(challenge.displayTitle)
-                    .font(.headline)
-                    .fontWeight(.bold)
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 Spacer(minLength: Spacing.xs)
                 if challenge.daysRemaining > 0 {
                     HStack(spacing: 3) {
                         Image(systemName: "clock")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.ds_caption)
                         Text("\(challenge.daysRemaining)d left")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
+                            .font(.ds_labelSmall)
                     }
                     .foregroundColor(.secondary)
                     .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, 3)
+                    .padding(.vertical, Spacing.xxxs)
                     .background(Capsule().fill(Color.secondary.opacity(0.12)))
                 }
             }
@@ -156,12 +157,10 @@ struct AddHomescreenWidgetSheet: View {
                     gradient: accentGradient
                 )
 
-                VStack(spacing: 2) {
-                    Text("vs")
-                        .font(.system(size: 11, weight: .heavy, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
-                .frame(width: 24)
+                Text("vs")
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.secondary)
+                    .frame(width: 24)
 
                 participantTile(
                     name: opponentFirst,
@@ -198,12 +197,11 @@ struct AddHomescreenWidgetSheet: View {
             }
 
             // Caption — what the widget shows
-            HStack(spacing: 4) {
+            HStack(spacing: Spacing.xxs) {
                 Image(systemName: "rectangle.stack.fill")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.ds_caption)
                 Text("Live on your home screen")
-                    .font(.caption2)
-                    .fontWeight(.medium)
+                    .font(.ds_labelSmall)
             }
             .foregroundColor(accentColor)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -214,19 +212,17 @@ struct AddHomescreenWidgetSheet: View {
         VStack(spacing: Spacing.sm) {
             HStack(spacing: Spacing.xs) {
                 Text("🏆")
-                    .font(.system(size: 22))
+                    .font(.ds_heading2)
                 Text("Your active challenge")
-                    .font(.headline)
-                    .fontWeight(.bold)
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
                 Spacer()
             }
-            HStack(spacing: 4) {
+            HStack(spacing: Spacing.xxs) {
                 Image(systemName: "rectangle.stack.fill")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.ds_caption)
                 Text("Live on your home screen")
-                    .font(.caption2)
-                    .fontWeight(.medium)
+                    .font(.ds_labelSmall)
             }
             .foregroundColor(accentColor)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -251,27 +247,25 @@ struct AddHomescreenWidgetSheet: View {
                         .frame(width: 36, height: 36)
                         .overlay(
                             Text(String(fallbackName.prefix(1)).uppercased())
-                                .font(.subheadline)
-                                .fontWeight(.bold)
+                                .font(.ds_labelLarge)
                                 .foregroundColor(.white)
                         )
                 }
                 if isLeading {
                     Image(systemName: "crown.fill")
-                        .font(.system(size: 10))
+                        .font(.ds_caption)
                         .foregroundColor(.yellow)
                         .offset(y: -22)
                 }
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(value)
-                    .font(.subheadline)
-                    .fontWeight(.heavy)
+                    .font(.ds_labelLarge)
                     .foregroundColor(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 Text(name)
-                    .font(.caption2)
+                    .font(.ds_caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
@@ -297,18 +291,17 @@ struct AddHomescreenWidgetSheet: View {
     private func stepRow(number: Int, step: Step) -> some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
             Text(String(format: "%02d", number))
-                .font(.system(size: 14, weight: .heavy, design: .rounded))
+                .font(.ds_labelMedium)
                 .foregroundStyle(LinearGradient(colors: accentGradient, startPoint: .top, endPoint: .bottom))
                 .frame(width: 26, alignment: .leading)
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(step.title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(.ds_labelLarge)
                     .foregroundColor(.primary)
                 Text(step.body)
-                    .font(.caption)
+                    .font(.ds_bodySmall)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -322,11 +315,11 @@ struct AddHomescreenWidgetSheet: View {
     private var inlineTip: some View {
         HStack(alignment: .top, spacing: Spacing.xs) {
             Image(systemName: "lightbulb.fill")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.ds_caption)
                 .foregroundColor(.yellow)
                 .padding(.top, 2)
             Text("Long-press the widget after adding to switch challenges, or stack multiple — one per challenge.")
-                .font(.caption)
+                .font(.ds_bodySmall)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -335,9 +328,14 @@ struct AddHomescreenWidgetSheet: View {
 
     // MARK: - Helpers
 
+    /// Mirrors the canonical side-panel section-label pattern from
+    /// `DESIGN_SYSTEM_AGENT.md`: `ds_labelSmall` uppercased, secondary
+    /// color. We use this instead of the heavier `SectionHeader` (title3
+    /// bold) component because we're labelling sub-sections inside a
+    /// sheet, not page-level sections.
     private func sectionLabel(_ text: String) -> some View {
         Text(text.uppercased())
-            .font(.system(size: 11, weight: .heavy, design: .rounded))
+            .font(.ds_labelSmall)
             .tracking(0.6)
             .foregroundColor(.secondary)
             .padding(.leading, 2)

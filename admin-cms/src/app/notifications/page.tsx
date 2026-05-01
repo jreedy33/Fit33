@@ -5,7 +5,76 @@ import { useRouter } from 'next/navigation'
 import AdminShell from '@/components/AdminShell'
 import { adminApi } from '@/lib/api'
 
-type TabId = 'dashboard' | 'campaigns' | 'queue' | 'debug'
+type TabId = 'dashboard' | 'campaigns' | 'queue' | 'funnel' | 'failed' | 'debug'
+
+// Smart Notification Engine — Phase 5 Health & Funnel data shapes.
+// Returned by `admin_get_push_funnel(p_window_hours)` (migration 20260808).
+interface FunnelCategoryRow {
+  category: string
+  enqueued: number
+  attempted: number
+  apns_success: number
+  delivered: number
+  opened: number
+  action_taken: number
+  dismissed: number
+  apns_error: number
+  token_invalid: number
+  notification_failed: number
+  prefs_blocked: number
+  quiet_hours_deferred: number
+  cap_exceeded: number
+  open_rate_pct: number | null
+}
+
+interface FunnelTotals {
+  enqueued?: number
+  apns_success?: number
+  delivered?: number
+  opened?: number
+  apns_error?: number
+  prefs_blocked?: number
+  cap_exceeded?: number
+  unique_openers?: number
+}
+
+interface FunnelOrchestrator {
+  total_decisions?: number
+  enqueued?: number
+  suppressed?: number
+  deferred?: number
+  shadow_only?: number
+  errored?: number
+}
+
+interface FunnelABVariant {
+  intent_kind: string
+  variant: string
+  sent: number
+  opened: number
+  open_rate_pct: number | null
+}
+
+interface FunnelPayload {
+  window_hours: number
+  window_start?: string
+  by_category: FunnelCategoryRow[]
+  totals: FunnelTotals
+  ab_variants: FunnelABVariant[]
+  orchestrator: FunnelOrchestrator
+}
+
+interface FailedDeliveryRow {
+  id: string
+  notification_id: string | null
+  user_id: string | null
+  event: string
+  detail: Record<string, unknown> | null
+  category: string | null
+  created_at: string
+  recipient_profile: { id: string; name: string | null; username: string | null; email: string | null } | null
+  queue_entry: { id: string; notification_type: string; title: string | null; body: string | null; status: string; retry_count: number; error_message: string | null } | null
+}
 
 const SEGMENTS = [
   { value: 'all', label: 'All users' },
@@ -164,6 +233,26 @@ export default function PushNotificationsPage() {
   const [userDebug, setUserDebug] = useState<UserDebugPayload | null>(null)
   const [userDebugLoading, setUserDebugLoading] = useState(false)
 
+  // Send-test-push state (Phase 5).
+  const [testTitle, setTestTitle] = useState('Test from Admin CMS')
+  const [testBody, setTestBody] = useState('If you can read this, push delivery is working.')
+  const [testCategory, setTestCategory] = useState('announcement')
+  const [testSending, setTestSending] = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
+
+  // Funnel tab state (Phase 5 Health & Funnel).
+  const [funnelWindow, setFunnelWindow] = useState<24 | 168 | 720>(24)
+  const [funnel, setFunnel] = useState<FunnelPayload | null>(null)
+  const [funnelLoading, setFunnelLoading] = useState(false)
+
+  // Failed Deliveries tab state.
+  const [failedItems, setFailedItems] = useState<FailedDeliveryRow[]>([])
+  const [failedLoading, setFailedLoading] = useState(false)
+  const [failedEvent, setFailedEvent] = useState<string>('')
+  const [failedCategory, setFailedCategory] = useState<string>('')
+  const [failedUser, setFailedUser] = useState<string>('')
+  const [failedExpanded, setFailedExpanded] = useState<string | null>(null)
+
   const loadOverview = useCallback(async () => {
     setError(null)
     const data = await adminApi('get_push_overview')
@@ -198,6 +287,58 @@ export default function PushNotificationsPage() {
     }
   }, [])
 
+  const loadFunnel = useCallback(async () => {
+    setFunnelLoading(true)
+    setError(null)
+    try {
+      const data = await adminApi('get_push_funnel', { window_hours: funnelWindow })
+      setFunnel(data as FunnelPayload)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load funnel')
+    } finally {
+      setFunnelLoading(false)
+    }
+  }, [funnelWindow])
+
+  const loadFailed = useCallback(async () => {
+    setFailedLoading(true)
+    setError(null)
+    try {
+      const params: Record<string, unknown> = { limit: 100 }
+      if (failedEvent) params.event = failedEvent
+      if (failedCategory) params.category = failedCategory
+      if (failedUser.trim()) params.user_id = failedUser.trim()
+      const data = await adminApi('get_push_failed_deliveries', params)
+      setFailedItems((data.items as FailedDeliveryRow[]) || [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load failed deliveries')
+    } finally {
+      setFailedLoading(false)
+    }
+  }, [failedEvent, failedCategory, failedUser])
+
+  const sendTestPush = useCallback(async () => {
+    if (!userIdInput.trim() || !testTitle.trim() || !testBody.trim()) {
+      setTestResult('User, title, and body are required.')
+      return
+    }
+    setTestSending(true)
+    setTestResult(null)
+    try {
+      const res = await adminApi('send_test_push', {
+        user_id: userIdInput.trim(),
+        title: testTitle.trim(),
+        body: testBody.trim(),
+        category: testCategory,
+      })
+      setTestResult(res.note ? `${res.note} (queue_id ${res.queue_id})` : `Queued (queue_id ${res.queue_id ?? '—'}).`)
+    } catch (e) {
+      setTestResult(e instanceof Error ? e.message : 'Send failed')
+    } finally {
+      setTestSending(false)
+    }
+  }, [userIdInput, testTitle, testBody, testCategory])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -222,6 +363,14 @@ export default function PushNotificationsPage() {
   useEffect(() => {
     if (tab === 'queue') loadQueue()
   }, [tab, loadQueue])
+
+  useEffect(() => {
+    if (tab === 'funnel') loadFunnel()
+  }, [tab, loadFunnel])
+
+  useEffect(() => {
+    if (tab === 'failed') loadFailed()
+  }, [tab, loadFailed])
 
   useEffect(() => {
     if (!autoRefreshQueue || tab !== 'queue') return
@@ -442,6 +591,8 @@ export default function PushNotificationsPage() {
               ['dashboard', 'Dashboard'],
               ['campaigns', 'Campaigns'],
               ['queue', 'Queue Monitor'],
+              ['funnel', 'Health & Funnel'],
+              ['failed', 'Failed Deliveries'],
               ['debug', 'User Debug'],
             ] as const
           ).map(([id, label]) => (
@@ -924,6 +1075,242 @@ export default function PushNotificationsPage() {
               </div>
             )}
 
+            {tab === 'funnel' && (
+              <div className="space-y-6">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Health & Funnel</h2>
+                  <div className="ml-auto flex items-center gap-2">
+                    <span className="text-xs uppercase font-semibold" style={{ color: 'var(--text-muted)' }}>Window:</span>
+                    {([24, 168, 720] as const).map((w) => (
+                      <button
+                        key={w}
+                        type="button"
+                        className={`tab ${funnelWindow === w ? 'tab-active' : ''}`}
+                        onClick={() => setFunnelWindow(w)}
+                      >
+                        {w === 24 ? '24h' : w === 168 ? '7d' : '30d'}
+                      </button>
+                    ))}
+                    <button type="button" className="btn btn-ghost text-xs" onClick={loadFunnel} disabled={funnelLoading}>
+                      {funnelLoading ? 'Loading…' : 'Refresh'}
+                    </button>
+                  </div>
+                </div>
+
+                {funnelLoading ? (
+                  <div className="flex justify-center py-16"><div className="spinner" style={{ width: 32, height: 32 }} /></div>
+                ) : funnel ? (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="card">
+                        <div className="text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Enqueued</div>
+                        <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{(funnel.totals.enqueued ?? 0).toLocaleString()}</div>
+                      </div>
+                      <div className="card">
+                        <div className="text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Delivered</div>
+                        <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{(funnel.totals.delivered ?? 0).toLocaleString()}</div>
+                      </div>
+                      <div className="card">
+                        <div className="text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Opened</div>
+                        <div className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{(funnel.totals.opened ?? 0).toLocaleString()}</div>
+                        <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                          {funnel.totals.unique_openers ?? 0} unique users
+                        </div>
+                      </div>
+                      <div className="card">
+                        <div className="text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>APNs Errors</div>
+                        <div className="text-2xl font-bold" style={{ color: (funnel.totals.apns_error ?? 0) > 0 ? 'var(--accent-danger, #d33)' : 'var(--text-primary)' }}>
+                          {(funnel.totals.apns_error ?? 0).toLocaleString()}
+                        </div>
+                        <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                          cap_exceeded: {funnel.totals.cap_exceeded ?? 0} · prefs_blocked: {funnel.totals.prefs_blocked ?? 0}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="card">
+                      <h3 className="text-md font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Per-Category Funnel</h3>
+                      <div className="overflow-x-auto">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Category</th><th>Enqueued</th><th>APNs OK</th><th>Delivered</th><th>Opened</th>
+                              <th>Open %</th><th>Errors</th><th>Capped</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {funnel.by_category.length === 0 && (
+                              <tr><td colSpan={8} className="text-sm py-4" style={{ color: 'var(--text-muted)' }}>No traffic in window.</td></tr>
+                            )}
+                            {funnel.by_category.map((c) => (
+                              <tr key={c.category}>
+                                <td className="text-sm font-semibold">{c.category}</td>
+                                <td className="text-sm">{c.enqueued.toLocaleString()}</td>
+                                <td className="text-sm">{c.apns_success.toLocaleString()}</td>
+                                <td className="text-sm">{c.delivered.toLocaleString()}</td>
+                                <td className="text-sm">{c.opened.toLocaleString()}</td>
+                                <td className="text-sm">
+                                  {c.open_rate_pct == null ? '—' : <span className="badge badge-info">{c.open_rate_pct.toFixed(1)}%</span>}
+                                </td>
+                                <td className="text-sm" style={{ color: c.apns_error > 0 ? 'var(--accent-danger, #d33)' : undefined }}>
+                                  {c.apns_error.toLocaleString()}
+                                </td>
+                                <td className="text-sm">{c.cap_exceeded.toLocaleString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className="card">
+                        <h3 className="text-md font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Orchestrator decisions</h3>
+                        {funnel.orchestrator.total_decisions ? (
+                          <ul className="space-y-1 text-sm">
+                            <li><strong>{funnel.orchestrator.total_decisions.toLocaleString()}</strong> total decisions</li>
+                            <li>Enqueued: <strong>{funnel.orchestrator.enqueued ?? 0}</strong></li>
+                            <li>Suppressed: {funnel.orchestrator.suppressed ?? 0}</li>
+                            <li>Deferred: {funnel.orchestrator.deferred ?? 0}</li>
+                            <li>Shadow only: {funnel.orchestrator.shadow_only ?? 0}</li>
+                            <li>Errored: {funnel.orchestrator.errored ?? 0}</li>
+                          </ul>
+                        ) : (
+                          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            No orchestrator decisions in this window. (Likely running in shadow mode or the */5 cron hasn&apos;t ticked yet.)
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="card">
+                        <h3 className="text-md font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>A/B variant winners</h3>
+                        {funnel.ab_variants.length === 0 ? (
+                          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                            No variant data yet. (Templates need ≥5 sends per variant before they appear here.)
+                          </p>
+                        ) : (
+                          <table>
+                            <thead><tr><th>Intent</th><th>Variant</th><th>Sent</th><th>Opened</th><th>Open %</th></tr></thead>
+                            <tbody>
+                              {funnel.ab_variants.map((v) => (
+                                <tr key={`${v.intent_kind}:${v.variant}`}>
+                                  <td className="text-sm">{v.intent_kind}</td>
+                                  <td className="text-sm font-mono text-xs">{v.variant}</td>
+                                  <td className="text-sm">{v.sent}</td>
+                                  <td className="text-sm">{v.opened}</td>
+                                  <td className="text-sm">
+                                    {v.open_rate_pct == null ? '—' : <span className="badge badge-success">{v.open_rate_pct.toFixed(1)}%</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Click Refresh to load.</p>
+                )}
+              </div>
+            )}
+
+            {tab === 'failed' && (
+              <div className="space-y-4">
+                <div className="card">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Event</label>
+                      <select value={failedEvent} onChange={(e) => setFailedEvent(e.target.value)} className="w-full">
+                        <option value="">All failures</option>
+                        <option value="apns_error_400">apns_error_400</option>
+                        <option value="apns_error_403">apns_error_403</option>
+                        <option value="apns_error_410">apns_error_410 (token gone)</option>
+                        <option value="apns_error_429">apns_error_429 (rate limit)</option>
+                        <option value="apns_error_500">apns_error_500</option>
+                        <option value="apns_error_503">apns_error_503</option>
+                        <option value="token_invalid">token_invalid</option>
+                        <option value="notification_failed">notification_failed</option>
+                        <option value="prefs_blocked">prefs_blocked</option>
+                        <option value="cap_exceeded">cap_exceeded</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Category</label>
+                      <select value={failedCategory} onChange={(e) => setFailedCategory(e.target.value)} className="w-full">
+                        <option value="">All categories</option>
+                        <option value="rivalry">rivalry</option>
+                        <option value="workout">workout</option>
+                        <option value="recovery">recovery</option>
+                        <option value="nutrition">nutrition</option>
+                        <option value="streak">streak</option>
+                        <option value="social">social</option>
+                        <option value="announcement">announcement</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>User ID</label>
+                      <input type="text" value={failedUser} onChange={(e) => setFailedUser(e.target.value)} placeholder="(optional)" className="w-full" />
+                    </div>
+                    <div className="flex items-end">
+                      <button type="button" className="btn btn-primary w-full" onClick={loadFailed} disabled={failedLoading}>
+                        {failedLoading ? 'Loading…' : 'Apply filters'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card">
+                  <h3 className="text-md font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                    Failed deliveries ({failedItems.length})
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table>
+                      <thead>
+                        <tr><th>When</th><th>Event</th><th>Category</th><th>Recipient</th><th>Notification</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        {failedItems.length === 0 && (
+                          <tr><td colSpan={6} className="text-sm py-4" style={{ color: 'var(--text-muted)' }}>No failures matching filters.</td></tr>
+                        )}
+                        {failedItems.map((row) => (
+                          <Fragment key={row.id}>
+                            <tr>
+                              <td className="text-sm" style={{ color: 'var(--text-muted)' }}>{new Date(row.created_at).toLocaleString()}</td>
+                              <td><span className="badge badge-danger text-xs">{row.event}</span></td>
+                              <td className="text-sm">{row.category ?? '—'}</td>
+                              <td className="text-sm">
+                                {row.recipient_profile?.username ?? row.recipient_profile?.email ?? row.user_id ?? '—'}
+                              </td>
+                              <td className="text-sm">{row.queue_entry?.title ?? '—'}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost text-xs"
+                                  onClick={() => setFailedExpanded(failedExpanded === row.id ? null : row.id)}
+                                >
+                                  {failedExpanded === row.id ? 'Hide' : 'Inspect'}
+                                </button>
+                              </td>
+                            </tr>
+                            {failedExpanded === row.id && (
+                              <tr>
+                                <td colSpan={6}>
+                                  <pre className="p-3 rounded text-xs overflow-x-auto" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+{JSON.stringify({ detail: row.detail, queue_entry: row.queue_entry, recipient: row.recipient_profile }, null, 2)}
+                                  </pre>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {tab === 'debug' && (
               <div className="card space-y-6">
                 <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
@@ -947,6 +1334,43 @@ export default function PushNotificationsPage() {
                   >
                     {userDebugLoading ? 'Loading…' : 'Lookup'}
                   </button>
+                </div>
+
+                <div className="border-t pt-4 space-y-3" style={{ borderColor: 'var(--border)' }}>
+                  <h3 className="text-md font-semibold" style={{ color: 'var(--text-primary)' }}>Send test push</h3>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Goes through the canonical queue → send-push-notification path so it exercises the same caps + RLS as production.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Title</label>
+                      <input type="text" value={testTitle} onChange={(e) => setTestTitle(e.target.value)} className="w-full" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Body</label>
+                      <input type="text" value={testBody} onChange={(e) => setTestBody(e.target.value)} className="w-full" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>Category</label>
+                      <select value={testCategory} onChange={(e) => setTestCategory(e.target.value)} className="w-full">
+                        <option value="announcement">announcement</option>
+                        <option value="rivalry">rivalry</option>
+                        <option value="workout">workout</option>
+                        <option value="recovery">recovery</option>
+                        <option value="nutrition">nutrition</option>
+                        <option value="streak">streak</option>
+                        <option value="social">social</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2 flex items-end">
+                      <button type="button" className="btn btn-primary" onClick={sendTestPush} disabled={testSending || !userIdInput.trim()}>
+                        {testSending ? 'Sending…' : 'Send test push to user'}
+                      </button>
+                    </div>
+                  </div>
+                  {testResult && (
+                    <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{testResult}</p>
+                  )}
                 </div>
 
                 {userDebug && (

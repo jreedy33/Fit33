@@ -32,7 +32,15 @@ struct NotificationSettingsView: View {
                     // Quick Settings
                     if notificationManager.masterNotificationsEnabled && notificationManager.isAuthorized {
                         quickSettingsSection
-                        
+
+                        // Smart Notification Engine — Phase 4 (2026-08-05).
+                        // Surface for the orchestrator-driven controls
+                        // (smart timing, frequency tier, daily cap, snooze,
+                        // category previews). The legacy per-type toggles
+                        // below remain intact so users can still flip
+                        // individual notification types.
+                        SmartNotificationSettingsSection()
+
                         // Notification Categories
                         ForEach(NotificationCategory.allCases) { category in
                             categorySection(category)

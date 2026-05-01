@@ -10,6 +10,7 @@ struct MainTabView: View {
     @StateObject private var deepLinkManager = DeepLinkManager.shared
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var badgeCounter = HomeBadgeCounter.shared
+    @StateObject private var pushPermissionCoordinator = PushPermissionCoordinator.shared
     // ⚡️ Tab infrastructure — plain references (NOT @StateObject) to avoid
     // re-rendering ALL tabs whenever isTransitioning/isPreloadingComplete changes.
     // These are only used for method calls in onChange handlers.
@@ -394,44 +395,26 @@ struct MainTabView: View {
                 PrivateChallengeJoinSheet(code: code)
             }
         }
-        // MARK: - Notification Permission Prompt
+        // MARK: - Push permission primer (coordinated single-ask path)
+        // Smart Notification Engine — Phase 1 (2026-08-01).
+        // Replaced three independent ask paths (onboarding, post-auth,
+        // MainTabView .task) with one coordinator. The primer sheet
+        // explains WHY before the cold system dialog.
+        .sheet(isPresented: $pushPermissionCoordinator.showPrimerSheet) {
+            NotificationPrimerSheet()
+        }
         .task {
-            // Check notification permission status on app launch
-            // Only prompt once per session to avoid being annoying
             guard !hasCheckedNotificationPermission else { return }
             hasCheckedNotificationPermission = true
-            
-            // Short delay to let the UI settle
-            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 second delay
-            
-            // Check current notification authorization status
-            let settings = await UNUserNotificationCenter.current().notificationSettings()
-            
-            switch settings.authorizationStatus {
-            case .notDetermined:
-                // First time - request permission directly (iOS will show native prompt)
-                let granted = await notificationManager.requestAuthorization()
-                if !granted {
-                    // If user denied, show our custom prompt to guide to Settings
-                    await MainActor.run {
-                        showNotificationPermissionPrompt = true
-                    }
-                }
-            case .denied:
-                // Previously denied - show prompt to guide to Settings
-                // Only show this once per install (track with UserDefaults)
-                let hasShownDeniedPrompt = UserDefaults.standard.bool(forKey: "has_shown_notification_denied_prompt")
-                if !hasShownDeniedPrompt {
-                    UserDefaults.standard.set(true, forKey: "has_shown_notification_denied_prompt")
-                    await MainActor.run {
-                        showNotificationPermissionPrompt = true
-                    }
-                }
-            case .authorized, .provisional, .ephemeral:
-                // Already handled by Fit33App post-auth startup
-                break
-            @unknown default:
-                break
+
+            // Let the UI settle so the primer sheet doesn't fight onboarding
+            // dismissal animations.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+
+            let status = await pushPermissionCoordinator.ensureAskedOnce(useSoftPrompt: true)
+            if status == .denied && pushPermissionCoordinator.shouldShowPostDenyPrompt() {
+                pushPermissionCoordinator.markPostDenyPromptShown()
+                await MainActor.run { showNotificationPermissionPrompt = true }
             }
         }
         .alert("Stay on Track with Notifications", isPresented: $showNotificationPermissionPrompt) {

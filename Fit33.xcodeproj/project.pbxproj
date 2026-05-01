@@ -225,6 +225,11 @@
 		7C8CFBBB2FA2B7AD007CD766 /* WorkoutQualityScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFBBA2FA2B7AD007CD766 /* WorkoutQualityScorer.swift */; };
 		7C8CFD542FA426F9007CD766 /* BarcodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD532FA426F9007CD766 /* BarcodeScannerView.swift */; };
 		7C8CFD562FA42DAA007CD766 /* PinnedTabHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */; };
+		7C8E80012FB10001007CD766 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80002FB10001007CD766 /* PushPayload.swift */; };
+		7C8E80032FB10002007CD766 /* PushPermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */; };
+		7C8E80052FB10003007CD766 /* NotificationPrimerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */; };
+		7C8E80092FB10005007CD766 /* PushEventReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80082FB10005007CD766 /* PushEventReporter.swift */; };
+		7C8E800B2FB10006007CD766 /* SmartNotificationSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E800A2FB10006007CD766 /* SmartNotificationSettingsSection.swift */; };
 		7C8CFD602FA42700007CD766 /* CommonFoodDensities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */; };
 		7C8CFE512FA431FF007CD766 /* CommonFoodDensities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */; };
 		7C8EB1C02F26ABD4007BFA55 /* PerformanceOptimizations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */; };
@@ -352,6 +357,8 @@
 		99364A9593A0410F2D510B03 /* DashboardView+Programs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CFA4DFC91E3611A9F27B9C8 /* DashboardView+Programs.swift */; };
 		9ABC4959A15ABF09ABD3B7CD /* DashboardView+Activity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6CA4EF5A48F356087AB9009 /* DashboardView+Activity.swift */; };
 		9C3F4E5D6C7B8A9C0D1E2F30 /* AddHomescreenWidgetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4F5E6D7C8B9A0C1D2E3F40 /* AddHomescreenWidgetSheet.swift */; };
+		9C3F4E5D6C7B8A9C0D1E2F31 /* ChallengeDetailKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4F5E6D7C8B9A0C1D2E3F41 /* ChallengeDetailKit.swift */; };
+		9C3F4E5D6C7B8A9C0D1E2F32 /* BattleCryComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4F5E6D7C8B9A0C1D2E3F42 /* BattleCryComposer.swift */; };
 		9C94CB98D984411780E60E6A /* OuraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FED9E19F69446F994B8FA9 /* OuraService.swift */; };
 		9E394B0DA9FB48C3BB1C2C19 /* DashboardWeightWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A24D18B40D9675B5069F12 /* DashboardWeightWidget.swift */; };
 		A1234567890123456789012A /* Fit33App.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1234567890123456789012B /* Fit33App.swift */; };
@@ -682,6 +689,11 @@
 		7C8CFBBA2FA2B7AD007CD766 /* WorkoutQualityScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutQualityScorer.swift; sourceTree = "<group>"; };
 		7C8CFD532FA426F9007CD766 /* BarcodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeScannerView.swift; sourceTree = "<group>"; };
 		7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabHeader.swift; sourceTree = "<group>"; };
+		7C8E80002FB10001007CD766 /* PushPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayload.swift; sourceTree = "<group>"; };
+		7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPermissionCoordinator.swift; sourceTree = "<group>"; };
+		7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPrimerSheet.swift; sourceTree = "<group>"; };
+		7C8E80082FB10005007CD766 /* PushEventReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushEventReporter.swift; sourceTree = "<group>"; };
+		7C8E800A2FB10006007CD766 /* SmartNotificationSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartNotificationSettingsSection.swift; sourceTree = "<group>"; };
 		7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonFoodDensities.swift; sourceTree = "<group>"; };
 		7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonFoodDensities.swift; sourceTree = "<group>"; };
 		7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizations.swift; sourceTree = "<group>"; };
@@ -816,6 +828,8 @@
 		935D4A858C8C3C8A31F67156 /* OnboardingConfirmationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingConfirmationViews.swift; path = Fit33/OnboardingConfirmationViews.swift; sourceTree = SOURCE_ROOT; };
 		939742FBB40A49F30A3C3E1B /* OnboardingInfrastructure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OnboardingInfrastructure.swift; path = Fit33/OnboardingInfrastructure.swift; sourceTree = SOURCE_ROOT; };
 		9D4F5E6D7C8B9A0C1D2E3F40 /* AddHomescreenWidgetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddHomescreenWidgetSheet.swift; sourceTree = "<group>"; };
+		9D4F5E6D7C8B9A0C1D2E3F41 /* ChallengeDetailKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeDetailKit.swift; sourceTree = "<group>"; };
+		9D4F5E6D7C8B9A0C1D2E3F42 /* BattleCryComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleCryComposer.swift; sourceTree = "<group>"; };
 		9F79CB6A4C33FAA95E80AB9A /* BugReportStateSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BugReportStateSnapshot.swift; sourceTree = "<group>"; };
 		A1234567890123456789012B /* Fit33App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fit33App.swift; sourceTree = "<group>"; };
 		A1234567890123456789012F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -979,6 +993,8 @@
 				8689D6E7E65D34B42C3F6179 /* SmackTalkWidgetBridge.swift */,
 				8B2F3E4D5C6B7A8B9C0D1E2F /* ActiveChallengeHeaderRow.swift */,
 				9D4F5E6D7C8B9A0C1D2E3F40 /* AddHomescreenWidgetSheet.swift */,
+				9D4F5E6D7C8B9A0C1D2E3F41 /* ChallengeDetailKit.swift */,
+				9D4F5E6D7C8B9A0C1D2E3F42 /* BattleCryComposer.swift */,
 				7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */,
 				7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */,
 				A12345678901234567890221 /* ActiveWorkoutView.swift */,
@@ -1186,7 +1202,12 @@
 				F1E3406881B826760E5E531D /* NewOnboardingView+Steps.swift */,
 				4F4A4117978615CECC0201DA /* NewOnboardingView+Verification.swift */,
 				7CB08C8C2EDAB01300236ECB /* NotificationManager.swift */,
+				7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */,
 				7CB08C8D2EDAB01300236ECB /* NotificationSettingsView.swift */,
+				7C8E80002FB10001007CD766 /* PushPayload.swift */,
+				7C8E80082FB10005007CD766 /* PushEventReporter.swift */,
+				7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */,
+				7C8E800A2FB10006007CD766 /* SmartNotificationSettingsSection.swift */,
 				B74E45D48B3421428E5D57F5 /* NowPlayingBar.swift */,
 				AB2C49A7B94119EE17AEC8D6 /* NutritionDetailViews.swift */,
 				240444B5A733024477A024FC /* NutritionModels.swift */,
@@ -1744,6 +1765,11 @@
 				A12345678901234567890210 /* ExerciseDetailView.swift in Sources */,
 				7C53E2322F357EB600C2F7EC /* GroupChallengeDetailView.swift in Sources */,
 				7C8CFD562FA42DAA007CD766 /* PinnedTabHeader.swift in Sources */,
+				7C8E80012FB10001007CD766 /* PushPayload.swift in Sources */,
+				7C8E80092FB10005007CD766 /* PushEventReporter.swift in Sources */,
+				7C8E80032FB10002007CD766 /* PushPermissionCoordinator.swift in Sources */,
+				7C8E80052FB10003007CD766 /* NotificationPrimerSheet.swift in Sources */,
+				7C8E800B2FB10006007CD766 /* SmartNotificationSettingsSection.swift in Sources */,
 				7CAFD55C2EDF780B00920F0D /* HydrationWidget.swift in Sources */,
 				7C3DF1CF2F2D262D00A9CDA7 /* InBodySettingsView.swift in Sources */,
 				7C3DF1D02F2D262D00A9CDA7 /* InBodyService.swift in Sources */,
@@ -1882,6 +1908,8 @@
 				6B34AAC21F1750658795CF35 /* SmackTalkWidgetBridge.swift in Sources */,
 				8A1F2E3D4C5B6A7980A1B2C3 /* ActiveChallengeHeaderRow.swift in Sources */,
 				9C3F4E5D6C7B8A9C0D1E2F30 /* AddHomescreenWidgetSheet.swift in Sources */,
+				9C3F4E5D6C7B8A9C0D1E2F31 /* ChallengeDetailKit.swift in Sources */,
+				9C3F4E5D6C7B8A9C0D1E2F32 /* BattleCryComposer.swift in Sources */,
 				7C8CEA742F9A75B1007CD766 /* PerformanceSignposts.swift in Sources */,
 				7C0C42202F09DB7200F02E84 /* LearningEngineDebugView.swift in Sources */,
 				B1234567890123456789A007 /* IntelligentWorkoutGenerator.swift in Sources */,

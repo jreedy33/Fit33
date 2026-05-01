@@ -42,6 +42,15 @@ struct ChallengeDetailView: View {
     @State private var showingReactionPicker = false
     @State private var showingAddWidgetSheet = false
 
+    // Battle Cry overhaul (2026-04-30) — Phase 2 realtime state.
+    // Owned by the parent detail view per PE invariant 9 so the
+    // `ReactiveBattleFeed` row never subscribes to RealtimeService
+    // itself. Initial snapshot loaded by `loadReactions()`; subsequent
+    // INSERTs streamed in via `RealtimeService.subscribeChallengeReactions`.
+    @State private var reactions: [ChallengeReaction] = []
+    @State private var reactionsLoading: Bool = true
+    @State private var reactionsInboundFlash: Int = 0
+
     private enum DetailsLoadState: Equatable {
         case idle
         case loading
@@ -80,17 +89,25 @@ struct ChallengeDetailView: View {
             // (battle log + reaction feed → wait for `details`).
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: Spacing.md) {
-                    headToHeadCard
-                    statBar
+                    heroCard
+                    podiumCard
+                    statChips
 
                     if challenge.status == "active" {
-                        reactionSendSection
+                        battleCryStrip
                     }
 
-                    todayProgressCard
+                    todayCard
 
                     if challenge.status == "active" {
-                        ReactionFeedView(challenge: challenge)
+                        ReactiveBattleFeed(
+                            mode: battleCryMode,
+                            typeColor: typeColor,
+                            gradient: challengeType.gradientColors,
+                            reactions: reactions,
+                            isLoading: reactionsLoading,
+                            inboundFlash: reactionsInboundFlash
+                        )
                     }
 
                     battleLogSection
@@ -103,7 +120,7 @@ struct ChallengeDetailView: View {
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.top, Spacing.sm)
-                .padding(.bottom, 60)
+                .padding(.bottom, Spacing.xxl)
             }
         }
         // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
@@ -171,7 +188,25 @@ struct ChallengeDetailView: View {
                     }
                 }
             }
-            
+
+            // Battle Cry overhaul (2026-04-30) — Phase 2 realtime hookup.
+            // Owned by the parent view per PE invariant 9. Fly-in animation
+            // + confetti is driven by `inboundFlash` ticking up on each
+            // remote arrival; local optimistic inserts (in `sendBattleCry`)
+            // skip the flash so we don't confetti our own taps.
+            await loadReactions()
+            await RealtimeService.shared.subscribeChallengeReactions(challengeId: challenge.challengeId)
+            RealtimeService.shared.onChallengeReactionReceived = { reaction in
+                guard reactions.first(where: { $0.id == reaction.id }) == nil else { return }
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
+                    reactions.insert(reaction, at: 0)
+                }
+                if !reaction.isMine {
+                    reactionsInboundFlash &+= 1
+                    HapticManager.notification(.warning)
+                }
+            }
+
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 120_000_000_000)
                 // Only poll-refresh once details have successfully loaded
@@ -185,6 +220,8 @@ struct ChallengeDetailView: View {
         }
         .onDisappear {
             RealtimeService.shared.onOpponentDailyProgressUpdated = nil
+            RealtimeService.shared.onChallengeReactionReceived = nil
+            Task { await RealtimeService.shared.unsubscribeChallengeReactions() }
         }
         .alert("Cancel Challenge?", isPresented: $showingCancelConfirmation) {
             Button("Keep Challenge", role: .cancel) { }
@@ -208,410 +245,167 @@ struct ChallengeDetailView: View {
         }
     }
     
-    // MARK: - Head-to-Head Card
-    
-    private var headToHeadCard: some View {
-        VStack(spacing: Spacing.md) {
-            // Challenge type + time badge
-            HStack(spacing: Spacing.xs) {
-                HStack(spacing: Spacing.xxs) {
-                    Text(challengeType.emoji)
-                        .font(.system(size: 14))
-                    Text(challengeType.displayName)
-                        .font(.ds_labelSmall)
-                        .fontWeight(.bold)
-                }
-                .foregroundColor(typeColor)
-                .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, Spacing.xxxs)
-                .background(Capsule().fill(typeColor.opacity(0.12)))
-                
-                Spacer()
-                
-                HStack(spacing: Spacing.xxs) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 9))
-                    if challenge.daysRemaining > 0 {
-                        Text("\(challenge.daysRemaining)d left")
-                    } else {
-                        Text("Complete")
-                    }
-                }
-                .font(.ds_labelSmall)
-                .foregroundColor(.secondary)
-            }
-            
-            // VS Battle
-            HStack(spacing: 0) {
-                // Me
-                VStack(spacing: Spacing.xs) {
-                    ZStack {
-                        if let cachedImage = ProfilePhotoCache.shared.cachedImage {
-                            Image(uiImage: cachedImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 56, height: 56)
-                                .clipShape(Circle())
-                                .overlay(
-                                    Circle().stroke(
-                                        challenge.amWinning
-                                            ? LinearGradient(colors: [.green, .mint], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                            : typeGradient,
-                                        lineWidth: 2.5
-                                    )
-                                )
-                        } else {
-                            Circle()
-                                .fill(typeGradient)
-                                .frame(width: 56, height: 56)
-                                .overlay(
-                                    Image(systemName: "person.fill")
-                                        .font(.ds_heading2)
-                                        .foregroundColor(.white)
-                                )
-                        }
-                        
-                        if challenge.amWinning && challenge.myTotalProgress > 0 {
-                            Image(systemName: "crown.fill")
-                                .font(.system(size: 14))
-                                .foregroundColor(.yellow)
-                                .offset(y: -32)
-                        }
-                    }
-                    
-                    Text("You")
-                        .font(.ds_labelSmall)
-                        .foregroundColor(.primary)
-                    
-                    Text(formatProgress(challenge.myTotalProgress))
-                        .font(.ds_stat)
-                        .foregroundStyle(
-                            challenge.amWinning
-                                ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(Color.primary)
-                        )
-                }
-                .frame(maxWidth: .infinity)
-                
-                // VS Column
-                VStack(spacing: Spacing.xxs) {
-                    Text("VS")
-                        .font(.system(size: 20, weight: .black, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(colors: [.orange, .red], startPoint: .top, endPoint: .bottom)
-                        )
-                    
-                    if challenge.myTotalProgress != challenge.opponentTotalProgress {
-                        let diff = abs(challenge.myTotalProgress - challenge.opponentTotalProgress)
-                        Text(challenge.amWinning ? "+\(formatProgress(diff))" : "-\(formatProgress(diff))")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(challenge.amWinning ? .green : .red)
-                    }
-                }
-                .frame(width: 56)
-                
-                // Opponent
-                VStack(spacing: Spacing.xs) {
-                    ZStack {
-                        CachedFriendPhoto(
-                            friendId: challenge.opponentId.uuidString,
-                            photoUrl: challenge.opponentPhotoUrl,
-                            name: challenge.opponentName ?? "Opponent",
-                            size: 56,
-                            showGradientRing: true,
-                            gradientColors: !challenge.amWinning && challenge.opponentTotalProgress > 0
-                                ? [.green, .mint] : [.orange, .red]
-                        )
-                        
-                        if !challenge.amWinning && challenge.opponentTotalProgress > 0 {
-                            Image(systemName: "crown.fill")
-                                .font(.system(size: 14))
-                                .foregroundColor(.yellow)
-                                .offset(y: -32)
-                        }
-                    }
-                    
-                    HStack(spacing: 2) {
-                        Text(opponentFirst)
-                            .font(.ds_labelSmall)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        if challenge.opponentIsVerified == true || challenge.opponentIsGoldVerified == true {
-                            VerifiedBadge(size: 10, isGold: challenge.opponentIsGoldVerified == true)
-                        }
-                    }
-                    
-                    Text(formatProgress(challenge.opponentTotalProgress))
-                        .font(.ds_stat)
-                        .foregroundStyle(
-                            !challenge.amWinning
-                                ? AnyShapeStyle(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(Color.primary)
-                        )
-                }
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding(Spacing.md)
-        .sleekCard(cornerRadius: 20, accentColor: typeColor)
+    // MARK: - Hero Card
+
+    /// Top-of-page hero. Shows the challenge title, type emoji, the
+    /// (now-visible) description, and a time pill via the shared
+    /// `ChallengeHeroCard` kit component.
+    private var heroCard: some View {
+        ChallengeHeroCard(
+            title: challenge.displayTitle,
+            emoji: challengeType.emoji,
+            typeColor: typeColor,
+            gradient: challengeType.gradientColors,
+            typeLabel: challengeType.displayName,
+            description: challenge.description,
+            daysElapsed: challenge.daysElapsed,
+            durationDays: challenge.durationDays,
+            daysRemaining: challenge.daysRemaining,
+            endDate: challenge.endDate,
+            memberCountSuffix: nil
+        )
     }
-    
-    // MARK: - Stat Bar
-    
-    private var statBar: some View {
-        let livePercent = ChallengeProgressResolver.shared.progressPercentage(for: challenge)
-        let streak = challenge.myCurrentStreak
-        
-        return VStack(spacing: Spacing.sm) {
-            // Today's progress context
-            HStack(spacing: Spacing.xs) {
-                HStack(spacing: Spacing.xxs) {
-                    Text(challengeType.emoji)
-                        .font(.system(size: 14))
-                    Text("\(Int(livePercent * 100))% of today's goal")
-                        .font(.ds_labelSmall)
-                        .foregroundColor(.primary)
-                }
-                
-                Spacer()
-                
-                let liveValue = ChallengeProgressResolver.shared.liveProgress(for: challenge)
-                Text("\(liveValue)/\(challenge.dailyTarget ?? 0) \(challenge.targetUnit)")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(typeColor)
-            }
-            
-            // Progress bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(typeColor.opacity(colorScheme == .dark ? 0.12 : 0.08))
-                        .frame(height: 6)
-                    
-                    Capsule()
-                        .fill(typeGradient)
-                        .frame(width: max(geo.size.width * livePercent, 6), height: 6)
-                        .animation(.spring(response: 0.5), value: livePercent)
-                }
-            }
-            .frame(height: 6)
-            
-            // Stats row with dividers
-            HStack(spacing: 0) {
-                statCell(
-                    value: formatProgress(challenge.dailyTarget ?? 0),
-                    label: "daily \(challenge.targetUnit)",
-                    valueColor: typeColor
-                )
-                
-                thinDivider
-                
-                VStack(spacing: 2) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.orange)
-                        Text("\(streak)")
-                            .font(.ds_statSmall)
-                            .foregroundColor(.primary)
-                    }
-                    Text("streak")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                
-                thinDivider
-                
-                statCell(
-                    value: "\(challenge.daysRemaining)",
-                    label: challenge.daysRemaining == 1 ? "day left" : "days left",
-                    valueColor: challenge.daysRemaining <= 1 ? .red : .primary
-                )
-                
-                thinDivider
-                
-                statCell(
-                    value: "\(challenge.myDaysCompleted)/\(max(challenge.daysElapsed, 1))",
-                    label: "days hit",
-                    valueColor: .green
-                )
-            }
-            .padding(.vertical, Spacing.xs)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
-                    .fill(typeColor.opacity(colorScheme == .dark ? 0.06 : 0.04))
+
+    // MARK: - Participant Podium
+
+    /// Big head-to-head podium with 88pt avatars, animated crown
+    /// pulse on the leader, and freshness-aware opponent value via
+    /// the shared `ParticipantPodium` kit component.
+    private var podiumCard: some View {
+        let amLeading = challenge.amWinning && challenge.opponentTotalProgress >= 0
+        let leadDelta: String? = {
+            guard challenge.myTotalProgress != challenge.opponentTotalProgress else { return nil }
+            let diff = abs(challenge.myTotalProgress - challenge.opponentTotalProgress)
+            return amLeading ? "+\(formatProgress(diff))" : "-\(formatProgress(diff))"
+        }()
+        let oppShowsRaw = challenge.opponentLastProgressAt == nil
+            || ProgressFreshnessKit.shouldShowRawValue(for: challenge.opponentLastProgressAt)
+        let oppValueText = oppShowsRaw
+            ? formatProgress(challenge.opponentTotalProgress)
+            : "—"
+
+        return ParticipantPodium(
+            myImage: ProfilePhotoCache.shared.cachedImage,
+            myName: "You",
+            myValueText: formatProgress(challenge.myTotalProgress),
+            opponentId: challenge.opponentId.uuidString,
+            opponentName: opponentFirst,
+            opponentPhotoUrl: challenge.opponentPhotoUrl,
+            opponentValueText: oppValueText,
+            opponentIsVerified: challenge.opponentIsVerified == true,
+            opponentIsGoldVerified: challenge.opponentIsGoldVerified == true,
+            amWinning: amLeading,
+            leadDelta: leadDelta,
+            typeColor: typeColor,
+            gradient: challengeType.gradientColors,
+            opponentFreshness: ProgressFreshnessKit.freshness(for: challenge.opponentLastProgressAt),
+            opponentAgeLabel: ProgressFreshnessKit.ageLabel(for: challenge.opponentLastProgressAt)
+        )
+    }
+
+    // MARK: - Stat Chip Row
+
+    /// Horizontally scrollable stat chip strip — replaces the old
+    /// 4-cell `statBar`. Always-visible streak chip with flame.
+    private var statChips: some View {
+        let liveValue = ChallengeProgressResolver.shared.liveProgress(for: challenge)
+        let livePercent = Int(ChallengeProgressResolver.shared.progressPercentage(for: challenge) * 100)
+        let target = challenge.dailyTarget ?? 0
+
+        return StatChipRow(chips: [
+            StatChip(
+                value: "\(challenge.myCurrentStreak)",
+                label: "streak",
+                icon: "flame.fill",
+                tint: .orange
+            ),
+            StatChip(
+                value: "\(liveValue)",
+                label: "today \(challenge.targetUnit)",
+                tint: typeColor
+            ),
+            StatChip(
+                value: "\(livePercent)%",
+                label: "of goal",
+                tint: livePercent >= 100 ? .green : .primary
+            ),
+            StatChip(
+                value: formatProgress(target),
+                label: "daily target"
+            ),
+            StatChip(
+                value: "\(challenge.myDaysCompleted)/\(max(challenge.daysElapsed, 1))",
+                label: "days hit",
+                tint: .green
+            ),
+            StatChip(
+                value: "\(challenge.daysRemaining)",
+                label: challenge.daysRemaining == 1 ? "day left" : "days left",
+                tint: challenge.daysRemaining <= 1 ? .red : .primary
             )
-        }
-        .padding(Spacing.sm)
-        .sleekCardSubtle(cornerRadius: 16)
+        ])
     }
-    
-    private func statCell(value: String, label: String, valueColor: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.ds_statSmall)
-                .foregroundColor(valueColor)
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
+
+    // MARK: - Battle Cry Strip (inline composer)
+
+    /// Inline 5-emoji quick-tap composer + "..." trailing button.
+    /// One-tap = haptic + animated pulse + send. Replaces the old
+    /// chevron-right `reactionSendSection` row.
+    private var battleCryStrip: some View {
+        BattleCryStrip(
+            mode: battleCryMode,
+            typeColor: typeColor,
+            gradient: challengeType.gradientColors,
+            onSend: { preset in sendBattleCry(preset) },
+            onOpenPicker: { showingReactionPicker = true }
+        )
     }
-    
-    private var thinDivider: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.2))
-            .frame(width: 1, height: 28)
-    }
-    
-    // MARK: - Reaction Send
-    
-    private var reactionSendSection: some View {
-        let isCompetition = challenge.mode == .competition
-        let themeGradient: [Color] = isCompetition ? [.orange, .red] : [.blue, .cyan]
-        
-        return Button {
-            HapticManager.impact(.medium)
-            showingReactionPicker = true
-        } label: {
-            HStack(spacing: Spacing.sm) {
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient(colors: themeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 38, height: 38)
-                    
-                    Text(isCompetition ? "🗣️" : "⚡")
-                        .font(.ds_bodyMedium)
-                }
-                
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(isCompetition ? "Send a Battle Cry" : "Send a Power Up")
-                        .font(.ds_bodySmall)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    
-                    Text(isCompetition ? "Talk smack to \(opponentFirst)" : "Hype up \(opponentFirst)")
-                        .font(.ds_caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.ds_labelSmall)
-                    .foregroundStyle(LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing))
-            }
-            .padding(Spacing.sm)
-            .sleekCardSubtle(cornerRadius: 14)
-        }
-        .buttonStyle(.plain)
-    }
-    
+
     // MARK: - Today's Progress Card
-    
-    private var todayProgressCard: some View {
+
+    /// Single shared today's-progress card via the kit. Bigger
+    /// numbers, freshness-aware opponent label.
+    private var todayCard: some View {
         let myLive = ChallengeProgressResolver.shared.liveProgress(for: challenge)
         let oppToday = challenge.opponentTodayProgress ?? 0
         let target = challenge.dailyTarget ?? 1
-        let myPercent = min(1.0, Double(myLive) / Double(target))
-        let oppPercent = min(1.0, Double(oppToday) / Double(target))
-        
-        return VStack(spacing: Spacing.sm) {
-            // Section header
-            HStack(spacing: Spacing.xs) {
-                Image(systemName: "bolt.circle.fill")
-                    .foregroundStyle(typeGradient)
-                    .font(.title3)
-                Text("Today")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                if challenge.amWinningToday == true {
-                    Text("You're ahead!")
-                        .font(.ds_caption)
-                        .foregroundColor(.green)
-                } else if challenge.amWinningToday == false {
-                    Text("\(opponentFirst) leads")
-                        .font(.ds_caption)
-                        .foregroundColor(.orange)
-                }
-            }
-            
-            // My progress bar
-            VStack(spacing: Spacing.xxs) {
-                HStack {
-                    Text("You")
-                        .font(.ds_labelSmall)
-                        .foregroundColor(.primary)
-                    Spacer()
-                    Text("\(myLive) / \(target)")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(myPercent >= 1.0 ? .green : typeColor)
-                    if myPercent >= 1.0 {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(.green)
-                    }
-                }
-                
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.primary.opacity(0.08))
-                            .frame(height: 8)
-                        Capsule()
-                            .fill(typeGradient)
-                            .frame(width: geo.size.width * myPercent, height: 8)
-                            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: myPercent)
-                    }
-                }
-                .frame(height: 8)
-            }
-            
-            // Opponent progress bar
-            VStack(spacing: Spacing.xxs) {
-                HStack {
-                    HStack(spacing: 2) {
-                        Text(opponentFirst)
-                            .font(.ds_labelSmall)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                        if challenge.opponentIsVerified == true || challenge.opponentIsGoldVerified == true {
-                            VerifiedBadge(size: 9, isGold: challenge.opponentIsGoldVerified == true)
-                        }
-                    }
-                    Spacer()
-                    Text(oppToday > 0 ? "\(oppToday) / \(target)" : "–")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(oppPercent >= 1.0 ? .green : (oppToday > 0 ? .primary : .secondary))
-                    if oppPercent >= 1.0 {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(.green)
-                    }
-                }
-                
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.primary.opacity(0.08))
-                            .frame(height: 8)
-                        Capsule()
-                            .fill(LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: geo.size.width * oppPercent, height: 8)
-                            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: oppPercent)
-                    }
-                }
-                .frame(height: 8)
-            }
+        let oppShowsRaw = challenge.opponentLastProgressAt == nil
+            || ProgressFreshnessKit.shouldShowRawValue(for: challenge.opponentLastProgressAt)
+        let oppValueText: String = {
+            guard oppShowsRaw else { return "—" }
+            return oppToday > 0 ? formatProgress(oppToday) : "—"
+        }()
+        let leaderTitle: String = {
+            if challenge.amWinningToday == true { return "You're ahead" }
+            if challenge.amWinningToday == false { return "\(opponentFirst) leads" }
+            return ""
+        }()
+
+        return TodayProgressCard(
+            myValue: myLive,
+            myValueText: formatProgress(myLive),
+            opponentName: opponentFirst,
+            opponentValue: oppShowsRaw ? oppToday : 0,
+            opponentValueText: oppValueText,
+            target: target,
+            targetUnit: challenge.targetUnit,
+            typeColor: typeColor,
+            gradient: challengeType.gradientColors,
+            leaderTitle: leaderTitle,
+            opponentFreshness: ProgressFreshnessKit.freshness(for: challenge.opponentLastProgressAt),
+            opponentAgeLabel: ProgressFreshnessKit.ageLabel(for: challenge.opponentLastProgressAt)
+        )
+    }
+
+    // MARK: - Battle Cry Mode
+
+    /// Maps the 1v1 challenge mode to the BattleCryComposer kit's
+    /// preset pool: competition → smack-talk, accountability → hype.
+    private var battleCryMode: BattleCryMode {
+        switch challenge.mode {
+        case .competition:    return .competition
+        case .accountability: return .accountability
         }
-        .padding(Spacing.md)
-        .sleekCardSubtle(cornerRadius: 16)
     }
     
     // MARK: - Battle Log (Day-by-Day Timeline)
@@ -928,6 +722,66 @@ struct ChallengeDetailView: View {
     
     private func refreshProgressIfNeeded() async {
         await syncMyProgressInBackground()
+    }
+
+    // MARK: - Battle Cry Helpers
+
+    /// Initial fetch of recent reactions for this challenge. Called
+    /// once on `.task(id:)` before the realtime subscription opens
+    /// so the feed paints with history instead of an empty bubble
+    /// stack while we wait for the next INSERT.
+    private func loadReactions() async {
+        reactionsLoading = true
+        let fetched = await ChallengeService.shared.fetchReactions(challengeId: challenge.challengeId)
+        await MainActor.run {
+            reactions = fetched
+            reactionsLoading = false
+        }
+    }
+
+    /// Optimistic-insert + send for an inline `BattleCryStrip` tap.
+    /// Inserts a placeholder reaction immediately so the bubble
+    /// appears in the feed without round-trip latency, then awaits
+    /// the RPC; on failure the placeholder fades out + we surface
+    /// an error haptic. The realtime listener also receives our
+    /// own INSERT, but the dedup-by-id guard in the
+    /// `onChallengeReactionReceived` callback prevents a double
+    /// bubble (`reactions.first(where: { $0.id == reaction.id })`).
+    private func sendBattleCry(_ preset: ReactionPreset) {
+        guard let me = SupabaseManager.shared.currentUser?.id else { return }
+
+        let optimisticId = UUID()
+        let optimistic = ChallengeReaction(
+            reactionId: optimisticId,
+            senderId: me,
+            senderName: "You",
+            senderPhotoUrl: nil,
+            recipientId: challenge.opponentId,
+            reactionKey: preset.id,
+            reactionEmoji: preset.emoji,
+            reactionText: preset.text,
+            reactionCategory: preset.category.rawValue,
+            createdAt: Date()
+        )
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
+            reactions.insert(optimistic, at: 0)
+        }
+
+        Task {
+            let result = await ChallengeService.shared.sendReaction(
+                challengeId: challenge.challengeId,
+                recipientId: challenge.opponentId,
+                preset: preset
+            )
+            if !result.success {
+                await MainActor.run {
+                    HapticManager.notification(.error)
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        reactions.removeAll { $0.id == optimisticId }
+                    }
+                }
+            }
+        }
     }
     
     private func toggleNotificationPreference(_ notify: Bool) {

@@ -50,7 +50,17 @@ class RealtimeService: ObservableObject {
     private var friendActivityFeedChannel: RealtimeChannelV2?
     private var privacyChangeChannel: RealtimeChannelV2?
     private var exercisesChannel: RealtimeChannelV2?
-    
+
+    /// Per-challenge reactions channel. Owned + torn down by the
+    /// challenge-detail view that's currently visible. Replaces the
+    /// previous "fetch on view-appear" reaction list with a live
+    /// stream powered by `challenge_reactions` realtime INSERTs.
+    /// Per PE invariant 9 the parent detail view is the sole owner;
+    /// nested rows must NOT subscribe themselves.
+    private var challengeReactionsChannel: RealtimeChannelV2?
+    private var challengeReactionsListenerTask: Task<Void, Never>?
+    private var subscribedReactionChallengeId: UUID?
+
     // MARK: - Debounce State
     
     /// Debounce task for batched community challenge progress refreshes.
@@ -169,6 +179,13 @@ class RealtimeService: ObservableObject {
     
     /// Called when opponent's daily progress updates (for live challenge widget)
     var onOpponentDailyProgressUpdated: ((DailyProgressPayload) -> Void)?
+
+    /// Called when a new battle cry / power-up reaction is inserted
+    /// for the currently-subscribed challenge (set via
+    /// `subscribeChallengeReactions(challengeId:)`). Detail views set
+    /// this in `.task` to drive the `ReactiveBattleFeed` fly-in
+    /// animation + confetti burst.
+    var onChallengeReactionReceived: ((ChallengeReaction) -> Void)?
     
     private init() {}
     
@@ -513,7 +530,8 @@ class RealtimeService: ObservableObject {
         if let channel = exercisesChannel {
             await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
         }
-        
+        await unsubscribeChallengeReactions()
+
         // Also tear down service-level realtime channels so they can re-subscribe on reconnect.
         // Without this, the services hold a stale channel reference and the guard in
         // subscribeToRealtimeUpdates() prevents re-subscription after background → foreground.
@@ -1725,6 +1743,124 @@ class RealtimeService: ObservableObject {
     func stopAutoTrackedRefreshTimer() {
         autoTrackedRefreshTimer?.cancel()
         autoTrackedRefreshTimer = nil
+    }
+
+    // MARK: - Challenge Reactions Subscription (per-detail-view)
+
+    /// Subscribe to INSERT events on `challenge_reactions` filtered by
+    /// `challenge_id`. Owned by whichever challenge-detail view is
+    /// currently visible. The view calls this in `.task(id:)` and
+    /// `unsubscribeChallengeReactions()` in `.onDisappear`. Idempotent
+    /// when called with the same `challengeId` twice (returns early).
+    /// Switching to a different challengeId tears the previous channel
+    /// down before opening a new one.
+    func subscribeChallengeReactions(challengeId: UUID) async {
+        // Same channel already open for this challenge — no-op so a
+        // .task(id:) re-evaluation doesn't churn the socket.
+        if subscribedReactionChallengeId == challengeId, challengeReactionsChannel != nil {
+            return
+        }
+
+        await unsubscribeChallengeReactions()
+
+        let client = SupabaseManager.shared.supabaseClient
+        let channel = client.realtimeV2.channel("challenge_reactions-\(challengeId.uuidString)")
+
+        let inserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "challenge_reactions",
+            filter: "challenge_id=eq.\(challengeId.uuidString)"
+        )
+
+        challengeReactionsListenerTask = Task { [weak self] in
+            for await action in inserts {
+                guard let self = self else { return }
+                await self.handleChallengeReactionInsert(action.record)
+            }
+        }
+
+        await channel.subscribe()
+        challengeReactionsChannel = channel
+        subscribedReactionChallengeId = challengeId
+
+        logRealtimeEvent(
+            type: "SUBSCRIBED",
+            source: "challenge_reactions",
+            details: "✅ Listening for INSERT on challenge_reactions for \(challengeId.uuidString.prefix(8))"
+        )
+    }
+
+    /// Tear down the per-challenge reactions subscription (mirrors the
+    /// "1 channel per visible detail view" lifetime contract).
+    func unsubscribeChallengeReactions() async {
+        challengeReactionsListenerTask?.cancel()
+        challengeReactionsListenerTask = nil
+
+        if let channel = challengeReactionsChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
+        challengeReactionsChannel = nil
+        subscribedReactionChallengeId = nil
+    }
+
+    private func handleChallengeReactionInsert(_ record: [String: AnyJSON]?) async {
+        guard let record = record else { return }
+
+        // Decode the inserted row into the existing `ChallengeReaction`
+        // model. Realtime payloads carry the columns we own
+        // (`reaction_*`, `sender_id`, `recipient_id`, `created_at`)
+        // but NOT joined `sender_name` / `sender_photo_url` (those
+        // come from the RPC view). Best-effort: hand the row to the
+        // callback with a nil/empty name; the receiver row will fall
+        // back to the cached `CachedFriendPhoto` initials avatar and
+        // will re-hydrate on the next `fetchReactions` refresh.
+        guard let reactionIdString = jsonString(record["id"]),
+              let reactionId = UUID(uuidString: reactionIdString),
+              let senderIdString = jsonString(record["sender_id"]),
+              let senderId = UUID(uuidString: senderIdString),
+              let recipientIdString = jsonString(record["recipient_id"]),
+              let recipientId = UUID(uuidString: recipientIdString) else {
+            AppLogger.warning("[REACTIONS_REALTIME] Malformed reaction insert; dropping event", category: .network)
+            return
+        }
+
+        let reactionKey = jsonString(record["reaction_key"]) ?? ""
+        let reactionEmoji = jsonString(record["reaction_emoji"]) ?? "💬"
+        let reactionText = jsonString(record["reaction_text"]) ?? ""
+        let reactionCategory = jsonString(record["reaction_category"]) ?? "trash_talk"
+
+        let createdAt: Date = {
+            if let raw = jsonString(record["created_at"]) {
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let parsed = iso.date(from: raw) { return parsed }
+                iso.formatOptions = [.withInternetDateTime]
+                if let parsed = iso.date(from: raw) { return parsed }
+            }
+            return Date()
+        }()
+
+        let reaction = ChallengeReaction(
+            reactionId: reactionId,
+            senderId: senderId,
+            senderName: nil,
+            senderPhotoUrl: nil,
+            recipientId: recipientId,
+            reactionKey: reactionKey,
+            reactionEmoji: reactionEmoji,
+            reactionText: reactionText,
+            reactionCategory: reactionCategory,
+            createdAt: createdAt
+        )
+
+        logRealtimeEvent(
+            type: "🔥 CHALLENGE_REACTION",
+            source: "challenge_reactions",
+            details: "⚡️ \(reactionEmoji) \(reactionText) from \(senderIdString.prefix(8))"
+        )
+
+        onChallengeReactionReceived?(reaction)
     }
 }
 

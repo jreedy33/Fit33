@@ -188,6 +188,12 @@ extension ChallengeService {
             
             if response.success {
                 AppLogger.info("✅ [REACTIONS] Sent reaction: \(preset.emoji) \(preset.text)", category: .social)
+                // PE invariant 13: any RPC that inserts into push_notification_queue
+                // must flush so the recipient sees the push within seconds (not on
+                // the next 60s cron tick). `send_challenge_reaction` queues a
+                // 'challenge_reaction' push to the recipient — flush immediately
+                // so battle cries land like Instagram DMs.
+                PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "challenge_reaction_sent")
                 return (true, response.remainingToday)
             } else {
                 AppLogger.warning("⚠️ [REACTIONS] Send failed: \(response.error ?? "unknown")", category: .social)

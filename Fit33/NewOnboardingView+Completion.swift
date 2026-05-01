@@ -690,25 +690,22 @@ extension NewOnboardingView {
         // UserManager.createUser already sets hasCompletedOnboarding = true
         // The view will automatically transition via ContentView
         AppLogger.info("Onboarding complete! Transitioning to main app...", category: .ui)
-        
-        // 🔔 REQUEST NOTIFICATION PERMISSIONS IMMEDIATELY
-        // This triggers the native iOS permission prompt right as they complete onboarding
-        // All notification types are defaulted ON in NotificationManager for maximum engagement
-        Task {
-            // Request notification permission - this shows native iOS prompt
-            let granted = await NotificationManager.shared.requestAuthorization()
-            if granted {
-                AppLogger.info("Notification permissions granted during onboarding - scheduling all notifications", category: .ui)
-                // Schedule all default notifications immediately
-                await MainActor.run {
-                    NotificationManager.shared.scheduleAllNotifications()
-                }
-            } else {
-                AppLogger.warning("User declined notification permission", category: .ui)
-                // We'll show them a banner on the Dashboard to reconsider
-            }
-        }
-        
+
+        // Smart Notification Engine — Phase 1 (2026-08-01).
+        //
+        // Notification permission used to be requested directly here, racing
+        // the MainTabView .task ask + the PushNotificationService ask path.
+        // All three paths are now consolidated through PushPermissionCoordinator
+        // which owns the single iOS dialog call. MainTabView triggers
+        // `ensureAskedOnce()` 1.5s after launch, where the soft-prompt sheet
+        // (NotificationPrimerSheet) gets to explain the value of pushes
+        // BEFORE the cold system dialog. This is the canonical ask path.
+        //
+        // We deliberately do NOT trigger the ask from here — the user has
+        // just finished onboarding and the app needs a moment to settle
+        // before piling on another modal. The coordinator handles the
+        // post-onboarding ask within MainTabView's first .task.
+
         // Generate personalized programs based on user profile
         if let user = userManager.currentUser {
             Task {

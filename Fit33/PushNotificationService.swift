@@ -123,14 +123,16 @@ class PushNotificationService: ObservableObject {
     
     // MARK: - Register for Push Notifications
     
-    /// Request push notification permissions and register with APNs
+    /// Request push notification permissions and register with APNs.
+    ///
+    /// 2026-08-01: Now routes through `PushPermissionCoordinator` so the
+    /// system dialog only ever appears via one path (Phase 1 consolidation).
+    /// If `useSoftPrompt` is true, the coordinator will present
+    /// NotificationPrimerSheet before the system dialog.
     func registerForPushNotifications() async {
-        // First, request notification authorization
-        let granted = await NotificationManager.shared.requestAuthorization()
-        
-        if !granted {
-            AppLogger.warning("⚠️ [PUSH] Notification permission not granted via prompt", category: .network)
-            // Don't return early - check if user enabled in Settings later
+        let status = await PushPermissionCoordinator.shared.ensureAskedOnce(useSoftPrompt: true)
+        if status != .authorized && status != .provisional && status != .ephemeral {
+            AppLogger.info("[PUSH] Permission status \(status.rawValue) — APNs registration deferred", category: .network)
         }
         
         // Always check current authorization status (user might have enabled in Settings)

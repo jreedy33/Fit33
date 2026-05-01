@@ -426,6 +426,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             
             await MainActor.run {
                 self.isAuthorized = granted
+                // NUJ telemetry — flips `notification_permission_granted`
+                // boolean on the user's enrollment row via the trigger.
+                NewUserJourneyTracker.shared.logPermission(
+                    kind: "notifications",
+                    granted: granted
+                )
             }
             
             if granted {
@@ -1495,7 +1501,134 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     }
     
     // MARK: - Preference Sync to Cloud
-    
+    //
+    // Two-way sync with `user_notification_preferences` (server). Writes
+    // happen on every toggle (`syncPreferencesToCloud`); reads happen
+    // once on auth-ready (`syncPreferencesFromCloud`) so a re-install or
+    // second-device install picks up the user's existing opt-outs
+    // instead of starting fresh from `defaultEnabled`.
+    //
+    // Conflict policy: server-wins-when-newer. We compare server
+    // `updated_at` against `lastLocalPrefsChangeAt` (UserDefaults). When
+    // server is older OR equal, local wins (we just saved). When server
+    // is newer (another device made a change), server wins.
+
+    /// ISO8601 timestamp of the most recent local-side prefs mutation. Used
+    /// by `syncPreferencesFromCloud()` to decide whether server is newer.
+    private static let lastLocalPrefsChangeKey = "notif_prefs_last_local_change_at"
+
+    private func recordLocalPrefsChange() {
+        UserDefaults.standard.set(ISO8601DateFormatter().string(from: Date()), forKey: Self.lastLocalPrefsChangeKey)
+    }
+
+    /// Hydrate notification preferences from the server. Should be called
+    /// once after auth-ready (e.g. from `Fit33App` `WindowGroup.task` after
+    /// `SupabaseManager.isAuthenticated`). Server-newer-wins conflict policy.
+    ///
+    /// Calls `get_my_notification_preferences()` RPC (migration 20260801)
+    /// which bundles preferences + the category catalogue in one round-trip.
+    func syncPreferencesFromCloud() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+
+        struct Response: Decodable {
+            let preferences: ServerPrefs
+            // categories: [CategoryRow]  // Hydrated by NotificationSettingsView when needed.
+        }
+        struct ServerPrefs: Decodable {
+            let master_enabled: Bool?
+            let disabled_types: [String]?
+            let quiet_hours_enabled: Bool?
+            let quiet_hours_start: String?
+            let quiet_hours_end: String?
+            let timezone: String?
+            let daily_cap: Int?
+            let category_disabled: [String]?
+            let smart_timing_enabled: Bool?
+            let updated_at: String?
+            let is_default: Bool?
+        }
+
+        do {
+            let resp: Response = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_my_notification_preferences")
+                .execute()
+                .value
+            let prefs = resp.preferences
+
+            // Server says "no row yet" → don't overwrite local. We'll write
+            // local → server on the next user toggle.
+            if prefs.is_default == true { return }
+
+            // Conflict policy: only apply server when its updated_at is
+            // strictly newer than our last local change.
+            if let serverUpdatedAt = prefs.updated_at,
+               let serverDate = ISO8601DateFormatter().date(from: serverUpdatedAt),
+               let lastLocalRaw = UserDefaults.standard.string(forKey: Self.lastLocalPrefsChangeKey),
+               let lastLocalDate = ISO8601DateFormatter().date(from: lastLocalRaw),
+               serverDate <= lastLocalDate {
+                AppLogger.debug("Notif prefs: server (\(serverUpdatedAt)) older than local (\(lastLocalRaw)) — skipping hydrate", category: .general)
+                return
+            }
+
+            // Apply server state. We bypass the `didSet` hooks (which would
+            // bounce write back to server in a loop) by mutating UserDefaults
+            // first, then re-init the @Published values via the init pattern.
+            if let me = prefs.master_enabled {
+                UserDefaults.standard.set(me, forKey: "master_notifications_enabled")
+                masterNotificationsEnabled = me
+            }
+            if let qhe = prefs.quiet_hours_enabled {
+                UserDefaults.standard.set(qhe, forKey: "quiet_hours_enabled")
+                quietHoursEnabled = qhe
+            }
+            if let qhs = prefs.quiet_hours_start, let qhsDate = parseHHMM(qhs) {
+                UserDefaults.standard.set(qhsDate, forKey: "quiet_hours_start")
+                quietHoursStart = qhsDate
+            }
+            if let qhe = prefs.quiet_hours_end, let qheDate = parseHHMM(qhe) {
+                UserDefaults.standard.set(qheDate, forKey: "quiet_hours_end")
+                quietHoursEnd = qheDate
+            }
+            if let disabled = prefs.disabled_types {
+                let disabledSet = Set(disabled)
+                let allTypes = Set(NotificationType.allCases.map { $0.rawValue })
+                enabledNotifications = allTypes.subtracting(disabledSet)
+                saveEnabledNotifications()
+            }
+            // Per-category prefs (used by Phase 4 Settings UI). Stored as
+            // raw JSON in UserDefaults so the legacy didSet path doesn't
+            // trip on them.
+            if let catDisabled = prefs.category_disabled {
+                UserDefaults.standard.set(catDisabled, forKey: "notif_category_disabled")
+            }
+            if let smart = prefs.smart_timing_enabled {
+                UserDefaults.standard.set(smart, forKey: "notif_smart_timing_enabled")
+            }
+            if let cap = prefs.daily_cap {
+                UserDefaults.standard.set(cap, forKey: "notif_daily_cap")
+            }
+
+            // Stamp local time so the next syncPreferencesToCloud() write is
+            // newer than what we just hydrated.
+            recordLocalPrefsChange()
+            AppLogger.info("Hydrated notification prefs from server (server_updated_at=\(prefs.updated_at ?? "nil"))", category: .general)
+        } catch {
+            AppLogger.error("Failed to hydrate notification preferences: \(error.localizedDescription)", category: .general)
+        }
+    }
+
+    /// Parse "HH:mm:ss" / "HH:mm" → Date today.
+    private func parseHHMM(_ raw: String) -> Date? {
+        let parts = raw.split(separator: ":")
+        guard parts.count >= 2,
+              let h = Int(parts[0]), let m = Int(parts[1]),
+              h >= 0, h < 24, m >= 0, m < 60 else { return nil }
+        var components = DateComponents()
+        components.hour = h
+        components.minute = m
+        return Calendar.current.date(from: components)
+    }
+
     private struct NotificationPreferencesInsert: Codable {
         let user_id: String
         let master_enabled: Bool
@@ -1534,6 +1667,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             updated_at: ISO8601DateFormatter().string(from: Date())
         )
         
+        recordLocalPrefsChange()
         Task {
             do {
                 try await SupabaseManager.shared.supabaseClient
@@ -1557,6 +1691,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     ) {
         let userInfo = notification.request.content.userInfo
         
+        // Smart Notification Engine — Phase 2 (2026-08-02). Report
+        // foreground-time delivery so the funnel captures it. The dedicated
+        // service-extension target (when wired in Xcode) handles
+        // background-delivered events; this covers the foreground case so
+        // we never lose a delivery signal even before the extension ships.
+        PushEventReporter.shared.report(.delivered, userInfo: userInfo)
+
         // Process notification even when in foreground to refresh data
         Task { @MainActor in
             if let notificationType = userInfo["type"] as? String {
@@ -1686,7 +1827,18 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             "type": notifType,
             "action": actionIdentifier
         ])
-        
+
+        // Smart Notification Engine — Phase 2. Report tap to the engagement
+        // funnel. `opened` covers the default action; custom action buttons
+        // ALSO report `action_taken` below in the action-handling switch.
+        if actionIdentifier == UNNotificationDefaultActionIdentifier {
+            PushEventReporter.shared.report(.opened, userInfo: userInfo)
+        } else if actionIdentifier == UNNotificationDismissActionIdentifier {
+            PushEventReporter.shared.report(.dismissed, userInfo: userInfo)
+        } else {
+            PushEventReporter.shared.report(.actionTaken, userInfo: userInfo, actionId: actionIdentifier)
+        }
+
         Task { @MainActor in
             switch actionIdentifier {
             case "START_WORKOUT":

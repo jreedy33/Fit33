@@ -769,6 +769,13 @@ struct Fit33App: App {
                             // high-resolution behavioral telemetry. Idempotent;
                             // safely re-callable on every cold start.
                             await NewUserJourneyTracker.shared.checkEnrollmentAndActivate()
+                            // Smart Notification Engine Phase 1 (2026-08-01):
+                            // Hydrate notification preferences from server so a
+                            // re-install or 2nd-device install picks up the
+                            // user's existing opt-outs / quiet hours instead
+                            // of starting fresh from `defaultEnabled`.
+                            // Server-newer-wins conflict policy.
+                            await NotificationManager.shared.syncPreferencesFromCloud()
                         }
                         
                         Task.detached(priority: .background) {

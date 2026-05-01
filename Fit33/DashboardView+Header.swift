@@ -37,7 +37,7 @@ extension DashboardView {
         HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
             HStack(spacing: 4) {
                 Text("WELCOME BACK, \(getFirstName().uppercased())")
-                    .font(.ds_labelMedium)
+                    .font(.ds_labelLarge)
                     .tracking(1.4)
                     .foregroundColor(.secondary)
                     .lineLimit(1)

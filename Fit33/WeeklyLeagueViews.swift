@@ -649,6 +649,14 @@ struct WeeklyLeagueDetailView: View {
     // not-placed runway.
     @State private var showingLeagueInfo = false
 
+    // 2026-04-30 — Challenge League Points Expansion. Expand-in-place panel
+    // beneath the current user's leaderboard row showing per-source LP
+    // breakdown for the week. Backed by `get_league_member_breakdown` —
+    // own-user only (privacy parity with league_point_awards RLS).
+    @State private var isBreakdownExpanded = false
+    @State private var breakdownEntries: [LeagueMemberBreakdownEntry] = []
+    @State private var isLoadingBreakdown = false
+
     var body: some View {
         ZStack {
             // Background
@@ -913,23 +921,19 @@ struct WeeklyLeagueDetailView: View {
                 VStack(spacing: 2) {
                     // Promotion zone label
                     if standing.promotionCount > 0 {
-                        HStack {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.ds_labelSmall)
-                                .foregroundColor(.green)
-                            Text("Promotion Zone — Top \(standing.promotionCount) advance to \(standing.nextTierName ?? "next tier")")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.green)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
+                        promotionZoneHeader(standing: standing)
                     }
 
                     ForEach(standing.leaderboard) { entry in
                         fullLeaderboardRow(entry: entry, standing: standing)
+
+                        // Inline breakdown panel — expanded beneath the caller's
+                        // own row. Keeps tap-to-expand out of the Button action
+                        // (which routes to FriendProfileView for everyone else)
+                        // by rendering a compact trigger row below the entry.
+                        if entry.isCurrentUser {
+                            breakdownTriggerAndPanel(weekStart: standing.weekStart)
+                        }
 
                         // Zone dividers
                         if entry.rank == standing.promotionCount && standing.promotionCount > 0 {
@@ -1581,7 +1585,236 @@ struct WeeklyLeagueDetailView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 6)
     }
-    
+
+    // MARK: - Promotion Zone Header (LP floor surface)
+    //
+    // 2026-04-30 — Challenge League Points Expansion. Surfaces the
+    // `promotion_lp_floor` gate so users see both conditions they must meet
+    // (top-N% + absolute LP). Renders:
+    //   Line 1: "Promotion Zone — Top N + 900 LP → Elite"
+    //   Line 2: mini progress bar "420 / 900 LP" with current points.
+    // When the server hasn't surfaced a floor (pre-#177 clients decoding an
+    // older response), falls back to the original single-line copy.
+
+    @ViewBuilder
+    private func promotionZoneHeader(standing: LeagueStanding) -> some View {
+        let floor = standing.promotionLpFloor ?? 0
+        let progress = standing.promotionLpFloorProgress ?? 0
+        let nextTier = standing.nextTierName ?? "next tier"
+        let requiresCrown = standing.requiresCrownToPromote == true
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.ds_labelSmall)
+                    .foregroundColor(.green)
+                if floor > 0 {
+                    if requiresCrown {
+                        Text("Promotion Zone — Rank 1 + \(floor) LP → \(nextTier)")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.green)
+                    } else {
+                        Text("Promotion Zone — Top \(standing.promotionCount) + \(floor) LP → \(nextTier)")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.green)
+                    }
+                } else {
+                    Text("Promotion Zone — Top \(standing.promotionCount) advance to \(nextTier)")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.green)
+                }
+                Spacer()
+            }
+
+            if floor > 0 {
+                VStack(alignment: .leading, spacing: 3) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.green.opacity(0.12))
+                                .frame(height: 4)
+                            Capsule()
+                                .fill(Color.green)
+                                .frame(width: geo.size.width * CGFloat(progress), height: 4)
+                        }
+                    }
+                    .frame(height: 4)
+
+                    HStack(spacing: 4) {
+                        Text("\(standing.myPoints) / \(floor) LP")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(progress >= 1.0 ? .green : .secondary)
+                        if progress >= 1.0 {
+                            Text("· floor cleared")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.green)
+                        } else {
+                            Text("· \(floor - standing.myPoints) to go")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: - Member Breakdown Panel (Challenge League Points Expansion)
+    //
+    // 2026-04-30 — Tap-to-expand "Where did my points come from?" panel
+    // beneath the current user's leaderboard row. Sourced from
+    // `get_league_member_breakdown` (own-user only). Collapsed state is a
+    // single compact row with a disclosure chevron + total; expanded state
+    // renders a stacked bar + per-source list.
+
+    @ViewBuilder
+    private func breakdownTriggerAndPanel(weekStart: String) -> some View {
+        VStack(spacing: 0) {
+            Button {
+                HapticManager.impact(.light)
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    isBreakdownExpanded.toggle()
+                }
+                if isBreakdownExpanded && breakdownEntries.isEmpty {
+                    Task { await fetchBreakdown(weekStart: weekStart) }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.bar.fill")
+                        .font(.ds_caption)
+                        .foregroundColor(.secondary)
+                    Text(isBreakdownExpanded ? "Hide your points breakdown" : "See where your points came from")
+                        .font(.ds_caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary.opacity(0.6))
+                        .rotationEffect(.degrees(isBreakdownExpanded ? 180 : 0))
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+
+            if isBreakdownExpanded {
+                breakdownPanel
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 10)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var breakdownPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if isLoadingBreakdown {
+                HStack {
+                    ProgressView().scaleEffect(0.7)
+                    Text("Loading breakdown…")
+                        .font(.ds_caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+            } else if breakdownEntries.isEmpty {
+                Text("No points yet this week — complete a workout, hit a challenge target, or log a meal to start earning.")
+                    .font(.ds_caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                breakdownStackedBar
+                breakdownLegend
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.04 : 0.03))
+        )
+    }
+
+    private var breakdownStackedBar: some View {
+        GeometryReader { geo in
+            let total = max(1, breakdownEntries.reduce(0) { $0 + $1.totalPoints })
+            HStack(spacing: 1) {
+                ForEach(breakdownEntries) { entry in
+                    let fraction = CGFloat(entry.totalPoints) / CGFloat(total)
+                    Rectangle()
+                        .fill(color(forSource: entry.source))
+                        .frame(width: geo.size.width * fraction)
+                }
+            }
+            .frame(height: 10)
+            .clipShape(Capsule())
+        }
+        .frame(height: 10)
+    }
+
+    private var breakdownLegend: some View {
+        VStack(spacing: 6) {
+            ForEach(breakdownEntries) { entry in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(color(forSource: entry.source))
+                        .frame(width: 8, height: 8)
+                    Text(entry.displayName)
+                        .font(.ds_caption)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text("+\(entry.totalPoints) pts")
+                        .font(.ds_caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    if entry.awardCount > 1 {
+                        Text("(\(entry.awardCount)×)")
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary.opacity(0.7))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Stable per-source color mapping. Keeps the stacked bar segments and the
+    /// legend circles in sync. Sources that aren't on this list get the
+    /// rotating "other" palette.
+    private func color(forSource source: String) -> Color {
+        switch source {
+        case "workout":                    return .orange
+        case "cardio_session":             return .red
+        case "challenge_daily",
+             "challenge_final_bell",
+             "challenge_target":           return .green
+        case "personal_record":            return .yellow
+        case "meal_logged":                return .mint
+        case "daily_login":                return .blue
+        case "streak_milestone_7",
+             "streak_milestone_30",
+             "streak_milestone_100":       return .purple
+        case "daily_quest_completed":      return .teal
+        case "body_weight_logged":         return .indigo
+        case "new_exercise_tried":         return .pink
+        case "friend_kudos_given",
+             "workout_shared_with_friend": return .cyan
+        default:                           return .gray
+        }
+    }
+
+    private func fetchBreakdown(weekStart: String) async {
+        isLoadingBreakdown = true
+        let entries = await leagueService.fetchMemberBreakdown(weekStart: weekStart)
+        breakdownEntries = entries
+        isLoadingBreakdown = false
+    }
+
     // MARK: - History Tab
     
     private var historyTab: some View {

@@ -142,9 +142,9 @@ struct ChallengeDetailView: View {
                         HapticManager.impact(.medium)
                         showingAddWidgetSheet = true
                     } label: {
-                        Label("Add Home Screen Widget", systemImage: "plus")
-                            .labelStyle(.titleAndIcon)
+                        Text("Home Screen Widget")
                             .font(.ds_labelMedium)
+                            .fontWeight(.semibold)
                     }
                     .accessibilityLabel("Add home screen widget")
                     .accessibilityHint("Opens a step-by-step guide for adding the widget")
@@ -475,7 +475,9 @@ struct ChallengeDetailView: View {
                         opponentName: opponentFirst,
                         typeColor: typeColor,
                         typeGradientColors: challengeType.gradientColors,
-                        colorScheme: colorScheme
+                        colorScheme: colorScheme,
+                        leaguePointsAwarded: details.leaguePointsAwarded(on: date),
+                        leagueReason: details.primaryLeagueReason(on: date)
                     )
 
                     if index < allDays.count - 1 {
@@ -874,6 +876,13 @@ private struct BattleLogRow: View {
     let typeColor: Color
     let typeGradientColors: [Color]
     let colorScheme: ColorScheme
+    /// 2026-04-30 — Challenge League Points Expansion. Total LP credited to
+    /// the caller for this calendar day (sum across hit/winner/intensity/
+    /// early-bird awards). Zero = no chip rendered.
+    var leaguePointsAwarded: Int = 0
+    /// One-line reason string for the chip subtitle (e.g. "Day winner — 2x").
+    /// Nil falls back to just the +N LP pill.
+    var leagueReason: String? = nil
     
     private var isToday: Bool {
         var calendar = Calendar.current
@@ -1000,6 +1009,45 @@ private struct BattleLogRow: View {
                     ? typeColor.opacity(colorScheme == .dark ? 0.1 : 0.06)
                     : Color.clear)
         )
+        .overlay(alignment: .topTrailing) {
+            if leaguePointsAwarded > 0 && !isFuture {
+                leaguePointsChip
+                    .padding(.top, 2)
+                    .padding(.trailing, Spacing.xs)
+            }
+        }
+    }
+
+    /// 2026-04-30 — Challenge League Points Expansion.
+    /// Small pill that renders "+N LP" with an optional single-line reason
+    /// subtitle. Rendered only for past / today rows where the server-side
+    /// rollup has actually credited points. Future days, or days with a
+    /// zero award sum, render no chip so the row's layout is unchanged.
+    private var leaguePointsChip: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "rosette")
+                .font(.system(size: 9, weight: .semibold))
+            Text("+\(leaguePointsAwarded) LP")
+                .font(.ds_caption)
+                .fontWeight(.semibold)
+            if let reason = leagueReason, !reason.isEmpty {
+                Text("·")
+                    .font(.ds_caption)
+                    .foregroundColor(.secondary.opacity(0.6))
+                Text(reason)
+                    .font(.ds_caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .foregroundStyle(typeColor)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            Capsule()
+                .fill(typeColor.opacity(colorScheme == .dark ? 0.18 : 0.12))
+        )
+        .accessibilityLabel("Earned \(leaguePointsAwarded) league points\(leagueReason.map { " for \($0)" } ?? "")")
     }
 
     private func miniRing(progress: Double) -> some View {

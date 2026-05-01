@@ -187,6 +187,10 @@ class BackgroundChallengeSyncService {
             (.activeEnergyBurned, .hourly),
             (.distanceWalkingRunning, .hourly),
             (.appleExerciseTime, .hourly),
+            // Sprint 20260811 — `stairsClimbed` challenge type. Hourly is
+            // plenty: stairs aggregate slowly and an immediate-frequency
+            // observer would burn battery for a low-volume signal.
+            (.flightsClimbed, .hourly),
         ]
         let challengeRelevantTypes: [(HKQuantityType, HKUpdateFrequency)] = identifiersAndFreqs.compactMap { id, freq in
             guard let qt = HKQuantityType.quantityType(forIdentifier: id) else { return nil }

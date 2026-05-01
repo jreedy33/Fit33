@@ -374,21 +374,36 @@ struct ReactiveBattleFeed: View {
         }
     }
 
+    /// Compact fixed-size feed: ~4 bubbles tall, older cries scroll
+    /// upward off-screen. Container height stays constant regardless of
+    /// reaction count so the rest of the detail surface doesn't shift.
     private var bubbleList: some View {
-        VStack(spacing: Spacing.xs) {
-            ForEach(Array(reactions.prefix(maxVisible))) { reaction in
-                bubble(reaction)
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.4)
-                            .combined(with: .opacity)
-                            .combined(with: .move(edge: reaction.isMine ? .trailing : .leading)),
-                        removal: .opacity
-                    ))
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: Spacing.xs) {
+                    ForEach(Array(reactions.prefix(maxVisible))) { reaction in
+                        bubble(reaction)
+                            .id(reaction.id)
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.4)
+                                    .combined(with: .opacity)
+                                    .combined(with: .move(edge: reaction.isMine ? .trailing : .leading)),
+                                removal: .opacity
+                            ))
+                    }
+                }
+                .padding(Spacing.sm)
+            }
+            .frame(maxHeight: 220)  // ~4 bubble rows visible; rest scrolls
+            .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+            .animation(shouldDisableMotion ? nil : .spring(response: 0.45, dampingFraction: 0.65), value: reactions.map(\.id))
+            .onChange(of: reactions.first?.id) { _, newest in
+                guard let newest else { return }
+                withAnimation(shouldDisableMotion ? nil : .easeOut(duration: 0.25)) {
+                    proxy.scrollTo(newest, anchor: .top)
+                }
             }
         }
-        .padding(Spacing.sm)
-        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
-        .animation(shouldDisableMotion ? nil : .spring(response: 0.45, dampingFraction: 0.65), value: reactions.map(\.id))
     }
 
     @ViewBuilder

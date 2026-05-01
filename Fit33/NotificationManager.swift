@@ -2220,6 +2220,25 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 AppLogger.debug("Engagement nudge tapped without challenge_id — falling back to dashboard", category: .general)
             }
 
+        // 2026-04-30 — Challenge League Points Expansion ("Daily Duels, Final
+        // Bell"). Fired by the server after `compute_challenge_daily_awards`
+        // or `compute_challenge_final_bell` writes a row the user should know
+        // about ("You won Day 3 vs Paul — +45 LP"). Deep-links to the
+        // challenge so the user can see the freshly rendered LP chip on
+        // BattleLogRow. When `challenge_id` is missing (e.g. a weekly summary
+        // variant) we fall back to the leagues tab so the leaderboard
+        // breakdown panel is one tap away.
+        case "challenge_lp_awarded":
+            if let challengeId = userInfo["challenge_id"] as? String {
+                DeepLinkManager.shared.pendingDestination = .challengeDetail(challengeId: challengeId)
+                AppLogger.debug("challenge_lp_awarded — opening challenge detail: \(challengeId)", category: .general)
+            } else {
+                DeepLinkManager.shared.pendingDestination = .leagues
+                AppLogger.debug("challenge_lp_awarded without challenge_id — opening leagues tab", category: .general)
+            }
+            // Refresh the standing so the in-app badge reflects the new total.
+            await WeeklyLeagueService.shared.fetchOrJoinLeague(force: true)
+
         // ── Smart Notification Engine Phase 3 trigger types (2026-08-01) ──
         //
         // These are the new orchestrator-driven intent types (see
@@ -2316,6 +2335,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         "challenge_accepted", "challenge_progress", "challenge_completed",
         "challenge_cancelled", "challenge_declined", "challenge_update",
         "challenge_reaction",
+        // 2026-04-30 — Challenge League Points Expansion. Fired post-rollup
+        // (daily or Final Bell) when a user earned notable LP. Routes to
+        // `.challengeDetail(...)` so the BattleLogRow LP chip is visible.
+        "challenge_lp_awarded",
         // Activity-feed reactions (friends ❤️ your workout / meal / weight log)
         "activity_reaction",
         // Realtime Widget Server Pull, Phase 7c (2026-04-26): server

@@ -1667,12 +1667,29 @@ class PrivateChallengeService: ObservableObject {
         case "steps":       return data.steps
         case "walk":        return challenge.targetUnit == "minutes" ? data.walkMinutesToday : 0
         case "run":         return challenge.targetUnit == "minutes" ? data.runMinutesToday : 0
-        case "lift", "workout_streak": return 0
+        case "lift", "workout_streak", "total_volume_lifted": return 0
         case "active_minutes": return data.activeMinutes
         case "hydrate":     return data.hydrationInUnit(challenge.targetUnit)
         case "protein":     return data.protein
         case "calories":    return max(data.calories, data.mealCalories)
-        case "sleep":       return data.sleepMinutes
+        case "sleep", "sleep_hours": return data.sleepMinutes
+        case "cycling":
+            switch challenge.targetUnit.lowercased() {
+            case "minutes": return data.cyclingMinutes
+            case "km":      return Int(data.cyclingMeters / 1000)
+            case "miles":   return Int(data.cyclingMeters / 1609.344)
+            case "workouts": return data.cyclingSessions
+            default: return 0
+            }
+        case "swim":
+            switch challenge.targetUnit.lowercased() {
+            case "workouts": return data.swimSessions
+            case "minutes":  return data.swimMinutes
+            case "km":       return Int(data.swimMeters / 1000)
+            default: return 0
+            }
+        case "stairs_climbed":   return data.stairsClimbed
+        case "mind_body_minutes": return data.mindBodyMinutes
         default:            return 0
         }
     }

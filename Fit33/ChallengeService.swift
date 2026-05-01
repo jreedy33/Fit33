@@ -84,6 +84,14 @@ struct ChallengeProgressData {
     let walkMinutesToday: Int
     let runMinutesToday: Int
     let sleepMinutes: Int
+    let cyclingMinutes: Int
+    let cyclingMeters: Double
+    let cyclingSessions: Int
+    let swimMinutes: Int
+    let swimMeters: Double
+    let swimSessions: Int
+    let stairsClimbed: Int
+    let mindBodyMinutes: Int
     
     func hydrationInUnit(_ unit: String) -> Int {
         unit.lowercased() == "oz" ? Int(Double(hydrationMl) / 29.5735) : hydrationMl
@@ -98,15 +106,24 @@ func gatherCurrentProgress() async -> ChallengeProgressData {
     let hkManager = HealthKitManager.shared
     
     let steps = hkManager.todaySteps > 0 ? hkManager.todaySteps : hkService.todaySteps
-    
-    let walkMinutes = hkService.recentWorkouts
-        .filter { $0.workoutType == .walking && Calendar.current.isDateInToday($0.startDate) }
+
+    let todaysWorkouts = hkService.recentWorkouts.filter { Calendar.current.isDateInToday($0.startDate) }
+
+    let walkMinutes = todaysWorkouts
+        .filter { $0.workoutType == .walking }
         .reduce(0) { $0 + $1.durationMinutes }
-    
-    let runMinutes = hkService.recentWorkouts
-        .filter { $0.workoutType == .running && Calendar.current.isDateInToday($0.startDate) }
+
+    let runMinutes = todaysWorkouts
+        .filter { $0.workoutType == .running }
         .reduce(0) { $0 + $1.durationMinutes }
-    
+
+    let cyclingWorkouts = todaysWorkouts.filter { $0.workoutType == .cycling }
+    let swimWorkouts = todaysWorkouts.filter { $0.workoutType == .swimming }
+
+    let mindBodyTypes: [HKWorkoutActivityType] = [.yoga, .flexibility, .mindAndBody, .coreTraining]
+    let mindBodyMin = todaysWorkouts.filter { mindBodyTypes.contains($0.workoutType) }
+        .reduce(0) { $0 + $1.durationMinutes }
+
     let sleepHours = hkService.lastNightSleep ?? 0
     
     return ChallengeProgressData(
@@ -118,7 +135,15 @@ func gatherCurrentProgress() async -> ChallengeProgressData {
         hydrationMl: HydrationService.shared.todayTotal,
         walkMinutesToday: walkMinutes,
         runMinutesToday: runMinutes,
-        sleepMinutes: Int(sleepHours * 60)
+        sleepMinutes: Int(sleepHours * 60),
+        cyclingMinutes: cyclingWorkouts.reduce(0) { $0 + $1.durationMinutes },
+        cyclingMeters: cyclingWorkouts.reduce(0.0) { $0 + ($1.distance ?? 0) },
+        cyclingSessions: cyclingWorkouts.count,
+        swimMinutes: swimWorkouts.reduce(0) { $0 + $1.durationMinutes },
+        swimMeters: swimWorkouts.reduce(0.0) { $0 + ($1.distance ?? 0) },
+        swimSessions: swimWorkouts.count,
+        stairsClimbed: hkService.todayFlightsClimbed,
+        mindBodyMinutes: mindBodyMin
     )
 }
 
@@ -2263,7 +2288,39 @@ class ChallengeService: ObservableObject {
         case "active_minutes":
             // Total moving time from all activities
             return todayActivities.reduce(0) { $0 + ($1.movingTime / 60) }
-            
+
+        case "cycling":
+            // Strava ride / virtual-ride / e-bike-ride / handcycle activities.
+            let rides = todayActivities.filter {
+                let t = $0.type.lowercased()
+                return t.contains("ride") || t.contains("cycling")
+            }
+            if targetUnit == "km" {
+                return Int(rides.reduce(0.0) { $0 + $1.distance } / 1000)
+            } else if targetUnit == "miles" {
+                return Int(rides.reduce(0.0) { $0 + $1.distance } / 1609.344)
+            } else if targetUnit == "minutes" {
+                return rides.reduce(0) { $0 + ($1.movingTime / 60) }
+            } else if targetUnit == "workouts" {
+                return rides.count
+            }
+            return 0
+
+        case "swim":
+            let swims = todayActivities.filter { $0.type.lowercased().contains("swim") }
+            if targetUnit == "workouts" {
+                return swims.count
+            } else if targetUnit == "minutes" {
+                return swims.reduce(0) { $0 + ($1.movingTime / 60) }
+            } else if targetUnit == "km" {
+                return Int(swims.reduce(0.0) { $0 + $1.distance } / 1000)
+            }
+            return 0
+
+        case "stairs_climbed", "total_volume_lifted", "mind_body_minutes":
+            // Strava doesn't track these directly — leave to HealthKit path.
+            return 0
+
         default:
             return 0
         }
@@ -2621,7 +2678,58 @@ class ChallengeService: ObservableObject {
         case "calories":
             // Calorie challenge uses burned calories only (HealthKit active energy)
             return healthKit.todayCalories
-            
+
+        case "cycling":
+            // HKWorkout cycling sessions today.
+            let rides = healthKit.recentWorkouts.filter {
+                $0.workoutType == .cycling && Calendar.current.isDateInToday($0.startDate)
+            }
+            if targetUnit == "minutes" {
+                return rides.reduce(0) { $0 + $1.durationMinutes }
+            } else if targetUnit == "miles" {
+                return Int(rides.reduce(0.0) { $0 + ($1.distance ?? 0) } / 1609.344)
+            } else if targetUnit == "km" {
+                return Int(rides.reduce(0.0) { $0 + ($1.distance ?? 0) } / 1000)
+            } else if targetUnit == "workouts" {
+                return rides.count
+            }
+            return 0
+
+        case "swim":
+            let swims = healthKit.recentWorkouts.filter {
+                $0.workoutType == .swimming && Calendar.current.isDateInToday($0.startDate)
+            }
+            if targetUnit == "workouts" {
+                return swims.count
+            } else if targetUnit == "minutes" {
+                return swims.reduce(0) { $0 + $1.durationMinutes }
+            } else if targetUnit == "km" {
+                return Int(swims.reduce(0.0) { $0 + ($1.distance ?? 0) } / 1000)
+            }
+            return 0
+
+        case "stairs_climbed":
+            // Today's flights climbed (HKQuantityType .flightsClimbed).
+            return healthKit.todayFlightsClimbed
+
+        case "total_volume_lifted":
+            // Cumulative working-set tonnage. Real per-session deltas flow
+            // via `syncFit33WorkoutToChallenge` (see WorkoutManager finish
+            // path). HealthKit doesn't expose volume directly, so the
+            // background HK sync returns 0 here — the server's GREATEST()
+            // path keeps the previously-pushed authoritative value.
+            return 0
+
+        case "mind_body_minutes":
+            // Yoga + flexibility + mind-and-body + coreTraining today.
+            let mindBodyTypes: [HKWorkoutActivityType] = [
+                .yoga, .flexibility, .mindAndBody, .coreTraining
+            ]
+            let sessions = healthKit.recentWorkouts.filter {
+                mindBodyTypes.contains($0.workoutType) && Calendar.current.isDateInToday($0.startDate)
+            }
+            return sessions.reduce(0) { $0 + $1.durationMinutes }
+
         default:
             AppLogger.warning("Unknown challenge type: \(challengeType)", category: .social)
             return 0
@@ -2735,6 +2843,22 @@ class ChallengeService: ObservableObject {
                 let strain = ReadinessService.shared.todayReadiness.strainPrev ?? 0
                 progressValue = Int(strain.rounded())
                 source = "readiness"
+
+            case .cycling, .swim, .stairsClimbed, .mindBodyMinutes:
+                // All four read from HealthKit — route through the same
+                // calculator that handles steps/walk/run.
+                progressValue = await calculateProgressFromHealthKit(
+                    challengeType: challenge.challengeType,
+                    targetUnit: challenge.targetUnit
+                )
+                source = "healthkit"
+
+            case .totalVolumeLifted:
+                // Per-session push only — server-side value is authoritative.
+                // syncFit33WorkoutToChallenge pushes deltas after each finished
+                // strength workout (see WorkoutManager.finishWorkout).
+                progressValue = 0
+                source = "fit33"
             }
             
             // For re-calculable types (protein, hydration, calories) the local value
@@ -2926,7 +3050,34 @@ class ChallengeService: ObservableObject {
                 // Any workout counts for streak
                 progressValue = 1
                 shouldLog = true
-                
+
+            case "cycling":
+                let t = workoutType.lowercased()
+                if t.contains("ride") || t.contains("cycling") {
+                    if challenge.targetUnit == "minutes" {
+                        progressValue = durationSeconds / 60
+                    } else if challenge.targetUnit == "km" {
+                        progressValue = Int(distanceMeters / 1000)
+                    } else if challenge.targetUnit == "miles" {
+                        progressValue = Int(distanceMeters / 1609.344)
+                    } else if challenge.targetUnit == "workouts" {
+                        progressValue = 1
+                    }
+                    shouldLog = progressValue > 0
+                }
+
+            case "swim":
+                if workoutType.lowercased().contains("swim") {
+                    if challenge.targetUnit == "workouts" {
+                        progressValue = 1
+                    } else if challenge.targetUnit == "minutes" {
+                        progressValue = durationSeconds / 60
+                    } else if challenge.targetUnit == "km" {
+                        progressValue = Int(distanceMeters / 1000)
+                    }
+                    shouldLog = progressValue > 0
+                }
+
             default:
                 break
             }
@@ -3300,6 +3451,60 @@ class ChallengeProgressResolver: ObservableObject {
             let readiness = ReadinessService.shared.todayReadiness
             localValue = Int((readiness.strainPrev ?? 0).rounded())
             localHasData = readiness.strainPrev != nil
+
+        case .cycling:
+            // Cycling distance / time / sessions today from HK workouts.
+            let rides = HealthKitService.shared.recentWorkouts.filter {
+                $0.workoutType == .cycling && Calendar.current.isDateInToday($0.startDate)
+            }
+            if targetUnit.lowercased().contains("min") {
+                localValue = rides.reduce(0) { $0 + $1.durationMinutes }
+            } else if targetUnit.lowercased() == "miles" {
+                localValue = Int(rides.reduce(0.0) { $0 + ($1.distance ?? 0) } / 1609.344)
+            } else if targetUnit.lowercased() == "km" {
+                localValue = Int(rides.reduce(0.0) { $0 + ($1.distance ?? 0) } / 1000)
+            } else if targetUnit.lowercased() == "workouts" {
+                localValue = rides.count
+            } else {
+                localValue = 0
+            }
+            localHasData = HealthKitService.shared.lastSyncDate.map { Calendar.current.isDateInToday($0) } ?? false
+
+        case .swim:
+            let swims = HealthKitService.shared.recentWorkouts.filter {
+                $0.workoutType == .swimming && Calendar.current.isDateInToday($0.startDate)
+            }
+            if targetUnit.lowercased() == "workouts" {
+                localValue = swims.count
+            } else if targetUnit.lowercased().contains("min") {
+                localValue = swims.reduce(0) { $0 + $1.durationMinutes }
+            } else if targetUnit.lowercased() == "km" {
+                localValue = Int(swims.reduce(0.0) { $0 + ($1.distance ?? 0) } / 1000)
+            } else {
+                localValue = 0
+            }
+            localHasData = HealthKitService.shared.lastSyncDate.map { Calendar.current.isDateInToday($0) } ?? false
+
+        case .stairsClimbed:
+            // Today's flights climbed. localHasData mirrors HK freshness.
+            localValue = HealthKitService.shared.todayFlightsClimbed
+            localHasData = HealthKitService.shared.lastSyncDate.map { Calendar.current.isDateInToday($0) } ?? false
+
+        case .totalVolumeLifted:
+            // Per-session push only — server is authoritative. Resolver
+            // returns 0 locally so the server value (max() below) wins.
+            localValue = 0
+            localHasData = false
+
+        case .mindBodyMinutes:
+            let mindBodyTypes: [HKWorkoutActivityType] = [
+                .yoga, .flexibility, .mindAndBody, .coreTraining
+            ]
+            let sessions = HealthKitService.shared.recentWorkouts.filter {
+                mindBodyTypes.contains($0.workoutType) && Calendar.current.isDateInToday($0.startDate)
+            }
+            localValue = sessions.reduce(0) { $0 + $1.durationMinutes }
+            localHasData = HealthKitService.shared.lastSyncDate.map { Calendar.current.isDateInToday($0) } ?? false
         }
         
         if localHasData {
@@ -3487,6 +3692,27 @@ enum ChallengeType: String, CaseIterable, Identifiable {
     /// that rewards smart volume, not grinding.
     case strainBudget = "strain_budget"
 
+    // MARK: Sprint 20260811 — Catalog Expansion (Phase 2)
+    //
+    // Five new HealthKit-cheap challenge types, all backed by either
+    // existing HKQuantityTypeIdentifier samples (`flightsClimbed`) or
+    // existing HKWorkoutType activity-type filters (cycling, swimming,
+    // yoga / mobility / coreTraining / flexibility) we already permission
+    // and read for the workout history. Lift volume reuses
+    // `WorkoutManager.totalVolumeLifted` aggregation. No new HK reads
+    // required apart from `.flightsClimbed`.
+    /// Cycling distance / sessions (HKWorkout activityType = .cycling).
+    case cycling = "cycling"
+    /// Swim distance / sessions (HKWorkout activityType = .swimming).
+    case swim = "swim"
+    /// Stairs flightsClimbed (HKQuantityType .flightsClimbed).
+    case stairsClimbed = "stairs_climbed"
+    /// Cumulative working-set tonnage (lbs / kg). Lift-cadence-friendly.
+    case totalVolumeLifted = "total_volume_lifted"
+    /// Yoga + mobility + flexibility + coreTraining minutes — recovery /
+    /// active-recovery counter. Read from HKWorkout activityType filter.
+    case mindBodyMinutes = "mind_body_minutes"
+
     var id: String { rawValue }
     
     var displayName: String {
@@ -3503,6 +3729,11 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .sleepHours: return "Sleep Challenge"
         case .readinessAverage: return "Readiness Challenge"
         case .strainBudget: return "Strain Budget"
+        case .cycling: return "Cycling Challenge"
+        case .swim: return "Swim Challenge"
+        case .stairsClimbed: return "Stairs Challenge"
+        case .totalVolumeLifted: return "Volume Quest"
+        case .mindBodyMinutes: return "Mind & Body"
         }
     }
     
@@ -3520,6 +3751,11 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .sleepHours: return "bed.double.fill"
         case .readinessAverage: return "heart.text.square.fill"
         case .strainBudget: return "bolt.heart.fill"
+        case .cycling: return "bicycle"
+        case .swim: return "figure.pool.swim"
+        case .stairsClimbed: return "figure.stairs"
+        case .totalVolumeLifted: return "scalemass.fill"
+        case .mindBodyMinutes: return "figure.mind.and.body"
         }
     }
     
@@ -3537,6 +3773,11 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .sleepHours: return "😴"
         case .readinessAverage: return "💚"
         case .strainBudget: return "⚡"
+        case .cycling: return "🚴"
+        case .swim: return "🏊"
+        case .stairsClimbed: return "🪜"
+        case .totalVolumeLifted: return "🦾"
+        case .mindBodyMinutes: return "🧘"
         }
     }
     
@@ -3554,6 +3795,11 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .sleepHours: return .indigo
         case .readinessAverage: return .green
         case .strainBudget: return .yellow
+        case .cycling: return .blue
+        case .swim: return .teal
+        case .stairsClimbed: return .brown
+        case .totalVolumeLifted: return .purple
+        case .mindBodyMinutes: return .mint
         }
     }
     
@@ -3571,6 +3817,11 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .sleepHours: return [.indigo, .purple]
         case .readinessAverage: return [.green, .teal]
         case .strainBudget: return [.yellow, .orange]
+        case .cycling: return [.blue, .indigo]
+        case .swim: return [.teal, .blue]
+        case .stairsClimbed: return [.brown, .orange]
+        case .totalVolumeLifted: return [.purple, .indigo]
+        case .mindBodyMinutes: return [.mint, .green]
         }
     }
     
@@ -3589,6 +3840,11 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .sleepHours: return "h"
         case .readinessAverage: return "/ 100"
         case .strainBudget: return "strain"
+        case .cycling: return "km"
+        case .swim: return "workouts"
+        case .stairsClimbed: return "flights"
+        case .totalVolumeLifted: return "lbs"
+        case .mindBodyMinutes: return "min"
         }
     }
 
@@ -3604,6 +3860,56 @@ enum ChallengeType: String, CaseIterable, Identifiable {
         case .sleepHours, .readinessAverage, .strainBudget: return true
         default: return false
         }
+    }
+}
+
+// MARK: - Challenge Cadence
+//
+// Sprint 20260811 — companion to migration #177.
+//
+// `daily`       → target measured per calendar day (canonical existing behavior)
+// `weekly`      → target measured by sum across the current ISO week
+//                 (e.g. "5 runs in 7 days", "25 km this week")
+// `total`       → cumulative across the entire challenge window
+//                 (e.g. "Marathon Month — 100 km / 30 d")
+// `per_session` → single qualifying session anywhere in the window
+//                 (e.g. "complete one 10K run in the next 14 days")
+//
+// Mirrors the server-side `target_cadence` CHECK constraint exactly.
+enum ChallengeCadence: String, Codable, CaseIterable, Identifiable {
+    case daily       = "daily"
+    case weekly      = "weekly"
+    case total       = "total"
+    case perSession  = "per_session"
+
+    var id: String { rawValue }
+
+    /// Picker display label (used in ChallengeFlowStartView's cadence picker).
+    var displayLabel: String {
+        switch self {
+        case .daily:      return "Daily"
+        case .weekly:     return "This Week"
+        case .total:      return "Total"
+        case .perSession: return "One Session"
+        }
+    }
+
+    /// Short copy that explains what "hit the target" means for this cadence.
+    var subtitle: String {
+        switch self {
+        case .daily:      return "Hit the target every day"
+        case .weekly:     return "Hit the total this week"
+        case .total:      return "Cumulative over the challenge"
+        case .perSession: return "One qualifying workout"
+        }
+    }
+
+    /// Lenient parser — accepts both the canonical raw string AND legacy nil.
+    /// Used everywhere we decode from server / cache; the column is non-NULL
+    /// on the server side (default 'daily') so nil only appears for in-flight
+    /// older RPCs that don't return the column yet.
+    static func parse(_ raw: String?) -> ChallengeCadence {
+        ChallengeCadence(rawValue: raw ?? "daily") ?? .daily
     }
 }
 
@@ -3840,6 +4146,19 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
     let amWinningToday: Bool?
     let opponentIsVerified: Bool?
     let opponentIsGoldVerified: Bool?
+
+    // ── Sprint 20260811 — cadence-aware fields (paired with migration #177) ──
+    // All optional: older RPC deploys (pre-#177) won't include them, and the
+    // existing iOS UI continues to work with `daily` semantics by default.
+    /// Server-provided `target_cadence` (`daily` / `weekly` / `total` /
+    /// `per_session`). Use `cadence` for the typed enum view.
+    let targetCadence: String?
+    /// Caller's period_progress as ranked by `get_challenge_leaderboard`
+    /// (today for daily, ISO-week SUM for weekly, total for total, MAX
+    /// session for per_session). nil from older RPC deploys.
+    let myPeriodProgress: Int?
+    /// Opponent's period_progress mirror. Same nullability rules as above.
+    let opponentPeriodProgress: Int?
     /// Realtime Widget Server Pull, Phase 2a/2b (2026-04-26):
     /// Stored as raw ISO-8601 strings — same pattern as `startDateString`
     /// / `endDateString` above — so the synthesized `Codable` decoder
@@ -3936,7 +4255,10 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
         opponentIsVerified: Bool? = nil,
         opponentIsGoldVerified: Bool? = nil,
         myLastProgressAt: Date? = nil,
-        opponentLastProgressAt: Date? = nil
+        opponentLastProgressAt: Date? = nil,
+        targetCadence: String? = nil,
+        myPeriodProgress: Int? = nil,
+        opponentPeriodProgress: Int? = nil
     ) {
         self.challengeId = challengeId
         self.challengeType = challengeType
@@ -3975,10 +4297,19 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
         // having to remember the formatter incantation.
         self.myLastProgressAtString = myLastProgressAt.map { ActiveChallenge.progressTimestampFormatter.string(from: $0) }
         self.opponentLastProgressAtString = opponentLastProgressAt.map { ActiveChallenge.progressTimestampFormatter.string(from: $0) }
+        self.targetCadence = targetCadence
+        self.myPeriodProgress = myPeriodProgress
+        self.opponentPeriodProgress = opponentPeriodProgress
     }
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
+    }
+
+    /// Typed cadence accessor (defaults to `.daily` when the server didn't
+    /// return the column — pre-#177 deploys + cached responses).
+    var cadence: ChallengeCadence {
+        ChallengeCadence.parse(targetCadence)
     }
     
     var mode: ChallengeMode {
@@ -4060,12 +4391,21 @@ struct ActiveChallenge: Codable, Identifiable, Hashable, ChallengeTypeResolvable
         case opponentIsGoldVerified = "opponent_is_gold_verified"
         case myLastProgressAtString = "my_last_progress_at"
         case opponentLastProgressAtString = "opponent_last_progress_at"
+        case targetCadence = "target_cadence"
+        case myPeriodProgress = "my_period_progress"
+        case opponentPeriodProgress = "opponent_period_progress"
     }
 }
 
 struct ChallengeTemplate: Codable, Identifiable {
     let id: UUID
+    /// Stable string identifier (e.g. `ten_k_steps_daily`). Added with
+    /// migration #176; nil from older RPC deploys.
+    let slug: String?
     let challengeType: String
+    /// Server-provided cadence (`daily` / `weekly` / `total` / `per_session`).
+    /// Added with migration #176; defaults to `daily` when nil.
+    let targetCadence: String?
     let title: String
     let description: String?
     let emoji: String?
@@ -4073,9 +4413,22 @@ struct ChallengeTemplate: Codable, Identifiable {
     let defaultDurationDays: Int
     let targetUnit: String
     let isFeatured: Bool
+    /// All optional — added by migration #176 + defensive against older RPCs.
+    let isOfficial: Bool?
+    let sortOrder: Int?
+    let category: String?
+    let tier: String?
+    let requiresWearable: Bool?
+    let requiresStrava: Bool?
+    let requiresAppleWatch: Bool?
+    let requiresHealthKit: Bool?
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
+    }
+
+    var cadence: ChallengeCadence {
+        ChallengeCadence.parse(targetCadence)
     }
     
     var displayEmoji: String {
@@ -4084,7 +4437,9 @@ struct ChallengeTemplate: Codable, Identifiable {
     
     enum CodingKeys: String, CodingKey {
         case id
+        case slug
         case challengeType = "challenge_type"
+        case targetCadence = "target_cadence"
         case title
         case description
         case emoji
@@ -4092,6 +4447,14 @@ struct ChallengeTemplate: Codable, Identifiable {
         case defaultDurationDays = "default_duration_days"
         case targetUnit = "target_unit"
         case isFeatured = "is_featured"
+        case isOfficial = "is_official"
+        case sortOrder = "sort_order"
+        case category
+        case tier
+        case requiresWearable = "requires_wearable"
+        case requiresStrava = "requires_strava"
+        case requiresAppleWatch = "requires_apple_watch"
+        case requiresHealthKit = "requires_health_kit"
     }
 }
 
@@ -4169,6 +4532,10 @@ struct ActiveGroupChallenge: Codable, Identifiable, Hashable, ChallengeTypeResol
     let createdBy: UUID
     let memberCount: Int
     let members: [GroupChallengeMember]?
+    /// Sprint 20260811 — cadence-aware fields. Optional + nil-safe to keep
+    /// older RPC deploys decodable without churn.
+    let targetCadence: String?
+    let myPeriodProgress: Int?
     
     var id: UUID { challengeId }
     var startDate: Date { parseFlexibleDate(startDateString) }
@@ -4176,6 +4543,10 @@ struct ActiveGroupChallenge: Codable, Identifiable, Hashable, ChallengeTypeResol
     
     var type: ChallengeType? {
         ChallengeType(rawValue: challengeType)
+    }
+
+    var cadence: ChallengeCadence {
+        ChallengeCadence.parse(targetCadence)
     }
     
     var challengeMode: ChallengeMode {
@@ -4248,7 +4619,9 @@ struct ActiveGroupChallenge: Codable, Identifiable, Hashable, ChallengeTypeResol
             startDateString: startDateString, endDateString: endDateString,
             durationDays: durationDays, daysElapsed: daysElapsed, daysRemaining: daysRemaining,
             status: status, createdBy: createdBy, memberCount: memberCount,
-            members: members?.map { $0.withZeroedTodayProgress() }
+            members: members?.map { $0.withZeroedTodayProgress() },
+            targetCadence: targetCadence,
+            myPeriodProgress: myPeriodProgress
         )
     }
 
@@ -4269,6 +4642,8 @@ struct ActiveGroupChallenge: Codable, Identifiable, Hashable, ChallengeTypeResol
         case createdBy = "created_by"
         case memberCount = "member_count"
         case members
+        case targetCadence = "target_cadence"
+        case myPeriodProgress = "my_period_progress"
     }
 }
 
@@ -4287,6 +4662,12 @@ struct ChallengeDetails: Codable, Identifiable {
     let createdAt: Date
     let notifyOnOpponentComplete: Bool?
     let participants: [ChallengeParticipantDetails]?
+    /// 2026-04-30 — Challenge League Points Expansion. Per-day + final-bell
+    /// LP award rows for the CALLING user only (server filters by
+    /// `auth.uid()` inside `get_challenge_details`). Drives the BattleLogRow
+    /// LP chip. Optional so legacy clients running against the pre-#178
+    /// RPC version (response lacks the column) keep decoding.
+    let dailyLeagueAwards: [ChallengeLeagueAward]?
     
     var id: UUID { challengeId }
     
@@ -4297,7 +4678,38 @@ struct ChallengeDetails: Codable, Identifiable {
     var shouldNotifyOnOpponentComplete: Bool {
         notifyOnOpponentComplete ?? true
     }
-    
+
+    /// Returns all daily LP awards the caller earned for a specific challenge
+    /// day. Used by BattleLogRow to render the `+N LP · reason` chip.
+    /// A single calendar day can produce up to 4 rows (hit/winner/intensity/
+    /// early-bird), so we return the array and let the view aggregate.
+    func leagueAwards(on day: Date) -> [ChallengeLeagueAward] {
+        guard let awards = dailyLeagueAwards else { return [] }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        let isoString = formatter.string(from: day)
+        return awards.filter { $0.day == isoString }
+    }
+
+    /// Total LP credited for a single day (sum across the 4 award kinds).
+    /// Returns 0 when no awards exist — the BattleLogRow uses this to decide
+    /// whether to render the chip at all.
+    func leaguePointsAwarded(on day: Date) -> Int {
+        leagueAwards(on: day).reduce(0) { $0 + $1.points }
+    }
+
+    /// First non-empty `displayReason` among awards for a day (primary reason
+    /// displayed as the chip subtitle). Falls back to award-kind copy.
+    func primaryLeagueReason(on day: Date) -> String? {
+        let awards = leagueAwards(on: day).sorted { $0.points > $1.points }
+        return awards.first?.displayReason
+    }
+
+    /// The single Final Bell award row (nil while challenge is active).
+    var finalBellAward: ChallengeLeagueAward? {
+        dailyLeagueAwards?.first { $0.awardKind == "final_bell" || $0.awardKind == "wave_final_bell" }
+    }
+
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
         case challengeType = "challenge_type"
@@ -4313,6 +4725,7 @@ struct ChallengeDetails: Codable, Identifiable {
         case createdAt = "created_at"
         case notifyOnOpponentComplete = "notify_on_opponent_complete"
         case participants
+        case dailyLeagueAwards = "daily_league_awards"
     }
 }
 

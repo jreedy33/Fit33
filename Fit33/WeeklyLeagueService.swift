@@ -44,6 +44,22 @@ struct LeagueStanding: Codable {
     /// League Redesign Plan §A5.
     let peakDay: Int?
 
+    // 2026-04-30 — Challenge League Points Expansion.
+    // Surfaced by `get_or_join_weekly_league` after migration #177
+    // (`20260430b_league_tier_promotion_floors.sql`). All optional so
+    // old clients decoding the response continue to work.
+    /// Minimum absolute LP required to promote out of the user's current
+    /// tier. Pairs with `promotionCount` — both must be met to promote.
+    /// 0 for tiers that cannot promote (Verified).
+    let promotionLpFloor: Int?
+    /// Tier-scaled Peak Day Bonus multiplier (2 Bronze/Silver .. 5 Verified).
+    /// Replaces the Sprint 3 hardcoded 3×.
+    let peakDayMultiplier: Int?
+    /// TRUE only when the tier's promotion gate additionally requires a
+    /// Crown finish (rank 1). Elite only — forces Verified promotion to
+    /// be earned as an apex, not a top-15% cruise.
+    let requiresCrownToPromote: Bool?
+
     var friendsInLeague: Int {
         leaderboard.filter { $0.isFriend == true && !$0.isCurrentUser }.count
     }
@@ -73,6 +89,24 @@ struct LeagueStanding: Codable {
         case top3Streak = "top3_streak"
         case crownUntil = "crown_until"
         case peakDay = "peak_day"
+        case promotionLpFloor = "promotion_lp_floor"
+        case peakDayMultiplier = "peak_day_multiplier"
+        case requiresCrownToPromote = "requires_crown_to_promote"
+    }
+
+    /// Whether the user has met the absolute LP floor required to promote.
+    /// Nil when the server hasn't surfaced a floor yet (pre-#177 clients).
+    var meetsPromotionLpFloor: Bool? {
+        guard let floor = promotionLpFloor, floor > 0 else { return nil }
+        return myPoints >= floor
+    }
+
+    /// Progress toward the absolute LP floor required to promote. Nil
+    /// when there's no floor (e.g. Verified — no promotion possible).
+    /// Range: 0.0 .. 1.0.
+    var promotionLpFloorProgress: Double? {
+        guard let floor = promotionLpFloor, floor > 0 else { return nil }
+        return min(1.0, Double(myPoints) / Double(floor))
     }
 
     /// Is today the user's Peak Day? Returns false when `peakDay` is nil
@@ -271,6 +305,67 @@ struct LeagueHistoryEntry: Codable, Identifiable {
     }
 }
 
+// MARK: - League Member Breakdown (Challenge League Points Expansion)
+//
+// 2026-04-30 — Per-source stacked-bar data returned by
+// `get_league_member_breakdown`. Used by WeeklyLeagueViews' tap-to-expand panel.
+struct LeagueMemberBreakdownEntry: Codable, Identifiable {
+    let source: String
+    let awardCount: Int
+    let totalPoints: Int
+
+    var id: String { source }
+
+    var displayName: String {
+        LeaguePointSource(rawValue: source)?.displayName ?? source.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case source
+        case awardCount = "award_count"
+        case totalPoints = "total_points"
+    }
+}
+
+// MARK: - Challenge League Award (for BattleLogRow chip)
+//
+// 2026-04-30 — One row returned inside the `daily_league_awards` JSONB
+// array on `get_challenge_details`. Drives the per-day LP chip in the
+// battle log. Server is the source of truth for `points`; client never
+// recomputes. `day` is NULL for Final Bell rows.
+struct ChallengeLeagueAward: Codable, Hashable {
+    let day: String?
+    let awardKind: String
+    let basePoints: Int
+    let multiplier: Double
+    let points: Int
+    let note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case day
+        case awardKind = "award_kind"
+        case basePoints = "base_points"
+        case multiplier
+        case points
+        case note
+    }
+
+    /// User-facing award reason string. "Day winner — 2x", "Hit target", etc.
+    var displayReason: String {
+        if let note, !note.isEmpty { return note }
+        switch awardKind {
+        case "hit_target":      return "Hit target"
+        case "day_winner":      return "Day winner"
+        case "intensity":       return "Intensity bonus"
+        case "early_bird":      return "Early Bird"
+        case "unbroken_chain":  return "Unbroken Chain"
+        case "final_bell":      return "Final Bell"
+        case "wave_final_bell": return "Wave payout"
+        default:                return awardKind.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+}
+
 // MARK: - Tier Promotion Event
 //
 // 2026-04-29 — League Redesign Plan §B2. The single celebration trigger that
@@ -325,6 +420,16 @@ enum LeaguePointSource: String {
     case friendKudosGiven = "friend_kudos_given"
     case workoutSharedWithFriend = "workout_shared_with_friend"
 
+    // 2026-04-30 — Challenge League Points Expansion ("Daily Duels, Final Bell").
+    // Server-authoritative: these values are credited by the `compute_challenge_*`
+    // SECURITY DEFINER RPCs (migration #178). The iOS app never computes the
+    // amount — it only renders the resulting chip / breakdown. `points` /
+    // `dailyCap` / `weeklyCap` are therefore informational (display copy) and
+    // return `nil` so `WeeklyLeagueService.shouldAwardPoints(source:)` short-
+    // circuits any accidental client-side award call.
+    case challengeDaily = "challenge_daily"
+    case challengeFinalBell = "challenge_final_bell"
+
     var points: Int {
         switch self {
         // Existing
@@ -343,6 +448,8 @@ enum LeaguePointSource: String {
         case .newExerciseTried: return 10
         case .friendKudosGiven: return 2
         case .workoutSharedWithFriend: return 15
+        // Server-authoritative — display only. Never awarded client-side.
+        case .challengeDaily, .challengeFinalBell: return 0
         }
     }
 
@@ -362,6 +469,8 @@ enum LeaguePointSource: String {
         case .newExerciseTried: return "New exercise"
         case .friendKudosGiven: return "Kudos"
         case .workoutSharedWithFriend: return "Shared workout"
+        case .challengeDaily: return "Daily Duel"
+        case .challengeFinalBell: return "Final Bell"
         }
     }
 
@@ -857,7 +966,10 @@ class WeeklyLeagueService: ObservableObject {
                         shieldAvailable: current.shieldAvailable,
                         top3Streak: current.top3Streak,
                         crownUntil: current.crownUntil,
-                        peakDay: current.peakDay
+                        peakDay: current.peakDay,
+                        promotionLpFloor: current.promotionLpFloor,
+                        peakDayMultiplier: current.peakDayMultiplier,
+                        requiresCrownToPromote: current.requiresCrownToPromote
                     )
                 }
                 
@@ -942,6 +1054,29 @@ class WeeklyLeagueService: ObservableObject {
             #endif
         }
     }
+
+    // MARK: - Member Breakdown (Challenge League Points Expansion)
+
+    /// Per-source LP totals for the calling user's current week. Drives the
+    /// tap-to-expand breakdown panel on `WeeklyLeagueViews` leaderboard rows.
+    /// Backed by `get_league_member_breakdown(DATE)` — own-user only. The
+    /// optional `weekStart` parameter is `YYYY-MM-DD`; nil means current week.
+    func fetchMemberBreakdown(weekStart: String? = nil) async -> [LeagueMemberBreakdownEntry] {
+        guard SupabaseManager.shared.currentUser?.id != nil else { return [] }
+        do {
+            let params: [String: String?] = ["p_week_start": weekStart]
+            let result: [LeagueMemberBreakdownEntry] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_league_member_breakdown", params: params)
+                .execute()
+                .value
+            return result
+        } catch {
+            #if DEBUG
+            AppLogger.error("❌ [LEAGUE] Failed to fetch member breakdown: \(error)", category: .social)
+            #endif
+            return []
+        }
+    }
     
     // MARK: - Daily Login Points
     
@@ -989,7 +1124,10 @@ class WeeklyLeagueService: ObservableObject {
                 shieldAvailable: current.shieldAvailable,
                 top3Streak: current.top3Streak,
                 crownUntil: current.crownUntil,
-                peakDay: current.peakDay
+                peakDay: current.peakDay,
+                promotionLpFloor: current.promotionLpFloor,
+                peakDayMultiplier: current.peakDayMultiplier,
+                requiresCrownToPromote: current.requiresCrownToPromote
             )
         }
         

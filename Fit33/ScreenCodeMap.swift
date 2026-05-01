@@ -323,14 +323,15 @@ enum ScreenCodeMap {
             "Fit33/BackgroundChallengeSyncService.swift",
         ],
         "challenge creation": [
-            "Fit33/ChallengeCreationFlow.swift",
+            "Fit33/ChallengeFlowStartView.swift",
             "Fit33/ChallengeSetupView.swift",
             "Fit33/ChallengeService.swift",
+            "Fit33/ChallengeActivityType.swift",
         ],
         "challenge flow start": [
             "Fit33/ChallengeFlowStartView.swift",
             "Fit33/ChallengeService.swift",
-            "Fit33/ChallengeCreationFlow.swift",
+            "Fit33/ChallengeActivityType.swift",
         ],
         "send workout to friend": [
             "Fit33/SendWorkoutToFriendView.swift",

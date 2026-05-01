@@ -246,6 +246,42 @@ struct StravaCelebrationPayload: Decodable {
     let activityId: String?
 }
 
+/// 2026-04-30 — Challenge League Points Expansion.
+/// `type = "challenge_lp_awarded"` — fired after the server rollup credits
+/// non-trivial LP for a challenge day or Final Bell. Used for the
+/// "You won Day 3 vs Paul — +45 LP" visible alert. All fields optional so
+/// a loosely populated server row (e.g. a weekly summary with no specific
+/// challenge) still decodes.
+struct ChallengeLpAwardedPayload: Decodable {
+    /// Polymorphic challenge identifier. Cross-reference with `challengeKind`.
+    let challengeId: String?
+    /// Display-only. Kind of challenge the award came from
+    /// (`1v1` / `group` / `private` / `community`).
+    let challengeKind: String?
+    /// Final LP credited (post multipliers, post Peak Day).
+    let points: Int?
+    /// Highest-value award row kind for this burst
+    /// (`hit_target` / `day_winner` / `intensity` / `early_bird` /
+    /// `final_bell` / `wave_final_bell`).
+    let primaryAwardKind: String?
+    /// Short human-readable reason string (server-rendered). Examples:
+    ///   "Day winner vs Paul — 2×"
+    ///   "Unbroken Chain · Final Bell"
+    ///   "Top 5% of 10K Steps Daily"
+    let reason: String?
+    /// ISO day for daily awards. NULL for Final Bell.
+    let day: String?
+
+    enum CodingKeys: String, CodingKey {
+        case challengeId      = "challenge_id"
+        case challengeKind    = "challenge_kind"
+        case points
+        case primaryAwardKind = "primary_award_kind"
+        case reason
+        case day
+    }
+}
+
 // MARK: - Silent push payloads (ride the same wire format)
 
 /// `type = "challenge_wake"` — wake-challenge-opponents silent push.

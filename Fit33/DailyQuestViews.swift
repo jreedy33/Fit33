@@ -526,19 +526,10 @@ struct DailyQuestsWidget: View {
             // the right of the emoji ring so the card stays compact (the bar
             // sits just below the subheader, not below the ring).
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(quest.title)
-                        .font(.ds_labelMedium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                    // Phase 3 (2026-04-27 — Daily Mission Unification):
-                    // "from your brief" provenance chip. Only renders
-                    // for the 1-2 cards the brief actually drove —
-                    // never every card.
-                    if isBriefInfluenced(quest) {
-                        briefInfluenceChip
-                    }
-                }
+                Text(quest.title)
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
                 // Reserve space so long titles don't collide with the
                 // XP pill pinned to the card's top-trailing corner.
                 .padding(.trailing, 56)
@@ -687,25 +678,6 @@ struct DailyQuestsWidget: View {
     private func isBriefInfluenced(_ quest: DailyQuest) -> Bool {
         if quest.isBriefInfluenced == true { return true }
         return briefStore.linkedQuestKeys.contains(quest.questKey)
-    }
-
-    /// Tiny "← from your brief" pill rendered inline with the quest
-    /// title when the engine elevated it. Tappable — taps re-trigger
-    /// the brief's CTA so users can ping-pong between the brief
-    /// (above) and the quest (below) without scrolling away.
-    private var briefInfluenceChip: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 9, weight: .semibold))
-            Text("from brief")
-                .font(.ds_labelSmall)
-        }
-        .foregroundColor(.blue.opacity(0.85))
-        .padding(.horizontal, Spacing.xxs)
-        .padding(.vertical, 2)
-        .background(Color.blue.opacity(0.10))
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color.blue.opacity(0.25), lineWidth: 0.5))
     }
 
     /// True when the quest has any metadata badge worth rendering. Used

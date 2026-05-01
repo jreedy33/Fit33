@@ -28,6 +28,10 @@ final class HealthKitService: ObservableObject {
     @Published var todayCalories: Int = 0
     @Published var todayActiveMinutes: Int = 0
     @Published var todayDistance: Double = 0 // meters
+    /// Today's flights of stairs climbed (HKQuantityType .flightsClimbed).
+    /// Used by the `stairsClimbed` challenge type's HealthKit-backed
+    /// progress resolver. Permissioned via `readTypes` (Sprint 20260811).
+    @Published var todayFlightsClimbed: Int = 0
     
     // Workouts
     @Published var recentWorkouts: [HealthKitWorkout] = []
@@ -55,7 +59,12 @@ final class HealthKitService: ObservableObject {
         
         let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
             .stepCount, .activeEnergyBurned, .distanceWalkingRunning,
-            .heartRate, .restingHeartRate
+            .heartRate, .restingHeartRate,
+            // Sprint 20260811 — needed for the new `stairsClimbed`
+            // challenge type. Cheap permission (no separate prompt — joins
+            // the existing batch). Without this, todayFlightsClimbed will
+            // silently return 0 even on devices that record stairs.
+            .flightsClimbed
         ]
         for id in quantityIdentifiers {
             if let qt = HKObjectType.quantityType(forIdentifier: id) {
@@ -162,6 +171,7 @@ final class HealthKitService: ObservableObject {
         todayCalories = 0
         todayActiveMinutes = 0
         todayDistance = 0
+        todayFlightsClimbed = 0
         recentWorkouts = []
         restingHeartRate = nil
         averageHeartRate = nil
@@ -279,23 +289,28 @@ final class HealthKitService: ObservableObject {
         let steps = await fetchSum(for: .stepCount, predicate: predicate, authorized: authorized)
         let calories = await fetchSum(for: .activeEnergyBurned, predicate: predicate, authorized: authorized)
         let distance = await fetchSum(for: .distanceWalkingRunning, predicate: predicate, authorized: authorized)
-        
+        // Sprint 20260811 — flights climbed for the `stairsClimbed`
+        // challenge type. Same fetchSum path, no extra HK round-trips.
+        let stairs = await fetchSum(for: .flightsClimbed, predicate: predicate, authorized: authorized)
+
         let stepsInt = steps.map { Int($0) } ?? 0
         let calsInt = calories.map { Int($0) } ?? 0
         let distVal = distance ?? 0
-        
+        let stairsInt = stairs.map { Int($0) } ?? 0
+
         await MainActor.run {
             todaySteps = stepsInt
             todayCalories = calsInt
             todayDistance = distVal
+            todayFlightsClimbed = stairsInt
             // Optimistic widget patch: as soon as the @Published values
             // commit, push fresh local progress into the active-challenge
             // widget snapshot. The bridge hash-gates so this is a no-op
             // when nothing changed.
             ActiveChallengeWidgetBridge.publishOptimisticLocalProgress()
         }
-        
-        AppLogger.info("HealthKit today: \(stepsInt) steps, \(calsInt) cal, \(String(format: "%.1f", distVal/1000)) km", category: .health)
+
+        AppLogger.info("HealthKit today: \(stepsInt) steps, \(calsInt) cal, \(String(format: "%.1f", distVal/1000)) km, \(stairsInt) flights", category: .health)
         
         if calsInt > 0 {
             await DailyQuestService.shared.onCaloriesBurned(kcal: calsInt)

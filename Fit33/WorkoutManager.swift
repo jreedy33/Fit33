@@ -1199,23 +1199,30 @@ class WorkoutManager: ObservableObject {
         // NUJ telemetry — flips `completed_first_workout` boolean on the
         // user's enrollment row via the trigger. `phase: "completed"` is the
         // payload contract the trigger looks for (Migration #167).
+        // NewUserJourneyTracker is @MainActor; finishWorkout() is sync
+        // nonisolated, so hop onto MainActor for the call (mirrors the
+        // NotificationManager hop at line ~1192).
         let exerciseCount = (currentWorkout?.exercises as? Set<WorkoutExercise>)?.count ?? 0
         let durationMin   = max(0, Int(actualDuration / 60))
         let workoutIdStr  = currentWorkout?.id?.uuidString
-        NewUserJourneyTracker.shared.logWorkout(
-            phase: "completed",
-            workoutId: workoutIdStr,
-            source: currentSmartProgramId != nil ? "smart_program" : "freeform",
-            exerciseCount: exerciseCount,
-            durationMin: durationMin
-        )
-        // Streak signal — flips `streak_3_days` boolean (Migration #175) when
-        // the user crosses the 3-day mark for the first time. The trigger
-        // looks for payload.name='streak' AND payload.to IN ('3','3_days').
-        if let user = UserManager.shared.currentUser, Int(user.currentStreak) == 3 {
-            NewUserJourneyTracker.shared.logStateTransition(
-                name: "streak", from: "2", to: "3"
+        let nujSource     = currentSmartProgramId != nil ? "smart_program" : "freeform"
+        let streakHit3    = (UserManager.shared.currentUser).map { Int($0.currentStreak) == 3 } ?? false
+        Task { @MainActor in
+            NewUserJourneyTracker.shared.logWorkout(
+                phase: "completed",
+                workoutId: workoutIdStr,
+                source: nujSource,
+                exerciseCount: exerciseCount,
+                durationMin: durationMin
             )
+            // Streak signal — flips `streak_3_days` boolean (Migration #175)
+            // when the user crosses the 3-day mark for the first time.
+            // Trigger contract: payload.name='streak' AND payload.to IN ('3','3_days').
+            if streakHit3 {
+                NewUserJourneyTracker.shared.logStateTransition(
+                    name: "streak", from: "2", to: "3"
+                )
+            }
         }
 
         isWorkoutActive = false

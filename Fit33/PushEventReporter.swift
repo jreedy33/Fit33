@@ -34,8 +34,13 @@ import Supabase
 //   double-fire produces at most one row per notification per event type.
 // =============================================================================
 
-@MainActor
-final class PushEventReporter {
+// Intentionally NOT @MainActor: this is called from
+// UNUserNotificationCenterDelegate methods which Apple delivers as
+// `nonisolated` synchronous functions. Marking the reporter @MainActor would
+// force every caller into `Task { @MainActor in ... }` for a fire-and-forget
+// network post that doesn't touch any main-thread state. The actual network
+// work runs in `Task.detached` below.
+final class PushEventReporter: @unchecked Sendable {
 
     static let shared = PushEventReporter()
     private init() {}

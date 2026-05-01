@@ -113,6 +113,13 @@ struct CommunityChallenge: Codable, Identifiable, ChallengeTypeResolvable {
     var topParticipants: [LeaderboardSnippetEntry]?
     let friendsIn: [CommunityFriendInfo]?
     let friendsCount: Int?
+    /// Sprint 20260811 — cadence-aware fields. Optional + nil-safe.
+    let targetCadence: String?
+    let myPeriodProgress: Int?
+
+    var cadence: ChallengeCadence {
+        ChallengeCadence.parse(targetCadence)
+    }
     
     var id: UUID { challengeId }
     
@@ -193,6 +200,8 @@ struct CommunityChallenge: Codable, Identifiable, ChallengeTypeResolvable {
         case topParticipants = "top_participants"
         case friendsIn = "friends_in"
         case friendsCount = "friends_count"
+        case targetCadence = "target_cadence"
+        case myPeriodProgress = "my_period_progress"
     }
 }
 
@@ -458,6 +467,13 @@ struct CommunityLeaderboardResponse: Codable, ChallengeTypeResolvable {
     let myDaysCompleted: Int
     let myCurrentStreak: Int
     let myBestStreak: Int
+    /// Sprint 20260811 — paired with #177 RPC widening.
+    let targetCadence: String?
+    let myPeriodProgress: Int?
+
+    var cadence: ChallengeCadence {
+        ChallengeCadence.parse(targetCadence)
+    }
     
     enum CodingKeys: String, CodingKey {
         case challengeId = "challenge_id"
@@ -475,6 +491,8 @@ struct CommunityLeaderboardResponse: Codable, ChallengeTypeResolvable {
         case myDaysCompleted = "my_days_completed"
         case myCurrentStreak = "my_current_streak"
         case myBestStreak = "my_best_streak"
+        case targetCadence = "target_cadence"
+        case myPeriodProgress = "my_period_progress"
     }
     
     var title: String { challengeTitle }
@@ -1283,12 +1301,29 @@ class CommunityChallengeService: ObservableObject {
         case "steps":       return data.steps
         case "walk":        return challenge.targetUnit == "minutes" ? data.walkMinutesToday : 0
         case "run":         return challenge.targetUnit == "minutes" ? data.runMinutesToday : 0
-        case "lift", "workout_streak": return 0
+        case "lift", "workout_streak", "total_volume_lifted": return 0
         case "active_minutes": return data.activeMinutes
         case "hydrate":     return data.hydrationInUnit(challenge.targetUnit)
         case "protein":     return data.protein
         case "calories":    return max(data.calories, data.mealCalories)
-        case "sleep":       return data.sleepMinutes
+        case "sleep", "sleep_hours": return data.sleepMinutes
+        case "cycling":
+            switch challenge.targetUnit.lowercased() {
+            case "minutes":  return data.cyclingMinutes
+            case "km":       return Int(data.cyclingMeters / 1000)
+            case "miles":    return Int(data.cyclingMeters / 1609.344)
+            case "workouts": return data.cyclingSessions
+            default: return 0
+            }
+        case "swim":
+            switch challenge.targetUnit.lowercased() {
+            case "workouts": return data.swimSessions
+            case "minutes":  return data.swimMinutes
+            case "km":       return Int(data.swimMeters / 1000)
+            default: return 0
+            }
+        case "stairs_climbed":   return data.stairsClimbed
+        case "mind_body_minutes": return data.mindBodyMinutes
         default:            return 0
         }
     }

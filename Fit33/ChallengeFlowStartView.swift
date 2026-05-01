@@ -1796,7 +1796,7 @@ struct ChallengeFlowStartView: View {
         case .protein: challengeType = .protein
         case .activeMinutes: challengeType = .activeMinutes
         case .workoutStreak: challengeType = .workoutStreak
-        case .sleep: challengeType = .steps // Sleep stored as custom, resolved by unit
+        case .sleep: challengeType = .sleepHours
         }
         
         let title = "\(mode.titlePrefix) \(activity.emoji) \(option.title)"

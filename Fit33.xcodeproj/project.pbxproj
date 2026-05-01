@@ -105,7 +105,7 @@
 		7C53E2202F33FD7500C2F7EC /* QRCodeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21F2F33FD7500C2F7EC /* QRCodeService.swift */; };
 		7C53E2212F33FD7500C2F7EC /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */; };
 		7C53E2222F33FD7500C2F7EC /* MyQRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21D2F33FD7500C2F7EC /* MyQRCodeView.swift */; };
-		7C53E2242F353B7700C2F7EC /* ChallengeCreationFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2232F353B7700C2F7EC /* ChallengeCreationFlow.swift */; };
+		7C53E2242F353B7700C2F7EC /* ChallengeActivityType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2232F353B7700C2F7EC /* ChallengeActivityType.swift */; };
 		7C53E2282F353FE200C2F7EC /* FriendSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2272F353FE200C2F7EC /* FriendSelectionSheet.swift */; };
 		7C53E22E2F35522100C2F7EC /* ChallengeFlowStartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E22D2F35522100C2F7EC /* ChallengeFlowStartView.swift */; };
 		7C53E2322F357EB600C2F7EC /* GroupChallengeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2312F357EB600C2F7EC /* GroupChallengeDetailView.swift */; };
@@ -203,7 +203,6 @@
 		7C8CEA722F9A7599007CD766 /* DiagnosticContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA712F9A7599007CD766 /* DiagnosticContext.swift */; };
 		7C8CEA742F9A75B1007CD766 /* PerformanceSignposts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */; };
 		7C8CEA762F9A75DC007CD766 /* PerformanceMetricsUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */; };
-		7C9F0A012F357EB600C2F7EC /* PerformanceOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */; };
 		7C8CED142F9D1B6E007CD766 /* RecentSessionsTilesRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CED132F9D1B6E007CD766 /* RecentSessionsTilesRow.swift */; };
 		7C8CEED32F9D76AB007CD766 /* StartupCachePreloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEED22F9D76AB007CD766 /* StartupCachePreloader.swift */; };
 		7C8CEF5F2F9E8610007CD766 /* WakeDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEF5E2F9E8610007CD766 /* WakeDiagnosticsView.swift */; };
@@ -226,13 +225,13 @@
 		7C8CFBBB2FA2B7AD007CD766 /* WorkoutQualityScorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFBBA2FA2B7AD007CD766 /* WorkoutQualityScorer.swift */; };
 		7C8CFD542FA426F9007CD766 /* BarcodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD532FA426F9007CD766 /* BarcodeScannerView.swift */; };
 		7C8CFD562FA42DAA007CD766 /* PinnedTabHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */; };
+		7C8CFD602FA42700007CD766 /* CommonFoodDensities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */; };
+		7C8CFE512FA431FF007CD766 /* CommonFoodDensities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */; };
 		7C8E80012FB10001007CD766 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80002FB10001007CD766 /* PushPayload.swift */; };
 		7C8E80032FB10002007CD766 /* PushPermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */; };
 		7C8E80052FB10003007CD766 /* NotificationPrimerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */; };
 		7C8E80092FB10005007CD766 /* PushEventReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80082FB10005007CD766 /* PushEventReporter.swift */; };
 		7C8E800B2FB10006007CD766 /* SmartNotificationSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E800A2FB10006007CD766 /* SmartNotificationSettingsSection.swift */; };
-		7C8CFD602FA42700007CD766 /* CommonFoodDensities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */; };
-		7C8CFE512FA431FF007CD766 /* CommonFoodDensities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */; };
 		7C8EB1C02F26ABD4007BFA55 /* PerformanceOptimizations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */; };
 		7C8EB1C32F26B03C007BFA55 /* StravaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */; };
 		7C8EB1C42F26B03C007BFA55 /* StravaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1C12F26B03C007BFA55 /* StravaService.swift */; };
@@ -246,6 +245,7 @@
 		7C98FAC62EECA9F4001AE1F3 /* DevSessionLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */; };
 		7C98FAC82EEDB4A0001AE1F3 /* SmartExerciseSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */; };
 		7C9A7F022F5E281C00B5C928 /* SendWorkoutToFriendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */; };
+		7C9F0A012F357EB600C2F7EC /* PerformanceOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */; };
 		7CA0643A2F7ACA48004CF656 /* PrivacySettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */; };
 		7CA0643C2F7ACA56004CF656 /* PrivacySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */; };
 		7CA81D852F6EF0E80020170A /* AdvancedSessionLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */; };
@@ -668,7 +668,6 @@
 		7C8CEA712F9A7599007CD766 /* DiagnosticContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticContext.swift; sourceTree = "<group>"; };
 		7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSignposts.swift; sourceTree = "<group>"; };
 		7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceMetricsUploader.swift; sourceTree = "<group>"; };
-		7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizer.swift; sourceTree = "<group>"; };
 		7C8CED132F9D1B6E007CD766 /* RecentSessionsTilesRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentSessionsTilesRow.swift; sourceTree = "<group>"; };
 		7C8CEED22F9D76AB007CD766 /* StartupCachePreloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupCachePreloader.swift; sourceTree = "<group>"; };
 		7C8CEF5E2F9E8610007CD766 /* WakeDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeDiagnosticsView.swift; sourceTree = "<group>"; };
@@ -691,13 +690,13 @@
 		7C8CFBBA2FA2B7AD007CD766 /* WorkoutQualityScorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutQualityScorer.swift; sourceTree = "<group>"; };
 		7C8CFD532FA426F9007CD766 /* BarcodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeScannerView.swift; sourceTree = "<group>"; };
 		7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabHeader.swift; sourceTree = "<group>"; };
+		7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonFoodDensities.swift; sourceTree = "<group>"; };
+		7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonFoodDensities.swift; sourceTree = "<group>"; };
 		7C8E80002FB10001007CD766 /* PushPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayload.swift; sourceTree = "<group>"; };
 		7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPermissionCoordinator.swift; sourceTree = "<group>"; };
 		7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPrimerSheet.swift; sourceTree = "<group>"; };
 		7C8E80082FB10005007CD766 /* PushEventReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushEventReporter.swift; sourceTree = "<group>"; };
 		7C8E800A2FB10006007CD766 /* SmartNotificationSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartNotificationSettingsSection.swift; sourceTree = "<group>"; };
-		7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonFoodDensities.swift; sourceTree = "<group>"; };
-		7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonFoodDensities.swift; sourceTree = "<group>"; };
 		7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizations.swift; sourceTree = "<group>"; };
 		7C8EB1C12F26B03C007BFA55 /* StravaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaService.swift; sourceTree = "<group>"; };
 		7C8EB1C22F26B03C007BFA55 /* StravaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StravaSettingsView.swift; sourceTree = "<group>"; };
@@ -711,6 +710,7 @@
 		7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevSessionLogsView.swift; sourceTree = "<group>"; };
 		7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartExerciseSearchService.swift; sourceTree = "<group>"; };
 		7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendWorkoutToFriendView.swift; sourceTree = "<group>"; };
+		7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizer.swift; sourceTree = "<group>"; };
 		7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsManager.swift; sourceTree = "<group>"; };
 		7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsView.swift; sourceTree = "<group>"; };
 		7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSessionLogger.swift; sourceTree = "<group>"; };

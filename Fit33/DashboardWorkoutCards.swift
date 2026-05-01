@@ -757,23 +757,35 @@ struct RecentCardioWorkoutCard: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
 
-                        // Third-party origin badge (Strava / WHOOP / Apple
-                        // Watch / Oura / Fitbit / Garmin …) — moved below the
-                        // date so the title never competes with it for width.
-                        sourceBadge
-                            .padding(.top, 2)
+                        // Third-party origin badge for non-WHOOP brands
+                        // (Strava / Apple Watch / Oura / Fitbit / Garmin …).
+                        // WHOOP gets its own white wordmark in the top-right
+                        // corner, so we suppress the red capsule here to
+                        // avoid redundancy.
+                        if origin != .whoop {
+                            sourceBadge
+                                .padding(.top, 2)
+                        }
                     }
-                    
+
                     Spacer()
-                    
-                    // Goal achieved badge
-                    if cardioWorkout.goalAchieved {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.ds_heading3)
-                            .foregroundColor(.green)
+
+                    // WHOOP white wordmark — sits where the legacy "goal
+                    // achieved" checkmark used to live. Only WHOOP has a
+                    // first-party white-on-transparent asset bundled
+                    // (WhoopWordmark.imageset), so other origins keep the
+                    // brand-colored capsule below the date instead.
+                    if origin == .whoop {
+                        Image("WhoopWordmark")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 14)
+                            .foregroundColor(.white)
                             .padding(.trailing, 8)
+                            .accessibilityLabel("WHOOP")
                     }
-                    
+
                     Image(systemName: "chevron.right")
                         .font(.ds_labelMedium)
                         .foregroundColor(.secondary.opacity(0.5))
@@ -811,16 +823,35 @@ struct RecentCardioWorkoutCard: View {
                         
                         statDivider
                         
-                        cardioStatColumn(
-                            icon: "speedometer",
-                            iconColor: .purple,
-                            value: formatPace(cardioWorkout.averagePace),
-                            label: paceLabel
-                        )
+                        // For WHOOP-origin sessions (predominantly strength
+                        // training, where pace is meaningless) we surface the
+                        // average heart rate in the 4th slot instead of pace
+                        // and drop the standalone bpm chip below. Other
+                        // origins still show pace + the chip as before.
+                        if origin == .whoop {
+                            cardioStatColumn(
+                                icon: "heart.fill",
+                                iconColor: .red,
+                                value: (cardioWorkout.averageHeartRate ?? 0) > 0
+                                    ? "\(cardioWorkout.averageHeartRate ?? 0)"
+                                    : "--",
+                                label: "bpm"
+                            )
+                        } else {
+                            cardioStatColumn(
+                                icon: "speedometer",
+                                iconColor: .purple,
+                                value: formatPace(cardioWorkout.averagePace),
+                                label: paceLabel
+                            )
+                        }
                     }
-                
-                    // Heart rate tag (if available)
-                    if let heartRate = cardioWorkout.averageHeartRate, heartRate > 0 {
+
+                    // Heart rate tag (only for non-WHOOP origins; WHOOP
+                    // already shows bpm in the stats row above).
+                    if origin != .whoop,
+                       let heartRate = cardioWorkout.averageHeartRate,
+                       heartRate > 0 {
                         HStack(spacing: 6) {
                             HStack(spacing: 4) {
                                 Image(systemName: "heart.fill")

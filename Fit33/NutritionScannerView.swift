@@ -540,16 +540,21 @@ struct NutritionScannerView: View {
         let adjustedCarbs = Int(baseCarbs * multiplier)
         let adjustedFat = Int(baseFat * multiplier)
         
+        // FoodEntry.quantity is now Double — preserve fractional servings
+        // (e.g. "0.5 packet" stays 0.5 instead of being ceiling'd to 1).
+        // `source: "ocr"` tags rows so analytics + future renames know this
+        // came from the nutrition-label scanner (no FDC id, no barcode).
         let foodEntry = FoodEntry(
             name: nutrition.foodName,
-            quantity: max(1, Int(ceil(nutrition.servingQuantity))),
+            quantity: max(0.01, nutrition.servingQuantity),
             unit: nutrition.servingUnit,
             calories: adjustedCalories,
             protein: adjustedProtein,
             carbs: adjustedCarbs,
             fat: adjustedFat,
             fdcId: nil,
-            foodItemId: nil
+            foodItemId: nil,
+            source: "ocr"
         )
         
         AppLogger.debug("💾 Saving scanned nutrition: \(nutrition.foodName)", category: .nutrition)

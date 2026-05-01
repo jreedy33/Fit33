@@ -191,11 +191,23 @@ struct ActiveChallengeProvider: AppIntentTimelineProvider {
         // pre-2026-04-28 picker selections still match because both
         // sides flow through the same lowercase normalization.
         let smack: ActiveChallengeWidgetSnapshot.WidgetSmackTalk? = {
-            guard let challenge = resolved,
-                  let pending = ActiveChallengeWidgetSnapshot.readSmackTalk(),
-                  pending.challengeId.lowercased() == challenge.challengeId.lowercased()
-            else { return nil }
-            return pending
+            guard let challenge = resolved else {
+                Self.log.info("📣 [WIDGET-EXT] smack=skip reason=no-resolved-challenge")
+                return nil
+            }
+            guard let pending = ActiveChallengeWidgetSnapshot.readSmackTalk() else {
+                Self.log.info("📣 [WIDGET-EXT] smack=none configured-challenge=\(challenge.challengeId, privacy: .public)")
+                return nil
+            }
+            let configured = challenge.challengeId.lowercased()
+            let pendingId = pending.challengeId.lowercased()
+            if pendingId == configured {
+                Self.log.info("📣 [WIDGET-EXT] smack=MATCH emoji=\(pending.reactionEmoji, privacy: .public) text=\(pending.reactionText, privacy: .public) sender=\(pending.senderFirstName, privacy: .public) challenge=\(pendingId, privacy: .public)")
+                return pending
+            } else {
+                Self.log.info("📣 [WIDGET-EXT] smack=mismatch pending-challenge=\(pendingId, privacy: .public) configured-challenge=\(configured, privacy: .public)")
+                return nil
+            }
         }()
         return ActiveChallengeEntry(
             date: Date(),
@@ -717,28 +729,44 @@ struct ActiveChallengeWidgetEntryView: View {
         }
         .padding(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // Smack-talk speech bubble yelling out of the type-emoji icon
-        // ("Do better!" — Joe). Mirrors the in-app reaction capsule's
-        // gradient + rounded-pill silhouette so the home-screen
-        // surface reads as the same component as the in-app feed,
-        // with a small downward tail anchored at the bottom-left of
-        // the bubble pointing back at the icon. Free to overlap the
-        // user's avatar / "You" label / score column — the smack is
-        // the loudest thing on the card the moment it lands and the
+        // Smack-talk speech bubble yelling out of the OPPONENT'S
+        // avatar (bottom-right of the widget — Paul's face in the
+        // screenshot that prompted this). Mirrors the in-app
+        // reaction capsule's gradient + rounded-pill silhouette so
+        // the home-screen surface reads as the same component as
+        // the in-app feed, with a small downward tail at the
+        // bottom-RIGHT of the bubble pointing down at the avatar.
+        // Free to overlap the score column — the smack is the
+        // loudest thing on the card the moment it lands and the
         // user can read the suppressed numbers fine on the next
         // refresh after they open the app to clear it. Static
         // layout — widgets re-render only on timeline ticks, so
         // animation would no-op.
-        .overlay(alignment: .topLeading) {
+        //
+        // 2026-04-30: moved from the type-emoji icon (top-left) to
+        // the opponent avatar (bottom-right) per user feedback —
+        // "the bubble needs to be on the other person not the
+        // receiver, put it on the o[pposite] side (Paul's icon)".
+        // The opponent is the one trash-talking; anchoring on their
+        // face makes the attribution obvious without needing to
+        // render their name inside the bubble.
+        .overlay(alignment: .bottomTrailing) {
             if let smack = entry.smackTalk {
-                SmackShoutBubble(smack: smack, compact: compactBubble)
-                    // Pushed down + right so the bubble clears the
-                    // type-emoji icon (top-left) and the "Steps · vs
-                    // Joe · 7d left" header row entirely, landing
-                    // squarely across the score row. That overlap is
-                    // explicitly OK — the user clears the bubble by
-                    // opening the app, restoring the numbers.
-                    .offset(x: compactBubble ? 39 : 64, y: compactBubble ? 40 : 53)
+                SmackShoutBubble(smack: smack, compact: compactBubble, tailSide: .right)
+                    // Pushed UP + slightly LEFT from the
+                    // bottom-trailing corner so the bubble sits
+                    // ABOVE the opponent's avatar with the tail
+                    // dropping down toward their face. Compact and
+                    // medium need different vertical lift because
+                    // the avatar sits at different distances from
+                    // the bottom edge in each layout (compact: avatar
+                    // is in the middle of the small card; medium:
+                    // avatar is in the bottom row right next to the
+                    // outer padding).
+                    .offset(
+                        x: compactBubble ? -22 : -55,
+                        y: compactBubble ? -60 : -78
+                    )
                     .accessibilityLabel("\(smack.senderFirstName) is talking smack: \(smack.reactionText)")
             }
         }
@@ -1392,32 +1420,63 @@ private struct ChallengeEmptyState: View {
 // `SmackTalkWidgetBridge.clear()` wired into `Fit33App`'s
 // scenePhase `.active` observer.
 
-/// Rounded-rectangle bubble + small triangular tail at the bottom-
-/// left, leaning toward the type-emoji icon. The tail tip / base
-/// positions are normalized (0..1 of bubble width) so a layout
-/// tweak doesn't require re-doing the geometry. Tail leans LEFT
-/// because the icon sits to the bottom-left of the bubble in the
-/// widget overlay anchor — the lean sells the "icon is yelling"
-/// affordance even when the tail can't physically reach the icon.
+/// Which horizontal side of the bubble the tail attaches to. The
+/// tail's tip / base x positions mirror across the bubble's vertical
+/// midline based on this value, so the same `ShoutBubbleShape` can
+/// either point DOWN-LEFT (yelling out of an icon to the bubble's
+/// bottom-left) or DOWN-RIGHT (yelling out of an icon to the
+/// bubble's bottom-right).
+enum SmackTailSide { case left, right }
+
+/// Rounded-rectangle bubble + small triangular tail at the bottom,
+/// leaning toward whichever icon the bubble is "yelling out of".
+/// The tail tip / base positions are normalized (0..1 of bubble
+/// width) and mirror around the bubble midline based on `tailSide`,
+/// so a layout tweak doesn't require re-doing the geometry. The
+/// lean sells the "icon is yelling" affordance even when the tail
+/// can't physically reach the icon.
+///
+/// 2026-04-30: tail can now flip sides via `tailSide`. Originally
+/// hard-coded LEFT (tail pointed at the type-emoji icon in the
+/// widget's top-left). Moved to the bottom-right (the opponent's
+/// avatar) per user feedback — "the bubble needs to be on the
+/// other person not the receiv[er] put it on the o[pposite] side
+/// (Paul's icon)" — because the opponent is the smack-talker, not
+/// the recipient (the user owns the widget).
 private struct ShoutBubbleShape: Shape {
     var cornerRadius: CGFloat = 14
-    /// X position of the tail TIP (the pointed end), in fractions of
-    /// bubble width. Smaller = closer to the bubble's left edge.
-    var tailTipX: CGFloat = 0.04
-    /// X positions of the tail BASE (where it attaches to the bubble),
-    /// in fractions of bubble width. Lean is `tailTipX < tailBaseLeftX`.
-    var tailBaseLeftX: CGFloat = 0.10
-    var tailBaseRightX: CGFloat = 0.22
+    var tailSide: SmackTailSide = .left
     /// Vertical extent of the tail below the bubble body.
     var tailLength: CGFloat = 8
+
+    /// Base normalized x positions for the LEFT-side tail. Mirrored
+    /// to the right via `1 - x` when `tailSide == .right`.
+    private var leftTailTipX: CGFloat { 0.04 }
+    private var leftTailBaseInnerX: CGFloat { 0.10 }
+    private var leftTailBaseOuterX: CGFloat { 0.22 }
+
+    /// `(tipX, baseLeftX, baseRightX)` in fractions of bubble width,
+    /// resolved for the active `tailSide`. For the right side these
+    /// are the LEFT-side values mirrored across `0.5`, and the order
+    /// of the two base x values is swapped so `baseLeftX < baseRightX`
+    /// remains an invariant the path code below relies on.
+    private var tailFractions: (tip: CGFloat, baseLeft: CGFloat, baseRight: CGFloat) {
+        switch tailSide {
+        case .left:
+            return (leftTailTipX, leftTailBaseInnerX, leftTailBaseOuterX)
+        case .right:
+            return (1 - leftTailTipX, 1 - leftTailBaseOuterX, 1 - leftTailBaseInnerX)
+        }
+    }
 
     func path(in rect: CGRect) -> Path {
         let bubbleHeight = max(rect.height - tailLength, rect.height * 0.5)
         let r = min(cornerRadius, bubbleHeight / 2, rect.width / 2)
         let bubbleBottom = rect.minY + bubbleHeight
-        let tipX = rect.minX + rect.width * tailTipX
-        let baseLeft = max(rect.minX + r + 1, rect.minX + rect.width * tailBaseLeftX)
-        let baseRight = max(baseLeft + 4, min(rect.maxX - r - 1, rect.minX + rect.width * tailBaseRightX))
+        let frac = tailFractions
+        let tipX = rect.minX + rect.width * frac.tip
+        let baseLeft = max(rect.minX + r + 1, rect.minX + rect.width * frac.baseLeft)
+        let baseRight = max(baseLeft + 4, min(rect.maxX - r - 1, rect.minX + rect.width * frac.baseRight))
 
         var path = Path()
         // Top edge
@@ -1482,6 +1541,11 @@ private struct ShoutBubbleShape: Shape {
 private struct SmackShoutBubble: View {
     let smack: ActiveChallengeWidgetSnapshot.WidgetSmackTalk
     let compact: Bool
+    /// Which side of the bubble the tail sits on. `.right` when the
+    /// bubble is anchored over the opponent's avatar (current default
+    /// — the opponent is the one yelling). `.left` is preserved for
+    /// the original "yelling out of the type-emoji icon" layout.
+    var tailSide: SmackTailSide = .right
 
     /// Mirrors the in-app `ChallengeReactionsView.themeGradient` —
     /// orange→red for trash talk, blue→cyan for accountability cheers.
@@ -1495,6 +1559,14 @@ private struct SmackShoutBubble: View {
     private var vPadding: CGFloat { compact ? 4 : 5 }
     private var tailLength: CGFloat { compact ? 5 : 6 }
     private var cornerRadius: CGFloat { compact ? 10 : 12 }
+
+    /// Subtle "yelling" rotation — leans AWAY from the tail side so
+    /// the tail still drops cleanly toward the icon below it instead
+    /// of arcing across the bubble. Left-tail leans -3°, right-tail
+    /// leans +3°.
+    private var leanDegrees: Double {
+        tailSide == .left ? -3 : 3
+    }
 
     var body: some View {
         HStack(spacing: 5) {
@@ -1524,15 +1596,16 @@ private struct SmackShoutBubble: View {
         .background(
             ShoutBubbleShape(
                 cornerRadius: cornerRadius,
+                tailSide: tailSide,
                 tailLength: tailLength
             )
             .fill(LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing))
             .shadow(color: .black.opacity(0.30), radius: 3, x: 0, y: 2)
         )
         // Subtle lean — adds the "yelling" energy without the comic-
-        // book wackiness of a heavy rotation. The tail's leftward
-        // lean (set on `ShoutBubbleShape`) carries the rest.
-        .rotationEffect(.degrees(-3))
+        // book wackiness of a heavy rotation. The tail's lean (set on
+        // `ShoutBubbleShape`) carries the rest.
+        .rotationEffect(.degrees(leanDegrees))
     }
 }
 

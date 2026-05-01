@@ -765,6 +765,10 @@ struct Fit33App: App {
                             await RealtimeService.shared.connect()
                             await supabaseManager.updateLastLogin()
                             await AdvancedSessionLogger.shared.checkIfEnabled()
+                            // New User Journey Tracker — 72h auto-enrolled
+                            // high-resolution behavioral telemetry. Idempotent;
+                            // safely re-callable on every cold start.
+                            await NewUserJourneyTracker.shared.checkEnrollmentAndActivate()
                         }
                         
                         Task.detached(priority: .background) {
@@ -920,6 +924,12 @@ struct Fit33App: App {
                     switch newPhase {
                     case .active:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became active")
+                        // Re-activate the new-user journey tracker if the user
+                        // is still inside their 72h window. Idempotent — the
+                        // tracker no-ops when already active. Safe even if
+                        // the user has aged out (server returns is_active=false
+                        // and the tracker stays dormant).
+                        Task { await NewUserJourneyTracker.shared.checkEnrollmentAndActivate() }
                         #if DEBUG
                         MainThreadWatchdog.shared.resume()
                         ProductionFPSMonitor.shared.start()
@@ -957,6 +967,18 @@ struct Fit33App: App {
                         WhoopService.shared.refreshConnectionState()
                         OuraService.shared.refreshConnectionState()
                         StravaService.shared.refreshConnectionState()
+
+                        // Forward local OAuth audit breadcrumbs to
+                        // `dev_session_logs` so "WHOOP/Oura disconnected
+                        // with no log line" reports are investigable from
+                        // the cloud alone (no device pull required). The
+                        // flush is watermarked — it only ships entries
+                        // newer than the last flush — so cost is bounded
+                        // even on long-running sessions. 2026-04-29:
+                        // landed alongside the atomic-keychain rewrite
+                        // (KeychainHelper.SecItemUpdate-first) and the
+                        // saveAndVerify wrapper for access-token writes.
+                        OAuthAuditLog.flushToDevLog()
 
                         // ⚡️ Cold-start speedup Phase 1.6 (2026-04-25):
                         // On cold start, gate the wearable force-syncs behind
@@ -1232,6 +1254,7 @@ struct Fit33App: App {
                         ProductionFPSMonitor.shared.stop()
                         #endif
                         AdvancedSessionLogger.shared.deactivate()
+                        NewUserJourneyTracker.shared.deactivate()
                         SessionLogManager.shared.log(.info, category: .session, message: "App entered background")
                         // 🔧 DEV: Mark clean shutdown before going to background
                         #if DEBUG

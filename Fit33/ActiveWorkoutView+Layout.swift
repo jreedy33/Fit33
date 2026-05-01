@@ -185,6 +185,20 @@ extension ActiveWorkoutView {
                                     onReplaceExercise: { newExercise in
                                         // Load historical data for the replaced exercise
                                         loadHistoricalDataForExercise(newExercise)
+                                        // Auto-select the new exercise and snap it cleanly
+                                        // to the top of the screen so the user can start
+                                        // logging without any extra scroll/tap (per user
+                                        // request 2026-04-29). The new exercise sits at
+                                        // the same `index` as the old one, so we read its
+                                        // id from the freshly-mutated `exercises` array
+                                        // rather than relying on the caller's reference.
+                                        let newExerciseId = newExercise.id?.uuidString ?? ""
+                                        if !newExerciseId.isEmpty {
+                                            activeExerciseId = newExerciseId
+                                            withAnimation(.easeInOut(duration: 0.3)) {
+                                                scrollProxy.scrollTo(newExerciseId, anchor: .top)
+                                            }
+                                        }
                                     },
                                     onShuffleExercise: { newExercise in
                                         shuffleCount += 1

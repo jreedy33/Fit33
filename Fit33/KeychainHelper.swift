@@ -29,9 +29,24 @@ import Security
 struct KeychainHelper {
 
     /// Persists `value` under `key`. Returns the final `OSStatus` from
-    /// `SecItemAdd` (`errSecSuccess` on success). Failures are logged
-    /// at `.warning` level so the diagnostic breadcrumb survives even
-    /// when callers `_ = save(...)`.
+    /// the underlying `SecItemUpdate` / `SecItemAdd` (`errSecSuccess`
+    /// on success). Failures are logged at `.warning` level so the
+    /// diagnostic breadcrumb survives even when callers `_ = save(...)`.
+    ///
+    /// 2026-04-29 — bug-intel "WHOOP keeps logging me out (no `disconnect()`
+    /// log line, no HTTP 4xx)": the previous implementation was
+    /// `SecItemDelete` → `SecItemAdd` (NOT atomic). On a BGTask wake
+    /// that hit a transient `errSecInteractionNotAllowed`, the delete
+    /// succeeded and the add failed — wiping the entry permanently.
+    /// The very next cold launch saw `accessToken == nil` →
+    /// `isConnected = false` and the dashboard WHOOP/Oura card vanished
+    /// even though `user_profiles.is_whoop_connected = true` in the cloud
+    /// (the additive sync guard refuses to mirror the local `false`, but
+    /// the in-app card reads local state). Now: `SecItemUpdate` first
+    /// (atomic, leaves the prior value intact on failure) and only fall
+    /// back to delete+add when the entry doesn't yet exist. The "delete
+    /// window" that could lose the entry no longer exists for the
+    /// rotation path; brand-new writes still take a single `SecItemAdd`.
     @discardableResult
     static func save(key: String, value: String) -> OSStatus {
         guard let data = value.data(using: .utf8) else {
@@ -47,15 +62,25 @@ struct KeychainHelper {
             kSecAttrAccount as String: key
         ]
 
-        // Best-effort delete of any prior entry. -25300 (notFound) is the
-        // happy path on a brand-new key; we only escalate logging for
-        // other non-success statuses (locked, missing entitlement, etc).
-        let delStatus = SecItemDelete(baseQuery as CFDictionary)
-        if delStatus != errSecSuccess && delStatus != errSecItemNotFound {
+        // Atomic update path: if the item already exists, replace its
+        // value in-place. SecItemUpdate is atomic — on failure the prior
+        // value remains intact (no "delete window"). This is the path
+        // taken on every token rotation, which is where the silent loss
+        // was occurring.
+        let updateAttrs: [String: Any] = [kSecValueData as String: data]
+        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, updateAttrs as CFDictionary)
+        if updateStatus == errSecSuccess { return updateStatus }
+
+        // Only fall through to the add-new-entry path when the item
+        // genuinely doesn't exist. Any other status (locked, etc.) is
+        // logged loudly and returned WITHOUT touching the existing
+        // entry — same defense as before.
+        if updateStatus != errSecItemNotFound {
             AppLogger.warning(
-                "[Keychain] save(\(key)) pre-delete \(statusLabel(delStatus))",
+                "[Keychain] save(\(key)) update \(statusLabel(updateStatus)) — leaving prior value untouched",
                 category: .auth
             )
+            return updateStatus
         }
 
         var addQuery = baseQuery
@@ -73,6 +98,18 @@ struct KeychainHelper {
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
 
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus == errSecDuplicateItem {
+            // Race: between SecItemUpdate's notFound and SecItemAdd, another
+            // caller landed an entry. Retry the update once — atomic again.
+            let retryStatus = SecItemUpdate(baseQuery as CFDictionary, updateAttrs as CFDictionary)
+            if retryStatus != errSecSuccess {
+                AppLogger.warning(
+                    "[Keychain] save(\(key)) duplicate then update \(statusLabel(retryStatus))",
+                    category: .auth
+                )
+            }
+            return retryStatus
+        }
         if addStatus != errSecSuccess {
             // Loud — silent SecItemAdd failures were the root cause of the
             // "WHOOP keeps logging me out" pain point. Surfacing them to

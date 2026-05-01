@@ -57,12 +57,16 @@ struct FriendsTabView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
+            AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 0) {
+            PinnedTabHeader {
+                FriendsHeaderWrapper(navigationPath: $navigationPath)
+            }
+
             ScrollView(.vertical) {
                 VStack(spacing: 0) {
-                    FriendsHeaderWrapper(navigationPath: $navigationPath)
-                        .padding(.top, 0)
-                        .padding(.bottom, 16)
-                    
                     FriendsStoriesWrapper(
                         navigationPath: $navigationPath,
                         sentRequestIds: $sentRequestIds,
@@ -109,6 +113,7 @@ struct FriendsTabView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 20)
             }
+            .scrollContentBackground(.hidden)
             .refreshable {
                 activeRefreshTask?.cancel()
                 await ChallengeService.shared.syncAllTrackingToChallenges()
@@ -118,10 +123,9 @@ struct FriendsTabView: View {
                 lastRefreshedAt = Date()
                 updateCachedSuggestions()
             }
-            .background(
-                AnimatedOrbBackground.friends(colorScheme: colorScheme)
-            )
-                
+
+            }   // closes VStack(spacing: 0) — pinned-header wrapper
+            .padding(.top, TabPinnedChrome.rootTopPullUp)
             }
             .navigationBarHidden(true)
             .adaptiveToolbarBackground()

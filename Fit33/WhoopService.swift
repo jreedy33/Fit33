@@ -94,6 +94,38 @@ final class WhoopService: ObservableObject {
         return ok
     }
 
+    /// Verified-write companion for the access token. 2026-04-29 incident
+    /// (Joe Reed, build 1.38(64) — `dev_session_logs` has WHOOP working
+    /// fine through 20:57:00, then a cold launch at 21:48 reports
+    /// `Synced all integration statuses … WHOOP: false` with NO
+    /// `[WHOOP] Disconnected` log, NO HTTP 4xx, and NO refresh-failure
+    /// audit entry — yet `user_profiles.is_whoop_connected` was still
+    /// `true` server-side. The 24e5efd fix landed `saveAndVerify` for
+    /// the refresh token but the access token still went through the
+    /// old `_ = KeychainHelper.save(...)` setter; on a BGTask wake
+    /// where `SecItemDelete` succeeded and `SecItemAdd` then hit a
+    /// transient `errSecInteractionNotAllowed`, the entry was wiped
+    /// silently — next cold launch read `accessToken == nil` and the
+    /// dashboard WHOOP card vanished. Pairing this with the atomic
+    /// `SecItemUpdate`-first rewrite of `KeychainHelper.save` (same
+    /// commit) eliminates the delete-window completely and makes the
+    /// failure mode observable when it does occur.
+    @discardableResult
+    private func writeAccessTokenVerified(_ value: String) -> Bool {
+        let preStatus = KeychainHelper.loadWithStatus(key: "whoop_access_token").status
+        let ok = KeychainHelper.saveAndVerify(key: "whoop_access_token", value: value)
+        OAuthAuditLog.record(
+            service: "whoop",
+            event: ok ? .keychainProbe : .refreshFailure,
+            reason: ok ? "at_write_verified" : "at_write_FAILED_no_readback",
+            details: [
+                "pre_at_status": KeychainHelper.statusLabel(preStatus),
+                "verified": String(ok)
+            ]
+        )
+        return ok
+    }
+
     private var tokenExpiresAt: Date? {
         get {
             guard let str = KeychainHelper.load(key: "whoop_token_expires_at"),
@@ -188,10 +220,11 @@ final class WhoopService: ObservableObject {
     /// Called from `Fit33App.onChange(scenePhase: .active)` so the widget
     /// reliably appears on every cold start / resume when WHOOP is connected.
     func refreshConnectionState() {
-        let probe = KeychainHelper.loadWithStatus(key: "whoop_access_token")
-        let nowConnected = probe.value != nil
+        let atProbe = KeychainHelper.loadWithStatus(key: "whoop_access_token")
+        let rtProbe = KeychainHelper.loadWithStatus(key: "whoop_refresh_token")
+        let nowConnected = atProbe.value != nil
         if nowConnected != isConnected {
-            AppLogger.info("[WHOOP] Connection state changed on foreground: \(isConnected) → \(nowConnected) (keychain=\(KeychainHelper.statusLabel(probe.status)))", category: .auth)
+            AppLogger.info("[WHOOP] Connection state changed on foreground: \(isConnected) → \(nowConnected) (at=\(KeychainHelper.statusLabel(atProbe.status)) rt=\(KeychainHelper.statusLabel(rtProbe.status)))", category: .auth)
             OAuthAuditLog.record(
                 service: "whoop",
                 event: .stateTransition,
@@ -199,21 +232,38 @@ final class WhoopService: ObservableObject {
                 details: [
                     "from": String(isConnected),
                     "to": String(nowConnected),
-                    "at_status": KeychainHelper.statusLabel(probe.status)
+                    "at_status": KeychainHelper.statusLabel(atProbe.status),
+                    "rt_status": KeychainHelper.statusLabel(rtProbe.status)
                 ]
             )
             isConnected = nowConnected
         } else {
-            // Even when the bool didn't flip, log the keychain status so
-            // we can correlate "everything's fine" probes against the
-            // surrounding error trail. Cheap (one keychain read) and
-            // emitted at most once per foreground.
+            // 2026-04-29 — Joe Reed's investigation: when `nowConnected
+            // == isConnected == false` the previous code path emitted
+            // ZERO `AppLogger` entries (only an `OAuthAuditLog` record
+            // into UserDefaults that doesn't reach `dev_session_logs`).
+            // That left "WHOOP card disappeared on cold launch with no
+            // disconnect log" un-investigable from the cloud side. Now
+            // every steady-state probe ships an `.info` AppLogger line
+            // — once per foreground, near-zero cost — so the cloud
+            // diagnostic trail tells us exactly when the keychain
+            // started returning `notFound` even though no `disconnect()`
+            // ran. Steady-state-true probes also land here so we can
+            // correlate "AT present, RT not_found" zombies against the
+            // surrounding error trail. Pairs with the
+            // `OAuthAuditLog.flushToDevLog()` call at app launch (same
+            // commit) which forwards local breadcrumbs to dev_session_logs.
+            AppLogger.info(
+                "[WHOOP] Connection state steady on foreground: isConnected=\(isConnected) (at=\(KeychainHelper.statusLabel(atProbe.status)) rt=\(KeychainHelper.statusLabel(rtProbe.status)))",
+                category: .auth
+            )
             OAuthAuditLog.record(
                 service: "whoop",
                 event: .keychainProbe,
                 reason: "scenePhase_active_steady",
                 details: [
-                    "at_status": KeychainHelper.statusLabel(probe.status),
+                    "at_status": KeychainHelper.statusLabel(atProbe.status),
+                    "rt_status": KeychainHelper.statusLabel(rtProbe.status),
                     "is_connected": String(isConnected)
                 ]
             )
@@ -345,9 +395,38 @@ final class WhoopService: ObservableObject {
             throw WhoopError.tokenExchangeFailed
         }
 
-        accessToken = tokenResponse.accessToken
+        // Verified write — bug-intel "WHOOP keeps disconnecting after a
+        // valid OAuth callback". If `SecItemAdd` silently fails right
+        // after `SecItemDelete` succeeds (locked-class race), the AT
+        // is gone the moment the user backgrounds the app. Verify the
+        // round-trip; on failure, retry once before declaring connect
+        // success. If both attempts fail, log loud and abort — the
+        // user sees an actionable "Connect failed, please retry" state
+        // instead of a phantom "Connected" card that vanishes 5 minutes
+        // later.
+        var atOk = writeAccessTokenVerified(tokenResponse.accessToken)
+        if !atOk {
+            AppLogger.warning("[WHOOP] AT failed verified-write on connect — retrying once", category: .auth)
+            atOk = writeAccessTokenVerified(tokenResponse.accessToken)
+        }
+        guard atOk else {
+            AppLogger.error("[WHOOP] AT could not be persisted to keychain (write failed twice). Aborting connect.", category: .auth)
+            errorMessage = "Couldn't save your WHOOP connection on this device. Please try again."
+            throw WhoopError.tokenExchangeFailed
+        }
         if let rt = tokenResponse.refreshToken {
-            refreshToken = rt
+            // Connect-time RT write also verified. The 24e5efd fix only
+            // covered the rotation path; without this, a brand-new connect
+            // could land an AT but lose the RT — refresh-token-missing
+            // disconnect on the very next launch.
+            var rtOk = writeRefreshTokenVerified(rt)
+            if !rtOk {
+                AppLogger.warning("[WHOOP] RT failed verified-write on connect — retrying once", category: .auth)
+                rtOk = writeRefreshTokenVerified(rt)
+            }
+            if !rtOk {
+                AppLogger.warning("[WHOOP] RT could not be persisted on connect. Continuing — next refresh attempt will surface the canonical disconnect path with a clear cause.", category: .auth)
+            }
         }
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 3600))
         isConnected = true
@@ -513,7 +592,31 @@ final class WhoopService: ObservableObject {
 
         let tokenResponse = try JSONDecoder().decode(WhoopTokenResponse.self, from: data)
 
-        accessToken = tokenResponse.accessToken
+        // Verified write for the rotated AT (NOT just the RT). 2026-04-29
+        // incident: the previous code path went through the `accessToken`
+        // setter which discarded the OSStatus — so a transient
+        // `errSecInteractionNotAllowed` during a BGTask wake silently
+        // dropped the AT. The next cold launch saw `isConnected = false`
+        // with no log line and no HTTP 4xx pointing at the cause. Now we
+        // verify the round-trip; on failure we keep the prior AT (still
+        // valid for the rest of this session) AND we DON'T advance
+        // `tokenExpiresAt` — so the very next API call enters refresh
+        // again with a clear breadcrumb instead of stale-token-followed-
+        // by-silent-disconnect.
+        var atOk = writeAccessTokenVerified(tokenResponse.accessToken)
+        if !atOk {
+            AppLogger.warning("[WHOOP] Refreshed AT failed verified-write — retrying once", category: .auth)
+            atOk = writeAccessTokenVerified(tokenResponse.accessToken)
+        }
+        guard atOk else {
+            // Don't `disconnect()` — the previous AT is still readable
+            // by the keychain getter (atomic `SecItemUpdate` left it
+            // intact). Throw `tokenRefreshFailed` so the caller logs
+            // the transient and retries on next foreground.
+            AppLogger.error("[WHOOP] Refreshed AT could not be persisted (verified-write failed twice). Keeping prior AT; will retry next refresh window.", category: .auth)
+            throw WhoopError.tokenRefreshFailed
+        }
+
         // CRITICAL: WHOOP (and most OAuth providers) don't always return a new
         // `refresh_token` on a successful refresh — they only rotate on their
         // own schedule. If we unconditionally wrote `tokenResponse.refreshToken`

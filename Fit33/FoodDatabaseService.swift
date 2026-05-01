@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Supabase
+import Auth
 
 // MARK: - Cloud Food Database Service
 
@@ -179,7 +180,25 @@ class FoodDatabaseService: ObservableObject {
         if let cachedResults = getCachedResults(for: query) {
             return cachedResults
         }
-        
+
+        // Edge function `requireUserAuth` calls `supabase.auth.getUser(token)` and
+        // requires a real user JWT — sending the anon key here returns 401 and was
+        // breaking 100% of food searches in production (4 fingerprints on a single
+        // user 2026-04-30: 022843d7…, b99dfd29…, f871f70a…, 8e070db8… — every meal
+        // search silently fell back to the local 380-food list). Same pattern as
+        // ContentModerationService.checkContent. Per Data invariant #11b, NEVER use
+        // AppConfig.Supabase.anonKey as the Authorization bearer for an edge function
+        // that calls `requireUserAuth` — use the user's session JWT and put the
+        // anon key on the `apikey` header (the Supabase gateway needs that one).
+        let session: Session
+        do {
+            session = try await SupabaseManager.shared.client.auth.session
+        } catch {
+            AppLogger.warning("Skipping cloud food search — no auth session: \(error.localizedDescription)", category: .nutrition)
+            return []
+        }
+        let accessToken = session.accessToken
+
         // Prepare request body
         struct SearchRequest: Encodable {
             let action: String
@@ -206,9 +225,10 @@ class FoodDatabaseService: ObservableObject {
             var urlRequest = URLRequest(url: edgeFunctionURL)
             urlRequest.httpMethod = "POST"
             urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            urlRequest.setValue("Bearer \(AppConfig.Supabase.anonKey)", forHTTPHeaderField: "Authorization")
+            urlRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            urlRequest.setValue(AppConfig.Supabase.anonKey, forHTTPHeaderField: "apikey")
             urlRequest.httpBody = try JSONEncoder().encode(request)
-            
+
             let (data, _) = try await URLSession.shared.data(for: urlRequest)
             
             // First check if this is an error response from the edge function
@@ -271,6 +291,64 @@ class FoodDatabaseService: ObservableObject {
         
         AppLogger.info("Successfully retrieved food details", category: .nutrition)
         return response.food
+    }
+
+    // MARK: - Barcode (Open Food Facts)
+
+    /// Look up a packaged-food product by EAN/UPC barcode.
+    ///
+    /// Goes through the `usda-food-search` edge function (`action: "barcode"`),
+    /// which checks `food_items.barcode` cache first and falls through to the
+    /// Open Food Facts API on miss. Per Data invariant #11b we use the
+    /// Supabase SDK's `functions.invoke` here (NOT a hand-rolled URLSession)
+    /// so the user JWT is attached automatically — same reasoning that fixed
+    /// the search-side 401 bug on 2026-04-30.
+    ///
+    /// Returns `nil` if the barcode is unknown to OFF (so the scanner UI can
+    /// show "not in database — search by name?" with the code prefilled).
+    /// Throws on transport / decode errors.
+    func searchByBarcode(_ barcode: String) async throws -> CloudFood? {
+        let trimmed = barcode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let digits = trimmed.filter { $0.isNumber }
+        // EAN-8, UPC-A, EAN-13, ITF-14 — anything else is garbage.
+        guard [8, 12, 13, 14].contains(digits.count) else {
+            AppLogger.warning("Skipping barcode lookup — invalid length \(digits.count): '\(barcode)'", category: .nutrition)
+            return nil
+        }
+
+        AppLogger.debug("Barcode lookup: \(digits)", category: .nutrition)
+
+        struct BarcodeRequest: Encodable {
+            let action: String
+            let barcode: String
+        }
+
+        struct BarcodeResponse: Decodable {
+            let source: String?
+            let found: Bool?
+            let food: CloudFood?
+            let barcode: String?
+            let error: String?
+        }
+
+        let request = BarcodeRequest(action: "barcode", barcode: digits)
+
+        let response: BarcodeResponse = try await supabase.functions
+            .invoke("usda-food-search", options: FunctionInvokeOptions(body: request))
+
+        if let err = response.error, !err.isEmpty {
+            AppLogger.warning("Barcode lookup error: \(err)", category: .nutrition)
+            return nil
+        }
+        if response.found == false {
+            AppLogger.info("Barcode \(digits) not found in OFF", category: .nutrition)
+            return nil
+        }
+        if let food = response.food {
+            AppLogger.info("Barcode \(digits) → \(food.description) (source: \(response.source ?? "?"))", category: .nutrition)
+            return food
+        }
+        return nil
     }
     
     // MARK: - User Food History
@@ -757,7 +835,13 @@ struct CloudFood: Decodable {
     
     // Portions from USDA (for serving size options like "1 cup", "100g", etc.)
     let portions: [CloudFoodPortion]?
-    
+
+    // OFF integration (2026-04-30) — nil for USDA-source rows, populated for
+    // rows that came in via the `barcode` action / OFF search fan-out.
+    let source: String?      // "usda" | "off"
+    let barcode: String?     // EAN/UPC for OFF rows
+    let imageUrl: String?    // OFF small product image
+
     // CodingKeys to handle snake_case from database AND camelCase from USDA API
     enum CodingKeys: String, CodingKey {
         case fdcId = "fdc_id"
@@ -796,6 +880,11 @@ struct CloudFood: Decodable {
         case nutritionData = "nutrition_data"
         // Portions
         case portions
+        // OFF metadata (2026-04-30)
+        case source
+        case barcode
+        case imageUrl
+        case imageUrlSnake = "image_url"
     }
     
     init(from decoder: Decoder) throws {
@@ -865,8 +954,14 @@ struct CloudFood: Decodable {
         
         // Portions
         portions = try? container.decode([CloudFoodPortion].self, forKey: .portions)
+
+        // OFF metadata — all optional, all silently nil for USDA rows.
+        source = try? container.decode(String.self, forKey: .source)
+        barcode = try? container.decode(String.self, forKey: .barcode)
+        imageUrl = (try? container.decode(String.self, forKey: .imageUrl))
+            ?? (try? container.decode(String.self, forKey: .imageUrlSnake))
     }
-    
+
     func toProcessedFoodItem() -> ProcessedFoodItem {
         AppLogger.debug("Converting FDC \(fdcId): \(description)", category: .nutrition)
         
@@ -951,10 +1046,13 @@ struct CloudFood: Decodable {
             servingUnit: servingSizeUnit ?? "g",
             nutrition: nutrition,
             portions: foodPortions,
-            dataType: dataType  // Pass dataType for ranking
+            dataType: dataType,  // Pass dataType for ranking
+            source: source,
+            barcode: barcode,
+            imageUrl: imageUrl
         )
-        
-        AppLogger.info("Successfully converted food with \(foodPortions.count) portions, dataType: \(dataType ?? "unknown")", category: .nutrition)
+
+        AppLogger.info("Successfully converted food with \(foodPortions.count) portions, dataType: \(dataType ?? "unknown"), source: \(source ?? "usda")", category: .nutrition)
         return result
     }
 }

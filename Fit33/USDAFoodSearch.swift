@@ -260,14 +260,18 @@ struct USDAFoodSearchView: View {
     private func addFood(_ food: ProcessedFoodItem) {
         let foodEntry = FoodEntry(
             name: food.displayName,
-            quantity: 1,
+            quantity: 1.0,
             unit: food.servingUnit,
             calories: Int(food.nutrition.calories),
             protein: Int(food.nutrition.protein),
             carbs: Int(food.nutrition.carbohydrates),
             fat: Int(food.nutrition.totalFat),
             fdcId: food.id,
-            foodItemId: nil
+            foodItemId: nil,
+            // Carry source from the underlying ProcessedFoodItem so OFF
+            // attribution survives this (legacy / dead) entry path.
+            source: food.source,
+            barcode: food.barcode
         )
         
         onAdd(foodEntry)

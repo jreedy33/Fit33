@@ -96,6 +96,37 @@ enum AppLogger {
         let rawText = message()
         let text = context.map { "\(rawText) \($0.compactSummary)" } ?? rawText
 
+        // Forward to NewUserJourneyTracker when active (parallel pipeline,
+        // 72h-TTL per-user behavioral telemetry — see NewUserJourneyTracker.swift).
+        // Only ship .warning+ here so the per-user payload stays bounded; product
+        // funnel events come through the tracker's explicit logFunnelStep / logTap
+        // surface, not via free-form AppLogger calls.
+        if NewUserJourneyTracker.isActive && level >= .warning {
+            let capturedLevel = level
+            let capturedCategory = category.rawValue
+            let capturedText = text
+            let capturedFile = (file as NSString).lastPathComponent
+            let capturedLine = line
+            let capturedFunction = function
+            Task { @MainActor in
+                let severityString: String = {
+                    switch capturedLevel {
+                    case .critical: return "critical"
+                    case .error:    return "error"
+                    case .warning:  return "warning"
+                    default:        return "info"
+                    }
+                }()
+                NewUserJourneyTracker.shared.logError(
+                    message: "[\(capturedCategory)] \(capturedText)",
+                    severity: severityString,
+                    file: capturedFile,
+                    line: capturedLine,
+                    function: capturedFunction
+                )
+            }
+        }
+
         // Forward ALL levels to advanced session logger when active (before minimum level gate)
         if AdvancedSessionLogger.isActive {
             let capturedCategory = category.rawValue

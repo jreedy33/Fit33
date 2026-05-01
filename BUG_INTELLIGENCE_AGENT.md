@@ -74,6 +74,17 @@
 22. **`similar_past_fixes` (Phase 12 Tier 5 #1) is the cross-fingerprint memory.** `bug_intel_find_similar_resolutions` returns ≥2 strength matches preferentially; `class=unknown` matches are GATED OUT (Phase 13). When a `match_strength=3` (exact structural) hit exists, Claude should reuse the past `agent_owner` + `file_path` instead of cold-starting.
 23. **The cooldown is 24h per fingerprint.** `triage-bugs` filters out FPs that already have a triage row from the last 24h. Honoring this prevents Claude rate-limit hammering. Don't bypass it for "rerun this triage now" — instead pop the existing row's review_status to `pending` from the CMS.
 
+### 6b. Sibling pipeline: New User Journey Tracking (Migration #167, 2026-04-30)
+
+23-nuj. **`new_user_journey_*` is its own pipeline — it does NOT feed the bug-intel rollup.** When `AppLogger.error/.warning/.critical` fires:
+  - The classifier-routed signal still goes to `dev_session_logs` (or NSURL-classified to `.transientNetwork`/`.expectedUserState` via `NetworkErrorClassifier`) and is picked up by `compute_daily_bug_rollup()` for fingerprinting (invariants 1-5 unchanged).
+  - In PARALLEL, when `NewUserJourneyTracker.isActive == true` (caller is in their first-72h window), the same log line is mirrored into `new_user_journey_events` with `event_type='error'` so the per-user report's "Friction signals" section can correlate errors against funnel drops.
+  - The mirror is GATED at `.warning+` to bound payload (cheap product-analytics cap, not a forensics cap) — `.debug` and `.info` lines do NOT mirror.
+  - The mirror does NOT call `bug_intel_classify_error` and does NOT create a fingerprint. Same row may appear in BOTH systems but represents the same root error; never dedup across them.
+  - The `dev_session_logs.entries[].x_file/x_line/x_function` chain (Phase 12, invariant 4) is preserved — `NewUserJourneyTracker.logError` accepts `file/line/function` and stores them in the event payload, so a per-user report can cite the exact call site too.
+  - **DO NOT** route `new_user_journey_events.is_error=TRUE` rows back into `bug_intelligence_fingerprints` — they would produce two fingerprints for one root cause AND violate the "fingerprint = forensic, journey-event = product-funnel" separation. The two pipelines exist precisely because the same signal serves two different decision surfaces (Cursor triage vs PM behavioral analysis).
+  - When tuning a `bug_intel_noise_filter` row, do NOT add a parallel filter to the new-user pipeline — let product see the noise so we can decide if it's user-visible friction. Hard noise (CrashReporter self-upload loops, etc.) that is genuinely invisible to users CAN be filtered at the `AppLogger` call site (severity downgrade to `.debug`), which drops it from BOTH pipelines simultaneously.
+
 ### 7. Pipeline polish patterns (when improving the tool itself)
 
 24. **A new pipeline phase = a new migration + paired iOS/CMS changes.** The phase migration carries:

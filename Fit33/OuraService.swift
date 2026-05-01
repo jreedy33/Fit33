@@ -74,6 +74,51 @@ final class OuraService: ObservableObject {
         }
     }
 
+    // MARK: - Verified Keychain Writes
+    //
+    // Mirrors `WhoopService.writeAccessTokenVerified` /
+    // `writeRefreshTokenVerified`. 2026-04-29 incident: the previous code
+    // path went through the unverified setter (`_ = KeychainHelper.save`)
+    // which discarded the OSStatus, so a transient
+    // `errSecInteractionNotAllowed` during a BGTask wake silently
+    // dropped the token. Atomic `SecItemUpdate` (in
+    // `KeychainHelper.save`) closes the delete-window; the
+    // `saveAndVerify` round-trip detects the rare residual case so
+    // the caller can throw `tokenRefreshFailed` instead of declaring
+    // success on a write that didn't stick.
+
+    @discardableResult
+    private func writeAccessTokenVerified(_ value: String) -> Bool {
+        let preStatus = KeychainHelper.loadWithStatus(key: "oura_access_token").status
+        let ok = KeychainHelper.saveAndVerify(key: "oura_access_token", value: value)
+        OAuthAuditLog.record(
+            service: "oura",
+            event: ok ? .keychainProbe : .refreshFailure,
+            reason: ok ? "at_write_verified" : "at_write_FAILED_no_readback",
+            details: [
+                "pre_at_status": KeychainHelper.statusLabel(preStatus),
+                "verified": String(ok)
+            ]
+        )
+        return ok
+    }
+
+    @discardableResult
+    private func writeRefreshTokenVerified(_ value: String) -> Bool {
+        let preStatus = KeychainHelper.loadWithStatus(key: "oura_refresh_token").status
+        let ok = KeychainHelper.saveAndVerify(key: "oura_refresh_token", value: value)
+        OAuthAuditLog.record(
+            service: "oura",
+            event: ok ? .keychainProbe : .refreshFailure,
+            reason: ok ? "rt_write_verified" : "rt_write_FAILED_no_readback",
+            details: [
+                "pre_rt_status": KeychainHelper.statusLabel(preStatus),
+                "verified": String(ok)
+            ]
+        )
+        return ok
+    }
+
     // MARK: - Sync Throttling
 
     private static let syncThrottleInterval: TimeInterval = 300
@@ -133,10 +178,11 @@ final class OuraService: ObservableObject {
     /// `Fit33App.onChange(scenePhase: .active)` so the dashboard Oura widget
     /// reliably appears on every cold start / resume when Oura is connected.
     func refreshConnectionState() {
-        let probe = KeychainHelper.loadWithStatus(key: "oura_access_token")
-        let nowConnected = probe.value != nil
+        let atProbe = KeychainHelper.loadWithStatus(key: "oura_access_token")
+        let rtProbe = KeychainHelper.loadWithStatus(key: "oura_refresh_token")
+        let nowConnected = atProbe.value != nil
         if nowConnected != isConnected {
-            AppLogger.info("[OURA] Connection state changed on foreground: \(isConnected) → \(nowConnected) (keychain=\(KeychainHelper.statusLabel(probe.status)))", category: .auth)
+            AppLogger.info("[OURA] Connection state changed on foreground: \(isConnected) → \(nowConnected) (at=\(KeychainHelper.statusLabel(atProbe.status)) rt=\(KeychainHelper.statusLabel(rtProbe.status)))", category: .auth)
             OAuthAuditLog.record(
                 service: "oura",
                 event: .stateTransition,
@@ -144,17 +190,27 @@ final class OuraService: ObservableObject {
                 details: [
                     "from": String(isConnected),
                     "to": String(nowConnected),
-                    "at_status": KeychainHelper.statusLabel(probe.status)
+                    "at_status": KeychainHelper.statusLabel(atProbe.status),
+                    "rt_status": KeychainHelper.statusLabel(rtProbe.status)
                 ]
             )
             isConnected = nowConnected
         } else {
+            // Mirrors WhoopService — every steady-state probe is logged
+            // so a "Oura card disappeared with no disconnect log" report
+            // is investigable from cloud logs alone (no UserDefaults
+            // pull required).
+            AppLogger.info(
+                "[OURA] Connection state steady on foreground: isConnected=\(isConnected) (at=\(KeychainHelper.statusLabel(atProbe.status)) rt=\(KeychainHelper.statusLabel(rtProbe.status)))",
+                category: .auth
+            )
             OAuthAuditLog.record(
                 service: "oura",
                 event: .keychainProbe,
                 reason: "scenePhase_active_steady",
                 details: [
-                    "at_status": KeychainHelper.statusLabel(probe.status),
+                    "at_status": KeychainHelper.statusLabel(atProbe.status),
+                    "rt_status": KeychainHelper.statusLabel(rtProbe.status),
                     "is_connected": String(isConnected)
                 ]
             )
@@ -273,9 +329,26 @@ final class OuraService: ObservableObject {
             throw OuraError.tokenExchangeFailed
         }
 
-        accessToken = tokenResponse.accessToken
+        // Verified write — see `writeAccessTokenVerified` doc comment.
+        var atOk = writeAccessTokenVerified(tokenResponse.accessToken)
+        if !atOk {
+            AppLogger.warning("[OURA] AT failed verified-write on connect — retrying once", category: .auth)
+            atOk = writeAccessTokenVerified(tokenResponse.accessToken)
+        }
+        guard atOk else {
+            AppLogger.error("[OURA] AT could not be persisted to keychain (write failed twice). Aborting connect.", category: .auth)
+            errorMessage = "Couldn't save your Oura connection on this device. Please try again."
+            throw OuraError.tokenExchangeFailed
+        }
         if let rt = tokenResponse.refreshToken {
-            refreshToken = rt
+            var rtOk = writeRefreshTokenVerified(rt)
+            if !rtOk {
+                AppLogger.warning("[OURA] RT failed verified-write on connect — retrying once", category: .auth)
+                rtOk = writeRefreshTokenVerified(rt)
+            }
+            if !rtOk {
+                AppLogger.warning("[OURA] RT could not be persisted on connect. Continuing — next refresh attempt will surface the canonical disconnect path with a clear cause.", category: .auth)
+            }
         }
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 86400))
         isConnected = true
@@ -416,7 +489,20 @@ final class OuraService: ObservableObject {
 
         let tokenResponse = try JSONDecoder().decode(OuraTokenResponse.self, from: data)
 
-        accessToken = tokenResponse.accessToken
+        // Verified write — mirrors `WhoopService._performTokenRefresh`.
+        // 2026-04-29: the previous code path went through the unverified
+        // `accessToken` setter, so a transient `errSecInteractionNotAllowed`
+        // during a BGTask wake silently dropped the AT.
+        var atOk = writeAccessTokenVerified(tokenResponse.accessToken)
+        if !atOk {
+            AppLogger.warning("[OURA] Refreshed AT failed verified-write — retrying once", category: .auth)
+            atOk = writeAccessTokenVerified(tokenResponse.accessToken)
+        }
+        guard atOk else {
+            AppLogger.error("[OURA] Refreshed AT could not be persisted (verified-write failed twice). Keeping prior AT; will retry next refresh window.", category: .auth)
+            throw OuraError.tokenRefreshFailed
+        }
+
         // CRITICAL: Oura (like WHOOP and most OAuth providers) does not always
         // return a new `refresh_token` on every successful refresh — they rotate
         // on their own schedule. The `refreshToken` setter DELETES the keychain
@@ -429,7 +515,23 @@ final class OuraService: ObservableObject {
         // pattern already used on the initial-authorization path.
         let rotated = (tokenResponse.refreshToken?.isEmpty == false)
         if let r = tokenResponse.refreshToken, !r.isEmpty {
-            refreshToken = r
+            // Verified write — mirrors WhoopService. If the rotated RT
+            // can't be persisted, keep the prior (non-rotated) RT and
+            // accept that the server has rotated; the next refresh will
+            // hit `invalid_grant` and run the canonical disconnect path
+            // with a clear reason instead of silently signing the user
+            // out via "rt missing".
+            let firstAttempt = writeRefreshTokenVerified(r)
+            if !firstAttempt {
+                AppLogger.warning("[OURA] Rotated RT failed verified-write — retrying once", category: .auth)
+                let retry = writeRefreshTokenVerified(r)
+                if !retry {
+                    AppLogger.warning(
+                        "[OURA] Rotated RT could not be persisted (keychain write failed twice). Continuing with this session; next refresh will surface the canonical disconnect path.",
+                        category: .auth
+                    )
+                }
+            }
         }
         tokenExpiresAt = Date().addingTimeInterval(Double(tokenResponse.expiresIn ?? 86400))
 

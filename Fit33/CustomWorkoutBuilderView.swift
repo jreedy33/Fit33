@@ -125,11 +125,14 @@ struct CustomWorkoutBuilderView: View {
         return []
     }
     
-    /// Only hide the complementary-suggestions block when we're in "Add to workout"
-    /// mode (not replace-mode, where suggestions ARE the primary UI) AND the user
-    /// is actively searching — either the keyboard is up or there's a non-empty query.
+    /// Hide the suggestions strip ("Suggested Replacements" in replace mode,
+    /// "Complements Your Workout" in add-to-workout mode) the moment the user
+    /// engages the search field — either the keyboard is up or the query has
+    /// content. Per user request 2026-04-29: the suggestions should disappear
+    /// as soon as the user starts typing so they never compete with active
+    /// search results, even on the Replace Exercise screen where suggestions
+    /// are otherwise the primary UI.
     private var shouldHideComplementsForSearch: Bool {
-        guard replacingExercise == nil else { return false }
         return isSearchFocused || !searchText.isEmpty
     }
     
@@ -674,10 +677,10 @@ struct CustomWorkoutBuilderView: View {
                             overdueSuggestionsSection
                         }
                         
-                        // Hide the "Complements Your Workout" block while the user is
-                        // actively searching — the keyboard + dropdown was covering the
-                        // intentional search results. Replace-mode suggestions stay
-                        // visible because they ARE the primary UI in that flow.
+                        // Hide the suggestions block ("Complements Your Workout" in
+                        // build / add-to-workout mode, "Suggested Replacements" in
+                        // replace mode) the moment the user engages the search field
+                        // so it never competes with the user's active search.
                         if !suggestedSwaps.isEmpty && !shouldHideComplementsForSearch {
                             suggestedReplacementsSection
                         }
@@ -1358,31 +1361,121 @@ struct CustomWorkoutBuilderView: View {
         }
     }
     
+    /// Build the 3-row "Suggested Replacements" strip shown in replace-mode.
+    ///
+    /// Picks for VARIETY — the 3 rows must complement each other AND the
+    /// exercise being swapped. The previous implementation grabbed the top-2
+    /// equipment variants which often surfaced two near-identical rows
+    /// (e.g. "Assisted Chin Up (Lever Machine)" + "Assisted Chin Up (Lever
+    /// Machine) — Neutral Grip"). New ranking:
+    ///   1. ONE equipment variant (same movement, different equipment) —
+    ///      caters to the "I don't have that machine today" use case.
+    ///   2. UP TO TWO complementary exercises (different movement family,
+    ///      same muscle group) — different families preferred for spread.
+    ///   3. Backfill with algorithmic similar matches if complementary is
+    ///      sparse.
+    /// Across all three picks we dedupe by `baseExerciseName` and prefer
+    /// distinct `exerciseFamily` so the user never sees two rows that read
+    /// like the same exercise.
     private func loadSuggestedSwaps(for exercise: Exercise) {
-        let sections = ExerciseSwapService.shared.getSwapSuggestions(for: exercise)
+        let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
+        let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
+        let sections = ExerciseSwapService.shared.getSwapSuggestions(
+            for: exercise,
+            userGoal: userGoal,
+            userEquipment: userEquipment
+        )
+        
         var swaps: [SwapSuggestion] = []
+        var seenIds: Set<UUID> = []
+        var seenBaseNames: Set<String> = []
+        var seenFamilies: Set<String> = []
         
-        // Collect up to 2 equipment variants
-        if let variants = sections.first(where: { $0.suggestions.first?.swapType == .equipmentVariant }) {
-            swaps.append(contentsOf: variants.suggestions.prefix(2))
+        if let originalId = exercise.id { seenIds.insert(originalId) }
+        let originalBase = ((exercise.value(forKey: "baseExerciseName") as? String) ?? exercise.name ?? "").lowercased()
+        if !originalBase.isEmpty { seenBaseNames.insert(originalBase) }
+        
+        func canAdd(_ suggestion: SwapSuggestion, allowSameFamily: Bool) -> Bool {
+            guard let id = suggestion.exercise.id, !seenIds.contains(id) else { return false }
+            let base = ((suggestion.exercise.value(forKey: "baseExerciseName") as? String) ?? suggestion.exercise.name ?? "").lowercased()
+            if !base.isEmpty && seenBaseNames.contains(base) { return false }
+            let family = ((suggestion.exercise.value(forKey: "exerciseFamily") as? String) ?? "").lowercased()
+            if !allowSameFamily && !family.isEmpty && seenFamilies.contains(family) { return false }
+            return true
         }
         
-        // Collect 1 complementary or alternative
-        if let complementary = sections.first(where: { $0.suggestions.first?.swapType == .complementary }) {
-            swaps.append(contentsOf: complementary.suggestions.prefix(1))
-        } else if let fallback = sections.first(where: { $0.suggestions.first?.swapType == .similar }) {
-            swaps.append(contentsOf: fallback.suggestions.prefix(1))
+        func consume(_ suggestion: SwapSuggestion) {
+            guard let id = suggestion.exercise.id else { return }
+            seenIds.insert(id)
+            let base = ((suggestion.exercise.value(forKey: "baseExerciseName") as? String) ?? suggestion.exercise.name ?? "").lowercased()
+            if !base.isEmpty { seenBaseNames.insert(base) }
+            let family = ((suggestion.exercise.value(forKey: "exerciseFamily") as? String) ?? "").lowercased()
+            if !family.isEmpty { seenFamilies.insert(family) }
+            swaps.append(suggestion)
         }
         
-        // If we still need more to reach 3, fill from any section
-        if swaps.count < 3 {
-            let existing = Set(swaps.map { $0.id })
-            for section in sections {
-                for suggestion in section.suggestions {
-                    if !existing.contains(suggestion.id) && swaps.count < 3 {
-                        swaps.append(suggestion)
+        let variantSection = sections.first(where: { $0.suggestions.first?.swapType == .equipmentVariant })
+        let complementarySection = sections.first(where: { $0.suggestions.first?.swapType == .complementary })
+        let similarSection = sections.first(where: { $0.suggestions.first?.swapType == .similar })
+        
+        // 1) One equipment variant — same exact movement, different equipment.
+        if let variants = variantSection?.suggestions {
+            if let pick = variants.first(where: { canAdd($0, allowSameFamily: true) }) {
+                consume(pick)
+            }
+        }
+        
+        // 2) Up to two complementary exercises, preferring NEW families so
+        // the strip spans the muscle group rather than re-suggesting the same
+        // movement pattern. Pass 1 enforces unique families; pass 2 relaxes
+        // that constraint if we still don't have enough rows.
+        if let complementary = complementarySection?.suggestions {
+            for suggestion in complementary {
+                guard swaps.count < 3 else { break }
+                if canAdd(suggestion, allowSameFamily: false) {
+                    consume(suggestion)
+                }
+            }
+            if swaps.count < 3 {
+                for suggestion in complementary {
+                    guard swaps.count < 3 else { break }
+                    if canAdd(suggestion, allowSameFamily: true) {
+                        consume(suggestion)
                     }
                 }
+            }
+        }
+        
+        // 3) Backfill with algorithmic similar matches.
+        if swaps.count < 3, let similar = similarSection?.suggestions {
+            for suggestion in similar {
+                guard swaps.count < 3 else { break }
+                if canAdd(suggestion, allowSameFamily: false) {
+                    consume(suggestion)
+                }
+            }
+            if swaps.count < 3 {
+                for suggestion in similar {
+                    guard swaps.count < 3 else { break }
+                    if canAdd(suggestion, allowSameFamily: true) {
+                        consume(suggestion)
+                    }
+                }
+            }
+        }
+        
+        // 4) Last-resort fill — relax the family constraint and sweep every
+        // section so the strip never renders fewer than 3 rows when candidates
+        // exist. Base-name dedup is preserved to avoid visual repeats.
+        if swaps.count < 3 {
+            for section in sections {
+                for suggestion in section.suggestions {
+                    guard swaps.count < 3 else { break }
+                    if canAdd(suggestion, allowSameFamily: true) {
+                        consume(suggestion)
+                    }
+                }
+                if swaps.count >= 3 { break }
             }
         }
         

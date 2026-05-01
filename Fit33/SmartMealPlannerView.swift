@@ -1025,14 +1025,15 @@ struct PlanMealDetailSheet: View {
         
         let entry = FoodEntry(
             name: meal.title,
-            quantity: 1,
+            quantity: 1.0,
             unit: "serving",
             calories: meal.calories,
             protein: meal.protein,
             carbs: meal.carbs,
             fat: meal.fat,
             fdcId: nil,
-            foodItemId: nil
+            foodItemId: nil,
+            source: "manual"
         )
         
         MealService.shared.addMealEntry(entry, mealType: meal.mealSlot.mealType, user: user)

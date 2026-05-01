@@ -24,6 +24,15 @@ enum ActiveChallengeWidgetSnapshot {
     /// a trash-talk reaction while the app is closed; cleared on
     /// next foreground (`Fit33App` scenePhase `.active`).
     static let smackTalkKey = "fit33.widget.smackTalk.v1"
+    /// Sidecar filename under the App Group container for smack
+    /// payloads. Mirrored byte-for-byte by
+    /// `Fit33/SmackTalkWidgetBridge.smackFileName` — the file is the
+    /// canonical wire (we abandoned `UserDefaults` for smack on
+    /// 2026-04-29 because cfprefsd's per-process cache served stale
+    /// reads to the widget extension despite `synchronize()` on both
+    /// sides). When this filename changes, mirror the iOS side in the
+    /// SAME edit pass.
+    static let smackFileName = "smackTalk.v1.json"
 
     static func opponentPhotoFilename(opponentId: String) -> String {
         "\(opponentPhotoPrefix)\(opponentId).jpg"
@@ -172,14 +181,34 @@ enum ActiveChallengeWidgetSnapshot {
     /// payload's `challengeId` matches the challenge currently being
     /// rendered, so a smack on challenge B doesn't yell out of a
     /// widget pinned to challenge A.
+    ///
+    /// Bug-intel 2026-04-29: originally read via `UserDefaults` but the
+    /// widget extension's cached `UserDefaults(suiteName:)` instance
+    /// served STALE data to the widget process even after the iOS app
+    /// successfully wrote + synchronized the new value. Symptom: silent
+    /// push received → bridge logged "smack published" → widget
+    /// reload requested → widget read NIL → no bubble. Switched to a
+    /// sidecar JSON file under the App Group container; file reads go
+    /// through the sandbox-extension'd container path which is
+    /// fully-consistent across processes (no cfprefsd cache).
     static func readSmackTalk() -> WidgetSmackTalk? {
-        guard let defaults = UserDefaults(suiteName: appGroupID),
-              let data = defaults.data(forKey: smackTalkKey) else {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupID
+        ) else {
             return nil
         }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(WidgetSmackTalk.self, from: data)
+        let url = container.appendingPathComponent(smackFileName)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        do {
+            let data = try Data(contentsOf: url, options: [.uncached])
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(WidgetSmackTalk.self, from: data)
+        } catch {
+            return nil
+        }
     }
 
     /// Reads the auto-pick / fallback challenge from the App Group.

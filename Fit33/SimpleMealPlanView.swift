@@ -32,6 +32,9 @@ struct SimpleMealPlanView: View {
     var body: some View {
         NavigationStack {
             ZStack {
+                AnimatedOrbBackground.home(colorScheme: colorScheme)
+                    .accessibilityHidden(true)
+
                 // Hidden NavigationLink for food search
                 NavigationLink(
                     destination: Group {
@@ -76,15 +79,20 @@ struct SimpleMealPlanView: View {
                 .frame(width: 0, height: 0)
                 .hidden()
                 
+            // Instagram-style pinned header + hard cutoff: the
+            // "Nutrition" title sits ABOVE the ScrollView via the
+            // shared `PinnedTabHeader` wrapper so the hairline matches
+            // Home / Workout / Friends in position and styling.
+            VStack(spacing: 0) {
+            PinnedTabHeader {
+                customNutritionHeaderView
+            }
+
             ScrollViewReader { scrollProxy in
                 ScrollView {
                     Color.clear.frame(height: 0).id("top")
                     
                     LazyVStack(spacing: 0) {
-                        customNutritionHeaderView
-                            .padding(.top, 0)
-                            .padding(.bottom, 16)
-                        
                         VStack(spacing: 24) {
                             if needsProfileSetup {
                                 profileSetupCard
@@ -104,9 +112,7 @@ struct SimpleMealPlanView: View {
                     .padding(.horizontal, Spacing.md)
                     .padding(.bottom, 20)
                 }
-                .background(
-                    AnimatedOrbBackground.home(colorScheme: colorScheme)
-                )
+                .scrollContentBackground(.hidden)
                 .contentMargins(.top, 0, for: .scrollContent)
                 .onChange(of: scrollToTopTrigger) { _, _ in
                     scrollProxy.scrollTo("top", anchor: .top)
@@ -128,6 +134,8 @@ struct SimpleMealPlanView: View {
                     }
                 }
             }
+            }   // closes VStack(spacing: 0) — pinned-header wrapper
+            .padding(.top, TabPinnedChrome.rootTopPullUp)
             .navigationBarHidden(true)
             .adaptiveToolbarBackground()
             }

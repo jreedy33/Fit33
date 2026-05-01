@@ -71,13 +71,23 @@ class MealService: ObservableObject {
         let mealEntry = MealEntry(context: viewContext)
         mealEntry.id = UUID()
         mealEntry.foodName = trimmedName
-        mealEntry.quantity = Double(foodEntry.quantity)
+        mealEntry.quantity = foodEntry.quantity   // Now Double end-to-end; preserves fractional servings.
         mealEntry.unit = foodEntry.unit
         mealEntry.calories = Int32(foodEntry.calories)
         mealEntry.protein = Int32(foodEntry.protein)
         mealEntry.carbs = Int32(foodEntry.carbs)
         mealEntry.fat = Int32(foodEntry.fat)
-        mealEntry.fdcId = Int32(foodEntry.fdcId ?? 0)
+        // fdcId is Int64 in Core Data (widened 2026-04-30 alongside DB
+        // `meal_logs.fdc_id` widening in migration #166). OFF rows have
+        // synthetic NEGATIVE bigints derived from the barcode; the OLD
+        // Int32 column truncated those to 0 on every save → the entire
+        // OFF integration silently lost provenance round-trip until this fix.
+        mealEntry.fdcId = Int64(foodEntry.fdcId ?? 0)
+        mealEntry.fiber = foodEntry.fiber
+        mealEntry.sugar = foodEntry.sugar
+        mealEntry.sodium = foodEntry.sodium
+        mealEntry.source = foodEntry.source
+        mealEntry.barcode = foodEntry.barcode
         mealEntry.mealType = mealType.rawValue
         mealEntry.date = Date()
         mealEntry.user = user
@@ -284,19 +294,7 @@ class MealService: ObservableObject {
             AppLogger.debug("Found \(results.count) meal entries for today", category: .nutrition)
             
             todaysMeals = results.map { mealEntry in
-                let data = MealEntryData(
-                    id: mealEntry.id ?? UUID(),
-                    foodName: mealEntry.foodName ?? "",
-                    quantity: mealEntry.quantity,
-                    unit: mealEntry.unit ?? "",
-                    calories: Int(mealEntry.calories),
-                    protein: Int(mealEntry.protein),
-                    carbs: Int(mealEntry.carbs),
-                    fat: Int(mealEntry.fat),
-                    mealType: MealType(rawValue: mealEntry.mealType ?? "") ?? .breakfast,
-                    date: mealEntry.date ?? Date(),
-                    fdcId: Int(mealEntry.fdcId)
-                )
+                let data = mealEntry.toMealEntryData()
                 AppLogger.verbose("  - \(data.foodName): \(data.calories)cal, \(data.protein)p, \(data.carbs)c, \(data.fat)f (\(data.mealType.rawValue))", category: .nutrition)
                 return data
             }
@@ -347,21 +345,7 @@ class MealService: ObservableObject {
             request.sortDescriptors = [NSSortDescriptor(keyPath: \MealEntry.date, ascending: true)]
             do {
                 let entries = try bgContext.fetch(request)
-                return entries.map { mealEntry in
-                    MealEntryData(
-                        id: mealEntry.id ?? UUID(),
-                        foodName: mealEntry.foodName ?? "",
-                        quantity: mealEntry.quantity,
-                        unit: mealEntry.unit ?? "",
-                        calories: Int(mealEntry.calories),
-                        protein: Int(mealEntry.protein),
-                        carbs: Int(mealEntry.carbs),
-                        fat: Int(mealEntry.fat),
-                        mealType: MealType(rawValue: mealEntry.mealType ?? "") ?? .breakfast,
-                        date: mealEntry.date ?? Date(),
-                        fdcId: Int(mealEntry.fdcId)
-                    )
-                }
+                return entries.map { $0.toMealEntryData() }
             } catch {
                 AppLogger.error("Error loading today's meals (bg): \(error.localizedDescription)", category: .nutrition)
                 return []
@@ -386,21 +370,7 @@ class MealService: ObservableObject {
         
         do {
             let results = try viewContext.fetch(request)
-            return results.map { mealEntry in
-                MealEntryData(
-                    id: mealEntry.id ?? UUID(),
-                    foodName: mealEntry.foodName ?? "",
-                    quantity: mealEntry.quantity,
-                    unit: mealEntry.unit ?? "",
-                    calories: Int(mealEntry.calories),
-                    protein: Int(mealEntry.protein),
-                    carbs: Int(mealEntry.carbs),
-                    fat: Int(mealEntry.fat),
-                    mealType: MealType(rawValue: mealEntry.mealType ?? "") ?? .breakfast,
-                    date: mealEntry.date ?? Date(),
-                    fdcId: Int(mealEntry.fdcId)
-                )
-            }
+            return results.map { $0.toMealEntryData() }
         } catch {
             AppLogger.error("Error loading meals for date: \(error.localizedDescription)", category: .nutrition)
             return []
@@ -453,14 +423,59 @@ struct MealEntryData: Identifiable {
     let fat: Int
     let mealType: MealType
     let date: Date
-    let fdcId: Int // For favoriting functionality
-    
+    let fdcId: Int // For favoriting functionality (Int64 on 64-bit; supports OFF negatives)
+    // Detailed nutrition (added 2026-04-30) — defaults to 0 so legacy MealEntry
+    // rows (created before fiber/sugar/sodium attributes existed) still load
+    // cleanly under Core Data lightweight migration.
+    var fiber: Double = 0
+    var sugar: Double = 0
+    var sodium: Double = 0
+    // Provenance (added 2026-04-30 with OFF). Nil for pre-OFF rows.
+    var source: String? = nil
+    var barcode: String? = nil
+
     var displayQuantity: String {
         if quantity == floor(quantity) {
             return String(Int(quantity))
         } else {
             return String(format: "%.1f", quantity)
         }
+    }
+}
+
+// MARK: - MealEntry → MealEntryData mapper
+//
+// Single canonical mapper used by all three load paths
+// (`loadTodaysMeals`, `loadTodaysMealsAsync`, `getMealsForDate`).
+// Replaces three near-identical inline initializers that drifted whenever
+// a new column was added (the 2026-04-30 nutrition audit found that
+// adding fiber/sugar/sodium without a single mapper would have required
+// hand-editing all three sites and still missed the fix in any future load
+// path).
+extension MealEntry {
+    func toMealEntryData() -> MealEntryData {
+        var data = MealEntryData(
+            id: id ?? UUID(),
+            foodName: foodName ?? "",
+            quantity: quantity,
+            unit: unit ?? "",
+            calories: Int(calories),
+            protein: Int(protein),
+            carbs: Int(carbs),
+            fat: Int(fat),
+            mealType: MealType(rawValue: mealType ?? "") ?? .breakfast,
+            date: date ?? Date(),
+            fdcId: Int(fdcId)
+        )
+        // Detailed nutrition + provenance — populated 2026-04-30 with OFF.
+        // Legacy rows return 0 / nil from Core Data which is the correct
+        // semantic for "we don't know" (vs a real zero like a true 0g sugar food).
+        data.fiber = fiber
+        data.sugar = sugar
+        data.sodium = sodium
+        data.source = source
+        data.barcode = barcode
+        return data
     }
 }
 

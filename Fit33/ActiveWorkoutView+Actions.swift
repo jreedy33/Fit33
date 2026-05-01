@@ -446,15 +446,19 @@ extension ActiveWorkoutView {
         
         syncExercisesToWorkoutManager()
         
-        // Transfer any sets data to the new exercise (or initialize fresh)
+        // Shuffle = brand-new exercise, so reset the sets entirely. We only
+        // preserve the SET COUNT (so the user's "I do 4 sets" preference for
+        // this slot survives the swap) — the new exercise gets fresh
+        // `WorkoutSetData()` rows: `isCompleted = false`, `weight = 0`,
+        // `reps = 0`. Carrying over completion checkmarks / weights / reps
+        // from a different exercise is misleading: a user who just shuffled
+        // away from the old exercise hasn't actually done THIS one yet
+        // (per user request 2026-04-29). The set-row UI's placeholder text
+        // immediately re-populates from `previousExerciseSets[newExerciseId]`
+        // once `loadHistoricalDataForExercise(newExercise)` returns below.
         let existingSets = workoutManager.exerciseSetsData[oldExerciseId] ?? []
-        if existingSets.isEmpty || existingSets.allSatisfy({ !$0.isCompleted && $0.weight == 0 && $0.reps == 0 }) {
-            let setCount = max(existingSets.count, WorkoutManager.userDefaultSetCount)
-            workoutManager.exerciseSetsData[newExerciseId] = (0..<setCount).map { _ in WorkoutSetData() }
-        } else {
-            // Transfer existing sets to new exercise
-            workoutManager.exerciseSetsData[newExerciseId] = existingSets
-        }
+        let setCount = max(existingSets.count, WorkoutManager.userDefaultSetCount)
+        workoutManager.exerciseSetsData[newExerciseId] = (0..<setCount).map { _ in WorkoutSetData() }
 
         // Clean up old exercise data
         workoutManager.exerciseSetsData.removeValue(forKey: oldExerciseId)

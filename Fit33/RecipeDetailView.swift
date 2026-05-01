@@ -815,14 +815,15 @@ struct RecipeDetailView: View {
         // Create a FoodEntry from the recipe
         let foodEntry = FoodEntry(
             name: detail.title,
-            quantity: portionServings,
+            quantity: Double(portionServings),
             unit: portionServings == 1 ? "serving" : "servings",
             calories: adjustedCalories,
             protein: adjustedProtein,
             carbs: adjustedCarbs,
             fat: adjustedFat,
             fdcId: detail.id, // Use recipe ID as identifier
-            foodItemId: detail.id
+            foodItemId: detail.id,
+            source: "spoonacular"
         )
         
         // Add to MealService

@@ -13,6 +13,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildCorsHeaders, requireUserAuth } from "../_shared/cors.ts";
+import { fetchOFFByBarcode, searchOFF } from "../_shared/openFoodFacts.ts";
 
 const USDA_API_KEY = Deno.env.get("USDA_API_KEY")!;
 const USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
@@ -44,6 +45,10 @@ interface SearchRequest {
 
 interface FoodDetailsRequest {
   fdcId: number;
+}
+
+interface BarcodeRequest {
+  barcode: string;
 }
 
 serve(async (req) => {
@@ -84,6 +89,8 @@ serve(async (req) => {
         return await handleSearch(supabaseClient, params as SearchRequest, corsHeaders);
       case "details":
         return await handleDetails(supabaseClient, params as FoodDetailsRequest, corsHeaders);
+      case "barcode":
+        return await handleBarcode(supabaseClient, params as BarcodeRequest, corsHeaders);
       case "cache_food":
         return await handleCacheFood(supabaseClient, params, corsHeaders);
       default:
@@ -215,16 +222,24 @@ async function handleSearch(supabase: any, params: SearchRequest, corsHeaders: R
   console.log(`🔗 Fetching Foundation Foods...`);
   console.log(`🔗 Fetching SR Legacy Foods...`);
   console.log(`🔗 Fetching Branded Foods...`);
+  console.log(`🔗 Fetching Open Food Facts...`);
 
   // Make parallel API calls for faster response
   console.log(`🔗 Foundation URL: ${foundationUrl.replace(USDA_API_KEY, "***")}`);
-  
-  const [foundationResponse, srLegacyResponse, brandedResponse] = await Promise.all([
+
+  // 4-way fan-out: 3 USDA dataType buckets + Open Food Facts (packaged products
+  // / international branded items USDA's Branded set is missing). Each branch
+  // catches its own error so a single source failing (e.g. OFF rate-limit, USDA
+  // 503) degrades gracefully to the others — never returns a 500 to iOS.
+  const [foundationResponse, srLegacyResponse, brandedResponse, offFoods] = await Promise.all([
     fetch(foundationUrl).catch(e => { console.log(`❌ Foundation fetch error: ${e}`); return { ok: false, error: e }; }),
     fetch(srLegacyUrl).catch(e => { console.log(`❌ SR Legacy fetch error: ${e}`); return { ok: false, error: e }; }),
-    fetch(brandedUrl).catch(e => { console.log(`❌ Branded fetch error: ${e}`); return { ok: false, error: e }; })
+    fetch(brandedUrl).catch(e => { console.log(`❌ Branded fetch error: ${e}`); return { ok: false, error: e }; }),
+    searchOFF(query, 25).catch(e => { console.log(`❌ OFF search error: ${e}`); return [] as any[]; }),
   ]);
-  
+
+  console.log(`🥫 OFF returned ${offFoods.length} usable products`);
+
   // Parse responses
   let foundationFoods: any[] = [];
   let srLegacyFoods: any[] = [];
@@ -285,25 +300,28 @@ async function handleSearch(supabase: any, params: SearchRequest, corsHeaders: R
     console.log(`⚠️ Branded Foods fetch failed - status: ${status}`);
   }
   
-  // Combine all foods - Foundation first, then SR Legacy, then Branded
-  // This ensures Foundation Foods are always in the results even if USDA API 
-  // would normally bury them in branded results
-  const allFoods = [...foundationFoods, ...srLegacyFoods, ...brandedFoods];
-  
-  // Deduplicate by fdcId (in case of any overlap)
+  // Combine all foods. Order doesn't matter here — `rankSearchResults` reorders
+  // by data type / exactness / popularity. Foundation goes first only because
+  // it lets the iOS render the most-trusted result fastest while the rest of
+  // the array is being processed.
+  const allFoods = [...foundationFoods, ...srLegacyFoods, ...brandedFoods, ...offFoods];
+
+  // Deduplicate by fdcId (USDA fdcIds are positive ints; OFF synthetic fdcIds
+  // are negative — both unique within their own set, and crossover is
+  // impossible by construction).
   const seenFdcIds = new Set<number>();
   const usdaFoods = allFoods.filter(food => {
     if (seenFdcIds.has(food.fdcId)) return false;
     seenFdcIds.add(food.fdcId);
     return true;
   });
-  
-  const usdaData = { 
-    foods: usdaFoods, 
-    totalHits: usdaFoods.length 
+
+  const usdaData = {
+    foods: usdaFoods,
+    totalHits: usdaFoods.length
   };
-  
-  console.log(`📊 Combined USDA results: ${usdaData.foods?.length || 0} total (${foundationFoods.length} Foundation, ${srLegacyFoods.length} SR Legacy, ${brandedFoods.length} Branded)`);
+
+  console.log(`📊 Combined results: ${usdaData.foods?.length || 0} total (${foundationFoods.length} Foundation, ${srLegacyFoods.length} SR Legacy, ${brandedFoods.length} Branded, ${offFoods.length} OFF)`);
 
   // Step 3: Cache the results in our database
   if (usdaData.foods && usdaData.foods.length > 0) {
@@ -429,6 +447,95 @@ async function handleDetails(supabase: any, params: FoodDetailsRequest, corsHead
 }
 
 // ============================================================================
+// BARCODE HANDLER (Open Food Facts)
+// ============================================================================
+// Camera-based barcode scan from `Fit33/BarcodeScannerView.swift` lands here.
+// Strategy:
+//   1. Cache hit on `food_items.barcode` → return immediately (no network).
+//   2. OFF lookup → cache row in `food_items` keyed by synthetic negative
+//      fdcId (so the existing cache infrastructure works untouched) AND by
+//      `barcode` UNIQUE INDEX. Future scans of the same code are cache hits.
+//   3. Not-found → return `{ found: false }` so iOS can show the
+//      "not in database — search by name?" fallback UX with the code prefilled.
+//
+// Validation: barcode is digits only (8/12/13/14 chars cover EAN-8, UPC-A,
+// EAN-13, ITF-14). Reject anything else early — saves an OFF round-trip and
+// stops obvious garbage from poisoning the cache.
+async function handleBarcode(supabase: any, params: BarcodeRequest, corsHeaders: Record<string, string>) {
+  const raw = (params.barcode || "").toString().trim();
+  const barcode = raw.replace(/\D/g, "");
+  if (!barcode || ![8, 12, 13, 14].includes(barcode.length)) {
+    return new Response(
+      JSON.stringify({ error: "Invalid barcode", code: "INVALID_BARCODE", found: false }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  console.log(`🔎 Barcode lookup: ${barcode}`);
+
+  // Step 1: cache hit by barcode column
+  const { data: cachedFood } = await supabase
+    .from("food_items")
+    .select("*")
+    .eq("barcode", barcode)
+    .maybeSingle();
+
+  if (cachedFood) {
+    console.log(`✅ Cache hit for barcode ${barcode} (food_id=${cachedFood.id})`);
+    // Bump search_count via RPC if available (best-effort, non-blocking).
+    try { await supabase.rpc("increment_food_search_count_by_id", { p_food_id: cachedFood.id }); } catch {}
+    const transformedFood = transformToApiFormat(cachedFood);
+    return new Response(
+      JSON.stringify({ source: "cache", found: true, food: transformedFood }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Step 2: OFF lookup
+  const offResult = await fetchOFFByBarcode(barcode);
+  if (!offResult.found || !offResult.food) {
+    return new Response(
+      JSON.stringify({ source: "off", found: false, barcode }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Step 3: cache and return
+  const cachedIds = await cacheUSDAFoods(supabase, [offResult.food]);
+  if (cachedIds.length === 0) {
+    // OFF gave us a row but persistence failed (e.g. race on UNIQUE barcode).
+    // Re-read and return what's there rather than returning `found: false` —
+    // the user did get a hit, just the write didn't land cleanly.
+    const { data: refetched } = await supabase
+      .from("food_items")
+      .select("*")
+      .eq("barcode", barcode)
+      .maybeSingle();
+    if (refetched) {
+      return new Response(
+        JSON.stringify({ source: "off", found: true, food: transformToApiFormat(refetched) }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    return new Response(
+      JSON.stringify({ error: "Cache write failed", found: false, barcode }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  const { data: insertedFood } = await supabase
+    .from("food_items")
+    .select("*")
+    .eq("id", cachedIds[0])
+    .single();
+
+  return new Response(
+    JSON.stringify({ source: "off", found: true, food: transformToApiFormat(insertedFood) }),
+    { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+
+// ============================================================================
 // CACHE FOOD HANDLER
 // ============================================================================
 async function handleCacheFood(supabase: any, params: any, corsHeaders: Record<string, string>) {
@@ -518,6 +625,11 @@ function transformToApiFormat(dbRow: any): any {
     brandName: dbRow.brand_name,
     brandOwner: dbRow.brand_owner,
     foodCategory: dbRow.category,
+    // Surface OFF metadata to iOS so the badge renders + ODbL attribution
+    // shows on the FoodDetailsView footer when source = 'off' (license req).
+    source: dbRow.source || "usda",
+    barcode: dbRow.barcode || null,
+    imageUrl: dbRow.image_url || null,
     // IMPORTANT: servingSize for Foundation/SR Legacy foods is always 100g
     // The nutrition values are per 100g from USDA
     servingSize: dbRow.serving_size || 100,
@@ -632,12 +744,27 @@ function calculateFoodScore(food: any, normalizedQuery: string, originalQuery: s
   // =========================================================================
   // TIER 2: DATA TYPE (Foundation Foods from USDA are most accurate)
   // =========================================================================
+  // Ordering rationale (lower score = better):
+  //   Foundation (USDA lab-verified)            -50000
+  //   SR Legacy  (USDA, slightly older method)  -40000
+  //   Survey FNDDS (USDA composite)             -10000
+  //   OFF (Open Food Facts — packaged products)  +5000  ← below USDA whole foods,
+  //                                                       ABOVE USDA Branded which
+  //                                                       is mostly low-quality
+  //                                                       UPC dumps.
+  //   Branded (USDA Branded)                    +30000
+  //
+  // OFF beats USDA Branded because OFF's `unique_scans_n` (popularity) is a
+  // far better quality signal than the random USDA Branded grab-bag, and OFF
+  // has nutrient-completeness scoring that USDA Branded doesn't expose.
   if (dataType === "Foundation") {
     score -= 50000; // Foundation foods = lab-verified, most accurate
   } else if (dataType === "SR Legacy") {
     score -= 40000; // SR Legacy = still high quality USDA data
   } else if (dataType === "Survey (FNDDS)") {
     score -= 10000; // Survey data = decent quality
+  } else if (dataType === "OFF") {
+    score += 5000; // Open Food Facts = packaged products, below whole foods
   } else if (dataType === "Branded") {
     score += 30000; // Branded = lowest priority
   }
@@ -723,6 +850,12 @@ function prepareFoodRow(food: any): any {
     description: p.modifier
   })) || [];
 
+  // OFF rows carry the synthetic-fdcId metadata on `_off*` keys (see
+  // `_shared/openFoodFacts.ts::transformOFFToUSDAShape`). USDA rows have no
+  // `_offBarcode`, so `source` defaults to `'usda'` (matches the column
+  // default in `20260801_food_items_off_barcode.sql`).
+  const isOFF = !!food._offBarcode;
+
   return {
     fdc_id: food.fdcId,
     name: food.description,
@@ -747,7 +880,10 @@ function prepareFoodRow(food: any): any {
     iron: getNutrient("303"),
     vitamin_c: getNutrient("401"),
     nutrition_data: nutrients,
-    portions: portions
+    portions: portions,
+    barcode: isOFF ? food._offBarcode : null,
+    source: isOFF ? "off" : "usda",
+    image_url: isOFF ? food._offImageUrl : null,
   };
 }
 

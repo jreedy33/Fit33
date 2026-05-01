@@ -15,6 +15,8 @@ struct FoodSearchView: View {
     @State private var showingQuickAccess = true
     @State private var showingNutritionScanner = false
     @State private var showingRestaurantSearch = false
+    @State private var showingScanChoice = false      // Action sheet — barcode vs nutrition label
+    @State private var showingBarcodeScanner = false  // Open Food Facts barcode scanner (2026-04-30)
     @State private var isWaitingForSearch = false  // Track debounce state to prevent flash
     
     var body: some View {
@@ -97,6 +99,41 @@ struct FoodSearchView: View {
         .sheet(isPresented: $showingRestaurantSearch) {
             RestaurantSearchSheet()
                 .environmentObject(userManager)
+        }
+        .confirmationDialog("Scan", isPresented: $showingScanChoice, titleVisibility: .visible) {
+            Button {
+                AppLogger.debug("📸 [SEARCH VIEW] User chose: Scan Barcode", category: .nutrition)
+                showingBarcodeScanner = true
+            } label: {
+                Label("Scan Barcode (UPC/EAN)", systemImage: "barcode.viewfinder")
+            }
+            Button {
+                AppLogger.debug("📸 [SEARCH VIEW] User chose: Scan Nutrition Label", category: .nutrition)
+                showingNutritionScanner = true
+            } label: {
+                Label("Scan Nutrition Label", systemImage: "doc.text.viewfinder")
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Barcode = packaged product\nNutrition Label = restaurant menu / hand-written")
+        }
+        .fullScreenCover(isPresented: $showingBarcodeScanner) {
+            // Camera needs full screen — sheet would clip the preview layer
+            // and AVCapture orientation handling gets weird inside a half-sheet.
+            BarcodeScannerView(
+                onScan: { food in
+                    // Hit: route through the existing FoodDetailsView path
+                    // (NavigationLink hidden in `.background` above) so the
+                    // serving-size picker + onAdd closure all work unchanged.
+                    selectedFood = food
+                },
+                onSearchFallback: { code in
+                    // Miss: prefill the search bar so the user can find a
+                    // similar product by name. Keeps the scanner from being
+                    // a dead-end UX when OFF doesn't have the item.
+                    searchText = code
+                }
+            )
         }
         .scrollDismissesKeyboard(.immediately)
         .onTapGesture {
@@ -254,7 +291,15 @@ struct FoodSearchView: View {
                     action: { /* Already showing search */ }
                 )
                 
-                // Scan Tile
+                // Scan Tile — opens an action sheet with two scanning paths
+                // (added Open Food Facts barcode lookup 2026-04-30):
+                //   - "Scan Barcode" → BarcodeScannerView → searchByBarcode
+                //   - "Scan Nutrition Label" → NutritionScannerView (existing OCR)
+                // We keep a single Scan tile rather than splitting into two so
+                // the action row stays at 3 tiles (4 doesn't fit comfortably
+                // on iPhone SE width — verified via DEVICE_COMPATIBILITY_AGENT
+                // adaptive-layout invariant). Confirmation dialog is the
+                // cheapest disambiguator.
                 AddFoodActionTile(
                     icon: "camera.fill",
                     title: "Scan",
@@ -262,7 +307,7 @@ struct FoodSearchView: View {
                     isActive: false,
                     action: {
                         AppLogger.debug("📸 [SEARCH VIEW] Scan tile tapped", category: .nutrition)
-                        showingNutritionScanner = true
+                        showingScanChoice = true
                     }
                 )
                 

@@ -34,6 +34,19 @@ enum SilentPushHandler {
     ) {
         let type = (userInfo["type"] as? String) ?? ""
 
+        // Diagnostic 2026-04-29 — surface ALL silent push wakes to the
+        // session log so the bug-intel CMS / Console.app can confirm
+        // iOS actually fired the content-available wake. If we get a
+        // sent-status push in the queue but nothing logs here, iOS is
+        // dropping the silent half (force-quit / BG refresh off /
+        // content-available not in payload).
+        SessionLogManager.shared.log(.info, category: .pushNotification, message: "🛎️ [SILENT PUSH] received", metadata: [
+            "type": type,
+            "app_state": "\(UIApplication.shared.applicationState.rawValue)",
+            "challenge_id": (userInfo["challenge_id"] as? String) ?? "—"
+        ])
+        AppLogger.info("[SILENT PUSH] received type='\(type)' app_state=\(UIApplication.shared.applicationState.rawValue)", category: .network)
+
         switch type {
         case "challenge_wake":
             handleChallengeWake(completion: completion)

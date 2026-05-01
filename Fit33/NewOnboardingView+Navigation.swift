@@ -41,6 +41,30 @@ extension NewOnboardingView {
             stepName: "\(step)",
             action: "navigated"
         )
+
+        // New User Journey Tracker — mirror to the 72h-TTL funnel pipeline.
+        // No-op until the user has authenticated (the auth step itself fires
+        // first, but the server RPC silently drops anonymous calls). Once
+        // post-signup, every step transition becomes a funnel event with
+        // monotonic step_index, drives the per-user report's onboarding section.
+        let stepName = "\(step)"
+        let stepIndex = step.rawValue
+        let editing = isEditingFromConfirmation
+        Task { @MainActor in
+            NewUserJourneyTracker.shared.logFunnelStep(
+                funnel: "onboarding",
+                step: stepName,
+                stepIndex: stepIndex,
+                extra: ["is_editing": editing]
+            )
+            if step == .complete {
+                NewUserJourneyTracker.shared.logFunnelStep(
+                    funnel: "onboarding",
+                    step: "completed",
+                    stepIndex: stepIndex
+                )
+            }
+        }
         
         // Log step completion to cloud (for debugging UK user issue)
         Task {

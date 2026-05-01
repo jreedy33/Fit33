@@ -659,14 +659,15 @@ struct ImportedRecipeDetailView: View {
         
         let foodEntry = FoodEntry(
             name: recipe.title,
-            quantity: portionServings,
+            quantity: Double(portionServings),
             unit: portionServings == 1 ? "serving" : "servings",
             calories: adjustedCalories,
             protein: adjustedProtein,
             carbs: adjustedCarbs,
             fat: adjustedFat,
             fdcId: recipe.id,
-            foodItemId: recipe.id
+            foodItemId: recipe.id,
+            source: "spoonacular"
         )
         
         MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user)

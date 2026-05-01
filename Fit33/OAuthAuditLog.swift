@@ -142,4 +142,58 @@ enum OAuthAuditLog {
             UserDefaults.standard.removeObject(forKey: keyPrefix + s)
         }
     }
+
+    // MARK: - Cloud Forwarding
+    //
+    // 2026-04-29 — bug-intel "WHOOP card disappeared with no disconnect
+    // log line on the cloud side". The audit trail above is local-only
+    // (UserDefaults), so debugging "why is WHOOP suddenly disconnected
+    // again?" required a remote device pull. This forwards the trail
+    // through `AppLogger` once per foreground (gated by a watermark so
+    // we don't ship the same breadcrumbs every launch). When dev
+    // logging is enabled for the user, the entries land in
+    // `dev_session_logs.entries[]` and become queryable for post-mortem
+    // — same surface used to investigate this incident in the first
+    // place. Cheap (≤4 services × ≤50 entries × one log line) and
+    // best-effort: we never want a logging path to throw.
+
+    private static let watermarkKey: String = "oauth_audit_log.last_flushed_ts"
+
+    /// Forward newly-recorded entries (since the last flush) into
+    /// `AppLogger` so they land in `dev_session_logs.entries[]` when
+    /// dev logging is enabled. Idempotent — re-runs are a no-op until
+    /// new entries arrive. Call once per foreground.
+    static func flushToDevLog() {
+        let lastFlushed = UserDefaults.standard.double(forKey: watermarkKey)
+        var newWatermark = lastFlushed
+        var flushed = 0
+        let services = ["whoop", "oura", "strava", "fitbit"]
+        for s in services {
+            let key = keyPrefix + s
+            guard let raw = UserDefaults.standard.data(forKey: key),
+                  let decoded = try? JSONDecoder().decode([Entry].self, from: raw) else {
+                continue
+            }
+            for entry in decoded {
+                let ts = entry.ts.timeIntervalSince1970
+                guard ts > lastFlushed else { continue }
+                if ts > newWatermark { newWatermark = ts }
+                // Use `.info` (NOT `.warning`) for the .keychainProbe
+                // breadcrumbs — they're informational, not bug-class.
+                // Real failure events (.refreshFailure / .disconnect)
+                // ride the same level so they don't inflate severity
+                // scores in the bug-intel pipeline; the `event=` token
+                // in the message lets the dashboard filter them.
+                AppLogger.info(
+                    "[OAUTH-AUDIT] \(entry.formatted)",
+                    category: .auth
+                )
+                flushed += 1
+            }
+        }
+        if flushed > 0 {
+            UserDefaults.standard.set(newWatermark, forKey: watermarkKey)
+            AppLogger.info("[OAUTH-AUDIT] Flushed \(flushed) breadcrumbs to dev log (watermark=\(newWatermark))", category: .auth)
+        }
+    }
 }

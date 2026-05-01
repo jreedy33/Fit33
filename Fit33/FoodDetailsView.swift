@@ -497,6 +497,22 @@ struct FoodDetailsView: View {
         return (String(Int(food.servingSize)), .grams)
     }
     
+    /// Food-aware grams-per-unit. Looks up `CommonFoodDensities` first
+    /// (handles "1 cup cooked rice = 158 g" instead of the 240 g water
+    /// default), then falls back to the volumetric default on the enum.
+    /// USED EVERYWHERE that previously read `unit.gramsPerUnit` directly.
+    /// Audit 2026-04-30 — ServingUnit.cups was 240 g for every food.
+    private func grams(for unit: ServingUnit) -> Double {
+        if let override = CommonFoodDensities.gramsPerUnit(
+            unit.rawValue,
+            foodName: food.displayName,
+            category: food.category
+        ) {
+            return override
+        }
+        return unit.gramsPerUnit
+    }
+    
     /// Calculates nutrition based on current serving amount and unit
     /// All conversions are based on gram weights for accuracy
     private var currentNutrition: NutritionInfo {
@@ -504,22 +520,23 @@ struct FoodDetailsView: View {
         // USDA nutrition data is per servingSize (usually 100g for Foundation/SR Legacy foods)
         let baseServing = max(0.1, food.servingSize)
         
-        // Convert the user's input to grams based on selected unit
-        let totalGrams = amount * selectedUnit.gramsPerUnit
+        // Convert the user's input to grams using the food-aware density table.
+        let totalGrams = amount * grams(for: selectedUnit)
         
         // Calculate nutrition: (totalGrams / baseServing) × baseNutrition
         return food.nutrition.perServing(servingSize: totalGrams, servingUnit: selectedUnit.rawValue, originalServingSize: baseServing)
     }
     
-    /// Converts the current amount to a new unit while preserving the gram weight
+    /// Converts the current amount to a new unit while preserving the gram weight.
+    /// Uses `grams(for:)` so cup → tbsp etc. convert via real density not water.
     private func convertToUnit(_ newUnit: ServingUnit) {
         guard let currentAmount = Double(servingAmount) else { return }
         
         // Calculate total grams from current unit
-        let totalGrams = currentAmount * selectedUnit.gramsPerUnit
+        let totalGrams = currentAmount * grams(for: selectedUnit)
         
         // Convert to new unit
-        let newAmount = totalGrams / newUnit.gramsPerUnit
+        let newAmount = totalGrams / grams(for: newUnit)
         
         // Format nicely (avoid excessive decimals)
         if newAmount >= 10 {
@@ -533,20 +550,39 @@ struct FoodDetailsView: View {
         selectedUnit = newUnit
     }
     
-    /// Checks if the current serving approximately matches the given gram weight
+    /// Checks if the current serving approximately matches the given gram weight.
+    /// Uses food-aware density so "1 cup rice" (158 g) matches a USDA portion
+    /// chip that says "1 cup = 158 g" instead of computing 240 g and missing.
     private func isCurrentServing(grams targetGrams: Double) -> Bool {
         guard let amount = Double(servingAmount) else { return false }
-        let currentGrams = amount * selectedUnit.gramsPerUnit
+        let currentGrams = amount * grams(for: selectedUnit)
         // Allow 1% tolerance for floating point comparison
         return abs(currentGrams - targetGrams) < max(1, targetGrams * 0.01)
     }
     
-    /// Quick portion option for the buttons
+    /// Quick portion option for the buttons.
+    /// Use `grams(of:)` on the parent view (NOT `.grams` on this struct) when
+    /// you need food-aware density — `.grams` here is the legacy volumetric
+    /// estimate kept only for callers that don't have access to `food`.
     private struct QuickPortion {
         let label: String
         let amount: String
         let unit: ServingUnit
         var grams: Double { (Double(amount) ?? 1) * unit.gramsPerUnit }
+    }
+    
+    /// Food-aware gram weight for a `QuickPortion` — preferred over
+    /// `quickPortion.grams` because it consults `CommonFoodDensities` first.
+    /// Use this for "is this chip currently selected?" comparisons so the
+    /// "1 cup rice" chip lights up at 158 g (real density) rather than only
+    /// matching 240 g.
+    private func grams(of qp: QuickPortion) -> Double {
+        let perUnit = CommonFoodDensities.gramsPerUnit(
+            qp.unit.rawValue,
+            foodName: food.displayName,
+            category: food.category
+        ) ?? qp.unit.gramsPerUnit
+        return (Double(qp.amount) ?? 1) * perUnit
     }
     
     /// Returns contextual quick portions based on the food type
@@ -895,7 +931,17 @@ struct FoodDetailsView: View {
                     if hasDetailedNutrition {
                         detailedNutritionCard
                     }
-                    
+
+                    // ODbL attribution — REQUIRED whenever an OFF-sourced food
+                    // is rendered (Open Food Facts data is licensed under
+                    // ODbL; visible attribution at the point of use is a
+                    // license condition). Stripping this is a license
+                    // violation, not optional polish. See PE invariant 21
+                    // and Data invariant #10c.
+                    if food.source == "off" {
+                        attributionFooter
+                    }
+
                     Spacer()
                 }
                 .padding(.horizontal, 20)
@@ -1048,19 +1094,27 @@ struct FoodDetailsView: View {
             // Quick portion shortcuts - contextual based on food type
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    // Show contextual quick portions based on food type
+                    // Show contextual quick portions based on food type.
+                    // `grams(of:)` (food-aware density) is preferred over
+                    // `portion.grams` (volumetric default) so the chip lights
+                    // up at e.g. 158 g for "1 cup rice" not just at 240 g.
                     ForEach(contextualQuickPortions, id: \.label) { portion in
                         QuickPortionButton(
                             title: portion.label,
-                            isSelected: isCurrentServing(grams: portion.grams)
+                            isSelected: isCurrentServing(grams: grams(of: portion))
                         ) {
                             servingAmount = portion.amount
                             selectedUnit = portion.unit
                         }
                     }
                     
-                    // Add USDA-provided portions if available (and not duplicates)
-                    ForEach(food.portions.prefix(2)) { portion in
+                    // Add ALL USDA-provided portions (was capped at .prefix(2)
+                    // — audit 2026-04-30 found foods with 4-5 useful portions
+                    // were silently truncated to the first two, hiding e.g.
+                    // "1 piece" or "1 lb" from the user). `food.portions` are
+                    // ALREADY the canonical gram weights from FDC so we use
+                    // `portion.gramWeight` directly (no density override needed).
+                    ForEach(food.portions) { portion in
                         QuickPortionButton(
                             title: portion.displayText,
                             isSelected: isCurrentServing(grams: portion.gramWeight)
@@ -1082,6 +1136,41 @@ struct FoodDetailsView: View {
         )
     }
     
+    // MARK: - ODbL Attribution Footer (Open Food Facts)
+    // Rendered ONLY when `food.source == "off"`. Required by the Open
+    // Database License — visible attribution at the point of use, with the
+    // database name + a link to the source. The button is `.plain` and uses
+    // a tap to open the OFF product page if a barcode is present (helps
+    // users verify the data they're seeing matches the bag in their hand).
+    private var attributionFooter: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "info.circle")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Text("Data: ")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            +
+            Text("Open Food Facts")
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(.blue)
+            Spacer()
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if let code = food.barcode,
+               let url = URL(string: "https://world.openfoodfacts.org/product/\(code)") {
+                UIApplication.shared.open(url)
+            } else if let url = URL(string: "https://world.openfoodfacts.org") {
+                UIApplication.shared.open(url)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Nutrition data from Open Food Facts. Tap to view source.")
+    }
+
     // MARK: - Detailed Nutrition Card
     private var detailedNutritionCard: some View {
         VStack(spacing: 0) {
@@ -1543,16 +1632,26 @@ struct FoodDetailsView: View {
         let amount = Double(servingAmount) ?? 1.0
         let nutrition = currentNutrition
         
+        // Quantity is now Double end-to-end (was being floor()'d to Int and
+        // clamped to >=1 — silently rewrote "0.5 cup" → "1 cup" in the
+        // displayed log even though macros were correct). Fixed 2026-04-30.
         let foodEntry = FoodEntry(
             name: food.displayName,
-            quantity: max(1, Int(amount.rounded())),
+            quantity: max(0.01, amount),
             unit: currentServingUnit,
             calories: Int(nutrition.calories),
             protein: Int(nutrition.protein),
             carbs: Int(nutrition.carbohydrates),
             fat: Int(nutrition.totalFat),
             fdcId: food.id,
-            foodItemId: food.id
+            foodItemId: food.id,
+            // Detailed nutrition + provenance — finally persisted (was lost
+            // at MealEntry save until 2026-04-30 audit).
+            fiber: nutrition.fiber,
+            sugar: nutrition.sugar,
+            sodium: nutrition.sodium,
+            source: food.source,
+            barcode: food.barcode
         )
         
         onAdd(foodEntry)

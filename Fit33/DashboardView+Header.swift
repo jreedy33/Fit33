@@ -2,6 +2,63 @@ import SwiftUI
 import CoreData
 
 extension DashboardView {
+    // MARK: - Pinned Top Header (Logo + Actions + Welcome Row)
+    //
+    // Layout (pinned at the very top, above the ScrollView):
+    //   [ status bar (time / signal) ]
+    //   [ Fit33 logo + ... + profile ]
+    //   [ WELCOME BACK, NAME + Silver ]
+    //   [ scrollable dashboard content ]
+    //
+    // Uses `PinnedTabHeader` for consistent horizontal inset only — no
+    // divider, no background (`AnimatedOrbBackground` fills the ZStack).
+    // Tight vertical rhythm — no top padding on the logo so the
+    // wordmark sits right under the status bar.
+    var pinnedTopHeader: some View {
+        PinnedTabHeader {
+            // 8pt gap between the Fit33 wordmark row and the WELCOME BACK
+            // row so the two pinned rows breathe instead of stacking flush.
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                customHeaderView
+                pinnedWelcomeRow
+            }
+        }
+    }
+
+    // MARK: - Pinned Welcome Row
+    //
+    // "WELCOME BACK, NAME" + verified badge on the left, weekly
+    // league badge ("Silver", placement copy, etc.) on the right.
+    // Extracted from `headerView` so it can live in the pinned top
+    // strip above the scrollable dashboard. The welcome card below
+    // (flame + daily brief) keeps its own card chrome but no longer
+    // duplicates this row.
+    var pinnedWelcomeRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+            HStack(spacing: 4) {
+                Text("WELCOME BACK, \(getFirstName().uppercased())")
+                    .font(.ds_labelMedium)
+                    .tracking(1.4)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                if userManager.isVerified || userManager.isGoldVerified {
+                    VerifiedBadge(size: 12, isGold: userManager.isGoldVerified)
+                }
+            }
+
+            Spacer()
+
+            DashboardLeagueBadge(navigationPath: $dashboardNavPath)
+        }
+        // Match `customHeaderView`'s internal horizontal padding so the
+        // "W" in WELCOME aligns with the "F" in Fit33. Trailing keeps
+        // `Spacing.xxs`; leading is nudged to 8pt because the wordmark
+        // PNG has a touch of transparent padding before the "F".
+        .padding(.leading, 8)
+        .padding(.trailing, Spacing.xxs)
+    }
+
     // MARK: - Custom Header View
     var customHeaderView: some View {
         HStack(alignment: .center) {
@@ -234,53 +291,12 @@ extension DashboardView {
     
     var headerView: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // Top section — Mission framing replaces the old generic
-            // "Welcome back," (2026-04-27 — Daily Mission Unification).
-            // Letter-spaced caps to read as a header label, not body
-            // copy; left-aligned with the user info below so the
-            // narrative flows top-down: MISSION → name → headline.
-            // Top row — both halves in the same light-grey
-            // letter-spaced caps treatment (2026-04-27 cleanup —
-            // matches the "TODAY'S MISSION," label style across the
-            // whole greeting so the line reads as one quiet header
-            // rather than a label glued to a name).
-            HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
-                HStack(spacing: 4) {
-                    // 2026-04-27 — copy reverted from "TODAY'S MISSION, NAME"
-                    // to a simpler "WELCOME BACK, NAME". Same letter-spaced
-                    // caps treatment (system font, secondary color, tracking
-                    // 1.4) bumped one step up (`.ds_labelSmall` →
-                    // `.ds_labelMedium`) so the greeting reads at glance
-                    // distance without crowding the league badge on the right.
-                    Text("WELCOME BACK, \(getFirstName().uppercased())")
-                        .font(.ds_labelMedium)
-                        .tracking(1.4)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    if userManager.isVerified || userManager.isGoldVerified {
-                        VerifiedBadge(size: 12, isGold: userManager.isGoldVerified)
-                    }
-                }
-
-                Spacer()
-
-                // League badge — tappable, pushes the full league
-                // leaderboard view (2026-04-27). Replaces the old
-                // XP-level badge ("Legendary Master 148"). Same
-                // surface as the FriendsTab `LeagueDetail` push — no
-                // popup card, no sheet. Falls back to the level
-                // title when the user hasn't been placed in a league
-                // yet (Monday placement, fresh accounts). Widget
-                // isolation per PE invariant 9 — owns its own
-                // `@StateObject WeeklyLeagueService.shared` so league
-                // refreshes don't recompute the dashboard.
-                DashboardLeagueBadge(navigationPath: $dashboardNavPath)
-            }
-
-            // Bottom section — flame + brief. The user's name has
-            // moved to the top line, so this row is now just the
-            // streak hero + the fused brief content.
+            // 2026-04-30 — Welcome row ("WELCOME BACK, NAME" +
+            // weekly league badge) was extracted into
+            // `pinnedWelcomeRow` and now lives in the pinned top
+            // strip above the scrollable dashboard. The welcome card
+            // below keeps its own chrome but only renders the
+            // flame + daily brief content.
             HStack(spacing: 14) {
                 // Hero icon - Flame with streak counter (tappable for info)
                 Button(action: {

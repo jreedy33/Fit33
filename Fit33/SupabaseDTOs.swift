@@ -807,7 +807,19 @@ struct MealLogDTO: Codable {
     let protein: Int
     let carbs: Int
     let fat: Int
+    /// USDA FDC id (positive) OR OFF synthetic (negative bigint derived from
+    /// barcode). Swift `Int` = Int64 on all supported devices; matches the
+    /// `meal_logs.fdc_id BIGINT` column added in migration #166.
     let fdcId: Int?
+    // Detailed nutrition (added 2026-04-30, migration #166).
+    // Optional because every column was added with nullable + default NULL,
+    // and pre-existing rows return NULL.
+    let fiber: Double?
+    let sugar: Double?
+    let sodium: Double?
+    // Provenance (added 2026-04-30, migration #166).
+    let source: String?
+    let barcode: String?
     
     enum CodingKeys: String, CodingKey {
         case id, date, quantity, unit, calories, protein, carbs, fat
@@ -815,6 +827,7 @@ struct MealLogDTO: Codable {
         case mealType = "meal_type"
         case foodName = "food_name"
         case fdcId = "fdc_id"
+        case fiber, sugar, sodium, source, barcode
     }
 }
 

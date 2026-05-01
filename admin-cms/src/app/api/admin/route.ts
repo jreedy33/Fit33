@@ -57,6 +57,12 @@ const WRITE_ACTIONS = new Set([
   'extend_trial',
   'mark_refund_acknowledged',
   'update_subscription_note',
+  // New User Journey Tracking (#162) — per-user 72h behavioral telemetry.
+  // generate_new_user_report fires the edge function (Anthropic API cost +
+  // possible Supabase mutation via the report insert). update_nuj_report_status
+  // mutates `new_user_journey_reports.review_status`.
+  'generate_new_user_report',
+  'update_nuj_report_status',
 ])
 const BULK_ACTIONS = new Set([
   'bulk_update_bug_reports', 'bulk_update_crash_reports',
@@ -4509,6 +4515,159 @@ export async function POST(req: NextRequest) {
         })
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         return NextResponse.json({ result: data })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // NEW USER JOURNEY TRACKING (Migration #167)
+      // ═══════════════════════════════════════════════════
+      //
+      // High-resolution per-user behavioral telemetry for the FIRST 72 HOURS.
+      // Tables: new_user_journey_enrollment / _sessions / _events / _reports
+      // Edge fn: generate-new-user-report (Anthropic optional)
+      // See SUPABASE migration `20260803_new_user_journey_tracking.sql`.
+
+      case 'get_nuj_enrollments': {
+        const { limit = 50, only_active } = params as { limit?: number; only_active?: boolean }
+        let query = admin.from('new_user_journey_enrollment')
+          .select('*, user_profiles(name, email, username)')
+          .order('enrolled_at', { ascending: false })
+          .limit(Math.min(Math.max(limit, 1), 200))
+        if (only_active) {
+          query = query.gt('journey_ends_at', new Date().toISOString())
+        }
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ enrollments: data })
+      }
+
+      case 'get_nuj_user_detail': {
+        const { user_id } = params as { user_id: string }
+        if (!user_id) return NextResponse.json({ error: 'Missing user_id' }, { status: 400 })
+
+        const [enrollmentRes, sessionsRes, reportsRes, recentEventsRes] = await Promise.all([
+          admin.from('new_user_journey_enrollment')
+            .select('*, user_profiles(name, email, username)')
+            .eq('user_id', user_id)
+            .maybeSingle(),
+          admin.from('new_user_journey_sessions')
+            .select('*')
+            .eq('user_id', user_id)
+            .order('started_at', { ascending: false })
+            .limit(50),
+          admin.from('new_user_journey_reports')
+            .select('id, checkpoint, generated_at, window_started_at, window_ended_at, review_status, claude_model, claude_tokens_in, claude_tokens_out, reviewed_by, reviewed_at, notes')
+            .eq('user_id', user_id)
+            .order('generated_at', { ascending: false }),
+          admin.from('new_user_journey_events')
+            .select('id, session_id, occurred_at, event_type, screen, detail, payload, is_error, severity')
+            .eq('user_id', user_id)
+            .order('occurred_at', { ascending: false })
+            .limit(200),
+        ])
+
+        if (enrollmentRes.error) return NextResponse.json({ error: enrollmentRes.error.message }, { status: 500 })
+        return NextResponse.json({
+          enrollment: enrollmentRes.data,
+          sessions: sessionsRes.data ?? [],
+          reports: reportsRes.data ?? [],
+          recent_events: recentEventsRes.data ?? [],
+        })
+      }
+
+      case 'get_nuj_report': {
+        const { report_id } = params as { report_id: string }
+        if (!report_id) return NextResponse.json({ error: 'Missing report_id' }, { status: 400 })
+        const { data, error } = await admin.from('new_user_journey_reports')
+          .select('*, user_profiles(name, email, username)')
+          .eq('id', report_id)
+          .maybeSingle()
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ report: data })
+      }
+
+      case 'get_nuj_cohort_summary': {
+        const { days = 7 } = params as { days?: number }
+        const cutoff = new Date(Date.now() - Math.min(Math.max(days, 1), 90) * 86_400_000).toISOString()
+
+        const { data, error } = await admin.from('new_user_journey_enrollment')
+          .select('user_id, enrolled_at, completed_onboarding, completed_first_workout, logged_first_meal, added_first_friend, connected_wearable, saw_paywall, converted_paywall, total_events, total_sessions, total_errors, total_crashes, install_app_version, install_device_model, auth_provider')
+          .gte('enrolled_at', cutoff)
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        const rows = data ?? []
+        const total = rows.length
+        const safeAvg = (sum: number) => total > 0 ? Math.round((sum / total) * 100) / 100 : 0
+        const safePct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
+
+        const summary = {
+          total_enrollments: total,
+          completed_onboarding_pct:    safePct(rows.filter(r => r.completed_onboarding).length),
+          completed_first_workout_pct: safePct(rows.filter(r => r.completed_first_workout).length),
+          logged_first_meal_pct:       safePct(rows.filter(r => r.logged_first_meal).length),
+          added_first_friend_pct:      safePct(rows.filter(r => r.added_first_friend).length),
+          connected_wearable_pct:      safePct(rows.filter(r => r.connected_wearable).length),
+          saw_paywall_pct:             safePct(rows.filter(r => r.saw_paywall).length),
+          converted_paywall_pct:       safePct(rows.filter(r => r.converted_paywall).length),
+          avg_events_per_user:    safeAvg(rows.reduce((s, r) => s + (r.total_events ?? 0), 0)),
+          avg_sessions_per_user:  safeAvg(rows.reduce((s, r) => s + (r.total_sessions ?? 0), 0)),
+          avg_errors_per_user:    safeAvg(rows.reduce((s, r) => s + (r.total_errors ?? 0), 0)),
+          avg_crashes_per_user:   safeAvg(rows.reduce((s, r) => s + (r.total_crashes ?? 0), 0)),
+        }
+        return NextResponse.json({ summary, rows_used: total, days })
+      }
+
+      case 'generate_new_user_report': {
+        const { user_id, checkpoint, dispatch_to_claude } = params as {
+          user_id: string; checkpoint?: string; dispatch_to_claude?: boolean
+        }
+        if (!user_id) return NextResponse.json({ error: 'Missing user_id' }, { status: 400 })
+
+        const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+        if (!supaUrl || !serviceKey) {
+          return NextResponse.json({ error: 'Edge function config missing (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)' }, { status: 500 })
+        }
+
+        const res = await fetch(`${supaUrl}/functions/v1/generate-new-user-report`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({
+            source: 'manual',
+            user_id,
+            checkpoint: checkpoint ?? 'MANUAL',
+            dispatch_to_claude: dispatch_to_claude !== false,
+          }),
+        })
+        const text = await res.text()
+        let payload: unknown
+        try { payload = JSON.parse(text) } catch { payload = { raw: text } }
+        if (!res.ok) return NextResponse.json({ error: 'Edge function failed', payload }, { status: 502 })
+        return NextResponse.json({ ok: true, result: payload })
+      }
+
+      case 'update_nuj_report_status': {
+        const { report_id, status: newStatus, notes } = params as {
+          report_id: string; status: string; notes?: string
+        }
+        if (!report_id || !newStatus) return NextResponse.json({ error: 'report_id and status required' }, { status: 400 })
+        const allowed = new Set(['pending', 'reviewed', 'actioned', 'archived'])
+        if (!allowed.has(newStatus)) return NextResponse.json({ error: 'invalid status' }, { status: 400 })
+
+        const update: Record<string, unknown> = {
+          review_status: newStatus,
+          reviewed_by: adminAuth.email,
+          reviewed_at: new Date().toISOString(),
+        }
+        if (notes !== undefined) update.notes = notes
+
+        const { error } = await admin.from('new_user_journey_reports')
+          .update(update)
+          .eq('id', report_id)
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ success: true })
       }
 
       default:

@@ -5119,6 +5119,12 @@ class SupabaseManager: ObservableObject {
         guard let userId = currentUser?.id,
               let mealId = meal.id?.uuidString else { return }
         
+        // OFF (Open Food Facts) products use synthetic NEGATIVE bigint fdcIds —
+        // we send any non-zero id (positive USDA OR negative OFF) and only
+        // strip the sentinel `0` (= "no provenance"). Filtering on `> 0` here
+        // would silently drop every OFF meal log from cloud history.
+        // The DB column was widened to BIGINT in supabase/20260801…off_barcode.sql
+        // and meal_logs in supabase/20260802_meal_logs_off_columns.sql.
         let mealDTO = MealLogDTO(
             id: mealId,
             userId: userId.uuidString,
@@ -5131,7 +5137,12 @@ class SupabaseManager: ObservableObject {
             protein: Int(meal.protein),
             carbs: Int(meal.carbs),
             fat: Int(meal.fat),
-            fdcId: meal.fdcId > 0 ? Int(meal.fdcId) : nil
+            fdcId: meal.fdcId != 0 ? Int(meal.fdcId) : nil,
+            fiber: meal.fiber > 0 ? meal.fiber : nil,
+            sugar: meal.sugar > 0 ? meal.sugar : nil,
+            sodium: meal.sodium > 0 ? meal.sodium : nil,
+            source: meal.source,
+            barcode: meal.barcode
         )
         
         try await client
@@ -5180,6 +5191,12 @@ class SupabaseManager: ObservableObject {
     private func syncMealLogsToCoreData(meals: [MealLogDTO]) async {
         let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
         let isoFormatter = iso8601Formatter
+        // Track which meals are NEW (vs already-known dedupes) so we can fire
+        // daily-quest fan-out for cross-device meal logs. Without this hook,
+        // a meal logged on iPhone was invisible to the Apple Watch's quest
+        // engine until the device round-tripped through `addMealEntry`.
+        // Bug found by 2026-04-30 nutrition pipeline audit.
+        var newlyInsertedMealTypes: [String] = []
         
         await bgContext.perform {
             let userRequest: NSFetchRequest<User> = User.fetchRequest()
@@ -5212,8 +5229,16 @@ class SupabaseManager: ObservableObject {
                         meal.protein = Int32(mealDTO.protein)
                         meal.carbs = Int32(mealDTO.carbs)
                         meal.fat = Int32(mealDTO.fat)
-                        meal.fdcId = Int32(mealDTO.fdcId ?? 0)
+                        // Int64 cast (was Int32) — required for OFF synthetic
+                        // negative bigints from `meal_logs.fdc_id BIGINT`.
+                        meal.fdcId = Int64(mealDTO.fdcId ?? 0)
+                        meal.fiber = mealDTO.fiber ?? 0
+                        meal.sugar = mealDTO.sugar ?? 0
+                        meal.sodium = mealDTO.sodium ?? 0
+                        meal.source = mealDTO.source
+                        meal.barcode = mealDTO.barcode
                         meal.user = user
+                        newlyInsertedMealTypes.append(mealDTO.mealType)
                     }
                 } catch {
                     _ = NetworkErrorClassifier.log(
@@ -5240,6 +5265,27 @@ class SupabaseManager: ObservableObject {
                     userId: self.currentUser?.id
                 )
             }
+        }
+        
+        // Daily-quest fan-out for cross-device meal logs (was MISSING).
+        // `MealService.addMealEntry` fires per-meal-type quests + log3Meals +
+        // protein progress, but ONLY for the local-write path. Until this
+        // hook landed, a Watch-logged or web-logged meal never advanced
+        // quests on iPhone after sync. Audit caught 2026-04-30.
+        if !newlyInsertedMealTypes.isEmpty {
+            await MainActor.run {
+                // Reload todaysMeals so dashboard + protein-goal recompute
+                // reflect the freshly-pulled rows BEFORE quests fan out.
+                MealService.shared.loadTodaysMeals()
+            }
+            for mealType in newlyInsertedMealTypes {
+                await DailyQuestService.shared.onMealLogged(mealType: mealType)
+            }
+            // log3Meals is bumped per-call inside `onMealLogged`, so the
+            // loop above already covers it. Protein progress recomputes
+            // from `todaysMeals.reduce` on the next addMealEntry; no need
+            // to duplicate here (would double-count if the user is also
+            // logging locally in the same window).
         }
     }
     

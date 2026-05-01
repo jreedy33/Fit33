@@ -726,8 +726,11 @@ struct MealEntryRow: View {
                     .foregroundColor(.secondary)
             }
             
-            // Favorite star button
-            if entry.fdcId > 0 {
+            // Favorite star button. Allow ANY non-zero fdcId — OFF rows
+            // have NEGATIVE bigint ids (synthetic from barcode), and we want
+            // them favoritable too. The pre-2026-04-30 `> 0` check silently
+            // hid the star on every barcode-scanned product.
+            if entry.fdcId != 0 {
                 Button(action: toggleFavorite) {
                     Image(systemName: isFavorite ? "star.fill" : "star")
                         .font(.ds_bodyRegular)
@@ -746,15 +749,16 @@ struct MealEntryRow: View {
         .background(colorScheme == .dark ? Color(white: 0.18) : Color(.systemBackground))
         .cornerRadius(CornerRadius.sm)
         .onAppear {
-            // Check if this food is already favorited
-            if entry.fdcId > 0 {
+            // Check if this food is already favorited (USDA positive OR OFF negative).
+            if entry.fdcId != 0 {
                 isFavorite = foodService.isFavorite(foodItemId: entry.fdcId)
             }
         }
     }
     
     private func toggleFavorite() {
-        guard entry.fdcId > 0 else { return }
+        // Accept negative OFF synthetic ids — see fdcId comment above.
+        guard entry.fdcId != 0 else { return }
         
         Task {
             await foodService.toggleFavorite(fdcId: entry.fdcId, foodItemId: entry.fdcId)
@@ -1443,14 +1447,15 @@ struct SavedMealDetailView: View {
         
         let foodEntry = FoodEntry(
             name: meal.name,
-            quantity: portionServings,
+            quantity: Double(portionServings),
             unit: portionServings == 1 ? "serving" : "servings",
             calories: caloriesPerServing * portionServings,
             protein: proteinPerServing * portionServings,
             carbs: carbsPerServing * portionServings,
             fat: fatPerServing * portionServings,
             fdcId: nil,
-            foodItemId: nil
+            foodItemId: nil,
+            source: "manual"
         )
         
         MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user)

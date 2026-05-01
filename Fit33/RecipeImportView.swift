@@ -950,14 +950,15 @@ struct MenuItemAddSheet: View {
         
         let foodEntry = FoodEntry(
             name: menuItem.title,
-            quantity: servings,
+            quantity: Double(servings),
             unit: "serving",
             calories: menuItem.calories * servings,
             protein: Int(menuItem.protein * Double(servings)),
             carbs: Int(menuItem.carbs * Double(servings)),
             fat: Int(menuItem.fat * Double(servings)),
             fdcId: menuItem.id,
-            foodItemId: menuItem.id
+            foodItemId: menuItem.id,
+            source: "spoonacular"
         )
         
         MealService.shared.addMealEntry(foodEntry, mealType: selectedMealType, user: user)

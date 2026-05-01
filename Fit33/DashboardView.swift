@@ -196,19 +196,19 @@ struct DashboardView: View {
                 // Animated background with colored orbs
                 AnimatedOrbBackground.home(colorScheme: colorScheme)
                     .accessibilityHidden(true)
-                
-                ScrollViewReader { scrollProxy in
-                    ScrollView(showsIndicators: false) {
+
+                // Pinned header + scroll share one full-screen orb behind
+                // the ZStack so the header strip stays see-through.
+                VStack(spacing: 0) {
+                    pinnedTopHeader
+
+                    ScrollViewReader { scrollProxy in
+                        ScrollView(showsIndicators: false) {
                     Color.clear
                     .frame(height: 0)
                     .id("top")
                     
                     LazyVStack(spacing: 0) {
-                    // Custom header with title and profile icon
-                    customHeaderView
-                        .padding(.top, 0)
-                        .padding(.bottom, 16)
-                    
                     DashboardNotificationBannerWrapper()
 
                     // Sprint 2 Q2-34 — shows when a workout save failed offline and is queued for retry.
@@ -416,6 +416,8 @@ struct DashboardView: View {
                     let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - refreshStart) * 1000)
                     AppLogger.debug("[DASHBOARD] Pull-to-refresh visible-work completed in \(elapsedMs)ms (timed_out: \(timedOut))", category: .ui)
                 }
+                }   // closes VStack(spacing: 0) — pinned-header wrapper
+                .padding(.top, TabPinnedChrome.rootTopPullUp)
             }
             .navigationBarHidden(true)
             .adaptiveToolbarBackground()

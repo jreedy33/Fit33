@@ -41,20 +41,23 @@ enum DailyGoalsWidgetSnapshot {
             return min(Double(currentValue) / Double(targetValue), 1.0)
         }
 
-        /// Mirror of `DailyQuest.categoryEmoji` in the main app — used as
-        /// the centerpiece of the progress ring so the widget matches the
-        /// in-app card identity at a glance.
+        /// Mirror of `DailyQuest.categoryEmoji` in the main app — delegates
+        /// to `QuestEmojiResolver` so widget cards show the same smart,
+        /// content-aware emoji as in-app cards (e.g. "Heart Health" → ❤️,
+        /// "Strawberry Smoothie" → 🍓, "Drink 8 Glasses of Water" → 🚰).
+        ///
+        /// `quest_key` isn't part of the widget snapshot today (we'd have to
+        /// bump the App Group payload version to add it). Until that ship,
+        /// the resolver falls back to the keyword scan + funLabel/category
+        /// path, which already covers the seeded server templates well.
         var categoryEmoji: String {
-            switch category {
-            case "workout":   return "💪"
-            case "nutrition": return "🥗"
-            case "social":    return "👥"
-            case "steps":     return "🚶"
-            case "tracking":  return "📊"
-            case "wildcard":  return "🌟"
-            case "reward":    return "📺"
-            default:          return "⭐"
-            }
+            QuestEmojiResolver.resolve(
+                questKey: "",
+                title: title,
+                description: description ?? "",
+                category: category,
+                funLabel: funLabel
+            )
         }
 
         /// Mirror of `DailyQuest.categoryColor` — drives the progress ring,

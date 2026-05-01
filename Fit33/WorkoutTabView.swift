@@ -338,15 +338,21 @@ struct WorkoutHomeView: View {
     
     var body: some View {
         ZStack {
-        ScrollViewReader { scrollProxy in
+        // Pinned title row + scroll share one full-screen orb (scroll no
+        // longer owns the background alone — avoids a dark band above).
+        AnimatedOrbBackground.workout(colorScheme: colorScheme)
+            .accessibilityHidden(true)
+
+        VStack(spacing: 0) {
+            PinnedTabHeader {
+                customWorkoutHeaderView
+            }
+
+            ScrollViewReader { scrollProxy in
             ScrollView(.vertical) {
                 Color.clear.frame(height: 0).id("top")
                 
                 VStack(spacing: 0) {
-                customWorkoutHeaderView
-                    .padding(.top, 0)
-                    .padding(.bottom, 16)
-                
                 VStack(spacing: 20) {
                     // Quick Actions
                     quickActionsSection
@@ -362,6 +368,7 @@ struct WorkoutHomeView: View {
             .padding(.horizontal, Spacing.md)
             .padding(.bottom, 20)
             }
+            .scrollContentBackground(.hidden)
             .onAppear {
                 // Force immediate rendering
                 forceRenderID = UUID()
@@ -378,14 +385,13 @@ struct WorkoutHomeView: View {
                 guard !Task.isCancelled else { return }
                 await loadCardioWorkoutsThisWeek()
             }
-            .background(
-                AnimatedOrbBackground.workout(colorScheme: colorScheme)
-            )
             .contentMargins(.top, 0, for: .scrollContent)
             .onChange(of: scrollToTopTrigger) { _, _ in
                 scrollProxy.scrollTo("top", anchor: .top)
             }
         }
+        }   // closes VStack(spacing: 0) — pinned-header wrapper
+        .padding(.top, TabPinnedChrome.rootTopPullUp)
         }
         .scrollDismissesKeyboard(.immediately)
         .onTapGesture {

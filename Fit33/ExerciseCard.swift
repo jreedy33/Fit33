@@ -36,6 +36,9 @@ struct ExerciseCard: View {
     @State private var showingRestTimerSheet = false
     @State private var showingReplaceExercise = false
     @State private var showingRenameExercise = false
+    // Drives the "..." action sheet (replaces the previous SwiftUI `Menu`).
+    // See the comment on the trigger button below for why we moved off `Menu`.
+    @State private var showingActionSheet = false
     @State private var activeTimerSetNumber: Int? = nil // Track which set currently has an active timer
     @State private var isFavorite: Bool = false
     @State private var dragOffset: CGFloat = 0
@@ -457,36 +460,38 @@ struct ExerciseCard: View {
                 .buttonStyle(PlainButtonStyle())
                 .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
                 
-                // Contextual menu for exercise actions
-                Menu {
-                    Button(role: .destructive) {
-                        onRemoveExercise()
-                    } label: {
-                        Label("Remove Exercise", systemImage: "trash")
-                    }
-                    Button {
-                        showingReplaceExercise = true
-                    } label: {
-                        Label("Replace Exercise", systemImage: "arrow.triangle.swap")
-                    }
-                    Button {
-                        showingRenameExercise = true
-                    } label: {
-                        Label("Rename Exercise", systemImage: "pencil")
-                    }
-                    Button {
-                        showingRestTimerSheet = true
-                    } label: {
-                        Label("Add Rest Timer", systemImage: "timer")
-                    }
+                // Contextual actions trigger. Opens a `.popover` anchored
+                // directly to this Button (so the arrow visibly points at
+                // the "..." icon), with `.presentationCompactAdaptation(
+                // .popover)` so iPhone keeps the popover style instead of
+                // falling back to a sheet.
+                //
+                // Why we got here (2026-04-29, three iterations):
+                //   1. SwiftUI `Menu` — items unreliable to tap because the
+                //      Menu's popover anchor was perturbed by this card's
+                //      `.shadow` x2 / `.offset` / `.scaleEffect` /
+                //      `.animation` x3 / `RestTimer` `CADisplayLink` (60+
+                //      FPS republish) modifiers. Items also visibly
+                //      flickered when a `.simultaneousGesture` on the card
+                //      root double-fired the focus-change handler on Menu
+                //      open.
+                //   2. `.confirmationDialog` — bulletproof tap reliability,
+                //      but presented far from the trigger (centered popover
+                //      / bottom sheet depending on iOS adaptation), which
+                //      lost the visual connection to the "..." icon.
+                //   3. `.popover` (this) — anchored to the Button so the
+                //      arrow points at the "..." icon, AND uses regular
+                //      SwiftUI Buttons inside (which have reliable tap
+                //      recognition unlike Menu items).
+                Button {
+                    HapticManager.selectionChanged()
+                    showingActionSheet = true
                 } label: {
-                    // Apple HIG: minimum 44pt tap target. Use `Color.clear` as
-                    // the layout claim so SwiftUI's hit-testing geometry matches
-                    // the visible 44pt rectangle EXACTLY (a chained `.frame()`
-                    // after a `.background()` previously left the contentShape
-                    // ambiguous for the Menu's gesture recognizer, causing
-                    // "tap doesn't always register" — 2026-04-29). Visual
-                    // circle stays 36pt via the overlay.
+                    // 44pt `Color.clear` hit area with a 36pt visible circle
+                    // overlay — keeps SwiftUI's hit-testing rectangle == the
+                    // visible tap target so the trigger itself stays
+                    // reliable (this was the original 2026-04-29 fix for
+                    // "tap doesn't always register on first try").
                     Color.clear
                         .frame(width: 44, height: 44)
                         .overlay(
@@ -501,8 +506,34 @@ struct ExerciseCard: View {
                         )
                         .contentShape(Rectangle())
                 }
+                .buttonStyle(PlainButtonStyle())
                 .accessibilityLabel("Exercise actions")
                 .accessibilityHint("Remove, replace, rename, or set rest timer")
+                .popover(
+                    isPresented: $showingActionSheet,
+                    attachmentAnchor: .point(.bottom),
+                    arrowEdge: .top
+                ) {
+                    ExerciseActionsPopover(
+                        onReplace: {
+                            showingActionSheet = false
+                            showingReplaceExercise = true
+                        },
+                        onRename: {
+                            showingActionSheet = false
+                            showingRenameExercise = true
+                        },
+                        onAddRestTimer: {
+                            showingActionSheet = false
+                            showingRestTimerSheet = true
+                        },
+                        onRemove: {
+                            showingActionSheet = false
+                            onRemoveExercise()
+                        }
+                    )
+                    .presentationCompactAdaptation(.popover)
+                }
             }
             .fixedSize() // Keep icons at their natural size
         }
@@ -665,5 +696,67 @@ struct ExerciseCard: View {
         }
         
         return nil
+    }
+}
+
+// MARK: - Exercise Actions Popover
+//
+// Anchored popover content for the "..." button on `ExerciseCard`. Lives in
+// its own struct (instead of inline `Menu { ... }` content) for two reasons:
+//   1. Tap reliability: SwiftUI Buttons inside a popover have rock-solid hit
+//      testing, vs. iOS `Menu` items which were flaky on the parent card's
+//      animated/shadowed/timer-republishing geometry (see the trigger
+//      Button's comment for the full history).
+//   2. Identity stability: a dedicated struct's body only re-evaluates when
+//      its inputs (the four closures) change identity, not on every parent
+//      re-render. This was a contributor to the previous `Menu`'s items
+//      "flickering" on open.
+//
+// Visual: matches iOS popover conventions — rounded vibrancy background
+// supplied by the `.popover` presentation, full-width 44pt+ rows with an
+// SF Symbol leading icon and trailing chevron-style spacing. Destructive
+// "Remove Exercise" row is tinted red via Button(role:).
+private struct ExerciseActionsPopover: View {
+    let onReplace: () -> Void
+    let onRename: () -> Void
+    let onAddRestTimer: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            row(label: "Replace Exercise", systemImage: "arrow.triangle.swap", action: onReplace)
+            Divider()
+            row(label: "Rename Exercise", systemImage: "pencil", action: onRename)
+            Divider()
+            row(label: "Add Rest Timer", systemImage: "timer", action: onAddRestTimer)
+            Divider()
+            row(label: "Remove Exercise", systemImage: "trash", role: .destructive, action: onRemove)
+        }
+        .frame(minWidth: 240)
+    }
+
+    @ViewBuilder
+    private func row(
+        label: String,
+        systemImage: String,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.body)
+                    .frame(width: 22, alignment: .center)
+                Text(label)
+                    .font(.body)
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(role == .destructive ? .red : .primary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

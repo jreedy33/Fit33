@@ -198,8 +198,17 @@ struct ProcessedFoodItem: Identifiable {
     let servingUnit: String
     let nutrition: NutritionInfo
     let portions: [FoodPortion]
-    let dataType: String?  // "Foundation", "SR Legacy", "Branded", etc.
-    
+    let dataType: String?  // "Foundation", "SR Legacy", "Branded", "OFF" etc.
+    // OFF integration (2026-04-30) — these are ALL nil for USDA / local-list rows.
+    // - `source` = "off" → render the ODbL attribution footer on FoodDetailsView
+    //   (license requirement) and slot the row into the "OFF" ranker tier.
+    // - `barcode` = the scanned EAN/UPC; preserved so the meal entry can be
+    //   re-resolved on a different device by barcode (cross-device cache hit).
+    // - `imageUrl` = OFF small product image, used by the scanner result card.
+    var source: String? = nil
+    var barcode: String? = nil
+    var imageUrl: String? = nil
+
     var displayName: String {
         if let brandName = brandName, !brandName.isEmpty {
             return "\(brandName) - \(name)"
@@ -674,6 +683,206 @@ class USDAFoodService: ObservableObject {
             makeLocalFood(id: 388, name: "Pancakes", category: "Prepared Foods", cal: 227, p: 6, c: 38, f: 5, satFat: 1.4, fiber: 1.2, sugar: 8, sodium: 439, chol: 22, calcium: 83, iron: 1.6, vitC: 0),
             makeLocalFood(id: 389, name: "Waffles", category: "Prepared Foods", cal: 291, p: 8, c: 33, f: 14, satFat: 2.9, fiber: 1.5, sugar: 5, sodium: 511, chol: 52, calcium: 196, iron: 2.1, vitC: 0),
             makeLocalFood(id: 390, name: "French Toast", category: "Prepared Foods", cal: 229, p: 8, c: 24, f: 11, satFat: 2.6, fiber: 0.7, sugar: 7, sodium: 435, chol: 87, calcium: 86, iron: 1.7, vitC: 0),
+
+            // ===== SNACKS & CHIPS (15+ items) =====
+            // Backfilled 2026-04-30 after a production auth bug exposed the
+            // limits of the local list — users searched "potato chips" and got
+            // nothing because the cloud was 401-ing. Per-100g values; users
+            // pick the unit (`oz`, `serving`, `g`) in FoodDetailsView.
+            makeLocalFood(id: 400, name: "Potato Chips", category: "Snacks", cal: 536, p: 7, c: 53, f: 35, satFat: 4.5, fiber: 4, sugar: 0.4, sodium: 525, chol: 0, calcium: 24, iron: 1.6, vitC: 31),
+            makeLocalFood(id: 401, name: "Potato Chips, baked", category: "Snacks", cal: 462, p: 7, c: 71, f: 16, satFat: 1.7, fiber: 5, sugar: 5, sodium: 643, chol: 0, calcium: 28, iron: 1.5, vitC: 26),
+            makeLocalFood(id: 402, name: "Tortilla Chips", category: "Snacks", cal: 503, p: 7, c: 64, f: 24, satFat: 3, fiber: 6, sugar: 0.5, sodium: 392, chol: 0, calcium: 134, iron: 1.5, vitC: 0),
+            makeLocalFood(id: 403, name: "Doritos, nacho cheese", category: "Snacks", cal: 500, p: 7, c: 60, f: 25, satFat: 3.5, fiber: 4, sugar: 4, sodium: 570, chol: 0, calcium: 100, iron: 1.4, vitC: 0),
+            makeLocalFood(id: 404, name: "Cheetos, crunchy", category: "Snacks", cal: 571, p: 7, c: 57, f: 36, satFat: 5, fiber: 1.4, sugar: 1.4, sodium: 1071, chol: 0, calcium: 71, iron: 1.3, vitC: 0),
+            makeLocalFood(id: 405, name: "Pretzels, hard", category: "Snacks", cal: 384, p: 10, c: 80, f: 3.1, satFat: 0.7, fiber: 3.4, sugar: 1.5, sodium: 1240, chol: 0, calcium: 36, iron: 4.6, vitC: 0),
+            makeLocalFood(id: 406, name: "Popcorn, air-popped", category: "Snacks", cal: 387, p: 13, c: 78, f: 4.5, satFat: 0.7, fiber: 14.5, sugar: 0.9, sodium: 8, chol: 0, calcium: 7, iron: 3.2, vitC: 0),
+            makeLocalFood(id: 407, name: "Popcorn, microwave butter", category: "Snacks", cal: 488, p: 8, c: 56, f: 25, satFat: 4.3, fiber: 9.6, sugar: 0.5, sodium: 763, chol: 0, calcium: 13, iron: 1.9, vitC: 0),
+            makeLocalFood(id: 408, name: "Popcorn, kettle corn", category: "Snacks", cal: 470, p: 7, c: 75, f: 17, satFat: 2.5, fiber: 8, sugar: 13, sodium: 416, chol: 0, calcium: 8, iron: 1.5, vitC: 0),
+            makeLocalFood(id: 409, name: "Crackers, saltine", category: "Snacks", cal: 421, p: 9, c: 71, f: 11, satFat: 1.7, fiber: 2.7, sugar: 0.7, sodium: 1100, chol: 0, calcium: 27, iron: 5.1, vitC: 0),
+            makeLocalFood(id: 410, name: "Crackers, Ritz", category: "Snacks", cal: 487, p: 6, c: 64, f: 23, satFat: 4, fiber: 2, sugar: 8, sodium: 786, chol: 0, calcium: 36, iron: 4, vitC: 0),
+            makeLocalFood(id: 411, name: "Cheez-Its", category: "Snacks", cal: 503, p: 12, c: 56, f: 25, satFat: 6, fiber: 3, sugar: 1, sodium: 1233, chol: 13, calcium: 167, iron: 4.6, vitC: 0),
+            makeLocalFood(id: 412, name: "Goldfish Crackers", category: "Snacks", cal: 482, p: 11, c: 64, f: 18, satFat: 3.6, fiber: 2, sugar: 4, sodium: 893, chol: 7, calcium: 71, iron: 4.3, vitC: 0),
+            makeLocalFood(id: 413, name: "Pita Chips", category: "Snacks", cal: 467, p: 10, c: 67, f: 17, satFat: 2.3, fiber: 3, sugar: 2, sodium: 833, chol: 0, calcium: 30, iron: 3.5, vitC: 0),
+            makeLocalFood(id: 414, name: "Trail Mix", category: "Snacks", cal: 462, p: 14, c: 45, f: 29, satFat: 5.5, fiber: 5, sugar: 24, sodium: 178, chol: 0, calcium: 78, iron: 3, vitC: 1.4),
+            makeLocalFood(id: 415, name: "Granola Bar", category: "Snacks", cal: 471, p: 10, c: 64, f: 20, satFat: 2.4, fiber: 4.4, sugar: 28, sodium: 294, chol: 0, calcium: 76, iron: 2.4, vitC: 0),
+            makeLocalFood(id: 416, name: "Protein Bar", category: "Snacks", cal: 380, p: 35, c: 30, f: 12, satFat: 5, fiber: 7, sugar: 10, sodium: 380, chol: 25, calcium: 250, iron: 5, vitC: 0),
+            makeLocalFood(id: 417, name: "Beef Jerky, teriyaki", category: "Snacks", cal: 410, p: 33, c: 11, f: 26, satFat: 10.8, fiber: 0, sugar: 9, sodium: 2081, chol: 65, calcium: 20, iron: 6.1, vitC: 0),
+
+            // ===== PREPARED SALADS (15+ items) =====
+            makeLocalFood(id: 420, name: "Caesar Salad", category: "Salads", cal: 190, p: 6, c: 7, f: 16, satFat: 4, fiber: 2, sugar: 2, sodium: 470, chol: 18, calcium: 95, iron: 1.2, vitC: 12),
+            makeLocalFood(id: 421, name: "Caesar Salad, with chicken", category: "Salads", cal: 200, p: 14, c: 6, f: 13, satFat: 3.5, fiber: 2, sugar: 2, sodium: 480, chol: 50, calcium: 90, iron: 1.5, vitC: 10),
+            makeLocalFood(id: 422, name: "Garden Salad", category: "Salads", cal: 17, p: 1, c: 3.5, f: 0.2, satFat: 0, fiber: 1.6, sugar: 1.5, sodium: 28, chol: 0, calcium: 32, iron: 0.7, vitC: 13),
+            makeLocalFood(id: 423, name: "Cobb Salad", category: "Salads", cal: 130, p: 9, c: 4, f: 9, satFat: 3, fiber: 2, sugar: 2, sodium: 360, chol: 60, calcium: 65, iron: 1, vitC: 12),
+            makeLocalFood(id: 424, name: "Greek Salad", category: "Salads", cal: 110, p: 4, c: 6, f: 8, satFat: 2.5, fiber: 2, sugar: 4, sodium: 380, chol: 12, calcium: 100, iron: 1, vitC: 25),
+            makeLocalFood(id: 425, name: "Tuna Salad", category: "Salads", cal: 187, p: 16, c: 9, f: 9, satFat: 1.6, fiber: 0, sugar: 5, sodium: 402, chol: 27, calcium: 17, iron: 1, vitC: 2),
+            makeLocalFood(id: 426, name: "Chicken Salad", category: "Salads", cal: 240, p: 16, c: 5, f: 18, satFat: 3.2, fiber: 1, sugar: 3, sodium: 415, chol: 56, calcium: 18, iron: 0.8, vitC: 1),
+            makeLocalFood(id: 427, name: "Egg Salad", category: "Salads", cal: 263, p: 10, c: 2, f: 24, satFat: 5, fiber: 0, sugar: 2, sodium: 420, chol: 290, calcium: 60, iron: 1.5, vitC: 0),
+            makeLocalFood(id: 428, name: "Pasta Salad", category: "Salads", cal: 174, p: 4, c: 22, f: 8, satFat: 1.3, fiber: 1.5, sugar: 3, sodium: 280, chol: 5, calcium: 16, iron: 1, vitC: 4),
+            makeLocalFood(id: 429, name: "Potato Salad", category: "Salads", cal: 143, p: 2.7, c: 11, f: 10, satFat: 1.8, fiber: 1.3, sugar: 2, sodium: 528, chol: 67, calcium: 16, iron: 0.6, vitC: 11),
+            makeLocalFood(id: 430, name: "Coleslaw", category: "Salads", cal: 152, p: 1, c: 14, f: 11, satFat: 1.6, fiber: 1.8, sugar: 11, sodium: 235, chol: 7, calcium: 35, iron: 0.5, vitC: 24),
+            makeLocalFood(id: 431, name: "Macaroni Salad", category: "Salads", cal: 198, p: 4, c: 24, f: 9, satFat: 1.4, fiber: 1.2, sugar: 4, sodium: 370, chol: 8, calcium: 14, iron: 1.2, vitC: 2),
+            makeLocalFood(id: 432, name: "Spinach Salad", category: "Salads", cal: 95, p: 4, c: 6, f: 7, satFat: 1.2, fiber: 2.5, sugar: 2, sodium: 220, chol: 8, calcium: 100, iron: 2.5, vitC: 25),
+            makeLocalFood(id: 433, name: "Quinoa Salad", category: "Salads", cal: 168, p: 5, c: 22, f: 7, satFat: 0.9, fiber: 3, sugar: 2, sodium: 245, chol: 0, calcium: 30, iron: 1.6, vitC: 8),
+            makeLocalFood(id: 434, name: "Caesar Dressing", category: "Condiments", cal: 425, p: 4, c: 5, f: 45, satFat: 7, fiber: 0, sugar: 4, sodium: 1064, chol: 38, calcium: 64, iron: 0.4, vitC: 0),
+
+            // ===== FAST FOOD (20+ items) =====
+            makeLocalFood(id: 440, name: "Big Mac", category: "Fast Food", cal: 251, p: 13, c: 19, f: 14, satFat: 5, fiber: 1.5, sugar: 4, sodium: 414, chol: 36, calcium: 91, iron: 2, vitC: 1),
+            makeLocalFood(id: 441, name: "Quarter Pounder with Cheese", category: "Fast Food", cal: 240, p: 14, c: 18, f: 12, satFat: 5.5, fiber: 1, sugar: 4, sodium: 470, chol: 50, calcium: 100, iron: 2.2, vitC: 1),
+            makeLocalFood(id: 442, name: "McDonald's Cheeseburger", category: "Fast Food", cal: 252, p: 13, c: 28, f: 10, satFat: 4.4, fiber: 1.4, sugar: 6, sodium: 583, chol: 35, calcium: 153, iron: 2.4, vitC: 1),
+            makeLocalFood(id: 443, name: "McDonald's French Fries", category: "Fast Food", cal: 312, p: 3.4, c: 41, f: 15, satFat: 2.3, fiber: 4, sugar: 0.3, sodium: 200, chol: 0, calcium: 12, iron: 0.8, vitC: 6),
+            makeLocalFood(id: 444, name: "Whopper", category: "Fast Food", cal: 235, p: 12, c: 19, f: 13, satFat: 4.4, fiber: 1.5, sugar: 4, sodium: 420, chol: 40, calcium: 67, iron: 2.5, vitC: 2),
+            makeLocalFood(id: 445, name: "Chicken Nuggets", category: "Fast Food", cal: 297, p: 14, c: 18, f: 19, satFat: 3.4, fiber: 1, sugar: 0.5, sodium: 540, chol: 50, calcium: 14, iron: 0.9, vitC: 0),
+            makeLocalFood(id: 446, name: "Chicken Tenders", category: "Fast Food", cal: 263, p: 16, c: 16, f: 16, satFat: 3, fiber: 0.6, sugar: 0.3, sodium: 565, chol: 60, calcium: 18, iron: 0.9, vitC: 0),
+            makeLocalFood(id: 447, name: "McChicken Sandwich", category: "Fast Food", cal: 266, p: 11, c: 27, f: 13, satFat: 2.2, fiber: 1.4, sugar: 4, sodium: 545, chol: 30, calcium: 91, iron: 2.4, vitC: 2),
+            makeLocalFood(id: 448, name: "Egg McMuffin", category: "Fast Food", cal: 234, p: 13, c: 26, f: 9, satFat: 3.7, fiber: 1.7, sugar: 2.6, sodium: 526, chol: 158, calcium: 213, iron: 2.4, vitC: 0),
+            makeLocalFood(id: 449, name: "Sausage McMuffin", category: "Fast Food", cal: 290, p: 13, c: 21, f: 17, satFat: 6, fiber: 1.5, sugar: 2, sodium: 533, chol: 50, calcium: 152, iron: 2.3, vitC: 0),
+            makeLocalFood(id: 450, name: "Filet-O-Fish", category: "Fast Food", cal: 263, p: 11, c: 27, f: 13, satFat: 2.5, fiber: 1.4, sugar: 4, sodium: 488, chol: 32, calcium: 142, iron: 1.6, vitC: 0),
+            makeLocalFood(id: 451, name: "Subway Italian BMT", category: "Fast Food", cal: 222, p: 10, c: 27, f: 8, satFat: 2.7, fiber: 2, sugar: 4.5, sodium: 614, chol: 25, calcium: 56, iron: 1.7, vitC: 4),
+            makeLocalFood(id: 452, name: "Subway Tuna Sub", category: "Fast Food", cal: 246, p: 11, c: 25, f: 12, satFat: 2.5, fiber: 1.8, sugar: 4, sodium: 510, chol: 22, calcium: 65, iron: 1.5, vitC: 3),
+            makeLocalFood(id: 453, name: "Subway Turkey Sub", category: "Fast Food", cal: 175, p: 10, c: 25, f: 3, satFat: 0.7, fiber: 2, sugar: 4, sodium: 495, chol: 12, calcium: 60, iron: 1.5, vitC: 4),
+            makeLocalFood(id: 454, name: "Chipotle Chicken Bowl", category: "Fast Food", cal: 158, p: 11, c: 13, f: 7, satFat: 2.3, fiber: 4, sugar: 1.5, sodium: 388, chol: 30, calcium: 50, iron: 1.4, vitC: 8),
+            makeLocalFood(id: 455, name: "Chipotle Steak Burrito", category: "Fast Food", cal: 200, p: 10, c: 23, f: 8, satFat: 3, fiber: 3.5, sugar: 1.5, sodium: 470, chol: 22, calcium: 80, iron: 2, vitC: 4),
+            makeLocalFood(id: 456, name: "Chick-fil-A Chicken Sandwich", category: "Fast Food", cal: 285, p: 17, c: 27, f: 12, satFat: 2.4, fiber: 1.5, sugar: 4.7, sodium: 670, chol: 50, calcium: 75, iron: 1.4, vitC: 1),
+            makeLocalFood(id: 457, name: "Chick-fil-A Nuggets", category: "Fast Food", cal: 247, p: 19, c: 11, f: 13, satFat: 2.5, fiber: 0.5, sugar: 1, sodium: 550, chol: 75, calcium: 12, iron: 1.1, vitC: 0),
+            makeLocalFood(id: 458, name: "Wendy's Frosty", category: "Fast Food", cal: 167, p: 4, c: 28, f: 4, satFat: 2.5, fiber: 0, sugar: 22, sodium: 95, chol: 16, calcium: 130, iron: 0.4, vitC: 0),
+            makeLocalFood(id: 459, name: "Taco Bell Crunchwrap Supreme", category: "Fast Food", cal: 248, p: 10, c: 30, f: 11, satFat: 4, fiber: 3, sugar: 3, sodium: 552, chol: 18, calcium: 120, iron: 2.2, vitC: 2),
+            makeLocalFood(id: 460, name: "Taco Bell Bean Burrito", category: "Fast Food", cal: 199, p: 8, c: 30, f: 6, satFat: 2.2, fiber: 4.5, sugar: 1.5, sodium: 487, chol: 5, calcium: 105, iron: 1.7, vitC: 0),
+
+            // ===== PIZZA & ITALIAN PREPARED (10+ items) =====
+            makeLocalFood(id: 480, name: "Pizza, supreme", category: "Prepared Foods", cal: 263, p: 11, c: 26, f: 13, satFat: 5, fiber: 2, sugar: 4, sodium: 700, chol: 30, calcium: 145, iron: 2.3, vitC: 5),
+            makeLocalFood(id: 481, name: "Pizza, Hawaiian", category: "Prepared Foods", cal: 232, p: 11, c: 27, f: 9, satFat: 4, fiber: 1.5, sugar: 6, sodium: 580, chol: 25, calcium: 150, iron: 2, vitC: 4),
+            makeLocalFood(id: 482, name: "Pizza, meat lovers", category: "Prepared Foods", cal: 295, p: 13, c: 26, f: 16, satFat: 6.5, fiber: 1.7, sugar: 4, sodium: 800, chol: 40, calcium: 150, iron: 2.4, vitC: 1),
+            makeLocalFood(id: 483, name: "Pizza, veggie", category: "Prepared Foods", cal: 220, p: 9, c: 28, f: 8, satFat: 3.6, fiber: 2.3, sugar: 4, sodium: 530, chol: 18, calcium: 160, iron: 2.1, vitC: 8),
+            makeLocalFood(id: 484, name: "Pizza, BBQ chicken", category: "Prepared Foods", cal: 240, p: 12, c: 30, f: 8, satFat: 3.5, fiber: 1.5, sugar: 7, sodium: 590, chol: 30, calcium: 130, iron: 2, vitC: 1),
+            makeLocalFood(id: 485, name: "Pizza, Margherita", category: "Prepared Foods", cal: 238, p: 11, c: 28, f: 9, satFat: 4, fiber: 2, sugar: 4, sodium: 510, chol: 22, calcium: 165, iron: 2.1, vitC: 4),
+            makeLocalFood(id: 486, name: "Calzone", category: "Prepared Foods", cal: 295, p: 14, c: 30, f: 14, satFat: 5.5, fiber: 1.5, sugar: 3, sodium: 620, chol: 35, calcium: 170, iron: 2.5, vitC: 2),
+            makeLocalFood(id: 487, name: "Lasagna", category: "Prepared Foods", cal: 132, p: 8, c: 12, f: 6, satFat: 2.7, fiber: 1.4, sugar: 3, sodium: 322, chol: 21, calcium: 95, iron: 1.2, vitC: 4),
+            makeLocalFood(id: 488, name: "Spaghetti with Meat Sauce", category: "Prepared Foods", cal: 145, p: 8, c: 16, f: 6, satFat: 1.9, fiber: 2, sugar: 3, sodium: 322, chol: 18, calcium: 22, iron: 1.5, vitC: 5),
+            makeLocalFood(id: 489, name: "Fettuccine Alfredo", category: "Prepared Foods", cal: 198, p: 6, c: 21, f: 10, satFat: 5, fiber: 1, sugar: 2, sodium: 380, chol: 30, calcium: 90, iron: 1.2, vitC: 0),
+            makeLocalFood(id: 490, name: "Chicken Parmesan", category: "Prepared Foods", cal: 199, p: 14, c: 17, f: 8, satFat: 3, fiber: 1.2, sugar: 4, sodium: 410, chol: 50, calcium: 130, iron: 1.4, vitC: 5),
+            makeLocalFood(id: 491, name: "Garlic Bread", category: "Prepared Foods", cal: 350, p: 8, c: 47, f: 14, satFat: 5.5, fiber: 2, sugar: 3, sodium: 600, chol: 0, calcium: 70, iron: 2.5, vitC: 0),
+
+            // ===== ASIAN PREPARED (12+ items) =====
+            makeLocalFood(id: 500, name: "Ramen, instant", category: "Prepared Foods", cal: 436, p: 9, c: 60, f: 17, satFat: 7.6, fiber: 2.5, sugar: 1.5, sodium: 1700, chol: 0, calcium: 18, iron: 4.6, vitC: 0),
+            makeLocalFood(id: 501, name: "Ramen, restaurant", category: "Prepared Foods", cal: 75, p: 4, c: 9, f: 3, satFat: 0.8, fiber: 0.6, sugar: 0.7, sodium: 750, chol: 12, calcium: 12, iron: 0.6, vitC: 1),
+            makeLocalFood(id: 502, name: "Pad Thai", category: "Prepared Foods", cal: 165, p: 6, c: 23, f: 5, satFat: 1, fiber: 1.5, sugar: 6, sodium: 384, chol: 30, calcium: 28, iron: 1.5, vitC: 6),
+            makeLocalFood(id: 503, name: "Fried Rice", category: "Prepared Foods", cal: 174, p: 5, c: 26, f: 5, satFat: 1, fiber: 1, sugar: 1, sodium: 386, chol: 50, calcium: 16, iron: 1, vitC: 1),
+            makeLocalFood(id: 504, name: "Lo Mein", category: "Prepared Foods", cal: 165, p: 6, c: 25, f: 4, satFat: 0.7, fiber: 1.5, sugar: 2, sodium: 451, chol: 8, calcium: 18, iron: 1.6, vitC: 6),
+            makeLocalFood(id: 505, name: "General Tso's Chicken", category: "Prepared Foods", cal: 249, p: 11, c: 21, f: 14, satFat: 2.4, fiber: 0.8, sugar: 12, sodium: 670, chol: 35, calcium: 18, iron: 1, vitC: 4),
+            makeLocalFood(id: 506, name: "Orange Chicken", category: "Prepared Foods", cal: 233, p: 12, c: 23, f: 11, satFat: 2, fiber: 0.6, sugar: 14, sodium: 620, chol: 35, calcium: 18, iron: 1, vitC: 6),
+            makeLocalFood(id: 507, name: "Sesame Chicken", category: "Prepared Foods", cal: 224, p: 11, c: 24, f: 10, satFat: 1.8, fiber: 0.7, sugar: 13, sodium: 590, chol: 30, calcium: 22, iron: 1.1, vitC: 4),
+            makeLocalFood(id: 508, name: "Egg Roll", category: "Prepared Foods", cal: 188, p: 7, c: 19, f: 9, satFat: 1.8, fiber: 1.5, sugar: 2, sodium: 384, chol: 16, calcium: 24, iron: 1.4, vitC: 4),
+            makeLocalFood(id: 509, name: "Spring Roll", category: "Prepared Foods", cal: 154, p: 4, c: 23, f: 5, satFat: 0.9, fiber: 1.6, sugar: 2, sodium: 318, chol: 6, calcium: 22, iron: 1, vitC: 4),
+            makeLocalFood(id: 510, name: "Pot Sticker", category: "Prepared Foods", cal: 187, p: 7, c: 22, f: 8, satFat: 1.6, fiber: 1.2, sugar: 1.5, sodium: 410, chol: 18, calcium: 18, iron: 1.5, vitC: 2),
+            makeLocalFood(id: 511, name: "Beef and Broccoli", category: "Prepared Foods", cal: 162, p: 14, c: 11, f: 7, satFat: 2.4, fiber: 2, sugar: 4, sodium: 580, chol: 35, calcium: 35, iron: 1.5, vitC: 30),
+            makeLocalFood(id: 512, name: "Sushi Roll, California", category: "Prepared Foods", cal: 186, p: 5, c: 35, f: 3, satFat: 0.5, fiber: 1.5, sugar: 5, sodium: 360, chol: 12, calcium: 24, iron: 0.8, vitC: 2),
+            makeLocalFood(id: 513, name: "Sushi Roll, spicy tuna", category: "Prepared Foods", cal: 219, p: 7, c: 33, f: 5, satFat: 0.8, fiber: 1.4, sugar: 4, sodium: 410, chol: 14, calcium: 18, iron: 1, vitC: 1),
+
+            // ===== MEXICAN PREPARED (8+ items) =====
+            makeLocalFood(id: 520, name: "Quesadilla, cheese", category: "Prepared Foods", cal: 297, p: 13, c: 24, f: 16, satFat: 8, fiber: 1.6, sugar: 1, sodium: 568, chol: 35, calcium: 290, iron: 1.7, vitC: 0),
+            makeLocalFood(id: 521, name: "Quesadilla, chicken", category: "Prepared Foods", cal: 269, p: 18, c: 22, f: 12, satFat: 6, fiber: 1.5, sugar: 1, sodium: 600, chol: 50, calcium: 240, iron: 1.7, vitC: 1),
+            makeLocalFood(id: 522, name: "Enchiladas", category: "Prepared Foods", cal: 187, p: 9, c: 17, f: 10, satFat: 4, fiber: 2.5, sugar: 3, sodium: 442, chol: 28, calcium: 130, iron: 1.4, vitC: 4),
+            makeLocalFood(id: 523, name: "Nachos, loaded", category: "Prepared Foods", cal: 274, p: 8, c: 26, f: 16, satFat: 5.5, fiber: 3, sugar: 2, sodium: 520, chol: 25, calcium: 165, iron: 1.4, vitC: 5),
+            makeLocalFood(id: 524, name: "Chimichanga", category: "Prepared Foods", cal: 250, p: 10, c: 24, f: 13, satFat: 4.5, fiber: 2, sugar: 2, sodium: 480, chol: 22, calcium: 90, iron: 1.6, vitC: 2),
+            makeLocalFood(id: 525, name: "Fajitas, chicken", category: "Prepared Foods", cal: 144, p: 11, c: 14, f: 5, satFat: 1.4, fiber: 2, sugar: 3, sodium: 350, chol: 30, calcium: 50, iron: 1.4, vitC: 25),
+            makeLocalFood(id: 526, name: "Tamale", category: "Prepared Foods", cal: 217, p: 6, c: 22, f: 12, satFat: 4.5, fiber: 2.5, sugar: 1, sodium: 380, chol: 18, calcium: 35, iron: 1.5, vitC: 2),
+
+            // ===== SANDWICHES & WRAPS (10+ items) =====
+            makeLocalFood(id: 540, name: "BLT Sandwich", category: "Sandwiches", cal: 286, p: 11, c: 24, f: 17, satFat: 4.5, fiber: 1.6, sugar: 3.5, sodium: 720, chol: 25, calcium: 80, iron: 2, vitC: 4),
+            makeLocalFood(id: 541, name: "Club Sandwich", category: "Sandwiches", cal: 275, p: 16, c: 26, f: 12, satFat: 3.5, fiber: 2, sugar: 4, sodium: 760, chol: 35, calcium: 120, iron: 2.2, vitC: 4),
+            makeLocalFood(id: 542, name: "Reuben Sandwich", category: "Sandwiches", cal: 266, p: 13, c: 22, f: 14, satFat: 5.5, fiber: 2, sugar: 4, sodium: 870, chol: 40, calcium: 220, iron: 2, vitC: 8),
+            makeLocalFood(id: 543, name: "Philly Cheesesteak", category: "Sandwiches", cal: 246, p: 16, c: 19, f: 13, satFat: 6, fiber: 1.5, sugar: 3, sodium: 580, chol: 50, calcium: 200, iron: 2.5, vitC: 4),
+            makeLocalFood(id: 544, name: "Tuna Sandwich", category: "Sandwiches", cal: 256, p: 14, c: 24, f: 12, satFat: 2, fiber: 1.5, sugar: 4, sodium: 540, chol: 22, calcium: 70, iron: 2.2, vitC: 2),
+            makeLocalFood(id: 545, name: "Turkey Sandwich", category: "Sandwiches", cal: 187, p: 13, c: 23, f: 5, satFat: 1.4, fiber: 2, sugar: 4, sodium: 540, chol: 18, calcium: 80, iron: 2.1, vitC: 3),
+            makeLocalFood(id: 546, name: "Ham Sandwich", category: "Sandwiches", cal: 215, p: 13, c: 24, f: 7, satFat: 2, fiber: 1.7, sugar: 4, sodium: 800, chol: 25, calcium: 75, iron: 1.9, vitC: 2),
+            makeLocalFood(id: 547, name: "PB&J Sandwich", category: "Sandwiches", cal: 304, p: 11, c: 38, f: 14, satFat: 2.6, fiber: 3, sugar: 18, sodium: 360, chol: 0, calcium: 75, iron: 2, vitC: 0),
+            makeLocalFood(id: 548, name: "Wrap, chicken", category: "Sandwiches", cal: 220, p: 13, c: 25, f: 8, satFat: 2.4, fiber: 2.4, sugar: 2, sodium: 530, chol: 30, calcium: 90, iron: 1.8, vitC: 4),
+            makeLocalFood(id: 549, name: "Wrap, veggie", category: "Sandwiches", cal: 195, p: 7, c: 28, f: 6, satFat: 1.5, fiber: 4, sugar: 3, sodium: 415, chol: 5, calcium: 75, iron: 2, vitC: 12),
+
+            // ===== SOUPS & STEWS (8+ items) =====
+            makeLocalFood(id: 560, name: "Chicken Noodle Soup", category: "Soups", cal: 38, p: 2, c: 5, f: 1, satFat: 0.3, fiber: 0.4, sugar: 0.5, sodium: 343, chol: 5, calcium: 7, iron: 0.4, vitC: 0),
+            makeLocalFood(id: 561, name: "Tomato Soup", category: "Soups", cal: 30, p: 1, c: 6, f: 0.5, satFat: 0.1, fiber: 0.7, sugar: 4, sodium: 295, chol: 0, calcium: 10, iron: 0.5, vitC: 27),
+            makeLocalFood(id: 562, name: "Clam Chowder", category: "Soups", cal: 81, p: 3, c: 7, f: 5, satFat: 1, fiber: 0.5, sugar: 0.6, sodium: 358, chol: 8, calcium: 32, iron: 0.7, vitC: 1),
+            makeLocalFood(id: 563, name: "Minestrone Soup", category: "Soups", cal: 36, p: 2, c: 6, f: 1, satFat: 0.2, fiber: 1.5, sugar: 1.5, sodium: 299, chol: 1, calcium: 14, iron: 0.4, vitC: 4),
+            makeLocalFood(id: 564, name: "French Onion Soup", category: "Soups", cal: 53, p: 3, c: 5, f: 2, satFat: 1, fiber: 0.7, sugar: 2, sodium: 480, chol: 5, calcium: 60, iron: 0.5, vitC: 3),
+            makeLocalFood(id: 565, name: "Chili", category: "Soups", cal: 117, p: 7, c: 12, f: 4, satFat: 1.5, fiber: 3.5, sugar: 2, sodium: 367, chol: 17, calcium: 32, iron: 1.7, vitC: 4),
+            makeLocalFood(id: 566, name: "Beef Stew", category: "Soups", cal: 95, p: 8, c: 8, f: 3, satFat: 1.2, fiber: 1.5, sugar: 1.5, sodium: 410, chol: 22, calcium: 14, iron: 1.4, vitC: 4),
+            makeLocalFood(id: 567, name: "Broccoli Cheddar Soup", category: "Soups", cal: 91, p: 3, c: 7, f: 6, satFat: 2.7, fiber: 1, sugar: 2, sodium: 425, chol: 14, calcium: 80, iron: 0.5, vitC: 14),
+
+            // ===== BREAKFAST FOODS (10+ items) =====
+            makeLocalFood(id: 580, name: "Bagel with Cream Cheese", category: "Breakfast", cal: 277, p: 8, c: 38, f: 10, satFat: 5, fiber: 2, sugar: 5, sodium: 446, chol: 28, calcium: 60, iron: 2.6, vitC: 0),
+            makeLocalFood(id: 581, name: "Breakfast Burrito", category: "Breakfast", cal: 195, p: 8, c: 20, f: 9, satFat: 3.5, fiber: 1.6, sugar: 1.5, sodium: 510, chol: 80, calcium: 95, iron: 1.8, vitC: 2),
+            makeLocalFood(id: 582, name: "Eggs Benedict", category: "Breakfast", cal: 290, p: 12, c: 17, f: 19, satFat: 6.5, fiber: 0.7, sugar: 1.5, sodium: 520, chol: 250, calcium: 120, iron: 1.8, vitC: 0),
+            makeLocalFood(id: 583, name: "Avocado Toast", category: "Breakfast", cal: 224, p: 4, c: 22, f: 14, satFat: 2, fiber: 6, sugar: 2, sodium: 285, chol: 0, calcium: 35, iron: 1.4, vitC: 6),
+            makeLocalFood(id: 584, name: "Cereal, Cheerios", category: "Breakfast", cal: 379, p: 12, c: 73, f: 7, satFat: 1.4, fiber: 10, sugar: 4, sodium: 643, chol: 0, calcium: 357, iron: 28.6, vitC: 21),
+            makeLocalFood(id: 585, name: "Cereal, Frosted Flakes", category: "Breakfast", cal: 375, p: 5, c: 89, f: 0.4, satFat: 0.1, fiber: 3, sugar: 36, sodium: 500, chol: 0, calcium: 0, iron: 16, vitC: 21),
+            makeLocalFood(id: 586, name: "Cereal, Cinnamon Toast Crunch", category: "Breakfast", cal: 420, p: 5, c: 75, f: 12, satFat: 1.7, fiber: 5, sugar: 30, sodium: 567, chol: 0, calcium: 67, iron: 13.3, vitC: 0),
+            makeLocalFood(id: 587, name: "Cereal, Lucky Charms", category: "Breakfast", cal: 380, p: 7, c: 80, f: 4, satFat: 0.7, fiber: 7, sugar: 33, sodium: 633, chol: 0, calcium: 333, iron: 18, vitC: 0),
+            makeLocalFood(id: 588, name: "Cereal, Frosted Mini Wheats", category: "Breakfast", cal: 364, p: 11, c: 85, f: 2.3, satFat: 0.4, fiber: 9, sugar: 22, sodium: 9, chol: 0, calcium: 18, iron: 18, vitC: 0),
+            makeLocalFood(id: 589, name: "Granola", category: "Breakfast", cal: 471, p: 10, c: 64, f: 20, satFat: 3, fiber: 7, sugar: 25, sodium: 26, chol: 0, calcium: 76, iron: 3.9, vitC: 0),
+            makeLocalFood(id: 590, name: "English Muffin", category: "Breakfast", cal: 235, p: 8, c: 46, f: 1.7, satFat: 0.3, fiber: 4, sugar: 5, sodium: 425, chol: 0, calcium: 174, iron: 3.7, vitC: 0),
+
+            // ===== DESSERTS & SWEETS (20+ items) =====
+            makeLocalFood(id: 600, name: "Ice Cream, vanilla", category: "Desserts", cal: 207, p: 4, c: 23, f: 11, satFat: 7, fiber: 0.7, sugar: 21, sodium: 80, chol: 44, calcium: 128, iron: 0.1, vitC: 0),
+            makeLocalFood(id: 601, name: "Ice Cream, chocolate", category: "Desserts", cal: 216, p: 4, c: 28, f: 11, satFat: 6.8, fiber: 1.2, sugar: 25, sodium: 76, chol: 34, calcium: 109, iron: 0.9, vitC: 0),
+            makeLocalFood(id: 602, name: "Ice Cream, strawberry", category: "Desserts", cal: 192, p: 3, c: 27, f: 8, satFat: 5, fiber: 0.7, sugar: 23, sodium: 60, chol: 29, calcium: 99, iron: 0.2, vitC: 4),
+            makeLocalFood(id: 603, name: "Ice Cream, mint chocolate chip", category: "Desserts", cal: 240, p: 4, c: 26, f: 13, satFat: 8, fiber: 0.8, sugar: 22, sodium: 80, chol: 40, calcium: 110, iron: 0.6, vitC: 0),
+            makeLocalFood(id: 604, name: "Ice Cream, cookies and cream", category: "Desserts", cal: 236, p: 4, c: 27, f: 13, satFat: 7.5, fiber: 0.7, sugar: 20, sodium: 110, chol: 40, calcium: 110, iron: 0.6, vitC: 0),
+            makeLocalFood(id: 605, name: "Ice Cream Sandwich", category: "Desserts", cal: 237, p: 4, c: 39, f: 7, satFat: 4, fiber: 1, sugar: 23, sodium: 130, chol: 22, calcium: 80, iron: 1, vitC: 0),
+            makeLocalFood(id: 606, name: "Frozen Yogurt", category: "Desserts", cal: 159, p: 4, c: 25, f: 4, satFat: 2.5, fiber: 0, sugar: 22, sodium: 70, chol: 5, calcium: 130, iron: 0.1, vitC: 0),
+            makeLocalFood(id: 607, name: "Donut, glazed", category: "Desserts", cal: 421, p: 5, c: 47, f: 23, satFat: 5.7, fiber: 1.5, sugar: 23, sodium: 442, chol: 17, calcium: 78, iron: 1.8, vitC: 0),
+            makeLocalFood(id: 608, name: "Donut, chocolate", category: "Desserts", cal: 452, p: 5, c: 51, f: 25, satFat: 7, fiber: 2, sugar: 27, sodium: 380, chol: 5, calcium: 38, iron: 2.4, vitC: 0),
+            makeLocalFood(id: 609, name: "Donut Hole", category: "Desserts", cal: 421, p: 5, c: 47, f: 23, satFat: 5.7, fiber: 1.5, sugar: 23, sodium: 442, chol: 17, calcium: 78, iron: 1.8, vitC: 0),
+            makeLocalFood(id: 610, name: "Brownie", category: "Desserts", cal: 466, p: 6, c: 60, f: 24, satFat: 6, fiber: 2.5, sugar: 41, sodium: 286, chol: 47, calcium: 41, iron: 2.4, vitC: 0),
+            makeLocalFood(id: 611, name: "Chocolate Chip Cookie", category: "Desserts", cal: 488, p: 5, c: 64, f: 25, satFat: 9, fiber: 2.4, sugar: 36, sodium: 320, chol: 20, calcium: 24, iron: 2.7, vitC: 0),
+            makeLocalFood(id: 612, name: "Oatmeal Cookie", category: "Desserts", cal: 450, p: 6, c: 70, f: 16, satFat: 3, fiber: 2.7, sugar: 35, sodium: 340, chol: 18, calcium: 35, iron: 2.4, vitC: 0),
+            makeLocalFood(id: 613, name: "Sugar Cookie", category: "Desserts", cal: 462, p: 5, c: 68, f: 19, satFat: 4.6, fiber: 0.9, sugar: 35, sodium: 350, chol: 22, calcium: 28, iron: 2.5, vitC: 0),
+            makeLocalFood(id: 614, name: "Chocolate Cake", category: "Desserts", cal: 367, p: 5, c: 53, f: 16, satFat: 4, fiber: 2, sugar: 36, sodium: 296, chol: 55, calcium: 80, iron: 1.9, vitC: 0),
+            makeLocalFood(id: 615, name: "Vanilla Cake", category: "Desserts", cal: 350, p: 4, c: 56, f: 12, satFat: 2.6, fiber: 0.6, sugar: 39, sodium: 295, chol: 50, calcium: 75, iron: 1.4, vitC: 0),
+            makeLocalFood(id: 616, name: "Cheesecake", category: "Desserts", cal: 321, p: 6, c: 26, f: 23, satFat: 12, fiber: 0.4, sugar: 22, sodium: 438, chol: 55, calcium: 51, iron: 0.6, vitC: 0),
+            makeLocalFood(id: 617, name: "Cupcake", category: "Desserts", cal: 305, p: 4, c: 45, f: 13, satFat: 4, fiber: 0.7, sugar: 32, sodium: 260, chol: 35, calcium: 60, iron: 1.4, vitC: 0),
+            makeLocalFood(id: 618, name: "Apple Pie", category: "Desserts", cal: 237, p: 2, c: 34, f: 11, satFat: 3.5, fiber: 1.4, sugar: 16, sodium: 266, chol: 0, calcium: 11, iron: 0.5, vitC: 1.4),
+            makeLocalFood(id: 619, name: "Pumpkin Pie", category: "Desserts", cal: 243, p: 4, c: 31, f: 11, satFat: 3.6, fiber: 1.7, sugar: 18, sodium: 250, chol: 25, calcium: 62, iron: 1.3, vitC: 2.5),
+            makeLocalFood(id: 620, name: "Pecan Pie", category: "Desserts", cal: 412, p: 5, c: 52, f: 22, satFat: 4, fiber: 2, sugar: 28, sodium: 274, chol: 36, calcium: 22, iron: 1.4, vitC: 0),
+            makeLocalFood(id: 621, name: "Cinnamon Roll", category: "Desserts", cal: 403, p: 6, c: 51, f: 19, satFat: 5, fiber: 1.7, sugar: 23, sodium: 339, chol: 22, calcium: 50, iron: 2.5, vitC: 0),
+
+            // ===== CANDY (8+ items) =====
+            makeLocalFood(id: 630, name: "Snickers", category: "Candy", cal: 488, p: 8, c: 60, f: 24, satFat: 9, fiber: 2.4, sugar: 51, sodium: 244, chol: 7, calcium: 73, iron: 0.9, vitC: 0.7),
+            makeLocalFood(id: 631, name: "M&Ms", category: "Candy", cal: 492, p: 4, c: 71, f: 21, satFat: 13, fiber: 2.3, sugar: 65, sodium: 65, chol: 7, calcium: 130, iron: 0.6, vitC: 0),
+            makeLocalFood(id: 632, name: "M&Ms, peanut", category: "Candy", cal: 515, p: 9, c: 56, f: 26, satFat: 11, fiber: 3.4, sugar: 47, sodium: 50, chol: 5, calcium: 100, iron: 0.7, vitC: 0),
+            makeLocalFood(id: 633, name: "Reese's Peanut Butter Cup", category: "Candy", cal: 530, p: 11, c: 50, f: 31, satFat: 11, fiber: 3, sugar: 45, sodium: 320, chol: 0, calcium: 50, iron: 1.4, vitC: 0),
+            makeLocalFood(id: 634, name: "Kit Kat", category: "Candy", cal: 521, p: 7, c: 65, f: 26, satFat: 17, fiber: 1.3, sugar: 49, sodium: 79, chol: 18, calcium: 132, iron: 1.3, vitC: 0),
+            makeLocalFood(id: 635, name: "Twix", category: "Candy", cal: 502, p: 5, c: 64, f: 24, satFat: 16, fiber: 1.3, sugar: 48, sodium: 218, chol: 9, calcium: 73, iron: 0, vitC: 0),
+            makeLocalFood(id: 636, name: "Skittles", category: "Candy", cal: 405, p: 0, c: 91, f: 4.4, satFat: 4.4, fiber: 0, sugar: 76, sodium: 22, chol: 0, calcium: 0, iron: 0, vitC: 0),
+            makeLocalFood(id: 637, name: "Starburst", category: "Candy", cal: 408, p: 0, c: 84, f: 8, satFat: 7.7, fiber: 0, sugar: 67, sodium: 25, chol: 0, calcium: 0, iron: 0, vitC: 0),
+            makeLocalFood(id: 638, name: "Sour Patch Kids", category: "Candy", cal: 350, p: 0, c: 88, f: 0, satFat: 0, fiber: 0, sugar: 60, sodium: 25, chol: 0, calcium: 0, iron: 0, vitC: 0),
+
+            // ===== SODAS & SUGARY DRINKS (12+ items) =====
+            makeLocalFood(id: 650, name: "Coca Cola", category: "Beverages", cal: 42, p: 0, c: 11, f: 0, satFat: 0, fiber: 0, sugar: 11, sodium: 4, chol: 0, calcium: 2, iron: 0, vitC: 0),
+            makeLocalFood(id: 651, name: "Diet Coke", category: "Beverages", cal: 0, p: 0, c: 0, f: 0, satFat: 0, fiber: 0, sugar: 0, sodium: 4, chol: 0, calcium: 4, iron: 0, vitC: 0),
+            makeLocalFood(id: 652, name: "Pepsi", category: "Beverages", cal: 44, p: 0, c: 12, f: 0, satFat: 0, fiber: 0, sugar: 12, sodium: 13, chol: 0, calcium: 1, iron: 0.1, vitC: 0),
+            makeLocalFood(id: 653, name: "Sprite", category: "Beverages", cal: 38, p: 0, c: 10, f: 0, satFat: 0, fiber: 0, sugar: 10, sodium: 17, chol: 0, calcium: 1, iron: 0, vitC: 0),
+            makeLocalFood(id: 654, name: "Mountain Dew", category: "Beverages", cal: 47, p: 0, c: 13, f: 0, satFat: 0, fiber: 0, sugar: 13, sodium: 17, chol: 0, calcium: 1, iron: 0, vitC: 0),
+            makeLocalFood(id: 655, name: "Red Bull", category: "Beverages", cal: 45, p: 0.4, c: 11, f: 0, satFat: 0, fiber: 0, sugar: 11, sodium: 42, chol: 0, calcium: 0, iron: 0, vitC: 0),
+            makeLocalFood(id: 656, name: "Monster Energy", category: "Beverages", cal: 46, p: 0, c: 11, f: 0, satFat: 0, fiber: 0, sugar: 11, sodium: 75, chol: 0, calcium: 0, iron: 0, vitC: 0),
+            makeLocalFood(id: 657, name: "Gatorade", category: "Beverages", cal: 25, p: 0, c: 6, f: 0, satFat: 0, fiber: 0, sugar: 6, sodium: 38, chol: 0, calcium: 0, iron: 0, vitC: 0),
+            makeLocalFood(id: 658, name: "Powerade", category: "Beverages", cal: 30, p: 0, c: 7, f: 0, satFat: 0, fiber: 0, sugar: 6, sodium: 24, chol: 0, calcium: 0, iron: 0, vitC: 0),
+            makeLocalFood(id: 659, name: "Lemonade", category: "Beverages", cal: 40, p: 0.1, c: 10, f: 0, satFat: 0, fiber: 0, sugar: 10, sodium: 4, chol: 0, calcium: 4, iron: 0.1, vitC: 4),
+            makeLocalFood(id: 660, name: "Beer", category: "Beverages", cal: 43, p: 0.5, c: 3.6, f: 0, satFat: 0, fiber: 0, sugar: 0, sodium: 4, chol: 0, calcium: 4, iron: 0, vitC: 0),
+            makeLocalFood(id: 661, name: "Beer, light", category: "Beverages", cal: 29, p: 0.2, c: 1.4, f: 0, satFat: 0, fiber: 0, sugar: 0, sodium: 4, chol: 0, calcium: 4, iron: 0, vitC: 0),
+            makeLocalFood(id: 662, name: "Wine, red", category: "Beverages", cal: 85, p: 0.1, c: 2.6, f: 0, satFat: 0, fiber: 0, sugar: 0.6, sodium: 4, chol: 0, calcium: 8, iron: 0.5, vitC: 0),
+            makeLocalFood(id: 663, name: "Wine, white", category: "Beverages", cal: 82, p: 0.1, c: 2.6, f: 0, satFat: 0, fiber: 0, sugar: 1, sodium: 5, chol: 0, calcium: 9, iron: 0.3, vitC: 0),
+            makeLocalFood(id: 664, name: "Margarita", category: "Beverages", cal: 168, p: 0, c: 11, f: 0, satFat: 0, fiber: 0, sugar: 11, sodium: 12, chol: 0, calcium: 4, iron: 0, vitC: 4),
+
+            // ===== AMERICAN STAPLES (8+ items) =====
+            makeLocalFood(id: 670, name: "Mac and Cheese", category: "Prepared Foods", cal: 384, p: 11, c: 53, f: 13, satFat: 4, fiber: 2, sugar: 7, sodium: 670, chol: 18, calcium: 100, iron: 1.4, vitC: 0),
+            makeLocalFood(id: 671, name: "Buffalo Wings", category: "Prepared Foods", cal: 263, p: 22, c: 1, f: 18, satFat: 5, fiber: 0, sugar: 0.3, sodium: 800, chol: 100, calcium: 18, iron: 1.2, vitC: 0),
+            makeLocalFood(id: 672, name: "Onion Rings", category: "Prepared Foods", cal: 411, p: 5, c: 38, f: 27, satFat: 7, fiber: 1.7, sugar: 4, sodium: 425, chol: 0, calcium: 56, iron: 1.6, vitC: 1),
+            makeLocalFood(id: 673, name: "Mozzarella Sticks", category: "Prepared Foods", cal: 350, p: 16, c: 30, f: 19, satFat: 8.5, fiber: 1.6, sugar: 3, sodium: 740, chol: 35, calcium: 350, iron: 1.5, vitC: 0),
+            makeLocalFood(id: 674, name: "Loaded Baked Potato", category: "Prepared Foods", cal: 132, p: 4, c: 18, f: 5, satFat: 2.5, fiber: 1.7, sugar: 1, sodium: 220, chol: 12, calcium: 32, iron: 0.6, vitC: 6),
+            makeLocalFood(id: 675, name: "Sloppy Joe", category: "Sandwiches", cal: 217, p: 11, c: 22, f: 9, satFat: 3.4, fiber: 1.5, sugar: 8, sodium: 540, chol: 30, calcium: 60, iron: 2.1, vitC: 4),
+            makeLocalFood(id: 676, name: "Meatloaf", category: "Prepared Foods", cal: 234, p: 19, c: 7, f: 14, satFat: 5.4, fiber: 0.5, sugar: 4, sodium: 410, chol: 90, calcium: 30, iron: 2.1, vitC: 1),
+            makeLocalFood(id: 677, name: "Chicken Pot Pie", category: "Prepared Foods", cal: 245, p: 8, c: 23, f: 14, satFat: 4.7, fiber: 1.7, sugar: 2, sodium: 393, chol: 25, calcium: 30, iron: 1.5, vitC: 2),
         ]
     }
     
@@ -1162,12 +1371,20 @@ class USDAFoodService: ObservableObject {
         
         // ═══ TIER 3: DATA QUALITY ═══
         
-        // PRIORITY 3a: FOUNDATION FOODS from USDA (lab-verified, most accurate)
+        // PRIORITY 3a: Data-quality tier (lower = better).
+        // Mirrors the server-side `calculateFoodScore()` ordering so the
+        // ranking the user sees in offline / cache-hit paths matches what
+        // the cloud would return. OFF sits between SR Legacy and Branded
+        // because OFF data has popularity + completeness signals that USDA
+        // Branded (random UPC dump) doesn't have.
         if dataType == "Foundation" {
             score -= 200000
         } else if dataType == "SR Legacy" {
             score -= 150000
+        } else if dataType == "OFF" {
+            score -= 50000
         }
+        // dataType == "Branded" or unknown → no boost (score stays 0 here)
         
         // PRIORITY 3b: Generic foods over branded
         if food.brandName?.isEmpty ?? true {

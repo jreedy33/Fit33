@@ -288,13 +288,13 @@ BEGIN
         last_screen         = COALESCE(NEW.screen, last_screen),
         total_errors        = total_errors + CASE WHEN NEW.is_error THEN 1 ELSE 0 END,
         total_crashes       = total_crashes + CASE WHEN NEW.event_type = 'crash' THEN 1 ELSE 0 END,
-        completed_onboarding = completed_onboarding OR (NEW.event_type = 'funnel' AND (NEW.payload->>'funnel') = 'onboarding' AND (NEW.payload->>'step') = 'completed'),
-        completed_first_workout = completed_first_workout OR (NEW.event_type = 'workout' AND (NEW.payload->>'phase') = 'completed'),
-        logged_first_meal   = logged_first_meal OR (NEW.event_type = 'meal' AND (NEW.payload->>'phase') = 'logged'),
-        added_first_friend  = added_first_friend OR (NEW.event_type = 'social' AND (NEW.payload->>'action') = 'friend_added'),
-        connected_wearable  = connected_wearable OR (NEW.event_type = 'integration' AND (NEW.payload->>'action') = 'success'),
-        saw_paywall         = saw_paywall OR (NEW.event_type = 'paywall' AND (NEW.payload->>'action') = 'view'),
-        converted_paywall   = converted_paywall OR (NEW.event_type = 'paywall' AND (NEW.payload->>'action') = 'convert')
+        completed_onboarding    = COALESCE(completed_onboarding,    FALSE) OR (NEW.event_type = 'funnel'      AND (NEW.payload->>'funnel') = 'onboarding' AND (NEW.payload->>'step') = 'completed'),
+        completed_first_workout = COALESCE(completed_first_workout, FALSE) OR (NEW.event_type = 'workout'     AND (NEW.payload->>'phase')  = 'completed'),
+        logged_first_meal       = COALESCE(logged_first_meal,       FALSE) OR (NEW.event_type = 'meal'        AND (NEW.payload->>'phase')  = 'logged'),
+        added_first_friend      = COALESCE(added_first_friend,      FALSE) OR (NEW.event_type = 'social'      AND (NEW.payload->>'action') = 'friend_added'),
+        connected_wearable      = COALESCE(connected_wearable,      FALSE) OR (NEW.event_type = 'integration' AND (NEW.payload->>'action') = 'success'),
+        saw_paywall             = COALESCE(saw_paywall,             FALSE) OR (NEW.event_type = 'paywall'     AND (NEW.payload->>'action') = 'view'),
+        converted_paywall       = COALESCE(converted_paywall,       FALSE) OR (NEW.event_type = 'paywall'     AND (NEW.payload->>'action') = 'convert')
     WHERE user_id = NEW.user_id;
     RETURN NEW;
 END;

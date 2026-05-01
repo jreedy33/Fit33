@@ -327,6 +327,7 @@
 		7CB08CA52EDCF00400236ECB /* ProgramScheduleFullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08CA62EDCF00400236ECB /* ProgramScheduleFullView.swift */; };
 		7CB08CA52EDE397200236ECB /* BugReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08CA42EDE397200236ECB /* BugReportView.swift */; };
 		7CB08CA72EDE398A00236ECB /* DevMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08CA62EDE398A00236ECB /* DevMenuView.swift */; };
+		7CD6DD322FA4382700E49D30 /* NewUserJourneyTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */; };
 		7CEA1ED52F54FB2D00CC468C /* WeeklyLeagueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA1ED42F54FB2D00CC468C /* WeeklyLeagueViews.swift */; };
 		7CEA1ED72F54FB3A00CC468C /* WeeklyLeagueService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA1ED62F54FB3A00CC468C /* WeeklyLeagueService.swift */; };
 		7CEA1EDA2F5A58EA00CC468C /* DailyQuestViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA1ED92F5A58EA00CC468C /* DailyQuestViews.swift */; };
@@ -788,6 +789,7 @@
 		7CB08CA42EDE397200236ECB /* BugReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BugReportView.swift; sourceTree = "<group>"; };
 		7CB08CA62EDCF00400236ECB /* ProgramScheduleFullView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgramScheduleFullView.swift; sourceTree = "<group>"; };
 		7CB08CA62EDE398A00236ECB /* DevMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevMenuView.swift; sourceTree = "<group>"; };
+		7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewUserJourneyTracker.swift; sourceTree = "<group>"; };
 		7CEA1ED42F54FB2D00CC468C /* WeeklyLeagueViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyLeagueViews.swift; sourceTree = "<group>"; };
 		7CEA1ED62F54FB3A00CC468C /* WeeklyLeagueService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyLeagueService.swift; sourceTree = "<group>"; };
 		7CEA1ED92F5A58EA00CC468C /* DailyQuestViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyQuestViews.swift; sourceTree = "<group>"; };
@@ -978,6 +980,7 @@
 				8B2F3E4D5C6B7A8B9C0D1E2F /* ActiveChallengeHeaderRow.swift */,
 				9D4F5E6D7C8B9A0C1D2E3F40 /* AddHomescreenWidgetSheet.swift */,
 				7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */,
+				7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */,
 				A12345678901234567890221 /* ActiveWorkoutView.swift */,
 				7C8CF46F2F9FA437007CD766 /* DailyBriefEngine.swift */,
 				7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */,
@@ -1768,6 +1771,7 @@
 				7C47F9DB2EE336E000BEC4D7 /* SmartDayGenerator.swift in Sources */,
 				7C792AC82F2AB2390048A97E /* RecipeBrowserView.swift in Sources */,
 				7CB08C972EDBB88200236ECB /* ProgramExplorerView.swift in Sources */,
+				7CD6DD322FA4382700E49D30 /* NewUserJourneyTracker.swift in Sources */,
 				7C792B022F2C2F7B0048A97E /* PulsingRedDot.swift in Sources */,
 				7C0C41D22F00B21600F02E84 /* ExerciseMetadataClassifier.swift in Sources */,
 				7C6DE3792F5BCA2800BCA276 /* StoreKitManager.swift in Sources */,

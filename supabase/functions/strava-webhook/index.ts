@@ -38,6 +38,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendApnsSilent, pushDeliveryLog, eventNameFor } from "../_shared/apns.ts";
 
 const STRAVA_API_BASE = "https://www.strava.com/api/v3";
 const STRAVA_OAUTH_URL = "https://www.strava.com/oauth/token";
@@ -230,98 +231,87 @@ async function upsertCardioFromActivity(
 
 // ── Silent push helper ───────────────────────────────────────────────────
 //
-// Sends APNs silent pushes (aps.content-available = 1) directly via the
-// Apple Push provider, mirroring the pattern used by
-// `wake-challenge-opponents/index.ts`. We can't use `send-push-notification`
-// here because that function only supports user-visible alerts; silent
-// pushes need apns-push-type: background + apns-priority: 5.
+// Sends APNs silent pushes (aps.content-available = 1) via the shared
+// _shared/apns.ts helper. On the iOS side, `Fit33/SilentPushHandler.swift`
+// routes `type: "strava_activity_new"` → a 1-day Strava sync.
 //
-// On the iOS side, `Fit33/SilentPushHandler.swift` routes
-// `type: "strava_activity_new"` → a 1-day Strava sync.
-//
-// Required env vars (same set as send-push-notification):
-//   APNS_KEY_ID, APNS_TEAM_ID, APNS_BUNDLE_ID, APNS_PRIVATE_KEY.
+// 2026-08-01: Migrated to shared helper. Pre-fix bug: this function read
+// from the non-existent `push_tokens` table (everywhere else the canonical
+// table is `user_push_tokens`), so Strava silent pushes silently no-op'd
+// in production. Fixed.
 async function sendStravaSilentPush(
   // deno-lint-ignore no-explicit-any
   supabase: any,
   userId: string,
   activityId: number,
 ): Promise<void> {
-  // Fetch the user's most-recent valid device token. Same shape as
-  // wake-challenge-opponents' query.
+  // Read ALL valid tokens (multi-device users own multiple iPhones / iPads).
   const { data: tokens, error } = await supabase
-    .from("push_tokens")
-    .select("device_token, apns_environment, is_valid")
+    .from("user_push_tokens")
+    .select("device_token, apns_environment, is_valid, updated_at")
     .eq("user_id", userId)
     .eq("is_valid", true)
-    .order("updated_at", { ascending: false })
-    .limit(1);
+    .order("updated_at", { ascending: false });
 
   if (error || !tokens?.length) {
     console.log(`[strava-webhook] No valid push token for user ${userId} — silent push skipped`);
-    return;
-  }
-
-  const token = tokens[0];
-  const apnsToken = await generateAPNsBearerToken();
-  if (!apnsToken) {
-    console.warn("[strava-webhook] Could not generate APNs JWT — skipping silent push");
-    return;
-  }
-
-  const host = token.apns_environment === "development"
-    ? "api.sandbox.push.apple.com"
-    : "api.push.apple.com";
-  const bundleId = Deno.env.get("APNS_BUNDLE_ID") ?? "";
-
-  const payload = {
-    aps: { "content-available": 1 },
-    type: "strava_activity_new",
-    activity_id: String(activityId),
-  };
-
-  try {
-    const res = await fetch(`https://${host}/3/device/${token.device_token}`, {
-      method: "POST",
-      headers: {
-        "authorization": `bearer ${apnsToken}`,
-        "apns-topic": bundleId,
-        "apns-push-type": "background",
-        "apns-priority": "5",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(payload),
+    await pushDeliveryLog(supabase, {
+      notificationId: null,
+      userId,
+      event: "no_valid_token",
+      detail: { source: "strava_webhook", token_error: error?.message ?? null, activity_id: activityId },
     });
-    if (!res.ok) {
-      console.warn(`[strava-webhook] APNs returned ${res.status}: ${await res.text()}`);
-    }
-  } catch (e) {
-    console.warn(`[strava-webhook] APNs send threw: ${(e as Error).message}`);
+    return;
   }
-}
 
-// JWT signing for APNs. Mirrors wake-challenge-opponents helper —
-// but kept self-contained here so this function has no shared deps.
-async function generateAPNsBearerToken(): Promise<string | null> {
-  try {
-    const { SignJWT, importPKCS8 } = await import(
-      "https://deno.land/x/jose@v4.14.4/index.ts"
+  for (const token of tokens) {
+    const result = await sendApnsSilent(
+      token.device_token,
+      {
+        type: "strava_activity_new",
+        data: { activity_id: String(activityId) },
+        expirationSeconds: 3600,
+      },
+      token.apns_environment,
     );
-    const keyId = Deno.env.get("APNS_KEY_ID") ?? "";
-    const teamId = Deno.env.get("APNS_TEAM_ID") ?? "";
-    const privateKeyPem = (Deno.env.get("APNS_PRIVATE_KEY") ?? "").replace(/\\n/g, "\n");
-    if (!keyId || !teamId || !privateKeyPem) return null;
 
-    const privateKey = await importPKCS8(privateKeyPem, "ES256");
-    const jwt = await new SignJWT({})
-      .setProtectedHeader({ alg: "ES256", kid: keyId })
-      .setIssuer(teamId)
-      .setIssuedAt()
-      .sign(privateKey);
-    return jwt;
-  } catch (e) {
-    console.error(`[strava-webhook] APNs JWT signing failed: ${(e as Error).message}`);
-    return null;
+    await pushDeliveryLog(supabase, {
+      notificationId: null,
+      userId,
+      event: result.success ? "silent_apns_success" : `silent_${eventNameFor(result)}`,
+      detail: {
+        source: "strava_webhook",
+        type: "strava_activity_new",
+        activity_id: activityId,
+        token_prefix: token.device_token.substring(0, 12),
+        apns_env: token.apns_environment,
+        status: result.status ?? null,
+        reason: result.reason ?? null,
+        duration_ms: result.durationMs ?? null,
+        error: result.error ?? null,
+      },
+    });
+
+    if (!result.success) {
+      console.warn(`[strava-webhook] APNs ${result.status ?? "?"}: ${result.error ?? "unknown"}`);
+      if (result.invalidateToken) {
+        await supabase
+          .from("user_push_tokens")
+          .update({ is_valid: false })
+          .eq("user_id", userId)
+          .eq("device_token", token.device_token);
+        await pushDeliveryLog(supabase, {
+          notificationId: null,
+          userId,
+          event: "token_invalid",
+          detail: {
+            source: "strava_webhook",
+            token_prefix: token.device_token.substring(0, 12),
+            reason: result.reason ?? "apple_410ish",
+          },
+        });
+      }
+    }
   }
 }
 

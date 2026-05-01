@@ -198,7 +198,11 @@ struct ChallengeDetailView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingAddWidgetSheet) {
-            AddHomescreenWidgetSheet()
+            // Pass the live challenge so the sheet's preview mirrors the
+            // exact widget the user is about to install — name, opponent,
+            // today's progress — making the home-screen widget instantly
+            // recognizable when it appears.
+            AddHomescreenWidgetSheet(challenge: challenge)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }

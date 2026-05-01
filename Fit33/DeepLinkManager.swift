@@ -49,6 +49,17 @@ class DeepLinkManager: ObservableObject {
         case personalRecord     // Stats tab > achievements
         case streakInfo         // Home tab > streak popup
         case programs           // Workout tab > program schedule
+
+        // Smart Notification Engine destinations (2026-08-01).
+        // The orchestrator's Phase 3 trigger library deep-links into these
+        // surfaces. League taps land on the Stats tab where the league
+        // widget lives; recovery taps surface the readiness drill-down on
+        // the dashboard; smackTalk lands on the challenge detail with the
+        // smack-talk composer auto-opened.
+        case leagues            // Stats tab > Weekly League widget
+        case readinessDetail    // Home tab > Readiness drill-down sheet
+        case smackTalk(challengeId: String)  // Challenge detail with composer open
+        case mealLogger(mealType: String?)   // Open meal logger (alias for addFood)
     }
     
     @Published var pendingDestination: Destination?

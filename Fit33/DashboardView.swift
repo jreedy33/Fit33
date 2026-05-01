@@ -274,7 +274,16 @@ struct DashboardView: View {
                             .environmentObject(userManager)
                             .padding(.bottom, 16)
                     }
-                    
+
+                    // Step Tracker Card — placed above the wearable widgets
+                    // (WHOOP / Oura / Strava) and beneath the Weight/Hydration
+                    // / Macros block so Daily Steps lives in the same
+                    // "physical activity at a glance" cluster as Weight,
+                    // not buried beneath the wearable strip.
+                    StepTrackerCard()
+                        .id("stepTracker")
+                        .padding(.bottom, 16)
+
                     // WHOOP Recovery Widget (isolated — only renders when WHOOP connected + widget enabled)
                     if showWhoopWidget {
                         DashboardWhoopWrapper(navigationPath: $dashboardNavPath)
@@ -290,13 +299,8 @@ struct DashboardView: View {
                     // Strava Latest Activity Widget (isolated — only renders when Strava connected + an activity from the last 36h)
                     if showStravaWidget {
                         DashboardStravaWrapper(navigationPath: $dashboardNavPath)
-                            .padding(.bottom, 16)
+                            .padding(.bottom, 20)
                     }
-
-                    // Step Tracker Card
-                    StepTrackerCard()
-                        .id("stepTracker")
-                        .padding(.bottom, 20)
 
                     // Recent workouts section (in-app + synced HealthKit/Strava/Fitbit)
                     if !recentWorkouts.isEmpty || !recentCardioWorkouts.isEmpty {

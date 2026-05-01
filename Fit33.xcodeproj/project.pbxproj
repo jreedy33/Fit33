@@ -203,6 +203,7 @@
 		7C8CEA722F9A7599007CD766 /* DiagnosticContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA712F9A7599007CD766 /* DiagnosticContext.swift */; };
 		7C8CEA742F9A75B1007CD766 /* PerformanceSignposts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */; };
 		7C8CEA762F9A75DC007CD766 /* PerformanceMetricsUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */; };
+		7C9F0A012F357EB600C2F7EC /* PerformanceOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */; };
 		7C8CED142F9D1B6E007CD766 /* RecentSessionsTilesRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CED132F9D1B6E007CD766 /* RecentSessionsTilesRow.swift */; };
 		7C8CEED32F9D76AB007CD766 /* StartupCachePreloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEED22F9D76AB007CD766 /* StartupCachePreloader.swift */; };
 		7C8CEF5F2F9E8610007CD766 /* WakeDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CEF5E2F9E8610007CD766 /* WakeDiagnosticsView.swift */; };
@@ -667,6 +668,7 @@
 		7C8CEA712F9A7599007CD766 /* DiagnosticContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticContext.swift; sourceTree = "<group>"; };
 		7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSignposts.swift; sourceTree = "<group>"; };
 		7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceMetricsUploader.swift; sourceTree = "<group>"; };
+		7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizer.swift; sourceTree = "<group>"; };
 		7C8CED132F9D1B6E007CD766 /* RecentSessionsTilesRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentSessionsTilesRow.swift; sourceTree = "<group>"; };
 		7C8CEED22F9D76AB007CD766 /* StartupCachePreloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartupCachePreloader.swift; sourceTree = "<group>"; };
 		7C8CEF5E2F9E8610007CD766 /* WakeDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeDiagnosticsView.swift; sourceTree = "<group>"; };
@@ -1224,6 +1226,7 @@
 				D4FED9E19F69446F994B8FA9 /* OuraService.swift */,
 				8FB5A1DFFE964AB298BE7010 /* OuraSettingsView.swift */,
 				7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */,
+				7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */,
 				7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */,
 				7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */,
 				7CEAFD142EF9D38900874B57 /* PersistenceController.swift */,
@@ -1628,6 +1631,7 @@
 				7C47F9DD2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift in Sources */,
 				7C81611A2EF867D6007556A7 /* RunningManager.swift in Sources */,
 				7C8EB1C02F26ABD4007BFA55 /* PerformanceOptimizations.swift in Sources */,
+				7C9F0A012F357EB600C2F7EC /* PerformanceOptimizer.swift in Sources */,
 				A12345678901234567890132 /* DataModel.xcdatamodeld in Sources */,
 				7C0C42842F18340E00F02E84 /* ReceivedWorkoutsView.swift in Sources */,
 				7C4F15062ED3785A00439932 /* CoreDataExtensions.swift in Sources */,

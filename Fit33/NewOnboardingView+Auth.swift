@@ -892,7 +892,16 @@ extension NewOnboardingView {
                 await MainActor.run {
                     errorMessage = "Failed to send reset email. Please check your email address and try again."
                     showError = true
-                    AppLogger.error("Password reset failed: \(error.localizedDescription)", category: .auth)
+                    let startedAt = Date()
+                    _ = NetworkErrorClassifier.log(
+                        error,
+                        context: "Password reset failed (unexpected)",
+                        category: .auth,
+                        op: PerformanceSignposts.Op.authPasswordReset.rawValue,
+                        endpoint: "auth/reset_password_for_email",
+                        startedAt: startedAt,
+                        userId: SupabaseManager.shared.currentUser?.id
+                    )
                 }
             }
         }

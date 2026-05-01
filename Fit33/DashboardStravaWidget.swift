@@ -25,6 +25,7 @@ struct DashboardStravaWrapper: View {
 
     @StateObject private var stravaService = StravaService.shared
     @ObservedObject private var unitSettings = UnitSettingsManager.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     // Mirror the same key used by `WidgetSettingsSheet` (`showStrava`
     // binding in DashboardView) so dismissing the unsynced Strava widget
@@ -36,6 +37,39 @@ struct DashboardStravaWrapper: View {
         stravaService.mostRecentActivity
     }
 
+    /// Soft disc + glow so the runner reads “floating” beside the wordmark,
+    /// aligned with the Daily Steps header glyph treatment.
+    private var stravaPoweredByHeaderRunner: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.stravaOrange.opacity(colorScheme == .dark ? 0.28 : 0.18),
+                            Color.stravaOrange.opacity(colorScheme == .dark ? 0.12 : 0.07)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 36, height: 36)
+
+            Image(systemName: "figure.run")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.stravaOrange, Color.stravaOrange.opacity(0.72)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        }
+        .shadow(color: Color.stravaOrange.opacity(colorScheme == .dark ? 0.45 : 0.35), radius: 10, x: 0, y: 5)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.1), radius: 5, x: 0, y: 3)
+        .accessibilityHidden(true)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             // The dismiss "X" only appears while Strava is unconnected so
@@ -45,6 +79,20 @@ struct DashboardStravaWrapper: View {
             // stays the canonical entry point for managing connected
             // widgets.
             HStack(spacing: 10) {
+                // Same treatment as Daily Steps (`StepTrackerCard` header): title3 + diagonal gradient glyph
+                Image(systemName: "figure.run")
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                Color.stravaOrange,
+                                Color(red: 252 / 255, green: 100 / 255, blue: 30 / 255)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .font(.title3)
+                    .accessibilityHidden(true)
                 Image("PoweredByStrava")
                     .resizable()
                     .renderingMode(.original)

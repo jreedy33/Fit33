@@ -924,6 +924,7 @@ class ChallengeService: ObservableObject {
         // every attempt so a stale message from a previous failed send isn't
         // shown after a successful retry.
         lastCreateChallengeError = nil
+        let createAttemptStartedAt = Date()
 
         // Breadcrumb for bug-intel: when the user shakes after a "could not
         // send" alert, this logs the op + opponent prefix so triage can see
@@ -981,13 +982,22 @@ class ChallengeService: ObservableObject {
             return challengeId
         }
 
-        AppLogger.error("All challenge creation methods failed", category: .social)
-        // If neither RPC try nor the direct-insert path set a more specific
-        // message, fall back to a generic one so the alert still shows
-        // something actionable.
-        if lastCreateChallengeError == nil {
-            lastCreateChallengeError = "Couldn't reach the server. Check your connection and try again."
-        }
+        let fallbackMsg = lastCreateChallengeError ?? "Couldn't reach the server. Check your connection and try again."
+        lastCreateChallengeError = fallbackMsg
+        let synthetic = NSError(
+            domain: "ChallengeService",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: fallbackMsg]
+        )
+        _ = NetworkErrorClassifier.log(
+            synthetic,
+            context: "All challenge creation methods failed",
+            category: .social,
+            op: PerformanceSignposts.Op.challengeWrite.rawValue,
+            endpoint: "challenges/create",
+            startedAt: createAttemptStartedAt,
+            userId: SupabaseManager.shared.currentUser?.id
+        )
         return nil
     }
     

@@ -33,38 +33,42 @@ CREATE TABLE IF NOT EXISTS notification_templates (
   id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
   intent_kind     TEXT NOT NULL,
-  /// Free-text variant name ('a','b','control','urgent','playful', etc.).
+  -- Free-text variant name ('a','b','control','urgent','playful', etc.).
   variant         TEXT NOT NULL DEFAULT 'default',
 
   category        TEXT NOT NULL
                   CHECK (category IN ('rivalry','workout','recovery','nutrition','streak','social','announcement')),
 
-  /// Title with {token} interpolation. Tokens reference payload keys.
+  -- Title with {token} interpolation. Tokens reference payload keys.
   title_template  TEXT NOT NULL,
-  /// Body with {token} interpolation.
+  -- Body with {token} interpolation.
   body_template   TEXT NOT NULL,
 
-  /// Optional data payload merged into the push `data` field. e.g. set
-  /// `{"deep_link": "smack_talk:{challenge_id}"}` to override default tap
-  /// routing for this variant.
+  -- Optional data payload merged into the push `data` field. e.g. set
+  -- `{"deep_link": "smack_talk:{challenge_id}"}` to override default tap
+  -- routing for this variant.
   data_template   JSONB NOT NULL DEFAULT '{}'::JSONB,
 
-  /// A/B selection weight. Variants picked proportionally; 0 = disabled.
+  -- A/B selection weight. Variants picked proportionally; 0 = disabled.
   weight          INTEGER NOT NULL DEFAULT 100 CHECK (weight >= 0),
 
-  /// Soft-toggle without deleting (preserve historical analytics).
+  -- Soft-toggle without deleting (preserve historical analytics).
   is_active       BOOLEAN NOT NULL DEFAULT true,
 
-  /// Optional cohort gating (matches notification_intents.cohort_key).
-  /// NULL = available to all cohorts.
+  -- Optional cohort gating (matches notification_intents.cohort_key).
+  -- NULL = available to all cohorts.
   cohort_key      TEXT,
 
   notes           TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-  UNIQUE (intent_kind, variant, COALESCE(cohort_key, ''))
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- UNIQUE expression constraints (over COALESCE) aren't allowed inline in
+-- CREATE TABLE — use a partial-style unique index instead. Same effect for
+-- ON CONFLICT (intent_kind, variant, COALESCE(cohort_key,'')) below.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_notification_templates_kind_variant_cohort
+  ON notification_templates (intent_kind, variant, COALESCE(cohort_key, ''));
 
 CREATE INDEX IF NOT EXISTS idx_notification_templates_kind_active
   ON notification_templates (intent_kind, is_active);

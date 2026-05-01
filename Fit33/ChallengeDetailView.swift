@@ -122,6 +122,7 @@ struct ChallengeDetailView: View {
                 .padding(.top, Spacing.sm)
                 .padding(.bottom, Spacing.xxl)
             }
+            .trackScrollJank(screen: "ChallengeDetail")
         }
         // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView.
         .trackScreen(.challengeDetail, metadata: ["challenge_id": challenge.id])
@@ -233,9 +234,15 @@ struct ChallengeDetailView: View {
             Text("This will end the challenge for both you and \(opponentFirst). They will be notified that you cancelled.")
         }
         .sheet(isPresented: $showingReactionPicker) {
-            ReactionPickerSheet(challenge: challenge, onSend: { _ in })
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+            BattleCryPickerSheet(
+                mode: battleCryMode,
+                typeColor: typeColor,
+                gradient: challengeType.gradientColors,
+                recipientLabel: opponentFirst,
+                onSend: { preset in sendBattleCry(preset) }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingAddWidgetSheet) {
             // Pass the live challenge so the sheet's preview mirrors the

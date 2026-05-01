@@ -220,88 +220,6 @@ final class DebugPerformanceMonitor {
 }
 #endif
 
-// MARK: - Scroll Performance Optimizer
-
-/// Tracks scroll velocity to reduce work during fast scrolling
-final class ScrollPerformanceTracker: ObservableObject {
-    static let shared = ScrollPerformanceTracker()
-    
-    @Published private(set) var isScrollingFast = false
-    
-    private var lastOffset: CGFloat = 0
-    private var lastTime: CFTimeInterval = 0
-    private var velocity: CGFloat = 0
-    
-    private let fastScrollThreshold: CGFloat = 500 // points per second
-    
-    func updateScroll(offset: CGFloat) {
-        let currentTime = CACurrentMediaTime()
-        if lastTime > 0 {
-            let timeDelta = currentTime - lastTime
-            let offsetDelta = abs(offset - lastOffset)
-            velocity = offsetDelta / CGFloat(timeDelta)
-            
-            let wasFast = isScrollingFast
-            isScrollingFast = velocity > fastScrollThreshold
-            
-            // Only publish if changed to avoid unnecessary view updates
-            if wasFast != isScrollingFast {
-                objectWillChange.send()
-            }
-        }
-        lastOffset = offset
-        lastTime = currentTime
-    }
-    
-    func resetScroll() {
-        isScrollingFast = false
-        velocity = 0
-    }
-}
-
-struct ScrollOffsetTracker: ViewModifier {
-    let screenName: String
-    @State private var lastLogTime: Date = .distantPast
-    
-    func body(content: Content) -> some View {
-        content
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .preference(key: ScrollOffsetKey.self, value: geo.frame(in: .global).minY)
-                }
-            )
-            .onPreferenceChange(ScrollOffsetKey.self) { offset in
-                ScrollPerformanceTracker.shared.updateScroll(offset: -offset)
-                
-                if ScrollPerformanceTracker.shared.isScrollingFast {
-                    let now = Date()
-                    if now.timeIntervalSince(lastLogTime) > 2.0 {
-                        lastLogTime = now
-                        SessionLogManager.shared.logScroll(
-                            screen: screenName,
-                            direction: offset < 0 ? "down" : "up",
-                            position: "\(Int(-offset))"
-                        )
-                    }
-                }
-            }
-    }
-}
-
-private struct ScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-extension View {
-    func trackScrollJank(screen: String) -> some View {
-        modifier(ScrollOffsetTracker(screenName: screen))
-    }
-}
-
 // MARK: - Debouncer for Search/Filter
 
 final class Debouncer {
@@ -447,7 +365,7 @@ final class NavigationPreloader {
         preloadQueue.async {
             // Preload video assets for likely destinations
             if destination.contains("Exercise") {
-                VideoPlaybackEngine.shared.preWarmRecentExercises()
+                VideoPlaybackEngine.shared.prewarmPlayerPool()
             }
         }
     }

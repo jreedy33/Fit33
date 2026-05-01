@@ -72,6 +72,7 @@ struct PrivateChallengeDetailView: View {
                 // keyboard immediately (covers the "scrolls off the chat
                 // widget" case without needing a per-section gesture).
                 .scrollDismissesKeyboard(.immediately)
+                .trackScrollJank(screen: "PrivateChallengeDetail")
                 // When the chat input gains focus, pin the chat widget just
                 // above the keyboard so the user can see what they're typing
                 // along with the most recent messages.
@@ -278,45 +279,86 @@ struct PrivateChallengeDetailView: View {
     }
     
     // MARK: - Compact Header Card
-    
+
+    /// Hero card: shared `ChallengeHeroCard` from kit + a slim
+    /// "members + badges" footer row that's specific to private
+    /// challenges (admin badge, recurring chip, member-avatars
+    /// stack, unread chat pill).
     private var headerCard: some View {
-        VStack(spacing: Spacing.sm) {
-            HStack(alignment: .top, spacing: Spacing.sm) {
-                challengeIconView(size: 48, emojiSize: 24)
-                
-                VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    Text(challenge.title)
-                        .font(.ds_heading3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                    
-                    HStack(spacing: Spacing.xxs) {
-                        Image(systemName: "target")
+        VStack(spacing: Spacing.xs) {
+            ChallengeHeroCard(
+                title: challenge.title,
+                emoji: challenge.displayEmoji,
+                typeColor: .purple,
+                gradient: [.purple, .pink],
+                typeLabel: "Private · \(challenge.targetUnit)/day target",
+                description: challenge.description,
+                daysElapsed: 0,
+                durationDays: 0,
+                daysRemaining: 0,
+                endDate: nil,
+                memberCountSuffix: challenge.formattedMemberCount
+            )
+
+            HStack(spacing: Spacing.xs) {
+                memberAvatarsRow
+
+                Spacer(minLength: 0)
+
+                if challenge.isRecurring {
+                    badgeCapsule(icon: "arrow.triangle.2.circlepath", text: "Recurring", color: .cyan)
+                }
+
+                if let unread = challenge.unreadCount, unread > 0 {
+                    HStack(spacing: Spacing.xxxs) {
+                        Image(systemName: "bubble.left.fill")
                             .font(.ds_caption)
-                            .foregroundColor(.purple)
-                        Text("\(challenge.dailyTarget) \(challenge.targetUnit)/day")
-                            .font(.ds_bodySmall)
-                            .foregroundColor(.secondary)
+                        Text("\(unread)")
+                            .font(.ds_labelSmall)
                     }
-                    
-                    if let desc = challenge.description, !desc.isEmpty {
-                        Text(desc)
-                            .font(.ds_bodySmall)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, Spacing.xxxs)
+                    .background(Capsule().fill(Color.purple))
+                }
+
+                if challenge.isAdmin {
+                    HStack(spacing: 3) {
+                        Image(systemName: "crown.fill")
+                            .font(.ds_caption)
+                        Text("Admin")
+                            .font(.ds_labelSmall)
+                    }
+                    .foregroundColor(.yellow)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, Spacing.xxxs)
+                    .background(Capsule().fill(Color.yellow.opacity(0.12)))
+                }
+            }
+            .padding(.horizontal, Spacing.xs)
+        }
+    }
+
+    /// Stacked top-4 member avatars (private-challenge specific —
+    /// the kit's hero doesn't carry an avatar list).
+    private var memberAvatarsRow: some View {
+        Group {
+            if let topMembers = challenge.topMembers, !topMembers.isEmpty {
+                HStack(spacing: -8) {
+                    ForEach(Array(topMembers.prefix(4))) { member in
+                        CachedFriendPhoto(
+                            friendId: member.userId.uuidString,
+                            photoUrl: member.profilePhotoUrl,
+                            name: member.displayName,
+                            size: 24,
+                            showGradientRing: member.isAdmin,
+                            gradientColors: member.isAdmin ? [.yellow, .orange] : [.purple, .pink]
+                        )
+                        .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 1.5))
                     }
                 }
-                
-                Spacer(minLength: 0)
-                
-                memberAvatarsColumn
             }
-            
-            badgesRow
         }
-        .padding(Spacing.md)
-        .sleekCard(cornerRadius: 20, accentColor: .purple)
     }
     
     @ViewBuilder
@@ -355,229 +397,95 @@ struct PrivateChallengeDetailView: View {
         }
     }
     
-    private var memberAvatarsColumn: some View {
-        VStack(alignment: .trailing, spacing: Spacing.xxs) {
-            if let topMembers = challenge.topMembers, !topMembers.isEmpty {
-                HStack(spacing: -8) {
-                    ForEach(Array(topMembers.prefix(4))) { member in
-                        CachedFriendPhoto(
-                            friendId: member.userId.uuidString,
-                            photoUrl: member.profilePhotoUrl,
-                            name: member.displayName,
-                            size: 28,
-                            showGradientRing: member.isAdmin,
-                            gradientColors: member.isAdmin ? [.yellow, .orange] : [.purple, .pink]
-                        )
-                        .overlay(Circle().stroke(Color(white: 0.1), lineWidth: 1.5))
-                    }
-                }
-            }
-            
-            HStack(spacing: Spacing.xxxs) {
-                Image(systemName: "person.2.fill")
-                    .font(.ds_caption)
-                Text(challenge.formattedMemberCount)
-                    .font(.ds_labelSmall)
-            }
-            .foregroundColor(.secondary)
-        }
-    }
-    
-    private var badgesRow: some View {
-        HStack(spacing: Spacing.xs) {
-            if challenge.isRecurring {
-                badgeCapsule(icon: "arrow.triangle.2.circlepath", text: "Recurring", color: .cyan)
-            }
-            
-            if let unread = challenge.unreadCount, unread > 0 {
-                HStack(spacing: Spacing.xxxs) {
-                    Image(systemName: "bubble.left.fill")
-                        .font(.ds_caption)
-                    Text("\(unread)")
-                        .font(.ds_labelSmall)
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, Spacing.xxxs)
-                .background(Capsule().fill(Color.purple))
-            }
-            
-            Spacer()
-            
-            if challenge.isAdmin {
-                Text("Admin")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.yellow)
-            }
-        }
-    }
-    
     private func badgeCapsule(icon: String, text: String, color: Color) -> some View {
         HStack(spacing: 3) {
             Image(systemName: icon)
-                .font(.system(size: 8, weight: .semibold))
+                .font(.ds_caption)
             Text(text)
-                .font(.system(size: 10, weight: .bold))
+                .font(.ds_labelSmall)
         }
         .foregroundColor(color)
         .padding(.horizontal, Spacing.xs)
         .padding(.vertical, Spacing.xxxs)
         .background(Capsule().fill(color.opacity(0.12)))
     }
-    
-    // MARK: - League-Style Stat Bar
-    
+
+    // MARK: - Stat Chip Row + Today Progress
+
+    /// Replaces the cramped 4-cell `statBar` with a horizontally
+    /// scrollable chip strip + the shared `TodayProgressCard` so the
+    /// "today's progress" hierarchy is consistent across all four
+    /// challenge-detail surfaces.
     private var statBar: some View {
         let resolver = ChallengeProgressResolver.shared
         let liveValue = resolver.liveProgress(for: challenge)
         let dailyTarget = detail?.dailyTarget ?? challenge.dailyTarget
-        let progress = dailyTarget > 0 ? min(1.0, Double(liveValue) / Double(dailyTarget)) : 0
+        let percentInt = dailyTarget > 0 ? Int(min(1.0, Double(liveValue) / Double(dailyTarget)) * 100) : 0
         let rank = detail?.myRank ?? challenge.myRank ?? 0
         let memberCount = detail?.memberCount ?? challenge.memberCount
         let streak = detail?.myCurrentStreak ?? challenge.myCurrentStreak ?? 0
-        
+
         return VStack(spacing: Spacing.sm) {
-            // Progress context line
-            HStack(spacing: Spacing.xs) {
-                HStack(spacing: Spacing.xxs) {
-                    Text(challenge.displayEmoji)
-                        .font(.system(size: 14))
-                    Text("\(Int(progress * 100))% of daily goal")
-                        .font(.ds_labelSmall)
-                        .foregroundColor(.primary)
-                }
-                
-                Spacer()
-                
-                Text("\(liveValue)/\(dailyTarget) \(challenge.targetUnit)")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(.purple)
-            }
-            
-            VStack(spacing: Spacing.xxs) {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.purple.opacity(colorScheme == .dark ? 0.12 : 0.08))
-                            .frame(height: 6)
-                        
-                        Capsule()
-                            .fill(LinearGradient(colors: [.pink, .purple], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: max(geo.size.width * progress, 6), height: 6)
-                    }
-                }
-                .frame(height: 6)
-                
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        HStack {
-                            Text("0")
-                                .font(.system(size: 8, weight: .medium))
-                                .foregroundColor(.secondary.opacity(0.5))
-                            
-                            Spacer()
-                            
-                            Text("\(dailyTarget)")
-                                .font(.system(size: 8, weight: .medium))
-                                .foregroundColor(progress >= 1.0 ? .green : .secondary.opacity(0.5))
-                        }
-                        
-                        if progress > 0 && progress < 1.0 {
-                            Text("\(liveValue)")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.purple)
-                                .position(x: geo.size.width * progress, y: 6)
-                        }
-                    }
-                }
-                .frame(height: 12)
-            }
-            
-            // Stats row with dividers (league pattern)
-            HStack(spacing: 0) {
-                statCell(value: "#\(rank)", label: "of \(memberCount)", valueColor: .purple)
-                
-                thinDivider
-                
-                statCell(
-                    value: "\(liveValue)",
-                    label: challenge.targetUnit,
-                    valueColor: .primary
+            StatChipRow(chips: [
+                StatChip(
+                    value: "#\(rank)",
+                    label: "of \(memberCount)",
+                    icon: "trophy.fill",
+                    tint: .purple
+                ),
+                StatChip(
+                    value: "\(streak)",
+                    label: "streak",
+                    icon: "flame.fill",
+                    tint: .orange
+                ),
+                StatChip(
+                    value: "\(percentInt)%",
+                    label: "today",
+                    tint: percentInt >= 100 ? .green : .primary
+                ),
+                StatChip(
+                    value: "\(dailyTarget)",
+                    label: "daily \(challenge.targetUnit)"
+                ),
+                StatChip(
+                    value: detail.map { "\(Int($0.completionRateToday * 100))%" } ?? "—",
+                    label: "group hit",
+                    tint: (detail?.completionRateToday ?? 0) >= 0.5 ? .green : .primary
                 )
-                
-                thinDivider
-                
-                VStack(spacing: 2) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.orange)
-                        Text("\(streak)")
-                            .font(.ds_statSmall)
-                            .foregroundColor(.primary)
-                    }
-                    Text("streak")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                
-                thinDivider
-                
-                if let d = detail {
-                    statCell(
-                        value: "\(Int(d.completionRateToday * 100))%",
-                        label: "completed",
-                        valueColor: d.completionRateToday >= 0.5 ? .green : .primary
-                    )
-                } else {
-                    statCell(value: "—", label: "completed", valueColor: .secondary)
-                }
-            }
-            .padding(.vertical, Spacing.xs)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
-                    .fill(Color.purple.opacity(colorScheme == .dark ? 0.06 : 0.04))
+            ])
+
+            TodayProgressCard(
+                myValue: liveValue,
+                myValueText: "\(liveValue)",
+                opponentName: nil,
+                opponentValue: 0,
+                opponentValueText: "",
+                target: dailyTarget,
+                targetUnit: challenge.targetUnit,
+                typeColor: .purple,
+                gradient: [.purple, .pink],
+                leaderTitle: percentInt >= 100 ? "Goal hit" : "",
+                opponentFreshness: .fresh,
+                opponentAgeLabel: nil
             )
         }
-        .padding(Spacing.sm)
-        .sleekCardSubtle(cornerRadius: 16)
-    }
-    
-    private func statCell(value: String, label: String, valueColor: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.ds_statSmall)
-                .foregroundColor(valueColor)
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
-    private var thinDivider: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.2))
-            .frame(width: 1, height: 28)
     }
     
     // MARK: - Leaderboard Section
-    
+
     private var leaderboardSection: some View {
         VStack(spacing: Spacing.sm) {
-            // Section header
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "trophy.circle.fill")
                     .foregroundStyle(accentGradient)
-                    .font(.title3)
+                    .font(.ds_heading3)
                 Text("Leaderboard")
-                    .font(.title3)
-                    .fontWeight(.bold)
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
-                
+
                 Spacer()
-                
+
                 if let d = detail {
                     HStack(spacing: Spacing.xxs) {
                         Circle()
@@ -589,16 +497,16 @@ struct PrivateChallengeDetailView: View {
                     }
                 }
             }
-            
+
             if let leaderboard = detail?.leaderboard, !leaderboard.isEmpty {
-                // Community stats mini bar
                 if let d = detail {
                     communityStatsBar(detail: d)
                 }
-                
-                // Leaderboard rows
-                ForEach(leaderboard) { member in
-                    leaderboardRow(member: member, dailyTarget: detail?.dailyTarget ?? challenge.dailyTarget)
+
+                VStack(spacing: Spacing.xxs) {
+                    ForEach(leaderboard) { member in
+                        kitLeaderboardRow(member: member, dailyTarget: detail?.dailyTarget ?? challenge.dailyTarget)
+                    }
                 }
             } else if isLoading {
                 ProgressView()
@@ -617,138 +525,43 @@ struct PrivateChallengeDetailView: View {
             }
         }
     }
-    
+
     private func communityStatsBar(detail d: PrivateChallengeDetail) -> some View {
-        HStack(spacing: 0) {
-            miniStatCell(value: "\(d.avgTodayProgress)", label: "avg \(challenge.targetUnit)")
-            
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(width: 1, height: 20)
-            
-            miniStatCell(value: "\(d.totalActiveToday)", label: "active today")
-            
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(width: 1, height: 20)
-            
-            miniStatCell(value: "\(Int(d.completionRateToday * 100))%", label: "hit goal")
-        }
-        .padding(.vertical, Spacing.xs)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
-                .fill(Color.purple.opacity(colorScheme == .dark ? 0.06 : 0.04))
-        )
+        StatChipRow(chips: [
+            StatChip(value: "\(d.avgTodayProgress)", label: "avg \(challenge.targetUnit)"),
+            StatChip(value: "\(d.totalActiveToday)", label: "active today", tint: .green),
+            StatChip(value: "\(Int(d.completionRateToday * 100))%", label: "hit goal", tint: d.completionRateToday >= 0.5 ? .green : .primary)
+        ])
     }
-    
-    private func miniStatCell(value: String, label: String) -> some View {
-        VStack(spacing: 1) {
-            Text(value)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
-    private func leaderboardRow(member: PrivateChallengeMember, dailyTarget: Int) -> some View {
+
+    /// Per-member leaderboard row, delegates rendering to the shared
+    /// kit `LeaderboardRow` for consistency with group + community.
+    private func kitLeaderboardRow(member: PrivateChallengeMember, dailyTarget: Int) -> some View {
         let isMe = member.isCurrentUser ?? false
         let displayProgress = isMe
             ? ChallengeProgressResolver.shared.liveProgress(for: challenge)
             : (member.todayProgress ?? 0)
         let progress = dailyTarget > 0 ? min(1.0, Double(displayProgress) / Double(dailyTarget)) : 0
         let rank = member.rank ?? 0
-        
-        return HStack(spacing: Spacing.sm) {
-            // Rank with medal
-            ZStack {
-                if rank <= 3 {
-                    Text(rank == 1 ? "🥇" : rank == 2 ? "🥈" : "🥉")
-                        .font(.system(size: 16))
-                } else {
-                    Text("#\(rank)")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(isMe ? .purple : .secondary)
-                }
-            }
-            .frame(width: 26)
-            
-            CachedFriendPhoto(
-                friendId: member.userId.uuidString,
-                photoUrl: member.profilePhotoUrl,
-                name: member.displayName,
-                size: 32,
-                showGradientRing: member.isAdmin,
-                gradientColors: member.isAdmin ? [.yellow, .orange] : [.purple, .pink]
-            )
-            
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 3) {
-                    Text(isMe ? "You" : member.firstName)
-                        .font(.system(size: 13, weight: isMe ? .bold : .medium))
-                        .foregroundColor(isMe ? .primary : .secondary)
-                        .lineLimit(1)
-                    
-                    if member.isVerified == true || member.isGoldVerified == true {
-                        VerifiedBadge(size: 11, isGold: member.isGoldVerified == true)
-                    }
-                    
-                    if member.isAdmin {
-                        Image(systemName: "crown.fill")
-                            .font(.system(size: 7))
-                            .foregroundColor(.yellow)
-                    }
-                }
-                
-                // Inline progress bar
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.primary.opacity(0.08))
-                            .frame(height: 3)
-                        
-                        Capsule()
-                            .fill(accentGradient)
-                            .frame(width: geometry.size.width * progress, height: 3)
-                    }
-                }
-                .frame(height: 3)
-            }
-            
-            Spacer()
-            
-            // Score
-            VStack(alignment: .trailing, spacing: 1) {
-                Text(!isMe && displayProgress == 0 ? "–" : "\(displayProgress)")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(!isMe && displayProgress == 0 ? .secondary.opacity(0.5) : (isMe ? .purple : .primary))
-                
-                if (isMe ? (displayProgress >= dailyTarget && dailyTarget > 0) : (member.targetHitToday ?? false)) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.green)
-                }
-            }
-        }
-        .padding(.vertical, 6)
-        .padding(.horizontal, Spacing.xs)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isMe
-                    ? Color.purple.opacity(colorScheme == .dark ? 0.12 : 0.08)
-                    : Color.clear)
+        let valueText = (!isMe && displayProgress == 0) ? "–" : "\(displayProgress)"
+        let trailing: String? = (isMe ? (displayProgress >= dailyTarget && dailyTarget > 0) : (member.targetHitToday ?? false))
+            ? "Goal hit ✓"
+            : nil
+
+        return LeaderboardRow(
+            rank: rank,
+            userId: member.userId.uuidString,
+            displayName: member.firstName,
+            photoUrl: member.profilePhotoUrl,
+            valueText: valueText,
+            progress: progress,
+            isMe: isMe,
+            typeColor: .purple,
+            gradient: [.purple, .pink],
+            trailingBadge: trailing,
+            isVerified: member.isVerified == true,
+            isGoldVerified: member.isGoldVerified == true
         )
-    }
-    
-    private func rankColor(_ rank: Int) -> Color {
-        switch rank {
-        case 1: return .yellow
-        case 2: return Color(white: 0.75)
-        case 3: return .orange
-        default: return .secondary
-        }
     }
     
     // MARK: - Chat Preview Section
@@ -814,7 +627,7 @@ struct PrivateChallengeDetailView: View {
                     HapticManager.selectionChanged()
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
                         .frame(width: 26, height: 26)
                         .background(
@@ -865,9 +678,9 @@ struct PrivateChallengeDetailView: View {
             chatInputBar
         }
         .padding(Spacing.sm)
-        .sleekCardSubtle(cornerRadius: 14)
+        .sleekCardSubtle(cornerRadius: CornerRadius.md)
     }
-    
+
     // Shared tap gesture for every non-chat section in the detail scroll view —
     // tapping anywhere off the chat widget dismisses the keyboard without
     // blocking button presses or scroll gestures inside that section.
@@ -978,7 +791,7 @@ struct PrivateChallengeDetailView: View {
                         .padding(.horizontal, Spacing.sm)
                         .padding(.vertical, Spacing.xs)
                         .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
                                 .fill(accentGradient)
                         )
                     
@@ -998,7 +811,7 @@ struct PrivateChallengeDetailView: View {
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text(message.senderFirstName)
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.ds_caption)
                             .foregroundColor(.purple)
                         
                         Text(message.content)
@@ -1007,7 +820,7 @@ struct PrivateChallengeDetailView: View {
                             .padding(.horizontal, Spacing.sm)
                             .padding(.vertical, Spacing.xs)
                             .background(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
                                     .fill(Color.primary.opacity(0.06))
                             )
                             .contextMenu {
@@ -1060,7 +873,7 @@ struct PrivateChallengeDetailView: View {
         HStack {
             Spacer()
             Text(formatChatDate(date))
-                .font(.system(size: 10, weight: .semibold))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
                 .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, Spacing.xxxs)
@@ -1189,7 +1002,7 @@ struct PrivateChallengeDetailView: View {
                     
                     if member.isAdmin {
                         Text("Admin")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.ds_caption)
                             .foregroundColor(.yellow)
                             .padding(.horizontal, Spacing.xxs)
                             .padding(.vertical, 1)
@@ -1255,9 +1068,9 @@ struct PrivateChallengeDetailView: View {
             }
         }
         .padding(Spacing.sm)
-        .sleekCardSubtle(cornerRadius: 14)
+        .sleekCardSubtle(cornerRadius: CornerRadius.md)
     }
-    
+
     // MARK: - Full Chat Sheet
     
     private var fullChatSheet: some View {
@@ -1306,7 +1119,7 @@ struct PrivateChallengeDetailView: View {
                         showFullChat = false
                     } label: {
                         Image(systemName: "chevron.backward")
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.ds_bodyRegular)
                     }
                     .accessibilityLabel("Back")
                 }

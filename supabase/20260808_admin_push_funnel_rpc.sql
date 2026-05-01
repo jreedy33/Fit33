@@ -64,7 +64,7 @@ DECLARE
 BEGIN
   -- Per-category funnel. NULL category lands in the synthetic 'unknown' bucket
   -- so legacy rows pre-Phase 1 still surface.
-  SELECT COALESCE(jsonb_agg(row_to_jsonb(c)), '[]'::jsonb)
+  SELECT COALESCE(jsonb_agg(to_jsonb(c)), '[]'::jsonb)
   INTO v_by_category
   FROM (
     SELECT
@@ -94,7 +94,7 @@ BEGIN
   ) c;
 
   -- Cross-category totals.
-  SELECT row_to_jsonb(t) INTO v_totals
+  SELECT to_jsonb(t) INTO v_totals
   FROM (
     SELECT
       COUNT(*) FILTER (WHERE event = 'enqueued')             AS enqueued,
@@ -109,30 +109,30 @@ BEGIN
     WHERE created_at >= v_since
   ) t;
 
-  -- A/B variant winners. Joins delivery log (carrying `notification_id`)
-  -- against orchestration decisions (carrying `variant_id`) via the
-  -- queue_id mapping. Best-effort; if `notification_orchestration_decisions`
-  -- is empty (orchestrator running in shadow mode) we return [].
+  -- A/B variant winners: `render_notification_copy` stamps `variant` into
+  -- `push_notification_queue.data`; join queue → delivery_log for opens.
   BEGIN
-    SELECT COALESCE(jsonb_agg(row_to_jsonb(v)), '[]'::jsonb)
+    SELECT COALESCE(jsonb_agg(to_jsonb(v)), '[]'::jsonb)
     INTO v_variants
     FROM (
       SELECT
-        d.intent_kind,
-        d.template_variant AS variant,
-        COUNT(DISTINCT d.queue_id)                                     AS sent,
-        COUNT(*) FILTER (WHERE l.event = 'opened')                     AS opened,
-        ROUND(100.0 * COUNT(*) FILTER (WHERE l.event = 'opened')
-                  / NULLIF(COUNT(DISTINCT d.queue_id), 0), 1)          AS open_rate_pct
-      FROM notification_orchestration_decisions d
+        q.notification_type AS intent_kind,
+        q.data->>'variant' AS variant,
+        COUNT(DISTINCT q.id) AS sent,
+        COUNT(DISTINCT CASE WHEN l.event = 'opened' THEN l.notification_id END) AS opened,
+        ROUND(
+          100.0 * COUNT(DISTINCT CASE WHEN l.event = 'opened' THEN l.notification_id END)
+                / NULLIF(COUNT(DISTINCT q.id), 0),
+          1
+        ) AS open_rate_pct
+      FROM push_notification_queue q
       LEFT JOIN push_notification_delivery_log l
-        ON l.notification_id = d.queue_id
+        ON l.notification_id = q.id
        AND l.created_at >= v_since
-      WHERE d.created_at >= v_since
-        AND d.queue_id IS NOT NULL
-        AND d.template_variant IS NOT NULL
-      GROUP BY d.intent_kind, d.template_variant
-      HAVING COUNT(DISTINCT d.queue_id) > 5  -- noise floor
+      WHERE q.created_at >= v_since
+        AND q.data ? 'variant'
+      GROUP BY q.notification_type, q.data->>'variant'
+      HAVING COUNT(DISTINCT q.id) > 5
       ORDER BY open_rate_pct DESC NULLS LAST, sent DESC
       LIMIT 25
     ) v;
@@ -144,17 +144,17 @@ BEGIN
   -- considered, how many it suppressed, how many it enqueued. Powers the
   -- "is the orchestrator dropping too much?" health card.
   BEGIN
-    SELECT row_to_jsonb(d) INTO v_decisions
+    SELECT to_jsonb(d) INTO v_decisions
     FROM (
       SELECT
-        COUNT(*)                                                 AS total_decisions,
-        COUNT(*) FILTER (WHERE outcome = 'enqueued')             AS enqueued,
-        COUNT(*) FILTER (WHERE outcome = 'suppressed')           AS suppressed,
-        COUNT(*) FILTER (WHERE outcome = 'deferred')             AS deferred,
-        COUNT(*) FILTER (WHERE outcome = 'shadow_only')          AS shadow_only,
-        COUNT(*) FILTER (WHERE outcome = 'errored')              AS errored
+        COUNT(*) AS total_decisions,
+        COUNT(*) FILTER (WHERE decision = 'enqueued')    AS enqueued,
+        COUNT(*) FILTER (WHERE decision = 'suppressed')  AS suppressed,
+        COUNT(*) FILTER (WHERE decision = 'deferred')   AS deferred,
+        COUNT(*) FILTER (WHERE shadow_mode = true)       AS shadow_mode_decisions,
+        0::BIGINT AS errored
       FROM notification_orchestration_decisions
-      WHERE created_at >= v_since
+      WHERE decided_at >= v_since
     ) d;
   EXCEPTION WHEN OTHERS THEN
     v_decisions := '{}'::jsonb;

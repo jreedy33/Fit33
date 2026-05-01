@@ -16,9 +16,9 @@ extension DashboardView {
     // wordmark sits right under the status bar.
     var pinnedTopHeader: some View {
         PinnedTabHeader {
-            // 8pt gap between the Fit33 wordmark row and the WELCOME BACK
-            // row so the two pinned rows breathe instead of stacking flush.
-            VStack(alignment: .leading, spacing: Spacing.xs) {
+            // 12pt gap between the Fit33 wordmark row and the WELCOME BACK
+            // row so the welcome line drops a touch lower and breathes.
+            VStack(alignment: .leading, spacing: Spacing.sm) {
                 customHeaderView
                 pinnedWelcomeRow
             }

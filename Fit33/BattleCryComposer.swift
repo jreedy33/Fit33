@@ -41,7 +41,7 @@ enum BattleCryMode {
         switch self {
         case .competition:    return ReactionPresets.trashTalk
         case .accountability: return ReactionPresets.cheers
-        case .community:      return ReactionPresets.cheers
+        case .community:      return ReactionPresets.communityEncouragement
         }
     }
 
@@ -83,14 +83,16 @@ enum BattleCryMode {
     var emptyTitle: String {
         switch self {
         case .competition:    return "No smack talk yet"
-        default:              return "No messages yet"
+        case .community:      return "No cheers yet"
+        case .accountability: return "No messages yet"
         }
     }
 
     var emptySubtitle: String {
         switch self {
         case .competition:    return "Be the first to fire a shot"
-        default:              return "Send some hype"
+        case .community:      return "Cheer someone on"
+        case .accountability: return "Send some hype"
         }
     }
 }
@@ -206,6 +208,92 @@ struct BattleCryStrip: View {
 
     private var shouldDisableMotion: Bool {
         reduceMotion || ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+}
+
+// MARK: - Quick open (compact surfaces)
+
+/// Capsule that teases the latest **incoming** reaction or a default
+/// battle-cry affordance. Opens the host's full picker via
+/// `showingPicker`. Replaces the deleted `ReactionQuickButton` from
+/// `ChallengeReactionsView.swift` so widget / dashboard rows stay on
+/// the same kit path as `BattleCryStrip` + `BattleCryPickerSheet`.
+struct BattleCryQuickOpenButton: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let challenge: ActiveChallenge
+    @Binding var showingPicker: Bool
+
+    @State private var latestReaction: ChallengeReaction?
+    @State private var pulseAnimation = false
+
+    private var mode: ChallengeMode { challenge.mode }
+    private var isCompetition: Bool { mode == .competition }
+
+    private var themeGradient: [Color] {
+        isCompetition ? [.orange, .red] : [.blue, .cyan]
+    }
+
+    private var themeColor: Color {
+        isCompetition ? .orange : .cyan
+    }
+
+    var body: some View {
+        Button {
+            HapticManager.impact(.light)
+            showingPicker = true
+        } label: {
+            HStack(spacing: Spacing.xxs) {
+                if let reaction = latestReaction, !reaction.isMine {
+                    Text(reaction.reactionEmoji)
+                        .font(.ds_bodySmall)
+                    Text(reaction.reactionText)
+                        .font(.ds_caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                } else {
+                    Image(systemName: isCompetition ? "flame.fill" : "bolt.heart.fill")
+                        .font(.ds_bodySmall)
+                        .foregroundStyle(
+                            LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing)
+                        )
+                    Text(isCompetition ? "Talk Smack" : "Send Hype")
+                        .font(.ds_caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
+            }
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xxs)
+            .background(
+                Capsule()
+                    .fill(themeColor.opacity(colorScheme == .dark ? 0.15 : 0.1))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(themeColor.opacity(0.3), lineWidth: 1)
+            )
+            .scaleEffect(pulseAnimation ? 1.03 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isCompetition ? "Open battle cry picker" : "Open hype picker")
+        .task {
+            let reactions = await ChallengeService.shared.fetchReactions(challengeId: challenge.challengeId, limit: 1)
+            if let latest = reactions.first {
+                latestReaction = latest
+                if !latest.isMine {
+                    withAnimation(.easeInOut(duration: 0.8).repeatCount(3, autoreverses: true)) {
+                        pulseAnimation = true
+                    }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(2.5))
+                        guard !Task.isCancelled else { return }
+                        pulseAnimation = false
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -388,6 +476,168 @@ struct ReactiveBattleFeed: View {
 
     private var shouldDisableMotion: Bool {
         reduceMotion || ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+}
+
+// MARK: - Battle Cry Picker Sheet
+
+/// Host-driven full picker. Replaces `ReactionPickerSheet` (which was
+/// hard-bound to `ActiveChallenge` and the 1v1 RPC) with a generic
+/// surface that 1v1, group, and community detail views can all share.
+/// The host owns the actual send call via `onSend` so the same sheet
+/// works across every challenge type without leaking model details.
+struct BattleCryPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+
+    let mode: BattleCryMode
+    let typeColor: Color
+    let gradient: [Color]
+    let recipientLabel: String
+    let onSend: (ReactionPreset) -> Void
+
+    @State private var pulsedKey: String?
+    @State private var sentPreset: ReactionPreset?
+
+    private var presets: [ReactionPreset] { mode.presets }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AnimatedOrbBackground.home(colorScheme: colorScheme)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: Spacing.md) {
+                        header
+                        grid
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.bottom, Spacing.xl)
+                }
+            }
+            .navigationTitle(mode.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(.ds_labelLarge)
+                }
+            }
+            .overlay(alignment: .center) {
+                if let sent = sentPreset {
+                    sentOverlay(sent)
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(spacing: Spacing.xs) {
+            Image(systemName: mode.icon)
+                .font(.ds_displayMedium)
+                .foregroundStyle(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+
+            Text(mode.openCTA)
+                .font(.ds_heading2)
+                .foregroundColor(.primary)
+
+            Text(headerSubtitle)
+                .font(.ds_bodySmall)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.top, Spacing.sm)
+    }
+
+    private var headerSubtitle: String {
+        switch mode {
+        case .competition:    return "Let \(recipientLabel) know who's boss"
+        case .accountability: return "Hype up \(recipientLabel) to crush today"
+        case .community:      return "Send some love to \(recipientLabel)"
+        }
+    }
+
+    private var grid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.xs) {
+            ForEach(presets) { preset in
+                cell(preset)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cell(_ preset: ReactionPreset) -> some View {
+        let isPulsing = pulsedKey == preset.id
+        Button {
+            HapticManager.notification(.success)
+            sentPreset = preset
+            onSend(preset)
+            pulse(preset.id)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(900))
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.25)) {
+                    sentPreset = nil
+                }
+                dismiss()
+            }
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Text(preset.emoji)
+                    .font(.ds_heading2)
+                Text(preset.text)
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .fill(Color.cardBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .stroke(typeColor.opacity(0.20), lineWidth: 1)
+            )
+            .scaleEffect(isPulsing ? 1.04 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Send \(preset.text)")
+    }
+
+    private func pulse(_ key: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
+            pulsedKey = key
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(280))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                pulsedKey = nil
+            }
+        }
+    }
+
+    private func sentOverlay(_ preset: ReactionPreset) -> some View {
+        VStack(spacing: Spacing.sm) {
+            Text(preset.emoji)
+                .font(.system(size: 64))
+            Text("Sent")
+                .font(.ds_heading3)
+                .foregroundColor(.white)
+        }
+        .padding(Spacing.xl)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                .fill(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                .shadow(color: typeColor.opacity(0.4), radius: 20)
+        )
+        .transition(.scale.combined(with: .opacity))
     }
 }
 

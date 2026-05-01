@@ -5,18 +5,28 @@ struct GroupChallengeDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var userManager: UserManager
     @ObservedObject private var challengeService = ChallengeService.shared
-    
+
     let challenge: ActiveGroupChallenge
-    
+
     @State private var showingLeaveConfirm = false
     @State private var showingCancelConfirm = false
     @State private var isProcessing = false
-    
+
+    // Battle Cry overhaul (2026-04-30) — Phase 4 realtime state.
+    // Owned by the parent view per PE invariant 9 so the
+    // `ReactiveBattleFeed` row never subscribes to RealtimeService
+    // itself. Initial snapshot loaded by `loadReactions()`; subsequent
+    // INSERTs streamed in via `RealtimeService.subscribeChallengeReactions`.
+    @State private var reactions: [ChallengeReaction] = []
+    @State private var reactionsLoading: Bool = true
+    @State private var reactionsInboundFlash: Int = 0
+    @State private var showingBattleCryPicker = false
+
     /// Live version of the challenge from the service (updates when fetchActiveGroupChallenges runs)
     private var liveChallenge: ActiveGroupChallenge {
         challengeService.activeGroupChallenges.first(where: { $0.challengeId == challenge.challengeId }) ?? challenge
     }
-    
+
     private var sortedMembers: [GroupChallengeMember] {
         let currentUserId = SupabaseManager.shared.currentUser?.id
         let resolver = ChallengeProgressResolver.shared
@@ -30,45 +40,68 @@ struct GroupChallengeDetailView: View {
             return p1 > p2
         }
     }
-    
+
     private var acceptedMembers: [GroupChallengeMember] {
         sortedMembers.filter(\.isAccepted)
     }
-    
+
     private var pendingMembers: [GroupChallengeMember] {
         sortedMembers.filter(\.isPending)
     }
-    
+
     private var isAccountability: Bool {
         challenge.challengeMode == .accountability
     }
-    
+
     private var resolvedType: ChallengeType { challenge.resolvedType }
     private var typeColor: Color { resolvedType.color }
+    private var typeGradientColors: [Color] { resolvedType.gradientColors }
     private var typeGradient: LinearGradient {
-        LinearGradient(colors: resolvedType.gradientColors, startPoint: .leading, endPoint: .trailing)
+        LinearGradient(colors: typeGradientColors, startPoint: .leading, endPoint: .trailing)
     }
-    
+
+    private var battleCryMode: BattleCryMode {
+        // Group hype lives between competition (1v1 smack) and community
+        // (broadcast cheer). Accountability mode borrows the hype/cheer
+        // pool so non-competitive groups don't get smack-talk presets.
+        isAccountability ? .accountability : .competition
+    }
+
     var body: some View {
         ZStack {
             AnimatedOrbBackground.friends(colorScheme: colorScheme)
                 .ignoresSafeArea()
-            
+
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: Spacing.md) {
-                    headerCard
+                    heroCard
+                    statChips
+                    groupTodayCard
                     membersSection
-                    statsSection
-                    
+
+                    if challenge.status == "active" && acceptedMembers.count > 1 {
+                        battleCryStrip
+
+                        ReactiveBattleFeed(
+                            mode: battleCryMode,
+                            typeColor: typeColor,
+                            gradient: typeGradientColors,
+                            reactions: reactions,
+                            isLoading: reactionsLoading,
+                            inboundFlash: reactionsInboundFlash
+                        )
+                    }
+
                     if !pendingMembers.isEmpty {
                         pendingSection
                     }
-                    
+
                     actionsSection
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.top, Spacing.sm)
                 .padding(.bottom, 60)
+                .trackScrollJank(screen: "GroupChallengeDetail")
             }
         }
         // Phase 12 rage-shake fix (2026-04-24) — see PrivateChallengeDetailView
@@ -82,8 +115,7 @@ struct GroupChallengeDetailView: View {
             // Sprint 2026-04-24 Phase 4 (N1): pause intelligence phases while
             // user is in this detail view — see UserFocusSentinel doc.
             UserFocusSentinel.shared.beginFocus("GroupChallengeDetail")
-            
-            // Subscribe to real-time opponent progress updates for this group challenge
+
             RealtimeService.shared.onOpponentDailyProgressUpdated = { payload in
                 if payload.challengeId == challenge.challengeId {
                     Task {
@@ -91,8 +123,23 @@ struct GroupChallengeDetailView: View {
                     }
                 }
             }
-            
-            // Periodic refresh as a safety net (every 2 minutes)
+
+            // Battle Cry overhaul (2026-04-30) — Phase 4 realtime hookup.
+            // Owned by the parent view per PE invariant 9. Fly-in animation
+            // + confetti is driven by `inboundFlash` ticking up on each
+            // remote arrival; local optimistic inserts (in `sendBattleCry`)
+            // skip the flash so we don't confetti our own taps.
+            await loadReactions()
+            await RealtimeService.shared.subscribeChallengeReactions(challengeId: challenge.challengeId)
+            RealtimeService.shared.onChallengeReactionReceived = { reaction in
+                guard !reaction.isMine else { return }
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
+                    reactions.insert(reaction, at: 0)
+                }
+                reactionsInboundFlash &+= 1
+                HapticManager.notification(.warning)
+            }
+
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 120_000_000_000)
                 await challengeService.fetchActiveGroupChallenges()
@@ -100,7 +147,20 @@ struct GroupChallengeDetailView: View {
         }
         .onDisappear {
             RealtimeService.shared.onOpponentDailyProgressUpdated = nil
+            RealtimeService.shared.onChallengeReactionReceived = nil
+            Task { await RealtimeService.shared.unsubscribeChallengeReactions() }
             UserFocusSentinel.shared.endFocus("GroupChallengeDetail")
+        }
+        .sheet(isPresented: $showingBattleCryPicker) {
+            BattleCryPickerSheet(
+                mode: battleCryMode,
+                typeColor: typeColor,
+                gradient: typeGradientColors,
+                recipientLabel: "the team",
+                onSend: { preset in sendBattleCry(preset) }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .alert("Leave Challenge?", isPresented: $showingLeaveConfirm) {
             Button("Leave", role: .destructive) {
@@ -126,356 +186,250 @@ struct GroupChallengeDetailView: View {
             Text("This will end the challenge for everyone. All members will be removed.")
         }
     }
-    
-    // MARK: - Header Card
-    
-    private var headerCard: some View {
-        VStack(spacing: Spacing.md) {
-            HStack(spacing: Spacing.xs) {
-                HStack(spacing: Spacing.xxs) {
-                    Text(resolvedType.emoji)
-                        .font(.system(size: 14))
-                    Text(resolvedType.displayName)
-                        .font(.ds_labelSmall)
-                        .fontWeight(.bold)
-                }
-                .foregroundColor(typeColor)
-                .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, Spacing.xxxs)
-                .background(Capsule().fill(typeColor.opacity(0.12)))
-                
-                HStack(spacing: Spacing.xxs) {
-                    Text(isAccountability ? "🤝" : "⚔️")
-                        .font(.system(size: 11))
-                    Text(isAccountability ? "Accountability" : "Competition")
-                        .font(.ds_labelSmall)
-                        .fontWeight(.semibold)
-                }
-                .foregroundStyle(typeGradient)
-                
-                Spacer()
-                
-                HStack(spacing: Spacing.xxs) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 9))
-                    if challenge.daysRemaining > 0 {
-                        Text("\(challenge.daysRemaining)d left")
-                    } else {
-                        Text("Complete")
-                    }
-                }
-                .font(.ds_labelSmall)
-                .foregroundColor(.secondary)
-            }
-            
-            Text(liveChallenge.displayTitle)
-                .font(.ds_heading2)
-                .foregroundColor(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            HStack(spacing: -10) {
-                ForEach(Array(acceptedMembers.enumerated()), id: \.element.id) { index, member in
-                    memberAvatar(member: member, size: 44)
-                        .zIndex(Double(acceptedMembers.count - index))
-                }
-                
-                if !pendingMembers.isEmpty {
-                    ZStack {
-                        Circle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(width: 44, height: 44)
-                        Text("+\(pendingMembers.count)")
-                            .font(.ds_labelSmall)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                    }
-                }
-                
-                Spacer()
-                
-                Text("\(acceptedMembers.count) members")
-                    .font(.ds_caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            if let target = challenge.dailyTarget {
-                HStack {
-                    Text("Daily Goal")
-                        .font(.ds_labelSmall)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("\(target) \(challenge.targetUnit)")
-                        .font(.ds_statSmall)
-                        .foregroundStyle(typeGradient)
-                }
-            }
-            
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(typeColor.opacity(colorScheme == .dark ? 0.12 : 0.08))
-                        .frame(height: 6)
-                    
-                    let progress = challenge.durationDays > 0
-                        ? CGFloat(challenge.daysElapsed) / CGFloat(challenge.durationDays)
-                        : 0
-                    
-                    Capsule()
-                        .fill(typeGradient)
-                        .frame(width: max(geo.size.width * min(1, progress), 6), height: 6)
-                        .animation(.spring(response: 0.5), value: progress)
-                }
-            }
-            .frame(height: 6)
-        }
-        .padding(Spacing.md)
-        .sleekCard(cornerRadius: 20, accentColor: typeColor)
+
+    // MARK: - Hero Card
+
+    /// Top-of-page hero. Shows the challenge title, type emoji, the
+    /// (now-visible) description, and a time pill via the shared
+    /// `ChallengeHeroCard` kit component. The previous bespoke header
+    /// included a duration progress bar that the audit flagged as
+    /// confusing (it looked like daily progress) — that bar is gone;
+    /// the "Day X of Y" pill on the hero card carries that information
+    /// without ambiguity.
+    private var heroCard: some View {
+        ChallengeHeroCard(
+            title: liveChallenge.displayTitle,
+            emoji: resolvedType.emoji,
+            typeColor: typeColor,
+            gradient: typeGradientColors,
+            typeLabel: isAccountability ? "Accountability" : "Competition",
+            description: liveChallenge.description,
+            daysElapsed: liveChallenge.daysElapsed,
+            durationDays: liveChallenge.durationDays,
+            daysRemaining: liveChallenge.daysRemaining,
+            endDate: liveChallenge.endDate,
+            memberCountSuffix: "\(acceptedMembers.count) members"
+        )
     }
-    
-    // MARK: - Members Section
-    
+
+    // MARK: - Stat Chip Row
+
+    private var statChips: some View {
+        let target = liveChallenge.dailyTarget ?? 0
+        let combined = acceptedMembers.reduce(0) { $0 + $1.totalProgress }
+        let bestStreak = acceptedMembers.map(\.currentStreak).max() ?? 0
+        let doneToday = target > 0 ? acceptedMembers.filter { $0.todayProgress >= target }.count : 0
+
+        var chips: [StatChip] = []
+        chips.append(StatChip(value: formatGroupTotal(combined), label: "Combined", icon: "chart.bar.fill", tint: typeColor))
+        if bestStreak > 0 {
+            chips.append(StatChip(value: "\(bestStreak)", label: "Best Streak", icon: "flame.fill", tint: .orange))
+        }
+        if target > 0 {
+            chips.append(StatChip(value: "\(doneToday)/\(acceptedMembers.count)", label: "Done Today", icon: "checkmark.seal.fill", tint: doneToday == acceptedMembers.count ? .green : .primary))
+            chips.append(StatChip(value: "\(target.formatted())", label: liveChallenge.targetUnit, icon: "target", tint: .primary))
+        }
+        chips.append(StatChip(
+            value: "\(liveChallenge.daysRemaining)",
+            label: liveChallenge.daysRemaining == 1 ? "Day Left" : "Days Left",
+            icon: "clock",
+            tint: liveChallenge.daysRemaining <= 1 ? .red : .primary
+        ))
+
+        return StatChipRow(chips: chips)
+    }
+
+    /// Shared kit "Today" card — single-row layout (`opponentName` nil)
+    /// shows only the current member's live daily progress vs the group
+    /// target (plan: Today → group detail). Hidden when the challenge has
+    /// no daily target (same as skipping a meaningless progress bar).
+    @ViewBuilder
+    private var groupTodayCard: some View {
+        let daily = liveChallenge.dailyTarget ?? 0
+        if daily > 0 {
+            let uid = userManager.currentUser?.id
+            let myMember = acceptedMembers.first { $0.userId == uid }
+            let live = myMember.map {
+                ChallengeProgressResolver.shared.liveProgress(for: liveChallenge, serverValue: $0.todayProgress)
+            } ?? 0
+            let hit = live >= daily
+
+            TodayProgressCard(
+                myValue: live,
+                myValueText: live.formatted(),
+                opponentName: nil,
+                opponentValue: 0,
+                opponentValueText: "",
+                target: daily,
+                targetUnit: liveChallenge.targetUnit,
+                typeColor: typeColor,
+                gradient: typeGradientColors,
+                leaderTitle: hit ? "Target hit" : (isAccountability ? "Your check-in" : "Your pace"),
+                opponentFreshness: .fresh,
+                opponentAgeLabel: nil
+            )
+        }
+    }
+
+    // MARK: - Members / Leaderboard Section
+
     private var membersSection: some View {
-        VStack(spacing: Spacing.sm) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: isAccountability ? "person.3.fill" : "trophy.fill")
+                    .font(.ds_heading3)
                     .foregroundStyle(typeGradient)
-                    .font(.title3)
                 Text(isAccountability ? "Team Check-In" : "Leaderboard")
-                    .font(.title3)
-                    .fontWeight(.bold)
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
-                
+
                 Spacer()
-                
-                Text("Day \(challenge.daysElapsed) of \(challenge.durationDays)")
-                    .font(.ds_caption)
-                    .foregroundColor(.secondary)
             }
-            
-            VStack(spacing: 0) {
+
+            VStack(spacing: Spacing.xxs) {
                 ForEach(Array(acceptedMembers.enumerated()), id: \.element.id) { rank, member in
-                    memberRow(member: member, rank: rank + 1)
-                    
-                    if rank < acceptedMembers.count - 1 {
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.04))
-                            .frame(height: 1)
-                            .padding(.horizontal, Spacing.sm)
+                    if isAccountability {
+                        accountabilityRow(member: member)
+                    } else {
+                        leaderboardRow(member: member, rank: rank + 1)
                     }
                 }
             }
-            .sleekCardSubtle(cornerRadius: 16)
         }
     }
-    
-    private func memberRow(member: GroupChallengeMember, rank: Int) -> some View {
+
+    @ViewBuilder
+    private func leaderboardRow(member: GroupChallengeMember, rank: Int) -> some View {
         let currentUserId = userManager.currentUser?.id
         let isMe = currentUserId != nil && member.userId == currentUserId
-        let target = challenge.dailyTarget ?? 0
+        let target = liveChallenge.dailyTarget ?? 0
         let displayProgress = isMe
-            ? ChallengeProgressResolver.shared.liveProgress(for: challenge, serverValue: member.todayProgress)
+            ? ChallengeProgressResolver.shared.liveProgress(for: liveChallenge, serverValue: member.todayProgress)
+            : member.todayProgress
+        let valueText = !isMe && displayProgress == 0 ? "—" : "\(displayProgress.formatted())"
+        let progressFraction: Double? = target > 0
+            ? min(1.0, max(0, Double(displayProgress) / Double(target)))
+            : nil
+        let streakBadge: String? = member.currentStreak > 0 ? "🔥 \(member.currentStreak)-day streak" : nil
+
+        LeaderboardRow(
+            rank: rank,
+            userId: member.userId.uuidString,
+            displayName: member.firstName,
+            photoUrl: member.profilePhotoUrl,
+            valueText: valueText,
+            progress: progressFraction,
+            isMe: isMe,
+            typeColor: typeColor,
+            gradient: typeGradientColors,
+            trailingBadge: streakBadge,
+            isVerified: member.isVerified == true,
+            isGoldVerified: member.isGoldVerified == true
+        )
+    }
+
+    @ViewBuilder
+    private func accountabilityRow(member: GroupChallengeMember) -> some View {
+        let currentUserId = userManager.currentUser?.id
+        let isMe = currentUserId != nil && member.userId == currentUserId
+        let target = liveChallenge.dailyTarget ?? 0
+        let displayProgress = isMe
+            ? ChallengeProgressResolver.shared.liveProgress(for: liveChallenge, serverValue: member.todayProgress)
             : member.todayProgress
         let completedToday = target > 0 && displayProgress >= target
-        
-        return HStack(spacing: Spacing.sm) {
-            if isAccountability {
-                Text(completedToday ? "✅" : "⬜")
-                    .font(.ds_heading3)
-            } else {
-                ZStack {
-                    Circle()
-                        .fill(rank == 1
-                            ? LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
-                            : LinearGradient(colors: [.gray.opacity(0.3), .gray.opacity(0.2)], startPoint: .top, endPoint: .bottom))
-                        .frame(width: 28, height: 28)
-                    
-                    if rank == 1 {
-                        Image(systemName: "crown.fill")
-                            .font(.ds_labelSmall)
-                            .foregroundColor(.white)
-                    } else {
-                        Text("\(rank)")
-                            .font(.ds_labelSmall)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                    }
-                }
-            }
-            
-            memberAvatar(member: member, size: 36)
-            
+
+        HStack(spacing: Spacing.sm) {
+            Text(completedToday ? "✅" : "⬜")
+                .font(.ds_heading3)
+
+            CachedFriendPhoto(
+                friendId: member.userId.uuidString,
+                photoUrl: member.profilePhotoUrl,
+                name: member.firstName,
+                size: 36,
+                showGradientRing: false,
+                gradientColors: typeGradientColors
+            )
+
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Text(isMe ? "You" : member.firstName)
-                        .font(.ds_bodySmall)
-                        .fontWeight(.semibold)
-                    
+                        .font(.ds_labelLarge)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
                     if member.isVerified == true || member.isGoldVerified == true {
-                        VerifiedBadge(size: 12, isGold: member.isGoldVerified == true)
+                        VerifiedBadge(size: 10, isGold: member.isGoldVerified == true)
                     }
                 }
-                
                 if member.currentStreak > 0 {
-                    HStack(spacing: 2) {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(.orange)
-                        Text("\(member.currentStreak)-day streak")
-                            .font(.ds_caption)
-                            .foregroundColor(.orange)
-                    }
+                    Text("🔥 \(member.currentStreak)-day streak")
+                        .font(.ds_caption)
+                        .foregroundColor(.orange)
                 }
             }
-            
-            Spacer()
-            
+
+            Spacer(minLength: 0)
+
             VStack(alignment: .trailing, spacing: 2) {
-                HStack(spacing: Spacing.xxxs) {
-                    Text(!isMe && displayProgress == 0 ? "–" : "\(displayProgress)")
-                        .font(.ds_statSmall)
-                        .foregroundColor(!isMe && displayProgress == 0 ? .secondary.opacity(0.5) : (completedToday ? .green : .primary))
-                    
-                    if completedToday {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(.green)
-                    }
-                }
-                
-                Text("today")
-                    .font(.system(size: 9, weight: .medium))
+                Text(!isMe && displayProgress == 0 ? "—" : "\(displayProgress.formatted())")
+                    .font(.ds_statSmall)
+                    .foregroundColor(completedToday ? .green : .primary)
+                Text(completedToday ? "DONE" : "TODAY")
+                    .font(.ds_caption)
+                    .tracking(0.5)
                     .foregroundColor(.secondary)
             }
         }
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, Spacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                .fill(isMe ? typeColor.opacity(colorScheme == .dark ? 0.14 : 0.08) : Color.clear)
+        )
     }
-    
-    // MARK: - Stats Section
-    
-    private var statsSection: some View {
-        VStack(spacing: Spacing.sm) {
-            HStack(spacing: Spacing.xs) {
-                Image(systemName: "chart.bar.fill")
-                    .foregroundStyle(typeGradient)
-                    .font(.title3)
-                Text("Group Stats")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
-                
-                Spacer()
+
+    // MARK: - Battle Cry Strip
+
+    private var battleCryStrip: some View {
+        BattleCryStrip(
+            mode: battleCryMode,
+            typeColor: typeColor,
+            gradient: typeGradientColors,
+            onSend: { preset in sendBattleCry(preset) },
+            onOpenPicker: {
+                HapticManager.impact(.light)
+                showingBattleCryPicker = true
             }
-            
-            HStack(spacing: 0) {
-                groupStatCell(
-                    value: formatGroupTotal(acceptedMembers.reduce(0) { $0 + $1.totalProgress }),
-                    label: "combined",
-                    valueColor: typeColor
-                )
-                
-                groupThinDivider
-                
-                VStack(spacing: 2) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.orange)
-                        Text("\(acceptedMembers.map(\.currentStreak).max() ?? 0)")
-                            .font(.ds_statSmall)
-                            .foregroundColor(.primary)
-                    }
-                    Text("best streak")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                
-                groupThinDivider
-                
-                groupStatCell(
-                    value: "\(challenge.daysRemaining)",
-                    label: challenge.daysRemaining == 1 ? "day left" : "days left",
-                    valueColor: challenge.daysRemaining <= 1 ? .red : .primary
-                )
-                
-                groupThinDivider
-                
-                groupStatCell(
-                    value: {
-                        let target = challenge.dailyTarget ?? 0
-                        let done = target > 0 ? acceptedMembers.filter { $0.todayProgress >= target }.count : 0
-                        return "\(done)/\(acceptedMembers.count)"
-                    }(),
-                    label: "done today",
-                    valueColor: .green
-                )
-            }
-            .padding(.vertical, Spacing.xs)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
-                    .fill(typeColor.opacity(colorScheme == .dark ? 0.06 : 0.04))
-            )
-        }
-        .padding(Spacing.sm)
-        .sleekCardSubtle(cornerRadius: 16)
+        )
     }
-    
-    private func groupStatCell(value: String, label: String, valueColor: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.ds_statSmall)
-                .foregroundColor(valueColor)
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
-    private var groupThinDivider: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.2))
-            .frame(width: 1, height: 28)
-    }
-    
-    private func formatGroupTotal(_ value: Int) -> String {
-        if value >= 10000 {
-            return String(format: "%.1fk", Double(value) / 1000)
-        }
-        return value.formatted()
-    }
-    
+
     // MARK: - Pending Section
-    
+
     private var pendingSection: some View {
-        VStack(spacing: Spacing.sm) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "hourglass.circle.fill")
+                    .font(.ds_heading3)
                     .foregroundStyle(LinearGradient(colors: [.orange, .yellow], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .font(.title3)
                 Text("Waiting to Join")
-                    .font(.title3)
-                    .fontWeight(.bold)
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
-                
+
                 Spacer()
             }
-            
+
             VStack(spacing: 0) {
                 ForEach(Array(pendingMembers.enumerated()), id: \.element.id) { index, member in
                     HStack(spacing: Spacing.sm) {
                         memberAvatar(member: member, size: 36)
-                        
+
                         Text(member.firstName)
                             .font(.ds_bodySmall)
-                            .fontWeight(.medium)
-                        
+
                         Spacer()
-                        
+
                         Text("Pending")
                             .font(.ds_labelSmall)
-                            .fontWeight(.semibold)
                             .foregroundColor(.orange)
                             .padding(.horizontal, Spacing.xs)
                             .padding(.vertical, Spacing.xxxs)
@@ -483,7 +437,7 @@ struct GroupChallengeDetailView: View {
                     }
                     .padding(.horizontal, Spacing.sm)
                     .padding(.vertical, Spacing.xs)
-                    
+
                     if index < pendingMembers.count - 1 {
                         Rectangle()
                             .fill(Color.primary.opacity(0.04))
@@ -492,16 +446,16 @@ struct GroupChallengeDetailView: View {
                     }
                 }
             }
-            .sleekCardSubtle(cornerRadius: 16)
+            .sleekCardSubtle(cornerRadius: CornerRadius.lg)
         }
     }
-    
+
     // MARK: - Actions Section
-    
+
     private var isCreator: Bool {
         userManager.currentUser?.id == liveChallenge.createdBy
     }
-    
+
     private var actionsSection: some View {
         VStack(spacing: Spacing.sm) {
             Button(action: { showingLeaveConfirm = true }) {
@@ -513,10 +467,9 @@ struct GroupChallengeDetailView: View {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
                             .font(.ds_bodyMedium)
                     }
-                    
+
                     Text(isProcessing ? "Leaving..." : "Leave Challenge")
                         .font(.ds_bodySmall)
-                        .fontWeight(.medium)
                 }
                 .foregroundColor(.orange)
                 .frame(maxWidth: .infinity)
@@ -532,16 +485,15 @@ struct GroupChallengeDetailView: View {
             }
             .buttonStyle(PlainButtonStyle())
             .disabled(isProcessing)
-            
+
             if isCreator {
                 Button(action: { showingCancelConfirm = true }) {
                     HStack(spacing: Spacing.xs) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.ds_bodyMedium)
-                        
+
                         Text("Cancel Challenge for Everyone")
                             .font(.ds_bodySmall)
-                            .fontWeight(.medium)
                     }
                     .foregroundColor(.red)
                     .frame(maxWidth: .infinity)
@@ -560,14 +512,67 @@ struct GroupChallengeDetailView: View {
             }
         }
     }
-    
+
+    // MARK: - Reactions
+
+    private func loadReactions() async {
+        reactionsLoading = true
+        let fetched = await ChallengeService.shared.fetchReactions(challengeId: challenge.challengeId)
+        await MainActor.run {
+            reactions = fetched
+            reactionsLoading = false
+        }
+    }
+
+    /// Optimistic-insert + group fan-out send. The realtime listener
+    /// also receives our own INSERT, but the `isMine` filter in the
+    /// `onChallengeReactionReceived` callback prevents a double bubble.
+    private func sendBattleCry(_ preset: ReactionPreset) {
+        guard let me = SupabaseManager.shared.currentUser?.id else { return }
+        let recipients = acceptedMembers.map(\.userId).filter { $0 != me }
+        guard !recipients.isEmpty else { return }
+
+        let optimisticId = UUID()
+        let optimistic = ChallengeReaction(
+            reactionId: optimisticId,
+            senderId: me,
+            senderName: "You",
+            senderPhotoUrl: nil,
+            recipientId: recipients.first ?? me,
+            reactionKey: preset.id,
+            reactionEmoji: preset.emoji,
+            reactionText: preset.text,
+            reactionCategory: preset.category.rawValue,
+            createdAt: Date()
+        )
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
+            reactions.insert(optimistic, at: 0)
+        }
+
+        Task {
+            let count = await ChallengeService.shared.sendGroupReaction(
+                challengeId: challenge.challengeId,
+                recipientIds: recipients,
+                preset: preset
+            )
+            if count == 0 {
+                await MainActor.run {
+                    HapticManager.notification(.error)
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        reactions.removeAll { $0.id == optimisticId }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
-    
+
     private func leaveChallenge() async {
         isProcessing = true
         let result = await challengeService.leaveGroupChallenge(challengeId: challenge.challengeId)
         isProcessing = false
-        
+
         if result != nil {
             HapticManager.notification(.success)
             dismiss()
@@ -575,12 +580,12 @@ struct GroupChallengeDetailView: View {
             HapticManager.notification(.error)
         }
     }
-    
+
     private func cancelChallenge() async {
         isProcessing = true
         let success = await challengeService.cancelGroupChallenge(challengeId: challenge.challengeId)
         isProcessing = false
-        
+
         if success {
             HapticManager.notification(.success)
             dismiss()
@@ -588,9 +593,16 @@ struct GroupChallengeDetailView: View {
             HapticManager.notification(.error)
         }
     }
-    
-    // MARK: - Helper
-    
+
+    // MARK: - Helpers
+
+    private func formatGroupTotal(_ value: Int) -> String {
+        if value >= 10000 {
+            return String(format: "%.1fk", Double(value) / 1000)
+        }
+        return value.formatted()
+    }
+
     private func memberAvatar(member: GroupChallengeMember, size: CGFloat) -> some View {
         Group {
             let currentUserId = SupabaseManager.shared.currentUser?.id

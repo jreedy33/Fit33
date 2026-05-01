@@ -263,7 +263,12 @@ BEGIN
         v_fingerprint, v_today, '(server-side: push delivery)', '',
         v_row.event_count, v_row.user_count
       )
-      ON CONFLICT DO NOTHING;
+      ON CONFLICT (fingerprint, day, screen, app_version) DO UPDATE SET
+        occurrence_count = bug_intelligence_daily_rollup.occurrence_count + EXCLUDED.occurrence_count,
+        unique_user_count = GREATEST(
+          bug_intelligence_daily_rollup.unique_user_count,
+          EXCLUDED.unique_user_count
+        );
     EXCEPTION WHEN OTHERS THEN
       NULL;  -- rollup table column drift; cluster row already planted.
     END;

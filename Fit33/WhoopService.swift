@@ -566,7 +566,6 @@ final class WhoopService: ObservableObject {
             let errorBody: String
             if let body = String(data: data, encoding: .utf8) {
                 errorBody = String(body.prefix(300))
-                AppLogger.error("[WHOOP] Token refresh failed (HTTP \(status)): \(errorBody)", category: .auth)
             } else {
                 errorBody = "<binary>"
             }
@@ -576,8 +575,10 @@ final class WhoopService: ObservableObject {
             // still valid, the WHOOP API just had a moment. Previously every
             // 5xx blip permanently signed users out, which is the root cause
             // behind "I haven't deleted the app, why am I disconnected again".
+            // Log at .warning only — .error inflates bug-intel (`af583196`) for
+            // recoverable OAuth states; permanent revoke path still disconnects.
             if (400...403).contains(status) {
-                AppLogger.error("[WHOOP] Refresh token rejected (HTTP \(status)) — disconnecting", category: .auth)
+                AppLogger.warning("[WHOOP] Refresh token rejected (HTTP \(status)) — disconnecting; body: \(errorBody)", category: .auth)
                 OAuthAuditLog.record(
                     service: "whoop",
                     event: .refreshFailure,

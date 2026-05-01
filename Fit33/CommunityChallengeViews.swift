@@ -2725,6 +2725,17 @@ struct CommunityDetailView: View {
     @State private var showingLeaveConfirmation = false
     @State private var isLeaving = false
     @State private var showShareSheet = false
+    @State private var showFullLeaderboard = false
+
+    // Battle Cry overhaul (2026-04-30) — Phase 5 realtime state.
+    // Owned by the parent view per PE invariant 9 so the
+    // `ReactiveBattleFeed` row never subscribes to RealtimeService
+    // itself. Initial snapshot loaded by `loadReactions()`; subsequent
+    // INSERTs streamed in via `RealtimeService.subscribeChallengeReactions`.
+    @State private var reactions: [ChallengeReaction] = []
+    @State private var reactionsLoading: Bool = true
+    @State private var reactionsInboundFlash: Int = 0
+    @State private var showingBattleCryPicker = false
     
     /// Previous leaderboard ranks for computing deltas locally
     @State private var previousDetailRanks: [UUID: Int] = [:]
@@ -2802,10 +2813,47 @@ struct CommunityDetailView: View {
                     ProgressView()
                 } else if let detail {
                     ScrollView {
-                        VStack(spacing: 16) {
-                            // Challenge header card
-                            detailHeader(detail)
-                            
+                        VStack(spacing: Spacing.md) {
+                            heroCard(detail)
+
+                            todayCard(detail)
+                            statChips(detail)
+
+                            // Olympic-style top-3 podium above the leaderboard.
+                            // Adds the visceral "who's winning" hierarchy that
+                            // the bare leaderboard list was missing.
+                            if let leaders = detail.topLeaderboard,
+                               leaders.contains(where: { $0.rank <= 3 }) {
+                                podiumCard(leaders, type: detail.resolvedType)
+                            }
+
+                            // Community-mode Battle Cry strip (encouragement
+                            // presets only — no smack talk for masses). Fans
+                            // out hype to the top leaderboard via realtime.
+                            if !(detail.topLeaderboard?.isEmpty ?? true) {
+                                battleCryStrip(detail)
+
+                                ReactiveBattleFeed(
+                                    mode: .community,
+                                    typeColor: detail.resolvedType.color,
+                                    gradient: detail.resolvedType.gradientColors,
+                                    reactions: reactions,
+                                    isLoading: reactionsLoading,
+                                    inboundFlash: reactionsInboundFlash
+                                )
+                            }
+
+                            // Pinned-me row when the user isn't in topLeaderboard
+                            pinnedMeRow(detail)
+
+                            // Top leaderboard rows (kit version)
+                            if let leaders = detail.topLeaderboard, !leaders.isEmpty {
+                                kitLeaderboardSection(leaders, type: detail.resolvedType)
+                            }
+
+                            // Jump to full leaderboard CTA
+                            jumpToFullLeaderboardButton(detail)
+
                             // Challenge rules
                             ChallengeRulesCard(
                                 rules: ChallengeRulesHelper.rules(
@@ -2816,41 +2864,35 @@ struct CommunityDetailView: View {
                                 ),
                                 themeColor: detail.resolvedType.color
                             )
-                            
-                            // Your stats
-                            myStatsSection(detail)
-                            
+
                             // Community pulse
                             communityPulseSection(detail)
-                            
+
                             // Friends in community
                             if let friends = detail.friendsIn, !friends.isEmpty {
                                 friendsSection(friends, count: detail.friendsCount, type: detail.resolvedType)
                             }
-                            
+
                             // Encouragement
                             if let encouragement = detail.encouragement, !encouragement.isEmpty {
                                 encouragementBanner(encouragement, type: detail.resolvedType)
                             }
-                            
-                            // Top leaderboard
-                            if let leaders = detail.topLeaderboard, !leaders.isEmpty {
-                                leaderboardSection(leaders, type: detail.resolvedType)
-                            }
-                            
+
                             // Leave community
                             leaveCommunityButton(type: detail.resolvedType)
                         }
                         .padding(.horizontal, Spacing.md)
-                        .padding(.top, 12)
-                        .padding(.bottom, 40)
+                        .padding(.top, Spacing.sm)
+                        .padding(.bottom, Spacing.xxl)
                     }
+                    .trackScrollJank(screen: "CommunityDetail")
                 } else {
-                    VStack(spacing: 12) {
+                    VStack(spacing: Spacing.sm) {
                         Image(systemName: "exclamationmark.triangle")
-                            .font(.largeTitle)
+                            .font(.ds_displayMedium)
                             .foregroundColor(.secondary)
                         Text("Could not load community details")
+                            .font(.ds_bodySmall)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -2859,7 +2901,7 @@ struct CommunityDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Spacing.sm) {
                         if detail != nil {
                             Button(action: { showShareSheet = true }) {
                                 Image(systemName: "square.and.arrow.up")
@@ -2867,10 +2909,12 @@ struct CommunityDetailView: View {
                             }
                         }
                         Button("Done") { dismiss() }
+                            .font(.ds_labelLarge)
                     }
                 }
             }
         }
+        .trackScreen(.communityChallengeDetail, metadata: ["challenge_id": challengeId])
         .sheet(isPresented: $showShareSheet) {
             if let detail, let url = detail.shareURL {
                 ShareSheet(items: [
@@ -2879,11 +2923,27 @@ struct CommunityDetailView: View {
                 ])
             }
         }
-        .task {
+        .task(id: challengeId) {
             let result = await CommunityChallengeService.shared.getChallengeDetail(challengeId: challengeId)
             storeRanksAndComputeDeltas(from: result)
             detail = result
             isLoading = false
+
+            // Battle Cry overhaul (2026-04-30) — Phase 5 realtime hookup.
+            // Owned by the parent view per PE invariant 9. Fly-in animation
+            // + confetti is driven by `inboundFlash` ticking up on each
+            // remote arrival; local optimistic inserts (in `sendBattleCry`)
+            // skip the flash so we don't confetti our own taps.
+            await loadReactions()
+            await RealtimeService.shared.subscribeChallengeReactions(challengeId: challengeId)
+            RealtimeService.shared.onChallengeReactionReceived = { reaction in
+                guard !reaction.isMine else { return }
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
+                    reactions.insert(reaction, at: 0)
+                }
+                reactionsInboundFlash &+= 1
+                HapticManager.notification(.warning)
+            }
         }
         .refreshable {
             let result = await CommunityChallengeService.shared.getChallengeDetail(challengeId: challengeId)
@@ -2898,6 +2958,29 @@ struct CommunityDetailView: View {
                     detail = result
                 }
             }
+        }
+        .onDisappear {
+            RealtimeService.shared.onChallengeReactionReceived = nil
+            Task { await RealtimeService.shared.unsubscribeChallengeReactions() }
+        }
+        .sheet(isPresented: $showingBattleCryPicker) {
+            if let d = detail {
+                BattleCryPickerSheet(
+                    mode: .community,
+                    typeColor: d.resolvedType.color,
+                    gradient: d.resolvedType.gradientColors,
+                    recipientLabel: "the community",
+                    onSend: { preset in sendBattleCry(preset, in: d) }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+        .navigationDestination(isPresented: $showFullLeaderboard) {
+            CommunityLeaderboardView(
+                challengeId: challengeId,
+                initialTitle: detail?.title ?? challengeTitle
+            )
         }
         .alert("Leave Community?", isPresented: $showingLeaveConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -2952,163 +3035,335 @@ struct CommunityDetailView: View {
             HapticManager.notification(.warning)
             showingLeaveConfirmation = true
         }) {
-            HStack(spacing: 8) {
+            HStack(spacing: Spacing.xs) {
                 if isLeaving {
                     ProgressView()
                         .tint(.red)
                 } else {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .font(.ds_bodyMedium)
                 }
                 Text(isLeaving ? "Leaving..." : "Leave Community")
+                    .font(.ds_bodySmall)
             }
-            .font(.subheadline)
-            .fontWeight(.medium)
             .foregroundColor(.red.opacity(0.8))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
                     .fill(Color.red.opacity(colorScheme == .dark ? 0.08 : 0.04))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
                     .stroke(Color.red.opacity(colorScheme == .dark ? 0.15 : 0.10), lineWidth: 1)
             )
         }
         .disabled(isLeaving)
-        .padding(.top, 8)
+        .padding(.top, Spacing.xs)
     }
     
-    // MARK: - Detail Header
-    
-    private func detailHeader(_ d: CommunityDetailResponse) -> some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(colors: d.resolvedType.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 50, height: 50)
-                Text(d.displayEmoji)
-                    .font(.ds_heading2)
+    // MARK: - Hero Card (kit)
+
+    /// Top-of-page hero. Shows the title, type emoji, the (now-visible)
+    /// description (was hidden in the previous detailHeader), and a
+    /// participant pill via the shared `ChallengeHeroCard`. Community
+    /// challenges are ongoing — durationDays = 0 hides the "Day X of Y"
+    /// pill cleanly per the kit's conditional rendering.
+    private func heroCard(_ d: CommunityDetailResponse) -> some View {
+        ChallengeHeroCard(
+            title: d.title,
+            emoji: d.displayEmoji,
+            typeColor: d.resolvedType.color,
+            gradient: d.resolvedType.gradientColors,
+            typeLabel: d.resolvedType.displayName,
+            description: d.description,
+            daysElapsed: 0,
+            durationDays: 0,
+            daysRemaining: 0,
+            endDate: nil,
+            memberCountSuffix: "\(d.participantCount) joined"
+        )
+    }
+
+    // MARK: - Today Card (kit)
+
+    private func todayCard(_ d: CommunityDetailResponse) -> some View {
+        TodayProgressCard(
+            myValue: liveMyTodayProgress,
+            myValueText: "\(liveMyTodayProgress.formatted())",
+            opponentName: nil,
+            opponentValue: 0,
+            opponentValueText: "",
+            target: d.dailyTarget,
+            targetUnit: d.targetUnit,
+            typeColor: d.resolvedType.color,
+            gradient: d.resolvedType.gradientColors,
+            leaderTitle: liveTargetHitToday ? "Done · #\(d.myRank)" : "#\(d.myRank)",
+            opponentFreshness: .fresh,
+            opponentAgeLabel: nil
+        )
+    }
+
+    // MARK: - Stat Chip Row (kit)
+
+    private func statChips(_ d: CommunityDetailResponse) -> some View {
+        var chips: [StatChip] = []
+        chips.append(StatChip(
+            value: "#\(d.myRank)",
+            label: "Rank",
+            icon: "trophy.fill",
+            tint: d.myRank <= 3 ? .yellow : d.resolvedType.color
+        ))
+        if d.myCurrentStreak > 0 {
+            chips.append(StatChip(value: "\(d.myCurrentStreak)", label: "Streak", icon: "flame.fill", tint: .orange))
+        }
+        chips.append(StatChip(value: "\(d.myDaysCompleted)", label: "Days", icon: "calendar", tint: d.resolvedType.color))
+        if d.myBestStreak > 0 {
+            chips.append(StatChip(value: "\(d.myBestStreak)", label: "Best", icon: "star.fill", tint: .yellow))
+        }
+        chips.append(StatChip(value: "\(d.myTotalProgress.formatted())", label: "Total \(d.targetUnit)", icon: "sum", tint: .primary))
+        return StatChipRow(chips: chips)
+    }
+
+    // MARK: - Top-3 Olympic Podium (kit)
+
+    private func podiumCard(_ leaders: [LeaderboardSnippetEntry], type: ChallengeType) -> some View {
+        let entries = leaders
+            .filter { $0.rank >= 1 && $0.rank <= 3 }
+            .sorted { $0.rank < $1.rank }
+            .map {
+                LeaderboardPodiumEntry(
+                    rank: $0.rank,
+                    userId: $0.userId.uuidString,
+                    displayName: $0.firstName,
+                    photoUrl: $0.profilePhotoUrl,
+                    valueText: "\($0.todayProgress.formatted())"
+                )
             }
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(d.title)
-                    .font(.headline)
+        return LeaderboardPodium(
+            entries: entries,
+            typeColor: type.color,
+            gradient: type.gradientColors
+        )
+    }
+
+    // MARK: - Pinned-me row
+
+    /// When the current user isn't in `topLeaderboard`, render a sticky
+    /// row with `#myRank` so they always know where they stand without
+    /// scrolling to the full leaderboard.
+    @ViewBuilder
+    private func pinnedMeRow(_ d: CommunityDetailResponse) -> some View {
+        let inTop = d.topLeaderboard?.contains(where: { $0.isCurrentUser }) ?? false
+        if !inTop, d.myRank > 0 {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text("Your Position")
+                    .font(.ds_caption)
+                    .tracking(0.6)
+                    .foregroundColor(.secondary)
+
+                LeaderboardRow(
+                    rank: d.myRank,
+                    userId: SupabaseManager.shared.currentUser?.id.uuidString ?? "me",
+                    displayName: "You",
+                    photoUrl: nil,
+                    valueText: "\(liveMyTodayProgress.formatted())",
+                    progress: d.dailyTarget > 0 ? min(1.0, Double(liveMyTodayProgress) / Double(d.dailyTarget)) : nil,
+                    isMe: true,
+                    typeColor: d.resolvedType.color,
+                    gradient: d.resolvedType.gradientColors,
+                    trailingBadge: d.myCurrentStreak > 0 ? "🔥 \(d.myCurrentStreak)-day streak" : nil
+                )
+                .padding(.vertical, Spacing.xxs)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                        .fill(Color.cardBackground)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                        .stroke(d.resolvedType.color.opacity(0.20), lineWidth: 1)
+                )
+            }
+        }
+    }
+
+    // MARK: - Kit Leaderboard Section
+
+    private func kitLeaderboardSection(_ leaders: [LeaderboardSnippetEntry], type: ChallengeType) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "trophy.fill")
+                    .font(.ds_heading3)
+                    .foregroundStyle(LinearGradient(colors: type.gradientColors, startPoint: .leading, endPoint: .trailing))
+                Text("Leaderboard")
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
-                
-                HStack(spacing: 8) {
-                    Label("\(d.participantCount)", systemImage: "person.2.fill")
-                        .font(.caption)
-                        .foregroundColor(d.resolvedType.color.opacity(0.7))
-                    
-                    if let max = d.maxParticipants {
-                        Text("/ \(max)")
-                            .font(.caption)
-                            .foregroundColor(d.resolvedType.color.opacity(0.5))
-                    }
-                    
-                    Text("•")
-                        .foregroundColor(d.resolvedType.color.opacity(0.3))
-                    
-                    Text("\(d.dailyTarget) \(d.targetUnit)/day")
-                        .font(.caption)
-                        .foregroundColor(d.resolvedType.color.opacity(0.7))
-                }
-            }
-            
-            Spacer()
-            
-            // Rank badge
-            VStack(spacing: 2) {
-                Text("#\(d.myRank)")
-                    .font(.ds_statSmall)
-                    .foregroundStyle(
-                        d.myRank <= 3
-                            ? LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)
-                            : LinearGradient(colors: d.resolvedType.gradientColors, startPoint: .top, endPoint: .bottom)
-                    )
-                Text("rank")
+
+                Spacer()
+
+                Text("\(leaders.count)")
                     .font(.ds_caption)
                     .foregroundColor(.secondary)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, Spacing.xxxs)
+                    .background(Capsule().fill(Color.primary.opacity(0.06)))
             }
-        }
-        .padding(Spacing.md)
-        .background(themedCard(color: d.resolvedType.color, cornerRadius: CornerRadius.lg))
-        .overlay(themedOutline(color: d.resolvedType.color, cornerRadius: CornerRadius.lg))
-    }
-    
-    // MARK: - My Stats Section
-    
-    private func myStatsSection(_ d: CommunityDetailResponse) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Your Stats")
-                .font(.subheadline)
-                .fontWeight(.bold)
-                .foregroundColor(.primary)
-            
-            // Progress bar
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Today's Progress")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("\(liveMyTodayProgress)/\(d.dailyTarget) \(d.targetUnit)")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(liveTargetHitToday ? d.resolvedType.color : .primary)
+
+            VStack(spacing: Spacing.xxs) {
+                ForEach(leaders) { entry in
+                    let progressFraction: Double? = {
+                        guard let d = detail, d.dailyTarget > 0 else { return nil }
+                        return min(1.0, max(0, Double(entry.todayProgress) / Double(d.dailyTarget)))
+                    }()
+                    let streakBadge: String? = entry.currentStreak > 0 ? "🔥 \(entry.currentStreak)-day streak" : nil
+                    LeaderboardRow(
+                        rank: entry.rank,
+                        userId: entry.userId.uuidString,
+                        displayName: entry.firstName,
+                        photoUrl: entry.profilePhotoUrl,
+                        valueText: "\(entry.todayProgress.formatted())",
+                        progress: progressFraction,
+                        isMe: entry.isCurrentUser,
+                        typeColor: type.color,
+                        gradient: type.gradientColors,
+                        trailingBadge: streakBadge,
+                        isVerified: entry.isVerified == true,
+                        isGoldVerified: entry.isGoldVerified == true
+                    )
                 }
-                
-                GeometryReader { geo in
-                    let livePct = d.dailyTarget > 0 ? min(1.0, Double(liveMyTodayProgress) / Double(d.dailyTarget)) : 0
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(d.resolvedType.color.opacity(0.12))
-                            .frame(height: 8)
-                        
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(LinearGradient(colors: d.resolvedType.gradientColors, startPoint: .leading, endPoint: .trailing))
-                            .frame(width: geo.size.width * livePct, height: 8)
-                            .shadow(color: d.resolvedType.color.opacity(0.4), radius: 3, x: 0, y: 1)
+            }
+            .padding(Spacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                    .fill(Color.cardBackground)
+            )
+        }
+    }
+
+    // MARK: - Battle Cry Strip
+
+    private func battleCryStrip(_ d: CommunityDetailResponse) -> some View {
+        BattleCryStrip(
+            mode: .community,
+            typeColor: d.resolvedType.color,
+            gradient: d.resolvedType.gradientColors,
+            onSend: { preset in sendBattleCry(preset, in: d) },
+            onOpenPicker: {
+                HapticManager.impact(.light)
+                showingBattleCryPicker = true
+            }
+        )
+    }
+
+    // MARK: - Jump to Full Leaderboard
+
+    private func jumpToFullLeaderboardButton(_ d: CommunityDetailResponse) -> some View {
+        Button {
+            HapticManager.selectionChanged()
+            showFullLeaderboard = true
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "list.number")
+                    .font(.ds_labelLarge)
+                Text("View Full Leaderboard")
+                    .font(.ds_labelLarge)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.secondary)
+            }
+            .foregroundColor(.primary)
+            .padding(Spacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .fill(Color.cardBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                    .stroke(d.resolvedType.color.opacity(0.20), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("View full community leaderboard")
+    }
+
+    // MARK: - Reactions
+
+    private func loadReactions() async {
+        reactionsLoading = true
+        let fetched = await ChallengeService.shared.fetchReactions(challengeId: challengeId)
+        await MainActor.run {
+            reactions = fetched
+            reactionsLoading = false
+        }
+    }
+
+    /// Optimistic-insert + community fan-out send. Recipients are the
+    /// visible top-leaderboard members (not the whole community) — the
+    /// realtime listener filters by `challenge_id`, so all subscribers
+    /// see all inserts; per-row fan-out is what guarantees each named
+    /// recipient receives a push (PE invariant 13).
+    private func sendBattleCry(_ preset: ReactionPreset, in d: CommunityDetailResponse) {
+        guard let me = SupabaseManager.shared.currentUser?.id else { return }
+        let recipients = (d.topLeaderboard ?? [])
+            .map(\.userId)
+            .filter { $0 != me }
+        guard !recipients.isEmpty else { return }
+
+        let optimisticId = UUID()
+        let optimistic = ChallengeReaction(
+            reactionId: optimisticId,
+            senderId: me,
+            senderName: "You",
+            senderPhotoUrl: nil,
+            recipientId: recipients.first ?? me,
+            reactionKey: preset.id,
+            reactionEmoji: preset.emoji,
+            reactionText: preset.text,
+            reactionCategory: preset.category.rawValue,
+            createdAt: Date()
+        )
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
+            reactions.insert(optimistic, at: 0)
+        }
+
+        Task {
+            let count = await ChallengeService.shared.sendGroupReaction(
+                challengeId: challengeId,
+                recipientIds: recipients,
+                preset: preset
+            )
+            if count == 0 {
+                await MainActor.run {
+                    HapticManager.notification(.error)
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        reactions.removeAll { $0.id == optimisticId }
                     }
                 }
-                .frame(height: 8)
-            }
-            
-            // Stat pills
-            HStack(spacing: 12) {
-                detailStatPill(value: "\(d.myDaysCompleted)", label: "Days", icon: "calendar", color: d.resolvedType.color)
-                detailStatPill(value: "\(d.myCurrentStreak)", label: "Streak", icon: "flame.fill", color: d.myCurrentStreak > 0 ? .orange : .secondary)
-                detailStatPill(value: "\(d.myBestStreak)", label: "Best", icon: "star.fill", color: .yellow)
-                detailStatPill(value: "\(d.myTotalProgress)", label: "Total \(d.targetUnit)", icon: "sum", color: d.resolvedType.color)
             }
         }
-        .padding(14)
-        .background(themedCard(color: d.resolvedType.color))
-        .overlay(themedOutline(color: d.resolvedType.color))
     }
-    
+
     // MARK: - Community Pulse
     
     private func communityPulseSection(_ d: CommunityDetailResponse) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
                 Text("🌍 Community Pulse")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
+                    .font(.ds_heading3)
                 Spacer()
-                
-                HStack(spacing: 4) {
+
+                HStack(spacing: Spacing.xxs) {
                     Circle()
                         .fill(d.resolvedType.color)
                         .frame(width: 6, height: 6)
                     Text("\(d.totalActiveToday) active today")
-                        .font(.caption2)
+                        .font(.ds_caption)
                         .foregroundColor(d.resolvedType.color.opacity(0.7))
                 }
             }
-            
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.xs) {
                 pulseCard(
                     title: "Avg Progress Today",
                     value: "\(d.avgTodayProgress) \(d.targetUnit)",
@@ -3143,50 +3398,46 @@ struct CommunityDetailView: View {
     // MARK: - Friends Section
     
     private func friendsSection(_ friends: [CommunityFriendInfo], count: Int, type: ChallengeType) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
                 Text("👥 Friends Here")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
+                    .font(.ds_heading3)
                 Spacer()
                 Text("\(count)")
-                    .font(.caption)
-                    .fontWeight(.semibold)
+                    .font(.ds_labelSmall)
                     .foregroundColor(type.color)
                     .padding(.horizontal, Spacing.xs)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(type.color.opacity(0.12)))
             }
-            
-            ForEach(Array(friends.prefix(10).enumerated()), id: \.element.userId) { index, friend in
-                HStack(spacing: 10) {
-                    // Friend avatar with photo
+
+            ForEach(Array(friends.prefix(10).enumerated()), id: \.element.userId) { _, friend in
+                HStack(spacing: Spacing.xs) {
                     detailFriendAvatar(friend: friend, type: type, size: 32)
-                    
+
                     VStack(alignment: .leading, spacing: 1) {
                         Text(friend.displayName)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+                            .font(.ds_bodySmall)
                         if let username = friend.username {
                             Text("@\(username)")
-                                .font(.caption2)
+                                .font(.ds_caption)
                                 .foregroundColor(type.color.opacity(0.6))
                         }
                     }
-                    
+
                     Spacer()
                 }
                 .padding(.vertical, 2)
             }
-            
+
             if count > 10 {
                 Text("+ \(count - 10) more friends")
-                    .font(.caption)
+                    .font(.ds_caption)
                     .foregroundColor(type.color.opacity(0.6))
                     .frame(maxWidth: .infinity, alignment: .center)
             }
         }
-        .padding(14)
+        .padding(Spacing.md)
         .background(themedCard(color: type.color))
         .overlay(themedOutline(color: type.color))
     }
@@ -3203,34 +3454,23 @@ struct CommunityDetailView: View {
         )
     }
     
-    private func detailFriendInitialCircle(initial: String, type: ChallengeType, size: CGFloat) -> some View {
-        ZStack {
-            Circle()
-                .fill(LinearGradient(colors: type.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: size, height: size)
-            Text(initial)
-                .font(.system(size: size * 0.4, weight: .bold))
-                .foregroundColor(.white)
-        }
-    }
-    
     // MARK: - Encouragement Banner
     
     private func encouragementBanner(_ text: String, type: ChallengeType) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Spacing.xs) {
             Text("💪")
-                .font(.title2)
-            
+                .font(.ds_heading2)
+
             Text(text)
-                .font(.subheadline)
+                .font(.ds_bodySmall)
                 .foregroundColor(.primary)
                 .italic()
-            
+
             Spacer()
         }
-        .padding(14)
+        .padding(Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [type.color.opacity(0.12), type.color.opacity(0.04)],
@@ -3240,179 +3480,34 @@ struct CommunityDetailView: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
                 .stroke(type.color.opacity(0.2), lineWidth: 1)
         )
     }
     
-    // MARK: - Leaderboard Section
-    
-    private func leaderboardSection(_ leaders: [LeaderboardSnippetEntry], type: ChallengeType) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("🏆 Leaderboard")
-                .font(.subheadline)
-                .fontWeight(.bold)
-            
-            ForEach(leaders) { entry in
-                let delta = detailRankDeltas[entry.userId] ?? 0
-                
-                HStack(spacing: 10) {
-                    // Rank + delta
-                    VStack(spacing: 1) {
-                        Text(rankDisplay(entry.rank))
-                            .font(.system(size: entry.rank <= 3 ? 18 : 14, weight: .bold, design: .rounded))
-                        
-                        // Rank change indicator
-                        if delta > 0 {
-                            HStack(spacing: 1) {
-                                Image(systemName: "arrowtriangle.up.fill")
-                                    .font(.system(size: 6))
-                                Text("+\(delta)")
-                                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                            }
-                            .foregroundColor(.green)
-                        } else if delta < 0 {
-                            HStack(spacing: 1) {
-                                Image(systemName: "arrowtriangle.down.fill")
-                                    .font(.system(size: 6))
-                                Text("\(delta)")
-                                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                            }
-                            .foregroundColor(.red)
-                        }
-                    }
-                    .frame(width: 34)
-                    
-                    // Avatar with photo
-                    leaderboardAvatar(entry: entry, type: type, size: 32)
-                    
-                    // Name
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 4) {
-                            Text(entry.name ?? entry.username ?? "User")
-                                .font(.subheadline)
-                                .fontWeight(entry.isCurrentUser ? .bold : .medium)
-                            if entry.isCurrentUser {
-                                Text("(You)")
-                                    .font(.caption2)
-                                    .foregroundColor(type.color)
-                            }
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Streak
-                    if entry.currentStreak > 0 {
-                        HStack(spacing: 2) {
-                            Image(systemName: "flame.fill")
-                                .font(.caption2)
-                                .foregroundColor(.orange)
-                            Text("\(entry.currentStreak)")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                        }
-                    }
-                    
-                    // Days completed
-                    Text("\(entry.daysCompleted)d")
-                        .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
-                        .foregroundColor(.primary)
-                }
-                .padding(.vertical, Spacing.xxs)
-                .padding(.horizontal, Spacing.xs)
-                .background(
-                    entry.isCurrentUser
-                        ? RoundedRectangle(cornerRadius: CornerRadius.sm).fill(type.color.opacity(0.06))
-                        : RoundedRectangle(cornerRadius: CornerRadius.sm).fill(Color.clear)
-                )
-            }
-        }
-        .padding(14)
-        .background(themedCard(color: type.color))
-        .overlay(themedOutline(color: type.color))
-    }
-    
-    /// Leaderboard avatar with cached photo support for detail view
-    private func leaderboardAvatar(entry: LeaderboardSnippetEntry, type: ChallengeType, size: CGFloat) -> some View {
-        CachedFriendPhoto(
-            friendId: entry.userId.uuidString,
-            photoUrl: entry.profilePhotoUrl,
-            name: entry.displayName,
-            size: size,
-            showGradientRing: false,
-            gradientColors: entry.isCurrentUser ? [type.color, type.color.opacity(0.7)] : [.gray.opacity(0.3), .gray.opacity(0.2)]
-        )
-    }
-    
-    private func leaderboardInitialCircle(entry: LeaderboardSnippetEntry, type: ChallengeType, size: CGFloat) -> some View {
-        ZStack {
-            Circle()
-                .fill(entry.isCurrentUser ? type.color.opacity(0.3) : Color.gray.opacity(0.15))
-                .frame(width: size, height: size)
-            Text(String((entry.name ?? entry.username ?? "?").prefix(1)).uppercased())
-                .font(.system(size: size * 0.4, weight: .bold))
-                .foregroundColor(entry.isCurrentUser ? type.color : .secondary)
-        }
-    }
-    
     // MARK: - Helper Views
-    
-    private func detailStatPill(value: String, label: String, icon: String, color: Color = .primary) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption2)
-                .foregroundColor(color)
-            Text(value)
-                .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
-                .foregroundColor(color)
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Spacing.xs)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                .fill(Color.gray.opacity(colorScheme == .dark ? 0.1 : 0.05))
-        )
-    }
-    
+
     private func pulseCard(title: String, value: String, icon: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            HStack(spacing: Spacing.xxs) {
                 Image(systemName: icon)
-                    .font(.caption2)
+                    .font(.ds_caption)
                     .foregroundColor(color)
                 Text(title)
                     .font(.ds_caption)
                     .foregroundColor(.secondary)
             }
-            
+
             Text(value)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .font(.ds_labelLarge)
                 .foregroundColor(.primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
+        .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
                 .fill(color.opacity(colorScheme == .dark ? 0.08 : 0.04))
         )
-    }
-    
-    private func rankDisplay(_ rank: Int) -> String {
-        switch rank {
-        case 1: return "🥇"
-        case 2: return "🥈"
-        case 3: return "🥉"
-        default: return "#\(rank)"
-        }
-    }
-    
-    private func friendColor(_ index: Int) -> Color {
-        let colors: [Color] = [.blue, .purple, .pink, .orange, .teal]
-        return colors[index % colors.count]
     }
 }
 

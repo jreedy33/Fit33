@@ -1613,7 +1613,102 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             recordLocalPrefsChange()
             AppLogger.info("Hydrated notification prefs from server (server_updated_at=\(prefs.updated_at ?? "nil"))", category: .general)
         } catch {
-            AppLogger.error("Failed to hydrate notification preferences: \(error.localizedDescription)", category: .general)
+            if await hydrateNotificationPrefsFromTableWhenRPCUnavailable(error) {
+                return
+            }
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Failed to hydrate notification preferences",
+                category: .general,
+                endpoint: "rpc/get_my_notification_preferences",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
+        }
+    }
+
+    /// When PostgREST returns PGRST202 (RPC not in schema cache / migration not
+    /// applied yet), read `user_notification_preferences` directly so launch
+    /// still hydrates toggles (`626608eb` / `3b9dd28b`).
+    private func hydrateNotificationPrefsFromTableWhenRPCUnavailable(_ rpcError: Error) async -> Bool {
+        let msg = rpcError.localizedDescription
+        guard msg.contains("PGRST202")
+            || msg.localizedCaseInsensitiveContains("could not find the function")
+            || msg.localizedCaseInsensitiveContains("does not exist") else {
+            return false
+        }
+        guard SupabaseManager.shared.isAuthenticated,
+              let userId = SupabaseManager.shared.currentUser?.id else { return false }
+
+        struct TablePrefs: Decodable {
+            let master_enabled: Bool?
+            let disabled_types: [String]?
+            let quiet_hours_enabled: Bool?
+            let quiet_hours_start: String?
+            let quiet_hours_end: String?
+            let timezone: String?
+            let daily_cap: Int?
+            let category_disabled: [String]?
+            let smart_timing_enabled: Bool?
+            let updated_at: String?
+        }
+
+        do {
+            let prefs: TablePrefs = try await SupabaseManager.shared.supabaseClient
+                .from("user_notification_preferences")
+                .select(
+                    "master_enabled, disabled_types, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, timezone, daily_cap, category_disabled, smart_timing_enabled, updated_at"
+                )
+                .eq("user_id", value: userId.uuidString)
+                .single()
+                .execute()
+                .value
+
+            if let serverUpdatedAt = prefs.updated_at,
+               let serverDate = ISO8601DateFormatter().date(from: serverUpdatedAt),
+               let lastLocalRaw = UserDefaults.standard.string(forKey: Self.lastLocalPrefsChangeKey),
+               let lastLocalDate = ISO8601DateFormatter().date(from: lastLocalRaw),
+               serverDate <= lastLocalDate {
+                AppLogger.debug("Notif prefs (table fallback): server older than local — skipping", category: .general)
+                return true
+            }
+
+            if let me = prefs.master_enabled {
+                UserDefaults.standard.set(me, forKey: "master_notifications_enabled")
+                masterNotificationsEnabled = me
+            }
+            if let qhe = prefs.quiet_hours_enabled {
+                UserDefaults.standard.set(qhe, forKey: "quiet_hours_enabled")
+                quietHoursEnabled = qhe
+            }
+            if let qhs = prefs.quiet_hours_start, let qhsDate = parseHHMM(qhs) {
+                UserDefaults.standard.set(qhsDate, forKey: "quiet_hours_start")
+                quietHoursStart = qhsDate
+            }
+            if let qhe = prefs.quiet_hours_end, let qheDate = parseHHMM(qhe) {
+                UserDefaults.standard.set(qheDate, forKey: "quiet_hours_end")
+                quietHoursEnd = qheDate
+            }
+            if let disabled = prefs.disabled_types {
+                let disabledSet = Set(disabled)
+                let allTypes = Set(NotificationType.allCases.map { $0.rawValue })
+                enabledNotifications = allTypes.subtracting(disabledSet)
+                saveEnabledNotifications()
+            }
+            if let catDisabled = prefs.category_disabled {
+                UserDefaults.standard.set(catDisabled, forKey: "notif_category_disabled")
+            }
+            if let smart = prefs.smart_timing_enabled {
+                UserDefaults.standard.set(smart, forKey: "notif_smart_timing_enabled")
+            }
+            if let cap = prefs.daily_cap {
+                UserDefaults.standard.set(cap, forKey: "notif_daily_cap")
+            }
+
+            recordLocalPrefsChange()
+            AppLogger.info("Hydrated notification prefs via table fallback (RPC unavailable)", category: .general)
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -2181,6 +2276,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         case "meal_reminder", "protein_deficit", "breakfast_reminder":
             DeepLinkManager.shared.pendingDestination = .mealsTab
             AppLogger.debug("Meal alert \(type) — opening meals tab", category: .general)
+
+        case "activity_reaction":
+            // Allowlisted in `knownNotificationTypes` but must route here — otherwise
+            // taps fell through to default and logged false-positive "unknown type"
+            // (bug-intel `184e70c6`).
+            DeepLinkManager.shared.pendingDestination = .friendsActivity
+            AppLogger.debug("Activity reaction — opening friends activity feed", category: .general)
 
         default:
             // Sprint 2 Q2-36 — hard allowlist. Anything not in

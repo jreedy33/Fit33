@@ -181,23 +181,14 @@ class FoodDatabaseService: ObservableObject {
             return cachedResults
         }
 
-        // Edge function `requireUserAuth` calls `supabase.auth.getUser(token)` and
-        // requires a real user JWT — sending the anon key here returns 401 and was
-        // breaking 100% of food searches in production (4 fingerprints on a single
-        // user 2026-04-30: 022843d7…, b99dfd29…, f871f70a…, 8e070db8… — every meal
-        // search silently fell back to the local 380-food list). Same pattern as
-        // ContentModerationService.checkContent. Per Data invariant #11b, NEVER use
-        // AppConfig.Supabase.anonKey as the Authorization bearer for an edge function
-        // that calls `requireUserAuth` — use the user's session JWT and put the
-        // anon key on the `apikey` header (the Supabase gateway needs that one).
-        let session: Session
+        // Edge function `requireUserAuth` requires a logged-in user. `invoke` below
+        // attaches the session JWT automatically (do not hand-roll URLSession).
         do {
-            session = try await SupabaseManager.shared.client.auth.session
+            _ = try await SupabaseManager.shared.client.auth.session
         } catch {
             AppLogger.warning("Skipping cloud food search — no auth session: \(error.localizedDescription)", category: .nutrition)
             return []
         }
-        let accessToken = session.accessToken
 
         // Prepare request body
         struct SearchRequest: Encodable {
@@ -214,36 +205,16 @@ class FoodDatabaseService: ObservableObject {
             pageNumber: 1
         )
         
-        // Call Supabase edge function
+        // Call Supabase edge function — MUST use `functions.invoke` (same as
+        // barcode + details) so supabase-swift attaches the current session JWT
+        // and participates in auth refresh. Hand-rolled URLSession used a
+        // frozen `accessToken` and leaked 401 Unauthorized after foregrounding
+        // (bug-intel `64639cbd` / `e6aaf4bb`, Meals Tab cloud search).
         AppLogger.debug("Invoking edge function for food search", category: .nutrition)
         
         do {
-            // Make the request using URLSession to get raw response
-            guard let edgeFunctionURL = URL(string: "\(AppConfig.Supabase.url)/functions/v1/usda-food-search") else {
-                throw NSError(domain: "FoodDB", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid edge function URL"])
-            }
-            var urlRequest = URLRequest(url: edgeFunctionURL)
-            urlRequest.httpMethod = "POST"
-            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            urlRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            urlRequest.setValue(AppConfig.Supabase.anonKey, forHTTPHeaderField: "apikey")
-            urlRequest.httpBody = try JSONEncoder().encode(request)
-
-            let (data, _) = try await URLSession.shared.data(for: urlRequest)
-            
-            // First check if this is an error response from the edge function
-            if let errorResponse = try? JSONDecoder().decode(EdgeFunctionErrorResponse.self, from: data),
-               let errorMessage = errorResponse.error {
-                // The throw below is caught by the outer catch and routed
-                // through NetworkErrorClassifier — keep this line at
-                // .warning so it doesn't fingerprint twice (`479cf818`
-                // Edge function error: Unauthorized was the duplicate).
-                AppLogger.warning("Edge function error response: \(errorMessage)", category: .nutrition)
-                throw NSError(domain: "EdgeFunction", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])
-            }
-
-            // Decode the search response
-            let response = try JSONDecoder().decode(CloudFoodSearchResponse.self, from: data)
+            let response: CloudFoodSearchResponse = try await supabase.functions
+                .invoke("usda-food-search", options: FunctionInvokeOptions(body: request))
 
             AppLogger.info("Successfully found \(response.foods.count) foods (source: \(response.source))", category: .nutrition)
 
@@ -1114,11 +1085,6 @@ struct CloudFoodSearchResponse: Decodable {
 struct CloudFoodDetailsResponse: Decodable {
     let source: String
     let food: CloudFood
-}
-
-/// Response when edge function returns an error
-struct EdgeFunctionErrorResponse: Decodable {
-    let error: String?
 }
 
 // MARK: - Frequent Food Item

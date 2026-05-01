@@ -1,4 +1,5 @@
 import Foundation
+import Supabase
 
 // =============================================================================
 // PushEventReporter — iOS side of the push delivery funnel

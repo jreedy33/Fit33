@@ -306,13 +306,14 @@ SELECT cron.schedule(
 --   'cohort:<key>'    — only act on intents where cohort_key = <key>.
 --   'live'            — act on everything.
 
-INSERT INTO internal_config (key, value, description)
-VALUES (
-  'notification_orchestrator_mode',
-  'shadow',
-  'Smart notification orchestrator mode: shadow (log only) | cohort:<key> | live'
-)
+-- internal_config schema is (key, value) only — no description column.
+-- Persist the human-readable note as a COMMENT instead.
+INSERT INTO internal_config (key, value)
+VALUES ('notification_orchestrator_mode', 'shadow')
 ON CONFLICT (key) DO NOTHING;
+
+COMMENT ON TABLE internal_config IS
+  'Service-role-only key/value config. Known keys: supabase_url, notification_orchestrator_mode (shadow | cohort:<key> | live), widget_writes_enabled, etc.';
 
 -- ── Audit ───────────────────────────────────────────────────────────────
 

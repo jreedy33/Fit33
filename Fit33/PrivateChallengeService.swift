@@ -833,7 +833,14 @@ class PrivateChallengeService: ObservableObject {
                 AppLogger.warning("inviteUser blocked by RPC policy: \(error.localizedDescription)", category: .social)
                 return .notAllowed(error.localizedDescription)
             }
-            AppLogger.error("Error inviting user to private challenge: \(error.localizedDescription)", category: .social)
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "invite_to_private_challenge unexpected failure",
+                category: .social,
+                op: PerformanceSignposts.Op.challengeWrite.rawValue,
+                endpoint: "rpc/invite_to_private_challenge",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             HapticManager.notification(.error)
             return .failed(error.localizedDescription)
         }

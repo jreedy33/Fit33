@@ -1446,6 +1446,9 @@ class SupabaseManager: ObservableObject {
         let looksRateLimited = desc.contains("over_email_send_rate_limit")
             || desc.contains("email rate limit")
             || desc.contains("rate limit exceeded")
+            || desc.contains("too many requests")
+            || desc.contains("email rate limit exceeded")
+            || desc.contains("429")
             || desc.contains("status code: 429")
             || desc.contains("\"status\":429")
         guard looksRateLimited else { return nil }

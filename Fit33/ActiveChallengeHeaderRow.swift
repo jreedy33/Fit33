@@ -9,7 +9,7 @@
 //
 //  Tap behavior:
 //    • Row body (icon + title + subtitle area)  → push ChallengeDetailView
-//    • Smiley button (competition mode only)    → present ReactionPickerSheet
+//    • Smiley button (competition mode only)    → present BattleCryPickerSheet
 //    • Mode badge 🤝 (accountability mode only) → passive (no tap)
 //    • Chevron                                  → push ChallengeDetailView
 //
@@ -59,9 +59,23 @@ struct ActiveChallengeHeaderRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, Spacing.sm)
         .sheet(isPresented: $showingReactionPicker) {
-            ReactionPickerSheet(challenge: challenge, onSend: { _ in })
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+            BattleCryPickerSheet(
+                mode: isAccountability ? .accountability : .competition,
+                typeColor: typeColor,
+                gradient: typeGradient,
+                recipientLabel: opponentFirst,
+                onSend: { preset in
+                    Task {
+                        _ = await ChallengeService.shared.sendReaction(
+                            challengeId: challenge.challengeId,
+                            recipientId: challenge.opponentId,
+                            preset: preset
+                        )
+                    }
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
     }
     

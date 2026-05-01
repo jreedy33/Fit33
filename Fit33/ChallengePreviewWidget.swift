@@ -425,9 +425,8 @@ struct ActiveChallengeWidget: View {
                     .frame(height: 6)
                     
                     HStack {
-                        // Reaction quick button (Battle Cry / Power Up)
-                        ReactionQuickButton(challenge: challenge, showingReactionPicker: $showingReactionPicker)
-                        
+                        BattleCryQuickOpenButton(challenge: challenge, showingPicker: $showingReactionPicker)
+
                         Spacer()
                         HStack(spacing: 4) {
                             Image(systemName: "clock")
@@ -444,9 +443,24 @@ struct ActiveChallengeWidget: View {
         }
         .buttonStyle(PlainButtonStyle())
         .sheet(isPresented: $showingReactionPicker) {
-            ReactionPickerSheet(challenge: challenge, onSend: { _ in })
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+            let mode: BattleCryMode = challenge.mode == .accountability ? .accountability : .competition
+            BattleCryPickerSheet(
+                mode: mode,
+                typeColor: resolvedType.color,
+                gradient: resolvedType.gradientColors,
+                recipientLabel: challenge.opponentName?.components(separatedBy: " ").first ?? "them",
+                onSend: { preset in
+                    Task {
+                        _ = await ChallengeService.shared.sendReaction(
+                            challengeId: challenge.challengeId,
+                            recipientId: challenge.opponentId,
+                            preset: preset
+                        )
+                    }
+                }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
     }
 }

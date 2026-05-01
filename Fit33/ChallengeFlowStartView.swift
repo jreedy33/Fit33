@@ -1774,12 +1774,12 @@ struct ChallengeFlowStartView: View {
         guard let mode = selectedMode,
               let activity = selectedActivity,
               let option = selectedOption else {
-            AppLogger.error("❌ [CHALLENGE FLOW] Missing required selections", category: .social)
+            AppLogger.debug("❌ [CHALLENGE FLOW] Missing required selections", category: .social)
             return
         }
         
         guard !selectedFriends.isEmpty else {
-            AppLogger.error("❌ [CHALLENGE FLOW] No friends selected", category: .social)
+            AppLogger.debug("❌ [CHALLENGE FLOW] No friends selected", category: .social)
             return
         }
         
@@ -1845,7 +1845,7 @@ struct ChallengeFlowStartView: View {
             HapticManager.notification(.success)
             showingSuccess = true
         } else {
-            AppLogger.error("❌ [CHALLENGE FLOW] Challenge creation failed", category: .social)
+            AppLogger.warning("❌ [CHALLENGE FLOW] Challenge creation failed (see ChallengeService.lastCreateChallengeError + classifier)", category: .social)
             HapticManager.notification(.error)
             showingError = true
         }

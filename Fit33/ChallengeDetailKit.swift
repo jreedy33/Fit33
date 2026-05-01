@@ -116,16 +116,18 @@ struct ChallengeHeroCard: View {
             }
 
             HStack(spacing: Spacing.xs) {
-                pill(icon: "calendar", text: dayProgressText, tint: typeColor)
+                if durationDays > 0 {
+                    pill(icon: "calendar", text: dayProgressText, tint: typeColor)
 
-                if daysRemaining > 0 {
-                    pill(
-                        icon: "clock",
-                        text: "\(daysRemaining)d left",
-                        tint: daysRemaining <= 1 ? .red : .secondary
-                    )
-                } else {
-                    pill(icon: "checkmark.seal.fill", text: "Complete", tint: .green)
+                    if daysRemaining > 0 {
+                        pill(
+                            icon: "clock",
+                            text: "\(daysRemaining)d left",
+                            tint: daysRemaining <= 1 ? .red : .secondary
+                        )
+                    } else {
+                        pill(icon: "checkmark.seal.fill", text: "Complete", tint: .green)
+                    }
                 }
 
                 if let suffix = memberCountSuffix {
@@ -753,6 +755,11 @@ struct LeaderboardPodium: View {
                 .frame(height: height)
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            entry.map { "\($0.rank == 1 ? "First place" : ($0.rank == 2 ? "Second place" : "Third place")), \($0.displayName), \($0.valueText)" }
+                ?? "Empty podium spot"
+        )
     }
 }
 

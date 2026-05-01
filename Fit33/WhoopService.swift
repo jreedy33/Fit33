@@ -432,6 +432,13 @@ final class WhoopService: ObservableObject {
         isConnected = true
 
         AppLogger.info("[WHOOP] Connected successfully (token expires in \(tokenResponse.expiresIn ?? 3600)s)", category: .health)
+        // NUJ telemetry — flips `connected_wearable` boolean (#167 contract).
+        await MainActor.run {
+            NewUserJourneyTracker.shared.logIntegration(
+                provider: "whoop",
+                action: "success"
+            )
+        }
         OAuthAuditLog.record(
             service: "whoop",
             event: .connect,

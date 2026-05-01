@@ -92,6 +92,7 @@ struct WorkoutTabView: View {
                 navigationPath.append("WorkoutGenerator")
                 workoutManager.shouldShowWorkoutGenerator = false
             }
+            NewUserJourneyTracker.shared.logScreen("workout_tab")
         }
         .onChange(of: workoutManager.shouldNavigateToCustomWorkoutBuilder) { _, shouldNavigate in
             if shouldNavigate {
@@ -143,8 +144,9 @@ struct WorkoutTabView: View {
                 deepLinkManager.pendingDestination = nil
                 AppLogger.debug("📋 Deep link: Navigating to programs", category: .workout)
             case .dashboard, .mealsTab, .statsTab, .hydration, .stepTracker, .weightTracker,
-                 .workoutHistory, .personalRecord, .streakInfo, .addFood:
-                break  // Handled by ContentView (tab switch + scroll)
+                 .workoutHistory, .personalRecord, .streakInfo, .addFood,
+                 .leagues, .readinessDetail, .smackTalk, .mealLogger:
+                break  // Handled by ContentView (tab switch + scroll) / target tab views
             }
         }
         .onChange(of: workoutManager.shouldShowWorkoutGenerator) { _, shouldShow in

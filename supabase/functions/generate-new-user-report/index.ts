@@ -104,6 +104,12 @@ interface EnrollmentRow {
     connected_wearable: boolean;
     saw_paywall: boolean;
     converted_paywall: boolean;
+    // Migration #175 — monetization predictor flags (optional for backwards
+    // compat with reports generated before #175 was deployed).
+    created_custom_workout?: boolean;
+    streak_3_days?: boolean;
+    goal_set?: boolean;
+    notification_permission_granted?: boolean;
 }
 
 interface SessionRow {
@@ -226,13 +232,18 @@ function buildMarkdownReport(data: ReportData, checkpoint: Checkpoint): string {
     lines.push("## 3. Activation funnel");
     lines.push("");
     const funnelChecks: Array<[string, boolean]> = [
-        ["Completed onboarding",   e.completed_onboarding],
-        ["First workout completed", e.completed_first_workout],
-        ["First meal logged",       e.logged_first_meal],
-        ["First friend added",      e.added_first_friend],
-        ["Wearable connected",      e.connected_wearable],
-        ["Saw paywall",             e.saw_paywall],
-        ["Converted on paywall",    e.converted_paywall],
+        ["Completed onboarding",      e.completed_onboarding],
+        // Phase 2 (Migration #175) — monetization predictor flags
+        ["Goal set in onboarding",    !!e.goal_set],
+        ["First workout completed",   e.completed_first_workout],
+        ["3-day streak reached",      !!e.streak_3_days],
+        ["Created custom workout",    !!e.created_custom_workout],
+        ["First meal logged",         e.logged_first_meal],
+        ["First friend added",        e.added_first_friend],
+        ["Wearable connected",        e.connected_wearable],
+        ["Push notifications opted in", !!e.notification_permission_granted],
+        ["Saw paywall",               e.saw_paywall],
+        ["Converted on paywall",      e.converted_paywall],
     ];
     for (const [label, hit] of funnelChecks) {
         lines.push(`- [${hit ? "x" : " "}] ${label}`);

@@ -1195,7 +1195,29 @@ class WorkoutManager: ObservableObject {
             // Sync workout completion to active challenges (lift/workout_streak)
             await ChallengeService.shared.syncFit33WorkoutToChallenge(workoutType: "strength")
         }
-        
+
+        // NUJ telemetry — flips `completed_first_workout` boolean on the
+        // user's enrollment row via the trigger. `phase: "completed"` is the
+        // payload contract the trigger looks for (Migration #167).
+        let exerciseCount = (currentWorkout?.exercises as? Set<WorkoutExercise>)?.count ?? 0
+        let durationMin   = max(0, Int(actualDuration / 60))
+        let workoutIdStr  = currentWorkout?.id?.uuidString
+        NewUserJourneyTracker.shared.logWorkout(
+            phase: "completed",
+            workoutId: workoutIdStr,
+            source: currentSmartProgramId != nil ? "smart_program" : "freeform",
+            exerciseCount: exerciseCount,
+            durationMin: durationMin
+        )
+        // Streak signal — flips `streak_3_days` boolean (Migration #175) when
+        // the user crosses the 3-day mark for the first time. The trigger
+        // looks for payload.name='streak' AND payload.to IN ('3','3_days').
+        if let user = UserManager.shared.currentUser, Int(user.currentStreak) == 3 {
+            NewUserJourneyTracker.shared.logStateTransition(
+                name: "streak", from: "2", to: "3"
+            )
+        }
+
         isWorkoutActive = false
         currentWorkout = nil
         currentExercises = []

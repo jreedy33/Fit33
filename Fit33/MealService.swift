@@ -137,6 +137,16 @@ class MealService: ObservableObject {
                 
                 // Award league points for meal logging (+10 pts)
                 await WeeklyLeagueService.shared.addPoints(source: .mealLogged)
+
+                // NUJ telemetry — flips `logged_first_meal` boolean on the
+                // user's enrollment row via the trigger (#167 contract:
+                // event_type='meal' + payload.phase='logged').
+                NewUserJourneyTracker.shared.logMeal(
+                    phase: "logged",
+                    foodName: trimmedName,
+                    source: foodEntry.source,
+                    calories: foodEntry.calories
+                )
             }
             
             // ⚡ REAL-TIME CHALLENGE SYNC: Push updated protein/calories to ALL challenge types

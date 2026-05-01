@@ -47,6 +47,14 @@ enum SilentPushHandler {
         ])
         AppLogger.info("[SILENT PUSH] received type='\(type)' app_state=\(UIApplication.shared.applicationState.rawValue)", category: .network)
 
+        // NUJ telemetry — silent push receipt is a key retention signal (every
+        // wake = "the app reached out to this user"). No-op when user is past
+        // their 72h window.
+        NewUserJourneyTracker.shared.logNotification(
+            type: "silent/\(type)",
+            action: "received"
+        )
+
         switch type {
         case "challenge_wake":
             handleChallengeWake(completion: completion)

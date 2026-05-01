@@ -198,6 +198,7 @@ struct FriendsTabView: View {
         .onAppear {
             // Mark community widgets as visible so rank arrows stay and update live
             communityService.markCommunityViewVisible()
+            NewUserJourneyTracker.shared.logScreen("friends_tab")
             
             // Auto-refresh when returning to this tab (after initial load)
             if hasAppearedBefore {

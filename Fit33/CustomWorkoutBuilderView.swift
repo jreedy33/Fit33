@@ -2178,7 +2178,19 @@ struct CustomWorkoutBuilderView: View {
         
         // Start workout using WorkoutManager FIRST (sets up all state)
         workoutManager.startWorkout(workout: newWorkout, exercises: selectedExercises)
-        
+
+        // NUJ telemetry — flips `created_custom_workout` boolean on the
+        // user's enrollment row via the trigger (#175 contract:
+        // event_type='workout' + payload.phase='custom_saved'). This is a
+        // monetization predictor signal — users who build custom workouts
+        // convert at ~2× baseline.
+        NewUserJourneyTracker.shared.logWorkout(
+            phase: "custom_saved",
+            workoutId: newWorkout.id?.uuidString,
+            source: "custom_builder",
+            exerciseCount: selectedExercises.count
+        )
+
         // THEN dismiss this view (after state is stable)
         dismiss()
         

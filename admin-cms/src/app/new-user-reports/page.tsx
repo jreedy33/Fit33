@@ -37,6 +37,11 @@ type Enrollment = {
   connected_wearable: boolean
   saw_paywall: boolean
   converted_paywall: boolean
+  // Migration #175 — monetization predictor flags
+  created_custom_workout?: boolean
+  streak_3_days?: boolean
+  goal_set?: boolean
+  notification_permission_granted?: boolean
   user_profiles?: UserProfileSummary
 }
 
@@ -114,6 +119,11 @@ type CohortSummary = {
   connected_wearable_pct: number
   saw_paywall_pct: number
   converted_paywall_pct: number
+  // Migration #175 — monetization predictor flags
+  created_custom_workout_pct?: number
+  streak_3_days_pct?: number
+  goal_set_pct?: number
+  notification_permission_granted_pct?: number
   avg_events_per_user: number
   avg_sessions_per_user: number
   avg_errors_per_user: number
@@ -434,10 +444,14 @@ function CohortSummaryCard({ summary, days, setDays }: { summary: CohortSummary 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
           <CohortStat label="Enrollments" value={summary.total_enrollments.toString()} />
           <CohortStat label="Onboarding %" value={`${summary.completed_onboarding_pct}%`} />
+          <CohortStat label="Goals set %" value={`${summary.goal_set_pct ?? 0}%`} />
           <CohortStat label="First workout %" value={`${summary.completed_first_workout_pct}%`} />
+          <CohortStat label="3-day streak %" value={`${summary.streak_3_days_pct ?? 0}%`} />
+          <CohortStat label="Custom workout %" value={`${summary.created_custom_workout_pct ?? 0}%`} />
           <CohortStat label="First meal %" value={`${summary.logged_first_meal_pct}%`} />
           <CohortStat label="First friend %" value={`${summary.added_first_friend_pct}%`} />
-          <CohortStat label="Wearable connect %" value={`${summary.connected_wearable_pct}%`} />
+          <CohortStat label="Wearable %" value={`${summary.connected_wearable_pct}%`} />
+          <CohortStat label="Push opt-in %" value={`${summary.notification_permission_granted_pct ?? 0}%`} />
           <CohortStat label="Saw paywall %" value={`${summary.saw_paywall_pct}%`} />
           <CohortStat label="Converted %" value={`${summary.converted_paywall_pct}%`} accent />
           <CohortStat label="Avg events/user" value={summary.avg_events_per_user.toString()} />
@@ -497,10 +511,14 @@ function UserDetailHeader({
           </div>
           <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <FunnelBadge label="Onboarding" hit={en.completed_onboarding} />
+            <FunnelBadge label="Goal set" hit={!!en.goal_set} />
             <FunnelBadge label="First workout" hit={en.completed_first_workout} />
+            <FunnelBadge label="3-day streak" hit={!!en.streak_3_days} />
+            <FunnelBadge label="Custom workout" hit={!!en.created_custom_workout} />
             <FunnelBadge label="First meal" hit={en.logged_first_meal} />
             <FunnelBadge label="First friend" hit={en.added_first_friend} />
             <FunnelBadge label="Wearable" hit={en.connected_wearable} />
+            <FunnelBadge label="Push opt-in" hit={!!en.notification_permission_granted} />
             <FunnelBadge label="Saw paywall" hit={en.saw_paywall} />
             <FunnelBadge label="Converted" hit={en.converted_paywall} />
           </div>

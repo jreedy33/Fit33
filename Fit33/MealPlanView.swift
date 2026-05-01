@@ -41,6 +41,7 @@ struct MealPlanView: View {
             SessionLogManager.shared.logScreen(.mealsTab, metadata: [
                 "date": Date().description
             ])
+            NewUserJourneyTracker.shared.logScreen("meals_tab")
             loadTodaysData()
         }
         .sheet(isPresented: $showingAddFood) {

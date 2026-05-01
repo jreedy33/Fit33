@@ -525,6 +525,19 @@ class FriendService: ObservableObject {
             await fetchSentRequests()
             
             await DailyQuestService.shared.onFriendRequestSent()
+
+            // NUJ telemetry — flips `added_first_friend` boolean on the
+            // user's enrollment row via the trigger (#167 contract:
+            // event_type='social' + payload.action='friend_added').
+            // We log on REQUEST SENT (not accepted) because that's the user's
+            // intent moment — accept happens on the receiver's device, where
+            // it can't fire this user's enrollment trigger.
+            await MainActor.run {
+                NewUserJourneyTracker.shared.logSocial(
+                    action: "friend_added",
+                    targetUserId: toUserId.uuidString
+                )
+            }
             
             SessionLogManager.shared.log(.info, category: .pushNotification, message: "Friend request sent — flushing push queue", metadata: ["to_user": toUserId.uuidString.prefix(8)])
             PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "friend_request_sent")

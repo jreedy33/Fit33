@@ -171,7 +171,14 @@ struct PremiumUpgradeView: View {
                 // Close button
                 HStack {
                     Spacer()
-                    Button(action: { dismiss() }) {
+                    Button(action: {
+                        NewUserJourneyTracker.shared.logPaywall(
+                            surface: "tier3_modal",
+                            action: "dismiss",
+                            triggeringFeature: "\(triggeringFeature)"
+                        )
+                        dismiss()
+                    }) {
                         Image(systemName: "xmark")
                             .font(.ds_labelMedium)
                             .foregroundColor(.white.opacity(0.6))
@@ -207,7 +214,14 @@ struct PremiumUpgradeView: View {
                 }
             }
         }
-        .onAppear { startAnimations() }
+        .onAppear {
+            startAnimations()
+            NewUserJourneyTracker.shared.logPaywall(
+                surface: "tier3_modal",
+                action: "view",
+                triggeringFeature: "\(triggeringFeature)"
+            )
+        }
     }
     
     // MARK: - Background
@@ -728,6 +742,13 @@ struct PremiumUpgradeView: View {
         let success = await storeKit.purchase(product)
         if success {
             HapticManager.notification(.success)
+            NewUserJourneyTracker.shared.logPaywall(
+                surface: "tier3_modal",
+                action: "convert",
+                sku: product.id,
+                priceUsd: NSDecimalNumber(decimal: product.price).doubleValue,
+                triggeringFeature: "\(triggeringFeature)"
+            )
             onUpgrade?(selectedPlan)
             dismiss()
         } else if case .failed(let msg) = storeKit.purchaseState {
@@ -742,6 +763,11 @@ struct PremiumUpgradeView: View {
         VStack(spacing: 10) {
             Button(action: {
                 Task {
+                    NewUserJourneyTracker.shared.logPaywall(
+                        surface: "tier3_modal",
+                        action: "restore",
+                        triggeringFeature: "\(triggeringFeature)"
+                    )
                     await storeKit.restorePurchases()
                     onRestore?()
                     if storeKit.hasActiveSubscription {

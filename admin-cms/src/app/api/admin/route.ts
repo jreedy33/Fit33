@@ -31,6 +31,8 @@ const WRITE_ACTIONS = new Set([
   'update_report_status', 'suspend_user', 'lift_suspension',
   'review_flagged_content',
   'create_push_campaign', 'update_push_campaign',
+  // Smart Notification Engine — Phase 5. Test pushes mutate the queue.
+  'send_test_push',
   // AI insights / dev-logging mutations — previously untracked.
   'update_insight_status', 'trigger_insights_generation',
   'save_chat_conversation', 'delete_chat_conversation',
@@ -3524,6 +3526,99 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ event_counts: eventCounts, daily_events: dailyEvents })
       }
 
+      // Smart Notification Engine — Phase 5 Health & Funnel tab.
+      // Aggregates `push_notification_delivery_log` over a window to produce
+      // category-grouped funnel metrics (enqueued → APNs success → delivered
+      // → opened) plus opt-out trends and orchestrator decision rates.
+      // Backed by `admin_get_push_funnel(p_window_hours)` RPC (migration
+      // 20260808). Defaults to 24h; CMS UI exposes 24h / 7d / 30d.
+      case 'get_push_funnel': {
+        const windowHours = Math.max(1, Math.min(720, Number(params.window_hours) || 24))
+        const { data, error } = await admin.rpc('admin_get_push_funnel', { p_window_hours: windowHours })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json(data || { window_hours: windowHours, by_category: [], totals: {}, ab_variants: [] })
+      }
+
+      // Failed-deliveries triage tab. Returns paginated rows of every
+      // `push_notification_delivery_log` row that is a terminal failure
+      // (apns_error_*, token_invalid, notification_failed, prefs_blocked,
+      // cap_exceeded). Each row resolves to its source queue entry, latest
+      // token state, and the recipient profile so triage stays in one
+      // window. Filters: category, event prefix, recipient.
+      case 'get_push_failed_deliveries': {
+        const lim = safeLimit(params.limit, 100)
+        const offset = Math.max(0, Number(params.offset) || 0)
+        const eventFilter = typeof params.event === 'string' ? params.event : null
+        const categoryFilter = typeof params.category === 'string' ? params.category : null
+        const userFilter = typeof params.user_id === 'string' ? params.user_id : null
+
+        let query = admin.from('push_notification_delivery_log')
+          .select('id, notification_id, user_id, event, detail, category, created_at')
+          .or('event.like.apns_error_%,event.eq.token_invalid,event.eq.notification_failed,event.eq.prefs_blocked,event.eq.cap_exceeded,event.eq.silent_apns_error_400,event.like.silent_apns_error_%')
+          .order('created_at', { ascending: false })
+          .range(offset, offset + lim - 1)
+
+        if (eventFilter) query = query.eq('event', eventFilter)
+        if (categoryFilter) query = query.eq('category', categoryFilter)
+        if (userFilter) query = query.eq('user_id', userFilter)
+
+        const { data, error } = await query
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+        // Hydrate recipient profiles + queue state in one pass.
+        const userIds = [...new Set((data || []).map((r: { user_id: string | null }) => r.user_id).filter(Boolean) as string[])]
+        const notifIds = [...new Set((data || []).map((r: { notification_id: string | null }) => r.notification_id).filter(Boolean) as string[])]
+
+        const [profilesRes, queueRes] = await Promise.all([
+          userIds.length
+            ? admin.from('user_profiles').select('id, name, username, email, profile_photo_url').in('id', userIds.slice(0, 200))
+            : Promise.resolve({ data: [] }),
+          notifIds.length
+            ? admin.from('push_notification_queue')
+                .select('id, notification_type, title, body, status, retry_count, error_message')
+                .in('id', notifIds.slice(0, 200))
+            : Promise.resolve({ data: [] }),
+        ])
+
+        const profileMap: Record<string, unknown> = {}
+        for (const p of (profilesRes.data || []) as { id: string }[]) profileMap[p.id] = p
+        const queueMap: Record<string, unknown> = {}
+        for (const q of (queueRes.data || []) as { id: string }[]) queueMap[q.id] = q
+
+        const items = (data || []).map((r: Record<string, unknown>) => ({
+          ...r,
+          recipient_profile: r.user_id ? profileMap[r.user_id as string] || null : null,
+          queue_entry: r.notification_id ? queueMap[r.notification_id as string] || null : null,
+        }))
+
+        return NextResponse.json({
+          items,
+          paging: { limit: lim, offset, returned: items.length },
+        })
+      }
+
+      // Send a one-shot test push to a specific user from the CMS Debug tab.
+      // Goes through the canonical `push_notification_queue` insert path so
+      // the test exercises the same dequeue + cap + RLS code that prod uses
+      // (instead of bypassing into a separate APNs sender — which would
+      // mask integration regressions). Backed by `admin_enqueue_test_push()`
+      // RPC (migration 20260808) with admin gate.
+      case 'send_test_push': {
+        const { user_id, title, body, category } = params
+        if (!user_id || !title || !body) {
+          return NextResponse.json({ error: 'Missing user_id/title/body' }, { status: 400 })
+        }
+        const { data, error } = await admin.rpc('admin_enqueue_test_push', {
+          p_user_id: user_id,
+          p_title: title,
+          p_body: body,
+          p_category: category || 'announcement',
+          p_actor_email: adminAuth.email || 'unknown',
+        })
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json(data || { ok: true })
+      }
+
       case 'get_push_queue_status': {
         const { data, error } = await admin.from('push_notification_queue')
           .select('id, recipient_user_id, notification_type, title, body, status, error_message, retry_count, created_at, sent_at')
@@ -4590,7 +4685,7 @@ export async function POST(req: NextRequest) {
         const cutoff = new Date(Date.now() - Math.min(Math.max(days, 1), 90) * 86_400_000).toISOString()
 
         const { data, error } = await admin.from('new_user_journey_enrollment')
-          .select('user_id, enrolled_at, completed_onboarding, completed_first_workout, logged_first_meal, added_first_friend, connected_wearable, saw_paywall, converted_paywall, total_events, total_sessions, total_errors, total_crashes, install_app_version, install_device_model, auth_provider')
+          .select('user_id, enrolled_at, completed_onboarding, completed_first_workout, logged_first_meal, added_first_friend, connected_wearable, saw_paywall, converted_paywall, created_custom_workout, streak_3_days, goal_set, notification_permission_granted, total_events, total_sessions, total_errors, total_crashes, install_app_version, install_device_model, auth_provider')
           .gte('enrolled_at', cutoff)
 
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -4608,6 +4703,11 @@ export async function POST(req: NextRequest) {
           connected_wearable_pct:      safePct(rows.filter(r => r.connected_wearable).length),
           saw_paywall_pct:             safePct(rows.filter(r => r.saw_paywall).length),
           converted_paywall_pct:       safePct(rows.filter(r => r.converted_paywall).length),
+          // Migration #175 — monetization predictor flags
+          created_custom_workout_pct:          safePct(rows.filter(r => r.created_custom_workout).length),
+          streak_3_days_pct:                   safePct(rows.filter(r => r.streak_3_days).length),
+          goal_set_pct:                        safePct(rows.filter(r => r.goal_set).length),
+          notification_permission_granted_pct: safePct(rows.filter(r => r.notification_permission_granted).length),
           avg_events_per_user:    safeAvg(rows.reduce((s, r) => s + (r.total_events ?? 0), 0)),
           avg_sessions_per_user:  safeAvg(rows.reduce((s, r) => s + (r.total_sessions ?? 0), 0)),
           avg_errors_per_user:    safeAvg(rows.reduce((s, r) => s + (r.total_errors ?? 0), 0)),

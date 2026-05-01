@@ -546,6 +546,9 @@ struct DashboardView: View {
                 "workouts_count": Int(userManager.currentUser?.totalWorkouts ?? 0),
                 "has_active_program": generatedProgramService.activeProgram != nil
             ])
+            // NUJ telemetry — see NewUserJourneyTracker. No-op when user is
+            // outside their 72h window (Self.isActive guard inside).
+            NewUserJourneyTracker.shared.logScreen("dashboard")
             
             // 🎯 SMART CAROUSEL DEFAULT: Active Program (page 1) if user has one, otherwise Custom/Auto (page 0)
             var transaction = Transaction()

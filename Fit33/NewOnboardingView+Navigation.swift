@@ -50,6 +50,11 @@ extension NewOnboardingView {
         let stepName = "\(step)"
         let stepIndex = step.rawValue
         let editing = isEditingFromConfirmation
+        // Capture has_goals at the moment the user is LEAVING the .goal step
+        // (Migration #175 trigger contract: payload.step='goals' AND
+        // payload.has_goals='true' → flips `goal_set` flag on enrollment).
+        let leavingGoalStep = (previousStep == .goal && step != .goal)
+        let hasGoalsAtLeave = !selectedGoals.isEmpty
         Task { @MainActor in
             NewUserJourneyTracker.shared.logFunnelStep(
                 funnel: "onboarding",
@@ -57,6 +62,17 @@ extension NewOnboardingView {
                 stepIndex: stepIndex,
                 extra: ["is_editing": editing]
             )
+            if leavingGoalStep {
+                NewUserJourneyTracker.shared.logFunnelStep(
+                    funnel: "onboarding",
+                    step: "goals",
+                    stepIndex: OnboardingStep.goal.rawValue,
+                    extra: [
+                        "has_goals": hasGoalsAtLeave,
+                        "goal_count": selectedGoals.count
+                    ]
+                )
+            }
             if step == .complete {
                 NewUserJourneyTracker.shared.logFunnelStep(
                     funnel: "onboarding",

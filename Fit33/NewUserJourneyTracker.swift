@@ -314,10 +314,26 @@ final class NewUserJourneyTracker: ObservableObject {
     }
 
     /// Paywall surface event. `action` ∈ {view, dismiss, convert, restore}.
-    func logPaywall(surface: String, action: String, sku: String? = nil, priceUsd: Double? = nil) {
+    /// - `triggeringFeature` — the `PremiumFeature.rawValue` that fired the
+    ///   paywall (most useful trigger-context field; lets Claude rank "which
+    ///   features convert vs dismiss")
+    /// - `secondsSinceLastEvent` — what was the user doing right before? Lets
+    ///   the cohort report identify "users who hit the paywall in their first
+    ///   30 seconds dismiss at 95%; users who hit it after a 10-min flow
+    ///   convert at 12%."
+    func logPaywall(surface: String,
+                    action: String,
+                    sku: String? = nil,
+                    priceUsd: Double? = nil,
+                    triggeringFeature: String? = nil,
+                    secondsSinceLastEvent: Int? = nil,
+                    wasInIntroOffer: Bool? = nil) {
         var payload: [String: Any] = ["surface": surface, "action": action]
         if let sku { payload["sku"] = sku }
         if let priceUsd { payload["price_usd"] = priceUsd }
+        if let triggeringFeature { payload["triggering_feature"] = triggeringFeature }
+        if let secondsSinceLastEvent { payload["seconds_since_last_event"] = secondsSinceLastEvent }
+        if let wasInIntroOffer { payload["was_in_intro_offer"] = wasInIntroOffer }
         recordEvent(eventType: "paywall",
                     screen: lastScreen,
                     detail: "\(surface)/\(action)",

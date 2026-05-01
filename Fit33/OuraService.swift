@@ -354,6 +354,16 @@ final class OuraService: ObservableObject {
         isConnected = true
 
         AppLogger.info("[OURA] Connected successfully (token expires in \(tokenResponse.expiresIn ?? 86400)s)", category: .health)
+        // NUJ telemetry — flips `connected_wearable` boolean on the user's
+        // enrollment row via the trigger (#167 contract: event_type='integration'
+        // + payload.action='success'). Wearable connection is a top-3 paid-
+        // conversion predictor (industry baseline: 3-5× lift).
+        await MainActor.run {
+            NewUserJourneyTracker.shared.logIntegration(
+                provider: "oura",
+                action: "success"
+            )
+        }
         OAuthAuditLog.record(
             service: "oura",
             event: .connect,

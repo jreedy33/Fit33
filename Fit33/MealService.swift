@@ -145,7 +145,7 @@ class MealService: ObservableObject {
                     phase: "logged",
                     foodName: trimmedName,
                     source: foodEntry.source,
-                    calories: foodEntry.calories
+                    calories: Double(foodEntry.calories)
                 )
             }
             

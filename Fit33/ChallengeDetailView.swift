@@ -143,8 +143,7 @@ struct ChallengeDetailView: View {
                     } label: {
                         Label("Add Home Screen Widget", systemImage: "plus")
                             .labelStyle(.titleAndIcon)
-                            .font(.caption)
-                            .fontWeight(.semibold)
+                            .font(.ds_labelMedium)
                     }
                     .accessibilityLabel("Add home screen widget")
                     .accessibilityHint("Opens a step-by-step guide for adding the widget")
@@ -409,26 +408,24 @@ struct ChallengeDetailView: View {
     }
     
     // MARK: - Battle Log (Day-by-Day Timeline)
-    
+
     private var battleLogSection: some View {
         VStack(spacing: Spacing.sm) {
-            // Section header
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "calendar.circle.fill")
                     .foregroundStyle(typeGradient)
-                    .font(.title3)
+                    .font(.ds_heading3)
                 Text("Battle Log")
-                    .font(.title3)
-                    .fontWeight(.bold)
+                    .font(.ds_heading3)
                     .foregroundColor(.primary)
-                
+
                 Spacer()
-                
+
                 Text("Day \(challenge.daysElapsed) of \(challenge.durationDays)")
                     .font(.ds_caption)
                     .foregroundColor(.secondary)
             }
-            
+
             battleLogContent
         }
     }
@@ -478,7 +475,7 @@ struct ChallengeDetailView: View {
                     }
                 }
             }
-            .sleekCardSubtle(cornerRadius: 16)
+            .sleekCardSubtle(cornerRadius: CornerRadius.lg)
         } else if detailsLoadState == .failed {
             Button {
                 HapticManager.impact(.light)
@@ -490,8 +487,7 @@ struct ChallengeDetailView: View {
                         .foregroundColor(typeColor)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Couldn't load battle log")
-                            .font(.ds_bodySmall)
-                            .fontWeight(.semibold)
+                            .font(.ds_labelLarge)
                             .foregroundColor(.primary)
                         Text("Tap to retry")
                             .font(.ds_caption)
@@ -504,7 +500,7 @@ struct ChallengeDetailView: View {
                 }
                 .padding(Spacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .sleekCardSubtle(cornerRadius: 16)
+                .sleekCardSubtle(cornerRadius: CornerRadius.lg)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Retry loading battle log")
@@ -518,7 +514,7 @@ struct ChallengeDetailView: View {
                 }
             }
             .padding(Spacing.sm)
-            .sleekCardSubtle(cornerRadius: 16)
+            .sleekCardSubtle(cornerRadius: CornerRadius.lg)
         }
     }
     
@@ -571,11 +567,11 @@ struct ChallengeDetailView: View {
                     }
                 }
                 .padding(Spacing.sm)
-                .sleekCardSubtle(cornerRadius: 14)
+                .sleekCardSubtle(cornerRadius: CornerRadius.md)
             }
         }
     }
-    
+
     // MARK: - Cancel Button
     
     private var cancelChallengeButton: some View {
@@ -892,26 +888,25 @@ private struct BattleLogRow: View {
     
     var body: some View {
         HStack(spacing: Spacing.sm) {
-            // Day column
             VStack(spacing: 1) {
                 if isToday {
                     Text("TODAY")
-                        .font(.system(size: 9, weight: .black))
+                        .font(.ds_caption)
+                        .tracking(0.6)
                         .foregroundColor(typeColor)
                 } else {
                     Text("Day \(dayNumber)")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.ds_caption)
                         .foregroundColor(isFuture ? .secondary.opacity(0.4) : .secondary)
                 }
-                
+
                 Text(dayLabel)
                     .font(.ds_caption)
                     .foregroundColor(.secondary.opacity(isFuture ? 0.3 : 0.6))
             }
             .frame(width: 44)
-            
+
             if isFuture {
-                // Future day — locked
                 HStack {
                     Spacer()
                     Image(systemName: "lock.fill")
@@ -920,20 +915,19 @@ private struct BattleLogRow: View {
                     Spacer()
                 }
             } else {
-                // My result
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("You")
-                        .font(.system(size: 8, weight: .medium))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
-                    
+
                     HStack(spacing: Spacing.xxxs) {
                         Text(myValue > 0 ? formatValue(myValue) : "–")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(.ds_labelMedium)
                             .foregroundColor(myWon ? .green : (myValue > 0 ? .primary : .secondary.opacity(0.4)))
-                        
+
                         if myWon {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 10))
+                                .font(.ds_caption)
                                 .foregroundColor(.green)
                         } else if myValue > 0 {
                             miniRing(progress: min(1.0, Double(myValue) / Double(target)))
@@ -941,17 +935,16 @@ private struct BattleLogRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
-                
-                // Winner indicator
+
                 if myValue > 0 || opponentValue > 0 {
                     ZStack {
                         if iAmAhead {
                             Image(systemName: "arrowtriangle.left.fill")
-                                .font(.system(size: 7))
+                                .font(.ds_caption)
                                 .foregroundColor(.green.opacity(0.6))
                         } else if opponentValue > myValue {
                             Image(systemName: "arrowtriangle.right.fill")
-                                .font(.system(size: 7))
+                                .font(.ds_caption)
                                 .foregroundColor(.orange.opacity(0.6))
                         } else {
                             Circle()
@@ -964,25 +957,24 @@ private struct BattleLogRow: View {
                     Spacer()
                         .frame(width: 12)
                 }
-                
-                // Opponent result
+
                 VStack(alignment: .leading, spacing: 1) {
                     Text(opponentName)
-                        .font(.system(size: 8, weight: .medium))
+                        .font(.ds_caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
-                    
+
                     HStack(spacing: Spacing.xxxs) {
                         if oppWon {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 10))
+                                .font(.ds_caption)
                                 .foregroundColor(.green)
                         } else if opponentValue > 0 {
                             miniRing(progress: min(1.0, Double(opponentValue) / Double(target)))
                         }
-                        
+
                         Text(opponentValue > 0 ? formatValue(opponentValue) : "–")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(.ds_labelMedium)
                             .foregroundColor(oppWon ? .green : (opponentValue > 0 ? .primary : .secondary.opacity(0.4)))
                     }
                 }
@@ -992,13 +984,13 @@ private struct BattleLogRow: View {
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, Spacing.xs)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: CornerRadius.sm, style: .continuous)
                 .fill(isToday
                     ? typeColor.opacity(colorScheme == .dark ? 0.1 : 0.06)
                     : Color.clear)
         )
     }
-    
+
     private func miniRing(progress: Double) -> some View {
         ZStack {
             Circle()

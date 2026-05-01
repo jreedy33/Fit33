@@ -289,123 +289,78 @@ extension DashboardView {
         checkIsFirstVisit() ? "Welcome to Fit33," : "Welcome back,"
     }
     
+    // 2026-05-01 — Welcome card redesign (lead-designer spec).
+    // Five stacked card-chrome layers were collapsed to canonical
+    // `.sleekCard()`; flame medallion shrunk 58→48 with
+    // proportionally scaled SF Symbol + hole-filler; streak number
+    // moved to the canonical `.ds_statSmall` token; HStack gap +
+    // padding moved to `Spacing.md` so the card no longer reads as
+    // "smashed". Headline bumped `.ds_heading3` → `.ds_heading2`
+    // inside `WelcomeBriefRow` to give the hero card its proper
+    // weight now that there's room for it.
     var headerView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // 2026-04-30 — Welcome row ("WELCOME BACK, NAME" +
-            // weekly league badge) was extracted into
-            // `pinnedWelcomeRow` and now lives in the pinned top
-            // strip above the scrollable dashboard. The welcome card
-            // below keeps its own chrome but only renders the
-            // flame + daily brief content.
-            HStack(spacing: 14) {
-                // Hero icon - Flame with streak counter (tappable for info)
-                Button(action: {
-                    HapticManager.impact(.light)
-                    showStreakInfo = true
-                }) {
-                    ZStack {
-                        // Solid fill behind the flame to fill the hole
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [Color.orange, Color.red.opacity(0.9)]),
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .frame(width: 32, height: 32)
-                            .offset(y: 6)
-                        
-                        // Flame icon
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 56, weight: .regular))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [Color.orange, Color.red]),
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .shadow(color: .orange.opacity(0.5), radius: 8, x: 0, y: 2)
-                        
-                        // Streak number centered in flame
-                        Text("\(userManager.currentUser?.currentStreak ?? 0)")
-                            .font(.system(size: 24, weight: .black, design: .rounded))
-                            .foregroundColor(.white)
-                            .shadow(color: .black.opacity(0.3), radius: 1, x: 0, y: 1)
-                            .offset(y: 4) // Center in flame body
-                    }
-                    .frame(width: 58, height: 58)
-                }
-                .accessibilityLabel("Current streak: \(userManager.currentUser?.currentStreak ?? 0) days")
-                .accessibilityHint("Tap for streak details")
-                .buttonStyle(.plain)
+        HStack(spacing: Spacing.md) {
+            streakFlameMedallion
 
-                // Daily Brief — fused multi-source insight (replaces
-                // the old single-line motivational subtitle, 2026-04-27).
-                // Engine: `DailyBriefEngine.compose()`; widget isolation
-                // in `DashboardWelcomeBriefWrapper` (PE invariant 9).
-                DashboardWelcomeBriefWrapper(navigationPath: $dashboardNavPath)
-                    .environmentObject(workoutManager)
+            // Daily Brief — fused multi-source insight (replaces
+            // the old single-line motivational subtitle, 2026-04-27).
+            // Engine: `DailyBriefEngine.compose()`; widget isolation
+            // in `DashboardWelcomeBriefWrapper` (PE invariant 9).
+            DashboardWelcomeBriefWrapper(navigationPath: $dashboardNavPath)
+                .environmentObject(workoutManager)
 
-                Spacer(minLength: 0)
-            }
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, Spacing.md)
-        .padding(.vertical, 14)
-        .background(
+        .padding(.vertical, Spacing.md)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+    }
+
+    /// Streak flame badge — the whole 58pt medallion is the tap
+    /// target for `showStreakInfo`. Internal sizes (58pt frame, 56pt
+    /// SF Symbol, 32pt hole-filler) are component-internal canonical
+    /// constants matching the original welcome-card flame size;
+    /// they are NOT `Spacing.*` tokens because they describe a
+    /// component's intrinsic size, not layout padding.
+    private var streakFlameMedallion: some View {
+        Button(action: {
+            HapticManager.impact(.light)
+            showStreakInfo = true
+        }) {
             ZStack {
-                // Bottom shadow layer (deepest) - blue glow like Favorites
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color.blue.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                    .offset(y: 8)
-                    .blur(radius: 4)
-                
-                // Middle shadow layer
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
-                
-                // Main card background
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                Circle()
                     .fill(
                         LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color.darkCardBackground, Color.darkSurface]
-                                : [Color.white, Color.white.opacity(0.95)],
+                            gradient: Gradient(colors: [Color.orange, Color.red.opacity(0.9)]),
                             startPoint: .top,
                             endPoint: .bottom
                         )
                     )
-                
-                // Inner highlight (top edge glow)
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
+                    .frame(width: 32, height: 32)
+                    .offset(y: 6)
+
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 56, weight: .regular))
+                    .foregroundStyle(
                         LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            gradient: Gradient(colors: [Color.orange, Color.red]),
                             startPoint: .top,
                             endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
+                        )
                     )
-                
-                // Blue/purple accent border
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                Color.blue.opacity(colorScheme == .dark ? 0.4 : 0.3),
-                                Color.purple.opacity(colorScheme == .dark ? 0.3 : 0.2)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                    .shadow(color: .orange.opacity(0.5), radius: 8, x: 0, y: 2)
+
+                Text("\(userManager.currentUser?.currentStreak ?? 0)")
+                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.3), radius: 1, x: 0, y: 1)
+                    .offset(y: 4)
             }
-        )
+            .frame(width: 58, height: 58)
+        }
+        .accessibilityLabel("Current streak: \(userManager.currentUser?.currentStreak ?? 0) days")
+        .accessibilityHint("Tap for streak details")
+        .buttonStyle(.plain)
     }
     
     var startWorkoutButton: some View {
@@ -465,11 +420,8 @@ extension DashboardView {
                             .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                             .offset(y: 4)
                         
-                        // Main card background with gradient
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(
-                                Color.cardBackground
-                            )
+                        // Main card background — adaptive (frosted ↔ solid via setting)
+                        AdaptiveCardSurface(cornerRadius: 24)
                         
                         // Inner highlight (top edge glow)
                         RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -557,11 +509,8 @@ extension DashboardView {
                             .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                             .offset(y: 4)
                         
-                        // Main card background with gradient
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(
-                                Color.cardBackground
-                            )
+                        // Main card background — adaptive (frosted ↔ solid via setting)
+                        AdaptiveCardSurface(cornerRadius: 24)
                         
                         // Inner highlight (top edge glow)
                         RoundedRectangle(cornerRadius: 24, style: .continuous)

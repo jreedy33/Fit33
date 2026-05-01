@@ -384,17 +384,24 @@ struct ExerciseLibraryView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Fixed header section (doesn't scroll)
+            ZStack {
+                AnimatedOrbBackground.exercises(colorScheme: colorScheme)
+                    .accessibilityHidden(true)
+
+                // Pinned title row matches Home / Workout / Nutrition /
+                // Friends — `PinnedTabHeader` provides the same horizontal
+                // inset and the outer VStack picks up the shared
+                // `TabPinnedChrome.rootTopPullUp` so this tab's title
+                // sits at the same vertical position as every other tab.
                 VStack(spacing: 0) {
-                    // Custom header
+                PinnedTabHeader {
                     customHeaderView
-                        .padding(.top, 0)
-                        .padding(.bottom, 16)
-                    
-                    // Compact search and filters
+                }
+
+                // Fixed filter section (doesn't scroll)
+                VStack(spacing: 0) {
                     compactFiltersView
-                    
+
                     // Banner ad - integrated below filters for free users
                     if !PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled {
                         BannerAdView()
@@ -402,7 +409,6 @@ struct ExerciseLibraryView: View {
                     }
                 }
                 .padding(.horizontal, Spacing.md)
-                .padding(.top, 8)
                 .padding(.bottom, 12)
                 
                 // Scrollable exercise list only
@@ -438,6 +444,7 @@ struct ExerciseLibraryView: View {
                         .padding(.top, 4)
                         .padding(.bottom, 20)
                     }
+                    .scrollContentBackground(.hidden)
                     .scrollDismissesKeyboard(.immediately)
                     .id(forceRenderID)
                     .refreshable {
@@ -447,15 +454,14 @@ struct ExerciseLibraryView: View {
                         scrollProxy.scrollTo("top", anchor: .top)
                     }
                 }
+                }   // closes VStack(spacing: 0) — pinned-header wrapper
+                .padding(.top, TabPinnedChrome.rootTopPullUp)
             }
             // ⚡️ SNAPPY SEARCH: Dismiss keyboard immediately when scrolling
             .simultaneousGesture(
                 DragGesture().onChanged { _ in
                     isSearchFocused = false
                 }
-            )
-            .background(
-                AnimatedOrbBackground.exercises(colorScheme: colorScheme)
             )
             .navigationBarHidden(true)
             .adaptiveToolbarBackground()
@@ -881,15 +887,8 @@ struct ExerciseLibraryView: View {
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.1 : 0.02))
                     .offset(y: 3)
                 
-                // Main card background with gradient
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: Color.cardGradientStops(for: colorScheme),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                // Main card background — adaptive (frosted ↔ solid via setting)
+                AdaptiveCardSurface(cornerRadius: 24)
                 
                 // Inner highlight (top edge glow)
                 RoundedRectangle(cornerRadius: 24, style: .continuous)

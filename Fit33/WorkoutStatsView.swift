@@ -231,7 +231,7 @@ private struct StatCell: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Spacing.sm)
-        .sleekCard(cornerRadius: CornerRadius.lg, accentColor: accentColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.lg, accentColor: accentColor)
         .accessibilityElement(children: .combine)
     }
 }
@@ -301,7 +301,7 @@ struct NutritionTrendsChartWidget: View {
                 }
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .teal)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .teal)
         }
         .task(id: timeframe) { await loadNutritionData() }
     }
@@ -460,7 +460,7 @@ struct CalorieBalanceChartWidget: View {
                 }
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
         }
         .task(id: timeframe) { await loadBalanceData() }
     }
@@ -586,7 +586,7 @@ struct WorkoutVolumeChartWidget: View {
                 }
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
         }
         .task(id: timeframe) { await loadVolumeData() }
     }
@@ -651,7 +651,7 @@ struct WorkoutFrequencyChartWidget: View {
                 }
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .cyan)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .cyan)
         }
         .task(id: timeframe) { await loadFrequencyData() }
     }
@@ -842,7 +842,7 @@ struct StrengthProgressChartWidget: View {
                 }
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .purple)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .purple)
         }
         .task(id: timeframe) { await loadStrengthData() }
     }
@@ -1020,7 +1020,7 @@ private struct StatsPRCard: View {
             }
         }
         .padding(Spacing.sm).frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.lg, accentColor: record.isRecentPR ? .yellow : .gray)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.lg, accentColor: record.isRecentPR ? .yellow : .gray)
         .accessibilityElement(children: .combine)
     }
 }
@@ -1069,7 +1069,7 @@ struct BodyWeightTrendWidget: View {
                 }
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
         }
         .accessibilityElement(children: .contain).accessibilityLabel("Body weight trend chart")
     }
@@ -1124,7 +1124,7 @@ struct WorkoutDurationChartWidget: View {
                 }
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
         }
         .task(id: timeframe) { await loadDurationData() }
     }
@@ -1201,7 +1201,7 @@ struct MuscleGroupDistributionWidget: View {
                 }
             }
             .padding(.horizontal, Spacing.md).padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .red)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .red)
         }
         .task { await loadMuscleData() }
     }

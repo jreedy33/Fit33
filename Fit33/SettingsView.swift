@@ -26,6 +26,12 @@ struct SettingsView: View {
     @StateObject private var adManager = AdManager.shared
     @StateObject private var premiumManager = PremiumManager.shared
     
+    /// "Frosted Card Style" toggle — drives every home dashboard widget's
+    /// surface (`AdaptiveCardSurface`, `.adaptiveSleekCard()`,
+    /// `.adaptiveSleekCardSubtle()`). True = frosted glass over the orb
+    /// backdrop, false = the original solid `Color.cardBackground` look.
+    @AppStorage(useFrostedDashboardCardsKey) private var useFrostedDashboardCards: Bool = true
+    
     // Clean gradient card background matching app style
     
     var body: some View {
@@ -47,6 +53,10 @@ struct SettingsView: View {
                         settingsSection(title: "App Preferences") {
                             VStack(spacing: 0) {
                                 appearanceRow()
+                                
+                                Divider().padding(.leading, 52)
+                                
+                                frostedCardsRow()
                                 
                                 Divider().padding(.leading, 52)
                                 
@@ -1117,6 +1127,44 @@ struct SettingsView: View {
             }
         }
         .padding(Spacing.md)
+    }
+    
+    // MARK: - Frosted Cards Row
+    /// Lets the user flip every home dashboard widget surface between the
+    /// new frosted-glass style (orb shows through) and the original solid
+    /// card style. Single source of truth: `useFrostedDashboardCardsKey` in
+    /// `AdaptiveColors.swift`.
+    private func frostedCardsRow() -> some View {
+        HStack(spacing: 16) {
+            Image(systemName: useFrostedDashboardCards ? "square.stack.3d.up.fill" : "square.fill")
+                .font(.title3)
+                .foregroundColor(.teal)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Frosted Card Style")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+
+                Text(useFrostedDashboardCards
+                    ? "Glass cards over the animated background"
+                    : "Solid cards (classic look)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $useFrostedDashboardCards.animation(.easeInOut(duration: 0.25)))
+                .labelsHidden()
+                .tint(.teal)
+        }
+        .padding(Spacing.md)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Frosted Card Style")
+        .accessibilityValue(useFrostedDashboardCards ? "On" : "Off")
+        .accessibilityHint("Switches home tab widget cards between frosted glass and solid backgrounds.")
     }
     
     // MARK: - Video Gender Row

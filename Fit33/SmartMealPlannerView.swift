@@ -352,7 +352,7 @@ struct SmartMealPlannerView: View {
             macroRing(label: "Fat", value: day.totalFat, goal: Int(Double(targetCalories) * 0.3 / 9), color: .purple, unit: "g")
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: 16, accentColor: .green)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .green)
     }
     
     private func macroRing(label: String, value: Int, goal: Int, color: Color, unit: String) -> some View {
@@ -409,7 +409,7 @@ struct SmartMealPlannerView: View {
             content()
         }
         .padding(14)
-        .sleekCard(cornerRadius: 14, accentColor: .green)
+        .adaptiveSleekCard(cornerRadius: 14, accentColor: .green)
     }
     
     // MARK: - Personalization Badge

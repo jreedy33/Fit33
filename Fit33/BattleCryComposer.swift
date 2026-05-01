@@ -395,7 +395,7 @@ struct ReactiveBattleFeed: View {
                 .padding(Spacing.sm)
             }
             .frame(maxHeight: 220)  // ~4 bubble rows visible; rest scrolls
-            .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+            .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
             .animation(shouldDisableMotion ? nil : .spring(response: 0.45, dampingFraction: 0.65), value: reactions.map(\.id))
             .onChange(of: reactions.first?.id) { _, newest in
                 guard let newest else { return }
@@ -476,7 +476,7 @@ struct ReactiveBattleFeed: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.lg)
-        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
     }
 
     private func triggerConfetti() {

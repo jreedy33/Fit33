@@ -956,7 +956,7 @@ struct ReceivedExerciseCard: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
     }
 }
 
@@ -1092,7 +1092,7 @@ struct EditableExerciseCard: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: 16, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
     }
 }
 

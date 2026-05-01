@@ -934,7 +934,7 @@ struct WelcomeStepView: View {
                     )
                 }
                 .padding(Spacing.lg)
-                .sleekCard(cornerRadius: 20, accentColor: .cyan)
+                .adaptiveSleekCard(cornerRadius: 20, accentColor: .cyan)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .padding(.horizontal, 20)
             }
@@ -1099,7 +1099,7 @@ struct DurationStepView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
+                            .adaptiveSleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
                             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1224,7 +1224,7 @@ struct DurationCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
+            .adaptiveSleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1457,7 +1457,7 @@ struct PrimaryMuscleCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
+            .adaptiveSleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1765,7 +1765,7 @@ struct SecondaryMuscleCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
+            .adaptiveSleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1832,7 +1832,7 @@ struct SmallSecondaryMuscleCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
+            .adaptiveSleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -2187,7 +2187,7 @@ struct AutoWorkoutEquipmentCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.sm)
-            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
+            .adaptiveSleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -2297,7 +2297,7 @@ struct DurationStepContentView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
+                            .adaptiveSleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
                             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -2712,7 +2712,7 @@ struct DurationTilesView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .sleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
+                            .adaptiveSleekCard(cornerRadius: 24, accentColor: isSelected ? .blue : Color(white: 0.4))
                             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 24, style: .continuous)

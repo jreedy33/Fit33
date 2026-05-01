@@ -4,9 +4,20 @@
 //
 //  Extracted 2026-08-11 from `ChallengeCreationFlow.swift` (now deleted).
 //
-//  Three small types used by the active challenge-creation flows
+//  Four small types used by the active challenge-creation flows
 //  (`ChallengeFlowStartView`, `PrivateChallengeCreationFlow`,
-//   `CommunityCreateChallengeView`):
+//   `CommunityCreateChallengeView`) and read across the dashboard /
+//   widget / reactions surfaces:
+//
+//    • `ChallengeMode` — Accountability ("we're in this together",
+//      🤝 prefix) vs Competition ("only one can win", ⚔️ prefix). Mode
+//      is encoded in the challenge TITLE PREFIX (no DB column) — every
+//      reader uses `ChallengeMode.from(title:)` to detect it. This is
+//      the contract that lets the iOS widget extension read mode
+//      without a DB schema dependency (see `WidgetSupabaseFetcher`).
+//      Adding a new mode = (a) new emoji prefix, (b) update `from(title:)`
+//      detection, (c) update every existing title-emitter
+//      (`ChallengeService.create…`, private + community equivalents).
 //
 //    • `ChallengeActivityType` — the activity-tile choice in the picker
 //      (Walk / Run / Lift / Steps / Hydrate / Calories / Protein /
@@ -31,6 +42,80 @@
 //  delete the dead view without breaking the live ones.
 
 import SwiftUI
+
+// MARK: - Challenge Mode
+//
+// Encoded in the challenge TITLE PREFIX (no DB column). Every reader
+// — dashboard, widget extension, reactions composer, friends tab —
+// uses `ChallengeMode.from(title:)` to detect mode at render time.
+// Adding a new mode requires updating both `titlePrefix` (the writer)
+// and `from(title:)` (the reader) in the same edit.
+enum ChallengeMode: String, CaseIterable {
+    case accountability = "Accountability"
+    case competition = "Competition"
+
+    var title: String {
+        switch self {
+        case .accountability: return "Accountability Buddy"
+        case .competition: return "Head-to-Head Battle"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .accountability: return "We're in this together"
+        case .competition: return "Only one can win"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .accountability:
+            return "Same goal. Same grind. You both commit to hitting the target every day — and keep each other honest. No scores, no losers. Just a shared streak you build together."
+        case .competition:
+            return "Go head-to-head. Every step, rep, and drop counts. One scoreboard, one winner, and permanent bragging rights."
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .accountability: return "🤝"
+        case .competition: return "⚔️"
+        }
+    }
+
+    /// Prefix embedded in challenge title so the widget can detect mode
+    /// without a DB column round-trip (see `WidgetSupabaseFetcher`).
+    var titlePrefix: String {
+        switch self {
+        case .accountability: return "🤝"
+        case .competition: return "⚔️"
+        }
+    }
+
+    var gradientColors: [Color] {
+        switch self {
+        case .accountability: return [.blue, .cyan]
+        case .competition: return [.orange, .red]
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .accountability: return .cyan
+        case .competition: return .orange
+        }
+    }
+
+    /// Detect mode from a challenge title prefix. Legacy challenges
+    /// (created before the prefix convention) default to competition —
+    /// keeping the original behavior so old data still renders.
+    static func from(title: String) -> ChallengeMode {
+        if title.hasPrefix("🤝") { return .accountability }
+        if title.hasPrefix("⚔️") { return .competition }
+        return .competition
+    }
+}
 
 // MARK: - Challenge Activity Type
 enum ChallengeActivityType: String, CaseIterable {

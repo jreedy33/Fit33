@@ -492,7 +492,7 @@ struct ExerciseDetailView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: categoryColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: categoryColor)
     }
     
     private func prCard(weight: Double, reps: Int, date: Date) -> some View {
@@ -581,7 +581,7 @@ struct ExerciseDetailView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: categoryColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: categoryColor)
     }
     
     // MARK: - How To Section
@@ -618,7 +618,7 @@ struct ExerciseDetailView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: categoryColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: categoryColor)
     }
     
     private var equipmentIcon: String {

@@ -544,11 +544,26 @@ Preserves the transient-HK-zero guard from 20260720.';
 -- 5. challenge_progress_summary view — surface target_cadence
 -- ============================================================================
 -- Re-creates the view to expose target_cadence + period_progress (the cadence-
--- aware "what to display" value). CRITICAL: re-apply security_invoker = on
--- after CREATE OR REPLACE because that command resets WITH options
--- (supabase-rules invariant 6).
+-- aware "what to display" value). CRITICAL caveats:
+--
+--   1. CREATE OR REPLACE VIEW requires the new column list to be a strict
+--      superset of the old one in the same order — Postgres raises 42P16
+--      when you try to REORDER columns. The old view (defined in
+--      `challenge_type_migration.sql`) has `title` at column 4; the new
+--      shape inserts `target_cadence` between `challenge_type` and `title`,
+--      which IS a reorder. So we DROP first, then CREATE.
+--
+--   2. CASCADE is defensive — any dependent function we forgot will be
+--      auto-dropped, and the leaderboard RPCs in section 6 of this
+--      migration recreate the only known consumers (get_challenge_leaderboard
+--      / get_community_challenge_leaderboard).
+--
+--   3. Re-apply security_invoker = on after the recreate (CREATE VIEW resets
+--      WITH options — supabase-rules invariant 6).
 
-CREATE OR REPLACE VIEW challenge_progress_summary AS
+DROP VIEW IF EXISTS challenge_progress_summary CASCADE;
+
+CREATE VIEW challenge_progress_summary AS
 SELECT
     cp.challenge_id,
     cp.user_id,

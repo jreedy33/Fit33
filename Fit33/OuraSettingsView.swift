@@ -115,7 +115,7 @@ struct OuraSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .teal)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .teal)
     }
 
     // MARK: - Readiness Preview
@@ -168,7 +168,7 @@ struct OuraSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: ouraService.currentReadinessLevel.color)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: ouraService.currentReadinessLevel.color)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Today's Oura snapshot. Readiness \(ouraService.todayReadiness?.score.map { "\($0)" } ?? "unavailable").")
     }
@@ -238,7 +238,7 @@ struct OuraSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .teal)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .teal)
     }
 
     // MARK: - OAuth (launches browser directly)

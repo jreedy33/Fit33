@@ -576,7 +576,7 @@ struct TutorialFindFriendsHero: View {
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.md)
             .frame(maxWidth: 360)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: kind.accentColor)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: kind.accentColor)
         }
         .padding(.horizontal, Spacing.md)
     }
@@ -818,7 +818,7 @@ struct TutorialProgramHero: View {
             .padding(Spacing.md)
         }
         .frame(maxWidth: 360)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: kind.accentColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: kind.accentColor)
         .scaleEffect(0.92)
         .offset(y: isAnimating ? -3 : 3)
     }
@@ -1144,7 +1144,7 @@ private struct IntegrationRowBody: View {
             connectPill
         }
         .padding(Spacing.sm)
-        .sleekCard(cornerRadius: CornerRadius.lg, accentColor: integration.tint)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.lg, accentColor: integration.tint)
     }
 
     private var iconBadge: some View {
@@ -1326,7 +1326,7 @@ struct TutorialFuelCard: View {
             }
             .padding(Spacing.md)
             .frame(maxWidth: 360)
-            .sleekCard(cornerRadius: CornerRadius.lg, accentColor: .cyan)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.lg, accentColor: .cyan)
         }
         .offset(y: isAnimating ? -2 : 2)
     }

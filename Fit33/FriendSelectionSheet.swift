@@ -83,10 +83,7 @@ struct FriendSelectionSheet: View {
                     }
                 }
                 .padding(Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: CornerRadius.md)
-                        .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
-                )
+                .background(AdaptiveCardSurface(cornerRadius: CornerRadius.md))
                 .padding(.horizontal, Spacing.md)
                 .padding(.top, 16)
                 
@@ -165,10 +162,7 @@ struct FriendRowButton: View {
                     .foregroundColor(.secondary)
             }
             .padding(Spacing.sm)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md)
-                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
-            )
+            .background(AdaptiveCardSurface(cornerRadius: CornerRadius.md))
         }
         .buttonStyle(PlainButtonStyle())
     }

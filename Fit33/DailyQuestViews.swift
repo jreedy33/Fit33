@@ -602,7 +602,7 @@ struct DailyQuestsWidget: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)
-        .sleekCardSubtle(cornerRadius: 16)
+        .adaptiveSleekCardSubtle(cornerRadius: 16)
         .overlay(alignment: .topTrailing) {
             // XP reward pinned to the top-right corner of every card — same
             // position for in-progress and completed states so users can scan
@@ -1772,7 +1772,7 @@ struct DailyQuestsWidget: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, 10)
-        .sleekCardSubtle(cornerRadius: 16)
+        .adaptiveSleekCardSubtle(cornerRadius: 16)
     }
     
     // MARK: - Loading / Empty States
@@ -1786,7 +1786,7 @@ struct DailyQuestsWidget: View {
         }
         .frame(maxWidth: .infinity)
         .padding(Spacing.lg)
-        .sleekCard(cornerRadius: 24, accentColor: .orange)
+        .adaptiveSleekCard(cornerRadius: 24, accentColor: .orange)
     }
     
     

@@ -1304,15 +1304,8 @@ struct WorkoutHomeView: View {
         .padding(Spacing.lg)
         .background(
             ZStack {
-                // Clean gradient background matching EnhancedStatCard
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: Color.cardGradientStops(for: colorScheme),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                // Main background — adaptive (frosted ↔ solid via setting)
+                AdaptiveCardSurface(cornerRadius: 24)
                 
                 // Subtle top highlight
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1601,11 +1594,8 @@ struct DepthQuickActionCard: View {
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                         .offset(y: 4)
                     
-                    // Main card background with gradient
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(
-                            Color.cardBackground
-                        )
+                    // Main card background — adaptive (frosted ↔ solid via setting)
+                    AdaptiveCardSurface(cornerRadius: 24)
                     
                     // Inner highlight (top edge glow)
                     RoundedRectangle(cornerRadius: 24, style: .continuous)

@@ -54,7 +54,7 @@ struct ExerciseCardRow: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
     }
 
     // MARK: - Checkbox

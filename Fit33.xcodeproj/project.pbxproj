@@ -106,6 +106,7 @@
 		7C53E2212F33FD7500C2F7EC /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */; };
 		7C53E2222F33FD7500C2F7EC /* MyQRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21D2F33FD7500C2F7EC /* MyQRCodeView.swift */; };
 		7C53E2242F353B7700C2F7EC /* ChallengeActivityType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2232F353B7700C2F7EC /* ChallengeActivityType.swift */; };
+		7C53E2262F353B7700C2F7ED /* ChallengeCreationCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2252F353B7700C2F7ED /* ChallengeCreationCards.swift */; };
 		7C53E2282F353FE200C2F7EC /* FriendSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2272F353FE200C2F7EC /* FriendSelectionSheet.swift */; };
 		7C53E22E2F35522100C2F7EC /* ChallengeFlowStartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E22D2F35522100C2F7EC /* ChallengeFlowStartView.swift */; };
 		7C53E2322F357EB600C2F7EC /* GroupChallengeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E2312F357EB600C2F7EC /* GroupChallengeDetailView.swift */; };
@@ -334,6 +335,7 @@
 		7CB08CA52EDE397200236ECB /* BugReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08CA42EDE397200236ECB /* BugReportView.swift */; };
 		7CB08CA72EDE398A00236ECB /* DevMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08CA62EDE398A00236ECB /* DevMenuView.swift */; };
 		7CD6DD322FA4382700E49D30 /* NewUserJourneyTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */; };
+		7CD6E66D2FA468FE00E49D30 /* ChallengeCreationCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */; };
 		7CEA1ED52F54FB2D00CC468C /* WeeklyLeagueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA1ED42F54FB2D00CC468C /* WeeklyLeagueViews.swift */; };
 		7CEA1ED72F54FB3A00CC468C /* WeeklyLeagueService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA1ED62F54FB3A00CC468C /* WeeklyLeagueService.swift */; };
 		7CEA1EDA2F5A58EA00CC468C /* DailyQuestViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA1ED92F5A58EA00CC468C /* DailyQuestViews.swift */; };
@@ -567,7 +569,8 @@
 		7C53E21D2F33FD7500C2F7EC /* MyQRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyQRCodeView.swift; sourceTree = "<group>"; };
 		7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
 		7C53E21F2F33FD7500C2F7EC /* QRCodeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeService.swift; sourceTree = "<group>"; };
-		7C53E2232F353B7700C2F7EC /* ChallengeCreationFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeCreationFlow.swift; sourceTree = "<group>"; };
+		7C53E2232F353B7700C2F7EC /* ChallengeActivityType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeActivityType.swift; sourceTree = "<group>"; };
+		7C53E2252F353B7700C2F7ED /* ChallengeCreationCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeCreationCards.swift; sourceTree = "<group>"; };
 		7C53E2272F353FE200C2F7EC /* FriendSelectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendSelectionSheet.swift; sourceTree = "<group>"; };
 		7C53E22D2F35522100C2F7EC /* ChallengeFlowStartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeFlowStartView.swift; sourceTree = "<group>"; };
 		7C53E2312F357EB600C2F7EC /* GroupChallengeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupChallengeDetailView.swift; sourceTree = "<group>"; };
@@ -804,6 +807,7 @@
 		7CB08CA62EDCF00400236ECB /* ProgramScheduleFullView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgramScheduleFullView.swift; sourceTree = "<group>"; };
 		7CB08CA62EDE398A00236ECB /* DevMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevMenuView.swift; sourceTree = "<group>"; };
 		7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewUserJourneyTracker.swift; sourceTree = "<group>"; };
+		7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeCreationCards.swift; sourceTree = "<group>"; };
 		7CEA1ED42F54FB2D00CC468C /* WeeklyLeagueViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyLeagueViews.swift; sourceTree = "<group>"; };
 		7CEA1ED62F54FB3A00CC468C /* WeeklyLeagueService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyLeagueService.swift; sourceTree = "<group>"; };
 		7CEA1ED92F5A58EA00CC468C /* DailyQuestViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyQuestViews.swift; sourceTree = "<group>"; };
@@ -1004,6 +1008,7 @@
 				7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */,
 				7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */,
 				7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */,
+				7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */,
 				7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */,
 				7C8CF4702F9FA437007CD766 /* DailyBriefStore.swift */,
 				7C8CF4712F9FA437007CD766 /* DailyBriefTemplates.swift */,
@@ -1044,7 +1049,8 @@
 				A12345678901234567890309 /* CardioStravaSection.swift */,
 				7C0C41F72F09D76A00F02E84 /* CardioWorkoutDetailView.swift */,
 				A12345678901234567890401 /* ChallengeAFriendEntryWidget.swift */,
-				7C53E2232F353B7700C2F7EC /* ChallengeCreationFlow.swift */,
+				7C53E2232F353B7700C2F7EC /* ChallengeActivityType.swift */,
+				7C53E2252F353B7700C2F7ED /* ChallengeCreationCards.swift */,
 				7CACB57A2F2E971E003A7C91 /* ChallengeDetailView.swift */,
 				7C53E22D2F35522100C2F7EC /* ChallengeFlowStartView.swift */,
 				7C8CE7E32F968F46007CD766 /* ChallengeOpponentWakeService.swift */,
@@ -1674,7 +1680,8 @@
 				7CAA1FAD2F428889008200B9 /* CommunityChallengeViews.swift in Sources */,
 				7C0C42BE2F194EB700F02E84 /* NativeAdView.swift in Sources */,
 				7C8405E82EE935D00009ED0F /* ExerciseFilterService.swift in Sources */,
-				7C53E2242F353B7700C2F7EC /* ChallengeCreationFlow.swift in Sources */,
+				7C53E2242F353B7700C2F7EC /* ChallengeActivityType.swift in Sources */,
+				7C53E2262F353B7700C2F7ED /* ChallengeCreationCards.swift in Sources */,
 				7C0C41CE2F00A63D00F02E84 /* LimitationFilterEngine.swift in Sources */,
 				7C47F9E32EE3BF8600BEC4D7 /* StretchModeView.swift in Sources */,
 				7C8CF9D32FA1EC80007CD766 /* LevelToTierMigrationCard.swift in Sources */,
@@ -1750,6 +1757,7 @@
 				7CB08C7F2ED8BB1700236ECB /* NewOnboardingView.swift in Sources */,
 				7C8405C02EE646D90009ED0F /* UserBehaviorLearningEngine.swift in Sources */,
 				7C87B6392EEA3F3C00AC01F3 /* ExerciseSwapService.swift in Sources */,
+				7CD6E66D2FA468FE00E49D30 /* ChallengeCreationCards.swift in Sources */,
 				7CAFD56A2EE2100B00920F0D /* WorkoutEnvironmentService.swift in Sources */,
 				A12345678901234567890182 /* WorkoutCreationView.swift in Sources */,
 				7C98FAC82EEDB4A0001AE1F3 /* SmartExerciseSearchService.swift in Sources */,

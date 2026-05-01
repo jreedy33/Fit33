@@ -173,7 +173,7 @@ struct SharedWorkoutPreviewView: View {
             }
         }
         .padding(20)
-        .sleekCard(cornerRadius: 20, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: .blue)
     }
     
     // MARK: - Exercise List

@@ -210,8 +210,7 @@ struct DashboardStravaSyncNowCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .fill(Color.cardBackground)
+                AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
                 RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .fill(
                         LinearGradient(
@@ -409,9 +408,8 @@ struct DashboardStravaCard: View {
     /// without losing legibility against the dashboard's dark/light surface.
     private var cardBackground: some View {
         ZStack {
-            // Base card surface
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .fill(Color.cardBackground)
+            // Base card surface — adaptive (frosted ↔ solid via setting)
+            AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
 
             // Orange tint overlay — top-left more saturated, fades to clear
             RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
@@ -634,8 +632,7 @@ struct DashboardStravaEmptyCard: View {
 
     private var cardBackground: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                .fill(Color.cardBackground)
+            AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
             RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                 .fill(
                     LinearGradient(

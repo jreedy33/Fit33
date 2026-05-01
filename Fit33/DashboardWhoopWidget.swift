@@ -217,7 +217,7 @@ struct DashboardWhoopSyncNowCard: View {
         // is the same neutral grey that drives the icon halo + "Sync now"
         // pill so the whole card reads as a single cohesive monochrome
         // surface.
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Sync WHOOP. Connect to track recovery, strain, HRV, and sleep.")
     }
@@ -275,7 +275,7 @@ struct DashboardWhoopCard: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: chromeAccent)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: chromeAccent)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
     }
@@ -627,7 +627,7 @@ struct DashboardWhoopWaitingCard: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("WHOOP recovery pending. Today's score will land here once your strap syncs.")
     }
@@ -981,10 +981,7 @@ private struct WhoopMetricInfoCard: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.cardBackground)
-        )
+        .background(AdaptiveCardSurface(cornerRadius: 18))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(info.color.opacity(colorScheme == .dark ? 0.18 : 0.12), lineWidth: 1)

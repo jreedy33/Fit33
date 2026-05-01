@@ -437,7 +437,7 @@ struct AutoWorkoutPreviewView: View {
             .disabled(isRegenerating)
         }
         .padding(14)
-        .sleekCard(cornerRadius: 24, accentColor: themeColor)
+        .adaptiveSleekCard(cornerRadius: 24, accentColor: themeColor)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
     
@@ -891,7 +891,7 @@ struct AutoExerciseCard: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
     }
 
     // MARK: - Exercise Details (matches `ExerciseCardRow.exerciseDetails`)
@@ -1276,7 +1276,7 @@ struct ExerciseDataDetailView: View {
             content()
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: 20, accentColor: categoryColor)
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: categoryColor)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
     
@@ -1502,7 +1502,7 @@ struct GeneratedExerciseDetailView: View {
             content()
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: 20, accentColor: categoryColor)
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: categoryColor)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }

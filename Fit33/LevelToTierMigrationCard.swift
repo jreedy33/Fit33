@@ -71,7 +71,7 @@ struct LevelToTierMigrationCard: View {
                     )
                 }
                 .padding(Spacing.md)
-                .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+                .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
                 .padding(.horizontal, Spacing.md)
 
                 Spacer()

@@ -148,7 +148,7 @@ struct CreateWorkoutForFriendView: View {
                 .foregroundStyle(LinearGradient.ds_socialAccent)
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.lg, accentColor: .cyan)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.lg, accentColor: .cyan)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Sending workout to \(friend.displayName)")
     }
@@ -217,7 +217,7 @@ struct CreateWorkoutForFriendView: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.lg)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.lg)
     }
     
     private func metadataPill<Content: View>(
@@ -312,7 +312,7 @@ struct CreateWorkoutForFriendView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.lg)
         .padding(.horizontal, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.lg)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.lg)
     }
     
     private var addExercisesPill: some View {
@@ -399,7 +399,7 @@ struct CreateWorkoutForFriendView: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.lg)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.lg)
     }
     
     // MARK: - Bottom Dock
@@ -575,7 +575,7 @@ private struct SendWorkoutExerciseRow: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(exercise.displayName), \(config.sets) sets of \(config.reps) reps")
         .accessibilityHint(isExpanded ? "Collapse details" : "Expand to edit sets and reps")

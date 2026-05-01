@@ -201,14 +201,7 @@ struct StepTrackerCard: View {
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                         .offset(y: 4)
                     
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: Color.cardGradientStops(for: colorScheme),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+                    AdaptiveCardSurface(cornerRadius: 24)
                     
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(

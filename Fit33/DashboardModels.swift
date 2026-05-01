@@ -365,10 +365,7 @@ struct StravaRecapNotificationCard: View {
             }
             .padding(Spacing.md)
             .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.cardBackground)
-            )
+            .background(AdaptiveCardSurface(cornerRadius: 16))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(Color.stravaOrange.opacity(0.35), lineWidth: 1)

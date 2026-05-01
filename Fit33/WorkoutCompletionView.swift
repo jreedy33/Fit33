@@ -742,7 +742,7 @@ struct WorkoutCompletionView: View {
             }
         }
         .padding(.vertical, Spacing.xs)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
     }
     
     // MARK: - Send to Friend (inline)
@@ -1114,7 +1114,7 @@ struct WorkoutCompletionView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .sleekCard(cornerRadius: CornerRadius.lg, accentColor: insight.iconColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.lg, accentColor: insight.iconColor)
     }
     
     // exerciseBreakdownCard and collapsedNotesSection merged into unifiedStatsCard

@@ -446,7 +446,7 @@ struct GroupChallengeDetailView: View {
                     }
                 }
             }
-            .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+            .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
         }
     }
 

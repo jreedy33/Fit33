@@ -238,55 +238,72 @@ enum ActiveChallengeWidgetSnapshot {
 enum ChallengeWidgetPalette {
     static func emoji(for type: String) -> String {
         switch type {
-        case "steps":             return "👟"
-        case "walk":              return "🚶"
-        case "run":               return "🏃"
-        case "lift":              return "🏋️"
-        case "workout_streak":    return "🔥"
-        case "active_minutes":    return "⏱️"
-        case "hydrate":           return "💧"
-        case "calories":          return "🔥"
-        case "protein":           return "🥩"
-        case "sleep_hours":       return "😴"
-        case "readiness_average": return "💚"
-        case "strain_budget":     return "⚡"
-        default:                  return "🏆"
+        case "steps":               return "👟"
+        case "walk":                return "🚶"
+        case "run":                 return "🏃"
+        case "lift":                return "🏋️"
+        case "workout_streak":      return "🔥"
+        case "active_minutes":      return "⏱️"
+        case "hydrate":             return "💧"
+        case "calories":            return "🔥"
+        case "protein":             return "🥩"
+        case "sleep_hours":         return "😴"
+        case "readiness_average":   return "💚"
+        case "strain_budget":       return "⚡"
+        // Sprint 20260811 — new ChallengeType cases. Mirror the emoji map
+        // in `ChallengeType.emoji` (Fit33/ChallengeService.swift).
+        case "cycling":             return "🚴"
+        case "swim":                return "🏊"
+        case "stairs_climbed":      return "🪜"
+        case "total_volume_lifted": return "🏋️"
+        case "mind_body_minutes":   return "🧘"
+        default:                    return "🏆"
         }
     }
 
     static func color(for type: String) -> Color {
         switch type {
-        case "steps":             return .green
-        case "walk":              return .blue
-        case "run":               return .orange
-        case "lift":              return .purple
-        case "workout_streak":    return .red
-        case "active_minutes":    return .cyan
-        case "hydrate":           return .cyan
-        case "calories":          return .orange
-        case "protein":           return .pink
-        case "sleep_hours":       return .indigo
-        case "readiness_average": return .green
-        case "strain_budget":     return .yellow
-        default:                  return .accentColor
+        case "steps":               return .green
+        case "walk":                return .blue
+        case "run":                 return .orange
+        case "lift":                return .purple
+        case "workout_streak":      return .red
+        case "active_minutes":      return .cyan
+        case "hydrate":             return .cyan
+        case "calories":            return .orange
+        case "protein":             return .pink
+        case "sleep_hours":         return .indigo
+        case "readiness_average":   return .green
+        case "strain_budget":       return .yellow
+        case "cycling":             return .blue
+        case "swim":                return .cyan
+        case "stairs_climbed":      return .brown
+        case "total_volume_lifted": return .purple
+        case "mind_body_minutes":   return .mint
+        default:                    return .accentColor
         }
     }
 
     static func gradient(for type: String) -> [Color] {
         switch type {
-        case "steps":             return [.green, .mint]
-        case "walk":              return [.blue, .cyan]
-        case "run":               return [.orange, .yellow]
-        case "lift":              return [.purple, .pink]
-        case "workout_streak":    return [.red, .orange]
-        case "active_minutes":    return [.cyan, .blue]
-        case "hydrate":           return [.cyan, .blue]
-        case "calories":          return [.orange, .red]
-        case "protein":           return [.pink, .purple]
-        case "sleep_hours":       return [.indigo, .purple]
-        case "readiness_average": return [.green, .teal]
-        case "strain_budget":     return [.yellow, .orange]
-        default:                  return [.accentColor, .accentColor]
+        case "steps":               return [.green, .mint]
+        case "walk":                return [.blue, .cyan]
+        case "run":                 return [.orange, .yellow]
+        case "lift":                return [.purple, .pink]
+        case "workout_streak":      return [.red, .orange]
+        case "active_minutes":      return [.cyan, .blue]
+        case "hydrate":             return [.cyan, .blue]
+        case "calories":            return [.orange, .red]
+        case "protein":             return [.pink, .purple]
+        case "sleep_hours":         return [.indigo, .purple]
+        case "readiness_average":   return [.green, .teal]
+        case "strain_budget":       return [.yellow, .orange]
+        case "cycling":             return [.blue, .indigo]
+        case "swim":                return [.cyan, .blue]
+        case "stairs_climbed":      return [.brown, .orange]
+        case "total_volume_lifted": return [.purple, .pink]
+        case "mind_body_minutes":   return [.mint, .green]
+        default:                    return [.accentColor, .accentColor]
         }
     }
 

@@ -439,7 +439,7 @@ struct ActiveChallengeWidget: View {
                 }
             }
             .padding(Spacing.md)
-            .sleekCard(cornerRadius: 16, accentColor: resolvedType.color)
+            .adaptiveSleekCard(cornerRadius: 16, accentColor: resolvedType.color)
         }
         .buttonStyle(PlainButtonStyle())
         .sheet(isPresented: $showingReactionPicker) {

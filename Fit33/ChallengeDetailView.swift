@@ -488,7 +488,7 @@ struct ChallengeDetailView: View {
                     }
                 }
             }
-            .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+            .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
         } else if detailsLoadState == .failed {
             Button {
                 HapticManager.impact(.light)
@@ -513,7 +513,7 @@ struct ChallengeDetailView: View {
                 }
                 .padding(Spacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+                .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Retry loading battle log")
@@ -527,7 +527,7 @@ struct ChallengeDetailView: View {
                 }
             }
             .padding(Spacing.sm)
-            .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+            .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
         }
     }
     
@@ -580,7 +580,7 @@ struct ChallengeDetailView: View {
                     }
                 }
                 .padding(Spacing.sm)
-                .sleekCardSubtle(cornerRadius: CornerRadius.md)
+                .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.md)
             }
         }
     }

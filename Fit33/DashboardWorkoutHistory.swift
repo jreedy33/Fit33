@@ -204,10 +204,7 @@ struct WorkoutHistoryFullView: View {
             }
         }
         .padding(40)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color.cardBackground)
-        )
+        .background(AdaptiveCardSurface(cornerRadius: 20))
         .overlay(
             RoundedRectangle(cornerRadius: 20)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 1)
@@ -240,10 +237,7 @@ struct HistoryStatPill: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.sm)
-        .background(
-            RoundedRectangle(cornerRadius: CornerRadius.md)
-                .fill(Color.cardBackground)
-        )
+        .background(AdaptiveCardSurface(cornerRadius: CornerRadius.md))
         .overlay(
             RoundedRectangle(cornerRadius: CornerRadius.md)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.04), lineWidth: 1)

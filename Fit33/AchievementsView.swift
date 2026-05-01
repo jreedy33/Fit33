@@ -109,7 +109,7 @@ struct AchievementsView: View {
         }
         .padding(.vertical, Spacing.md)
         .frame(maxWidth: .infinity)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .purple)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .purple)
     }
     
     // MARK: - Category Filter
@@ -238,7 +238,7 @@ struct AchievementRow: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .sleekCard(cornerRadius: CornerRadius.lg, accentColor: achievement.isUnlocked ? achievement.rarityColor : .gray)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.lg, accentColor: achievement.isUnlocked ? achievement.rarityColor : .gray)
         .opacity(achievement.isUnlocked ? 1 : 0.7)
     }
 }

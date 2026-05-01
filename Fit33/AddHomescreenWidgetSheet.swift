@@ -28,7 +28,7 @@
 //      tip line at the bottom. Same information, ~70% less ink.
 //
 //  Branding canon (DESIGN_AGENT.md / DESIGN_SYSTEM_AGENT.md):
-//    • Preview uses `.sleekCard(cornerRadius: .xl)` — the canonical
+//    • Preview uses `.adaptiveSleekCard(cornerRadius: .xl)` — the canonical
 //      widget-card treatment (matches dashboard widgets / challenge
 //      cards). Type-color accent so the card brand-matches whichever
 //      challenge the user opened (steps=green, lift=purple, etc.).
@@ -92,7 +92,7 @@ struct AddHomescreenWidgetSheet: View {
 
     /// Mirrors the widget's actual layout in miniature so the user
     /// pattern-matches the moment they see it on their home screen.
-    /// Uses `.sleekCard()` — the canonical premium widget-card per
+    /// Uses `.adaptiveSleekCard()` — the canonical premium widget-card per
     /// `DESIGN_AGENT.md` invariant #9.
     private var previewCard: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -106,7 +106,7 @@ struct AddHomescreenWidgetSheet: View {
                 }
             }
             .padding(Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
         }
     }
 

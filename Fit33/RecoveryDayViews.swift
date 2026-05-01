@@ -436,10 +436,7 @@ struct RecoveryDayDashboardWidget: View {
                 .foregroundColor(.teal)
             }
             .padding(Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(white: 0.14) : Color.white)
-            )
+            .background(AdaptiveCardSurface(cornerRadius: 16))
             .shadow(color: colorScheme == .dark ? .clear : .black.opacity(0.06), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(.plain)

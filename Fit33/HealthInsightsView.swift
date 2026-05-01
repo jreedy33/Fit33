@@ -144,7 +144,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .sleekCard(cornerRadius: 16, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func sourceBadge(name: String, color: Color) -> some View {
@@ -223,7 +223,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .sleekCard(cornerRadius: 16, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func summaryMetric(icon: String, value: String, label: String, goal: Int?, current: Int?, color: Color) -> some View {
@@ -314,7 +314,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .sleekCard(cornerRadius: 16, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     // MARK: - Heart Rate Card
@@ -395,7 +395,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .sleekCard(cornerRadius: 16, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func hrZoneIndicator(hr: Int) -> some View {
@@ -514,7 +514,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .sleekCard(cornerRadius: 16, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func sleepStat(label: String, value: String, color: Color) -> some View {
@@ -572,7 +572,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .sleekCard(cornerRadius: 16, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func workoutStatCard(icon: String, value: String, label: String, color: Color) -> some View {
@@ -616,7 +616,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding()
-        .sleekCard(cornerRadius: 16, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func hrZoneRow(name: String, minutes: Int, color: Color, icon: String) -> some View {
@@ -708,7 +708,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("WHOOP recovery trend over the last 7 days")
     }
@@ -755,7 +755,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("WHOOP strain trend over the last 7 days")
     }
@@ -791,7 +791,7 @@ struct HealthInsightsView: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .purple)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .purple)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("WHOOP vitals including SpO2 and skin temperature")
     }

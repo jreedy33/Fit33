@@ -854,7 +854,8 @@ class CommunityChallengeService: ObservableObject {
         endDate: String? = nil,
         maxParticipants: Int? = nil,
         visibility: String = "public",
-        category: String = "fitness"
+        category: String = "fitness",
+        targetCadence: ChallengeCadence = .daily
     ) async -> UUID? {
         do {
             struct CreateParams: Encodable {
@@ -869,6 +870,7 @@ class CommunityChallengeService: ObservableObject {
                 let p_max_participants: Int?
                 let p_visibility: String
                 let p_category: String
+                let p_target_cadence: String
             }
             
             let id: UUID = try await SupabaseManager.shared.supabaseClient
@@ -883,7 +885,8 @@ class CommunityChallengeService: ObservableObject {
                     p_end_date: endDate,
                     p_max_participants: maxParticipants,
                     p_visibility: visibility,
-                    p_category: category
+                    p_category: category,
+                    p_target_cadence: targetCadence.rawValue
                 ))
                 .execute()
                 .value

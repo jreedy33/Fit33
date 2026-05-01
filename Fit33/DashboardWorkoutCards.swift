@@ -328,7 +328,7 @@ struct RecentWorkoutCard: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
         }
         .buttonStyle(PlainButtonStyle())
         .overlay(alignment: .topTrailing) {
@@ -875,7 +875,7 @@ struct RecentCardioWorkoutCard: View {
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 18)
-                .sleekCard(cornerRadius: CornerRadius.xl, accentColor: activityInfo.color)
+                .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: activityInfo.color)
             }
             .buttonStyle(PlainButtonStyle())
     }

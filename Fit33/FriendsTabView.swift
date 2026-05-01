@@ -524,7 +524,7 @@ struct FriendsTabView: View {
                             .foregroundColor(.secondary)
                     }
                     .padding(14)
-                    .sleekCard(cornerRadius: 18, accentColor: .blue)
+                    .adaptiveSleekCard(cornerRadius: 18, accentColor: .blue)
                 }
                 .buttonStyle(.plain)
             }
@@ -682,7 +682,7 @@ struct FriendsTabView: View {
                         }
                     }
                     .padding(Spacing.md)
-                    .sleekCard(cornerRadius: 24, accentColor: .blue)
+                    .adaptiveSleekCard(cornerRadius: 24, accentColor: .blue)
                 }
             } else {
                 noFriendsYetCard
@@ -831,7 +831,7 @@ struct FriendsTabView: View {
         }
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity)
-        .sleekCard(cornerRadius: 24, accentColor: .cyan)
+        .adaptiveSleekCard(cornerRadius: 24, accentColor: .cyan)
     }
     
     // MARK: - Weekly League Widget
@@ -1577,6 +1577,12 @@ struct FriendsTabView: View {
         case .sleepHours: return "Rest up tonight!"
         case .readinessAverage: return "Keep the green days coming!"
         case .strainBudget: return "Train smart today!"
+        // Sprint 20260811 — new ChallengeType cases.
+        case .cycling: return "Saddle up and ride today!"
+        case .swim: return "Hit the pool together!"
+        case .stairsClimbed: return "Take the stairs today!"
+        case .totalVolumeLifted: return "Move some weight today!"
+        case .mindBodyMinutes: return "Roll out the mat together!"
         }
     }
     
@@ -2056,7 +2062,7 @@ struct FriendsTabView: View {
                 }
             }
             .padding(Spacing.md)
-            .sleekCard(cornerRadius: 24, accentColor: .purple)
+            .adaptiveSleekCard(cornerRadius: 24, accentColor: .purple)
         }
     }
     
@@ -2460,7 +2466,7 @@ struct FriendsTabView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(20)
-                        .sleekCard(cornerRadius: 24, accentColor: .green)
+                        .adaptiveSleekCard(cornerRadius: 24, accentColor: .green)
                     }
                 }
             }
@@ -2564,7 +2570,7 @@ struct FriendsTabView: View {
             }
         }
         .padding(14)
-        .sleekCard(cornerRadius: 18, accentColor: resolvedType.color)
+        .adaptiveSleekCard(cornerRadius: 18, accentColor: resolvedType.color)
     }
     
     // MARK: - Social Quick Actions
@@ -2652,7 +2658,7 @@ struct FriendsTabView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: 18, accentColor: gradient.first ?? .blue)
+            .adaptiveSleekCard(cornerRadius: 18, accentColor: gradient.first ?? .blue)
         }
         .buttonStyle(.plain)
     }
@@ -3032,7 +3038,7 @@ struct FriendsStoriesWrapper: View {
                             .foregroundColor(.secondary)
                     }
                     .padding(14)
-                    .sleekCard(cornerRadius: 18, accentColor: .blue)
+                    .adaptiveSleekCard(cornerRadius: 18, accentColor: .blue)
                 }
                 .buttonStyle(.plain)
             }
@@ -3182,7 +3188,7 @@ struct FriendsSpotlightWrapper: View {
                         }
                     }
                     .padding(Spacing.md)
-                    .sleekCard(cornerRadius: 24, accentColor: .blue)
+                    .adaptiveSleekCard(cornerRadius: 24, accentColor: .blue)
                 }
             } else {
                 VStack(spacing: 16) {
@@ -3213,7 +3219,7 @@ struct FriendsSpotlightWrapper: View {
                 }
                 .padding(Spacing.lg)
                 .frame(maxWidth: .infinity)
-                .sleekCard(cornerRadius: 24, accentColor: .cyan)
+                .adaptiveSleekCard(cornerRadius: 24, accentColor: .cyan)
             }
         }
     }
@@ -3900,7 +3906,7 @@ struct FriendsCommunityWrapper: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(20)
-                        .sleekCard(cornerRadius: 24, accentColor: .green)
+                        .adaptiveSleekCard(cornerRadius: 24, accentColor: .green)
                     }
                 }
             }

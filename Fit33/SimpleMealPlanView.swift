@@ -397,8 +397,7 @@ struct SimpleMealPlanView: View {
         }
         .padding(Spacing.xl)
         .background(
-            RoundedRectangle(cornerRadius: CornerRadius.xl)
-                .fill(.ultraThinMaterial)
+            AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
         )
     }
@@ -433,8 +432,7 @@ struct SimpleMealPlanView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: CornerRadius.xl)
-                .fill(.ultraThinMaterial)
+            AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
                 .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
         )
     }
@@ -778,9 +776,8 @@ struct SimpleMealPlanView: View {
                         .offset(y: 3)
                 }
                 
-                // Main card background
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
+                // Main card background — adaptive (frosted ↔ solid via setting)
+                AdaptiveCardSurface(cornerRadius: 24)
                 
                 if isCurrentMealTime {
                     // Inner highlight (top edge glow)
@@ -1240,15 +1237,8 @@ struct SimpleMealPlanView: View {
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: 4)
                 
-                // Main card background with gradient
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: Color.cardGradientStops(for: colorScheme),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                // Main card background — adaptive (frosted ↔ solid via setting)
+                AdaptiveCardSurface(cornerRadius: 24)
                 
                 // Inner highlight (top edge glow)
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1305,15 +1295,8 @@ struct SimpleMealPlanView: View {
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: 4)
                 
-                // Main card background with gradient
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: Color.cardGradientStops(for: colorScheme),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                // Main card background — adaptive (frosted ↔ solid via setting)
+                AdaptiveCardSurface(cornerRadius: 24)
                 
                 // Inner highlight (top edge glow)
                 RoundedRectangle(cornerRadius: 24, style: .continuous)

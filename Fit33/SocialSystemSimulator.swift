@@ -2791,6 +2791,38 @@ class SocialSystemSimulator: ObservableObject {
         case .strainBudget:
             // Strain: 5-18 (WHOOP strain 0-21 scale)
             return Int.random(in: 5...18)
+        // Sprint 20260811 — new ChallengeType cases. Ranges mirror the
+        // realistic per-day data each one would emit on a real device.
+        case .cycling:
+            // Cycling: 15-90 min OR 5-50 km/miles depending on target_unit.
+            let unit = targetUnit.lowercased()
+            if unit == "km" || unit == "miles" {
+                return Int.random(in: 5...50)
+            } else if unit == "workouts" {
+                return Int.random(in: 0...2)
+            }
+            return Int.random(in: 15...90)
+        case .swim:
+            // Swim: 20-60 min OR 500-3000 m OR 0-2 sessions.
+            let unit = targetUnit.lowercased()
+            if unit == "meters" || unit == "m" {
+                return Int.random(in: 500...3000)
+            } else if unit == "workouts" || unit == "sessions" {
+                return Int.random(in: 0...2)
+            }
+            return Int.random(in: 20...60)
+        case .stairsClimbed:
+            // Flights climbed: 5-50 floors per day.
+            return Int.random(in: 5...50)
+        case .totalVolumeLifted:
+            // Volume tonnage: 0-25,000 lbs per day (depends on session +
+            // user strength). Realistic range covers everything from a
+            // bodyweight session to an advanced lifter's heavy day.
+            _ = target
+            return Int.random(in: 0...25_000)
+        case .mindBodyMinutes:
+            // Yoga/mobility: 10-60 min per day.
+            return Int.random(in: 10...60)
         }
     }
     

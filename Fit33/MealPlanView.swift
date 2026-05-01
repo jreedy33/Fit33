@@ -179,15 +179,8 @@ struct MealPlanView: View {
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: 4)
                 
-                // Main card background with gradient
-                RoundedRectangle(cornerRadius: CornerRadius.lg)
-                    .fill(
-                        LinearGradient(
-                            colors: Color.cardGradientStops(for: colorScheme),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                // Main card background — adaptive (frosted ↔ solid via setting)
+                AdaptiveCardSurface(cornerRadius: CornerRadius.lg)
                 
                 // Inner highlight (top edge glow)
                 RoundedRectangle(cornerRadius: CornerRadius.lg)
@@ -416,10 +409,7 @@ struct MealPlanView: View {
                         .foregroundColor(.secondary)
                 }
                 .padding(14)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
-                )
+                .background(AdaptiveCardSurface(cornerRadius: 14))
             }
             .buttonStyle(PlainButtonStyle())
         }
@@ -1104,10 +1094,7 @@ struct SavedMealDetailView: View {
             .frame(height: 8)
         }
         .padding(Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
-        )
+        .background(AdaptiveCardSurface(cornerRadius: 14))
     }
     
     @ViewBuilder
@@ -1186,8 +1173,7 @@ struct SavedMealDetailView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                .fill(colorScheme == .dark ? Color.cardBackground : .white)
+            AdaptiveCardSurface(cornerRadius: CornerRadius.lg)
                 .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
         )
     }
@@ -1330,10 +1316,7 @@ struct SavedMealDetailView: View {
                         }
                     }
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color.cardBackground : .white)
-                )
+                .background(AdaptiveCardSurface(cornerRadius: 14))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
@@ -1373,10 +1356,7 @@ struct SavedMealDetailView: View {
                 .lineSpacing(6)
                 .padding(Spacing.md)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.98))
-                )
+                .background(AdaptiveCardSurface(cornerRadius: 14))
         }
     }
     
@@ -1555,10 +1535,7 @@ struct SavedMealPickerSheet: View {
                             .padding(.vertical, Spacing.sm)
                         }
                         .padding(20)
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
-                        )
+                        .background(AdaptiveCardSurface(cornerRadius: CornerRadius.lg))
                         
                         // Meal type selector
                         VStack(alignment: .leading, spacing: 12) {
@@ -1580,10 +1557,7 @@ struct SavedMealPickerSheet: View {
                             }
                         }
                         .padding(20)
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.lg)
-                                .fill(colorScheme == .dark ? Color.cardBackground : Color.white)
-                        )
+                        .background(AdaptiveCardSurface(cornerRadius: CornerRadius.lg))
                         
                         // Add button
                         Button {

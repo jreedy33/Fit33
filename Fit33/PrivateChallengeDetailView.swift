@@ -678,7 +678,7 @@ struct PrivateChallengeDetailView: View {
             chatInputBar
         }
         .padding(Spacing.sm)
-        .sleekCardSubtle(cornerRadius: CornerRadius.md)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.md)
     }
 
     // Shared tap gesture for every non-chat section in the detail scroll view —
@@ -1068,7 +1068,7 @@ struct PrivateChallengeDetailView: View {
             }
         }
         .padding(Spacing.sm)
-        .sleekCardSubtle(cornerRadius: CornerRadius.md)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.md)
     }
 
     // MARK: - Full Chat Sheet

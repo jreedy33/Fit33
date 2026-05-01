@@ -417,7 +417,7 @@ struct TopMatchCard: View {
             }
         }
         .padding(14)
-        .sleekCard(
+        .adaptiveSleekCard(
             cornerRadius: CornerRadius.lg,
             accentColor: program.template.category.color
         )
@@ -559,7 +559,7 @@ struct SeriesLevelCard: View {
         }
         .padding(Spacing.sm)
         .frame(width: 140)
-        .sleekCard(
+        .adaptiveSleekCard(
             cornerRadius: 16,
             accentColor: program.isUnlocked ? program.template.category.color : .gray
         )
@@ -646,7 +646,7 @@ struct ProgramCard: View {
         }
         .padding(Spacing.sm)
         .frame(height: 180)
-        .sleekCard(
+        .adaptiveSleekCard(
             cornerRadius: 16,
             accentColor: program.template.category.color
         )

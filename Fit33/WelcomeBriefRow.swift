@@ -158,23 +158,25 @@ struct WelcomeBriefRow: View {
     /// CTA is conveyed by the headline copy itself, so the affordance
     /// arrow read as visual noise at the welcome-card scale.
     ///
-    /// Spacing (2026-04-27 follow-up): bumped from 2pt to `.xxs` (4pt)
-    /// so the headline / body pair has a clean breath between them
-    /// — the previous 2pt was reading as cramped, especially when
-    /// the body wraps to two lines.
+    /// Spacing (2026-05-01 — welcome card redesign): VStack gap
+    /// bumped to `.xs` (8pt) because the headline is now
+    /// `.ds_heading2` (22pt bold) and the bigger headline needs
+    /// more vertical breath against the 13pt body. Headline scale
+    /// factor raised to `0.9` because below that 22pt starts to
+    /// look like a typo, not a controlled scale.
     private func bodyAndChevron(_ brief: DailyBrief) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xxs) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(brief.headline)
-                .font(.ds_heading3)
+                .font(.ds_heading2)
                 .foregroundColor(.primary)
                 .lineLimit(2)
-                .minimumScaleFactor(0.85)
+                .minimumScaleFactor(0.9)
                 .fixedSize(horizontal: false, vertical: true)
             Text(brief.body)
                 .font(.ds_bodySmall)
                 .foregroundColor(.secondary)
                 .lineLimit(2)
-                .minimumScaleFactor(0.85)
+                .minimumScaleFactor(0.9)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

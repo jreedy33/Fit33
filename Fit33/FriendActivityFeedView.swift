@@ -632,7 +632,7 @@ struct FriendActivityCard: View {
                 showWorkoutPreview = true
             }
         }
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: muscleGradient.first ?? .cyan)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: muscleGradient.first ?? .cyan)
         .contextMenu {
             // Sprint 2 Q2-7 — long-press Report & Block on feed activities
             Button(role: .destructive) {

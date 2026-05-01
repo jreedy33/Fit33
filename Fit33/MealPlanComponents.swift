@@ -527,10 +527,7 @@ struct SmartDailySummaryWidget: View {
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, Spacing.sm)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color.cardBackground)
-        )
+        .background(AdaptiveCardSurface(cornerRadius: 20))
         .overlay(
             RoundedRectangle(cornerRadius: 20)
                 .stroke(
@@ -907,15 +904,8 @@ struct SwipeableMealCard: View {
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.12 : 0.03))
                     .offset(y: 3)
                 
-                // Main card background
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
-                    .fill(
-                        LinearGradient(
-                            colors: Color.cardGradientStops(for: colorScheme),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                // Main card background — adaptive (frosted ↔ solid via setting)
+                AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
                 
                 // Inner highlight (top edge glow)
                 RoundedRectangle(cornerRadius: CornerRadius.xl)
@@ -1156,17 +1146,8 @@ struct MealRowCard: View {
                             .fill(Color.black.opacity(colorScheme == .dark ? 0.08 : 0.02))
                             .offset(y: 2)
                         
-                        // Main card background
-                        RoundedRectangle(cornerRadius: 25)
-                            .fill(
-                                LinearGradient(
-                                    colors: colorScheme == .dark 
-                                        ? [Color(white: 0.15), Color.cardBackground]
-                                        : [Color.white, Color.white.opacity(0.98)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
+                        // Main card background — adaptive (frosted ↔ solid via setting)
+                        AdaptiveCardSurface(cornerRadius: 25)
                         
                         // Inner highlight (top edge glow)
                         RoundedRectangle(cornerRadius: 25)

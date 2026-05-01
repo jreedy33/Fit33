@@ -123,7 +123,7 @@ struct WhoopSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .gray)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .gray)
     }
 
     // MARK: - Recovery Preview
@@ -176,7 +176,7 @@ struct WhoopSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: whoopService.currentRecoveryLevel.color)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: whoopService.currentRecoveryLevel.color)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Today's WHOOP snapshot. Recovery \(whoopService.todayRecovery?.recoveryScore.map { "\($0) percent" } ?? "unavailable").")
     }
@@ -248,7 +248,7 @@ struct WhoopSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
     }
 
     // MARK: - OAuth (launches browser directly)

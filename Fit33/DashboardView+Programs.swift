@@ -199,11 +199,8 @@ extension DashboardView {
                 .frame(maxWidth: 360)
                 .background(
                     ZStack {
-                        // Main background
-                        RoundedRectangle(cornerRadius: CornerRadius.xl)
-                            .fill(colorScheme == .dark 
-                                ? Color.cardBackground 
-                                : Color.white)
+                        // Main background — adaptive (frosted ↔ solid via setting)
+                        AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
                         
                         // Subtle gradient overlay
                         RoundedRectangle(cornerRadius: CornerRadius.xl)
@@ -842,8 +839,7 @@ extension DashboardView {
                 }
                 .padding(Spacing.sm)
                 .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.96))
+                    AdaptiveCardSurface(cornerRadius: 14)
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
                                 .stroke(programColor.opacity(0.2), lineWidth: 1)
@@ -1319,8 +1315,7 @@ extension DashboardView {
                     }
                     .padding(Spacing.sm)
                     .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.96))
+                        AdaptiveCardSurface(cornerRadius: 14)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
                                     .stroke(programColor.opacity(0.2), lineWidth: 1)
@@ -1380,8 +1375,7 @@ extension DashboardView {
                     }
                     .padding(Spacing.sm)
         .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.96))
+                        AdaptiveCardSurface(cornerRadius: 14)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
                                     .stroke(programColor.opacity(0.2), lineWidth: 1)
@@ -1942,11 +1936,8 @@ extension DashboardView {
                         )
                         .blur(radius: 6)
 
-                    // Main background
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(
-                            Color.cardBackground
-                        )
+                    // Main background — adaptive (frosted ↔ solid via setting)
+                    AdaptiveCardSurface(cornerRadius: 24)
 
                     // Inner border - more evenly distributed
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -2029,12 +2020,7 @@ extension DashboardView {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 120)
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(
-                        Color.cardBackground
-                    )
-            )
+            .background(AdaptiveCardSurface(cornerRadius: 24))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(Color.green.opacity(0.4), lineWidth: 1.5)

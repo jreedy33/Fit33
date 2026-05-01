@@ -218,6 +218,33 @@ extension DashboardView {
                         "Push the strain, but protect recovery, \(crown)! ⚡",
                         "Smart training beats brute training! 🧠"
                     ])
+                // Sprint 20260811 — new ChallengeType cases (cycling, swim,
+                // stairs_climbed, total_volume_lifted, mind_body_minutes).
+                case .cycling:
+                    messages.append(contentsOf: [
+                        "Saddle up! Just a bit more in the legs, \(crown)! 🚴",
+                        "\(remaining) to go on the bike – cruise it home! 💨"
+                    ])
+                case .swim:
+                    messages.append(contentsOf: [
+                        "Lap it up! \(remaining) more to crush this swim, \(crown)! 🏊",
+                        "The pool's calling – finish strong! 🌊"
+                    ])
+                case .stairsClimbed:
+                    messages.append(contentsOf: [
+                        "\(remaining) flights to go – take the stairs, \(crown)! 🪜",
+                        "Climb on! Quick stair break gets you there! 🔥"
+                    ])
+                case .totalVolumeLifted:
+                    messages.append(contentsOf: [
+                        "\(remaining.formatted()) lbs left to move, \(crown)! 🏋️",
+                        "Tonnage matters – one more set crushes it! 💪"
+                    ])
+                case .mindBodyMinutes:
+                    messages.append(contentsOf: [
+                        "\(remaining) minutes of mobility left – breathe through it! 🧘",
+                        "Recovery is training too, \(crown)! ✨"
+                    ])
                 }
             } else if dailyTarget > 0 {
                 // Already hit daily target
@@ -648,7 +675,7 @@ struct DashboardOfflineSyncChip: View {
                 }
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(Color.cardBackground)
+            .background(AdaptiveCardSurface(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.35), lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .padding(.horizontal, Spacing.md)

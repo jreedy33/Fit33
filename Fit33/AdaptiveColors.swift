@@ -206,9 +206,198 @@ extension View {
         modifier(SleekCardModifier(cornerRadius: cornerRadius, accentColor: accentColor))
     }
     
+    /// Frosted-glass variant of `.sleekCard()` — replaces the solid gradient
+    /// fill with `.ultraThinMaterial` so the underlying animated orb backdrop
+    /// shows through. Used on the home dashboard widget cards to match the
+    /// private-challenge friend selector look.
+    func sleekCardFrosted(cornerRadius: CGFloat = 24, accentColor: Color = .blue) -> some View {
+        modifier(SleekCardFrostedModifier(cornerRadius: cornerRadius, accentColor: accentColor))
+    }
+    
     /// Gradient card without the colored glow/outline — just the gradient fill + subtle depth
     func sleekCardSubtle(cornerRadius: CGFloat = 16) -> some View {
         modifier(SleekCardSubtleModifier(cornerRadius: cornerRadius))
+    }
+    
+    /// Frosted-glass variant of `.sleekCardSubtle()` — same subtle highlight
+    /// stroke, but the fill becomes `.ultraThinMaterial` so the orb backdrop
+    /// shows through. Paired with `.sleekCardFrosted()` on the home dashboard.
+    func sleekCardSubtleFrosted(cornerRadius: CGFloat = 16) -> some View {
+        modifier(SleekCardSubtleFrostedModifier(cornerRadius: cornerRadius))
+    }
+    
+    /// Adaptive variant of `.sleekCard()` — picks frosted vs solid based on
+    /// the `useFrostedDashboardCards` user setting (Settings → App Preferences
+    /// → "Frosted Card Style"). Use this on home dashboard widget cards so
+    /// the user can flip the entire dashboard between the two looks.
+    func adaptiveSleekCard(cornerRadius: CGFloat = 24, accentColor: Color = .blue) -> some View {
+        modifier(AdaptiveSleekCardModifier(cornerRadius: cornerRadius, accentColor: accentColor))
+    }
+    
+    /// Adaptive variant of `.sleekCardSubtle()` — picks frosted vs solid based
+    /// on the `useFrostedDashboardCards` user setting. Paired with
+    /// `.adaptiveSleekCard()`.
+    func adaptiveSleekCardSubtle(cornerRadius: CGFloat = 16) -> some View {
+        modifier(AdaptiveSleekCardSubtleModifier(cornerRadius: cornerRadius))
+    }
+}
+
+// MARK: - Adaptive Card Style (user-toggleable solid vs frosted)
+
+/// Storage key for the "Frosted Card Style" setting (Settings → App
+/// Preferences). Defaults to `true` (frosted). Single source of truth so
+/// every adaptive helper reads the same flag.
+let useFrostedDashboardCardsKey = "useFrostedDashboardCards"
+
+/// Drop-in replacement for `RoundedRectangle(cornerRadius: X).fill(...)` on
+/// dashboard widget surfaces. Reads the `useFrostedDashboardCards` setting
+/// and renders either `.ultraThinMaterial` (frosted) or `Color.cardBackground`
+/// (solid). Use this anywhere a home-tab widget paints its main card fill so
+/// the Settings toggle propagates everywhere.
+struct AdaptiveCardSurface: View {
+    let cornerRadius: CGFloat
+    @AppStorage(useFrostedDashboardCardsKey) private var useFrosted: Bool = true
+    
+    init(cornerRadius: CGFloat) {
+        self.cornerRadius = cornerRadius
+    }
+    
+    var body: some View {
+        if useFrosted {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.cardBackground)
+        }
+    }
+}
+
+struct AdaptiveSleekCardModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let accentColor: Color
+    @AppStorage(useFrostedDashboardCardsKey) private var useFrosted: Bool = true
+    
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if useFrosted {
+            content.sleekCardFrosted(cornerRadius: cornerRadius, accentColor: accentColor)
+        } else {
+            content.sleekCard(cornerRadius: cornerRadius, accentColor: accentColor)
+        }
+    }
+}
+
+struct AdaptiveSleekCardSubtleModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    @AppStorage(useFrostedDashboardCardsKey) private var useFrosted: Bool = true
+    
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if useFrosted {
+            content.sleekCardSubtleFrosted(cornerRadius: cornerRadius)
+        } else {
+            content.sleekCardSubtle(cornerRadius: cornerRadius)
+        }
+    }
+}
+
+// MARK: - Sleek Card Subtle Frosted
+
+struct SleekCardSubtleFrostedModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
+    
+    func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                    
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.08), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.4), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+    }
+}
+
+// MARK: - Sleek Card Frosted (frosted-glass variant)
+
+/// Same chrome (depth shadow → highlight stroke → accent border) as
+/// `SleekCardBackground`, but the main fill is `.ultraThinMaterial` so the
+/// animated orb dashboard backdrop shows through.
+struct SleekCardFrostedBackground: View {
+    let cornerRadius: CGFloat
+    let accentColor: Color
+    @Environment(\.colorScheme) private var colorScheme
+    
+    init(cornerRadius: CGFloat = 24, accentColor: Color = .blue) {
+        self.cornerRadius = cornerRadius
+        self.accentColor = accentColor
+    }
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius + 4, style: .continuous)
+                .fill(accentColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                .offset(y: 8)
+                .blur(radius: 4)
+            
+            RoundedRectangle(cornerRadius: cornerRadius + 2, style: .continuous)
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                .offset(y: 4)
+            
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+            
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: colorScheme == .dark
+                            ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                            : [Color.white, Color.white.opacity(0.5), Color.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1.5
+                )
+            
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            accentColor.opacity(colorScheme == .dark ? 0.4 : 0.3),
+                            accentColor.opacity(colorScheme == .dark ? 0.3 : 0.2)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        }
+    }
+}
+
+struct SleekCardFrostedModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let accentColor: Color
+    @Environment(\.colorScheme) private var colorScheme
+    
+    func body(content: Content) -> some View {
+        content
+            .background(SleekCardFrostedBackground(cornerRadius: cornerRadius, accentColor: accentColor))
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(color: accentColor.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
     }
 }
 

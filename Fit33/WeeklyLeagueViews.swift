@@ -281,7 +281,7 @@ struct WeeklyLeagueWidget: View {
             .foregroundColor(standing.tierSwiftUIColor)
         }
         .padding(Spacing.sm)
-        .sleekCard(cornerRadius: 20, accentColor: standing.tierSwiftUIColor)
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: standing.tierSwiftUIColor)
     }
     
     private func statCell(value: String, label: String, valueColor: Color) -> some View {
@@ -517,7 +517,7 @@ struct WeeklyLeagueWidget: View {
         }
         .frame(maxWidth: .infinity)
         .padding(Spacing.lg)
-        .sleekCard(cornerRadius: 24, accentColor: .yellow)
+        .adaptiveSleekCard(cornerRadius: 24, accentColor: .yellow)
     }
     
     // MARK: - Not Placed (missed Monday placement)
@@ -573,7 +573,7 @@ struct WeeklyLeagueWidget: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .sleekCard(cornerRadius: 24, accentColor: .gray)
+        .adaptiveSleekCard(cornerRadius: 24, accentColor: .gray)
     }
     
     // MARK: - Join Prompt (first time)
@@ -624,7 +624,7 @@ struct WeeklyLeagueWidget: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .sleekCard(cornerRadius: 24, accentColor: .yellow)
+        .adaptiveSleekCard(cornerRadius: 24, accentColor: .yellow)
     }
 }
 
@@ -1074,7 +1074,7 @@ struct WeeklyLeagueDetailView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accent)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: accent)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Your league starts Monday. You'll join \(tierName) at next reset. \(countdownText) until Monday.")
     }
@@ -1114,7 +1114,7 @@ struct WeeklyLeagueDetailView: View {
             }
             .padding(Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .sleekCard(cornerRadius: CornerRadius.lg, accentColor: .blue)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.lg, accentColor: .blue)
         }
     }
 
@@ -1140,7 +1140,7 @@ struct WeeklyLeagueDetailView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
     }
 
     private func pointsRow(icon: String, label: String, points: Int, color: Color) -> some View {
@@ -1195,7 +1195,7 @@ struct WeeklyLeagueDetailView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .green)
     }
 
     // MARK: - Not Placed: Footer CTA
@@ -1934,7 +1934,7 @@ struct WeeklyLeagueDetailView: View {
 /// - `AnimatedOrbBackground.friends(colorScheme:)` — canonical blue/cyan orb
 ///   that matches `WeeklyLeagueDetailView` so the league flow stays cohesive.
 /// - Hidden system nav bar + custom in-layout chevron header.
-/// - Primary content cards use `.sleekCard()`; numbers/spacing/radii/fonts use
+/// - Primary content cards use `.adaptiveSleekCard()`; numbers/spacing/radii/fonts use
 ///   the `Spacing.*` / `CornerRadius.*` / `Font.ds_*` tokens.
 struct WeeklyLeagueInfoView: View {
     @Environment(\.dismiss) private var dismiss
@@ -2070,7 +2070,7 @@ struct WeeklyLeagueInfoView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accent)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: accent)
     }
     
     // MARK: - How It Works
@@ -2088,7 +2088,7 @@ struct WeeklyLeagueInfoView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
     }
     
     // MARK: - Tier Ladder
@@ -2112,7 +2112,7 @@ struct WeeklyLeagueInfoView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: standing?.tierSwiftUIColor ?? .blue)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: standing?.tierSwiftUIColor ?? .blue)
     }
     
     private func tierRow(tier: Tier) -> some View {
@@ -2190,7 +2190,7 @@ struct WeeklyLeagueInfoView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
     }
     
     private func pointPill(icon: String, label: String, color: Color) -> some View {

@@ -133,7 +133,7 @@ struct StravaMileageChartWidget: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .orange)
         }
     }
 
@@ -256,7 +256,7 @@ struct StravaPaceTrendChartWidget: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.md)
-            .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .pink)
+            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .pink)
         }
     }
 

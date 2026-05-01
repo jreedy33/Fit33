@@ -221,7 +221,7 @@ struct ShareWorkoutSheet: View {
                                 .foregroundColor(.secondary)
                         }
                         .padding(Spacing.md)
-                        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+                        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
                     }
                     .buttonStyle(PlainButtonStyle())
                     .padding(.horizontal, Spacing.md)
@@ -334,7 +334,7 @@ struct ShareWorkoutSheet: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: accentColor)
         .padding(.horizontal, Spacing.md)
     }
     
@@ -487,7 +487,7 @@ struct ShareWorkoutSheet: View {
                         }
                     }
                     .padding(Spacing.md)
-                    .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+                    .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
                 }
                 
                 expandableShareCard

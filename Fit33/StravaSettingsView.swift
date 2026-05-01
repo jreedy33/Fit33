@@ -354,7 +354,7 @@ struct StravaSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
     }
 
     private func periodRow(
@@ -438,7 +438,7 @@ struct StravaSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
     }
 
     private func hasAnyTotals(_ stats: StravaAthleteStats) -> Bool {
@@ -495,7 +495,7 @@ struct StravaSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
     }
 
     // MARK: - 6. Recent Activities
@@ -534,7 +534,7 @@ struct StravaSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: Color.stravaOrange)
     }
 
     /// Friendly nudge shown when the user is connected but has no recent
@@ -684,7 +684,7 @@ struct StravaSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
     }
 
     // MARK: - About
@@ -700,7 +700,7 @@ struct StravaSettingsView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: .secondary)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .secondary)
     }
 
     private func aboutBullet(icon: String, text: String) -> some View {

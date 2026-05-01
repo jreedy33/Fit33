@@ -9,7 +9,7 @@
 //  like the same product instead of four sibling apps.
 //
 //  Per DESIGN_AGENT.md: every component uses `.ds_*` typography,
-//  `Spacing.*` / `CornerRadius.*` tokens, `.sleekCard()` for primary
+//  `Spacing.*` / `CornerRadius.*` tokens, `.adaptiveSleekCard()` for primary
 //  content, gold-only crowns, and accepts a `typeColor` / `gradient`
 //  pair so the surface brand-matches the challenge type (steps green,
 //  lift purple, run orange, hydrate cyan, etc.).
@@ -138,7 +138,7 @@ struct ChallengeHeroCard: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: typeColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: typeColor)
     }
 
     private var dayProgressText: String {
@@ -233,7 +233,7 @@ struct ParticipantPodium: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: typeColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: typeColor)
         .onAppear {
             guard !shouldDisableMotion else { return }
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
@@ -411,7 +411,7 @@ struct TodayProgressCard: View {
             }
         }
         .padding(Spacing.md)
-        .sleekCardSubtle(cornerRadius: CornerRadius.lg)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
     }
 
     @ViewBuilder
@@ -711,7 +711,7 @@ struct LeaderboardPodium: View {
             podiumColumn(entry: third, height: 44, ring: Self.bronzeRing, medal: "🥉")
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: typeColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: typeColor)
     }
 
     @ViewBuilder

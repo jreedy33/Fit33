@@ -99,7 +99,7 @@ struct ReadinessDrillDownSheet: View {
             Spacer(minLength: 0)
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: snapshot.band.accentColor)
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: snapshot.band.accentColor)
     }
 
     // MARK: - Signals breakdown

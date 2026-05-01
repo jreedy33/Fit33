@@ -956,7 +956,7 @@ struct FriendsListView: View {
         }
         .padding(.vertical, Spacing.lg)
         .padding(.horizontal, Spacing.md)
-        .sleekCard(cornerRadius: 24, accentColor: .green)
+        .adaptiveSleekCard(cornerRadius: 24, accentColor: .green)
         .padding(.horizontal, Spacing.md)
     }
     
@@ -1104,7 +1104,7 @@ struct FriendsListView: View {
             }
             .padding(.vertical, 20)
             .padding(.horizontal, Spacing.md)
-            .sleekCard(cornerRadius: 20, accentColor: .green)
+            .adaptiveSleekCard(cornerRadius: 20, accentColor: .green)
             .padding(.horizontal, Spacing.md)
         }
         .padding(.top, 10)

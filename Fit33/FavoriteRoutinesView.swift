@@ -504,7 +504,7 @@ struct FavoriteWorkoutCard: View {
                 }
             }
         }
-        .sleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: workoutGradient[0])
         .confirmationDialog(
             "Remove from Favorites?",
             isPresented: $showingDeleteConfirmation,

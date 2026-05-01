@@ -127,8 +127,7 @@ struct DashboardWeightWidget: View {
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: 4)
                 
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color.cardBackground)
+                AdaptiveCardSurface(cornerRadius: 24)
                 
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
@@ -334,11 +333,8 @@ struct DashboardWeightWidget: View {
                 .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                 .offset(y: 4)
             
-            // Main card background with gradient
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(
-                    Color.cardBackground
-                )
+            // Main card background — adaptive (frosted ↔ solid via setting)
+            AdaptiveCardSurface(cornerRadius: 24)
             
             // Inner highlight (top edge glow)
             RoundedRectangle(cornerRadius: 24, style: .continuous)

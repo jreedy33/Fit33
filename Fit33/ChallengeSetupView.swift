@@ -34,18 +34,53 @@ struct ChallengeSetupView: View {
     // Local template state (loaded once, not observed)
     @State private var templates: [ChallengeTemplate] = []
     @State private var isLoadingTemplates = true
-    
-    
-    
+
+    // Sprint 20260811 — chip-filter state. nil == "All". Tapping a chip
+    // narrows the catalog to one ChallengeType.
+    @State private var activityFilter: ChallengeType?
+
+    // Strava-gated templates only surface when the user has connected
+    // Strava. We observe the singleton so toggling Strava in Settings
+    // updates the picker live without a re-mount.
+    @ObservedObject private var strava = StravaService.shared
+
+    /// Templates after applying Strava-gating + activity-chip filter.
+    /// All downstream sections (`uniqueTemplates`, `featuredTemplates`,
+    /// per-type rows) read from this — keeps the rules in one place.
+    private var visibleTemplates: [ChallengeTemplate] {
+        templates.filter { template in
+            // Strava-required templates only shown to Strava-connected users.
+            if template.requiresStrava == true, !strava.isConnected {
+                return false
+            }
+            // Apply the chip filter, if any.
+            if let filter = activityFilter,
+               template.type != filter {
+                return false
+            }
+            return true
+        }
+    }
+
     // Group templates by type (using local state)
     private var groupedTemplates: [ChallengeType: [ChallengeTemplate]] {
-        Dictionary(grouping: templates) { template in
+        Dictionary(grouping: visibleTemplates) { template in
             ChallengeType(rawValue: template.challengeType) ?? .steps
         }
     }
     
     private var featuredTemplates: [ChallengeTemplate] {
-        templates.filter { $0.isFeatured }
+        visibleTemplates.filter { $0.isFeatured }
+    }
+
+    /// All distinct ChallengeTypes that appear in the (Strava-gated) catalog.
+    /// Drives the activity chip row — empty when the catalog is empty.
+    private var availableActivityChips: [ChallengeType] {
+        let strict = templates.filter { template in
+            template.requiresStrava != true || strava.isConnected
+        }
+        let types = strict.compactMap { $0.type }
+        return Array(Set(types)).sorted { $0.rawValue < $1.rawValue }
     }
     
     var body: some View {
@@ -94,25 +129,18 @@ struct ChallengeSetupView: View {
         }
     }
     
-    // Deduplicated templates (by title to avoid showing duplicates)
-    private var uniqueTemplates: [ChallengeTemplate] {
-        var seen = Set<String>()
-        return templates.filter { template in
-            let key = template.title.lowercased()
-            if seen.contains(key) {
-                return false
-            }
-            seen.insert(key)
-            return true
-        }
-    }
-    
+    // Sprint 20260811 — server (#176) is now the dedup source of truth via
+    // the `slug UNIQUE` constraint, so client-side title-dedup is no longer
+    // needed. These accessors read from `visibleTemplates` (which already
+    // applies Strava-gating + chip filtering — see top-of-class declarations).
+    private var uniqueTemplates: [ChallengeTemplate] { visibleTemplates }
+
     private var uniqueFeaturedTemplates: [ChallengeTemplate] {
-        uniqueTemplates.filter { $0.isFeatured }
+        visibleTemplates.filter { $0.isFeatured }
     }
-    
+
     private var uniqueGroupedTemplates: [ChallengeType: [ChallengeTemplate]] {
-        Dictionary(grouping: uniqueTemplates) { template in
+        Dictionary(grouping: visibleTemplates) { template in
             ChallengeType(rawValue: template.challengeType) ?? .steps
         }
     }
@@ -127,7 +155,14 @@ struct ChallengeSetupView: View {
                 
                 // 🎯 PRIMARY: Create Custom Challenge (at the top)
                 customChallengeCard
-                
+
+                // Activity chip-filter row — appears when there are at least
+                // 2 distinct activities to filter between. Tapping a chip
+                // narrows the catalog; tapping the active chip clears it.
+                if availableActivityChips.count >= 2 {
+                    activityChipRow
+                }
+
                 // Loading state
                 if isLoadingTemplates && templates.isEmpty {
                     VStack(spacing: 16) {
@@ -285,7 +320,57 @@ struct ChallengeSetupView: View {
         }
         .buttonStyle(PlainButtonStyle())
     }
-    
+
+    // MARK: - Activity chip-filter row (Sprint 20260811)
+
+    /// Horizontal scrolling row of "All / Run / Lift / …" chips. Tapping a
+    /// chip narrows `visibleTemplates` via `activityFilter`; tapping the
+    /// already-active chip clears it. Driven by `availableActivityChips`
+    /// which already hides Strava-only types when the user isn't connected.
+    private var activityChipRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                chipButton(label: "All", emoji: nil, isSelected: activityFilter == nil) {
+                    activityFilter = nil
+                }
+                ForEach(availableActivityChips) { type in
+                    chipButton(
+                        label: type.displayName,
+                        emoji: type.emoji,
+                        isSelected: activityFilter == type
+                    ) {
+                        activityFilter = (activityFilter == type) ? nil : type
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    @ViewBuilder
+    private func chipButton(label: String, emoji: String?, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let emoji {
+                    Text(emoji).font(.caption)
+                }
+                Text(label)
+                    .font(.subheadline)
+                    .fontWeight(isSelected ? .semibold : .regular)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .foregroundColor(isSelected ? .white : .primary)
+            .background(
+                Capsule().fill(isSelected ? Color.accentColor : Color.cardBackground)
+            )
+            .overlay(
+                Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
     // MARK: - Challenge Header
     
     private var challengeHeader: some View {
@@ -363,7 +448,7 @@ struct ChallengeSetupView: View {
             Spacer()
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: 20, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: .blue)
     }
     
     // MARK: - Custom Setup View
@@ -603,7 +688,7 @@ struct ChallengeSetupView: View {
                 }
             }
             .padding(Spacing.md)
-            .sleekCard(cornerRadius: 16, accentColor: .blue)
+            .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
         }
     }
     
@@ -717,6 +802,13 @@ struct ChallengeSetupView: View {
         case .sleepHours: return "hours"
         case .readinessAverage: return "score"
         case .strainBudget: return "strain"
+        // Sprint 20260811 — new ChallengeType cases. Custom-flow defaults
+        // to the most-common authoring unit per type (templates can override
+        // via target_unit). Cycling/swim default to minutes (low friction);
+        // stairs to flights; volume to lbs; mind/body to minutes.
+        case .cycling, .swim, .mindBodyMinutes: return "minutes"
+        case .stairsClimbed: return "flights"
+        case .totalVolumeLifted: return "lbs"
         }
     }
     
@@ -750,6 +842,16 @@ struct ChallengeSetupView: View {
             dailyTarget = min(100, dailyTarget + 5)
         case .strainBudget:
             dailyTarget = min(21, dailyTarget + 1)
+        // Sprint 20260811 — new ChallengeType cases. Step sizes mirror
+        // realistic daily targets (cycling/swim 5-min blocks like
+        // activeMinutes; stairs 5 flights/tap; mind-body 5-min blocks;
+        // volume 1000 lb increments — a single working set is ~500-2000 lbs).
+        case .cycling, .swim, .mindBodyMinutes:
+            dailyTarget = min(180, dailyTarget + 5)
+        case .stairsClimbed:
+            dailyTarget = min(200, dailyTarget + 5)
+        case .totalVolumeLifted:
+            dailyTarget = min(50_000, dailyTarget + 1_000)
         }
     }
     
@@ -774,6 +876,13 @@ struct ChallengeSetupView: View {
             dailyTarget = max(50, dailyTarget - 5)
         case .strainBudget:
             dailyTarget = max(5, dailyTarget - 1)
+        // Sprint 20260811 — symmetric floors per type.
+        case .cycling, .swim, .mindBodyMinutes:
+            dailyTarget = max(5, dailyTarget - 5)
+        case .stairsClimbed:
+            dailyTarget = max(5, dailyTarget - 5)
+        case .totalVolumeLifted:
+            dailyTarget = max(1_000, dailyTarget - 1_000)
         }
     }
     
@@ -902,7 +1011,19 @@ struct TemplateCard: View {
                         .foregroundColor(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
-                    
+
+                    if template.requiresStrava == true {
+                        // Sprint 20260811 — attribution pill for Strava-gated
+                        // templates. Mandatory by Strava brand guidelines.
+                        Text("Powered by Strava")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.orange.opacity(0.18)))
+                            .foregroundColor(.orange)
+                    }
+
                     Text("\(template.defaultDurationDays) days")
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -999,11 +1120,23 @@ struct TemplateRow: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(template.title)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    
+                    HStack(spacing: 6) {
+                        Text(template.title)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+
+                        if template.requiresStrava == true {
+                            Text("STRAVA")
+                                .font(.caption2)
+                                .fontWeight(.bold)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.orange.opacity(0.18)))
+                                .foregroundColor(.orange)
+                        }
+                    }
+
                     if let description = template.description {
                         Text(description)
                             .font(.caption)

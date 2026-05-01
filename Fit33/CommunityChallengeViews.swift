@@ -324,6 +324,30 @@ struct CommunityChallengesHubView: View {
     @State private var pendingCommunityJoinCode = ""
     @State private var selectedChallenge: CommunityChallenge?
     @State private var selectedFeatured: FeaturedCommunityChallenge?
+
+    // Sprint 20260811 — Discover-tab category filter. nil = "All". Tapping
+    // a chip narrows `featuredChallenges` client-side (server already
+    // supports `p_category` filtering but we filter locally to keep the
+    // UX snappy without a round-trip on every tap).
+    @State private var selectedCategory: String?
+
+    /// Categories present in the current featured catalog. Driven by the
+    /// data so we don't show empty chips. Sorted alphabetically with
+    /// "fitness" pinned first (the default for most templates).
+    private var availableCategories: [String] {
+        let cats = Set(service.featuredChallenges.compactMap { $0.category }.filter { !$0.isEmpty })
+        let sorted = cats.sorted()
+        if sorted.contains("fitness") {
+            return ["fitness"] + sorted.filter { $0 != "fitness" }
+        }
+        return sorted
+    }
+
+    /// Featured challenges narrowed by the active category chip (if any).
+    private var visibleFeaturedChallenges: [FeaturedCommunityChallenge] {
+        guard let category = selectedCategory else { return service.featuredChallenges }
+        return service.featuredChallenges.filter { ($0.category ?? "fitness") == category }
+    }
     
     var body: some View {
         NavigationStack {
@@ -522,6 +546,11 @@ struct CommunityChallengesHubView: View {
     
     private var discoverContent: some View {
         VStack(spacing: 16) {
+            // ── Category chips (only show if there's anything to filter) ──
+            if availableCategories.count > 1 {
+                categoryChipRow
+            }
+
             // ── Recommended For You (top 2 friend-populated communities) ──
             let recommendedChallenges = Array(service.discoverableChallenges.prefix(2))
             if !recommendedChallenges.isEmpty {
@@ -563,7 +592,7 @@ struct CommunityChallengesHubView: View {
                     .padding(.top, 40)
             } else {
                 // Official challenges — only show ones the user hasn't joined yet
-                let official = service.featuredChallenges.filter { $0.isOfficial && !$0.alreadyJoined }
+                let official = visibleFeaturedChallenges.filter { $0.isOfficial && !$0.alreadyJoined }
                 if !official.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         sectionHeader("Official Fit33 Challenges", emoji: "🏅")
@@ -579,7 +608,7 @@ struct CommunityChallengesHubView: View {
                 }
                 
                 // Community created — only show ones the user hasn't joined yet
-                let community = service.featuredChallenges.filter { !$0.isOfficial && !$0.alreadyJoined }
+                let community = visibleFeaturedChallenges.filter { !$0.isOfficial && !$0.alreadyJoined }
                 if !community.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         sectionHeader("Community Created", emoji: "🌍")
@@ -611,6 +640,70 @@ struct CommunityChallengesHubView: View {
             Spacer()
         }
         .padding(.top, 8)
+    }
+
+    /// Sprint 20260811 — horizontally scrolling category chip row above the
+    /// Discover content. "All" is the default; tapping a category narrows
+    /// `visibleFeaturedChallenges` to that category's challenges only. The
+    /// chips are derived from `availableCategories` so we never show a
+    /// category that has zero challenges in the current catalog.
+    private var categoryChipRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                categoryChip(label: "All", isActive: selectedCategory == nil) {
+                    selectedCategory = nil
+                }
+                ForEach(availableCategories, id: \.self) { category in
+                    categoryChip(label: prettyCategoryLabel(category), isActive: selectedCategory == category) {
+                        selectedCategory = (selectedCategory == category) ? nil : category
+                    }
+                }
+            }
+            .padding(.horizontal, Spacing.md)
+        }
+    }
+
+    private func categoryChip(label: String, isActive: Bool, onTap: @escaping () -> Void) -> some View {
+        Button(action: {
+            HapticManager.impact(.light)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                onTap()
+            }
+        }) {
+            Text(label)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(isActive ? .white : .primary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(categoryChipBackground(isActive: isActive))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func categoryChipBackground(isActive: Bool) -> some View {
+        if isActive {
+            Capsule().fill(
+                LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
+            )
+        } else {
+            Capsule().fill(Color.gray.opacity(0.15))
+        }
+    }
+
+    private func prettyCategoryLabel(_ raw: String) -> String {
+        switch raw {
+        case "fitness":     return "💪 Fitness"
+        case "wellness":    return "🧘 Wellness"
+        case "nutrition":   return "🥗 Nutrition"
+        case "running":     return "🏃 Running"
+        case "lifting":     return "🏋️ Lifting"
+        case "sleep":       return "😴 Sleep"
+        case "mindfulness": return "🧠 Mindfulness"
+        case "cardio":      return "❤️ Cardio"
+        default:            return raw.prefix(1).uppercased() + raw.dropFirst()
+        }
     }
 }
 
@@ -1538,7 +1631,7 @@ struct CommunityLeaderboardView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .sleekCard(cornerRadius: 20, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: .blue)
     }
     
     // MARK: - My Rank Card (Enriched)
@@ -1620,7 +1713,7 @@ struct CommunityLeaderboardView: View {
             .frame(maxWidth: .infinity)
         }
         .padding(Spacing.md)
-        .sleekCard(cornerRadius: 16, accentColor: .blue)
+        .adaptiveSleekCard(cornerRadius: 16, accentColor: .blue)
     }
     
     private func dividerLine(height: CGFloat) -> some View {
@@ -1928,6 +2021,11 @@ struct CommunityCreateChallengeView: View {
     @State private var showingSuccess = false
     @State private var createdJoinCode = ""
     @State private var createdSlug = ""
+    // Sprint 20260811 — community challenges default to RECURRING (7-day
+    // waves that auto-renew Sunday 23:59 UTC, with a Final Bell LP pot at
+    // each wave end). Toggling off creates a one-shot 7-day challenge that
+    // ends naturally with no auto-renewal.
+    @State private var isRecurring = true
     
     var body: some View {
         NavigationStack {
@@ -2040,7 +2138,31 @@ struct CommunityCreateChallengeView: View {
                                     .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
                             )
                         }
-                        
+
+                        // Recurring toggle
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle(isOn: $isRecurring) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Repeat every week")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Text(isRecurring
+                                        ? "New 7-day wave kicks off every Monday — final bell pays out League Points each Sunday."
+                                        : "One-shot 7-day challenge — ends naturally, no auto-renewal."
+                                    )
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.leading)
+                                }
+                            }
+                            .tint(.blue)
+                            .padding(Spacing.md)
+                            .background(
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
+                                    .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
+                            )
+                        }
+
                         // Create button
                         Button(action: { Task { await createChallenge() } }) {
                             HStack(spacing: 8) {
@@ -2096,7 +2218,8 @@ struct CommunityCreateChallengeView: View {
             description: description.isEmpty ? nil : description,
             emoji: selectedType.emoji,
             dailyTarget: dailyTarget,
-            targetUnit: unitLabel(for: selectedType)
+            targetUnit: unitLabel(for: selectedType),
+            isRecurring: isRecurring
         )
         
         isCreating = false

@@ -75,6 +75,78 @@ CREATE TABLE IF NOT EXISTS challenge_templates (
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Defensive widening: a stub `challenge_templates` table may already exist on
+-- some envs (CMS scaffolding, prior dev experiment, partial migration). The
+-- `CREATE TABLE IF NOT EXISTS` above no-ops in that case, leaving an
+-- older shape behind. Bring any pre-existing table up to the full spec
+-- with idempotent ADD COLUMN calls. Each column is safe to re-add — no
+-- DROP DEFAULT / NOT NULL flips, so re-running this migration on a
+-- fully-migrated env is a no-op.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS slug                  TEXT;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS challenge_type        TEXT;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS target_cadence        TEXT NOT NULL DEFAULT 'daily';
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS default_target        INT;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS default_duration_days INT  NOT NULL DEFAULT 7;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS target_unit           TEXT;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS title                 TEXT;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS description           TEXT;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS emoji                 TEXT NOT NULL DEFAULT '🏆';
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS is_featured           BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS is_official           BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS sort_order            INT     NOT NULL DEFAULT 1000;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS category              TEXT    NOT NULL DEFAULT 'fitness';
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS tier                  TEXT    NOT NULL DEFAULT 'intermediate';
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS requires_wearable     BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS requires_strava       BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS requires_apple_watch  BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS requires_health_kit   BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS retired_at            TIMESTAMPTZ;
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE challenge_templates ADD COLUMN IF NOT EXISTS updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- Add the cadence CHECK constraint defensively (only if missing — DROP+CREATE
+-- so re-running is a no-op without raising on the first add).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'challenge_templates_target_cadence_check'
+           AND conrelid = 'challenge_templates'::regclass
+    ) THEN
+        ALTER TABLE challenge_templates
+            ADD CONSTRAINT challenge_templates_target_cadence_check
+            CHECK (target_cadence IN ('daily','weekly','total','per_session'));
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'challenge_templates_tier_check'
+           AND conrelid = 'challenge_templates'::regclass
+    ) THEN
+        ALTER TABLE challenge_templates
+            ADD CONSTRAINT challenge_templates_tier_check
+            CHECK (tier IN ('beginner','intermediate','advanced'));
+    END IF;
+
+    -- slug UNIQUE — may already exist from CREATE TABLE; only add if missing.
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'challenge_templates_slug_key'
+           AND conrelid = 'challenge_templates'::regclass
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_indexes
+         WHERE schemaname = 'public'
+           AND tablename = 'challenge_templates'
+           AND indexname = 'challenge_templates_slug_key'
+    ) THEN
+        ALTER TABLE challenge_templates
+            ADD CONSTRAINT challenge_templates_slug_key UNIQUE (slug);
+    END IF;
+END $$;
+
 -- Hot path: featured catalog ordered for the picker.
 CREATE INDEX IF NOT EXISTS idx_challenge_templates_active_featured
   ON challenge_templates (is_featured DESC, sort_order)

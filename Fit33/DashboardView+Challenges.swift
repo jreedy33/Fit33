@@ -522,16 +522,7 @@ struct DashboardChallengesWrapper: View {
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: 4)
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.16), Color(white: 0.10)]
-                                : [Color.white, Color(white: 0.98)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
                 
                 RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
@@ -636,16 +627,7 @@ struct DashboardChallengesWrapper: View {
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: 4)
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.16), Color(white: 0.10)]
-                                : [Color.white, Color(white: 0.98)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
                 
                 RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
@@ -791,6 +773,12 @@ struct DashboardChallengesWrapper: View {
         case .sleepHours: return "Rest up tonight!"
         case .readinessAverage: return "Keep the green days coming!"
         case .strainBudget: return "Train smart today!"
+        // Sprint 20260811 — new ChallengeType cases.
+        case .cycling: return "Saddle up and ride today!"
+        case .swim: return "Hit the pool together!"
+        case .stairsClimbed: return "Take the stairs today!"
+        case .totalVolumeLifted: return "Move some weight today!"
+        case .mindBodyMinutes: return "Roll out the mat together!"
         }
     }
     
@@ -1263,16 +1251,7 @@ struct DashboardChallengesWrapper: View {
                     .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                     .offset(y: reducedGlow ? 3 : 4)
                 
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: reducedGlow ? 0.14 : 0.16), Color(white: reducedGlow ? 0.09 : 0.10)]
-                                : [Color.white, reducedGlow ? Color.white.opacity(0.95) : Color(white: 0.98)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
                 
                 RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .stroke(
@@ -1519,8 +1498,7 @@ struct DashboardChallengesWrapper: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: CornerRadius.md)
-                .fill(colorScheme == .dark ? Color.cardBackground : Color(white: 0.96))
+            AdaptiveCardSurface(cornerRadius: CornerRadius.md)
                 .overlay(
                     RoundedRectangle(cornerRadius: CornerRadius.md)
                         .stroke(
@@ -1546,6 +1524,53 @@ private enum StackedChallengeItem {
         case .active(let c): return c.resolvedType.rawValue
         case .group(let c): return c.resolvedType.rawValue
         case .pending(let c): return c.resolvedType.rawValue
+        }
+    }
+}
+
+// MARK: - Dashboard Challenge Section Header
+//
+// Mirrors `FriendsChallengeHeaderWrapper` (FriendsTabView.swift) so the
+// dashboard's challenge section gets the same "Active Challenges" /
+// "Start a Challenge" header treatment as the Friends tab. Lives in its
+// own wrapper struct (with its own `@StateObject`) so the parent
+// DashboardView body doesn't re-render when challenge data changes —
+// per the widget isolation rule.
+struct DashboardChallengeHeaderWrapper: View {
+    @StateObject private var challengeService = ChallengeService.shared
+    @Binding var showingChallengeCreation: Bool
+    
+    var body: some View {
+        if !challengeService.activeChallenges.isEmpty || !challengeService.activeGroupChallenges.isEmpty || !challengeService.pendingSentChallenges.isEmpty {
+            HStack {
+                Image(systemName: "flame.fill")
+                    .foregroundStyle(
+                        LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .font(.title3)
+                Text("Active Challenges")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                Spacer()
+                Button {
+                    HapticManager.impact(.light)
+                    showingChallengeCreation = true
+                } label: {
+                    HStack(spacing: 2) {
+                        Text("Start a Challenge")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(
+                        LinearGradient(colors: [.orange, Color(red: 1.0, green: 0.4, blue: 0.1)], startPoint: .leading, endPoint: .trailing)
+                    )
+                }
+                .accessibilityLabel("Start a Challenge")
+                .accessibilityHint("Opens the challenge creation flow")
+            }
         }
     }
 }

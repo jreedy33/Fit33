@@ -256,10 +256,17 @@ struct DashboardView: View {
                         .padding(.bottom, 16)
 
                     // Challenge Cards (1v1 active, group active, pending sent, get started)
+                    // Header mirrors the Friends tab: "Active Challenges" + "Start a Challenge"
+                    // CTA appears only when the user has at least one active / group / pending
+                    // challenge (otherwise the entry "Challenge a Friend!" widget already
+                    // serves as its own header).
                     if showChallengeWidget {
-                        DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation)
-                            .environmentObject(userManager)
-                            .padding(.bottom, 16)
+                        VStack(alignment: .leading, spacing: 12) {
+                            DashboardChallengeHeaderWrapper(showingChallengeCreation: $showingChallengeCreation)
+                            DashboardChallengesWrapper(showingChallengeCreation: $showingChallengeCreation)
+                                .environmentObject(userManager)
+                        }
+                        .padding(.bottom, 16)
                     }
                     
                     // Weight/Hydration Widget Row (below challenge widget)

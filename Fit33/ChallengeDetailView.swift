@@ -196,14 +196,18 @@ struct ChallengeDetailView: View {
             await loadReactions()
             await RealtimeService.shared.subscribeChallengeReactions(challengeId: challenge.challengeId)
             RealtimeService.shared.onChallengeReactionReceived = { reaction in
-                guard reactions.first(where: { $0.id == reaction.id }) == nil else { return }
+                // Skip our own sends — they're already inserted
+                // optimistically by `sendBattleCry`. Reading `@State`
+                // from a long-lived closure returns a stale snapshot
+                // (the closure captures the view value at .task time)
+                // so id-dedup is unreliable; isMine filtering is the
+                // canonical "mine vs theirs" cut.
+                guard !reaction.isMine else { return }
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
                     reactions.insert(reaction, at: 0)
                 }
-                if !reaction.isMine {
-                    reactionsInboundFlash &+= 1
-                    HapticManager.notification(.warning)
-                }
+                reactionsInboundFlash &+= 1
+                HapticManager.notification(.warning)
             }
 
             while !Task.isCancelled {

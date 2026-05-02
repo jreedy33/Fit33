@@ -512,6 +512,18 @@ final class DailyBriefEngine {
     /// gate fixes).
     ///
     /// EVERY signal of prior activity must be empty:
+    ///   - `currentUser != nil` (profile hydrated — a nil currentUser
+    ///     during cold-start race used to make every `?? 0` fallback
+    ///     pass and silently fire the welcome brief for established
+    ///     users; canonical incident 2026-05-02, Joe's streak=13
+    ///     dashboard rendered "Welcome to the club." because the
+    ///     brief composed before `UserManager.bootstrapFromCloud`
+    ///     had hydrated currentUser, then got disk-cached).
+    ///   - `createdAt` within the last 14 days (defense-in-depth —
+    ///     a fresh-device install of an established account reads
+    ///     zeros for streak/totalWorkouts/xp BEFORE the cloud
+    ///     profile sync lands, but the cloud `createdAt` is months
+    ///     old by then, so we'd never misfire as Day 0).
     ///   - `totalWorkouts == 0` (no completed workouts on this device)
     ///   - `currentStreak == 0` (no logged streak from cloud sync)
     ///   - `xp == 0` (no XP earned — populated by streak-check before
@@ -521,12 +533,16 @@ final class DailyBriefEngine {
     ///     (onboarding-supplied — established users restoring on
     ///     a fresh device skip the welcome brief).
     private func isBrandNewUser() -> Bool {
-        let user = UserManager.shared.currentUser
-        guard (user?.totalWorkouts ?? 0) == 0 else { return false }
-        guard (user?.currentStreak ?? 0) == 0 else { return false }
-        guard (user?.xp ?? 0) == 0 else { return false }
-        guard user?.lastWorkoutDate == nil else { return false }
-        let level = (user?.experienceLevel ?? "").lowercased()
+        guard let user = UserManager.shared.currentUser else { return false }
+        if let createdAt = user.createdAt,
+           Date().timeIntervalSince(createdAt) > 14 * 86_400 {
+            return false
+        }
+        guard user.totalWorkouts == 0 else { return false }
+        guard user.currentStreak == 0 else { return false }
+        guard user.xp == 0 else { return false }
+        guard user.lastWorkoutDate == nil else { return false }
+        let level = (user.experienceLevel ?? "").lowercased()
         if level == "intermediate" || level == "advanced" { return false }
         return true
     }

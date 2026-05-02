@@ -135,9 +135,12 @@ struct CardioLandingView: View {
     @ObservedObject private var workoutManager = WorkoutManager.shared
     @ObservedObject private var stravaService = StravaService.shared
 
-    @State private var selectedActivity: CardioActivityType?
-    @State private var showingGoalSetup = false
-    @State private var showingBrowseAll = false
+    /// 2026-05-02 (per-user request): every tap-driven option off the
+    /// cardio landing pushes its own page instead of presenting as a
+    /// pop-up sheet. Single-source-of-truth state for "which destination
+    /// is currently pushed". Setting this to `nil` pops back to the
+    /// landing surface.
+    @State private var pushedDestination: CardioLandingDestination?
     /// Cardio Redesign Phase 1 — Wave 6b. Loaded on appear from
     /// `SupabaseManager.fetchCardioStreak()`. Banner is hidden when
     /// streak is 0 OR the streak load is still in flight.
@@ -198,26 +201,37 @@ struct CardioLandingView: View {
         .navigationTitle("Cardio")
         .navigationBarTitleDisplayMode(.inline)
         .adaptiveToolbarBackground()
-        .sheet(isPresented: $showingGoalSetup) {
-            if let activity = selectedActivity {
+        // 2026-05-02 (per-user request): single navigationDestination
+        // registration for ALL tap-driven options off the cardio
+        // landing. Replaces three separate `.sheet` modifiers (goal
+        // setup, browse all, first-open intro). First-open intro is
+        // the only one still presented modally — see `.fullScreenCover`
+        // below — because it auto-presents on appear and "push on
+        // appear" has weird animation semantics.
+        .navigationDestination(item: $pushedDestination) { dest in
+            switch dest {
+            case .stravaIntegration:
+                StravaSettingsView()
+            case .goalSetup(let activity):
                 CardioGoalSetupView(activityType: activity)
                     .environmentObject(userManager)
+            case .browseAll:
+                BrowseAllCardioView()
             }
         }
-        .sheet(isPresented: $showingBrowseAll) {
-            BrowseAllCardioView()
-        }
-        .sheet(isPresented: $showingFirstOpenIntro) {
-            // Cardio Redesign Phase 1 — Wave 3b. First-open mini-
-            // onboarding. Sheet (not fullScreenCover) so the user
-            // perceives this as setup they can dismiss back to the
-            // page they were already looking at — same affordance as
-            // strength's onboarding hand-off.
+        .fullScreenCover(isPresented: $showingFirstOpenIntro) {
+            // Cardio Redesign Phase 1 — Wave 3b (revised 2026-05-02).
+            // First-open mini-onboarding now uses .fullScreenCover (not
+            // .sheet) so it reads as its own SCREEN, not a pop-up card,
+            // matching the rest of the cardio surface. The orb
+            // background already lives inside the intro view itself.
             CardioFirstOpenIntroView()
         }
         .onChange(of: workoutManager.shouldDismissCardioFlow) { _, shouldDismiss in
             if shouldDismiss {
-                showingGoalSetup = false
+                // Pop the goal-setup / browse-all push if it's open,
+                // then dismiss the cardio landing itself.
+                pushedDestination = nil
                 dismiss()
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(0.5))
@@ -229,6 +243,18 @@ struct CardioLandingView: View {
         .task { await loadCardioStreak() }
         .task { await triggerHKBackfillIfNeeded() }
         .onAppear { presentFirstOpenIntroIfNeeded() }
+    }
+
+    // MARK: - Push helpers (2026-05-02)
+    //
+    // Centralizes all "tap → push goal setup for this activity" callers
+    // (Walk hero, Run hero, 5 preset chips, equipment cards, just-one-
+    // block tile) so the haptic + navigation pattern stays consistent.
+    // Replaces the legacy
+    // `selectedActivity = X; showingGoalSetup = true` two-line dance.
+    private func pushGoalSetup(for activity: CardioActivityType, haptic: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
+        HapticManager.impact(haptic)
+        pushedDestination = .goalSetup(activity: activity)
     }
 
     // MARK: - First-open intro gate (Wave 3b)
@@ -294,14 +320,12 @@ struct CardioLandingView: View {
     private var justOneBlockTile: some View {
         if hasNoCardioToday {
             Button {
-                HapticManager.impact(.medium)
-                // 5-minute walk preset — straight into Walk goal-setup
-                // with a Time goal pre-filled. The CardioGoalSetupView
-                // task() will override defaults from smart-suggest, but
-                // since the user's pattern probably doesn't include
-                // 5-min walks, we don't worry about it.
-                selectedActivity = .walk
-                showingGoalSetup = true
+                // 5-minute walk preset — pushes Walk goal-setup with
+                // Time goal pre-filled. The CardioGoalSetupView .task()
+                // will override defaults from smart-suggest, but since
+                // the user's pattern probably doesn't include 5-min
+                // walks, we don't worry about it.
+                pushGoalSetup(for: .walk, haptic: .medium)
             } label: {
                 HStack(spacing: 12) {
                     ZStack {
@@ -441,9 +465,7 @@ struct CardioLandingView: View {
                 subtitle: "GPS · Pace · Calories",
                 accent: .mint
             ) {
-                HapticManager.impact(.medium)
-                selectedActivity = .walk
-                showingGoalSetup = true
+                pushGoalSetup(for: .walk)
             }
 
             WalkRunHeroCard(
@@ -452,9 +474,7 @@ struct CardioLandingView: View {
                 subtitle: "GPS · Pace · Splits",
                 accent: .green
             ) {
-                HapticManager.impact(.medium)
-                selectedActivity = .outdoorRun
-                showingGoalSetup = true
+                pushGoalSetup(for: .outdoorRun)
             }
         }
     }
@@ -471,29 +491,19 @@ struct CardioLandingView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     CardioPresetChip(label: "Open Walk", icon: "infinity", accent: .mint) {
-                        HapticManager.impact(.light)
-                        selectedActivity = .walk
-                        showingGoalSetup = true
+                        pushGoalSetup(for: .walk, haptic: .light)
                     }
                     CardioPresetChip(label: "30 min Walk", icon: "clock.fill", accent: .mint) {
-                        HapticManager.impact(.light)
-                        selectedActivity = .walk
-                        showingGoalSetup = true
+                        pushGoalSetup(for: .walk, haptic: .light)
                     }
                     CardioPresetChip(label: "Open Run", icon: "infinity", accent: .green) {
-                        HapticManager.impact(.light)
-                        selectedActivity = .outdoorRun
-                        showingGoalSetup = true
+                        pushGoalSetup(for: .outdoorRun, haptic: .light)
                     }
                     CardioPresetChip(label: "5K Run", icon: "figure.run", accent: .green) {
-                        HapticManager.impact(.light)
-                        selectedActivity = .outdoorRun
-                        showingGoalSetup = true
+                        pushGoalSetup(for: .outdoorRun, haptic: .light)
                     }
                     CardioPresetChip(label: "30 min Run", icon: "clock.fill", accent: .green) {
-                        HapticManager.impact(.light)
-                        selectedActivity = .outdoorRun
-                        showingGoalSetup = true
+                        pushGoalSetup(for: .outdoorRun, haptic: .light)
                     }
                 }
             }
@@ -515,29 +525,21 @@ struct CardioLandingView: View {
     }
 
     // MARK: - Powered by Strava (BOTTOM HALF)
+    //
+    // 2026-05-02 (per-user request): dropped the "Connected" pill +
+    // sync-time chip. The Powered-by-Strava lockup is the brand mark
+    // and nothing else; connection state is implicit (recent activities
+    // = connected; ConnectStravaCard = not connected).
     private var stravaLockupSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
-                Text("POWERED BY")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.secondary)
-                    .tracking(1)
-                Text("STRAVA")
-                    .font(.caption)
-                    .fontWeight(.heavy)
-                    .foregroundColor(Color(red: 0.99, green: 0.30, blue: 0.0)) // Strava brand orange
-                    .tracking(1)
+                Image("PoweredByStrava")
+                    .resizable()
+                    .renderingMode(.original)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(height: 17)
+                    .accessibilityLabel("Powered by Strava")
                 Spacer()
-                if stravaService.isConnected {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption)
-                        Text("Connected")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.green)
-                }
             }
 
             if stravaService.isConnected {
@@ -571,9 +573,7 @@ struct CardioLandingView: View {
                 HStack(spacing: 12) {
                     ForEach(CardioActivityType.allCases.filter { $0.supportsBluetooth }) { activity in
                         EquipmentCard(activity: activity) {
-                            HapticManager.impact(.medium)
-                            selectedActivity = activity
-                            showingGoalSetup = true
+                            pushGoalSetup(for: activity)
                         }
                     }
                 }
@@ -585,7 +585,7 @@ struct CardioLandingView: View {
     private var browseAllCardioLink: some View {
         Button {
             HapticManager.selectionChanged()
-            showingBrowseAll = true
+            pushedDestination = .browseAll
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "list.bullet.rectangle")
@@ -831,24 +831,39 @@ struct ConnectStravaCard: View {
             RoundedRectangle(cornerRadius: CornerRadius.lg)
                 .stroke(stravaOrange.opacity(0.20), lineWidth: 1)
         )
-        // Navigation destination is registered on the parent NavigationStack
-        // via the `.navigationDestination` modifier on `CardioLandingView`.
-        // The enum-based value is the post-PE-19 canonical pattern.
-        .navigationDestination(for: CardioLandingDestination.self) { dest in
-            switch dest {
-            case .stravaIntegration:
-                StravaSettingsView()
-            }
-        }
+        // Navigation destination registration moved up to
+        // `CardioLandingView` (the always-present ancestor) so the
+        // value-based push works even when ConnectStravaCard isn't in
+        // the hierarchy (Strava connected → CardioStravaSection renders
+        // instead, ConnectStravaCard is gone, modifier vanishes).
     }
 }
 
-/// Routing values for `CardioLandingView` — used by the value-based
-/// NavigationLink in `ConnectStravaCard` to push the Strava connect flow.
-/// Kept enum-shaped so future destinations (FAQ, history, etc.) can be
-/// added without per-case stack mutation.
+/// Routing values for `CardioLandingView`.
+///
+/// 2026-05-02 (per-user request): EVERY tap-driven menu off the cardio
+/// landing surface is now a pushed page (no `.sheet` "pop-up cards") to
+/// match the rest of the app's navigation. Cases:
+///   • `.stravaIntegration`        → `StravaSettingsView` (connect CTA)
+///   • `.goalSetup(activity:)`     → `CardioGoalSetupView` (Walk/Run
+///                                   hero tile, preset chip, equipment
+///                                   card, "Just one block" tile)
+///   • `.browseAll`                → `BrowseAllCardioView` (the legacy
+///                                   exhaustive cardio list)
+///
+/// First-open mini-onboarding (`CardioFirstOpenIntroView`) is presented
+/// as a `.fullScreenCover` rather than a pushed page because it's
+/// auto-presented on appear — pushing-on-appear has awkward animation
+/// semantics, but a full-screen modal still satisfies "screen, not card"
+/// (the orb background already lives inside the intro view itself).
+///
+/// Active-workout surfaces (`CardioActiveSessionHost`,
+/// `CardioActiveWorkoutView`) remain `.fullScreenCover` per the
+/// focused-task pattern — they intentionally suppress nav chrome.
 enum CardioLandingDestination: Hashable {
     case stravaIntegration
+    case goalSetup(activity: CardioActivityType)
+    case browseAll
 }
 
 // MARK: - Quick Start Card

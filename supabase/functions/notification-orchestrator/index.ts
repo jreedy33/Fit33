@@ -18,6 +18,12 @@
 //     Used during gradual rollout (e.g. 'cohort:beta').
 //   - 'live' — act on everything.
 //
+// Per-user canary override (Migration #178):
+//   internal_config['notification_orchestrator_canary_user_ids'] holds a
+//   JSON array of UUIDs. When global mode is `shadow`, those users get
+//   the LIVE path (real enqueue + APNs); every other user stays in
+//   shadow. Useful for canary testing before flipping the global switch.
+//
 // Auth: service-role / x-cron-key only. (Edge Function Auth Registry —
 // INFRA_SECURITY invariant 11.) No user JWTs accepted.
 //
@@ -153,6 +159,34 @@ function modeIsLive(mode: string): boolean {
   return mode === "live" || mode.startsWith("cohort:");
 }
 
+// Per-user canary override — Migration #178. Reads the JSON-array config
+// row once per orchestrator tick. Best-effort: if the value is not valid
+// JSON we fall back to comma-separated parsing; if anything is broken we
+// return an empty set (canary just no-ops, never poisons live behavior).
+async function getCanaryUserIds(
+  supabase: ReturnType<typeof createClient>,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("internal_config")
+    .select("value")
+    .eq("key", "notification_orchestrator_canary_user_ids")
+    .maybeSingle();
+  if (error || !data?.value) return new Set();
+  const raw = String(data.value);
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((x): x is string => typeof x === "string"));
+    }
+  } catch (_e) {
+    // Fall through to comma-separated.
+  }
+  return new Set(
+    raw.split(",").map((s) => s.trim().replace(/^["\[\]]+|["\[\]]+$/g, ""))
+       .filter((s) => s.length > 0),
+  );
+}
+
 // ── Core orchestration ──────────────────────────────────────────────────
 
 interface RunResult {
@@ -200,6 +234,12 @@ async function orchestrate(
 
   result.candidates = intents.length;
 
+  // Per-tick canary allowlist (Migration #178). Empty when global mode
+  // is `live` (or when the config row is missing/invalid). Cached as a
+  // Set so per-user lookups are O(1) below.
+  const globalLive = modeIsLive(mode);
+  const canarySet = globalLive ? new Set<string>() : await getCanaryUserIds(supabase);
+
   // Group by user so per-user caps + smart timing are decided in one pass.
   const byUser = new Map<string, IntentRow[]>();
   for (const intent of intents as IntentRow[]) {
@@ -210,12 +250,20 @@ async function orchestrate(
 
   for (const [userId, userIntents] of byUser.entries()) {
     try {
+      // Effective live flag for this user: global live OR canary
+      // listed (only meaningful when global is shadow). When true,
+      // every markDecision below stamps shadow_mode=false and the
+      // enqueue branch hits APNs for real.
+      const userIsLive = globalLive || canarySet.has(userId);
+      const isCanary = !globalLive && canarySet.has(userId);
+      const shadowFlag = !userIsLive;
+
       const prefs = await loadPrefs(supabase, userId);
 
       // Master kill-switch
       if (prefs && !prefs.master_enabled) {
         for (const intent of userIntents) {
-          await markDecision(supabase, intent, "suppressed", "master_disabled", null, mode === "shadow");
+          await markDecision(supabase, intent, "suppressed", "master_disabled", null, shadowFlag);
           await updateIntentStatus(supabase, intent.id, "suppressed", null);
           result.suppressed++;
         }
@@ -239,13 +287,13 @@ async function orchestrate(
       let enqueuedThisUser = 0;
       for (const { intent, score } of scored) {
         if (score.skip) {
-          await markDecision(supabase, intent, "suppressed", score.skipReason ?? "filter", null, mode === "shadow");
+          await markDecision(supabase, intent, "suppressed", score.skipReason ?? "filter", null, shadowFlag);
           await updateIntentStatus(supabase, intent.id, "suppressed", null);
           result.suppressed++;
           continue;
         }
         if (score.defer) {
-          await markDecision(supabase, intent, "deferred", score.deferReason ?? "deferred", score.score, mode === "shadow");
+          await markDecision(supabase, intent, "deferred", score.deferReason ?? "deferred", score.score, shadowFlag);
           // Leave status='pending' so a future run picks it up after the
           // 15-min cooldown (candidate scan filter), but bump decided_at so
           // it actually reaches the cooldown gate (else: re-decide every 5min).
@@ -255,18 +303,21 @@ async function orchestrate(
         }
 
         if (enqueuedThisUser >= room) {
-          await markDecision(supabase, intent, "deferred", "below_runner_up_or_capped", score.score, mode === "shadow");
+          await markDecision(supabase, intent, "deferred", "below_runner_up_or_capped", score.score, shadowFlag);
           await touchIntentDeferred(supabase, intent.id);
           result.deferred++;
           continue;
         }
 
         // ── Enqueue (or shadow-log) ──────────────────────────────────
-        if (modeIsLive(mode)) {
+        if (userIsLive) {
           const queueId = await enqueueIntent(supabase, intent);
           if (queueId) {
             await updateIntentStatus(supabase, intent.id, "enqueued", queueId);
-            await markDecision(supabase, intent, "enqueued", "top_score", score.score, false);
+            // Canary path stamped distinctly so the funnel can split
+            // canary opens vs full-live opens during the rollout window.
+            const reason = isCanary ? "top_score (CANARY)" : "top_score";
+            await markDecision(supabase, intent, "enqueued", reason, score.score, false);
             result.enqueued++;
             enqueuedThisUser++;
           } else {

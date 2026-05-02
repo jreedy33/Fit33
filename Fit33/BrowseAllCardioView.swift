@@ -3,12 +3,19 @@ import CoreData
 
 // MARK: - Browse All Cardio View
 //
-// Cardio Redesign Phase 1 — Wave 3 — sheet-presented from
-// `CardioLandingView` via the "Browse all cardio →" link at the bottom of
-// the redesigned landing. Preserves the search + filter + exercise list
-// experience that USED to anchor the landing page, but demoted out of the
-// top-level surface so Walk + Run hero tiles + the Powered-by-Strava
-// lockup get the visual real estate.
+// Cardio Redesign Phase 1 — Wave 3.
+//
+// 2026-05-02 (per-user request): converted from sheet → pushed page.
+// Hosted by `CardioLandingView`'s `.navigationDestination(item:)` via
+// `CardioLandingDestination.browseAll`. The view MUST NOT wrap its own
+// `NavigationStack` (PE invariant 6 — no nested stacks); the system
+// back chevron handles dismiss instead of the legacy "Done" toolbar
+// button.
+//
+// Preserves the search + filter + exercise list experience that USED
+// to anchor the landing page, but demoted out of the top-level surface
+// so Walk + Run hero tiles + the Powered-by-Strava lockup get the
+// visual real estate.
 //
 // All cardio exercises in the Core Data library (`category` or
 // `workoutType` contains "cardio") are searchable + filterable here.
@@ -21,7 +28,6 @@ import CoreData
 // File length: ~190 lines — within `codingrules.mdc` 200-300 line budget.
 
 struct BrowseAllCardioView: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var searchText: String = ""
@@ -53,36 +59,28 @@ struct BrowseAllCardioView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                AnimatedOrbBackground.workout(colorScheme: colorScheme)
-                    .ignoresSafeArea()
+        ZStack {
+            AnimatedOrbBackground.workout(colorScheme: colorScheme)
+                .ignoresSafeArea()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Spacing.md) {
-                        searchBar
-                        filterChips
-                        exerciseList
-                        Spacer(minLength: 60)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, Spacing.md)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    searchBar
+                    filterChips
+                    exerciseList
+                    Spacer(minLength: 60)
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, Spacing.md)
             }
-            .navigationTitle("Browse Cardio")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .font(.ds_labelLarge)
-                }
-            }
-            .adaptiveToolbarBackground()
-            .onAppear { recompute() }
-            .onChange(of: searchText) { _, _ in recompute() }
-            .onChange(of: selectedFilter) { _, _ in recompute() }
-            .onChange(of: cardioExercises.count) { _, _ in recompute() }
         }
+        .navigationTitle("Browse Cardio")
+        .navigationBarTitleDisplayMode(.inline)
+        .adaptiveToolbarBackground()
+        .onAppear { recompute() }
+        .onChange(of: searchText) { _, _ in recompute() }
+        .onChange(of: selectedFilter) { _, _ in recompute() }
+        .onChange(of: cardioExercises.count) { _, _ in recompute() }
     }
 
     // MARK: - Sub-views
@@ -210,5 +208,7 @@ struct BrowseAllCardioView: View {
 }
 
 #Preview {
-    BrowseAllCardioView()
+    NavigationStack {
+        BrowseAllCardioView()
+    }
 }

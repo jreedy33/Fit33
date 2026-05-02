@@ -48,8 +48,16 @@ struct DashboardCardioWidget: View {
         if isLoaded, shouldShow {
             content
                 .sheet(isPresented: $showingWalkSetup) {
-                    CardioGoalSetupView(activityType: .walk)
-                        .environmentObject(userManager)
+                    // 2026-05-02: `CardioGoalSetupView` no longer wraps
+                    // its own NavigationStack (it became a pushed page
+                    // off `CardioLandingView`). When presented as a
+                    // sheet from outside that nav stack — e.g. this
+                    // dashboard widget — we must provide one here so
+                    // the title + navigation bar still render.
+                    NavigationStack {
+                        CardioGoalSetupView(activityType: .walk)
+                            .environmentObject(userManager)
+                    }
                 }
         } else {
             // Empty placeholder while loading — avoids layout flash.

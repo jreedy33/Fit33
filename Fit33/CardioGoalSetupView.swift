@@ -120,78 +120,63 @@ struct CardioGoalSetupView: View {
         return (time, distance, calories)
     }
     
+    // 2026-05-02 (per-user request): goal setup is now a pushed page
+    // (NOT a sheet) hosted by `CardioLandingView`'s
+    // `.navigationDestination(item:)`. We MUST NOT wrap our own
+    // `NavigationStack` here — PE invariant 6 (no nested stacks). The
+    // system back chevron handles dismiss; the legacy custom "X" close
+    // button is gone. Background swapped from the activity-tinted
+    // gradient to the canonical `AnimatedOrbBackground.workout(...)`
+    // for visual consistency with the rest of the cardio surface.
     var body: some View {
-        NavigationStack {
-            ZStack {
-                // Background with activity color accent
-                backgroundGradient
-                
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 28) {
-                        // Activity Header
-                        activityHeader
-                        
-                        // Goal Type Selection
-                        goalTypeSelector
-                        
-                        // Goal Input Based on Selected Type
-                        goalInputSection
-                        
-                        // Smart Recommendation
-                        smartRecommendationCard
-                        
-                        // Bluetooth Equipment Section
-                        if activityType.supportsBluetooth {
-                            bluetoothSection
-                        }
-                        
-                        Spacer(minLength: 100)
+        ZStack {
+            AnimatedOrbBackground.workout(colorScheme: colorScheme)
+                .ignoresSafeArea()
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 28) {
+                    activityHeader
+                    goalTypeSelector
+                    goalInputSection
+                    smartRecommendationCard
+                    if activityType.supportsBluetooth {
+                        bluetoothSection
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
+                    Spacer(minLength: 100)
                 }
-                
-                // GO Button
-                VStack {
-                    Spacer()
-                    goButton
-                }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                            .font(.ds_labelMedium)
-                            .foregroundColor(.primary)
-                            .frame(width: 32, height: 32)
-                            .background(Circle().fill(Color(.systemGray5)))
-                    }
-                }
+
+            VStack {
+                Spacer()
+                goButton
             }
-            .adaptiveToolbarBackground()
-            .sheet(isPresented: $showingBluetoothSheet) {
-                FitnessEquipmentView()
-            }
-            .fullScreenCover(isPresented: $startWorkout) {
-                CardioActiveWorkoutView(
-                    activityType: activityType,
-                    goalType: selectedGoalType,
-                    timeGoal: timeGoal,
-                    distanceGoal: distanceGoal,
-                    calorieGoal: calorieGoal
-                )
+        }
+        .navigationTitle(activityType.rawValue)
+        .navigationBarTitleDisplayMode(.inline)
+        .adaptiveToolbarBackground()
+        .sheet(isPresented: $showingBluetoothSheet) {
+            FitnessEquipmentView()
+        }
+        .fullScreenCover(isPresented: $startWorkout) {
+            CardioActiveWorkoutView(
+                activityType: activityType,
+                goalType: selectedGoalType,
+                timeGoal: timeGoal,
+                distanceGoal: distanceGoal,
+                calorieGoal: calorieGoal
+            )
+            .environmentObject(userManager)
+        }
+        .fullScreenCover(isPresented: $startNativeWorkout) {
+            CardioActiveSessionHost(isPresented: $startNativeWorkout)
                 .environmentObject(userManager)
-            }
-            .fullScreenCover(isPresented: $startNativeWorkout) {
-                CardioActiveSessionHost(isPresented: $startNativeWorkout)
-                    .environmentObject(userManager)
-            }
-            .onChange(of: workoutManager.shouldDismissCardioFlow) { _, shouldDismiss in
-                if shouldDismiss {
-                    startWorkout = false
-                    dismiss()
-                }
+        }
+        .onChange(of: workoutManager.shouldDismissCardioFlow) { _, shouldDismiss in
+            if shouldDismiss {
+                startWorkout = false
+                dismiss()
             }
         }
         .onAppear {
@@ -296,24 +281,12 @@ struct CardioGoalSetupView: View {
         }
     }
     
-    // MARK: - Background
-    private var backgroundGradient: some View {
-        ZStack {
-            LinearGradient(
-                gradient: Gradient(colors: colorScheme == .dark
-                    ? [Color(red: 0.05, green: 0.08, blue: 0.12), Color.black]
-                    : [Color(red: 0.95, green: 0.97, blue: 1.0), Color.white]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            
-            // Activity color accent at top
-            activityType.color.opacity(0.1)
-                .blur(radius: 100)
-                .offset(y: -200)
-        }
-        .ignoresSafeArea()
-    }
+    // 2026-05-02: legacy `backgroundGradient` (LinearGradient + activity-
+    // color blur accent) removed. Replaced by canonical
+    // `AnimatedOrbBackground.workout(...)` in `body` for visual
+    // consistency with `CardioLandingView` and the rest of the cardio
+    // surface (per-user request).
+
     
     // MARK: - Activity Header
     private var activityHeader: some View {
@@ -878,6 +851,8 @@ struct RecommendationBubble: View {
 }
 
 #Preview {
-    CardioGoalSetupView(activityType: .treadmill)
-        .environmentObject(UserManager.shared)
+    NavigationStack {
+        CardioGoalSetupView(activityType: .treadmill)
+            .environmentObject(UserManager.shared)
+    }
 }

@@ -138,7 +138,12 @@ struct CardioStravaWeeklyDeltaChip: View {
     }
 }
 
-// MARK: - Recent Strava Row
+// MARK: - Recent Row
+//
+// 2026-05-02 (per-user request): renamed "Recent Strava" → "Recent" and
+// dropped the per-row "Synced X min ago" timestamp. The connection
+// status + last-sync are owned by the dashboard Strava widget — no need
+// to duplicate that signal under the cardio page header.
 
 struct CardioStravaRecentRow: View {
     @ObservedObject private var stravaService = StravaService.shared
@@ -157,19 +162,12 @@ struct CardioStravaRecentRow: View {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("RECENT STRAVA")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.secondary)
-                        .tracking(1)
-                    Spacer()
-                    if let last = stravaService.lastSyncDate {
-                        Text(relativeSync(last))
-                            .font(.caption2)
-                            .foregroundColor(.secondary.opacity(0.7))
-                    }
-                }
+                Text("RECENT")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+                    .tracking(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -189,12 +187,6 @@ struct CardioStravaRecentRow: View {
                 StravaActivityRecapSheet(activity: act)
             }
         }
-    }
-
-    private func relativeSync(_ date: Date) -> String {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .short
-        return "Synced \(f.localizedString(for: date, relativeTo: Date()))"
     }
 }
 

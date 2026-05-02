@@ -263,7 +263,13 @@ async function orchestrate(
             result.errors++;
           }
         } else {
+          // Shadow mode: log the decision AND mark the intent terminal so
+          // the next 5-minute tick doesn't re-decide the same intent.
+          // Without this update, status stays 'pending' and the candidate
+          // scan re-picks it on every tick — Migration #176 backfilled the
+          // bug victims; the status update here prevents recurrence.
           await markDecision(supabase, intent, "enqueued", "top_score (SHADOW)", score.score, true);
+          await updateIntentStatus(supabase, intent.id, "shadow_decided", null);
           result.shadow_only++;
         }
       }
@@ -597,7 +603,7 @@ async function markDecision(
 async function updateIntentStatus(
   supabase: ReturnType<typeof createClient>,
   intentId: string,
-  status: "enqueued" | "suppressed" | "expired" | "failed",
+  status: "enqueued" | "suppressed" | "expired" | "failed" | "shadow_decided",
   queueId: string | null,
 ): Promise<void> {
   await supabase.from("notification_intents").update({

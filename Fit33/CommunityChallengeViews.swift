@@ -3436,6 +3436,7 @@ struct CommunityDetailView: View {
         let optimisticId = UUID()
         let optimistic = ChallengeReaction(
             reactionId: optimisticId,
+            challengeId: d.challengeId,
             senderId: me,
             senderName: "You",
             senderPhotoUrl: nil,

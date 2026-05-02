@@ -535,6 +535,7 @@ struct GroupChallengeDetailView: View {
         let optimisticId = UUID()
         let optimistic = ChallengeReaction(
             reactionId: optimisticId,
+            challengeId: challenge.challengeId,
             senderId: me,
             senderName: "You",
             senderPhotoUrl: nil,

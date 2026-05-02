@@ -1279,8 +1279,20 @@ struct DashboardChallengesWrapper: View {
         .shadow(color: reducedGlow ? .black.opacity(colorScheme == .dark ? 0.3 : 0.08) : challengeColor.opacity(0.15), radius: reducedGlow ? 12 : 15, x: 0, y: reducedGlow ? 6 : 0)
         .shadow(color: reducedGlow ? challengeColor.opacity(colorScheme == .dark ? 0.2 : 0.12) : challengeColor.opacity(0.08), radius: reducedGlow ? 20 : 25, x: 0, y: reducedGlow ? 10 : 4)
         .frame(height: 156)
+        // Battle-cry shout bubble (2026-05-02). Pinned to the top of
+        // the group widget; the bubble subscribes to
+        // `RealtimeService.latestIncomingReaction` and only paints
+        // for reactions targeted at me whose `challengeId` matches
+        // this group challenge. Mirrors the 1v1 hookup in
+        // `ActiveChallengeHeaderRow`.
+        .overlay(alignment: .top) {
+            BattleCryShoutBubble(challengeId: challenge.challengeId)
+                .offset(y: -28)
+                .allowsHitTesting(true)
+                .zIndex(20)
+        }
     }
-    
+
     func nudgePendingMember(challengeId: UUID, memberId: UUID) {
         HapticManager.impact(.medium)
         let nudgeKey = "nudge_\(challengeId.uuidString)_\(memberId.uuidString)"

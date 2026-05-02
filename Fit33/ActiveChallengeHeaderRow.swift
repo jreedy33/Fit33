@@ -46,9 +46,9 @@ struct ActiveChallengeHeaderRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            
+
             modeAffordance
-            
+
             NavigationLink(value: challenge) {
                 Image(systemName: "chevron.right")
                     .font(.ds_labelMedium)
@@ -58,6 +58,18 @@ struct ActiveChallengeHeaderRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, Spacing.sm)
+        // Battle-cry shout bubble (2026-05-02). Floats above the row
+        // when the opponent sends a reaction targeted at me. The
+        // bubble subscribes via `RealtimeService.latestIncomingReaction`
+        // and filters internally to `challenge.challengeId`, so
+        // multiple cards on the same dashboard each only paint their
+        // own challenge's reactions. Auto-dismisses after 6s.
+        .overlay(alignment: .top) {
+            BattleCryShoutBubble(challengeId: challenge.challengeId)
+                .offset(y: -28)
+                .allowsHitTesting(true)
+                .zIndex(20)
+        }
         .sheet(isPresented: $showingReactionPicker) {
             BattleCryPickerSheet(
                 mode: isAccountability ? .accountability : .competition,

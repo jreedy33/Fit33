@@ -61,6 +61,30 @@ class RealtimeService: ObservableObject {
     private var challengeReactionsListenerTask: Task<Void, Never>?
     private var subscribedReactionChallengeId: UUID?
 
+    /// Persistent dashboard-level incoming-reactions channel — covers
+    /// EVERY active challenge the user participates in, filtered by
+    /// `recipient_id = me`. Drives the "comic-bubble shouts out of
+    /// the dashboard widget" effect (`BattleCryShoutBubble`) on
+    /// `ActiveChallengeHeaderRow` + `groupChallengeWidget` so the user
+    /// sees an opponent's battle cry land WITHOUT having to drill
+    /// into the challenge detail view. Owned by `connect()` /
+    /// `disconnect()` (NOT per-view) — it's the social equivalent of
+    /// the friendships / shared_workouts channels: one channel for
+    /// the lifetime of the foreground session.
+    private var incomingReactionsChannel: RealtimeChannelV2?
+    private var incomingReactionsListenerTask: Task<Void, Never>?
+
+    /// Latest battle cry / cheer the current user RECEIVED (i.e.
+    /// `recipient_id == auth.uid()`). Updated by
+    /// `subscribeIncomingReactions(userId:)` whenever a new INSERT
+    /// arrives. Dashboard widget cards observe this `@Published`
+    /// value and animate a `BattleCryShoutBubble` when the reaction's
+    /// `challengeId` matches the card they're rendering. The bubble
+    /// auto-dismisses after ~6s; the value stays set so a freshly-
+    /// rendered card (e.g. tab switch back to dashboard) can still
+    /// surface a recent reaction.
+    @Published var latestIncomingReaction: ChallengeReaction?
+
     // MARK: - Debounce State
     
     /// Debounce task for batched community challenge progress refreshes.
@@ -334,16 +358,17 @@ class RealtimeService: ObservableObject {
         await subscribeFriendActivityFeed(userId: userId)
         await subscribePrivacyChanges(userId: userId)
         await subscribeExercises(userId: userId)
-        
+        await subscribeIncomingReactions(userId: userId)
+
         // Start periodic cadence refresh for auto-tracked challenges (steps, active_minutes, etc.)
         startAutoTrackedRefreshTimer()
-        
+
         isConnected = true
         connectionError = nil
         lastConnectTime = Date()
         AppLogger.info("Connected to all channels", category: .network)
         logRealtimeEvent(type: "CONNECTED", source: "RealtimeService",
-                        details: "✅ All 10 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed, privacy_changes + auto-tracked refresh timer")
+                        details: "✅ All 11 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed, privacy_changes, exercises, incoming_reactions + auto-tracked refresh timer")
 
         // ─── Sync-triage 2026-04-28 Layer B — post-connect canonical resync ───
         //
@@ -469,15 +494,44 @@ class RealtimeService: ObservableObject {
         } ?? .greatestFiniteMagnitude
         let isStale = lastEventAge > Self.staleEventThreshold
 
-        if isStale {
+        // Sync-triage 2026-05-02 (Layer E) — staleness alone is NOT enough.
+        // The `.background` scenePhase observer in `Fit33App.swift` fires
+        // `Task { await RealtimeService.shared.disconnect() }` to save
+        // battery; that nils every channel + sets `isConnected = false`
+        // but does NOT touch `lastEventReceivedAt`. A user who locks
+        // their phone for 5s after a recent event would foreground into
+        // a "channel healthy, last event 5s ago" no-op, leaving the
+        // app subscribed to NOTHING while the staleness gate stayed
+        // closed. Symptoms: friend requests / battle cries / opponent
+        // step updates only appear after the foreground social fan-out
+        // (`Priority 2`, line ~1114 of `Fit33App.swift`) finishes its
+        // ~1s of RPCs — not real time.
+        //
+        // Treat "channels actually torn down" as the dominant signal.
+        // `friendshipsChannel` is the canonical "any channel up" probe
+        // (it's the first channel `connect()` opens; it's the last one
+        // `disconnect()` nils). `!isConnected` is a belt-and-suspenders
+        // catch for the rare case where a channel ref leaks past a
+        // disconnect.
+        let channelsAreDown = friendshipsChannel == nil || !isConnected
+
+        if isStale || channelsAreDown {
+            let reason: String
+            if channelsAreDown && !isStale {
+                reason = "channels torn down (likely from prior backgrounding)"
+            } else if channelsAreDown && isStale {
+                reason = "channels torn down + stale (last event \(lastEventReceivedAt == nil ? "never" : "\(Int(lastEventAge))s ago"))"
+            } else {
+                reason = "stale (last event \(lastEventReceivedAt == nil ? "never" : "\(Int(lastEventAge))s ago"))"
+            }
             AppLogger.info(
-                "🔄 [REALTIME] Stale channel detected (last event \(lastEventReceivedAt == nil ? "never" : "\(Int(lastEventAge))s ago"), threshold \(Int(Self.staleEventThreshold))s) — forcing reconnect",
+                "🔄 [REALTIME] Reconnecting — \(reason)",
                 category: .network
             )
             logRealtimeEvent(
                 type: "FORCE_RECONNECT",
                 source: "RealtimeService",
-                details: "🔄 Stale channel — last event \(lastEventReceivedAt == nil ? "never" : "\(Int(lastEventAge))s ago"). Tearing down + re-subscribing."
+                details: "🔄 \(reason). Tearing down + re-subscribing."
             )
             // Tear down so `connect()` doesn't bail on the
             // `if isConnected || friendshipsChannel != nil { disconnect }`
@@ -530,6 +584,11 @@ class RealtimeService: ObservableObject {
         if let channel = exercisesChannel {
             await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
         }
+        incomingReactionsListenerTask?.cancel()
+        incomingReactionsListenerTask = nil
+        if let channel = incomingReactionsChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
         await unsubscribeChallengeReactions()
 
         // Also tear down service-level realtime channels so they can re-subscribe on reconnect.
@@ -556,7 +615,16 @@ class RealtimeService: ObservableObject {
         friendActivityFeedChannel = nil
         privacyChangeChannel = nil
         exercisesChannel = nil
-        
+        incomingReactionsChannel = nil
+
+        // Sync-triage 2026-05-02 (Layer E) — clear the last-event-time
+        // along with the channels. The previous version left this set,
+        // which fooled `forceReconnectIfStale()` into thinking the
+        // channel was still healthy after a fresh disconnect. The
+        // staleness gate now sees `nil → .greatestFiniteMagnitude`
+        // and reliably triggers a reconnect on the next foreground.
+        lastEventReceivedAt = nil
+
         isConnected = false
         AppLogger.info("Disconnected from all channels", category: .network)
     }
@@ -1825,6 +1893,7 @@ class RealtimeService: ObservableObject {
             return
         }
 
+        let challengeIdValue: UUID? = jsonString(record["challenge_id"]).flatMap { UUID(uuidString: $0) }
         let reactionKey = jsonString(record["reaction_key"]) ?? ""
         let reactionEmoji = jsonString(record["reaction_emoji"]) ?? "💬"
         let reactionText = jsonString(record["reaction_text"]) ?? ""
@@ -1843,6 +1912,7 @@ class RealtimeService: ObservableObject {
 
         let reaction = ChallengeReaction(
             reactionId: reactionId,
+            challengeId: challengeIdValue,
             senderId: senderId,
             senderName: nil,
             senderPhotoUrl: nil,
@@ -1861,6 +1931,122 @@ class RealtimeService: ObservableObject {
         )
 
         onChallengeReactionReceived?(reaction)
+    }
+
+    // MARK: - Dashboard Incoming Reactions (recipient-filtered)
+
+    /// Subscribe to INSERT events on `challenge_reactions` filtered by
+    /// `recipient_id = userId`. Owned by `connect()` / `disconnect()`
+    /// — NOT per-view. Powers the dashboard `BattleCryShoutBubble`
+    /// effect: every active challenge widget the user is rendering
+    /// listens to `latestIncomingReaction` and animates a comic bubble
+    /// when the reaction's `challengeId` matches the card's challenge.
+    ///
+    /// Coexists with `subscribeChallengeReactions(challengeId:)` (the
+    /// per-detail-view channel). The two have different filters:
+    ///   • Detail-view channel = "all reactions for THIS challenge"
+    ///     (filtered by `challenge_id`) — drives the in-feed bubble
+    ///     stack on `ChallengeDetailView` / `GroupChallengeDetailView`
+    ///     / `CommunityChallengeViews`.
+    ///   • Dashboard channel  = "all reactions targeted at ME"
+    ///     (filtered by `recipient_id`) — drives the dashboard widget
+    ///     shout bubble. Includes reactions from challenges I haven't
+    ///     opened the detail view of yet.
+    /// Realtime delivers a separate event to each, so the user only
+    /// sees one logical bubble per surface (dashboard vs detail view).
+    private func subscribeIncomingReactions(userId: UUID) async {
+        let client = SupabaseManager.shared.supabaseClient
+        let channel = client.realtimeV2.channel("incoming_reactions-\(userId.uuidString)")
+
+        let inserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "challenge_reactions",
+            filter: "recipient_id=eq.\(userId.uuidString)"
+        )
+
+        incomingReactionsListenerTask = Task { [weak self] in
+            for await action in inserts {
+                guard let self = self else { return }
+                await self.handleIncomingReactionInsert(action.record)
+            }
+        }
+
+        await channel.subscribe()
+        incomingReactionsChannel = channel
+
+        logRealtimeEvent(
+            type: "SUBSCRIBED",
+            source: "incoming_reactions",
+            details: "✅ Listening for INSERT on challenge_reactions where recipient_id=\(userId.uuidString.prefix(8))"
+        )
+    }
+
+    private func handleIncomingReactionInsert(_ record: [String: AnyJSON]?) async {
+        guard let record = record else { return }
+
+        guard let reactionIdString = jsonString(record["id"]),
+              let reactionId = UUID(uuidString: reactionIdString),
+              let senderIdString = jsonString(record["sender_id"]),
+              let senderId = UUID(uuidString: senderIdString),
+              let recipientIdString = jsonString(record["recipient_id"]),
+              let recipientId = UUID(uuidString: recipientIdString),
+              let challengeIdString = jsonString(record["challenge_id"]),
+              let challengeId = UUID(uuidString: challengeIdString) else {
+            AppLogger.warning("[INCOMING_REACTIONS] Malformed reaction insert; dropping event", category: .network)
+            return
+        }
+
+        // Defensive — skip our own sends. The server-side `recipient_id`
+        // filter SHOULD make this a no-op (we never set ourselves as
+        // the recipient), but a future RPC change that fans out to
+        // multi-recipient groups could violate that. Belt-and-suspenders.
+        if senderId == SupabaseManager.shared.currentUser?.id { return }
+
+        let reactionKey = jsonString(record["reaction_key"]) ?? ""
+        let reactionEmoji = jsonString(record["reaction_emoji"]) ?? "💬"
+        let reactionText = jsonString(record["reaction_text"]) ?? ""
+        let reactionCategory = jsonString(record["reaction_category"]) ?? "trash_talk"
+
+        let createdAt: Date = {
+            if let raw = jsonString(record["created_at"]) {
+                let iso = ISO8601DateFormatter()
+                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let parsed = iso.date(from: raw) { return parsed }
+                iso.formatOptions = [.withInternetDateTime]
+                if let parsed = iso.date(from: raw) { return parsed }
+            }
+            return Date()
+        }()
+
+        let reaction = ChallengeReaction(
+            reactionId: reactionId,
+            challengeId: challengeId,
+            senderId: senderId,
+            senderName: nil,
+            senderPhotoUrl: nil,
+            recipientId: recipientId,
+            reactionKey: reactionKey,
+            reactionEmoji: reactionEmoji,
+            reactionText: reactionText,
+            reactionCategory: reactionCategory,
+            createdAt: createdAt
+        )
+
+        logRealtimeEvent(
+            type: "🔥 INCOMING_REACTION",
+            source: "incoming_reactions",
+            details: "📣 \(reactionEmoji) \(reactionText) for challenge \(challengeIdString.prefix(8))"
+        )
+
+        // Single-slot publisher — newest wins. Dashboard widget cards
+        // observe this and decide whether to animate based on their
+        // own `challengeId`. We don't queue because the bubble itself
+        // is single-slot per card; if two reactions land within 6s
+        // the second one replaces the first (last-writer-wins) which
+        // matches what the user expects from a comic-bubble surface.
+        latestIncomingReaction = reaction
+        HapticManager.notification(.warning)
     }
 }
 

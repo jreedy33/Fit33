@@ -656,6 +656,183 @@ struct BattleCryPickerSheet: View {
     }
 }
 
+// MARK: - Dashboard Shout Bubble (cross-widget)
+
+/// Comic-style speech bubble that floats out of an active challenge
+/// widget on the dashboard when the OPPONENT sends a battle cry /
+/// power-up cheer. Single-slot per challenge: the host renders this
+/// inside an `.overlay(alignment: .top)` and passes the
+/// `challengeId` of the card it's pinned to.
+///
+/// Wire-up:
+///   1. Host calls `BattleCryShoutBubble(challengeId: challenge.challengeId)`
+///      from inside `.overlay(alignment: .top)`
+///   2. Internally the view observes
+///      `RealtimeService.shared.$latestIncomingReaction`. When that
+///      stream emits a reaction whose `challengeId` matches, the
+///      bubble springs in, plays a 700ms confetti burst, and
+///      auto-dismisses after 6 seconds (last-writer-wins if a new
+///      reaction lands during the dismissal window).
+///   3. The bubble is purely passive — tapping it just dismisses it
+///      early. It does NOT navigate; users can drill into the
+///      challenge via the card body itself.
+///
+/// Why a separate stream from `onChallengeReactionReceived`:
+///   - `onChallengeReactionReceived` is set by a single OWNED
+///     subscriber (the visible challenge-detail view) per the
+///     PE invariant 9 contract. Multiple dashboard cards rendered
+///     simultaneously can't share that single callback slot.
+///   - `RealtimeService.latestIncomingReaction` is `@Published` so
+///     SwiftUI distributes the value to every observing card; each
+///     card filters by its own `challengeId`. This is the canonical
+///     "broadcast to many widgets" pattern.
+struct BattleCryShoutBubble: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var realtimeService = RealtimeService.shared
+
+    /// The challenge this bubble is pinned to. Reactions for ANY other
+    /// challenge are ignored — even if the user has 5 active 1v1s the
+    /// shout only paints on the matching card.
+    let challengeId: UUID
+
+    @State private var displayedReaction: ChallengeReaction?
+    @State private var dismissTask: Task<Void, Never>?
+    @State private var confettiBurstId: Int = 0
+
+    /// Auto-dismiss window. Long enough to read a 4-word smack
+    /// "Catch me if you can!" without rushing; short enough to not
+    /// crowd the dashboard if the user is mid-scroll.
+    private static let visibleDuration: TimeInterval = 6
+
+    private var isCompetition: Bool {
+        displayedReaction?.reactionCategory == "trash_talk"
+    }
+
+    private var bubbleGradient: [Color] {
+        isCompetition ? [.orange, .red] : [.blue, .cyan]
+    }
+
+    private var bubbleTextColor: Color { .white }
+
+    var body: some View {
+        ZStack {
+            if let reaction = displayedReaction {
+                bubbleContent(reaction)
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.6, anchor: .bottom)
+                                .combined(with: .opacity)
+                                .combined(with: .move(edge: .bottom)),
+                            removal: .opacity.combined(with: .scale(scale: 0.9))
+                        )
+                    )
+                    .id(reaction.reactionId)
+            }
+        }
+        .allowsHitTesting(displayedReaction != nil)
+        .onReceive(realtimeService.$latestIncomingReaction.compactMap { $0 }) { reaction in
+            guard reaction.challengeId == challengeId else { return }
+            present(reaction)
+        }
+    }
+
+    private func bubbleContent(_ reaction: ChallengeReaction) -> some View {
+        Button {
+            HapticManager.impact(.light)
+            dismissNow()
+        } label: {
+            HStack(spacing: Spacing.xs) {
+                Text(reaction.reactionEmoji)
+                    .font(.ds_heading3)
+                Text(reaction.reactionText)
+                    .font(.ds_caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(bubbleTextColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .background(
+                ZStack {
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: bubbleGradient,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Capsule()
+                        .stroke(Color.white.opacity(0.4), lineWidth: 1.5)
+                }
+            )
+            .shadow(color: bubbleGradient.first?.opacity(0.45) ?? .clear, radius: 12, x: 0, y: 4)
+            .overlay(alignment: .bottom) {
+                // Comic-bubble tail pointing down at the card.
+                Triangle()
+                    .fill(
+                        LinearGradient(
+                            colors: bubbleGradient,
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 14, height: 8)
+                    .offset(y: 7)
+            }
+            .overlay(
+                BattleCryConfetti(burstId: confettiBurstId, gradient: bubbleGradient)
+                    .opacity(reduceMotion ? 0 : 1)
+                    .allowsHitTesting(false)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Battle cry: \(reaction.reactionText)")
+        .accessibilityHint("Tap to dismiss")
+    }
+
+    private func present(_ reaction: ChallengeReaction) {
+        // Cancel any in-flight dismissal so a fresh reaction extends
+        // the visible window from "now" rather than the previous one.
+        dismissTask?.cancel()
+
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.62)) {
+            displayedReaction = reaction
+        }
+        confettiBurstId &+= 1
+
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.visibleDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.35)) {
+                displayedReaction = nil
+            }
+        }
+        dismissTask = task
+    }
+
+    private func dismissNow() {
+        dismissTask?.cancel()
+        withAnimation(.easeOut(duration: 0.25)) {
+            displayedReaction = nil
+        }
+    }
+}
+
+/// Tiny equilateral-triangle shape for the comic-bubble tail.
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+}
+
 // MARK: - Confetti Burst
 
 /// Lightweight one-shot confetti. ≤16 particles, no third-party libs,

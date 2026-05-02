@@ -109,6 +109,14 @@ struct ReactionPresets {
 
 struct ChallengeReaction: Codable, Identifiable {
     let reactionId: UUID
+    /// `challenge_reactions.challenge_id` — added 2026-05-02 alongside
+    /// the dashboard `BattleCryShoutBubble` work. Required so the
+    /// `RealtimeService.latestIncomingReaction` stream can be filtered
+    /// per dashboard widget card to "is this reaction for the
+    /// challenge I'm rendering?". Optional because the historical RPC
+    /// view (`get_reactions_for_challenge`) doesn't return the column
+    /// in its joined SELECT — back-compat-safe.
+    let challengeId: UUID?
     let senderId: UUID
     let senderName: String?
     let senderPhotoUrl: String?
@@ -118,19 +126,19 @@ struct ChallengeReaction: Codable, Identifiable {
     let reactionText: String
     let reactionCategory: String
     let createdAt: Date
-    
+
     var id: UUID { reactionId }
-    
+
     /// Whether I sent this reaction
     var isMine: Bool {
         senderId == SupabaseManager.shared.currentUser?.id
     }
-    
+
     /// Sender first name
     var senderFirstName: String {
         senderName?.components(separatedBy: " ").first ?? "Someone"
     }
-    
+
     /// Time ago string
     var timeAgo: String {
         let seconds = Int(Date().timeIntervalSince(createdAt))
@@ -139,9 +147,10 @@ struct ChallengeReaction: Codable, Identifiable {
         if seconds < 86400 { return "\(seconds / 3600)h ago" }
         return "\(seconds / 86400)d ago"
     }
-    
+
     enum CodingKeys: String, CodingKey {
         case reactionId = "reaction_id"
+        case challengeId = "challenge_id"
         case senderId = "sender_id"
         case senderName = "sender_name"
         case senderPhotoUrl = "sender_photo_url"

@@ -156,17 +156,16 @@ struct ActivityTypeCard: View {
     let isSelected: Bool
     let onSelect: () -> Void
 
-    // Sprint 20260811 — observe Strava so the "Powered by Strava" pill on
-    // the Run tile updates live when the user toggles Strava in Settings.
-    @ObservedObject private var strava = StravaService.shared
-
-    /// True only for the Run tile when Strava is connected. Strava
-    /// auto-syncs runs into the challenge progress pipeline; users without
-    /// Strava still get HealthKit-sourced runs, so the pill is purely
-    /// informational ("we'll grab this from Strava the moment you finish").
-    private var showStravaPill: Bool {
-        activity == .run && strava.isConnected
-    }
+    // 2026-05-02 (per user request): the per-Run "Powered by Strava"
+    // attribution chip was REMOVED from this tile. Run challenges
+    // accept HealthKit / Apple Watch / native Fit33 runs in addition
+    // to Strava — gating the brand mark on `strava.isConnected` was
+    // misleading because the activity tile speaks to ANY run source.
+    // The Strava attribution still lives on the GENUINELY Strava-only
+    // surfaces (challenge templates with `template.requiresStrava ==
+    // true` in `ChallengeSetupView`, the cardio recap sheet, the
+    // Strava settings page, the cardio landing lockup, and the home-
+    // tab Strava widget). Don't reintroduce it here.
 
     var body: some View {
         Button(action: onSelect) {
@@ -178,24 +177,9 @@ struct ActivityTypeCard: View {
                     .font(.subheadline)
                     .fontWeight(isSelected ? .bold : .semibold)
                     .foregroundColor(.white)
-
-                if showStravaPill {
-                    // 2026-05-02 Strava brand-guideline fix: the previous
-                    // free-text "Powered by Strava" pill violated Brand
-                    // Guidelines §1 (do not freestyle the brand mark —
-                    // use the official asset). Swapped for the canonical
-                    // `Image("PoweredByStrava")` lockup at the 20pt
-                    // brand-guideline minimum height.
-                    Image("PoweredByStrava")
-                        .resizable()
-                        .renderingMode(.original)
-                        .scaledToFit()
-                        .frame(height: 20)
-                        .accessibilityLabel("Powered by Strava")
-                }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: showStravaPill ? 115 : 95)
+            .frame(height: 95)
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - colored glow for selected

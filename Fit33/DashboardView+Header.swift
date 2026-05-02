@@ -296,14 +296,15 @@ extension DashboardView {
         return !UserDefaults.standard.bool(forKey: "has_been_welcomed_\(userId.uuidString)")
     }
     
-    // Welcome message based on first visit. First load reads
-    // "Welcome to the club" — friendlier + community-shaped framing
-    // than "Welcome to Fit33" for someone who just signed up
-    // (2026-05-02 copy revision). Subsequent loads flip to
-    // "Welcome back" via the `has_been_welcomed_<userId>`
-    // UserDefaults flag set by `DashboardView.onAppear`.
+    // Welcome message based on first visit. Banner copy is the
+    // formal app-name greeting on Day 0 ("Welcome to Fit33,") so
+    // it pairs with the warmer "Welcome to the club." card
+    // headline below — banner = identity, card = community.
+    // Subsequent loads flip to "Welcome back" via the
+    // `has_been_welcomed_<userId>` UserDefaults flag set by
+    // `DashboardView.onAppear` (2s delay after first paint).
     func getWelcomeMessage() -> String {
-        checkIsFirstVisit() ? "Welcome to the club," : "Welcome back,"
+        checkIsFirstVisit() ? "Welcome to Fit33," : "Welcome back,"
     }
     
     // 2026-05-01 — Welcome card redesign (lead-designer spec).

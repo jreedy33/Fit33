@@ -551,7 +551,21 @@ final class DailyBriefEngine {
         let createdAt = UserManager.shared.currentUser?.createdAt ?? Date()
         let daysSinceJoin = max(0, Int(Date().timeIntervalSince(createdAt) / 86_400))
 
-        let (headline, body) = welcomeCopy(goal: goal, daysSinceJoin: daysSinceJoin)
+        // First-name extraction follows the same pattern as
+        // `DashboardView+Header.swift:288–289` so a user named "Kayli
+        // Smith" → "Kayli". Empty/whitespace falls through to a clean
+        // no-name greeting ("Welcome to the club.") rather than the
+        // generic "there" used in greeting headers — sounds wrong in
+        // a "Welcome to the club," construction.
+        let firstName: String? = {
+            let raw = UserManager.shared.currentUser?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !raw.isEmpty else { return nil }
+            let first = raw.components(separatedBy: " ").first ?? raw
+            let trimmed = first.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }()
+
+        let (headline, body) = welcomeCopy(goal: goal, daysSinceJoin: daysSinceJoin, firstName: firstName)
         let cta: BriefCTA = .startAutoWorkout(splitHint: nil, etaMin: 25)
         let trace: [String] = [
             "capacity:unknown:none",
@@ -592,23 +606,40 @@ final class DailyBriefEngine {
     /// (Day 0 / Day 1–2 / Day 3+) keep the dashboard from reading
     /// static if the user takes a few days to start; goal pivots
     /// match `GoalFamily(rawGoal:)` from onboarding.
+    ///
+    /// Day 0 headline is the warm "Welcome to the club, <FirstName>."
+    /// greeting — uniform across goals so the moment feels personal,
+    /// not segmented. Goal still drives the body so build-muscle vs
+    /// lose-fat vs endurance get tailored next-step copy. When we
+    /// can't resolve a first name (cold-start before profile sync,
+    /// guest-mode, OAuth metadata empty) we drop the comma + name
+    /// and fall back to "Welcome to the club." — never "Welcome to
+    /// the club, there." (would read as a literal bug).
     private func welcomeCopy(
         goal: GoalFamily,
-        daysSinceJoin: Int
+        daysSinceJoin: Int,
+        firstName: String?
     ) -> (headline: String, body: String) {
+        let day0Headline: String = {
+            if let name = firstName, !name.isEmpty {
+                return "Welcome to the club, \(name)."
+            }
+            return "Welcome to the club."
+        }()
+
         switch (daysSinceJoin, goal) {
         // ── Day 0: hero welcome ─────────────────────────────────
         case (0, .buildMuscle):
-            return ("Welcome to Fit33. Let's build.",
+            return (day0Headline,
                     "Your first session sets the tone — tap for a 25-min auto workout to bank +30 XP.")
         case (0, .loseFat):
-            return ("Welcome to Fit33. Day 1 starts now.",
+            return (day0Headline,
                     "Tap to start a 25-min auto session — burn the deficit, earn +30 XP.")
         case (0, .endurance):
-            return ("Welcome to Fit33. Engine on.",
+            return (day0Headline,
                     "Tap to start your first 25-min full-body session and lock day 1.")
         case (0, .generalFitness):
-            return ("Welcome to Fit33.",
+            return (day0Headline,
                     "Tap to start your first 25-min auto session and lock day 1 of your streak.")
 
         // ── Day 1–2: first-session-is-the-hardest nudge ─────────

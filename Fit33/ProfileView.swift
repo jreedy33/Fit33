@@ -71,6 +71,13 @@ struct ProfileView: View {
     @State private var showWorkoutHistory = false
     @State private var showFriendsList = false
     @State private var showReceivedWorkouts = false
+
+    /// Cardio Redesign Phase 1 — Wave 6b. Cardio streak (separate from
+    /// strength streak) — fetched lazily on appear via
+    /// `SupabaseManager.fetchCardioStreak()`. Surfaces as a compact
+    /// flame badge under the stats row when > 0; hidden otherwise.
+    @State private var cardioStreakDays: Int = 0
+    @State private var cardioStreakLoaded: Bool = false
     
     // Profile photo
     @State private var profilePhotoURL: String? = nil
@@ -991,6 +998,13 @@ struct ProfileView: View {
             
             // Instagram-style Stats Row
             profileStatsRow
+
+            // Cardio Redesign Phase 1 — Wave 6b. Cardio streak badge.
+            // Distinct from the workout streak (which lives implicitly
+            // in `currentUser.currentStreak`). This is a CARDIO-only
+            // streak — any cardio day (native, Strava, HK, Watch)
+            // counts. Self-hides when streak == 0 OR not loaded yet.
+            profileCardioStreakBadge
         }
         .confirmationDialog("Profile Photo", isPresented: $showingPhotoOptions) {
             Button("Take Photo") {
@@ -1168,7 +1182,57 @@ struct ProfileView: View {
         .padding(.horizontal, Spacing.lg)
         .padding(.top, 12)
     }
-    
+
+    // MARK: - Cardio Streak Badge (Wave 6b)
+    @ViewBuilder
+    private var profileCardioStreakBadge: some View {
+        if cardioStreakLoaded, cardioStreakDays > 0 {
+            HStack(spacing: 8) {
+                Image(systemName: "flame.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(LinearGradient(
+                        colors: [.orange, .red],
+                        startPoint: .top, endPoint: .bottom
+                    ))
+                    .shadow(color: .orange.opacity(0.4), radius: 3)
+                Text("\(cardioStreakDays)-day cardio streak")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Capsule().stroke(Color.orange.opacity(0.30), lineWidth: 1)
+                    )
+            )
+            .padding(.top, 8)
+            .task { await loadCardioStreakIfNeeded() }
+            .transition(.opacity.combined(with: .scale(scale: 0.92)))
+        } else {
+            // Lazy-load even when not yet ready to render — a single
+            // empty placeholder keeps the load wired without rendering
+            // a frame of placeholder UI.
+            Color.clear
+                .frame(height: 0)
+                .task { await loadCardioStreakIfNeeded() }
+        }
+    }
+
+    /// Idempotent — only round-trips once per ProfileView lifetime.
+    /// Errors are swallowed silently (badge stays hidden).
+    @MainActor
+    private func loadCardioStreakIfNeeded() async {
+        guard !cardioStreakLoaded else { return }
+        if let streak = await SupabaseManager.shared.fetchCardioStreak() {
+            cardioStreakDays = streak.currentStreak
+        }
+        cardioStreakLoaded = true
+    }
+
     private var defaultAvatarContent: some View {
         ZStack {
             Circle()

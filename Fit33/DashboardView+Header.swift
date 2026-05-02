@@ -36,7 +36,19 @@ extension DashboardView {
     var pinnedWelcomeRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
             HStack(spacing: 4) {
-                Text("WELCOME BACK, \(getFirstName().uppercased())")
+                // 2026-05-02 — Phase 8 (New User Onboarding Brief).
+                // First-visit banner reads "WELCOME TO FIT33, NAME"
+                // so a brand-new user's very first dashboard load
+                // doesn't say "Welcome BACK" (false-by-construction —
+                // they've never been here before). UserDefaults flag
+                // `has_been_welcomed_<userId>` is set with a 2s delay
+                // by `DashboardView.onAppear` (see comment at the
+                // flag write site), so the next dashboard mount
+                // flips to "WELCOME BACK". Helper + flag wiring
+                // already existed; this just routes the rendered
+                // Text through `getWelcomeMessage()` instead of the
+                // hardcoded "WELCOME BACK, ".
+                Text("\(getWelcomeMessage().replacingOccurrences(of: ",", with: "").uppercased()), \(getFirstName().uppercased())")
                     .font(.ds_labelLarge)
                     .tracking(1.4)
                     .foregroundColor(.secondary)

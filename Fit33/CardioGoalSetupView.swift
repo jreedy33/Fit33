@@ -543,67 +543,114 @@ struct CardioGoalSetupView: View {
     }
 
     // MARK: - GO Button
+    // Cardio Redesign Phase 1 — Wave 4d (polish, 2026-05-02).
+    //
+    // Sticky bottom CTA with a subtle scrim above the button so it
+    // reads as anchored to the bottom of the sheet rather than
+    // floating over the scrolling content. The button itself uses
+    // `UniversalScaleButtonStyle` for tactile feedback consistent
+    // with the rest of the cardio surface (CardioLanding hero tiles,
+    // preset chips, intro CTAs).
     private var goButton: some View {
-        Button(action: {
-            HapticManager.impact(.heavy)
-            if usesNativeOutdoorEngine {
-                routeToNativeSession()
-            } else {
-                startWorkout = true
-            }
-        }) {
-            HStack {
-                Image(systemName: "play.fill")
-                    .font(.ds_heading2)
-                
-                Text("GO")
-                    .font(.title2)
-                    .fontWeight(.bold)
-            }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 18)
-            .background(
-                LinearGradient(
-                    colors: [activityType.color, activityType.color.opacity(0.8)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
+        VStack(spacing: 0) {
+            // Scrim — fades the scrolling content under the sticky
+            // button so text doesn't crash into the GO label.
+            LinearGradient(
+                colors: [Color.clear, (colorScheme == .dark ? Color.black : Color.white).opacity(0.85)],
+                startPoint: .top,
+                endPoint: .bottom
             )
-            .cornerRadius(CornerRadius.lg)
-            .shadow(color: activityType.color.opacity(0.4), radius: 12, y: 6)
+            .frame(height: 28)
+            .allowsHitTesting(false)
+
+            Button(action: {
+                HapticManager.impact(.heavy)
+                if usesNativeOutdoorEngine {
+                    routeToNativeSession()
+                } else {
+                    startWorkout = true
+                }
+            }) {
+                HStack(spacing: 10) {
+                    Image(systemName: "play.fill")
+                        .font(.ds_heading2)
+
+                    Text("GO")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+                .background(
+                    LinearGradient(
+                        colors: [activityType.color, activityType.color.opacity(0.8)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .cornerRadius(CornerRadius.lg)
+                .shadow(color: activityType.color.opacity(0.4), radius: 12, y: 6)
+            }
+            .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 40)
+            .background(
+                (colorScheme == .dark ? Color.black : Color.white)
+                    .opacity(0.85)
+                    .ignoresSafeArea(edges: .bottom)
+            )
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 40)
     }
 }
 
 // MARK: - Goal Type Button
+//
+// Cardio Redesign Phase 1 — Wave 4d (polish 2026-05-02). Replaces the
+// flat `Color(.systemGray5)` unselected fill with `.ultraThinMaterial`
+// + per-color stroke, matching the landing page's `CardioPresetChip`
+// aesthetic. The selected state preserves the activity-accent color
+// fill for clear "this is the chosen goal" feedback.
 struct GoalTypeButton: View {
     let goalType: CardioGoalType
     let isSelected: Bool
     let color: Color
     let onTap: () -> Void
-    
+
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 6) {
                 Image(systemName: goalType.icon)
                     .font(.ds_heading3)
-                
+
                 Text(goalType.rawValue)
                     .font(.caption2)
-                    .fontWeight(.medium)
+                    .fontWeight(.semibold)
             }
             .foregroundColor(isSelected ? .white : .primary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md)
-                    .fill(isSelected ? color : Color(.systemGray5))
+                ZStack {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
+                            .fill(LinearGradient(
+                                colors: [color, color.opacity(0.85)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
+                    } else {
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: CornerRadius.md)
+                                    .stroke(color.opacity(0.30), lineWidth: 1)
+                            )
+                    }
+                }
             )
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
     }
 }
 

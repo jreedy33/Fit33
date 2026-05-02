@@ -53,15 +53,31 @@ COMMENT ON COLUMN public.cardio_workouts.gps_avg_accuracy_m IS
 COMMENT ON COLUMN public.cardio_workouts.weather_json IS
     'Weather snapshot at start time. Keys: temp_c (Float), condition (String), wind_kph (Float), humidity_pct (Int). Optional — only populated when WeatherKit is opted in.';
 
--- 2. Widen goal_type CHECK to include 'pace' ----------------------------------
--- Drop the existing CHECK defensively (name varies across deploys) and re-add
--- with the widened set. Use a safe DO block so this migration succeeds whether
--- or not the prior CHECK existed.
+-- 2. Normalize legacy goal_type values + widen CHECK to include 'pace' --------
+-- Pre-redesign data has these variants in the wild (verified during the
+-- 2026-05-02 #184 deploy attempt against prod):
+--
+--   * `'open_goal'` (HealthDataService, FitbitService, StravaService) — the
+--     CURRENT canonical for HK / Strava / Fitbit imports.
+--   * `'Open Goal'`, `'Time'`, `'Distance'`, `'Calories'` (legacy
+--     `CardioGoalType.rawValue` title-case strings from older Fit33 builds
+--     before the redesign).
+--   * `'open'`, `'time'`, `'distance'`, `'calories'`, `'pace'` — the new
+--     canonical lowercase set written by `CardioRecapView` via
+--     `RunGoalType.rawKey`.
+--
+-- We normalize all variants to the lowercase canonical set BEFORE attaching
+-- the CHECK so existing rows pass the constraint. iOS writers that still
+-- emit `'open_goal'` (HealthDataService / FitbitService / StravaService) are
+-- updated in the same PR to write `'open'` going forward — re-running this
+-- normalization is therefore a no-op in steady state.
+--
+-- Drop the existing CHECK defensively (name varies across deploys) and
+-- re-add with the canonical set.
 DO $$
 DECLARE
     v_constraint_name TEXT;
 BEGIN
-    -- Find any existing check constraint on goal_type
     SELECT con.conname
     INTO v_constraint_name
     FROM pg_constraint con
@@ -78,6 +94,60 @@ BEGIN
             'ALTER TABLE public.cardio_workouts DROP CONSTRAINT IF EXISTS %I',
             v_constraint_name
         );
+    END IF;
+END $$;
+
+-- Normalize legacy values BEFORE attaching the new CHECK (no rows can fail
+-- the constraint if everything's been canonicalized first).
+UPDATE public.cardio_workouts
+SET goal_type = 'open'
+WHERE goal_type IN ('open_goal', 'Open Goal', 'OpenGoal');
+
+UPDATE public.cardio_workouts
+SET goal_type = 'time'
+WHERE goal_type IN ('Time', 'TIME');
+
+UPDATE public.cardio_workouts
+SET goal_type = 'distance'
+WHERE goal_type IN ('Distance', 'DISTANCE');
+
+UPDATE public.cardio_workouts
+SET goal_type = 'calories'
+WHERE goal_type IN ('Calories', 'CALORIES');
+
+UPDATE public.cardio_workouts
+SET goal_type = 'pace'
+WHERE goal_type IN ('Pace', 'PACE');
+
+-- Sweep any remaining unrecognized values to NULL — preserves the row
+-- (better than rejecting the migration) and lets the CHECK pass since it
+-- explicitly allows NULL. If you see any of these in your DB after deploy,
+-- they were authored by a code path that wrote a typo'd value pre-redesign;
+-- the row's still queryable, the goal type just renders as "—" in the UI.
+UPDATE public.cardio_workouts
+SET goal_type = NULL
+WHERE goal_type IS NOT NULL
+  AND goal_type NOT IN ('open', 'time', 'distance', 'calories', 'pace');
+
+-- Audit log: emit the count of normalized rows so the deploy operator sees
+-- a clear paper-trail in the SQL Editor output. Pre-deploy zero, post-deploy
+-- the count of rows touched on the very first run; subsequent re-runs = 0.
+DO $$
+DECLARE
+    v_total_rows INT;
+    v_remaining_legacy INT;
+BEGIN
+    SELECT COUNT(*) INTO v_total_rows FROM public.cardio_workouts;
+    SELECT COUNT(*) INTO v_remaining_legacy
+    FROM public.cardio_workouts
+    WHERE goal_type IS NOT NULL
+      AND goal_type NOT IN ('open', 'time', 'distance', 'calories', 'pace');
+
+    RAISE NOTICE '[#184] cardio_workouts total: % rows, remaining legacy goal_type: %',
+        v_total_rows, v_remaining_legacy;
+
+    IF v_remaining_legacy > 0 THEN
+        RAISE EXCEPTION '[#184] FAILED: % rows still have legacy goal_type after normalization sweep', v_remaining_legacy;
     END IF;
 END $$;
 

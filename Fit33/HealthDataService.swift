@@ -436,7 +436,9 @@ final class HealthDataService: ObservableObject {
                 userId: userId.uuidString,
                 activityType: activityType,
                 workoutName: workout.sportName ?? "WHOOP Workout",
-                goalType: "open_goal",
+                // Canonical lowercase per migration #184. External
+                // imports always log `'open'` (no local goal target).
+                goalType: "open",
                 goalAchieved: true,
                 durationSeconds: durationSeconds,
                 distanceMeters: workout.score?.distanceMeter ?? 0,
@@ -826,7 +828,8 @@ final class HealthDataService: ObservableObject {
                 userId: userId.uuidString,
                 activityType: mapOuraActivityToType(workout.activity),
                 workoutName: workout.label ?? workout.activity ?? "Oura Workout",
-                goalType: "open_goal",
+                // Canonical lowercase per migration #184.
+                goalType: "open",
                 goalAchieved: true,
                 durationSeconds: durationSeconds,
                 distanceMeters: workout.distance ?? 0,
@@ -1111,7 +1114,9 @@ final class HealthDataService: ObservableObject {
             userId: userId.uuidString,
             activityType: workoutType,
             workoutName: "\(displayName) \(workoutType)",
-            goalType: "open_goal",
+            // Canonical lowercase per migration #184. HK imports never
+            // had a local goal target.
+            goalType: "open",
             goalAchieved: true,
             durationSeconds: Int(workout.duration),
             distanceMeters: workout.distance ?? 0,

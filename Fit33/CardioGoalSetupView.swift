@@ -6,7 +6,7 @@ enum CardioGoalType: String, CaseIterable {
     case time = "Time"
     case distance = "Distance"
     case calories = "Calories"
-    
+
     var icon: String {
         switch self {
         case .openGoal: return "infinity"
@@ -15,13 +15,30 @@ enum CardioGoalType: String, CaseIterable {
         case .calories: return "flame.fill"
         }
     }
-    
+
     var description: String {
         switch self {
         case .openGoal: return "No specific target"
         case .time: return "Set a duration"
         case .distance: return "Set a distance"
         case .calories: return "Set a calorie burn"
+        }
+    }
+
+    /// Canonical Supabase key — must match the
+    /// `cardio_workouts_goal_type_check` CHECK constraint
+    /// (migration #184). NEVER write `rawValue.lowercased()` for the
+    /// `goal_type` column — `.openGoal.rawValue.lowercased()` produces
+    /// `'open_goal'` which fails the CHECK. Use this property
+    /// everywhere the value is written to Supabase. The legacy
+    /// `rawValue` is reserved for UI display strings ("Open Goal",
+    /// "Time", "Distance", "Calories").
+    var canonicalKey: String {
+        switch self {
+        case .openGoal: return "open"
+        case .time:     return "time"
+        case .distance: return "distance"
+        case .calories: return "calories"
         }
     }
 }

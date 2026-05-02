@@ -594,7 +594,11 @@ final class FitbitService: ObservableObject {
                 userId: appUserId.uuidString,
                 activityType: activityType,
                 workoutName: activity.activityName,
-                goalType: "open_goal",
+                // Canonical lowercase per migration #184 (`cardio_workouts_goal_type_check`).
+                // External imports (Fitbit / WHOOP / Oura / HK / Strava) all
+                // log `'open'` because the workout was already completed
+                // externally — we never had a goal target locally.
+                goalType: "open",
                 goalAchieved: true,
                 durationSeconds: activity.activeDuration / 1000, // Convert from ms
                 distanceMeters: activity.distance ?? 0,

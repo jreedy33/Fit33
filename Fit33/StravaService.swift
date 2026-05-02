@@ -782,7 +782,9 @@ final class StravaService: ObservableObject {
                 userId: userId.uuidString,
                 activityType: activityType,
                 workoutName: activity.name,
-                goalType: "open_goal",
+                // Canonical lowercase per migration #184. Strava
+                // activities are completed externally — no local goal.
+                goalType: "open",
                 goalAchieved: true, // Already completed
                 durationSeconds: activity.movingTime,
                 distanceMeters: activity.distance,

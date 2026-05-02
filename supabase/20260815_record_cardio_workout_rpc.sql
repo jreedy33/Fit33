@@ -317,8 +317,15 @@ COMMENT ON FUNCTION public.record_cardio_workout(JSONB) IS
 
 -- League points source registration ------------------------------------------
 -- Register 'cardio_bonus' in the source caps policy table if it exists. The
--- Sprint 3 release introduced league_point_source_caps; if the table doesn't
--- exist yet (older deploy), this is a silent no-op.
+-- Sprint 3 release introduced league_point_source_caps (#148, schema:
+--   source TEXT PK, daily_cap INTEGER NULL, weekly_cap INTEGER NULL,
+--   is_lifetime BOOLEAN NOT NULL DEFAULT FALSE, notes TEXT NULL).
+-- If the table doesn't exist yet (older deploy), this is a silent no-op.
+--
+-- NOTE on column names — early drafts of this migration used `lifetime_cap`
+-- and `description` which don't exist on the real table; the canonical
+-- columns from #148 are `is_lifetime` (boolean) and `notes` (text). Keep
+-- the schema in sync if you ever add a new source row.
 DO $$
 BEGIN
     IF EXISTS (
@@ -326,17 +333,17 @@ BEGIN
         WHERE table_schema = 'public' AND table_name = 'league_point_source_caps'
     ) THEN
         INSERT INTO public.league_point_source_caps (
-            source, daily_cap, weekly_cap, lifetime_cap,
-            description
+            source, daily_cap, weekly_cap, is_lifetime, notes
         )
         VALUES (
-            'cardio_bonus', 50, 200, NULL,
+            'cardio_bonus', 50, 200, FALSE,
             'Cardio Redesign Phase 1: graduated bonus on native cardio rows. base_per_km × km × intensity_multiplier; daily cap 50, weekly cap 200.'
         )
         ON CONFLICT (source) DO UPDATE SET
             daily_cap   = EXCLUDED.daily_cap,
             weekly_cap  = EXCLUDED.weekly_cap,
-            description = EXCLUDED.description;
+            is_lifetime = EXCLUDED.is_lifetime,
+            notes       = EXCLUDED.notes;
     END IF;
 END $$;
 

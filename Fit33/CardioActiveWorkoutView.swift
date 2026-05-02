@@ -985,7 +985,10 @@ struct CardioCompletionView: View {
         // Create workout data
         let workoutData = CardioWorkoutData(
             activityType: activityType.rawValue.lowercased().replacingOccurrences(of: " ", with: "_"),
-            goalType: goalType.rawValue.lowercased().replacingOccurrences(of: " ", with: "_"),
+            // Canonical key per migration #184. `rawValue.lowercased()`
+            // produced `'open_goal'` which fails the CHECK constraint;
+            // `canonicalKey` returns `'open'` for `.openGoal`.
+            goalType: goalType.canonicalKey,
             goalValue: goalValue,
             goalAchieved: goalAchieved,
             durationSeconds: Int(duration),

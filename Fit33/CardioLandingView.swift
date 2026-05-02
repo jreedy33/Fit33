@@ -33,16 +33,23 @@ enum CardioActivityType: String, CaseIterable, Identifiable {
     
     var color: Color {
         switch self {
-        case .outdoorRun: return .green
+        // 2026-05-02 (per-user request): Outdoor Run is now BLUE,
+        // Walk is now TEAL (was green / mint). The pair was chosen
+        // so the two GPS-native activities sit at the cool end of
+        // the spectrum, leaving warm tones (orange / yellow / red /
+        // pink) for indoor / HIIT / niche activities. Cycling pulls
+        // toward the run-blue family (cyan) so the related-activity
+        // grouping reads at a glance.
+        case .outdoorRun: return .blue
         case .treadmill: return .orange
-        case .walk: return .mint
+        case .walk: return .teal
         case .indoorCycle: return .yellow
         case .outdoorCycle: return .cyan
-        case .rowing: return .blue
+        case .rowing: return Color(red: 0.20, green: 0.45, blue: 0.85)
         case .elliptical: return .purple
         case .stairClimber: return .red
         case .hiit: return .pink
-        case .swimming: return .teal
+        case .swimming: return .mint
         }
     }
     
@@ -141,16 +148,13 @@ struct CardioLandingView: View {
     /// is currently pushed". Setting this to `nil` pops back to the
     /// landing surface.
     @State private var pushedDestination: CardioLandingDestination?
-    /// Cardio Redesign Phase 1 — Wave 6b. Loaded on appear from
-    /// `SupabaseManager.fetchCardioStreak()`. Banner is hidden when
-    /// streak is 0 OR the streak load is still in flight.
-    @State private var cardioStreakDays: Int = 0
-    @State private var cardioStreakLoaded: Bool = false
-    /// Cardio Redesign Phase 1 — Wave 3c. Computed from local Core Data
-    /// + cardio streak data — `true` when the user has zero workouts
-    /// (strength OR cardio) logged today, surfacing the "Just one block"
-    /// 5-min walk one-tap entry as the off-day cure.
-    @State private var hasNoCardioToday: Bool = false
+    // 2026-05-02 (per-user request): the "1-day cardio streak" banner
+    // and "Just one block" off-day-cure tile were removed from this
+    // surface. The `loadCardioStreak()` helper + its `cardioStreakDays`
+    // / `cardioStreakLoaded` / `hasNoCardioToday` state vars were the
+    // only consumers, so they were stripped too. Streak is still
+    // surfaced on the profile (`ProfileView` keeps its own copy of the
+    // same fetch).
     /// Cardio Redesign Phase 1 — Wave 3b. First-open mini-onboarding
     /// (units / experience / Strava ask / default goal). Driven by
     /// `cardio_intro_seen_v1` UserDefaults flag — sheet flips on once
@@ -176,16 +180,30 @@ struct CardioLandingView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 24) {
                     // ── TOP HALF — native walk + run hero tiles + presets ──
+                    // 2026-05-02 (per-user request): the
+                    // `cardioStreakBanner` ("1-day cardio streak") and
+                    // `justOneBlockTile` ("Just one block · 5-min walk")
+                    // were removed from this stack to declutter the
+                    // surface. Header → hero tiles → quick-start grid
+                    // is now the entire above-the-fold story.
                     headerSection
-                    cardioStreakBanner
-                    justOneBlockTile
                     walkRunHeroSection
                     presetChipsSection
 
-                    // ── DIVIDER between native top-half and Strava bottom-half ──
+                    // ── DIVIDER between native top-half and recent/Strava bottom-half ──
                     sectionDivider
 
-                    // ── BOTTOM HALF — Powered by Strava ──
+                    // ── BOTTOM HALF — unified recent activity log ──
+                    // 2026-05-02 (per-user request): the recent log
+                    // pulled out of the Strava lockup. Shows ALL cardio
+                    // sources (Strava + Fit33 native + WHOOP / Apple
+                    // Watch / etc.) with source-colored accents
+                    // (orange / blue / white) — NO Strava-connected
+                    // gate. See `CardioRecentLogSection` for the source
+                    // → accent map.
+                    CardioRecentLogSection()
+
+                    // ── Powered by Strava lockup (brand mark + connect CTA) ──
                     stravaLockupSection
 
                     // ── Indoor equipment + browse-all link (demoted) ──
@@ -219,6 +237,15 @@ struct CardioLandingView: View {
                 BrowseAllCardioView()
             }
         }
+        // 2026-05-02 — unified recent log uses
+        // `RecentCardioWorkoutCard`, which fires a value-based
+        // NavigationLink with `cardioWorkout`. Register the destination
+        // here (NOT inside `CardioRecentLogSection`) so the modifier
+        // attaches to the cardio landing root and the push survives any
+        // future restructuring of the section list.
+        .navigationDestination(for: CardioWorkoutDTO.self) { workout in
+            CardioWorkoutDetailView(cardioWorkout: workout)
+        }
         .fullScreenCover(isPresented: $showingFirstOpenIntro) {
             // Cardio Redesign Phase 1 — Wave 3b (revised 2026-05-02).
             // First-open mini-onboarding now uses .fullScreenCover (not
@@ -240,7 +267,6 @@ struct CardioLandingView: View {
                 }
             }
         }
-        .task { await loadCardioStreak() }
         .task { await triggerHKBackfillIfNeeded() }
         .onAppear { presentFirstOpenIntroIfNeeded() }
     }
@@ -280,91 +306,6 @@ struct CardioLandingView: View {
         }
     }
 
-    // MARK: - Cardio Streak Banner (Wave 6b)
-    @ViewBuilder
-    private var cardioStreakBanner: some View {
-        if cardioStreakLoaded, cardioStreakDays > 0 {
-            HStack(spacing: 10) {
-                Image(systemName: "flame.fill")
-                    .font(.title3)
-                    .foregroundStyle(LinearGradient(
-                        colors: [.orange, .red],
-                        startPoint: .top, endPoint: .bottom
-                    ))
-                    .shadow(color: .orange.opacity(0.4), radius: 4)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(cardioStreakDays)-day cardio streak")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                    Text(cardioStreakDays == 1 ? "Day 1 — keep it going!" : "Don't break the chain.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.orange.opacity(0.10))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.orange.opacity(0.25), lineWidth: 1)
-                    )
-            )
-        }
-    }
-
-    // MARK: - Just One Block Tile (Wave 3c — off-day cure)
-    @ViewBuilder
-    private var justOneBlockTile: some View {
-        if hasNoCardioToday {
-            Button {
-                // 5-minute walk preset — pushes Walk goal-setup with
-                // Time goal pre-filled. The CardioGoalSetupView .task()
-                // will override defaults from smart-suggest, but since
-                // the user's pattern probably doesn't include 5-min
-                // walks, we don't worry about it.
-                pushGoalSetup(for: .walk, haptic: .medium)
-            } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.mint.opacity(0.15))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: "figure.walk.motion")
-                            .font(.title3)
-                            .foregroundColor(.mint)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Just one block")
-                            .font(.subheadline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                        Text("5-minute walk · keep your streak alive")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "arrow.up.right.circle.fill")
-                        .foregroundColor(.mint)
-                        .font(.title3)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(.ultraThinMaterial)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.mint.opacity(0.30), lineWidth: 1)
-                        )
-                )
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
     // MARK: - HealthKit 30-day backfill (Wave 2b)
     //
     // Cheat code — on the user's FIRST cardio-landing open after this
@@ -397,37 +338,6 @@ struct CardioLandingView: View {
             "[CARDIO] First-cardio-open HK 30d backfill complete",
             category: .health
         )
-    }
-
-    // MARK: - Streak loader
-    private func loadCardioStreak() async {
-        // Streak load
-        if let streak = await SupabaseManager.shared.fetchCardioStreak() {
-            await MainActor.run {
-                cardioStreakDays = streak.currentStreak
-                cardioStreakLoaded = true
-            }
-        } else {
-            await MainActor.run { cardioStreakLoaded = true }
-        }
-        // "Has cardio today" — single quick fetch of today's cardio rows.
-        // Used by the Just-One-Block tile gating.
-        do {
-            let cal = Calendar.current
-            let startOfDay = cal.startOfDay(for: Date())
-            let stats = try await SupabaseManager.shared.fetchCardioStats(
-                startDate: startOfDay,
-                endDate: Date()
-            )
-            await MainActor.run {
-                hasNoCardioToday = stats.totalWorkouts == 0
-            }
-        } catch {
-            // Silent — banner just doesn't show. AppLogger noisy on
-            // landing-view appears, especially during launch when the
-            // session may not be ready.
-            await MainActor.run { hasNoCardioToday = false }
-        }
     }
 
     // MARK: - Background
@@ -463,7 +373,7 @@ struct CardioLandingView: View {
                 activity: .walk,
                 title: "Walk",
                 subtitle: "GPS · Pace · Calories",
-                accent: .mint
+                accent: .teal
             ) {
                 pushGoalSetup(for: .walk)
             }
@@ -472,7 +382,7 @@ struct CardioLandingView: View {
                 activity: .outdoorRun,
                 title: "Run",
                 subtitle: "GPS · Pace · Splits",
-                accent: .green
+                accent: .blue
             ) {
                 pushGoalSetup(for: .outdoorRun)
             }
@@ -480,31 +390,44 @@ struct CardioLandingView: View {
     }
 
     // MARK: - Preset Chips (1-tap goal presets)
+    //
+    // 2026-05-02 (per-user request): the quick-start row is now a
+    // 2-column LazyVGrid of 4 floating tiles instead of a horizontally-
+    // scrolling chip strip. Tiles are full-width within their column,
+    // tap-target-sized (≈44pt tall), and sit directly on the orb
+    // background (no surrounding card container) per the "floating"
+    // spec. The chip styling itself ("Walk = teal, Run = blue,
+    // capsule + ultraThinMaterial + accent stroke") matches the
+    // GoalTypeButton + GoalQuickChip pickers downstream so the user
+    // feels visual continuity tile-tap → goal-setup. The 4 tiles are
+    // chosen as the most-used pair per activity (Walk: 30 min + Open;
+    // Run: 5K + 30 min) — the legacy "Open Walk" chip was dropped
+    // because it duplicated "30 min Walk"'s entry path and the grid
+    // is fixed-cell, so we kept the higher-utility option.
     private var presetChipsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let columns = [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10)
+        ]
+        return VStack(alignment: .leading, spacing: 12) {
             Text("QUICK START")
                 .font(.caption)
                 .fontWeight(.bold)
                 .foregroundColor(.secondary)
                 .tracking(1)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    CardioPresetChip(label: "Open Walk", icon: "infinity", accent: .mint) {
-                        pushGoalSetup(for: .walk, haptic: .light)
-                    }
-                    CardioPresetChip(label: "30 min Walk", icon: "clock.fill", accent: .mint) {
-                        pushGoalSetup(for: .walk, haptic: .light)
-                    }
-                    CardioPresetChip(label: "Open Run", icon: "infinity", accent: .green) {
-                        pushGoalSetup(for: .outdoorRun, haptic: .light)
-                    }
-                    CardioPresetChip(label: "5K Run", icon: "figure.run", accent: .green) {
-                        pushGoalSetup(for: .outdoorRun, haptic: .light)
-                    }
-                    CardioPresetChip(label: "30 min Run", icon: "clock.fill", accent: .green) {
-                        pushGoalSetup(for: .outdoorRun, haptic: .light)
-                    }
+            LazyVGrid(columns: columns, spacing: 10) {
+                CardioPresetChip(label: "30 min Walk", icon: "clock.fill", accent: .teal, fillsWidth: true) {
+                    pushGoalSetup(for: .walk, haptic: .light)
+                }
+                CardioPresetChip(label: "Open Run", icon: "infinity", accent: .blue, fillsWidth: true) {
+                    pushGoalSetup(for: .outdoorRun, haptic: .light)
+                }
+                CardioPresetChip(label: "5K Run", icon: "figure.run", accent: .blue, fillsWidth: true) {
+                    pushGoalSetup(for: .outdoorRun, haptic: .light)
+                }
+                CardioPresetChip(label: "30 min Run", icon: "clock.fill", accent: .blue, fillsWidth: true) {
+                    pushGoalSetup(for: .outdoorRun, haptic: .light)
                 }
             }
         }
@@ -718,10 +641,20 @@ struct WalkRunHeroCard: View {
 // Currently routes to the goal-setup sheet pre-selected with the right
 // activity. Wave 4d will route DIRECTLY to the active screen with a
 // pre-filled goal (skipping the sheet for true 1-tap starts).
+//
+// 2026-05-02 (per-user request): added `fillsWidth` so the chip can
+// stretch to fill its parent column when used inside the QUICK START
+// 2-column LazyVGrid. Defaults to `false` to keep the legacy
+// hug-content behavior for any other caller (none today, but
+// preserved for safety per coding-rules "don't change unrelated
+// behavior"). When `true` the chip uses a rounded-rectangle shape +
+// `frame(maxWidth: .infinity)` so all four grid cells render at the
+// same width regardless of label length ("5K Run" vs "30 min Walk").
 struct CardioPresetChip: View {
     let label: String
     let icon: String
     let accent: Color
+    var fillsWidth: Bool = false
     let onTap: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -734,17 +667,36 @@ struct CardioPresetChip: View {
                 Text(label)
                     .font(.subheadline)
                     .fontWeight(.semibold)
+                    .lineLimit(1)
             }
             .foregroundColor(accent)
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
+            .frame(maxWidth: fillsWidth ? .infinity : nil)
             .background(
-                Capsule()
-                    .fill(accent.opacity(colorScheme == .dark ? 0.12 : 0.10))
+                Group {
+                    if fillsWidth {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(accent.opacity(colorScheme == .dark ? 0.10 : 0.08))
+                            )
+                    } else {
+                        Capsule()
+                            .fill(accent.opacity(colorScheme == .dark ? 0.12 : 0.10))
+                    }
+                }
             )
             .overlay(
-                Capsule()
-                    .stroke(accent.opacity(0.30), lineWidth: 1)
+                Group {
+                    if fillsWidth {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(accent.opacity(0.30), lineWidth: 1)
+                    } else {
+                        Capsule().stroke(accent.opacity(0.30), lineWidth: 1)
+                    }
+                }
             )
         }
         .buttonStyle(PlainButtonStyle())

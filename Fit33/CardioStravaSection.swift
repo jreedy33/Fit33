@@ -2,29 +2,46 @@ import SwiftUI
 
 // MARK: - Phase 4 Cardio Section Strava Surface
 //
-// Two pieces that the Cardio landing view drops in above the existing
-// `quickStartSection`:
+// Two pieces that the Cardio landing view drops in below the
+// "Powered by Strava" lockup:
 //
 //   • CardioStravaWeeklyDeltaChip  — single-line "This week vs last week"
 //                                     summary (distance + time deltas).
-//   • CardioStravaRecentRow        — horizontal scroll of the last 8
-//                                     Strava activities; tap → recap sheet.
+//                                     Pulls from `StravaService.shared.recentActivities`,
+//                                     gates on `StravaService.shared.isConnected`.
 //
-// Both gate on `StravaService.shared.isConnected` and quietly
-// short-circuit to `EmptyView()` when no activities exist yet.
+//   • CardioRecentLogSection       — UNIFIED recent activity log (Strava +
+//                                     Fit33 native + WHOOP / Apple Watch /
+//                                     Oura / Fitbit / Garmin / etc.).
+//                                     Shape-matches the Home tab's
+//                                     `RecentCardioWorkoutCard` but paints
+//                                     SOURCE-driven accents:
+//                                       - Strava   → orange (#FC4C02)
+//                                       - Fit33    → blue
+//                                       - Wearables (WHOOP / Apple Watch /
+//                                         Oura / Fitbit / Garmin / etc.)
+//                                                  → "white" (.primary —
+//                                         renders white in dark mode and
+//                                         dark gray in light mode so it
+//                                         stays visible on both card fills)
+//                                     Loads via `SupabaseManager.fetchRecentCardioWorkouts`,
+//                                     so it surfaces ANY cardio history —
+//                                     no Strava-connected gate.
 
-// MARK: - Container
-
+// MARK: - Container (legacy — kept thin for backward compat)
+//
+// Pre-2026-05-02 this struct rendered both the weekly delta chip and a
+// horizontal mini-card recent row. The recent row has been promoted to
+// `CardioRecentLogSection` (a sibling section on `CardioLandingView`)
+// because the unified log shouldn't gate on Strava-connected. The
+// container now only holds the Strava-specific weekly trend chip — the
+// only piece that legitimately depends on `StravaService.recentActivities`.
 struct CardioStravaSection: View {
     @ObservedObject private var stravaService = StravaService.shared
-    @ObservedObject private var unitSettings = UnitSettingsManager.shared
 
     var body: some View {
         if stravaService.isConnected {
-            VStack(alignment: .leading, spacing: 12) {
-                CardioStravaWeeklyDeltaChip()
-                CardioStravaRecentRow()
-            }
+            CardioStravaWeeklyDeltaChip()
         } else {
             EmptyView()
         }
@@ -138,122 +155,125 @@ struct CardioStravaWeeklyDeltaChip: View {
     }
 }
 
-// MARK: - Recent Row
+// MARK: - Cardio Recent Log Section
 //
-// 2026-05-02 (per-user request): renamed "Recent Strava" → "Recent" and
-// dropped the per-row "Synced X min ago" timestamp. The connection
-// status + last-sync are owned by the dashboard Strava widget — no need
-// to duplicate that signal under the cardio page header.
-
-struct CardioStravaRecentRow: View {
-    @ObservedObject private var stravaService = StravaService.shared
-    @State private var selectedActivity: StravaActivity?
-
-    private var activities: [StravaActivity] {
-        Array(
-            stravaService.recentActivities
-                .sorted { $0.startDate > $1.startDate }
-                .prefix(8)
-        )
-    }
+// 2026-05-02 (per-user request) — the cardio landing's "Recent" surface
+// is now a UNIFIED activity log, not a Strava-only mini-card row.
+//
+// Visual: shape-matches the Home tab's `RecentCardioWorkoutCard` (icon
+// ring + title + date + 4-stat row + chevron + sleek card border).
+//
+// Color: source-driven accent override
+//   • Strava        → Strava brand orange  (#FC4C02)
+//   • Fit33         → system blue
+//   • WHOOP / Apple Watch / Oura / Fitbit / Garmin / Nike / Peloton /
+//     Zwift / MapMyRun / Runkeeper / adidas / Apple Health (.unknown)
+//                    → `.primary` (white in dark mode, dark gray in
+//                       light mode — stays legible on both card fills,
+//                       matches the user's "white" intent for
+//                       passive wearable data)
+//
+// Data: pulls from `SupabaseManager.fetchRecentCardioWorkouts(limit: 8)`
+// — same RPC the Home tab uses, just deeper. No Strava-connected gate
+// since the log is meant to surface ALL cardio sources.
+//
+// Empty state: a thin "Your cardio log will live here" hint when the
+// user has zero rows so the section never renders as blank space.
+struct CardioRecentLogSection: View {
+    @State private var workouts: [CardioWorkoutDTO] = []
+    @State private var loaded: Bool = false
 
     var body: some View {
-        if activities.isEmpty {
-            EmptyView()
-        } else {
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
                 Text("RECENT")
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.secondary)
                     .tracking(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer()
+            }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(activities) { activity in
-                            Button {
-                                selectedActivity = activity
-                            } label: {
-                                CardioStravaMiniCard(activity: activity)
-                            }
-                            .buttonStyle(.plain)
-                        }
+            if loaded && workouts.isEmpty {
+                emptyHint
+            } else {
+                LazyVStack(spacing: Spacing.sm) {
+                    ForEach(workouts, id: \.id) { workout in
+                        RecentCardioWorkoutCard(
+                            cardioWorkout: workout,
+                            isMostRecent: false,
+                            accentColorOverride: Self.sourceAccent(for: workout.resolvedOrigin)
+                        )
                     }
-                    .padding(.horizontal, 2)
                 }
             }
-            .sheet(item: $selectedActivity) { act in
-                StravaActivityRecapSheet(activity: act)
-            }
+        }
+        .task { await loadRecent() }
+    }
+
+    @MainActor
+    private func loadRecent() async {
+        do {
+            // limit: 8 — matches the legacy Strava mini-card cap and
+            // gives the user a full week of recent activity at typical
+            // 4-6 sessions/week without overwhelming the page.
+            let rows = try await SupabaseManager.shared.fetchRecentCardioWorkouts(limit: 8)
+            self.workouts = rows
+        } catch {
+            AppLogger.warning(
+                "[CARDIO] CardioRecentLogSection load failed: \(error.localizedDescription)",
+                category: .ui
+            )
+            self.workouts = []
+        }
+        self.loaded = true
+    }
+
+    // MARK: - Source-driven accent palette
+
+    /// Maps a cardio workout's resolved origin to the accent color the
+    /// recent log should paint. Returns `nil` only for the
+    /// best-effort `.unknown` fallback when we want the per-activity
+    /// color to take over (e.g., legacy Apple Health imports without
+    /// origin tagging).
+    static func sourceAccent(for origin: WorkoutOrigin) -> Color? {
+        switch origin {
+        case .strava:
+            // Strava brand orange #FC4C02.
+            return Color(red: 0xFC/255, green: 0x4C/255, blue: 0x02/255)
+        case .fit33:
+            return .blue
+        case .whoop, .appleWatch, .oura, .fitbit, .garmin,
+             .nikeRunClub, .peloton, .zwift, .mapMyRun,
+             .runkeeper, .adidasRunning:
+            // "White" per-user request. `.primary` is white in dark mode
+            // and near-black in light mode — the only neutral that stays
+            // visible on both `.adaptiveSleekCard` fills. WHOOP /
+            // wearables get the same neutral so the entire passive-data
+            // bucket reads as one visual category.
+            return .primary
+        case .unknown:
+            // Legacy HK rows without origin_app — let the per-activity
+            // color (running=green, walk=blue, etc.) take over.
+            return nil
         }
     }
-}
 
-// MARK: - Mini Card
-
-private struct CardioStravaMiniCard: View {
-    let activity: StravaActivity
-
-    @ObservedObject private var unitSettings = UnitSettingsManager.shared
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: activity.activityIcon)
-                    .font(.system(size: 12, weight: .semibold))
-                Text(activity.type)
-                    .font(.caption2.weight(.semibold))
-                    .lineLimit(1)
-            }
-            .foregroundColor(.orange)
-
-            Text(activity.name)
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(.primary)
-                .lineLimit(1)
-
-            HStack(spacing: 8) {
-                Label(distanceLabel, systemImage: "ruler")
-                    .labelStyle(.titleOnly)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Label(durationLabel, systemImage: "clock")
-                    .labelStyle(.titleOnly)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            Text(relativeDate)
-                .font(.caption2)
-                .foregroundColor(.secondary.opacity(0.7))
+    private var emptyHint: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "figure.run.circle")
+                .font(.title3)
+                .foregroundColor(.secondary)
+            Text("Your cardio log will live here.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Spacer()
         }
-        .padding(12)
-        .frame(width: 170, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color.cardBackground)
+                .fill(.ultraThinMaterial)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.orange.opacity(0.25), lineWidth: 1)
-        )
-    }
-
-    private var distanceLabel: String {
-        UnitSettingsManager.shared.formatStravaDistance(meters: activity.distance)
-    }
-
-    private var durationLabel: String {
-        let h = activity.movingTime / 3600
-        let m = (activity.movingTime % 3600) / 60
-        if h > 0 { return "\(h)h \(m)m" }
-        return "\(m)m"
-    }
-
-    private var relativeDate: String {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .short
-        return f.localizedString(for: activity.startDate, relativeTo: Date())
     }
 }

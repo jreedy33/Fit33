@@ -390,9 +390,13 @@ struct SettingsView: View {
                                 }
                                 .buttonStyle(.plain)
                                 
+                                // Oura Ring Integration — temporarily hidden (Sprint 2026-05-02).
+                                // We're reworking the Oura integration; the row is suppressed
+                                // here, on the dashboard widget, and on the onboarding wearables
+                                // page. Re-enable by uncommenting (and re-adding the divider).
+                                /*
                                 Divider().padding(.leading, 52)
-                                
-                                // Oura Ring Integration
+
                                 NavigationLink(destination: OuraSettingsView()) {
                                     HStack(spacing: 16) {
                                         ZStack {
@@ -415,7 +419,7 @@ struct SettingsView: View {
                                                     )
                                                 )
                                         }
-                                        
+
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text("Oura Ring")
                                                 .font(.body)
@@ -424,9 +428,9 @@ struct SettingsView: View {
                                                 .font(.caption)
                                                 .foregroundColor(ouraService.isConnected ? .green : .secondary)
                                         }
-                                        
+
                                         Spacer()
-                                        
+
                                         if ouraService.isConnected {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundColor(.green)
@@ -443,7 +447,8 @@ struct SettingsView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Oura Ring")
                                 .accessibilityHint(ouraService.isConnected ? "Connected. Tap to manage Oura settings." : "Tap to connect your Oura Ring.")
-                                
+                                */
+
                                 Divider().padding(.leading, 52)
                                 
                                 // Apple Health Integration (Nike Run Club, Apple Watch, etc.)

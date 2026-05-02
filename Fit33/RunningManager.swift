@@ -256,6 +256,15 @@ class RunningManager: NSObject, ObservableObject {
     @Published var goalValue: Double = 0 // distance in meters or time in seconds
     @Published var targetPaceMin: Double = 0 // seconds per km (lower bound)
     @Published var targetPaceMax: Double = 0 // seconds per km (upper bound)
+
+    /// Cardio Redesign — Goal-Met detection (2026-05-02 per user request).
+    /// Flips `true` on the first frame `goalProgress >= 1.0` during an
+    /// active session; reset on `startRun(...)`. The active-cardio view
+    /// observes this via `.onChange` to surface the "You hit your X
+    /// goal!" celebration sheet (with End / Keep-going CTAs). Stays
+    /// `true` for the rest of the session even if the user keeps going
+    /// past the goal — the sheet is one-shot per session.
+    @Published var goalReached: Bool = false
     
     // MARK: - Audio Cue Properties
     @Published var audioCuesEnabled = true
@@ -507,6 +516,8 @@ class RunningManager: NSObject, ObservableObject {
         // Set goal
         self.goalType = goal
         self.goalValue = goalValue
+        // Reset goal-met flag — fresh session, fresh celebration.
+        self.goalReached = false
         if let range = targetPaceRange {
             self.targetPaceMin = range.min
             self.targetPaceMax = range.max
@@ -633,6 +644,12 @@ class RunningManager: NSObject, ObservableObject {
         // Estimate calories (MET-by-pace; see updateCalories docstring)
         updateCalories()
 
+        // Goal-met edge detection — covers time + calorie goals (which
+        // tick on the timer). Distance goals also pass through here as a
+        // safety net in case the GPS update path doesn't fire on a
+        // borderline tick (e.g., user is stationary at the goal line).
+        checkGoalReached()
+
         // Coalesce Live Activity updates per activity type (walk = 4s,
         // run = 2s, cycle = 3s, hike = 6s). Walking sessions can be 60+
         // minutes — dropping update freq saves measurable battery on
@@ -756,6 +773,48 @@ class RunningManager: NSObject, ObservableObject {
     func setGoal(type: RunGoalType, value: Double) {
         self.goalType = type
         self.goalValue = value
+        // New goal mid-session — re-arm the celebration. The active
+        // view's `.onChange(of: goalReached)` ignores false→false; this
+        // is mainly for the goal-setup → countdown → active path where
+        // the goal is set BEFORE startRun() resets the flag explicitly.
+        self.goalReached = false
+    }
+
+    /// One-shot edge detector for "user hit their goal". Called every
+    /// timer tick (`updateElapsedTime`) AND on every GPS distance
+    /// update so the celebration sheet fires the SAME second the user
+    /// crosses 5K / 30:00 / 350 kcal. Skips:
+    ///   • Goal-less / pace-only sessions (`goalValue <= 0`).
+    ///   • Already-celebrated sessions (idempotent — flag stays true
+    ///     for the rest of the run so the sheet doesn't reopen if the
+    ///     user dismisses with "Keep going" and progress oscillates).
+    private func checkGoalReached() {
+        guard goalValue > 0, !goalReached else { return }
+        guard goalType == .distance || goalType == .time || goalType == .calories else { return }
+        if goalProgress >= 1.0 {
+            goalReached = true
+            // Hardware tap — same intensity we use for "workout
+            // complete" elsewhere, so the sensation reads as a
+            // milestone rather than a generic UI tap.
+            HapticManager.notification(.success)
+            AppLogger.info(
+                "🎯 [\(activityType.rawValue.uppercased())] Goal reached: \(goalType.rawKey) target=\(goalValue) actual=\(formattedGoalActualValue)",
+                category: .health
+            )
+        }
+    }
+
+    /// Human-readable "actual value" string at the moment the goal was
+    /// hit — used by the AppLogger line above and by debug overlays.
+    /// Kept in `RunningManager` because the formatting depends on the
+    /// canonical units stored here.
+    private var formattedGoalActualValue: String {
+        switch goalType {
+        case .distance: return String(format: "%.0fm", distance)
+        case .time:     return String(format: "%.0fs", elapsedTime)
+        case .calories: return String(format: "%.0fkcal", calories)
+        case .pace, .none: return "n/a"
+        }
     }
     
     /// Toggle audio cues
@@ -951,6 +1010,13 @@ extension RunningManager: CLLocationManagerDelegate {
                             recordPaceHistory()
 
                             checkForSplit()
+
+                            // Distance-goal edge detection — fire as
+                            // soon as the GPS sample crosses the goal
+                            // line, not on the next 1s timer tick.
+                            // Helps the "You hit your 5K!" sheet feel
+                            // instantaneous when the user is mid-stride.
+                            checkGoalReached()
                         }
                     }
                 }

@@ -351,7 +351,12 @@ final class StravaService: ObservableObject {
                     "[STRAVA] Refresh token revoked (HTTP \(httpResponse.statusCode)) — disconnecting",
                     category: .auth
                 )
-                disconnect()
+                // External revoke (user hit "Revoke" on strava.com): the
+                // webhook already cascaded the cardio_workouts + tokens
+                // delete server-side. Pass `triggeredByExternalRevoke: true`
+                // so `disconnect()` skips the redundant `delete_my_strava_data`
+                // RPC call.
+                disconnect(triggeredByExternalRevoke: true)
             } else {
                 AppLogger.warning(
                     "[STRAVA] Token refresh transient failure (HTTP \(httpResponse.statusCode)) — will retry on next sync",
@@ -923,8 +928,42 @@ final class StravaService: ObservableObject {
     
     // MARK: - Disconnect
     
-    /// Disconnect Strava account
-    func disconnect() {
+    /// Disconnect Strava and PURGE all imported Strava data.
+    ///
+    /// Strava API Agreement §"Privacy" (2026-05-02 compliance fix):
+    ///   "if a user revokes the authorization previously granted for your
+    ///    Developer Applications to access to their Strava account, you
+    ///    must ensure that all Personal Data pertaining to that user is
+    ///    deleted from your Developer Applications and related networks,
+    ///    systems and servers."
+    ///
+    /// Tapping Disconnect IS a revocation — so this function does not just
+    /// clear local tokens, it ALSO calls the `delete_my_strava_data` RPC
+    /// (migration #20260822) which deletes every `cardio_workouts` row
+    /// with `source='strava'` for the caller AND removes the
+    /// `user_strava_tokens` row that the webhook would otherwise still
+    /// hold. The alert copy in `StravaSettingsView` makes this explicit.
+    ///
+    /// Server purge is best-effort but logged: if the RPC fails (e.g. user
+    /// is offline), we still clear the local state so the connection is
+    /// disabled, then on next launch the keychain is empty + the user
+    /// can reconnect → the purge becomes the next disconnect's problem.
+    /// We could queue a retry but the more common case is the user
+    /// disconnects WITH network, the purge succeeds, and we're done.
+    /// `triggeredByExternalRevoke=true` is for the case where Strava
+    /// already invalidated our refresh token (e.g. user revoked from
+    /// strava.com first, the webhook handled the cascade-delete, and the
+    /// app is now learning about it via HTTP 400 invalid_grant) — in that
+    /// flow the server-side purge has already happened so we skip the RPC
+    /// to avoid a redundant call.
+    func disconnect(triggeredByExternalRevoke: Bool = false) {
+        // Capture the user id BEFORE we clear state — the RPC is auth-pinned
+        // server-side so it doesn't strictly need it, but logging is nicer.
+        let userId = SupabaseManager.shared.currentUser?.id
+
+        // Local state first — the user expects the UI to reflect "disconnected"
+        // immediately; the RPC fanout can race the network without holding
+        // the user.
         accessToken = nil
         refreshToken = nil
         tokenExpiresAt = nil
@@ -942,13 +981,44 @@ final class StravaService: ObservableObject {
         for key in ["strava_access_token", "strava_refresh_token", "strava_token_expires_at"] {
             UserDefaults.standard.removeObject(forKey: key)
         }
-        
-        // Update integration status in database
+
+        // Server-side purge + integration status update (best-effort, parallel).
         Task {
             await SupabaseManager.shared.updateIntegrationStatus(integration: "strava", isConnected: false)
+
+            if triggeredByExternalRevoke {
+                // Webhook (`object_type=athlete, authorized=false`) already
+                // ran the cascade delete server-side. Calling the RPC now
+                // would be a no-op, but skip it to avoid an unnecessary
+                // round-trip.
+                AppLogger.debug("[STRAVA] Skipping purge RPC — server already cascaded on external revoke (user \(userId?.uuidString ?? "?"))", category: .health)
+                return
+            }
+
+            do {
+                let response = try await SupabaseManager.shared.client
+                    .rpc("delete_my_strava_data")
+                    .execute()
+                let body = String(data: response.data, encoding: .utf8) ?? "?"
+                AppLogger.info(
+                    "✅ [STRAVA] delete_my_strava_data succeeded (deleted=\(body)) for user \(userId?.uuidString ?? "?")",
+                    category: .health
+                )
+            } catch {
+                // Best-effort — local state is already cleared so the user
+                // sees a disconnected app even if the RPC fails. If they
+                // ever reconnect, the new sync writes will re-create the
+                // tokens row; if they don't, the orphan `user_strava_tokens`
+                // row + their old `cardio_workouts` Strava rows will be
+                // swept up by the periodic compliance audit cron (TBD).
+                AppLogger.error(
+                    "⚠️ [STRAVA] delete_my_strava_data RPC failed: \(error.localizedDescription) — local state still cleared",
+                    category: .health
+                )
+            }
         }
-        
-        AppLogger.debug("🔌 [STRAVA] Disconnected", category: .health)
+
+        AppLogger.debug("🔌 [STRAVA] Disconnected (triggeredByExternalRevoke=\(triggeredByExternalRevoke))", category: .health)
     }
 
     // MARK: - Cache Persistence

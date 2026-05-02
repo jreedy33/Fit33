@@ -8,15 +8,23 @@
 //  cards on `AnimatedOrbBackground`) so the wearable settings pages feel
 //  cohesive.
 //
-//  Sections (in order):
-//   1. Connection card — profile, name, last sync, sync now, disconnect.
+//  Sections (in order — 2026-05-02 layout):
+//   • Toolbar:    Powered-by-Strava lockup (center) + manual-sync arrow
+//                 button (trailing — spins while `strava.isLoading`).
+//   1. Connection card — avatar + Connected chip + name + location.
+//                        NO disconnect / export / sync buttons; those
+//                        live elsewhere now.
 //   2. This Week / This Month — quick totals from the synced activity list.
 //   3. Recent (4w) / YTD / All-Time — long-form `/athletes/{id}/stats` totals
 //      per sport (run / ride / swim).
 //   4. Mileage chart — weekly km stacked by activity type.
 //   5. Pace trend chart — 4-week rolling avg run pace.
 //   6. Recent activities list — tap → `StravaActivityRecapSheet`.
-//   7. About — what syncs, automatic refresh, 60-day inactivity behavior.
+//   7. About — what syncs, automatic refresh, 48h-deletion compliance.
+//   8. Account actions — Disconnect + Export my Strava data.
+//                        Sits BELOW About so the destructive / data-rights
+//                        controls are at the END of the page (per user
+//                        request), not stacked under the avatar.
 //
 
 import SwiftUI
@@ -34,6 +42,12 @@ struct StravaSettingsView: View {
     @State private var isAuthenticating = false
     @State private var authErrorMessage: String?
     @State private var webAuthSession: ASWebAuthenticationSession?
+
+    /// 2026-05-02 Strava compliance: temp-file URL of the user's exported
+    /// Strava activity JSON, populated on demand by `prepareDataExport()`
+    /// when they tap "Export my Strava data". Cleared after the share
+    /// sheet dismisses to keep the temp dir tidy.
+    @State private var dataExportFile: DataExportFile?
 
     var body: some View {
         ZStack {
@@ -56,11 +70,36 @@ struct StravaSettingsView: View {
                         section(title: "Recent Activities", icon: "figure.run") {
                             recentActivitiesCard
                         }
-                        syncStatusCard
                     }
 
                     section(title: "About", icon: "info.circle.fill", iconColor: .secondary) {
                         aboutCard
+                    }
+
+                    // 2026-05-02 layout follow-up: Disconnect + Export
+                    // moved from the top connection tile to a dedicated
+                    // card BELOW About, so the destructive / data-export
+                    // controls are at the bottom of the page (where the
+                    // user has finished reading what the integration
+                    // does), not stacked under the user's avatar.
+                    if strava.isConnected {
+                        accountActionsCard
+                    }
+
+                    if let error = strava.errorMessage, strava.isConnected {
+                        // The old syncStatusCard surfaced sync errors
+                        // inline. With the manual sync now living in the
+                        // toolbar, errors get a small standalone caption
+                        // so the user can still see WHY a sync didn't go
+                        // through.
+                        Text(error)
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, Spacing.md)
+                            .accessibilityLabel("Strava sync error")
+                            .accessibilityValue(error)
                     }
                 }
                 .padding(.horizontal, Spacing.md)
@@ -80,14 +119,47 @@ struct StravaSettingsView: View {
                     .frame(height: 22)
                     .accessibilityLabel("Powered by Strava")
             }
+            // 2026-05-02 layout follow-up: dedicated "Sync now" affordance
+            // sits to the right of the Powered-by-Strava lockup. Replaces
+            // the prior `syncStatusCard` (the "Last Sync" widget). When
+            // `strava.isLoading == true`, the icon spins continuously to
+            // show in-flight progress; otherwise tapping kicks a manual
+            // force-refresh of the activity list.
+            ToolbarItem(placement: .topBarTrailing) {
+                if strava.isConnected {
+                    Button {
+                        Task { await strava.syncActivities(daysBack: 30, force: true) }
+                    } label: {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.ds_labelLarge.weight(.semibold))
+                            .foregroundColor(Color.stravaOrange)
+                            .rotationEffect(.degrees(strava.isLoading ? 360 : 0))
+                            .animation(
+                                strava.isLoading
+                                    ? .linear(duration: 1.0).repeatForever(autoreverses: false)
+                                    : .default,
+                                value: strava.isLoading
+                            )
+                    }
+                    .disabled(strava.isLoading)
+                    .accessibilityLabel("Sync Strava data now")
+                    .accessibilityHint("Forces an immediate refresh of activities and lifetime totals.")
+                }
+            }
         }
         .alert("Disconnect Strava?", isPresented: $showingDisconnectAlert) {
             Button("Cancel", role: .cancel) {}
-            Button("Disconnect", role: .destructive) {
+            Button("Disconnect & Delete Data", role: .destructive) {
                 strava.disconnect()
             }
         } message: {
-            Text("Your synced activities will remain in Fit33, but new activities won't sync until you reconnect.")
+            // Strava API Agreement requires that revoking authorization
+            // purges all Personal Data we hold for the user. The
+            // destructive button is now explicit so the user knows what
+            // will happen — and `disconnect()` calls the
+            // `delete_my_strava_data` RPC to actually do the cascade
+            // delete on the server (cardio_workouts + user_strava_tokens).
+            Text("Disconnecting will delete every Strava activity Fit33 has imported and remove our access to your Strava account. Your activities on Strava itself are not affected. You can reconnect any time to start syncing fresh.")
         }
         .sheet(isPresented: $showingRecap) {
             if let selectedActivity {
@@ -95,6 +167,16 @@ struct StravaSettingsView: View {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
+        }
+        .sheet(item: $dataExportFile, onDismiss: {
+            // Cleanup the temp file when the sheet dismisses.
+            cleanupDataExport()
+        }) { exportFile in
+            // 2026-05-02 Strava compliance: data-access right via iOS share
+            // sheet. Reuses the canonical `ShareSheet` from
+            // `Fit33/DevSessionLogsView.swift` (it lives outside #if DEBUG).
+            ShareSheet(items: [exportFile.url])
+                .ignoresSafeArea()
         }
         .onAppear {
             // Refresh keychain-backed connection state on every appearance —
@@ -186,51 +268,42 @@ struct StravaSettingsView: View {
 
     private var connectionTile: some View {
         VStack(spacing: Spacing.md) {
-            HStack(spacing: Spacing.md) {
-                profileAvatar
-                VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    HStack(spacing: Spacing.xs) {
-                        Image(systemName: strava.isConnected ? "checkmark.circle.fill" : "link.badge.plus")
-                            .foregroundColor(strava.isConnected ? .green : .secondary)
-                            .font(.ds_bodySmall)
-                        Text(strava.isConnected ? "Connected" : "Not connected")
-                            .font(.ds_labelLarge)
-                            .foregroundColor(strava.isConnected ? .green : .secondary)
-                    }
-                    if let athlete = strava.athleteProfile {
-                        Text(athlete.fullName)
-                            .font(.ds_heading3)
-                    } else if !strava.isConnected {
-                        Text("Connect Strava")
-                            .font(.ds_heading3)
-                    }
-                    if let location = athleteLocation {
-                        Text(location)
-                            .font(.ds_bodySmall)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                Spacer()
-            }
-
             if strava.isConnected {
-                Button {
-                    showingDisconnectAlert = true
-                } label: {
-                    Text("Disconnect")
-                        .font(.ds_labelLarge)
-                        .foregroundColor(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Spacing.sm)
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.md)
-                                .fill(Color.red.opacity(0.12))
-                        )
+                // 2026-05-02 layout follow-up: only profile + connected
+                // chip live up here now. Disconnect + Export moved into
+                // `accountActionsCard` (below About). Manual sync moved
+                // to the toolbar trailing edge.
+                HStack(spacing: Spacing.md) {
+                    profileAvatar
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.ds_bodySmall)
+                            Text("Connected")
+                                .font(.ds_labelLarge)
+                                .foregroundColor(.green)
+                        }
+                        if let athlete = strava.athleteProfile {
+                            Text(athlete.fullName)
+                                .font(.ds_heading3)
+                        }
+                        if let location = athleteLocation {
+                            Text(location)
+                                .font(.ds_bodySmall)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Spacer()
                 }
-                .buttonStyle(UniversalScaleButtonStyle())
-                .accessibilityLabel("Disconnect Strava")
-                .accessibilityHint("Removes Strava connection and stops syncing new activities.")
             } else {
+                Image(systemName: "figure.run")
+                    .font(.system(size: 56, weight: .semibold))
+                    .foregroundColor(Color.stravaOrange)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Spacing.sm)
+                    .accessibilityHidden(true)
+
                 Button(action: startAuth) {
                     ZStack {
                         Image("ConnectWithStravaButton")
@@ -628,63 +701,71 @@ struct StravaSettingsView: View {
         .contentShape(Rectangle())
     }
 
-    // MARK: - 7. Sync Status
+    // MARK: - Account Actions (Disconnect + Export)
+    //
+    // 2026-05-02 layout follow-up: lives BELOW About (per user request)
+    // so the destructive / data-export controls sit at the bottom of the
+    // page after the user has read what the integration does. Both
+    // buttons used to live in `connectionTile` at the top; moving them
+    // here also tightens the connection-tile visual to "who you are"
+    // signal only (avatar + name + location + Connected chip).
+    //
+    // Manual sync isn't here — it's in the toolbar (see top-of-file
+    // `.toolbar` block). The card has no card chrome (`.adaptiveSleekCard`)
+    // so the buttons read as a discrete actions block, not a third stats
+    // card.
 
-    private var syncStatusCard: some View {
+    private var accountActionsCard: some View {
         VStack(spacing: Spacing.sm) {
-            HStack {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .foregroundColor(.blue)
-                Text("Last Sync")
-                    .font(.ds_bodyMedium)
-                Spacer()
-                if strava.isLoading {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                } else if let date = strava.lastSyncDate {
-                    Text(date, style: .relative)
-                        .font(.ds_bodySmall)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("Never")
-                        .font(.ds_bodySmall)
-                        .foregroundColor(.secondary)
-                }
-            }
-
+            // 2026-05-02 Strava compliance: API Agreement §"Privacy"
+            // requires that revoking authorization deletes all Personal
+            // Data. The destructive label + alert copy make that
+            // explicit (cardio_workouts WHERE source='strava' + the
+            // user_strava_tokens row are purged via
+            // `delete_my_strava_data` RPC; webhook also handles the
+            // server-initiated revoke path).
             Button {
-                Task { await strava.syncActivities(daysBack: 30, force: true) }
+                showingDisconnectAlert = true
+            } label: {
+                Text("Disconnect")
+                    .font(.ds_labelLarge)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: CornerRadius.md)
+                            .fill(Color.red.opacity(0.12))
+                    )
+            }
+            .buttonStyle(UniversalScaleButtonStyle())
+            .accessibilityLabel("Disconnect Strava")
+            .accessibilityHint("Removes Strava connection and deletes every Strava activity Fit33 has imported.")
+
+            // 2026-05-02 Strava compliance: API Agreement requires the
+            // user be able to access the Strava data we've collected on
+            // their behalf at any time. Serializes `recentActivities`
+            // to JSON, writes a temp file, opens the iOS share sheet.
+            Button {
+                prepareDataExport()
             } label: {
                 HStack(spacing: Spacing.xs) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                    Text("Sync Now")
+                    Image(systemName: "square.and.arrow.up")
+                    Text("Export my Strava data")
                 }
-                .font(.ds_labelMedium)
+                .font(.ds_labelLarge)
                 .foregroundColor(.blue)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, Spacing.xs)
+                .padding(.vertical, Spacing.sm)
                 .background(
                     RoundedRectangle(cornerRadius: CornerRadius.md)
-                        .fill(Color.blue.opacity(0.1))
+                        .fill(Color.blue.opacity(0.10))
                 )
             }
             .buttonStyle(UniversalScaleButtonStyle())
-            .disabled(strava.isLoading)
-            .accessibilityLabel("Sync Strava data now")
-            .accessibilityHint("Forces an immediate refresh of activities and lifetime totals.")
-
-            if let error = strava.errorMessage {
-                Text(error)
-                    .font(.ds_bodySmall)
-                    .foregroundColor(.red)
-                    .multilineTextAlignment(.center)
-                    .accessibilityLabel("Strava sync error")
-                    .accessibilityValue(error)
-            }
+            .accessibilityLabel("Export Strava data")
+            .accessibilityHint("Saves a JSON file of every Strava activity Fit33 has imported.")
         }
-        .padding(.horizontal, Spacing.md)
-        .padding(.vertical, Spacing.md)
-        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: .blue)
+        .padding(.horizontal, Spacing.xs)
     }
 
     // MARK: - About
@@ -696,7 +777,19 @@ struct StravaSettingsView: View {
             aboutBullet(icon: "mountain.2.fill", text: "Elevation gain and effort (suffer score)")
             aboutBullet(icon: "map.fill", text: "Route map, segment efforts, and HR streams")
             aboutBullet(icon: "arrow.triangle.2.circlepath", text: "Auto-syncs in the background — once connected, you stay connected")
-            aboutBullet(icon: "lock.fill", text: "Tokens refresh automatically; only disconnects if you tap Disconnect, delete your account, or stay away 60+ days")
+            aboutBullet(icon: "trash.fill", text: "Delete an activity on Strava and we'll remove it from Fit33 within minutes — disconnecting also deletes everything Fit33 has imported")
+            // Strava API Agreement: Activity data via the Strava API may
+            // include data that requires attribution to Garmin. Fit33
+            // renders Strava-normalized metrics (distance, time, pace, HR)
+            // and links out to Strava itself for the canonical device /
+            // gear attribution surface — that's where third-party device
+            // brand names (Garmin / Wahoo / etc.) live. We disclose this
+            // here so the user (and any Strava reviewer) can see the
+            // attribution chain.
+            aboutBullet(
+                icon: "applewatch.side.right",
+                text: "Activities recorded on third-party devices (Garmin, Wahoo, etc.) are attributed to those device makers on Strava itself — tap 'View on Strava' on any activity to see the original source"
+            )
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.md)
@@ -766,6 +859,61 @@ struct StravaSettingsView: View {
         }
     }
 
+    // MARK: - Strava Data Export (2026-05-02 compliance)
+    //
+    // Strava API Agreement §"Privacy" requires that we make Strava data
+    // we've collected available to the user on demand. Export path:
+    //   1. Encode `recentActivities` (the in-memory cache that
+    //      `StravaService` keeps fresh) as pretty-printed JSON.
+    //   2. Write to a temp file named `fit33-strava-export-{ISO8601}.json`.
+    //   3. Present the iOS share sheet so the user can save to Files,
+    //      iCloud, AirDrop, email it, etc.
+    //   4. Clean up the temp file on share-sheet dismiss.
+
+    private func prepareDataExport() {
+        let activities = strava.recentActivities
+        guard !activities.isEmpty else {
+            authErrorMessage = "No Strava activities to export. Pull to refresh and try again."
+            return
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+
+        do {
+            let data = try encoder.encode(activities)
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            let timestamp = isoFormatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            let fileName = "fit33-strava-export-\(timestamp).json"
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            try data.write(to: url, options: .atomic)
+            AppLogger.info("[STRAVA] Prepared data export at \(url.lastPathComponent) (\(activities.count) activities)", category: .health)
+            dataExportFile = DataExportFile(url: url)
+        } catch {
+            AppLogger.error("[STRAVA] Data export failed: \(error.localizedDescription)", category: .health)
+            authErrorMessage = "Couldn't prepare your data export. Please try again."
+        }
+    }
+
+    private func cleanupDataExport() {
+        guard let exportFile = dataExportFile else { return }
+        try? FileManager.default.removeItem(at: exportFile.url)
+        dataExportFile = nil
+    }
+}
+
+// MARK: - Strava Data Export File
+
+/// Identifiable wrapper for the temp file URL produced by
+/// `StravaSettingsView.prepareDataExport()`. URL-keyed so SwiftUI's
+/// `.sheet(item:)` correctly re-renders if the user re-exports during
+/// the same session (each export gets a unique timestamped filename).
+private struct DataExportFile: Identifiable {
+    let url: URL
+    var id: URL { url }
 }
 
 // MARK: - Date Extension

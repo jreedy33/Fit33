@@ -55,7 +55,21 @@ struct DashboardCardioWidget: View {
                     // dashboard widget — we must provide one here so
                     // the title + navigation bar still render.
                     NavigationStack {
-                        CardioGoalSetupView(activityType: .walk)
+                        // 2026-05-02 (per-user request, Wave 4d.3):
+                        // when `CardioGoalSetupView` is reached via
+                        // the canonical Workout-tab push, the
+                        // circular GO! button is mounted on the
+                        // global `GoButtonState.shared` overlay so it
+                        // floats over the system tab bar. That
+                        // overlay lives on `MainTabView` UNDER this
+                        // sheet — invisible from inside the sheet.
+                        // We pass `presentedAsSheet: true` so the
+                        // view falls back to its in-screen
+                        // tab-bar-style `bottomGoBar` instead.
+                        CardioGoalSetupView(
+                            activityType: .walk,
+                            presentedAsSheet: true
+                        )
                             .environmentObject(userManager)
                     }
                 }

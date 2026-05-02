@@ -1,249 +1,309 @@
-# Privacy Policy for BuiltSimple
+# Privacy Policy for Fit33
 
-**Last Updated: December 1, 2025**
+**Last Updated: May 2, 2026**
 
 ## Introduction
 
-BuiltSimple ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our mobile application BuiltSimple (the "App").
+Fit33 ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains what we collect, how we use it, who we share it with, and the controls you have. It covers our iOS app, Apple Watch companion app, and our cloud services.
 
-Please read this Privacy Policy carefully. By using the App, you agree to the collection and use of information in accordance with this policy. If you do not agree with the terms of this Privacy Policy, please do not access the App.
+By using Fit33, you agree to the collection and use of information described in this policy. If you do not agree, please do not use the app.
+
+---
 
 ## Information We Collect
 
-### Personal Information You Provide
-
-When you create an account and use our App, we may collect the following information:
-
-**Account Information:**
+### Account & Identity
 - Email address
-- Display name
-- Profile picture (if provided)
-
-**Health and Fitness Profile:**
-- Age
+- Display name and username
+- Profile photo (optional; stored in Supabase Storage)
+- Phone number (optional; verified via SMS for account recovery and trust)
+- Apple ID / Google account identifier (if you sign in with Apple or Google)
+- Date of birth and age
 - Gender
-- Height
-- Weight
-- Fitness goals (e.g., build muscle, lose weight, improve strength)
-- Experience level
-- Available workout days per week
-- Available equipment
 
-**Workout and Exercise Data:**
-- Workout history and logs
-- Exercise preferences and favorites
-- Custom exercises you create
-- Sets, repetitions, and weights
-- Workout duration and frequency
-- Active and completed fitness programs
-- Exercise swap preferences
+### Health & Fitness Profile
+- Height, weight, and body-composition entries
+- Fitness goals (build muscle, lose weight, improve strength, endurance, etc.)
+- Experience level and available days per week
+- Available equipment and training environment
+- Physical limitations, injuries, and exercise contraindications you tell us about
 
-**Nutrition and Meal Data:**
-- Meal logs and food entries
-- Calorie and macronutrient tracking (protein, carbohydrates, fats)
-- Favorite foods
-- Food search history and frequency
+### Workout & Exercise Data
+- Workout history, logs, sets, reps, weights, durations
+- Active and completed programs (7 / 14 / 21 / 30-day plans)
+- Auto-generated workouts, custom workouts you build, and exercise swaps
+- Exercise preferences, favorites, and personal records (PRs)
+- Rest-day / recovery-day usage
+- Quality scores derived from workout intelligence (form/tempo telemetry when using workout replay)
 
-**Progress and Achievement Data:**
-- Workout streaks
-- Experience points (XP)
-- Achievements and milestones
-- Personal records
+### Cardio & Running Data
+- Outdoor-run GPS traces (route, distance, pace, elevation) — only while a run is active, with your permission
+- Indoor cardio sessions (treadmill, bike, rower), including equipment telemetry received over Bluetooth
+- Cardio goals, pace targets, and session snapshots used for crash-recovery of an in-progress run
 
-### Automatically Collected Information
+### Nutrition & Meal Data
+- Meal logs, food entries, and custom foods you create
+- Calorie and macronutrient tracking (protein, carbohydrates, fat, fiber, sugar, sodium)
+- Favorite foods and search history
+- Saved recipes, imported recipes (via URL), and shopping-list items
+- Water / hydration intake
+- Photos of nutrition-facts labels used for **on-device OCR** — the image is processed locally with Apple's Vision framework and is **not uploaded**
 
-**Device Information:**
-- Device type and model
-- Operating system version
-- Unique device identifiers
-- App version
+> Note: Fit33 does not currently support true grocery-barcode scanning. Our scanner reads the nutrition-facts panel via OCR.
 
-**Usage Information:**
-- Features used within the App
-- Time spent in the App
-- Interaction patterns
+### Progress, Gamification & Achievements
+- Workout streaks and streak shields
+- Experience points (XP) and level
+- Daily quest completion (3 per day, resets at local midnight)
+- Weekly league placement and leaderboard rank (Monday 00:15 UTC placement)
+- Achievements, milestones, and personal records
+- Progress photos (front / side / back) you choose to capture, stored in your private Supabase Storage bucket
 
-**Bug Reports (When Submitted):**
-- Screenshots of the App at time of report
-- Bug descriptions you provide
-- Device and system information
-- Reproducibility information
+### Social & Community Data
+- Friends list, friend requests, and connections
+- 1-on-1, group, and community challenges you create or join
+- Messages sent inside private challenge chats
+- Shared workouts and reactions
+- Blocked users and reports you submit
+- Privacy Settings choices (profile-photo visibility, friend-activity visibility, weekly-league opt-out, contact-sync opt-out, search visibility, active-status visibility)
 
-### Health Data (With Your Permission)
+### Health Integrations (With Your Explicit Permission)
 
-If you choose to connect Apple HealthKit, we may access:
-- Step count data
-- Active energy burned
-- Workout data synced from other apps
+We only receive data you authorize in each provider's consent screen or the iOS permission dialog. You can revoke access at any time.
 
-**Important:** Health data accessed through HealthKit is used solely to enhance your fitness tracking experience within the App and is never sold to third parties or used for advertising purposes.
+| Integration | Data we request | Where to revoke |
+|-------------|-----------------|-----------------|
+| Apple HealthKit | Steps, active energy, workouts, heart rate, weight, body composition | iOS → Settings → Privacy & Security → Health → Fit33 |
+| Strava | Running / cycling activities (route, distance, pace, HR) via OAuth + webhooks | Strava → Settings → My Apps |
+| Fitbit | Steps, heart rate, sleep stages, activity summaries | Fitbit dashboard OR Fit33 → Settings → Fitbit |
+| WHOOP | Recovery, HRV, strain, sleep stages, SpO2, skin temperature, workouts | WHOOP dashboard OR Fit33 → Settings → WHOOP |
+| Oura | Sleep, readiness, HRV, activity summaries | Oura dashboard OR Fit33 → Settings → Oura |
+| InBody | Body-composition scans you import | Fit33 → Settings → InBody |
+| Bluetooth gym equipment | Live sensor data (speed, distance, cadence, watts, HR) during an active session | Session ends when you stop the workout |
+
+### Device, Diagnostics & Usage Information
+- Device type, model, OS version, and app version
+- Unique user identifier (server-generated UUID, not the device advertising ID)
+- Advertising identifier (IDFA) — **only if** you grant App Tracking Transparency (ATT) consent
+- App usage patterns, features opened, and screen telemetry (for bug-intelligence triage)
+- Network type (cellular/Wi-Fi) and basic performance metrics
+- Timezone, locale, and unit preferences
+- Crash reports, including symbolicated stack traces uploaded via dSYM for debugging
+- Bug reports you submit manually (description, screenshot, device info)
+
+### Camera, Photos, Contacts & Location
+- **Camera:** QR-code scanning (add friends) and nutrition-label OCR. The image is **not** uploaded.
+- **Photo Library:** only when you pick a profile or progress photo.
+- **Contacts:** only when you opt in to contact-based friend discovery. Hashed identifiers are sent to Supabase to find matches and are not stored in readable form on our servers.
+- **Location:** only during an active outdoor run. Background-location permission keeps tracking working when the screen is locked. We do **not** track location outside of an active cardio session.
+
+### Push Notifications & Silent Push
+- Apple Push Notification (APNs) device token
+- Per-category notification preferences (workouts, hydration, quests, streaks, challenges, readiness, social, marketing)
+- Silent pushes coalesce background sync for challenges, quests, and wearable data
+
+### Purchases & Subscriptions
+- In-app purchases processed by Apple StoreKit (receipts, transaction IDs, entitlement status)
+- We do **not** collect or store your credit-card information — Apple handles billing
+
+### Content Moderation
+- Text you send in challenge chats and content you post in social surfaces may be screened for harmful content using the **OpenAI Moderation API**
+- **Only the text** is sent to OpenAI. No identifiers, email, or profile data are attached
+- Flagged content may be reviewed by our moderation team
+
+---
 
 ## How We Use Your Information
 
-We use the information we collect to:
+- **Provide and maintain the App** — create/manage your account, sync your data across devices
+- **Personalize your experience** — workouts, programs, daily quests, meal recommendations, and readiness scoring based on your goals, equipment, limitations, and wearable signals
+- **Track your progress** — streaks, XP, achievements, leaderboards, and body-composition trends
+- **Calculate nutritional needs** (BMR, TDEE, macros) and merge calorie data across devices without double-counting
+- **Record cardio sessions** and award LP / credit uniformly regardless of source (Fit33 native, Strava, HealthKit, Apple Watch)
+- **Enable social features** — friends, challenges, shared workouts, reactions, leaderboards
+- **Send push notifications** you have opted into
+- **Moderate content** for harassment, hate speech, and self-harm signals
+- **Detect and investigate** crashes, bugs, and performance regressions
+- **Operate the free tier** with Google AdMob advertising (subject to your ATT choice)
+- **Comply with legal obligations** and App Store requirements
 
-- **Provide and maintain the App** - Create and manage your account, deliver the core fitness tracking functionality
-- **Personalize your experience** - Generate customized workout recommendations based on your goals, equipment, and preferences
-- **Sync your data** - Enable cloud synchronization so your data is available across devices
-- **Track your progress** - Display workout history, streaks, achievements, and fitness metrics
-- **Improve the App** - Analyze usage patterns to enhance features and fix bugs
-- **Communicate with you** - Send workout reminders, achievement notifications, and important updates (with your permission)
-- **Provide customer support** - Respond to bug reports and assist with technical issues
+---
 
 ## How We Share Your Information
 
-We do not sell your personal information. We may share your information in the following circumstances:
+We **do not sell your personal information**. We share data only in the following circumstances:
 
 ### Service Providers
 
-We use third-party services to operate our App:
-
-**Supabase:**
-- Purpose: Database storage, user authentication, file storage
-- Data shared: Account information, workout data, meal data, profile information
-- Privacy Policy: https://supabase.com/privacy
-
-**Google AdMob:**
-- Purpose: Display advertisements in the free version of the App
-- Data shared: Device identifiers, general location (country/region), ad interaction data
-- Privacy Policy: https://policies.google.com/privacy
-- Note: AdMob may use device advertising identifiers to show personalized ads. You can opt out of personalized advertising in your device settings.
-
-**Apple (App Store & HealthKit):**
-- Purpose: App distribution, health data integration
-- Data shared: As permitted by your HealthKit settings
-- Privacy Policy: https://www.apple.com/legal/privacy/
+| Provider | Purpose | Data shared | Privacy policy |
+|----------|---------|-------------|----------------|
+| **Supabase** | Database, authentication, file storage, realtime | Account info, workout data, meal data, profile, chat messages | https://supabase.com/privacy |
+| **Apple** (App Store, HealthKit, StoreKit, APNs, Sign in with Apple) | App distribution, health data, billing, notifications | As permitted by each API | https://www.apple.com/legal/privacy/ |
+| **Google** (AdMob, Sign-In) | Free-tier advertising; Google sign-in | Device identifiers (with ATT), basic Google profile | https://policies.google.com/privacy |
+| **Strava / Fitbit / WHOOP / Oura / InBody** | Optional health data integrations | Only the OAuth scopes you grant | Each provider's privacy policy |
+| **USDA FoodData Central** | Food nutrition lookup | Food name you search (no personal data) | https://fdc.nal.usda.gov/ |
+| **Open Food Facts** | Enriched product lookup | Barcode / product name (no personal data) | https://world.openfoodfacts.org/terms-of-use |
+| **Spoonacular** | Recipe browsing and import | Search query or URL you import (no personal data) | https://spoonacular.com/food-api/terms |
+| **OpenAI (Moderation API)** | Text moderation for chat and public posts | Message text only (no identifiers) | https://openai.com/policies/privacy-policy |
+| **Twilio** (via Supabase Auth) | SMS phone-number verification | Phone number and OTP | https://www.twilio.com/legal/privacy |
 
 ### Legal Requirements
-
-We may disclose your information if required to do so by law or in response to valid requests by public authorities (e.g., a court or government agency).
+We may disclose your information if required by law, subpoena, or valid government request, or to protect our rights, property, or users.
 
 ### Business Transfers
+If we are involved in a merger, acquisition, or sale of assets, your information may be transferred as part of that transaction. We will notify you before your data becomes subject to a different privacy policy.
 
-If we are involved in a merger, acquisition, or sale of assets, your information may be transferred as part of that transaction.
+---
 
 ## Data Storage and Security
 
 ### Cloud Storage
-
-Your data is securely stored using Supabase, which employs:
-- Encryption in transit (TLS/SSL)
+Your data is stored using Supabase:
+- TLS/SSL encryption in transit
 - Encryption at rest
-- Regular security audits
-- SOC 2 Type II compliance
+- Row-level security (RLS) so users can only read their own private data
+- Server-side enforcement of your Privacy Settings (a modified client cannot bypass them)
+- OAuth token rotation, stored in the iOS Keychain
+- Audit logging for health-integration token issuance and revocation
 
 ### Local Storage
-
-Some data is cached locally on your device for offline access and performance. This includes:
-- Recent workout data
-- Exercise library
+Some data is cached locally on your device (Core Data) for offline access and performance:
+- Recent workout, cardio, and meal data
+- Exercise library (6,000+ exercises)
 - User preferences
+- Auth tokens (iOS Keychain)
+- In-progress cardio snapshots (for crash-recovery within a 4-hour window)
 
 ### Data Retention
+- **Active accounts:** retained as long as the account is active
+- **Deleted accounts:** permanently removed from our servers within 30 days
+- **Bug / crash reports:** retained up to 90 days for troubleshooting
+- **Anonymized aggregate analytics:** may be retained longer
 
-- **Active accounts:** We retain your data for as long as your account is active
-- **Deleted accounts:** When you delete your account, all associated data is permanently removed from our servers within 30 days
-- **Bug reports:** Retained for up to 90 days for troubleshooting purposes
+---
 
 ## Your Privacy Rights
 
-You have the following rights regarding your data:
-
 ### Access and Portability
-You can view all your data within the App's settings and profile sections.
+- View your data in the app
+- Export your data via **Settings → Download Data**
 
 ### Correction
-You can update your profile information, workout data, and preferences at any time through the App.
+Update your profile information, workout data, and preferences any time in Profile and Settings.
 
 ### Deletion
-You can delete your account and all associated data through the App's settings. This action is irreversible.
+Delete your account and all associated data:
+1. Open Fit33
+2. Go to **Profile → Delete Account**
+3. Confirm — deletion is irreversible
 
-To delete your account:
-1. Open the App
-2. Go to Settings
-3. Scroll to "Delete Account"
-4. Confirm deletion
+### Revoke Health-Integration Access
+Apple Health: iOS → Settings → Privacy & Security → Health → Fit33
+Strava / Fitbit / WHOOP / Oura / InBody: Fit33 → Settings → [Integration name], or the provider's own dashboard
 
-### Opt-Out of Advertising
-You can opt out of personalized advertising:
-- **iOS:** Settings → Privacy & Security → Tracking → Disable "Allow Apps to Request to Track"
-- **iOS:** Settings → Privacy & Security → Apple Advertising → Disable "Personalized Ads"
+### Opt Out of Personalized Advertising
+- iOS → Settings → Privacy & Security → Tracking → disable "Allow Apps to Request to Track"
+- iOS → Settings → Privacy & Security → Apple Advertising → disable "Personalized Ads"
 
-### HealthKit Data
-You can revoke HealthKit access at any time:
-- **iOS:** Settings → Privacy & Security → Health → BuiltSimple → Disable permissions
+### Manage Notifications
+- iOS → Settings → Notifications → Fit33
+- Fit33 → Settings → Notifications (per-category toggles)
+
+### Block and Report Users
+- Long-press a message in a private challenge chat OR a post in the friend-activity feed
+- Tap **Report & Block**
+- Manage blocked users in **Settings → Privacy & Security → Blocked Users**
+
+### In-App Privacy Controls (Settings → Privacy & Security)
+- Hide Profile Photo
+- Hide Friend Activity
+- Hide from Weekly League
+- Hide from Contact Sync
+- Hide from Search
+- Hide Active Status
+- Manage Blocked Users
+
+---
 
 ## Children's Privacy
 
-The App is not intended for children under the age of 13. We do not knowingly collect personal information from children under 13. If you are a parent or guardian and believe your child has provided us with personal information, please contact us, and we will delete such information.
+Fit33 is not intended for children under 13. We do not knowingly collect personal information from children under 13. If you are a parent or guardian and believe your child has provided us with personal information, please contact us and we will delete it. In the EEA/UK, the minimum age is 16 unless local law specifies a lower age.
+
+---
 
 ## International Data Transfers
 
-Your information may be transferred to and processed in countries other than your country of residence. These countries may have data protection laws that are different from the laws of your country. By using the App, you consent to the transfer of your information to these countries.
+Your information may be transferred to and processed in the United States and other countries where our service providers operate. By using Fit33, you consent to the transfer.
+
+---
+
+## California Privacy Rights (CCPA / CPRA)
+
+If you are a California resident, you have additional rights:
+- **Right to Know** what we collect and why
+- **Right to Delete** your personal information
+- **Right to Correct** inaccurate information
+- **Right to Opt-Out** of the "sale" or "sharing" of personal information (we do **not** sell your data)
+- **Right to Non-Discrimination** for exercising your privacy rights
+
+To exercise these rights, contact us using the details below.
+
+---
+
+## European Privacy Rights (GDPR / UK GDPR)
+
+If you are in the EEA, UK, or Switzerland, you have the following rights:
+- **Right of Access** — request a copy of your personal data
+- **Right to Rectification** — correct inaccurate data
+- **Right to Erasure** — request deletion ("right to be forgotten")
+- **Right to Restrict Processing**
+- **Right to Data Portability**
+- **Right to Object** to processing
+- **Right to lodge a complaint** with a supervisory authority
+
+Our **legal bases** for processing:
+- **Contract** — providing the app functionality
+- **Consent** — marketing communications, health-integration OAuth connections, App Tracking Transparency
+- **Legitimate Interests** — improving the app, preventing abuse and fraud
+
+---
 
 ## Changes to This Privacy Policy
 
-We may update this Privacy Policy from time to time. We will notify you of any changes by:
-- Posting the new Privacy Policy in the App
-- Updating the "Last Updated" date at the top of this policy
-- Sending a notification through the App for significant changes
+We may update this Privacy Policy from time to time. We will notify you of changes by:
+- Posting the new Privacy Policy in the app
+- Updating the "Last Updated" date above
+- Sending an in-app notification for significant changes
 
-We encourage you to review this Privacy Policy periodically for any changes.
+We encourage you to review this Privacy Policy periodically.
 
-## California Privacy Rights (CCPA)
-
-If you are a California resident, you have additional rights under the California Consumer Privacy Act (CCPA):
-
-- **Right to Know:** You can request information about the categories and specific pieces of personal information we have collected about you
-- **Right to Delete:** You can request deletion of your personal information
-- **Right to Non-Discrimination:** We will not discriminate against you for exercising your privacy rights
-
-To exercise these rights, please contact us using the information below.
-
-## European Privacy Rights (GDPR)
-
-If you are a resident of the European Economic Area (EEA), you have additional rights under the General Data Protection Regulation (GDPR):
-
-- **Right of Access:** Request copies of your personal data
-- **Right to Rectification:** Request correction of inaccurate data
-- **Right to Erasure:** Request deletion of your data
-- **Right to Restrict Processing:** Request limitation of data processing
-- **Right to Data Portability:** Request transfer of your data
-- **Right to Object:** Object to processing of your data
-
-Our legal basis for processing your data includes:
-- **Contract:** Processing necessary to provide the App services
-- **Consent:** Processing based on your explicit consent (e.g., marketing communications)
-- **Legitimate Interests:** Processing for our legitimate business interests (e.g., improving the App)
-
-## Contact Us
-
-If you have questions or concerns about this Privacy Policy or our data practices, please contact us at:
-
-**Email:** privacy@builtsimple.app
-
-**Mailing Address:**
-BuiltSimple
-131 W 15th ST. UNIT 30
-New York, NY 1001
+---
 
 ## App Store Privacy Details
 
 In accordance with Apple's App Privacy requirements, here is a summary of our data practices:
 
 ### Data Used to Track You
-- Identifiers (Device ID for advertising)
+- Identifiers (Device ID / IDFA) — **only with ATT consent**, for Google AdMob
 
 ### Data Linked to You
-- Contact Info (Email)
-- Health & Fitness (Workouts, Nutrition)
-- Identifiers (User ID)
-- Usage Data
+- **Contact Info** — email, phone number
+- **Health & Fitness** — workouts, cardio, nutrition, wearable data
+- **User Content** — profile photo, progress photos, challenge messages
+- **Identifiers** — User ID
+- **Usage Data**
 
 ### Data Not Linked to You
-- Diagnostics (Crash data, performance data)
+- **Diagnostics** — crash data, performance data
 
 ---
 
-**BuiltSimple** - Your fitness journey, simplified.
+## Contact Us
 
+If you have questions or concerns about this Privacy Policy or our data practices:
+
+**Email:** support@fit33app.com
+
+---
+
+**Fit33** — Your fitness journey, done right.

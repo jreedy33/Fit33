@@ -29,6 +29,17 @@
 			</array>
 		</dict>
 	</array>
+	<!-- 2026-05-02 (per-user request): the cardio "Run with Strava"
+	     handoff button on `CardioGoalSetupView` calls
+	     `UIApplication.shared.canOpenURL("strava://...")` to decide
+	     whether to deep-link or fall back to the App Store. Without
+	     `LSApplicationQueriesSchemes` declaring `strava`, iOS would
+	     refuse the query and the user would always get the App Store
+	     fallback even when Strava is installed. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>strava</string>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>GADApplicationIdentifier</key>

@@ -148,6 +148,7 @@ struct DashboardView: View {
     @AppStorage("showWhoopWidget") var showWhoopWidget = true  // WHOOP Recovery widget (only renders when connected)
     @AppStorage("showOuraWidget") var showOuraWidget = true  // Oura Readiness widget (only renders when connected)
     @AppStorage("showStravaWidget") var showStravaWidget = true  // Strava latest-activity widget (only renders when connected + fresh activity)
+    @AppStorage("showCardioWidget") var showCardioWidget = true  // Dashboard cardio streak / "Just one block" walk CTA
     
     // Nutrition data for macros widget (plain let — macros widget wraps its own @ObservedObject)
     let mealService = MealService.shared
@@ -301,9 +302,13 @@ struct DashboardView: View {
                     // cardio yet), or the just-one-block tile (no
                     // streak, no cardio yet). Tap → opens
                     // `CardioGoalSetupView(.walk)` as a sheet.
-                    DashboardCardioWidget()
-                        .environmentObject(userManager)
-                        .padding(.bottom, 16)
+                    // Toggleable via the "..." widget settings menu
+                    // (`showCardioWidget` AppStorage flag).
+                    if showCardioWidget {
+                        DashboardCardioWidget()
+                            .environmentObject(userManager)
+                            .padding(.bottom, 16)
+                    }
 
                     // WHOOP Recovery Widget (isolated — only renders when WHOOP connected + widget enabled)
                     if showWhoopWidget {
@@ -311,11 +316,14 @@ struct DashboardView: View {
                             .padding(.bottom, 16)
                     }
 
-                    // Oura Readiness Widget (isolated — only renders when Oura connected + widget enabled)
-                    if showOuraWidget {
-                        DashboardOuraWrapper()
-                            .padding(.bottom, 16)
-                    }
+                    // Oura Readiness Widget — temporarily hidden (Sprint 2026-05-02).
+                    // Oura row was removed from onboarding/settings/dashboard while
+                    // the Oura integration is being reworked. The AppStorage flag
+                    // and wrapper are preserved so we can re-enable in one line.
+                    // if showOuraWidget {
+                    //     DashboardOuraWrapper()
+                    //         .padding(.bottom, 16)
+                    // }
 
                     // Strava Latest Activity Widget (isolated — only renders when Strava connected + an activity from the last 36h)
                     if showStravaWidget {
@@ -468,7 +476,8 @@ struct DashboardView: View {
                     showRecommended: $showRecommendedWidget,
                     showWhoop: $showWhoopWidget,
                     showOura: $showOuraWidget,
-                    showStrava: $showStravaWidget
+                    showStrava: $showStravaWidget,
+                    showCardio: $showCardioWidget
                 )
                 .presentationDragIndicator(.visible)
             }

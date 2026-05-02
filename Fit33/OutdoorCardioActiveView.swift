@@ -35,12 +35,21 @@ import CoreLocation
 struct OutdoorCardioActiveView: View {
     @ObservedObject private var run = RunningManager.shared
     @ObservedObject private var session = CardioSessionManager.shared
+    @ObservedObject private var unitSettings = UnitSettingsManager.shared
 
     @State private var cameraPosition: MapCameraPosition = .userLocation(
         followsHeading: true,
         fallback: .automatic
     )
     @State private var focusedMetric: FocusedMetric = .pace
+    /// Cardio Redesign — Goal-Met sheet (2026-05-02 per user request).
+    /// Flips `true` once `RunningManager.goalReached` rises. Shows the
+    /// "You hit your X goal!" celebration with End / Keep-going CTAs.
+    /// Held outside the sheet's `isPresented:` because we need to
+    /// observe `run.goalReached` separately and only allow the sheet to
+    /// open ONCE per session (`hasShownGoalMet` keeps it idempotent).
+    @State private var showGoalMetSheet: Bool = false
+    @State private var hasShownGoalMet: Bool = false
 
     private enum FocusedMetric: String, CaseIterable {
         case pace, speed, heartRate
@@ -81,6 +90,39 @@ struct OutdoorCardioActiveView: View {
         .background(Color(.systemBackground))
         .ignoresSafeArea(.container, edges: .top)
         .navigationBarBackButtonHidden(true)
+        // Goal-Met sheet wiring (2026-05-02 per user request).
+        // We listen for the `goalReached` rising edge and open the
+        // celebration sheet ONCE per session. Subsequent oscillations
+        // (e.g., if the engine is paused/resumed) don't re-fire.
+        .onChange(of: run.goalReached) { _, reached in
+            if reached, !hasShownGoalMet {
+                hasShownGoalMet = true
+                showGoalMetSheet = true
+            }
+        }
+        .sheet(isPresented: $showGoalMetSheet) {
+            CardioGoalMetSheet(
+                accent: activityAccent,
+                goalLabel: goalLabelForCelebration,
+                distance: run.formattedDistance,
+                time: run.formattedElapsedTime,
+                calories: Int(run.calories),
+                onKeepGoing: {
+                    showGoalMetSheet = false
+                },
+                onEnd: {
+                    showGoalMetSheet = false
+                    // Same end path the bottom red button uses — flips
+                    // session phase to `.ended` → `.recap`, the recap
+                    // does the Supabase RPC + LP/quest fanout, then
+                    // surfaces a card in the unified recent log.
+                    HapticManager.notification(.warning)
+                    session.end()
+                }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: - Map
@@ -124,10 +166,30 @@ struct OutdoorCardioActiveView: View {
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
             if run.goalType != .none, run.goalValue > 0 {
-                ProgressView(value: run.goalProgress)
-                    .progressViewStyle(.linear)
-                    .tint(activityAccent)
-                    .frame(maxWidth: 240)
+                // Cardio Redesign — labeled goal progress (2026-05-02
+                // per user request). The legacy bare `ProgressView`
+                // gave the user no idea where they were in the goal;
+                // now we surface "2.30 / 3.11 mi" (or "12:34 / 30:00",
+                // "187 / 350 kcal") directly under the bar so the
+                // remainder is obvious at a glance.
+                VStack(spacing: 4) {
+                    ProgressView(value: run.goalProgress)
+                        .progressViewStyle(.linear)
+                        .tint(run.goalReached ? .green : activityAccent)
+                        .frame(maxWidth: 240)
+                    HStack(spacing: 4) {
+                        if run.goalReached {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                        }
+                        Text(goalProgressLabel)
+                            .font(.caption.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundColor(run.goalReached ? .green : .secondary)
+                            .contentTransition(.numericText())
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -280,9 +342,14 @@ struct OutdoorCardioActiveView: View {
     // MARK: - Helpers
 
     private var activityAccent: Color {
+        // 2026-05-02 (per-user request): Walk = teal, Run = blue
+        // (was mint / green). Drives the GPS-route polyline color,
+        // focused-metric tile gradient, splits chip tint, countdown
+        // overlay glow — the entire active-screen identity. Cycling
+        // stays cyan, hike stays orange.
         switch run.activityType {
-        case .walk:         return .mint
-        case .run:          return .green
+        case .walk:         return .teal
+        case .run:          return .blue
         case .outdoorCycle: return .cyan
         case .hike:         return .orange
         }
@@ -324,6 +391,238 @@ struct OutdoorCardioActiveView: View {
     private func endWorkout() {
         HapticManager.notification(.warning)
         session.end()
+    }
+
+    // MARK: - Goal Progress Formatting (2026-05-02 user request)
+    //
+    // The user wants to see "2.30 / 3.11 mi" in real time on the active
+    // screen so they always know how far they have left. Distance label
+    // honors `UnitSettingsManager.shared.distanceUnit`; time / calorie
+    // labels are unit-independent.
+
+    /// "Current / target" progress string, e.g.:
+    ///   • Distance (5K imperial): "2.30 / 3.11 mi"
+    ///   • Distance (5K metric):   "2.5 / 5.0 km"
+    ///   • Time:                   "12:34 / 30:00"
+    ///   • Calories:               "187 / 350 kcal"
+    private var goalProgressLabel: String {
+        switch run.goalType {
+        case .distance:
+            switch unitSettings.distanceUnit {
+            case .imperial:
+                let cur = run.distance / 1609.344
+                let goal = run.goalValue / 1609.344
+                return String(format: "%.2f / %.2f mi", cur, goal)
+            case .metric:
+                let cur = run.distance / 1000.0
+                let goal = run.goalValue / 1000.0
+                return String(format: "%.2f / %.2f km", cur, goal)
+            }
+        case .time:
+            return "\(formatSeconds(run.elapsedTime)) / \(formatSeconds(run.goalValue))"
+        case .calories:
+            return "\(Int(run.calories)) / \(Int(run.goalValue)) kcal"
+        case .pace, .none:
+            return ""
+        }
+    }
+
+    /// Friendly label inside the celebration sheet headline. Maps round
+    /// race distances to their canonical name ("5K", "10K", "Half
+    /// Marathon", "Marathon") and falls back to the raw goal value
+    /// otherwise. Time / calorie goals get their natural string.
+    private var goalLabelForCelebration: String {
+        switch run.goalType {
+        case .distance:
+            // Snap to canonical race distances within ±1% of the
+            // metric target; otherwise show the user's preferred unit.
+            let raceLabels: [(meters: Double, label: String)] = [
+                (5_000,  "5K"),
+                (10_000, "10K"),
+                (15_000, "15K"),
+                (21_097, "Half Marathon"),
+                (42_195, "Marathon")
+            ]
+            for race in raceLabels {
+                if abs(run.goalValue - race.meters) / race.meters < 0.01 {
+                    return race.label
+                }
+            }
+            switch unitSettings.distanceUnit {
+            case .imperial: return String(format: "%.2f mi", run.goalValue / 1609.344)
+            case .metric:   return String(format: "%.2f km", run.goalValue / 1000.0)
+            }
+        case .time:
+            let mins = Int(run.goalValue) / 60
+            let secs = Int(run.goalValue) % 60
+            if mins >= 60 {
+                let hrs = mins / 60
+                let rem = mins % 60
+                return rem > 0 ? "\(hrs)h \(rem) min" : "\(hrs) hour\(hrs == 1 ? "" : "s")"
+            }
+            return secs == 0 ? "\(mins)-min" : String(format: "%d:%02d", mins, secs)
+        case .calories:
+            return "\(Int(run.goalValue)) kcal"
+        case .pace, .none:
+            return ""
+        }
+    }
+
+    private func formatSeconds(_ s: TimeInterval) -> String {
+        let total = Int(s)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let sec = total % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, sec)
+        }
+        return String(format: "%d:%02d", m, sec)
+    }
+}
+
+// MARK: - CardioGoalMetSheet
+//
+// Cardio Redesign — Goal-Met celebration (2026-05-02 per user request).
+//
+// Surfaced from `OutdoorCardioActiveView` the moment
+// `RunningManager.goalReached` flips true. Two CTAs:
+//   • "End workout" — primary, red gradient. Routes through the
+//     normal `CardioSessionManager.end()` path → `.recap` →
+//     `CardioRecapView` → Supabase RPC → unified recent log card.
+//   • "Keep going"  — secondary. Closes the sheet only; the run
+//     continues uninterrupted (timer, GPS, splits all keep ticking
+//     because `OutdoorCardioActiveView` never paused).
+//
+// Stats row mirrors the recap card's hero metrics (distance / time /
+// calories) so the user gets immediate validation of the milestone
+// they just hit.
+private struct CardioGoalMetSheet: View {
+    let accent: Color
+    let goalLabel: String
+    let distance: String
+    let time: String
+    let calories: Int
+    let onKeepGoing: () -> Void
+    let onEnd: () -> Void
+
+    var body: some View {
+        VStack(spacing: 24) {
+            // Trophy hero
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [accent.opacity(0.30), accent.opacity(0.10)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 96, height: 96)
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(accent)
+                    .shadow(color: accent.opacity(0.45), radius: 12)
+            }
+            .padding(.top, 8)
+
+            VStack(spacing: 6) {
+                Text("You hit your \(goalLabel) goal!")
+                    .font(.title2.bold())
+                    .multilineTextAlignment(.center)
+                Text("Crush it. Keep moving — or save what you've got.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            statsRow
+
+            VStack(spacing: 10) {
+                Button(action: onEnd) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "stop.fill")
+                        Text("End workout")
+                            .fontWeight(.bold)
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.red, Color.red.opacity(0.85)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(14)
+                    .shadow(color: Color.red.opacity(0.35), radius: 10, y: 4)
+                }
+                .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
+
+                Button(action: onKeepGoing) {
+                    Text("Keep going")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(accent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(.ultraThinMaterial)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(accent.opacity(0.35), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 28)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var statsRow: some View {
+        HStack(spacing: 0) {
+            statColumn(icon: "figure.run", value: distance, label: "Distance")
+            divider
+            statColumn(icon: "clock.fill", value: time, label: "Time")
+            divider
+            statColumn(icon: "flame.fill", value: "\(calories)", label: "Calories")
+        }
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+        )
+    }
+
+    private func statColumn(icon: String, value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(accent)
+            Text(value)
+                .font(.headline.weight(.bold))
+                .monospacedDigit()
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 1, height: 32)
     }
 }
 

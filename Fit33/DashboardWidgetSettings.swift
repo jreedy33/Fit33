@@ -10,6 +10,7 @@ struct WidgetSettingsSheet: View {
     @Binding var showWhoop: Bool
     @Binding var showOura: Bool
     @Binding var showStrava: Bool
+    @Binding var showCardio: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var premiumManager = PremiumManager.shared
@@ -86,13 +87,16 @@ struct WidgetSettingsSheet: View {
                             isSelected: $showWhoop
                         )
                         
-                        widgetOptionRow(
-                            icon: "circle.circle",
-                            title: "Oura Readiness",
-                            subtitle: "Readiness score, HRV & sleep",
-                            gradientColors: [Color.teal, Color.cyan],
-                            isSelected: $showOura
-                        )
+                        // Oura Readiness widget — temporarily hidden (Sprint 2026-05-02).
+                        // Binding kept on the sheet so DashboardView's call site
+                        // still compiles; we'll restore the row when Oura is back.
+                        // widgetOptionRow(
+                        //     icon: "circle.circle",
+                        //     title: "Oura Readiness",
+                        //     subtitle: "Readiness score, HRV & sleep",
+                        //     gradientColors: [Color.teal, Color.cyan],
+                        //     isSelected: $showOura
+                        // )
 
                         widgetOptionRow(
                             icon: "figure.run",
@@ -101,7 +105,15 @@ struct WidgetSettingsSheet: View {
                             gradientColors: [Color.stravaOrange, Color.orange],
                             isSelected: $showStrava
                         )
-                        
+
+                        widgetOptionRow(
+                            icon: "flame.fill",
+                            title: "Cardio Streak",
+                            subtitle: "Streak status & one-tap walk start",
+                            gradientColors: [Color.green, Color.orange],
+                            isSelected: $showCardio
+                        )
+
                         // Challenge widget - show for all users, but locked for free users
                         challengeWidgetOptionRow(
                             isSelected: $showChallenge

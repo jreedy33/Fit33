@@ -145,7 +145,7 @@ enum TutorialPageKind: CaseIterable, Identifiable {
         case .challenges1v1:  return "Compete head-to-head"
         case .community:      return "Featured challenges, real people"
         case .league:         return "Duolingo-style weekly leagues"
-        case .wearables:      return "WHOOP, Oura, Fitbit, Apple Health"
+        case .wearables:      return "WHOOP, Fitbit, Strava, Apple Health"
         case .fuel:           return "Macros, meals, hydration"
         case .trial:          return "Start your free trial"
         }
@@ -168,7 +168,7 @@ enum TutorialPageKind: CaseIterable, Identifiable {
         case .league:
             return "Train every week, climb the ranks.\nTop finishers get promoted. Bottom drops down."
         case .wearables:
-            return "Connect your favorite trackers.\nRecovery, strain, sleep — all read by Fit33."
+            return "Connect your favorite apps for a more\npersonalized Fit33 experience."
         case .fuel:
             return "Log meals with USDA + label OCR.\nStay hydrated with one-tap water tracking."
         case .trial:
@@ -1003,7 +1003,7 @@ struct TutorialConnectIntegrationsView: View {
         VStack(spacing: Spacing.xs) {
             IntegrationRow(integration: .appleHealth)
             IntegrationRow(integration: .whoop)
-            IntegrationRow(integration: .oura)
+            // Oura row temporarily hidden — coming back in a future update.
             IntegrationRow(integration: .fitbit)
             IntegrationRow(integration: .strava)
 
@@ -1036,7 +1036,10 @@ private enum TutorialIntegration {
         case .whoop:       return "Recovery, strain, sleep, HRV"
         case .oura:        return "Readiness, sleep, activity"
         case .fitbit:      return "Steps, heart rate, sleep"
-        case .strava:      return "Runs, rides, GPS activities"
+        // Kept short so the green "Connected" pill (wider than "Connect")
+        // doesn't force "GPS activities" to truncate to "GPS…" on the
+        // narrow card width when the user is already linked to Strava.
+        case .strava:      return "Runs, rides & GPS"
         }
     }
 
@@ -1061,6 +1064,15 @@ private enum TutorialIntegration {
     }
 
     var tint: Color { brandColors[0] }
+
+    /// True for integrations whose icon badge is the brand's own wordmark / lockup
+    /// (so we don't render a redundant text title above the dataline).
+    var usesBrandBadge: Bool {
+        switch self {
+        case .whoop, .fitbit, .strava: return true
+        case .appleHealth, .oura:      return false
+        }
+    }
 }
 
 private struct IntegrationRow: View {
@@ -1130,16 +1142,23 @@ private struct IntegrationRowBody: View {
             iconBadge
 
             VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                Text(integration.title)
-                    .font(.ds_heading3)
-                    .foregroundColor(.adaptiveText)
+                // For third-party brands the badge IS the title (their official
+                // wordmark / "compatible with" lockup), so don't double up with a
+                // text label. Apple Health keeps the textual title.
+                if integration.usesBrandBadge == false {
+                    Text(integration.title)
+                        .font(.ds_heading3)
+                        .foregroundColor(.adaptiveText)
+                }
                 Text(integration.dataLine)
                     .font(.ds_bodySmall)
                     .foregroundColor(.adaptiveSecondaryText)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(integration.title). \(integration.dataLine)")
 
-            Spacer()
+            Spacer(minLength: Spacing.xxs)
 
             connectPill
         }
@@ -1147,15 +1166,103 @@ private struct IntegrationRowBody: View {
         .adaptiveSleekCard(cornerRadius: CornerRadius.lg, accentColor: integration.tint)
     }
 
+    // MARK: - Brand badge constants
+    //
+    // ALL four integration badges are the same 88×44 brand chip so the rows line
+    // up and the logos read as a consistent set. Inner logo frames are picked
+    // per-brand to make the visual weight of the wordmarks/glyphs feel equal —
+    // WHOOP's tall thin "WHOOP" wordmark, Fitbit's wide horizontal lockup, and
+    // Strava's stacked "Compatible with" badge each need a slightly different
+    // inner frame to look the same size to the eye.
+    private static let chipSize = CGSize(width: 88, height: 44)
+    private static let chipCornerRadius: CGFloat = 12
+
+    @ViewBuilder
     private var iconBadge: some View {
+        switch integration {
+        case .appleHealth:
+            // Red→pink gradient chip mirroring the Apple Health brand identity.
+            // Same dimensions as the third-party brand chips so all four icons
+            // read as a clean grid.
+            chipBackground(fill: AnyShapeStyle(
+                LinearGradient(colors: integration.brandColors,
+                               startPoint: .topLeading,
+                               endPoint: .bottomTrailing)
+            ), shadow: integration.tint.opacity(0.35)) {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+        case .whoop:
+            // Black puck with the official white WHOOP wordmark — matches WHOOP
+            // brand guidelines (white logotype on dark background only).
+            chipBackground(fill: AnyShapeStyle(Color.black),
+                           shadow: Color.black.opacity(0.4)) {
+                Image("WhoopWordmark")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(.white)
+                    .frame(width: 60, height: 18)
+            }
+            .accessibilityHidden(true)
+        case .fitbit:
+            // Fitbit official wordmark on a clean white chip. Inner frame is
+            // sized to leave generous horizontal padding so the dark navy
+            // wordmark doesn't crowd the chip edge — fixes the "dark issues"
+            // where the wordmark appeared to bleed into the row background.
+            chipBackground(fill: AnyShapeStyle(Color.white),
+                           shadow: Color.black.opacity(0.25)) {
+                Image("FitbitLogo")
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 64, height: 22)
+            }
+            .accessibilityHidden(true)
+        case .strava:
+            // "Compatible with STRAVA" lockup — Strava brand guidelines require
+            // the official badge whenever Strava data is shown to the user.
+            // Stacked badge sits taller; frame tuned so the orange "STRAVA"
+            // visually matches the WHOOP/Fitbit wordmark weight.
+            chipBackground(fill: AnyShapeStyle(Color.white),
+                           shadow: Color.black.opacity(0.25)) {
+                Image("CompatibleWithStrava")
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 56, height: 34)
+            }
+            .accessibilityHidden(true)
+        case .oura:
+            // Retained for compile-safety only — Oura row is currently hidden
+            // from this screen (see TutorialConnectIntegrationsView).
+            chipBackground(fill: AnyShapeStyle(
+                LinearGradient(colors: integration.brandColors,
+                               startPoint: .topLeading,
+                               endPoint: .bottomTrailing)
+            ), shadow: integration.tint.opacity(0.35)) {
+                Image(systemName: integration.icon)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+        }
+    }
+
+    /// Shared chip container used by every integration row so the badges line
+    /// up at the same 88×44 footprint regardless of what's drawn inside.
+    @ViewBuilder
+    private func chipBackground<Content: View>(
+        fill: AnyShapeStyle,
+        shadow: Color,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         ZStack {
-            Circle()
-                .fill(LinearGradient(colors: integration.brandColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 44, height: 44)
-                .shadow(color: integration.tint.opacity(0.4), radius: 6, x: 0, y: 3)
-            Image(systemName: integration.icon)
-                .font(.ds_labelLarge)
-                .foregroundColor(.white)
+            RoundedRectangle(cornerRadius: Self.chipCornerRadius)
+                .fill(fill)
+                .frame(width: Self.chipSize.width, height: Self.chipSize.height)
+                .shadow(color: shadow, radius: 6, x: 0, y: 3)
+            content()
         }
     }
 
@@ -1166,31 +1273,80 @@ private struct IntegrationRowBody: View {
                 Image(systemName: "checkmark.seal.fill").font(.ds_caption)
                 Text("Connected").font(.ds_labelMedium)
             }
-            .foregroundColor(.white)
+            .foregroundColor(connectPillForeground)
             .padding(.horizontal, Spacing.sm)
             .padding(.vertical, Spacing.xxs)
-            .background(Capsule().fill(Color(red: 0.2, green: 0.7, blue: 0.4)))
+            .background(Capsule().fill(connectPillBackground))
+            .overlay(Capsule().stroke(connectPillStroke, lineWidth: connectPillStrokeWidth))
             .accessibilityLabel("\(integration.title) connected")
         } else {
             Button(action: launchConnect) {
                 HStack(spacing: Spacing.xxxs) {
                     if isConnecting {
-                        ProgressView().tint(.white).controlSize(.small)
+                        ProgressView().tint(connectPillForeground).controlSize(.small)
                     } else {
                         Text("Connect").font(.ds_labelMedium)
                     }
                 }
-                .foregroundColor(.white)
+                .foregroundColor(connectPillForeground)
                 .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, Spacing.xs)
-                .background(
-                    Capsule()
-                        .fill(LinearGradient(colors: integration.brandColors, startPoint: .leading, endPoint: .trailing))
+                .background(Capsule().fill(connectPillBackground))
+                .overlay(
+                    // Subtle hairline so the white WHOOP pill stays legible on
+                    // the card background regardless of color scheme.
+                    Capsule().stroke(connectPillStroke, lineWidth: connectPillStrokeWidth)
                 )
             }
             .scaleButtonStyle(.standard, withHaptic: true)
             .disabled(isConnecting)
             .accessibilityLabel("Connect \(integration.title)")
+        }
+    }
+
+    // MARK: - Per-brand Connect / Connected Pill Styling
+    //
+    // Brand guidelines (and good UX) require each integration's CTA to look
+    // unmistakably like the destination brand. The SAME styling is used whether
+    // the user is connecting (Connect) or already linked (Connected) — the
+    // checkmark.seal.fill icon is the only signal of state, so the pill stays
+    // brand-colored end-to-end and the row reads as that brand at a glance.
+    //   • Apple Health — red→pink gradient (matches the heart chip / brand)
+    //   • WHOOP        — solid white pill, black text (WHOOP: white on black)
+    //   • Fitbit       — solid Fitbit teal, white text (#00B0BD)
+    //   • Strava       — solid Strava orange, white text (#FD4D0A)
+
+    private var connectPillBackground: AnyShapeStyle {
+        switch integration {
+        case .whoop:
+            return AnyShapeStyle(Color.white)
+        case .fitbit:
+            return AnyShapeStyle(Color(red: 0.0, green: 0.69, blue: 0.74))
+        case .strava:
+            return AnyShapeStyle(Color(red: 0.99, green: 0.30, blue: 0.04))
+        case .appleHealth, .oura:
+            return AnyShapeStyle(LinearGradient(colors: integration.brandColors, startPoint: .leading, endPoint: .trailing))
+        }
+    }
+
+    private var connectPillForeground: Color {
+        switch integration {
+        case .whoop: return .black
+        default:     return .white
+        }
+    }
+
+    private var connectPillStroke: Color {
+        switch integration {
+        case .whoop: return Color.black.opacity(0.12)
+        default:     return Color.clear
+        }
+    }
+
+    private var connectPillStrokeWidth: CGFloat {
+        switch integration {
+        case .whoop: return 1
+        default:     return 0
         }
     }
 

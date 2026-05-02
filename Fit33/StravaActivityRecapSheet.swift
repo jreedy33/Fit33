@@ -192,10 +192,14 @@ struct StravaActivityRecapSheet: View {
     }
 
     private func openInStravaButton(url: URL) -> some View {
+        // Strava Brand Guidelines §3 (Linking to Strava Data): the
+        // canonical text MUST be "View on Strava" (any other label is
+        // a brand-guideline violation). Bold weight + Strava brand
+        // orange (#FC5200) satisfy the link-affordance rule.
         Link(destination: url) {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "arrow.up.right.square.fill")
-                Text("Open in Strava")
+                Text("View on Strava")
                     .fontWeight(.semibold)
             }
             .font(.subheadline)

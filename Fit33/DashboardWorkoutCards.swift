@@ -523,7 +523,25 @@ struct RecentWorkoutCard: View {
 struct RecentCardioWorkoutCard: View {
     let cardioWorkout: CardioWorkoutDTO
     var isMostRecent: Bool = false
+    /// 2026-05-02 — when set, overrides `activityInfo.color` for the
+    /// card's primary accent (icon ring, icon glyph, stat icons, sleek
+    /// border). Used by `CardioRecentLogSection` on the cardio landing
+    /// where SOURCE coloring (Strava=orange / Fit33=blue / wearables=
+    /// white) replaces the per-activity coloring used on the Home tab.
+    /// When non-nil, the inline brand badge below the date is
+    /// suppressed (the accent stroke already encodes the source); the
+    /// WHOOP top-right wordmark still renders because it doubles as the
+    /// "white accent" itself for WHOOP-origin rows.
+    var accentColorOverride: Color? = nil
     @Environment(\.colorScheme) private var colorScheme
+
+    /// Resolved accent — override wins, falls through to the per-activity
+    /// color used on the Home tab.
+    private var effectiveAccent: Color { accentColorOverride ?? activityInfo.color }
+    /// Hide the inline brand capsule below the date when the caller is
+    /// painting the card with a source-colored accent (cardio recent
+    /// log). The WHOOP wordmark logic below is unaffected.
+    private var suppressInlineOriginBadge: Bool { accentColorOverride != nil }
     
     // Parse completed date (uses centralized cached formatters)
     private var completedDate: Date {
@@ -531,21 +549,29 @@ struct RecentCardioWorkoutCard: View {
     }
     
     // Activity type display name and icon
+    //
+    // 2026-05-02 (per-user request): canonical Walk = teal, Run = blue
+    // mapping matches `CardioActivityType.color` + `OutdoorCardioActiveView.activityAccent`,
+    // so a Fit33 walk on the Home tab card uses the same accent as
+    // the active-workout screen and the cardio landing hero tile.
+    // Cycling stays cyan, indoor variants pull warm. Default fallback
+    // also moves to blue (was green) so unknown activity types don't
+    // suddenly land on a "run" green.
     private var activityInfo: (name: String, icon: String, color: Color) {
         let type = cardioWorkout.activityType.lowercased().replacingOccurrences(of: "_", with: " ")
         switch type {
         case "outdoor run", "run":
-            return ("Outdoor Run", "figure.run", .green)
+            return ("Outdoor Run", "figure.run", .blue)
         case "treadmill":
             return ("Treadmill", "figure.walk.motion", .orange)
         case "walk":
-            return ("Walk", "figure.walk", .blue)
+            return ("Walk", "figure.walk", .teal)
         case "indoor cycle", "indoor_cycle":
             return ("Indoor Cycle", "bicycle", .cyan)
         case "outdoor cycle", "outdoor_cycle":
-            return ("Outdoor Cycle", "bicycle", .green)
+            return ("Outdoor Cycle", "bicycle", .cyan)
         case "rowing":
-            return ("Rowing", "figure.rower", .blue)
+            return ("Rowing", "figure.rower", Color(red: 0.20, green: 0.45, blue: 0.85))
         case "elliptical":
             return ("Elliptical", "figure.elliptical", .purple)
         case "stair climber", "stair_climber":
@@ -553,9 +579,9 @@ struct RecentCardioWorkoutCard: View {
         case "hiit":
             return ("HIIT", "flame.fill", .red)
         case "swimming":
-            return ("Swimming", "figure.pool.swim", .cyan)
+            return ("Swimming", "figure.pool.swim", .mint)
         default:
-            return (type.capitalized, "figure.run", .green)
+            return (type.capitalized, "figure.run", .blue)
         }
     }
     
@@ -679,12 +705,12 @@ struct RecentCardioWorkoutCard: View {
             Text("Cardio")
                 .font(.caption2)
                 .fontWeight(.semibold)
-                .foregroundColor(activityInfo.color)
+                .foregroundColor(effectiveAccent)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(
                     Capsule()
-                        .fill(activityInfo.color.opacity(0.15))
+                        .fill(effectiveAccent.opacity(0.15))
                 )
         }
     }
@@ -723,7 +749,7 @@ struct RecentCardioWorkoutCard: View {
                         Circle()
                             .stroke(
                                 LinearGradient(
-                                    colors: [activityInfo.color, activityInfo.color.opacity(0.6)],
+                                    colors: [effectiveAccent, effectiveAccent.opacity(0.6)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ),
@@ -735,7 +761,7 @@ struct RecentCardioWorkoutCard: View {
                             .font(.ds_heading2)
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [activityInfo.color, activityInfo.color.opacity(0.7)],
+                                    colors: [effectiveAccent, effectiveAccent.opacity(0.7)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -762,7 +788,11 @@ struct RecentCardioWorkoutCard: View {
                         // WHOOP gets its own white wordmark in the top-right
                         // corner, so we suppress the red capsule here to
                         // avoid redundancy.
-                        if origin != .whoop {
+                        // 2026-05-02 — also suppress when an
+                        // `accentColorOverride` is in play (cardio recent
+                        // log uses source-colored accents on the card
+                        // border, so an inline brand chip is redundant).
+                        if origin != .whoop && !suppressInlineOriginBadge {
                             sourceBadge
                                 .padding(.top, 2)
                         }
@@ -798,7 +828,7 @@ struct RecentCardioWorkoutCard: View {
                     HStack(spacing: 0) {
                         cardioStatColumn(
                             icon: "clock.fill",
-                            iconColor: activityInfo.color,
+                            iconColor: effectiveAccent,
                             value: formatDuration(cardioWorkout.durationSeconds),
                             label: "Duration"
                         )
@@ -807,7 +837,7 @@ struct RecentCardioWorkoutCard: View {
                         
                         cardioStatColumn(
                             icon: "point.topleft.down.to.point.bottomright.curvepath.fill",
-                            iconColor: activityInfo.color,
+                            iconColor: effectiveAccent,
                             value: formatDistance(cardioWorkout.distanceMeters),
                             label: distanceLabel
                         )
@@ -875,7 +905,7 @@ struct RecentCardioWorkoutCard: View {
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 18)
-                .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: activityInfo.color)
+                .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: effectiveAccent)
             }
             .buttonStyle(PlainButtonStyle())
     }

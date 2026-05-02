@@ -17,9 +17,24 @@
 //   4. Send a silent push (type='strava_activity_new') to the user's
 //      device tokens so the dashboard recap card refreshes within seconds.
 //
-// On `aspect_type=delete`:
-//   • Soft-delete the matching cardio_workouts row (or leave as-is — Strava
-//     deletions are rare and we don't currently surface them).
+// On `object_type=activity` + `aspect_type=delete`:
+//   • Hard-delete the matching `cardio_workouts` row (filter
+//     `source='strava' AND external_id=object_id::text`). Required by the
+//     Strava API Agreement §"Permitted Use": "deletions must be reflected
+//     in your Developer Application expeditiously but in all cases, within
+//     48 hours." (2026-05-02 compliance fix.)
+//
+// On `object_type=athlete` + `aspect_type=update` + `updates.authorized=false`:
+//   • The user revoked Fit33's access from strava.com. Required cascade:
+//     (a) DELETE every `cardio_workouts WHERE user_id=X AND source='strava'`
+//         row — the user's prior Strava-derived Personal Data must leave
+//         our database.
+//     (b) DELETE the `user_strava_tokens` row so the iOS client and this
+//         webhook both stop sending API calls on the user's behalf.
+//   • Required by the Strava API Agreement §"Privacy": "if a user revokes
+//     the authorization … you must ensure that all Personal Data pertaining
+//     to that user is deleted from your Developer Applications and related
+//     networks, systems and servers." (2026-05-02 compliance fix.)
 //
 // Auth: Strava itself signs nothing — the only "auth" is the
 // STRAVA_VERIFY_TOKEN that we returned during the GET handshake. We
@@ -373,13 +388,6 @@ serve(async (req) => {
 });
 
 async function processEvent(event: StravaWebhookEvent): Promise<void> {
-  if (event.object_type !== "activity") return;
-  if (event.aspect_type === "delete") {
-    // We currently leave deleted activities in cardio_workouts. If we
-    // ever want to soft-delete, do it here. Returning early for now.
-    return;
-  }
-
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   if (!supabaseUrl || !serviceKey) {
@@ -390,7 +398,9 @@ async function processEvent(event: StravaWebhookEvent): Promise<void> {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Resolve owner_id → user_id via service-role RPC.
+  // Resolve owner_id → user_id via service-role RPC. The same lookup is
+  // shared by every event branch below so we hoist it ahead of the type
+  // switch.
   const { data: userIdRow, error: rpcErr } = await supabase.rpc(
     "get_user_id_for_strava_athlete",
     { p_athlete_id: event.owner_id },
@@ -403,6 +413,74 @@ async function processEvent(event: StravaWebhookEvent): Promise<void> {
   }
   const userId = userIdRow as string;
 
+  // ── Athlete deauthorization (Strava API Agreement §"Privacy") ──────────
+  // Strava sends `object_type=athlete, aspect_type=update,
+  // updates: { authorized: "false" }` when the user revokes Fit33 from
+  // their Strava settings page. We MUST cascade-delete the user's
+  // imported Strava data + tokens within 48h to stay compliant. The
+  // value can arrive as a JSON boolean `false` OR (more often) as the
+  // string `"false"` — handle both.
+  if (event.object_type === "athlete" && event.aspect_type === "update") {
+    const updates = event.updates ?? {};
+    const authRaw = updates["authorized"];
+    const isDeauthorized =
+      authRaw === false || authRaw === "false" || authRaw === 0 || authRaw === "0";
+    if (isDeauthorized) {
+      const { error: cardioErr, count: cardioCount } = await supabase
+        .from("cardio_workouts")
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .eq("source", "strava");
+      if (cardioErr) {
+        console.error(
+          `[strava-webhook] Athlete deauth: cardio_workouts purge failed for user ${userId}: ${cardioErr.message}`,
+        );
+      }
+
+      const { error: tokenErr } = await supabase
+        .from("user_strava_tokens")
+        .delete()
+        .eq("user_id", userId);
+      if (tokenErr) {
+        console.error(
+          `[strava-webhook] Athlete deauth: user_strava_tokens purge failed for user ${userId}: ${tokenErr.message}`,
+        );
+      }
+
+      console.log(
+        `[strava-webhook] Athlete deauthorized — purged ${cardioCount ?? 0} cardio_workouts + tokens for user ${userId}`,
+      );
+    }
+    return;
+  }
+
+  // Athlete update events that aren't a deauth (e.g. premium-status
+  // changes) — nothing to do.
+  if (event.object_type !== "activity") return;
+
+  // ── Activity delete (Strava API Agreement §"Permitted Use") ────────────
+  // 48-hour rule: when a user deletes an activity on Strava, the matching
+  // row must leave Fit33 expeditiously.
+  if (event.aspect_type === "delete") {
+    const { error: deleteErr, count } = await supabase
+      .from("cardio_workouts")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .eq("source", "strava")
+      .eq("external_id", String(event.object_id));
+    if (deleteErr) {
+      console.error(
+        `[strava-webhook] Activity delete failed for user ${userId} activity ${event.object_id}: ${deleteErr.message}`,
+      );
+      return;
+    }
+    console.log(
+      `[strava-webhook] Activity ${event.object_id} deleted on Strava — purged ${count ?? 0} cardio_workouts row(s) for user ${userId}`,
+    );
+    return;
+  }
+
+  // ── Activity create / update ───────────────────────────────────────────
   // Read tokens.
   const { data: tokenRow, error: tokenErr } = await supabase
     .from("user_strava_tokens")

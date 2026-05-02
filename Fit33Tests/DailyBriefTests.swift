@@ -124,7 +124,7 @@ final class DailyBriefTests: XCTestCase {
             booster: "your 1v1 with Paul",
             streak: 7
         )
-        XCTAssertEqual(r.headline, "Strain is fresh — chest & triceps are 5 days overdue.")
+        XCTAssertEqual(r.headline, "Fresh — chest & triceps are 5d overdue.")
         XCTAssertEqual(r.body, "Push day in ~28 min wins today's quest + your 1v1 with Paul.")
     }
 
@@ -138,7 +138,7 @@ final class DailyBriefTests: XCTestCase {
             streak: 3
         )
         XCTAssertTrue(r.headline.contains("back & biceps"))
-        XCTAssertTrue(r.headline.contains("4 days"))
+        XCTAssertTrue(r.headline.contains("4d"))
         // No booster → "{booster}" collapses to empty, so no trailing " + ...".
         XCTAssertFalse(r.body.contains(" + "))
     }

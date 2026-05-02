@@ -1257,7 +1257,18 @@ class USDAFoodService: ObservableObject {
                 try await cloudService.addToFavorites(foodItemId: foodItemId)
             }
         } catch {
-            AppLogger.error("Error toggling favorite: \(error.localizedDescription)", category: .nutrition)
+            // QP invariant 25a — drains a long-tail of "Error toggling
+            // favorite: cancelled / timed out / 401" fingerprints when
+            // the user double-taps the heart during JWT-refresh windows.
+            // Routing through the classifier downgrades transients while
+            // preserving real failures at .error.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[Nutrition] Error toggling favorite",
+                category: .nutrition,
+                op: PerformanceSignposts.Op.foodSearch.rawValue,
+                endpoint: "food/favorites/toggle"
+            )
         }
     }
     

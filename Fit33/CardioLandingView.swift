@@ -148,6 +148,12 @@ struct CardioLandingView: View {
     /// (strength OR cardio) logged today, surfacing the "Just one block"
     /// 5-min walk one-tap entry as the off-day cure.
     @State private var hasNoCardioToday: Bool = false
+    /// Cardio Redesign Phase 1 — Wave 3b. First-open mini-onboarding
+    /// (units / experience / Strava ask / default goal). Driven by
+    /// `cardio_intro_seen_v1` UserDefaults flag — sheet flips on once
+    /// per device install, dismisses + sets the flag on completion.
+    @AppStorage("cardio_intro_seen_v1") private var cardioIntroSeen: Bool = false
+    @State private var showingFirstOpenIntro: Bool = false
 
     // Cardio Redesign Phase 1 — Wave 3 (revised 2026-05-02 per user
     // request).
@@ -201,6 +207,14 @@ struct CardioLandingView: View {
         .sheet(isPresented: $showingBrowseAll) {
             BrowseAllCardioView()
         }
+        .sheet(isPresented: $showingFirstOpenIntro) {
+            // Cardio Redesign Phase 1 — Wave 3b. First-open mini-
+            // onboarding. Sheet (not fullScreenCover) so the user
+            // perceives this as setup they can dismiss back to the
+            // page they were already looking at — same affordance as
+            // strength's onboarding hand-off.
+            CardioFirstOpenIntroView()
+        }
         .onChange(of: workoutManager.shouldDismissCardioFlow) { _, shouldDismiss in
             if shouldDismiss {
                 showingGoalSetup = false
@@ -214,6 +228,30 @@ struct CardioLandingView: View {
         }
         .task { await loadCardioStreak() }
         .task { await triggerHKBackfillIfNeeded() }
+        .onAppear { presentFirstOpenIntroIfNeeded() }
+    }
+
+    // MARK: - First-open intro gate (Wave 3b)
+    //
+    // Surface the 4-step mini-onboarding if `cardio_intro_seen_v1`
+    // hasn't been flipped yet. We use `.onAppear` (not `.task`) so the
+    // flag check runs synchronously before the view stabilizes, which
+    // prevents a flash of the landing UI before the sheet rises.
+    //
+    // The intro flips the flag on its own (via `@AppStorage`) when
+    // the user taps Continue past the last step OR taps Skip — so this
+    // is a one-shot gate. We bail early if HK backfill is already
+    // running this session to avoid double-scrim.
+    private func presentFirstOpenIntroIfNeeded() {
+        guard !cardioIntroSeen else { return }
+        // Tiny delay so the landing renders first — the sheet rising
+        // over an empty/black surface looks broken; rising over the
+        // landing reads as "we set up your space, now configure it".
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled, !cardioIntroSeen else { return }
+            showingFirstOpenIntro = true
+        }
     }
 
     // MARK: - Cardio Streak Banner (Wave 6b)

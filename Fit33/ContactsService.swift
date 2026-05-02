@@ -432,13 +432,26 @@ class ContactsService: ObservableObject {
             // concurrency contract in swiftui-rules #4.
             AppLogger.debug("[Social] findMatchingUsersDirect cancelled (tab switch / view disappear)", category: .social)
         } catch {
-            // URLError.cancelled (-999) is the URLSession-side spelling of
-            // the same teardown path — surface as debug, not error.
-            if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled {
-                AppLogger.debug("[Social] Contact match request cancelled (URLSession)", category: .social)
-            } else {
-                AppLogger.error("Query failed: \(error.localizedDescription)", category: .social)
-            }
+            // QP invariant 25a — bug-intel Cluster H from the 2026-05-02
+            // rollup (Reports 9 / 15 / 18). The `URLError.cancelled` /
+            // `Swift.CancellationError` branches above are already
+            // squelched, but the fall-through used to call
+            // `AppLogger.error(...)` directly — surfacing transient
+            // Cloudflare 502/503/504 + URL timeouts as bug-intel
+            // fingerprints during foreground refresh bursts. Routing
+            // through the classifier keeps the breadcrumb but downgrades
+            // transients to .warning and only logs `.error` for true
+            // unexpected failures. The classifier already handles the
+            // NSURLErrorCancelled case the manual branch above used to
+            // catch — duplicating the check is harmless (the inner
+            // branch wins).
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[Social] Contact match query failed",
+                category: .social,
+                op: "social.contact_match",
+                endpoint: "rpc/find_matching_users_by_hash"
+            )
         }
     }
     
@@ -607,11 +620,18 @@ class ContactsService: ObservableObject {
         } catch is CancellationError {
             AppLogger.debug("[Social] syncContactsToDatabase cancelled (tab switch / view disappear)", category: .social)
         } catch {
-            if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled {
-                AppLogger.debug("[Social] Contact sync cancelled (URLSession)", category: .social)
-            } else {
-                AppLogger.error("Error syncing contacts: \(error.localizedDescription)", category: .social)
-            }
+            // QP invariant 25a — bug-intel Cluster H Report 9. Classifier
+            // routes URLError.cancelled / NSURLErrorCancelled / timeouts
+            // / 5xx flaps through .warning instead of .error so contact
+            // sync transients during foreground refresh bursts don't
+            // manufacture per-tab-switch fingerprints.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[Social] Error syncing contacts",
+                category: .social,
+                op: "social.sync_contacts",
+                endpoint: "rpc/sync_user_contacts"
+            )
         }
     }
     
@@ -634,11 +654,16 @@ class ContactsService: ObservableObject {
             // — not an error. Same pattern as findMatchingUsersDirect.
             AppLogger.debug("[Social] checkForContactJoinedNotifications cancelled (tab switch / view disappear)", category: .social)
         } catch {
-            if (error as NSError).domain == NSURLErrorDomain && (error as NSError).code == NSURLErrorCancelled {
-                AppLogger.debug("[Social] Contact notification check cancelled (URLSession)", category: .social)
-            } else {
-                AppLogger.error("Error checking contact notifications: \(error.localizedDescription)", category: .social)
-            }
+            // QP invariant 25a — bug-intel Cluster H Report 18. Same
+            // classifier-routing pattern as syncContactsToDatabase /
+            // findMatchingUsersDirect above.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "[Social] Error checking contact notifications",
+                category: .social,
+                op: "social.contact_notifications",
+                endpoint: "rpc/get_pending_contact_notifications"
+            )
         }
     }
     

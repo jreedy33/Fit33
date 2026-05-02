@@ -349,7 +349,25 @@ final class ExerciseIntelligenceEngine {
             
             AppLogger.info("ExerciseIntelligenceEngine loaded \(exerciseCache.count) exercises, \(equipmentToExercises.keys.count) equipment groups, \(muscleToExercises.keys.count) muscle groups", category: .workout)
         } catch {
-            AppLogger.error("ExerciseIntelligenceEngine failed to load data: \(error.localizedDescription)", category: .workout)
+            // QP invariant 25a — bug-intel Cluster J from the 2026-05-02
+            // rollup (fingerprint behind Report 5). The dominant cause of
+            // load failures here is `pg:57014 statement_timeout` /
+            // `NSURLErrorTimedOut` during the dashboard's cold-start fan-out
+            // (the engine fetches the full exercise catalogue and the
+            // request gets coalesced behind 14 other parallel RPCs). Those
+            // are transient — the next foreground refresh succeeds — so
+            // routing them through the classifier surfaces them at
+            // `.warning` instead of `.error`, dropping the per-cold-start
+            // bug-intel fingerprint without losing the breadcrumb.
+            // `fetchWithRetry` (above) already burns the 2 fast retries;
+            // this catch is the terminal log site.
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "ExerciseIntelligenceEngine failed to load data",
+                category: .workout,
+                op: "exercise.catalogue_load",
+                endpoint: "rpc/fetchAllExercises"
+            )
         }
     }
     

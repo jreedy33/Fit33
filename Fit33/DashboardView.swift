@@ -291,6 +291,20 @@ struct DashboardView: View {
                         .id("stepTracker")
                         .padding(.bottom, 16)
 
+                    // Cardio Redesign Phase 1 — Wave 3c + 6b. Compact
+                    // cardio surface that combines the cardio streak
+                    // banner with the "Just one block" 5-min walk
+                    // entry. Self-hides when the user has cardio
+                    // logged today AND no streak (no value to surface).
+                    // Otherwise it's either a streak chip (alive
+                    // today), a "save the streak" CTA (alive but no
+                    // cardio yet), or the just-one-block tile (no
+                    // streak, no cardio yet). Tap → opens
+                    // `CardioGoalSetupView(.walk)` as a sheet.
+                    DashboardCardioWidget()
+                        .environmentObject(userManager)
+                        .padding(.bottom, 16)
+
                     // WHOOP Recovery Widget (isolated — only renders when WHOOP connected + widget enabled)
                     if showWhoopWidget {
                         DashboardWhoopWrapper(navigationPath: $dashboardNavPath)

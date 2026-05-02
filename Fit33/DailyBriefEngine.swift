@@ -326,6 +326,25 @@ final class DailyBriefEngine {
     /// Idempotent and cheap: no side effects, no network IO; reads
     /// only `@Published` state already kept fresh by other services.
     func compose(streak: Int) async -> DailyBrief {
+        // Phase 8 (2026-05-02 — New User Onboarding Brief). Brand-new
+        // accounts (zero training data + zero XP + no last workout +
+        // no recorded streak) bypass the entire urgency-cascade engine.
+        // The `muscleDebtFacet` "never trained = 7d overdue" fallback
+        // (line ~929) otherwise produces alarming "chest & triceps
+        // are 7 days overdue" copy on a fresh signup — false-by-
+        // construction for someone who literally just finished
+        // onboarding and has zero workout history. The dedicated
+        // welcome brief is goal-aware, directive, and conversion-
+        // friendly: ONE clear next step (start your first session)
+        // without the diagnostic-shaped copy that confused the
+        // urgency cascade. Multi-signal gate mirrors
+        // `DailyQuestService.isLikelyDay1User` so we don't
+        // misclassify an established user mid-cold-start (cloud
+        // profile sync race) as new.
+        if isBrandNewUser() {
+            return brandNewUserWelcomeBrief()
+        }
+
         async let capacity = capacityFacet()
         async let muscleDebt = muscleDebtFacet()
         async let nutrition = nutritionFacet()
@@ -481,6 +500,145 @@ final class DailyBriefEngine {
             return score
         }
         return 0
+    }
+
+    // MARK: - Phase 8: Brand-new user welcome (bypass)
+
+    /// Multi-signal Day-0 gate. Mirrors
+    /// `DailyQuestService.isLikelyDay1User` so the brief and the
+    /// quest slate agree on "is this a brand-new user?" — divergence
+    /// would let one surface show beginner cards while the other
+    /// shows alarming "chest is 7 days overdue" copy (the bug this
+    /// gate fixes).
+    ///
+    /// EVERY signal of prior activity must be empty:
+    ///   - `totalWorkouts == 0` (no completed workouts on this device)
+    ///   - `currentStreak == 0` (no logged streak from cloud sync)
+    ///   - `xp == 0` (no XP earned — populated by streak-check before
+    ///     brief compose, so it's a reliable cold-start signal)
+    ///   - `lastWorkoutDate == nil` (no historical workout)
+    ///   - `experienceLevel != "intermediate" / "advanced"`
+    ///     (onboarding-supplied — established users restoring on
+    ///     a fresh device skip the welcome brief).
+    private func isBrandNewUser() -> Bool {
+        let user = UserManager.shared.currentUser
+        guard (user?.totalWorkouts ?? 0) == 0 else { return false }
+        guard (user?.currentStreak ?? 0) == 0 else { return false }
+        guard (user?.xp ?? 0) == 0 else { return false }
+        guard user?.lastWorkoutDate == nil else { return false }
+        let level = (user?.experienceLevel ?? "").lowercased()
+        if level == "intermediate" || level == "advanced" { return false }
+        return true
+    }
+
+    /// Welcome brief for brand-new accounts. Bypasses the facet
+    /// cascade because there's nothing to compare against — no
+    /// training history, no streak, no rivals, no readiness baseline
+    /// — and the cascade's "never trained = 7d overdue" path lands
+    /// on copy that's false-by-construction at this user state.
+    ///
+    /// Tier model (Day 0 → Day 7+ since signup):
+    ///   - Day 0: hero welcome + first-session directive.
+    ///   - Day 1–2: softer "first session is the hardest" nudge.
+    ///   - Day 3+: encouragement framing — "today's a good day to start."
+    /// Goal-aware so build-muscle / lose-fat / endurance users
+    /// each see their own framing. CTA always
+    /// `.startAutoWorkout(splitHint: nil, etaMin: 25)` — one tap to
+    /// the auto-gen, the only on-ramp that makes sense before the
+    /// user has a single workout to compare against.
+    private func brandNewUserWelcomeBrief() -> DailyBrief {
+        let goal = GoalFamily(rawGoal: UserManager.shared.currentUser?.fitnessGoal)
+        let createdAt = UserManager.shared.currentUser?.createdAt ?? Date()
+        let daysSinceJoin = max(0, Int(Date().timeIntervalSince(createdAt) / 86_400))
+
+        let (headline, body) = welcomeCopy(goal: goal, daysSinceJoin: daysSinceJoin)
+        let cta: BriefCTA = .startAutoWorkout(splitHint: nil, etaMin: 25)
+        let trace: [String] = [
+            "capacity:unknown:none",
+            "debt:none",
+            "goal:\(goal.rawValue)",
+            "brand_new_user:day_\(min(daysSinceJoin, 30))"
+        ]
+
+        // Empty Decision so DailyQuestService.gatherUserContext sends
+        // nulls to get_daily_quests v4 — Layer 7/8 fall back to legacy
+        // 6-layer behavior, which is correct for a Day-0 slate (the
+        // beginner quests already kick in via `isLikelyDay1User`).
+        let decision = BriefDecision(
+            capacityBand: .unknown,
+            capacityScore: 0,
+            topDebtKind: nil,
+            topDebtPayload: [:],
+            goalFamily: goal,
+            boosterChallengeId: nil,
+            linkedQuestKeys: []
+        )
+
+        return DailyBrief(
+            headline: headline,
+            body: body,
+            ctaCode: BriefCTACoder.code(for: cta),
+            ctaPayload: BriefCTACoder.payload(for: cta),
+            chips: [],
+            rotatingInsight: nil,
+            sourceTrace: trace,
+            composedAt: Date(),
+            decision: decision
+        )
+    }
+
+    /// Goal × days-since-signup → (headline, body). Pure data — copy
+    /// edits live here, no engine plumbing needed. Three day buckets
+    /// (Day 0 / Day 1–2 / Day 3+) keep the dashboard from reading
+    /// static if the user takes a few days to start; goal pivots
+    /// match `GoalFamily(rawGoal:)` from onboarding.
+    private func welcomeCopy(
+        goal: GoalFamily,
+        daysSinceJoin: Int
+    ) -> (headline: String, body: String) {
+        switch (daysSinceJoin, goal) {
+        // ── Day 0: hero welcome ─────────────────────────────────
+        case (0, .buildMuscle):
+            return ("Welcome to Fit33. Let's build.",
+                    "Your first session sets the tone — tap for a 25-min auto workout to bank +30 XP.")
+        case (0, .loseFat):
+            return ("Welcome to Fit33. Day 1 starts now.",
+                    "Tap to start a 25-min auto session — burn the deficit, earn +30 XP.")
+        case (0, .endurance):
+            return ("Welcome to Fit33. Engine on.",
+                    "Tap to start your first 25-min full-body session and lock day 1.")
+        case (0, .generalFitness):
+            return ("Welcome to Fit33.",
+                    "Tap to start your first 25-min auto session and lock day 1 of your streak.")
+
+        // ── Day 1–2: first-session-is-the-hardest nudge ─────────
+        case (1...2, .buildMuscle):
+            return ("Day \(daysSinceJoin + 1) — let's get session one in.",
+                    "A 25-min push day banks your first set of gains.")
+        case (1...2, .loseFat):
+            return ("Day \(daysSinceJoin + 1) — your first session is the hardest.",
+                    "25 min today and the deficit starts working with you.")
+        case (1...2, .endurance):
+            return ("Day \(daysSinceJoin + 1) — get the engine started.",
+                    "A quick full-body session today builds your base.")
+        case (1...2, _):
+            return ("Day \(daysSinceJoin + 1) — your first session locks day 1.",
+                    "Tap to start a 25-min auto workout (+30 XP).")
+
+        // ── Day 3+: gentle encouragement ────────────────────────
+        case (_, .buildMuscle):
+            return ("Ready when you are.",
+                    "Your first session is one tap away — 25 min, all the basics.")
+        case (_, .loseFat):
+            return ("Today's a good day to start.",
+                    "25-min auto workout — short, simple, and the deficit pays you back.")
+        case (_, .endurance):
+            return ("Today's a good day to start.",
+                    "Tap for a quick 25-min full-body session to build the base.")
+        default:
+            return ("Ready when you are.",
+                    "Tap to start your first 25-min auto session.")
+        }
     }
 
     // MARK: - Phase 7b: Action vs Insight body decision
@@ -736,7 +894,16 @@ final class DailyBriefEngine {
 
         // Top overdue muscle (even when NOT the firing debt — body
         // copy uses this for "still chest & triceps overdue" tail
-        // clauses on protein/water/step debts).
+        // clauses on protein/water/step debts). Phase 8 (2026-05-02):
+        // mirrors the `muscleDebtFacet` Day-0/Day-1 gate — the
+        // "never trained = 7d" fallback only applies for users with
+        // enough training history that an untrained muscle is a
+        // meaningful gap. Without this, the `{ifOverdue}` clause
+        // appended to body templates would say "chest & triceps
+        // still 7d overdue" for a Day 1 user who literally has zero
+        // chest training to be overdue ON.
+        let totalWorkoutsForCtx = Int(UserManager.shared.currentUser?.totalWorkouts ?? 0)
+        let allowNeverTrainedOverdue = totalWorkoutsForCtx >= 3
         let muscleStates = await WorkoutSuggestionEngine.shared.getMuscleRecoveryStatesAsync()
         let overdueLifted: Set<WorkoutSuggestionEngine.MuscleCategory> = [
             .chest, .back, .shoulders, .biceps, .triceps,
@@ -745,7 +912,10 @@ final class DailyBriefEngine {
         let overdueCandidates = muscleStates
             .filter { overdueLifted.contains($0.category) }
             .compactMap { state -> (WorkoutSuggestionEngine.MuscleCategory, Int)? in
-                guard let last = state.lastTrainedDate else { return (state.category, 7) }
+                guard let last = state.lastTrainedDate else {
+                    guard allowNeverTrainedOverdue else { return nil }
+                    return (state.category, 7)
+                }
                 let days = Int(now.timeIntervalSince(last) / 86_400)
                 guard days >= 4 else { return nil }
                 return (state.category, days)
@@ -913,6 +1083,25 @@ final class DailyBriefEngine {
     // MARK: - Facet: Muscle debt (Core Data via WorkoutSuggestionEngine)
 
     private func muscleDebtFacet() async -> FacetSignal? {
+        // Phase 8 (2026-05-02 — New User Onboarding Brief): the
+        // "never trained = 7d overdue" fallback below is meant to
+        // surface a real gap for users who have ALREADY trained
+        // SOMETHING but missed an entire muscle group. For users
+        // with fewer than 3 total workouts every untrained muscle
+        // is "untrained" by construction (no history exists yet),
+        // so the fallback misfires — every body part appears 7d
+        // overdue and the brief lands on alarming
+        // "chest & triceps are 7 days overdue" copy that's
+        // false-by-construction at this user state. Defense-in-
+        // depth alongside the `isBrandNewUser()` short-circuit
+        // in `compose(...)`: the short-circuit covers Day 0,
+        // this gate covers Day 1–2 (first workout completed —
+        // the user has a `lastWorkoutDate` so the brand-new
+        // gate flips off, but `totalWorkouts` is still 1–2 and
+        // ALL non-trained muscles would fire as 7d overdue).
+        let totalWorkouts = Int(UserManager.shared.currentUser?.totalWorkouts ?? 0)
+        let allowNeverTrainedFallback = totalWorkouts >= 3
+
         let states = await WorkoutSuggestionEngine.shared.getMuscleRecoveryStatesAsync()
         // Find groups that are recovered (>= recoveryHours) AND haven't
         // been touched in the last 5 days. Skip "cardio"/"core" since
@@ -927,7 +1116,11 @@ final class DailyBriefEngine {
             .filter { lifted.contains($0.category) }
             .compactMap { state -> (WorkoutSuggestionEngine.MuscleCategory, Int)? in
                 guard let last = state.lastTrainedDate else {
-                    // Never trained — count as 7d overdue so it surfaces.
+                    // Never trained — count as 7d overdue so it surfaces,
+                    // but only for users with enough training history that
+                    // an untrained muscle is a meaningful gap (see Phase 8
+                    // gate above).
+                    guard allowNeverTrainedFallback else { return nil }
                     return (state.category, 7)
                 }
                 let days = Int(now.timeIntervalSince(last) / 86_400)

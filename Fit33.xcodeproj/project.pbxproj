@@ -58,6 +58,8 @@
 		B05A2A0350220502BC050005 /* OutdoorCardioActiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0350220502BC050004 /* OutdoorCardioActiveView.swift */; };
 		B05A2A0450220502BC050007 /* CardioRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0450220502BC050006 /* CardioRecapView.swift */; };
 		B05A2A0550220502BC050009 /* CardioShareCardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */; };
+		B05A2A0650220502BC05000B /* CardioFirstOpenIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */; };
+		B05A2A0750220502BC05000D /* DashboardCardioWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */; };
 		7C0C41F22F09C91F00F02E84 /* CardioGoalSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */; };
 		7C0C41F42F09C92400F02E84 /* CardioActiveWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */; };
 		7C0C41F62F09CE0100F02E84 /* ExerciseNicknameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */; };
@@ -526,6 +528,8 @@
 		B05A2A0350220502BC050004 /* OutdoorCardioActiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutdoorCardioActiveView.swift; sourceTree = "<group>"; };
 		B05A2A0450220502BC050006 /* CardioRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioRecapView.swift; sourceTree = "<group>"; };
 		B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioShareCardSheet.swift; sourceTree = "<group>"; };
+		B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioFirstOpenIntroView.swift; sourceTree = "<group>"; };
+		B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardCardioWidget.swift; sourceTree = "<group>"; };
 		7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioGoalSetupView.swift; sourceTree = "<group>"; };
 		7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioActiveWorkoutView.swift; sourceTree = "<group>"; };
 		7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseNicknameService.swift; sourceTree = "<group>"; };
@@ -1058,6 +1062,8 @@
 				B05A2A0350220502BC050004 /* OutdoorCardioActiveView.swift */,
 				B05A2A0450220502BC050006 /* CardioRecapView.swift */,
 				B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */,
+				B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */,
+				B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */,
 				7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */,
 				7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */,
 				7C0C41EF2F09C91A00F02E84 /* CardioLandingView.swift */,
@@ -1723,6 +1729,8 @@
 				B05A2A0350220502BC050005 /* OutdoorCardioActiveView.swift in Sources */,
 				B05A2A0450220502BC050007 /* CardioRecapView.swift in Sources */,
 				B05A2A0550220502BC050009 /* CardioShareCardSheet.swift in Sources */,
+				B05A2A0650220502BC05000B /* CardioFirstOpenIntroView.swift in Sources */,
+				B05A2A0750220502BC05000D /* DashboardCardioWidget.swift in Sources */,
 				7CB08C652ED6A33C00236ECB /* WorkoutGeneratorService.swift in Sources */,
 				DDA48A0D52DCCDCB7D45FBC6 /* WorkoutSuggestionEngine.swift in Sources */,
 				7C558B1F2ED5027200A01E1F /* FoodDetailsView.swift in Sources */,

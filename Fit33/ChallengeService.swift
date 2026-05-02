@@ -951,6 +951,22 @@ class ChallengeService: ObservableObject {
         lastCreateChallengeError = nil
         let createAttemptStartedAt = Date()
 
+        // JWT race pre-flight (bug-intel Cluster E from 2026-05-02 rollup —
+        // shake reports `UserManager.isVerified=true` AND
+        // `ChallengeService.lastCreateChallengeError="Not authenticated"`,
+        // fingerprints behind Reports 14 + 27). The Supabase client's
+        // cached JWT is allowed to expire ~30s before the @Published
+        // `isAuthenticated` flag flips — so the create_challenge RPC
+        // (SECURITY DEFINER, `auth.uid()`-pinned) sees a NULL
+        // `auth.uid()` and RAISEs `Not authenticated` even though the
+        // user is technically signed in. Reading `client.auth.session`
+        // is a no-op when the access token is fresh and triggers the
+        // SDK's auto-refresh path when it isn't. Wrapped in `try?`
+        // because if the refresh itself fails we still want the RPC
+        // attempt below to run — its catch block handles the auth
+        // case via `extractUserFacingErrorMessage`.
+        _ = try? await SupabaseManager.shared.client.auth.session
+
         // Breadcrumb for bug-intel: when the user shakes after a "could not
         // send" alert, this logs the op + opponent prefix so triage can see
         // exactly which call path was attempted (and the error message we

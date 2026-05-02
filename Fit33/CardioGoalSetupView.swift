@@ -36,6 +36,13 @@ struct CardioGoalSetupView: View {
     @StateObject private var bluetoothManager = BluetoothFitnessManager.shared
     @ObservedObject private var workoutManager = WorkoutManager.shared
     
+    /// Cardio Redesign Phase 1 — Wave 3b. The first-open intro lets
+    /// the user pick a preferred default goal type. We read it back
+    /// here via `@AppStorage` and seed `selectedGoalType` from it on
+    /// init (see `init`). Falls through to `.time` when the value is
+    /// missing or unrecognized.
+    @AppStorage("cardio_default_goal_type_v1") private var defaultGoalTypePref: String = ""
+
     @State private var selectedGoalType: CardioGoalType = .time
     @State private var timeGoal: Int = 30 // minutes
     @State private var distanceGoal: Double = 5.0 // km
@@ -175,6 +182,18 @@ struct CardioGoalSetupView: View {
             timeGoal = recommendations.time
             distanceGoal = recommendations.distance
             calorieGoal = recommendations.calories
+
+            // Cardio Redesign Phase 1 — Wave 3b. Seed `selectedGoalType`
+            // from the user's first-open intro choice ONCE per
+            // appearance. The user can still flip to any other goal
+            // type via the chip row — this is just the initial pin.
+            switch defaultGoalTypePref {
+            case "open": selectedGoalType = .openGoal
+            case "time": selectedGoalType = .time
+            case "distance": selectedGoalType = .distance
+            case "calories": selectedGoalType = .calories
+            default: break
+            }
         }
         // Cardio Redesign Phase 1 — Wave 4e (Smart Goal Auto-Suggest).
         // After the static recommendations seed the controls, fire an

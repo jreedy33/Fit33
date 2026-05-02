@@ -623,25 +623,24 @@ final class DailyBriefEngine {
     /// static if the user takes a few days to start; goal pivots
     /// match `GoalFamily(rawGoal:)` from onboarding.
     ///
-    /// Day 0 headline is the warm "Welcome to the club, <FirstName>."
-    /// greeting — uniform across goals so the moment feels personal,
-    /// not segmented. Goal still drives the body so build-muscle vs
-    /// lose-fat vs endurance get tailored next-step copy. When we
-    /// can't resolve a first name (cold-start before profile sync,
-    /// guest-mode, OAuth metadata empty) we drop the comma + name
-    /// and fall back to "Welcome to the club." — never "Welcome to
-    /// the club, there." (would read as a literal bug).
+    /// Day 0 headline is the punchy "Welcome to the club." greeting —
+    /// uniform across goals so the moment feels universal, not
+    /// segmented. The banner above ("WELCOME TO FIT33, NAME") already
+    /// carries the personal greeting, so the card stays clean and
+    /// directive (2026-05-02 copy revision). Goal still drives the
+    /// body so build-muscle vs lose-fat vs endurance get tailored
+    /// next-step copy.
     private func welcomeCopy(
         goal: GoalFamily,
         daysSinceJoin: Int,
         firstName: String?
     ) -> (headline: String, body: String) {
-        let day0Headline: String = {
-            if let name = firstName, !name.isEmpty {
-                return "Welcome to the club, \(name)."
-            }
-            return "Welcome to the club."
-        }()
+        // 2026-05-02 — name dropped from card headline; banner
+        // above already carries the personal greeting. `firstName`
+        // arg kept on the signature for backwards-compat / future
+        // re-introduction without a call-site sweep.
+        _ = firstName
+        let day0Headline = "Welcome to the club."
 
         switch (daysSinceJoin, goal) {
         // ── Day 0: hero welcome ─────────────────────────────────

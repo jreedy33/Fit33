@@ -296,9 +296,14 @@ extension DashboardView {
         return !UserDefaults.standard.bool(forKey: "has_been_welcomed_\(userId.uuidString)")
     }
     
-    // Welcome message based on first visit
+    // Welcome message based on first visit. First load reads
+    // "Welcome to the club" — friendlier + community-shaped framing
+    // than "Welcome to Fit33" for someone who just signed up
+    // (2026-05-02 copy revision). Subsequent loads flip to
+    // "Welcome back" via the `has_been_welcomed_<userId>`
+    // UserDefaults flag set by `DashboardView.onAppear`.
     func getWelcomeMessage() -> String {
-        checkIsFirstVisit() ? "Welcome to Fit33," : "Welcome back,"
+        checkIsFirstVisit() ? "Welcome to the club," : "Welcome back,"
     }
     
     // 2026-05-01 — Welcome card redesign (lead-designer spec).

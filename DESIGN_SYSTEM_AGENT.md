@@ -139,6 +139,15 @@ HStack(spacing: 3) {
 - Timer badge font: `.system(.caption, design: .monospaced)` — intentional monospaced choice
 - Electric blue `Color(red: 0, green: 0.7, blue: 1.0)` — if reused, extract to `Color.electricBlue` (not yet a token)
 
+### Cardio Redesign Phase 1 components (2026-05-02)
+- **`WalkRunHeroCard`** (in `CardioLandingView.swift`) — large 50/50 split tile for the two native outdoor activities. Accent color drives gradient + badge: `.mint` for walk, `.green` for run. Tap action fires `HapticManager.impact(.medium)` and routes through `CardioSessionManager.prepare(activity:)` via the legacy `CardioGoalSetupView` bridge.
+- **`CardioPresetChip`** — small Quick-Start pill (`infinity` / `clock.fill` / `figure.run` icons). Capsule background `accent.opacity(0.15)`. One-tap routes into the goal-setup sheet with the implied goal pre-set.
+- **`ConnectStravaCard`** — bottom-half CTA for unconnected users. Uses pinned `stravaOrange = Color(red: 0.99, green: 0.30, blue: 0.0)` (Strava brand) — exempt from token migration; brand assets must match the third-party brand exactly.
+- **Cinematic countdown overlay** (in `OutdoorCardioActiveView.swift`) — `Text("\(n)")` at `size: 220, weight: .black, design: .rounded`, accent-colored with `shadow(color: accent.opacity(0.5), radius: 24)`, scale-fade transition keyed on `id(n)`. Scrim `Color.black.opacity(0.55)`.
+- **`CardioRecapView`** — focused-metric tile uses `.system(size: 56, weight: .heavy, design: .rounded)` for distance hero (NOT `ds_displayLarge` — the recap intentionally goes one size heavier than dashboard hero numbers since it's the celebratory beat). 2×2 stat grid at `RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial)`. PR badges use a private `CardioBadgeFlowLayout` (lightweight wrap layout) — NOT the existing `FlowLayout` in `WorkoutInsightsView.swift` (file-private name collision; renamed to avoid).
+- **`CardioShareCardSheet`** — 1080×1920 export rendered via `ImageRenderer`. Activity-accent gradient background. `RouteSilhouette: Shape` aspect-corrects lat/lon to the export rect (cos-lat correction). Strava co-brand footer renders ONLY when `StravaService.shared.isConnected`. ShareLink + SharePreview + Save-to-Photos trio is the canonical iOS social-export pattern — reuse for any future share-card surface.
+- **`CardioStreakBanner`** + **`JustOneBlockTile`** (inline in `CardioLandingView.swift`) — small surface widgets above the hero tiles. Streak uses `flame.fill` with orange→red gradient + 4pt glow shadow; Just-One-Block uses `figure.walk.motion` in `Color.mint.opacity(0.15)` circle. Both gated on async load completion to avoid layout flicker on first paint.
+
 ---
 
 ## Adoption Snapshot (2026-04-26 refresh)

@@ -99,32 +99,41 @@ enum PremiumFeature: String, CaseIterable {
 enum SubscriptionPlan: String, CaseIterable {
     case monthly = "Monthly"
     case yearly = "Yearly"
-    
+
+    // Cardio Redesign Phase 1 — pricing aligned with canonical
+    // MONETIZATION_AGENT.md §pricing-table: Pro Monthly $9.99/mo,
+    // Pro Yearly $59.99/yr. The previous $3.99 / $29.99 strings were
+    // stale fallbacks from pre-StoreKit copy and would fail App Review
+    // 4.0/4.5/3.1.2(b) "intro offer disclosure binding" if shipped.
+    // These remain UI fallback values only — actual prices come from
+    // StoreKit `Product.displayPrice` once products load.
     var price: String {
         switch self {
-        case .monthly: return "$3.99"
-        case .yearly: return "$29.99"
+        case .monthly: return "$9.99"
+        case .yearly: return "$59.99"
         }
     }
-    
+
     var period: String {
         switch self {
         case .monthly: return "/month"
         case .yearly: return "/year"
         }
     }
-    
+
     var monthlyEquivalent: String {
         switch self {
-        case .monthly: return "$3.99/mo"
-        case .yearly: return "$2.49/mo"
+        case .monthly: return "$9.99/mo"
+        // $59.99 / 12 = $4.999 → display as $5.00/mo
+        case .yearly: return "$5.00/mo"
         }
     }
-    
+
     var savings: String? {
         switch self {
         case .monthly: return nil
-        case .yearly: return "Save 37%"
+        // ($9.99 × 12 − $59.99) / ($9.99 × 12) = ~50%
+        case .yearly: return "Save 50%"
         }
     }
     

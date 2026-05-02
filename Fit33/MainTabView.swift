@@ -7,6 +7,7 @@ struct MainTabView: View {
     @EnvironmentObject var userManager: UserManager
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var deepLinkManager = DeepLinkManager.shared
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var badgeCounter = HomeBadgeCounter.shared
@@ -39,338 +40,242 @@ struct MainTabView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            OfflineBanner()
-                .animation(.easeInOut(duration: 0.3), value: NetworkMonitor.shared.isConnected)
-            
-            ZStack(alignment: .bottom) {
-            // ⚡️ INSTANT TAB SWITCHING: All tabs preloaded for zero-lag transitions
-            TabView(selection: $selectedTab) {
-                // Tab 0: Dashboard (always loaded - primary tab)
-                DashboardView()
-                    .tabContentOptimized()
-                    .tabItem {
-                        Label {
-                            Text(tabs[0].title)
-                        } icon: {
-                            Image(systemName: selectedTab == 0 ? tabs[0].selectedIcon : tabs[0].icon)
-                        }
-                        .accessibilityLabel(badgeCounter.count > 0 ? "Home tab, \(badgeCounter.count) notifications" : "Home tab")
-                        .accessibilityHint("View your dashboard and daily summary")
-                    }
-                    .tag(0)
-                    .badge(badgeCounter.count)
-                
-                // Tab 1: Exercise Library (preloaded for instant access)
-                LazyTabContent(tab: .exercises) {
-                    ExerciseLibraryView()
-                }
+        mainTabChrome
+    }
+
+    /// Just the `TabView { ... }` body. Split out so the modifier chain in
+    /// `tabViewWithModifiers` stays inside the Swift type-checker's budget.
+    @ViewBuilder
+    private var coreTabView: some View {
+        // ⚡️ INSTANT TAB SWITCHING: All tabs preloaded for zero-lag transitions
+        TabView(selection: $selectedTab) {
+            // Tab 0: Dashboard (always loaded - primary tab)
+            DashboardView()
                 .tabContentOptimized()
                 .tabItem {
                     Label {
-                        Text(tabs[1].title)
+                        Text(tabs[0].title)
                     } icon: {
-                        Image(systemName: selectedTab == 1 ? tabs[1].selectedIcon : tabs[1].icon)
+                        Image(systemName: selectedTab == 0 ? tabs[0].selectedIcon : tabs[0].icon)
                     }
-                    .accessibilityLabel("Exercises tab")
-                    .accessibilityHint("Browse exercise library")
+                    .accessibilityLabel(badgeCounter.count > 0 ? "Home tab, \(badgeCounter.count) notifications" : "Home tab")
+                    .accessibilityHint("View your dashboard and daily summary")
                 }
-                .tag(1)
-                
-                // Tab 2: Workout (preloaded and prioritized)
-                LazyTabContent(tab: .workout) {
-                    WorkoutTabView()
-                }
-                .tabContentOptimized()
-                .tabItem {
-                    if workoutManager.isWorkoutActive && selectedTab != 2 {
-                        Label {
-                            Text(tabs[2].title)
-                                .foregroundColor(.red)
-                        } icon: {
-                            Image(uiImage: UIImage(systemName: "dumbbell.fill")!
-                                .withTintColor(.red, renderingMode: .alwaysOriginal))
-                        }
-                        .foregroundColor(.red)
-                        .accessibilityLabel("Workout tab, workout in progress")
-                        .accessibilityHint("Return to your active workout")
-                    } else {
-                        Label {
-                            Text(tabs[2].title)
-                        } icon: {
-                            Image(systemName: selectedTab == 2 ? tabs[2].selectedIcon : tabs[2].icon)
-                        }
-                        .accessibilityLabel("Workout tab")
-                        .accessibilityHint("Start or manage workouts")
-                    }
-                }
-                .tag(2)
-                
-                // Tab 3: Meals (preloaded)
-                LazyTabContent(tab: .nutrition) {
-                    SimpleMealPlanView()
-                }
-                .tabContentOptimized()
-                .tabItem {
-                    Label {
-                        Text(tabs[3].title)
-                    } icon: {
-                        Image(systemName: selectedTab == 3 ? tabs[3].selectedIcon : tabs[3].icon)
-                    }
-                    .accessibilityLabel("Nutrition tab")
-                    .accessibilityHint("Track meals and macros")
-                }
-                .tag(3)
-                
-                // Tab 4: Friends (social hub)
-                LazyTabContent(tab: .progress) {
-                    FriendsTabView()
-                        .environmentObject(workoutManager)
-                        .environmentObject(userManager)
-                }
-                .tabContentOptimized()
-                .tabItem {
-                    Label {
-                        Text(tabs[4].title)
-                    } icon: {
-                        Image(systemName: selectedTab == 4 ? tabs[4].selectedIcon : tabs[4].icon)
-                    }
-                    .accessibilityLabel("Friends tab")
-                    .accessibilityHint("View friends and social activity")
-                }
-                .tag(4)
+                .tag(0)
+                .badge(badgeCounter.count)
+
+            // Tab 1: Exercise Library (preloaded for instant access)
+            LazyTabContent(tab: .exercises) {
+                ExerciseLibraryView()
             }
-            // Animations managed per-tab via tabContentOptimized() during active transitions only
-        .tint(currentTabColor)
-        .onChange(of: workoutManager.shouldNavigateToWorkoutTab) { _, shouldNavigate in
-            if shouldNavigate {
-                selectedTab = 2
-                workoutManager.shouldNavigateToWorkoutTab = false
+            .tabContentOptimized()
+            .tabItem {
+                Label {
+                    Text(tabs[1].title)
+                } icon: {
+                    Image(systemName: selectedTab == 1 ? tabs[1].selectedIcon : tabs[1].icon)
+                }
+                .accessibilityLabel("Exercises tab")
+                .accessibilityHint("Browse exercise library")
             }
+            .tag(1)
+
+            // Tab 2: Workout (preloaded and prioritized)
+            LazyTabContent(tab: .workout) {
+                WorkoutTabView()
+            }
+            .tabContentOptimized()
+            .tabItem {
+                if workoutManager.isWorkoutActive && selectedTab != 2 {
+                    Label {
+                        Text(tabs[2].title)
+                            .foregroundColor(.red)
+                    } icon: {
+                        Image(uiImage: UIImage(systemName: "dumbbell.fill")!
+                            .withTintColor(.red, renderingMode: .alwaysOriginal))
+                    }
+                    .foregroundColor(.red)
+                    .accessibilityLabel("Workout tab, workout in progress")
+                    .accessibilityHint("Return to your active workout")
+                } else {
+                    Label {
+                        Text(tabs[2].title)
+                    } icon: {
+                        Image(systemName: selectedTab == 2 ? tabs[2].selectedIcon : tabs[2].icon)
+                    }
+                    .accessibilityLabel("Workout tab")
+                    .accessibilityHint("Start or manage workouts")
+                }
+            }
+            .tag(2)
+
+            // Tab 3: Meals (preloaded)
+            LazyTabContent(tab: .nutrition) {
+                SimpleMealPlanView()
+            }
+            .tabContentOptimized()
+            .tabItem {
+                Label {
+                    Text(tabs[3].title)
+                } icon: {
+                    Image(systemName: selectedTab == 3 ? tabs[3].selectedIcon : tabs[3].icon)
+                }
+                .accessibilityLabel("Nutrition tab")
+                .accessibilityHint("Track meals and macros")
+            }
+            .tag(3)
+
+            // Tab 4: Friends (social hub)
+            LazyTabContent(tab: .progress) {
+                FriendsTabView()
+                    .environmentObject(workoutManager)
+                    .environmentObject(userManager)
+            }
+            .tabContentOptimized()
+            .tabItem {
+                Label {
+                    Text(tabs[4].title)
+                } icon: {
+                    Image(systemName: selectedTab == 4 ? tabs[4].selectedIcon : tabs[4].icon)
+                }
+                .accessibilityLabel("Friends tab")
+                .accessibilityHint("View friends and social activity")
+            }
+            .tag(4)
         }
-        .onChange(of: workoutManager.isWorkoutActive) { _, isActive in
-            // Also switch to workout tab when workout becomes active (backup)
-            if isActive && selectedTab != 2 {
-                selectedTab = 2
+    }
+
+    /// Modifiers + onChange handlers wrapped around `coreTabView`. Split into
+    /// two halves (`applyNavigationTriggers` + `applyLifecycleAndOverlays`) so
+    /// the Swift type-checker can handle the full chain in budget.
+    private var tabViewWithModifiers: some View {
+        applyLifecycleAndOverlays(
+            applyNavigationTriggers(
+                coreTabView.tint(currentTabColor)
+            )
+        )
+    }
+
+    /// First half of the tab-stack modifier chain: every imperative
+    /// "shouldNavigateTo*" trigger from `WorkoutManager`.
+    @ViewBuilder
+    private func applyNavigationTriggers<V: View>(_ content: V) -> some View {
+        content
+            .onChange(of: workoutManager.shouldNavigateToWorkoutTab) { _, shouldNavigate in
+                if shouldNavigate {
+                    selectedTab = 2
+                    workoutManager.shouldNavigateToWorkoutTab = false
+                }
             }
-            // 🔧 Reset "came from home" flag when workout starts (user pressed GO)
-            if isActive {
-                workoutManager.autoGenCameFromHomeTab = false
+            .onChange(of: workoutManager.isWorkoutActive) { _, isActive in
+                if isActive && selectedTab != 2 {
+                    selectedTab = 2
+                }
+                if isActive {
+                    workoutManager.autoGenCameFromHomeTab = false
+                }
+                updateWorkoutTabLabelColor(isRed: isActive && selectedTab != 2)
             }
-        }
-        .onChange(of: workoutManager.shouldNavigateToHomeTab) { _, shouldNavigate in
-            if shouldNavigate {
-                // 🔧 Reset IMMEDIATELY to prevent race conditions
-                workoutManager.shouldNavigateToHomeTab = false
-                workoutManager.shouldClearWorkoutTabNav = false  // Also reset clear flag
-                
-                AppLogger.debug("ContentView: Switching to home tab", category: .ui)
-                withAnimation {
+            .onChange(of: workoutManager.shouldNavigateToHomeTab) { _, shouldNavigate in
+                if shouldNavigate {
+                    workoutManager.shouldNavigateToHomeTab = false
+                    workoutManager.shouldClearWorkoutTabNav = false
+                    AppLogger.debug("ContentView: Switching to home tab", category: .ui)
+                    withAnimation {
+                        selectedTab = 0
+                    }
+                }
+            }
+            .onChange(of: workoutManager.shouldNavigateToHomeTabInstant) { _, shouldNavigate in
+                if shouldNavigate {
+                    workoutManager.shouldNavigateToHomeTabInstant = false
+                    workoutManager.shouldClearWorkoutTabNav = false
+                    AppLogger.debug("ContentView: Switching to home tab (instant)", category: .ui)
                     selectedTab = 0
                 }
             }
-        }
-        .onChange(of: workoutManager.shouldNavigateToHomeTabInstant) { _, shouldNavigate in
-            // 🔧 Instant tab switch (no animation) for auto-gen back navigation
-            // This prevents flicker during transition
-            if shouldNavigate {
-                workoutManager.shouldNavigateToHomeTabInstant = false
-                workoutManager.shouldClearWorkoutTabNav = false
-                
-                AppLogger.debug("ContentView: Switching to home tab (instant)", category: .ui)
-                // NO animation - instant switch
-                selectedTab = 0
-            }
-        }
-        .onChange(of: workoutManager.shouldNavigateToAutoGen) { _, shouldNavigate in
-            // 🔧 Redirect auto-gen from Home tab to Workout tab
-            // This prevents cross-tab navigation issues when starting workout
-            if shouldNavigate {
-                workoutManager.shouldNavigateToAutoGen = false
-                workoutManager.autoGenCameFromHomeTab = true  // Track origin for back navigation
-                workoutManager.shouldShowWorkoutGenerator = true
-                selectedTab = 2  // Switch to Workout tab
-            }
-        }
-        .onChange(of: workoutManager.shouldNavigateToPrograms) { _, shouldNavigate in
-            // 🔧 Redirect to programs from Home tab to Workout tab
-            if shouldNavigate {
-                selectedTab = 2  // Switch to Workout tab (will trigger navigation in WorkoutTabView)
-            }
-        }
-        .onChange(of: workoutManager.shouldNavigateToFindFriends) { _, shouldNavigate in
-            // 🔧 Redirect to find friends from Home tab to Workout tab (for challenges)
-            if shouldNavigate {
-                selectedTab = 2  // Switch to Workout tab (will trigger navigation in WorkoutTabView)
-            }
-        }
-        .onChange(of: workoutManager.shouldNavigateToProgramOverview) { _, shouldNavigate in
-            // 🔧 Navigate to Program Overview on Workout tab (from Dashboard)
-            if shouldNavigate {
-                selectedTab = 2  // Switch to Workout tab first
-            }
-        }
-        .onChange(of: workoutManager.shouldNavigateToProgramDay) { _, shouldNavigate in
-            // 🔧 Navigate to Program Day Preview on Workout tab (from Dashboard)
-            if shouldNavigate {
-                selectedTab = 2  // Switch to Workout tab first
-            }
-        }
-        .onChange(of: workoutManager.shouldNavigateToCustomWorkoutBuilder) { _, shouldNavigate in
-            // Navigate to Custom Workout Builder (from Exercise Detail "Add to workout" button)
-            if shouldNavigate {
-                selectedTab = 2  // Switch to Workout tab first, WorkoutTabView handles the navigation
-                AppLogger.debug("Switching to Workout tab for Custom Workout Builder", category: .ui)
-            }
-        }
-        .onChange(of: workoutManager.shouldNavigateToMealsTab) { _, shouldNavigate in
-            // Daily Brief CTA — meal / water / weight log opens the
-            // Nutrition tab. Pushing `SimpleMealPlanView` onto the
-            // dashboard's NavigationStack auto-bounces back to root
-            // because it wraps its own NavigationStack (PE invariant 6).
-            if shouldNavigate {
-                workoutManager.shouldNavigateToMealsTab = false
-                selectedTab = 3
-            }
-        }
-        .onChange(of: selectedTab) { oldValue, newValue in
-            if oldValue != newValue {
-                let switchStartTime = CACurrentMediaTime()
-                
-                MainThreadWatchdog.shared.setContext("tab_switch_\(oldValue)→\(newValue)")
-                let isInstantSwitch = tabPreloader.isPreloadingComplete || lazyTabManager.isEagerModeEnabled
-                tabSwitchOptimizer.beginTransition(from: oldValue, to: newValue)
-                
-                // Mark tab as visited for lazy loading
-                if let tab = LazyTabManager.Tab(rawValue: newValue) {
-                    lazyTabManager.markVisited(tab)
-                    // Only prefetch if not already preloaded
-                    if !isInstantSwitch {
-                        SmartPrefetch.shared.prefetchForTab(tab)
-                    }
+            .onChange(of: workoutManager.shouldNavigateToAutoGen) { _, shouldNavigate in
+                if shouldNavigate {
+                    workoutManager.shouldNavigateToAutoGen = false
+                    workoutManager.autoGenCameFromHomeTab = true
+                    workoutManager.shouldShowWorkoutGenerator = true
+                    selectedTab = 2
                 }
-                
-                
-                // Log tab switch with screen IDs
-                let tabScreens: [SessionLogManager.Screen] = [.dashboard, .exerciseLibrary, .workoutTab, .mealsTab, .statsTab]
-                let fromScreen = oldValue < tabScreens.count ? tabScreens[oldValue] : .unknown
-                let toScreen = newValue < tabScreens.count ? tabScreens[newValue] : .unknown
-                
-                // Start transition tracking
-                SessionLogManager.shared.beginTransition(to: toScreen, from: .tabBarHome, action: "tab_switch")
-                SessionLogManager.shared.logTabSwitch(from: fromScreen.displayName, to: toScreen.displayName)
-                SessionLogManager.shared.log(.info, category: .navigation, message: "🔀 TAB: [\(fromScreen.rawValue)] → [\(toScreen.rawValue)]", metadata: [
-                    "from_tab_index": oldValue,
-                    "to_tab_index": newValue,
-                    "from_screen_id": fromScreen.rawValue,
-                    "to_screen_id": toScreen.rawValue,
-                    "timestamp_ms": Int(Date().timeIntervalSince1970 * 1000),
-                    "is_instant": isInstantSwitch
-                ])
-                
+            }
+            .onChange(of: workoutManager.shouldNavigateToPrograms) { _, shouldNavigate in
+                if shouldNavigate { selectedTab = 2 }
+            }
+            .onChange(of: workoutManager.shouldNavigateToFindFriends) { _, shouldNavigate in
+                if shouldNavigate { selectedTab = 2 }
+            }
+            .onChange(of: workoutManager.shouldNavigateToProgramOverview) { _, shouldNavigate in
+                if shouldNavigate { selectedTab = 2 }
+            }
+            .onChange(of: workoutManager.shouldNavigateToProgramDay) { _, shouldNavigate in
+                if shouldNavigate { selectedTab = 2 }
+            }
+            .onChange(of: workoutManager.shouldNavigateToCustomWorkoutBuilder) { _, shouldNavigate in
+                if shouldNavigate {
+                    selectedTab = 2
+                    AppLogger.debug("Switching to Workout tab for Custom Workout Builder", category: .ui)
+                }
+            }
+            .onChange(of: workoutManager.shouldNavigateToMealsTab) { _, shouldNavigate in
+                // Daily Brief CTA — pushing `SimpleMealPlanView` onto the dashboard's
+                // NavigationStack auto-bounces back to root because it wraps its own
+                // NavigationStack (PE invariant 6).
+                if shouldNavigate {
+                    workoutManager.shouldNavigateToMealsTab = false
+                    selectedTab = 3
+                }
+            }
+    }
 
-                scrollToTopTrigger = UUID()
-                // Immediately hide GO button when switching tabs
-                GoButtonState.shared.hide(reason: "tab_switch")
-                
-                // 🔁 Tab tap notifications. The Exercises tab listens for
-                // `.exerciseTabSelected` to reset its filter back to
-                // Recommended every time the user lands on it (per user
-                // request 2026-04-27). Keep this alongside the existing
-                // `scrollToTopTrigger` so callers don't have to subscribe to
-                // a UUID-based environment value just to detect "I came
-                // back". Posted only when this tap actually changes tabs
-                // (oldValue != newValue is enforced above).
-                if newValue == 1 {
-                    NotificationCenter.default.post(name: .exerciseTabSelected, object: nil)
-                }
-                
-                // Always pop to root when switching to Home tab
-                // This prevents stale navigation states from showing unexpected views
-                if newValue == 0 {
-                    workoutManager.shouldPopToRootHome = true
-                }
-                
-                // 🔧 Reset "came from home" flag when user manually leaves Workout tab
-                // This ensures if they come back manually, they stay on Workout tab when pressing back
-                if oldValue == 2 && newValue != 2 {
-                    workoutManager.autoGenCameFromHomeTab = false
-                }
-                
-                
-                
-                // ⚡️ End transition tracking (async to not block).
-                // swiftui-rules.mdc: use structured concurrency (`Task { @MainActor }`)
-                // instead of DispatchQueue.main.asyncAfter / .async — rule §3.
-                Task { @MainActor [self] in
-                    tabSwitchOptimizer.endTransition()
-                    MainThreadWatchdog.shared.clearContext()
+    /// Second half of the tab-stack modifier chain: lifecycle (`onAppear`,
+    /// scenePhase), tab-switch handling, deep-link routing, and overlays.
+    @ViewBuilder
+    private func applyLifecycleAndOverlays<V: View>(_ content: V) -> some View {
+        content
+            .onChange(of: selectedTab) { oldValue, newValue in
+                handleSelectedTabChange(oldValue: oldValue, newValue: newValue)
+                updateWorkoutTabLabelColor(isRed: workoutManager.isWorkoutActive && newValue != 2)
+                syncDashboardBattleCryHostVisibility()
+            }
+            .environment(\.scrollToTopTrigger, scrollToTopTrigger)
+            .onAppear {
+                updateWorkoutTabLabelColor(isRed: workoutManager.isWorkoutActive && selectedTab != 2)
+                updateTabBarScale(isGoButtonVisible: GoButtonState.shared.isVisible)
+                syncDashboardBattleCryHostVisibility()
+            }
+            .onChange(of: scenePhase) { _, _ in
+                syncDashboardBattleCryHostVisibility()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .goButtonVisibilityChanged)) { notification in
+                if let isVisible = notification.object as? Bool {
+                    updateTabBarScale(isGoButtonVisible: isVisible)
                 }
             }
-            if newValue == 0 && HealthKitManager.shared.isAuthorized {
-                Task.detached(priority: .background) {
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    await HealthKitManager.shared.fetchTodaySteps()
-                    await HealthKitManager.shared.fetchWeeklySteps()
-                    await HealthKitManager.shared.fetchMonthlyAverage()
-                }
+            .onReceive(deepLinkManager.$pendingDestination) { destination in
+                guard let destination = destination else { return }
+                handleDeepLinkDestination(destination)
             }
+            // ⚠️ DO NOT add .id() here - it destroys active workout state on rotation.
+            .preferredColorScheme(AppearanceManager.shared.colorScheme)
+    }
 
-            // Wearable widget preload on return to Dashboard.
-            // WHOOP / Oura widgets can go stale while the user is on another tab
-            // for >5 min. We trigger a quiet force-sync IF last sync is older than
-            // 60s. Service-level `isSyncing` guard coalesces with any in-flight
-            // foreground sync, so this never duplicates work.
-            if newValue == 0 && oldValue != 0 {
-                Task(priority: .userInitiated) {
-                    let now = Date()
-                    let whoopStale: Bool = {
-                        guard WhoopService.shared.isConnected else { return false }
-                        guard let last = WhoopService.shared.lastSyncDate else { return true }
-                        return now.timeIntervalSince(last) > 60
-                    }()
-                    let ouraStale: Bool = {
-                        guard OuraService.shared.isConnected else { return false }
-                        guard let last = OuraService.shared.lastSyncDate else { return true }
-                        return now.timeIntervalSince(last) > 60
-                    }()
-                    if whoopStale {
-                        await WhoopService.shared.syncAllData(force: true)
-                    }
-                    if ouraStale {
-                        await OuraService.shared.syncAllData(force: true)
-                    }
-                }
+    /// Offline banner + tab stack + GO overlay + sheets/alerts.
+    @ViewBuilder
+    private var mainTabChrome: some View {
+        VStack(spacing: 0) {
+            OfflineBanner()
+                .animation(.easeInOut(duration: 0.3), value: NetworkMonitor.shared.isConnected)
+
+            ZStack(alignment: .bottom) {
+                tabViewWithModifiers
+
+                // GO! Button overlay - isolated view that observes its own state
+                GoButtonOverlay()
             }
-        }
-        .environment(\.scrollToTopTrigger, scrollToTopTrigger)
-        .onChange(of: workoutManager.isWorkoutActive) { _, isActive in
-            updateWorkoutTabLabelColor(isRed: isActive && selectedTab != 2)
-        }
-        .onChange(of: selectedTab) { _, newTab in
-            updateWorkoutTabLabelColor(isRed: workoutManager.isWorkoutActive && newTab != 2)
-        }
-        .onAppear {
-            updateWorkoutTabLabelColor(isRed: workoutManager.isWorkoutActive && selectedTab != 2)
-            updateTabBarScale(isGoButtonVisible: GoButtonState.shared.isVisible)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .goButtonVisibilityChanged)) { notification in
-            if let isVisible = notification.object as? Bool {
-                updateTabBarScale(isGoButtonVisible: isVisible)
-            }
-        }
-        // MARK: - Deep Link Tab Navigation
-        .onReceive(deepLinkManager.$pendingDestination) { destination in
-            guard let destination = destination else { return }
-            handleDeepLinkDestination(destination)
-        }
-        // ✅ SwiftUI handles orientation changes naturally
-        // ⚠️ DO NOT add .id() here - it destroys active workout state on rotation!
-        .preferredColorScheme(AppearanceManager.shared.colorScheme)
-            
-            // GO! Button overlay - isolated view that observes its own state
-            GoButtonOverlay()
-        }
         } // end VStack (offline banner + tab content)
         // Shared Workout Sheet - shows when user opens a shared workout link
         .sheet(isPresented: $deepLinkManager.showSharedWorkoutSheet) {
@@ -428,6 +333,119 @@ struct MainTabView: View {
         } message: {
             Text("Get workout reminders, streak alerts, and celebrate your achievements! Enable notifications in Settings to never miss a beat.")
         }
+    }
+    
+    /// Home dashboard is the only surface that shows `BattleCryShoutBubble`.
+    /// While off Home or when the app is backgrounded, incoming reactions
+    /// buffer in `RealtimeService`; see `BattleCryShoutBubble` + `RealtimeService`.
+    private func syncDashboardBattleCryHostVisibility() {
+        let onHomeSurface = selectedTab == 0 && scenePhase != .background
+        RealtimeService.shared.setDashboardBattleCryHostVisible(onHomeSurface)
+    }
+
+    /// Extracted from the `.onChange(of: selectedTab)` closure so the SwiftUI
+    /// body can type-check within budget. Owns: tab-transition logging, prefetch,
+    /// scroll-to-top, GO-button hide, per-tab notifications, pop-to-root, and
+    /// post-switch HealthKit / wearable preloads.
+    private func handleSelectedTabChange(oldValue: Int, newValue: Int) {
+        if oldValue != newValue {
+            MainThreadWatchdog.shared.setContext("tab_switch_\(oldValue)→\(newValue)")
+            let isInstantSwitch = tabPreloader.isPreloadingComplete || lazyTabManager.isEagerModeEnabled
+            tabSwitchOptimizer.beginTransition(from: oldValue, to: newValue)
+
+            if let tab = LazyTabManager.Tab(rawValue: newValue) {
+                lazyTabManager.markVisited(tab)
+                if !isInstantSwitch {
+                    SmartPrefetch.shared.prefetchForTab(tab)
+                }
+            }
+
+            logTabSwitch(oldValue: oldValue, newValue: newValue, isInstantSwitch: isInstantSwitch)
+
+            scrollToTopTrigger = UUID()
+            GoButtonState.shared.hide(reason: "tab_switch")
+
+            // 🔁 Exercises tab resets its filter to Recommended on every tap.
+            if newValue == 1 {
+                NotificationCenter.default.post(name: .exerciseTabSelected, object: nil)
+            }
+
+            if newValue == 0 {
+                workoutManager.shouldPopToRootHome = true
+            }
+
+            if oldValue == 2 && newValue != 2 {
+                workoutManager.autoGenCameFromHomeTab = false
+            }
+
+            // ⚡️ End transition tracking (async to not block).
+            // swiftui-rules.mdc §3: structured concurrency, never DispatchQueue.
+            Task { @MainActor [self] in
+                tabSwitchOptimizer.endTransition()
+                MainThreadWatchdog.shared.clearContext()
+            }
+        }
+
+        if newValue == 0 && HealthKitManager.shared.isAuthorized {
+            Task.detached(priority: .background) {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                await HealthKitManager.shared.fetchTodaySteps()
+                await HealthKitManager.shared.fetchWeeklySteps()
+                await HealthKitManager.shared.fetchMonthlyAverage()
+            }
+        }
+
+        // Wearable widget preload on return to Dashboard. WHOOP / Oura widgets
+        // can go stale while the user is on another tab for >5 min. Quiet
+        // force-sync IF last sync is older than 60s. Service-level `isSyncing`
+        // guard coalesces with any in-flight foreground sync.
+        if newValue == 0 && oldValue != 0 {
+            Task(priority: .userInitiated) {
+                let now = Date()
+                let whoopStale: Bool = {
+                    guard WhoopService.shared.isConnected else { return false }
+                    guard let last = WhoopService.shared.lastSyncDate else { return true }
+                    return now.timeIntervalSince(last) > 60
+                }()
+                let ouraStale: Bool = {
+                    guard OuraService.shared.isConnected else { return false }
+                    guard let last = OuraService.shared.lastSyncDate else { return true }
+                    return now.timeIntervalSince(last) > 60
+                }()
+                if whoopStale {
+                    await WhoopService.shared.syncAllData(force: true)
+                }
+                if ouraStale {
+                    await OuraService.shared.syncAllData(force: true)
+                }
+            }
+        }
+    }
+
+    /// Heterogeneous metadata dictionary literal — pulled out of the
+    /// `onChange` closure where it added significant type-checker cost.
+    private func logTabSwitch(oldValue: Int, newValue: Int, isInstantSwitch: Bool) {
+        let tabScreens: [SessionLogManager.Screen] = [.dashboard, .exerciseLibrary, .workoutTab, .mealsTab, .statsTab]
+        let fromScreen = oldValue < tabScreens.count ? tabScreens[oldValue] : .unknown
+        let toScreen = newValue < tabScreens.count ? tabScreens[newValue] : .unknown
+
+        SessionLogManager.shared.beginTransition(to: toScreen, from: .tabBarHome, action: "tab_switch")
+        SessionLogManager.shared.logTabSwitch(from: fromScreen.displayName, to: toScreen.displayName)
+
+        let metadata: [String: Any] = [
+            "from_tab_index": oldValue,
+            "to_tab_index": newValue,
+            "from_screen_id": fromScreen.rawValue,
+            "to_screen_id": toScreen.rawValue,
+            "timestamp_ms": Int(Date().timeIntervalSince1970 * 1000),
+            "is_instant": isInstantSwitch
+        ]
+        SessionLogManager.shared.log(
+            .info,
+            category: .navigation,
+            message: "🔀 TAB: [\(fromScreen.rawValue)] → [\(toScreen.rawValue)]",
+            metadata: metadata
+        )
     }
     
     // MARK: - Deep Link Handling

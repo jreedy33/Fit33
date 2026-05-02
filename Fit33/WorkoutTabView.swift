@@ -229,6 +229,13 @@ struct WorkoutTabView: View {
             FavoriteRoutinesView()
         case "OutdoorRun":
             RunningWorkoutView()
+        case "CardioLanding":
+            // Cardio Redesign Phase 1 — pushed detail (NOT sheet, per
+            // user request 2026-05-02). `CardioLandingView` no longer
+            // wraps its own `NavigationStack` — this case relies on the
+            // outer `WorkoutTabView` navigation stack to host it.
+            CardioLandingView()
+                .environmentObject(userManager)
         case "SmartProgramOverview":
             if let program = workoutManager.navigateProgramData {
                 SmartProgramOverviewView(
@@ -441,8 +448,7 @@ struct WorkoutHomeView: View {
         }
         .padding(.horizontal, Spacing.xxs)
     }
-    
-    @State private var showingCardioLanding = false
+
     
     // MARK: - Quick Actions
     private var quickActionsSection: some View {
@@ -532,8 +538,8 @@ struct WorkoutHomeView: View {
                         guard !isNavigating else { return }
                         isNavigating = true
                         Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
-                        
-                        showingCardioLanding = true
+
+                        navigationPath.append("CardioLanding")
                     }
                 )
                 
@@ -554,10 +560,6 @@ struct WorkoutHomeView: View {
                     }
                 )
             }
-        }
-        .sheet(isPresented: $showingCardioLanding) {
-            CardioLandingView()
-                .environmentObject(userManager)
         }
     }
     

@@ -76,14 +76,46 @@ class RealtimeService: ObservableObject {
 
     /// Latest battle cry / cheer the current user RECEIVED (i.e.
     /// `recipient_id == auth.uid()`). Updated by
-    /// `subscribeIncomingReactions(userId:)` whenever a new INSERT
-    /// arrives. Dashboard widget cards observe this `@Published`
-    /// value and animate a `BattleCryShoutBubble` when the reaction's
-    /// `challengeId` matches the card they're rendering. The bubble
-    /// auto-dismisses after ~6s; the value stays set so a freshly-
-    /// rendered card (e.g. tab switch back to dashboard) can still
-    /// surface a recent reaction.
+    /// `subscribeIncomingReactions(userId:)` only while the user is on
+    /// the **Home** tab with the app foregrounded (see
+    /// `setDashboardBattleCryHostVisible` from `MainTabView`). When the
+    /// user is elsewhere (other tab, app backgrounded), the same INSERT
+    /// is stored in `pendingIncomingReactions` so
+    /// `BattleCryShoutBubble` can show it when they return. The bubble
+    /// auto-dismisses after ~6s; `latestIncomingReaction` is cleared
+    /// when leaving the Home surface so a stale value does not replay.
     @Published var latestIncomingReaction: ChallengeReaction?
+
+    /// Reactions that arrived while the user was not on the Home
+    /// dashboard (other tab, app in background). One entry per
+    /// `challengeId` (newest wins). Consumed by
+    /// `BattleCryShoutBubble` when the Home surface becomes active.
+    private var pendingIncomingReactions: [UUID: ChallengeReaction] = [:]
+
+    /// `true` when `MainTabView` is on the Home tab (index 0) and
+    /// `scenePhase != .background`. Drives realtime vs buffer behavior
+    /// and lets `BattleCryShoutBubble` dismiss when the user leaves.
+    @Published private(set) var isDashboardBattleCryHostVisible: Bool = false
+
+    // MARK: - Dashboard battle cry host (Home tab + foreground)
+
+    /// Called from `MainTabView` when the Home tab + scene phase change.
+    /// When leaving Home (other tab or app background), clears
+    /// `latestIncomingReaction` so bubbles do not replay stale shouts;
+    /// buffered rows stay in `pendingIncomingReactions`.
+    func setDashboardBattleCryHostVisible(_ visible: Bool) {
+        guard visible != isDashboardBattleCryHostVisible else { return }
+        isDashboardBattleCryHostVisible = visible
+        if !visible {
+            latestIncomingReaction = nil
+        }
+    }
+
+    /// Removes and returns the buffered reaction for this challenge (newest
+    /// per challenge while off-Home), if any.
+    func consumePendingIncomingReaction(for challengeId: UUID) -> ChallengeReaction? {
+        pendingIncomingReactions.removeValue(forKey: challengeId)
+    }
 
     // MARK: - Debounce State
     
@@ -624,6 +656,9 @@ class RealtimeService: ObservableObject {
         // staleness gate now sees `nil → .greatestFiniteMagnitude`
         // and reliably triggers a reconnect on the next foreground.
         lastEventReceivedAt = nil
+        pendingIncomingReactions.removeAll()
+        latestIncomingReaction = nil
+        isDashboardBattleCryHostVisible = false
 
         isConnected = false
         AppLogger.info("Disconnected from all channels", category: .network)
@@ -2039,14 +2074,15 @@ class RealtimeService: ObservableObject {
             details: "📣 \(reactionEmoji) \(reactionText) for challenge \(challengeIdString.prefix(8))"
         )
 
-        // Single-slot publisher — newest wins. Dashboard widget cards
-        // observe this and decide whether to animate based on their
-        // own `challengeId`. We don't queue because the bubble itself
-        // is single-slot per card; if two reactions land within 6s
-        // the second one replaces the first (last-writer-wins) which
-        // matches what the user expects from a comic-bubble surface.
-        latestIncomingReaction = reaction
-        HapticManager.notification(.warning)
+        // Home dashboard visible → animate widgets immediately. Otherwise
+        // buffer per challenge so `BattleCryShoutBubble` can show when the
+        // user returns to Home (see `setDashboardBattleCryHostVisible`).
+        if isDashboardBattleCryHostVisible {
+            latestIncomingReaction = reaction
+            HapticManager.notification(.warning)
+        } else {
+            pendingIncomingReactions[challengeId] = reaction
+        }
     }
 }
 

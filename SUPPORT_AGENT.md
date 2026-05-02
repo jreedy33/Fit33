@@ -107,6 +107,12 @@ Related Agent
 | PP-013 | Exercise swap erases completed sets | High | `WorkoutManager.replaceExercise` discarded sets | **Resolved (Mar 2026)** |
 | PP-014 | "Account creation failed" dead end | Critical | `signUp()` created auth user + profile failed + retry rejected as "already registered" | **Resolved (Mar 2026)** — recovery logic + error surfacing |
 | PP-015 | "Session expired" during phone verify | Critical | Email/password signup deferred account creation; `@State password` lost across 10 steps | **Resolved (Mar 2026)** — account now created immediately after password entry |
+| PP-016 | "Cardio gave me 0 LP, but my friend's gave 50" | High | Old client-side `+50 cardioSession` award was bypassed on `RunCompletionView` silent-skip path AND on Strava/HK imports. Net: native Fit33 runs sometimes credited, Strava-imported runs never did. | **Resolved (May 2026)** — server-side `record_cardio_workout` RPC awards graduated LP for ALL sources (Fit33 native, Strava, HK, Watch). Client-side `+50` removed from `UserManager`. |
+| PP-017 | "I started a run, app crashed, lost my GPS data" | Critical | Pre-redesign cardio used in-memory state only; cold launch = lost session. | **Resolved (May 2026)** — `CardioSessionManager` writes a `CardioSessionSnapshot` to UserDefaults under `fit33.cardioSession.snapshot.v1` while phase ∈ {.active, .paused}. Cold-launch recovery rehydrates within 4h window. |
+| PP-018 | "My cardio screen has stuff stuck under the notch" | Medium | `CardioActiveWorkoutView` was missing `.ignoresSafeArea()` on the map layer. | **Resolved (May 2026)** — `.ignoresSafeArea()` applied; map fills the bezel. |
+| PP-019 | "I run on Strava — why am I missing out on streaks / quests / LP?" | High | Strava activities historically routed to a separate path that didn't fan out to the cardio gamification bus. | **Resolved (May 2026)** — `record_cardio_workout` RPC widened `verify_strava_quests_for_today` to all native + Strava + HK sources; quests/streak/LP credit identically regardless of origin. |
+| PP-020 | "I subscribed but the price changed at checkout" | High | `SubscriptionPlan` shipped with stale hardcoded `$3.99` / `$29.99` strings while StoreKit was already configured at canonical `$9.99` / `$59.99`. | **Resolved (May 2026)** — `PremiumUpgradeView` updated to canonical values; copy now matches StoreKit truth. |
+| PP-021 | "First time I opened cardio there was nothing in my history" | Medium | App wrote forward-only — historical Apple-Watch / Strava-via-HK workouts were never imported. | **Resolved (May 2026)** — `CardioLandingView.triggerHKBackfillIfNeeded()` runs `HealthDataService.syncAllHealthData(force: true)` exactly once on first cardio-page open (UserDefaults gate `cardio_first_open_hk_backfill_done_v1`), pulling last 30d from HealthKit. Newcomers see populated feed immediately. |
 
 ---
 
@@ -121,6 +127,10 @@ Related Agent
 | "Challenge progress is wrong" | Timezone mismatch client/server | Acknowledge known issue; route to Data & Backend |
 | "Doesn't work offline" | No offline queue for some flows (most covered by `CloudSyncRetryQueue`) | Acknowledge limitation; explain cloud-only flows |
 | "Can't see friend's workout" | Privacy setting or sync delay | Check friend status; check realtime sub |
+| "My run paused itself" | Auto-pause kicked in (speed dropped below threshold for N seconds) | Explain auto-pause; mention Resume button or just resume motion |
+| "My Strava run isn't showing in Fit33" | Strava token expired OR sync delay (typical ≤60s) | Check `StravaService.shared.isConnected`; ask user to re-authorize if needed |
+| "Why is my walk credited the same as a run?" | By design — gamification rails treat cardio uniformly; calorie counts differ | Explain Wave 7b graduated LP; confirm walks still count toward streak/quests |
+| "I imported a HK workout and it's missing distance" | HK source app didn't write distance (e.g., yoga, strength) | Confirm activity type; if cardio, escalate to Data & Backend |
 
 ---
 

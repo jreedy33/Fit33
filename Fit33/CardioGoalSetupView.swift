@@ -42,6 +42,22 @@ struct CardioGoalSetupView: View {
     @State private var calorieGoal: Int = 300
     @State private var showingBluetoothSheet = false
     @State private var startWorkout = false
+    /// Cardio Redesign Phase 1 — Wave 4b. Set when GO is tapped for an
+    /// outdoor walk / run / cycle. Routes the user into the new
+    /// `CardioActiveSessionHost` instead of the legacy
+    /// `CardioActiveWorkoutView` (which still owns indoor activities
+    /// + the duplicate `CardioLocationManager` until Wave 4b cleanup).
+    @State private var startNativeWorkout = false
+
+    /// `true` for the activities the new `OutdoorCardioManager` /
+    /// `CardioSessionManager` flow handles. Indoor + niche activities
+    /// fall through to the legacy `CardioActiveWorkoutView`.
+    private var usesNativeOutdoorEngine: Bool {
+        switch activityType {
+        case .outdoorRun, .walk, .outdoorCycle: return true
+        default: return false
+        }
+    }
     
     // Smart recommendations based on user profile
     private var recommendations: (time: Int, distance: Double, calories: Int) {
@@ -143,6 +159,10 @@ struct CardioGoalSetupView: View {
                 )
                 .environmentObject(userManager)
             }
+            .fullScreenCover(isPresented: $startNativeWorkout) {
+                CardioActiveSessionHost(isPresented: $startNativeWorkout)
+                    .environmentObject(userManager)
+            }
             .onChange(of: workoutManager.shouldDismissCardioFlow) { _, shouldDismiss in
                 if shouldDismiss {
                     startWorkout = false
@@ -155,6 +175,88 @@ struct CardioGoalSetupView: View {
             timeGoal = recommendations.time
             distanceGoal = recommendations.distance
             calorieGoal = recommendations.calories
+        }
+        // Cardio Redesign Phase 1 — Wave 4e (Smart Goal Auto-Suggest).
+        // After the static recommendations seed the controls, fire an
+        // async query against the user's last 7 days of cardio for this
+        // activity type and bias the defaults +5-10% above the median.
+        // Falls through silently if there's no history yet (then the
+        // static recommendations stand). Kept on the same `.task` view
+        // modifier rather than `.onAppear` so SwiftUI cancels the load
+        // automatically when the sheet dismisses.
+        .task { await applySmartSuggestion() }
+    }
+
+    // MARK: - Smart Goal Auto-Suggest (Wave 4e)
+    //
+    // Pull the user's last-7-days cardio rows from Supabase, filter to
+    // matching activity type, compute the median time/distance/calories,
+    // and bias defaults +7% above the median (in line with progressive
+    // overload — gentle, never aggressive). If there's <3 sessions in
+    // the window we don't override — small sample sizes lead to
+    // erratic suggestions ("you ran 12 miles last week, here's 13"
+    // when really it was a fluke long run).
+    private func applySmartSuggestion() async {
+        let activityKey = supabaseActivityKey
+        guard !activityKey.isEmpty else { return }
+
+        let recent: [CardioWorkoutDTO]
+        do {
+            recent = try await SupabaseManager.shared.fetchRecentCardioWorkouts(
+                limit: 30, activityType: activityKey
+            )
+        } catch {
+            return
+        }
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let inWindow = recent.filter {
+            // Best-effort parse — `completed_at` may or may not include
+            // fractional seconds. Try both.
+            let date = isoFormatter.date(from: $0.completedAt)
+                ?? ISO8601DateFormatter().date(from: $0.completedAt)
+            return (date ?? .distantPast) >= cutoff
+        }
+        guard inWindow.count >= 3 else { return }
+
+        let durationsMin = inWindow.map { Double($0.durationSeconds) / 60.0 }.sorted()
+        let distancesKm = inWindow.map { $0.distanceMeters / 1000.0 }.sorted()
+        let calories = inWindow.map { $0.caloriesBurned }.sorted()
+
+        func median(_ arr: [Double]) -> Double {
+            guard !arr.isEmpty else { return 0 }
+            let mid = arr.count / 2
+            return arr.count % 2 == 0 ? (arr[mid - 1] + arr[mid]) / 2 : arr[mid]
+        }
+
+        let suggestedTime = max(5, Int((median(durationsMin) * 1.07).rounded()))
+        let suggestedDist = max(0.5, (median(distancesKm) * 1.07 * 10).rounded() / 10)
+        let suggestedCal  = max(50, Int((median(calories) * 1.07).rounded()))
+
+        await MainActor.run {
+            timeGoal = suggestedTime
+            if activityType.defaultDistance > 0 {
+                distanceGoal = suggestedDist
+            }
+            calorieGoal = suggestedCal
+        }
+    }
+
+    /// Maps the legacy `CardioActivityType` to the Supabase
+    /// `cardio_workouts.activity_type` string we filter on.
+    private var supabaseActivityKey: String {
+        switch activityType {
+        case .outdoorRun:    return "run"
+        case .walk:          return "walk"
+        case .outdoorCycle:  return "outdoor_cycle"
+        case .treadmill:     return "treadmill"
+        case .indoorCycle:   return "indoor_cycle"
+        case .rowing:        return "rowing"
+        case .elliptical:    return "elliptical"
+        case .stairClimber:  return "stair_climber"
+        case .hiit:          return "hiit"
+        case .swimming:      return "swimming"
         }
     }
     
@@ -385,11 +487,51 @@ struct CardioGoalSetupView: View {
         }
     }
     
+    // MARK: - Native Session Bridge (Wave 4b)
+    //
+    // Maps the legacy `CardioActivityType` + `CardioGoalType` selection
+    // into the new `CardioSessionManager` (`CardioActivity` + `RunGoalType`)
+    // surface, kicks off the cinematic countdown, and presents the new
+    // active-session host. The legacy fullScreenCover stays in place
+    // for indoor activities + non-GPS flows.
+    private func routeToNativeSession() {
+        let mappedActivity: CardioActivity = {
+            switch activityType {
+            case .outdoorRun:   return .run
+            case .walk:         return .walk
+            case .outdoorCycle: return .outdoorCycle
+            default:            return .run
+            }
+        }()
+
+        let (goal, value): (RunGoalType, Double) = {
+            switch selectedGoalType {
+            case .openGoal:  return (.none, 0)
+            case .time:      return (.time, Double(timeGoal) * 60)
+            case .distance:  return (.distance, distanceGoal * 1000)
+            case .calories:  return (.calories, Double(calorieGoal))
+            }
+        }()
+
+        CardioSessionManager.shared.prepare(activity: mappedActivity)
+        CardioSessionManager.shared.setGoal(goal, value: value)
+        startNativeWorkout = true
+        // `start()` flips the session into `.preStart` and runs the
+        // 3-2-1 countdown. The host view's first render is the
+        // countdown overlay sitting on top of the empty active layout
+        // (map + zeroed metrics), then transitions to live.
+        CardioSessionManager.shared.start()
+    }
+
     // MARK: - GO Button
     private var goButton: some View {
         Button(action: {
             HapticManager.impact(.heavy)
-            startWorkout = true
+            if usesNativeOutdoorEngine {
+                routeToNativeSession()
+            } else {
+                startWorkout = true
+            }
         }) {
             HStack {
                 Image(systemName: "play.fill")

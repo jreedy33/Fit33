@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cardio - Fit33 Help Center</title>
+  <meta name="description" content="Walk, run, ride, or row. Learn how cardio works in Fit33 — native goals, Strava integration, streaks, and how every session counts toward your gains.">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="icon" type="image/png" href="../favicon.png">
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="nav" id="navbar">
+    <div class="nav-container">
+      <a href="../" class="nav-logo">
+        <img src="../app-icon.png" alt="Fit33">
+        <span>Fit33</span>
+      </a>
+
+      <ul class="nav-links" id="navLinks">
+        <li><a href="../">Home</a></li>
+        <li><a href="../features.html">Features</a></li>
+        <li><a href="../help-center.html" class="active">Help Center</a></li>
+        <li><a href="../contact.html">Contact</a></li>
+      </ul>
+
+      <div class="nav-cta">
+        <a href="https://apps.apple.com/app/fit33" class="btn btn-primary">Download Free</a>
+      </div>
+
+      <div class="nav-toggle" onclick="toggleNav()">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Article Content -->
+  <section class="article-page">
+    <div class="article-container">
+
+      <!-- Breadcrumb -->
+      <div class="article-breadcrumb">
+        <a href="../help-center.html">Help Center</a>
+        <span>→</span>
+        <span>Cardio</span>
+      </div>
+
+      <!-- Header -->
+      <div class="article-header">
+        <h1>Cardio in Fit33</h1>
+        <div class="article-meta">
+          <span>📖 7 min read</span>
+          <span>Last updated: May 2026</span>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="article-content">
+        <p>Fit33 isn't a heavy cardio app — but it scales for it. The Cardio tab gives you a focused walk-and-run engine on top, and a "Powered by Strava" lockup on the bottom for everything else. Whether you log a 5-minute walk or a half-marathon, every session counts toward your streak, your daily quests, your league points, and your active challenges.</p>
+
+        <h2>1. The Cardio Page</h2>
+        <p>Open the Workout tab and tap <strong>Cardio</strong>. The page is split into two halves:</p>
+
+        <ul>
+          <li><strong>Top half — Native walk + run.</strong> Two big tiles for Walk and Run, a "Quick Start" preset chip row, your active cardio streak, and (on off-days) a "Just one block" 5-minute walk shortcut.</li>
+          <li><strong>Bottom half — Powered by Strava.</strong> If your Strava is connected, your recent activities show up here. If it isn't, you'll see a one-tap Connect Strava card. Below that is the indoor-equipment row and a "Browse all cardio" link.</li>
+        </ul>
+
+        <div class="callout tip">
+          <strong>💡 First-time tip:</strong> The first time you open the Cardio page, Fit33 quietly imports the last 30 days of cardio history from Apple Health. So if you've been logging walks on your Apple Watch, you'll see a populated feed instead of starting from zero.
+        </div>
+
+        <h2>2. Walk &amp; Run — The Native Engine</h2>
+        <p>Tap <strong>Walk</strong> or <strong>Run</strong> to set up a workout. You'll pick a goal type:</p>
+
+        <ul>
+          <li><strong>Open Goal</strong> — no target, just go. Useful for "I'll see how I feel today."</li>
+          <li><strong>Time</strong> — finish at a duration (e.g., 30 min).</li>
+          <li><strong>Distance</strong> — finish at a distance (e.g., 5 km, half-marathon, full marathon).</li>
+          <li><strong>Calories</strong> — finish when calories burned hits a target.</li>
+        </ul>
+
+        <p>The default values are seeded by your fitness profile (experience tier, weight) AND your last 7 days of cardio history — Fit33 quietly biases the suggestion +7% above your recent median to nudge progressive overload. Small samples are ignored (we need at least 3 sessions in the window before we override the static recommendation).</p>
+
+        <div class="callout">
+          <strong>⌚ Apple Watch:</strong> Fit33 also runs natively on Apple Watch — start the same workout on your wrist and it'll mirror to your phone with full GPS, splits, and Live Activity.
+        </div>
+
+        <h2>3. The Active Workout Screen</h2>
+        <p>Once you tap GO, you'll see a cinematic 3-2-1 countdown (tap to skip), then the active screen:</p>
+
+        <ul>
+          <li><strong>Full-frame map</strong> with your route polyline drawn live as you move.</li>
+          <li><strong>Focused metric tile</strong> — tap to cycle between Pace, Speed, and Heart Rate.</li>
+          <li><strong>Stat grid</strong> — distance, time, calories, elevation.</li>
+          <li><strong>Splits strip</strong> — per-mile (or per-km) splits as they tick off.</li>
+          <li><strong>Auto-paused chip</strong> — Fit33 detects when you stop (e.g., red light, water break) and pauses for you. Tap Resume or just start moving again.</li>
+          <li><strong>Pause / End buttons</strong> — manual control when you need it.</li>
+        </ul>
+
+        <p>While the workout is active, a Lock-Screen Live Activity shows pace, distance, and time so you can glance without unlocking.</p>
+
+        <h2>4. The Recap</h2>
+        <p>End your workout and you land on the Recap screen:</p>
+
+        <ul>
+          <li><strong>Route preview</strong> with elevation if available.</li>
+          <li><strong>Headline distance</strong> in big numbers.</li>
+          <li><strong>Stat grid</strong> — duration, average pace, calories, total elevation.</li>
+          <li><strong>PR badges</strong> — fastest split, negative split, 5K+ / 10K+ milestone, hill day.</li>
+          <li><strong>Splits</strong> — expandable per-split breakdown.</li>
+          <li><strong>Share card</strong> — tap Share to render a 1080×1920 Instagram-Story image of your run with route silhouette, stats, and (if connected) a Strava co-brand footer.</li>
+          <li><strong>Save to Health</strong> — sync to Apple Health if you didn't already.</li>
+        </ul>
+
+        <h2>5. Strava — "Powered by Strava"</h2>
+        <p>If you'd rather track cardio in Strava and use Fit33 for strength, that works too. Connect Strava once and the bottom half of the Cardio page becomes your Strava feed:</p>
+
+        <ul>
+          <li>Recent runs, rides, swims, hikes — pulled in as soon as you finish.</li>
+          <li>Each Strava activity counts toward your daily quests, weekly league points, and active challenges. <strong>You don't have to start cardio in Fit33 to get the credit.</strong></li>
+          <li>Native Fit33 runs are pushed to Strava automatically (so you get the kudos there too).</li>
+        </ul>
+
+        <div class="callout tip">
+          <strong>🔗 To connect Strava:</strong> Cardio tab → tap the Connect Strava card → authorize on Strava's site → done.
+        </div>
+
+        <h2>6. How Cardio Counts</h2>
+        <p>Every cardio session — Fit33 native, Apple Watch, Strava, Garmin, Peloton, Nike Run Club, anything routed through Apple Health — fans out automatically:</p>
+
+        <ul>
+          <li><strong>League Points</strong> — graduated bonus based on duration and intensity, capped at +50 per day so a single epic ride doesn't trivialize the rest of the week.</li>
+          <li><strong>Daily Quests</strong> — covers the cardio quest family (1km walk, 20min cardio, 20min Zone 2, active recovery). Quests are biased by your onboarding goal: lose-fat users see more calorie / Zone-2 quests; endurance users see more distance / time quests.</li>
+          <li><strong>Active Challenges</strong> — challenge progress (distance, duration, calories) auto-updates.</li>
+          <li><strong>Cardio Streak</strong> — separate from your strength streak. Any cardio day counts (native, Strava, HK), and your current streak shows up at the top of the Cardio page when it's alive.</li>
+        </ul>
+
+        <h2>7. The Just-One-Block Tile</h2>
+        <p>On days you have zero cardio logged, the Cardio page surfaces a "Just one block" card — a 5-minute open walk you can start with a single tap. It's there to make keeping a streak alive feel as low-friction as possible.</p>
+
+        <h2>8. Indoor Cardio</h2>
+        <p>For treadmill, indoor bike, rowing, elliptical, stair climber, HIIT, swimming, dance, and others, scroll to the indoor equipment row at the bottom of the page. These workouts use a manual flow (no GPS) — you set your goal, log time / calories at the end, and it counts the same way.</p>
+
+        <p>Indoor flows can also pair with Bluetooth heart-rate / cadence equipment when supported.</p>
+
+        <h2>9. Cardio &amp; Your Onboarding Goal</h2>
+        <p>Your onboarding fitness goal shapes how Fit33 thinks about cardio:</p>
+
+        <ul>
+          <li><strong>Lose fat</strong> — daily quests favor calorie targets and Zone 2.</li>
+          <li><strong>Build muscle</strong> — cardio quests stay light (active recovery) so you don't blunt strength gains.</li>
+          <li><strong>Endurance</strong> — distance / duration quests dominate, with progressive bias toward higher targets.</li>
+          <li><strong>General fitness</strong> — balanced mix across all four cardio quest types.</li>
+        </ul>
+
+        <h2>10. Common Questions</h2>
+
+        <h3>Will my Strava activities double-count if I also have Apple Health on?</h3>
+        <p>No. Fit33 dedupes across sources — if a Strava-authored workout also lands in HealthKit, only one row is saved. Same external ID, same workout.</p>
+
+        <h3>Why is my run paused?</h3>
+        <p>Auto-pause kicked in when your speed dropped below a threshold (e.g., you stopped at a light). Resume happens automatically when you start moving again, or tap Resume.</p>
+
+        <h3>I lost GPS for part of my run. What happens?</h3>
+        <p>Fit33 keeps tracking what it can (time, partial distance) and flags the GPS gap. Your splits will reflect actual distance recorded — there's no penalty for a tunnel or a city canyon.</p>
+
+        <h3>Do walks count the same as runs?</h3>
+        <p>Yes — same gamification rails. A 30-min walk and a 30-min run both award cardio LP, count toward quests, and feed your cardio streak. Calories differ (run burns more), but the credit structure is the same.</p>
+
+        <div class="callout tip">
+          <strong>🎯 Bottom line:</strong> Use Fit33 native if you want a clean walk / run engine. Use Strava if you already love it. Either way, cardio lives in your stats and your league standings.
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Related Articles -->
+  <section class="help-center" style="padding-top: 0;">
+    <div class="help-container">
+      <h2 style="text-align: center; margin-bottom: 32px;">Related Articles</h2>
+      <div class="help-categories" style="max-width: 800px; margin: 0 auto;">
+        <a href="getting-started.html" class="help-category">
+          <div class="help-category-icon">🚀</div>
+          <h3>Getting Started</h3>
+          <p>New to Fit33? Start here to learn the basics.</p>
+        </a>
+        <a href="tracking.html" class="help-category">
+          <div class="help-category-icon">📊</div>
+          <h3>Progress &amp; Stats</h3>
+          <p>Track your gains and understand your data.</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-bottom" style="border-top: none; padding-top: 0;">
+        <p>&copy; 2026 DoubleThr33s. All rights reserved.</p>
+        <div class="social-links">
+          <a href="https://instagram.com/fit33app" aria-label="Instagram">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073z"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

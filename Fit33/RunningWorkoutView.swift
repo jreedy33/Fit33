@@ -1292,6 +1292,15 @@ struct GoalSetupSheet: View {
             runningManager.setGoal(type: .distance, value: distanceValue * 1609.34) // Convert miles to meters
         case .time:
             runningManager.setGoal(type: .time, value: timeMinutes * 60) // Convert to seconds
+        case .calories:
+            // Calorie goals are handled by the new CardioGoalSetupView /
+            // OutdoorCardioActiveView flow (Cardio Redesign Phase 1). This
+            // legacy goal-setup sheet is run-only and never surfaces the
+            // calorie chip, so we treat it as no-op + open goal.
+            runningManager.setGoal(type: .none, value: 0)
+        case .pace:
+            // Pace goals are not exposed in this legacy sheet either.
+            runningManager.setGoal(type: .none, value: 0)
         }
         dismiss()
     }
@@ -1301,12 +1310,18 @@ struct GoalSetupSheet: View {
 struct RunCompletionView: View {
     let result: RunWorkoutResult
     let onDismiss: () -> Void
-    
+
     @Environment(\.colorScheme) private var colorScheme
     @State private var showSplits = false
     @State private var isSavingToHealth = false
     @State private var savedToHealth = false
-    
+    /// Cardio Redesign Phase 1 — guards the Supabase + UserManager save
+    /// fanout in `onRunCompletionAppeared`. The view re-appears whenever the
+    /// recap sheet is detented or the user returns from the share-sheet, so
+    /// without this flag we'd double-count XP / league / quests / challenges
+    /// every time. Kept as @State so it lives for the duration of the recap.
+    @State private var didCompleteFanout = false
+
     private let accentColor = Color(red: 0.2, green: 1.0, blue: 0.6)
     
     var body: some View {
@@ -1466,18 +1481,121 @@ struct RunCompletionView: View {
         // close any prior gap where GPS-only runs skipped gamification.
         UserManager.shared.updateStreak()
 
-        // If Strava is connected, pull the just-finished activity so the
-        // dashboard widget + recap card surface the richer Strava metrics
-        // (HR avg, suffer score, kudos in Phase 2) within seconds.
-        if StravaService.shared.isConnected {
-            Task {
-                // Small delay so Strava's pipeline has time to ingest from
-                // the watch / phone before we hit `/athlete/activities`.
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                // Force-sync after a workout completes — bypass the 5-min
-                // throttle so the recap card / dashboard widget update
-                // immediately with the new activity.
-                await StravaService.shared.syncActivities(daysBack: 1, force: true)
+        // Cardio Redesign Phase 1 — fanout fix.
+        //
+        // Prior to this change `RunCompletionView` ONLY called updateStreak +
+        // optional Strava force-sync. A phone-only run (no Strava connected)
+        // therefore silently skipped the entire cardio gamification chain:
+        //   • `cardio_workouts` row never created (no recap row, no PR check)
+        //   • `+50 .workout` league points never awarded
+        //   • XP never added (`completeCardioWorkout` never called)
+        //   • Daily quests never verified (`onWorkoutCompleted` never fired)
+        //   • Challenges never progressed
+        //   • Friend feed never posted
+        //
+        // The save fanout below closes that gap. Idempotent via
+        // `didCompleteFanout` so re-appearance (sheet detent change,
+        // share-sheet dismiss) doesn't double-count.
+        guard !didCompleteFanout else { return }
+        didCompleteFanout = true
+
+        Task { @MainActor in
+            // 1. Build a CardioWorkoutData payload from the RunWorkoutResult.
+            let activityKey = result.activityType.rawValue // "walk" | "run" | "outdoor_cycle" | "hike"
+            let routeJSON: String? = {
+                guard !result.simplifiedRouteCoordinates.isEmpty else { return nil }
+                let coords = result.simplifiedRouteCoordinates.map {
+                    ["lat": $0.latitude, "lon": $0.longitude]
+                }
+                guard JSONSerialization.isValidJSONObject(coords) else { return nil }
+                if let data = try? JSONSerialization.data(withJSONObject: coords) {
+                    return String(data: data, encoding: .utf8)
+                }
+                return nil
+            }()
+            let splitsJSON: String? = {
+                guard !result.splits.isEmpty else { return nil }
+                let arr = result.splits.map {
+                    [
+                        "kilometer": $0.kilometer,
+                        "time": $0.time,
+                        "pace": $0.pace,
+                        "is_manual": $0.isManual
+                    ] as [String: Any]
+                }
+                guard JSONSerialization.isValidJSONObject(arr) else { return nil }
+                if let data = try? JSONSerialization.data(withJSONObject: arr) {
+                    return String(data: data, encoding: .utf8)
+                }
+                return nil
+            }()
+
+            let payload = CardioWorkoutData(
+                activityType: activityKey,
+                workoutName: nil,
+                goalType: result.goalType.rawKey,
+                goalValue: result.goalValue > 0 ? result.goalValue : nil,
+                goalAchieved: result.goalAchieved,
+                durationSeconds: Int(result.duration),
+                distanceMeters: result.distance,
+                caloriesBurned: result.calories,
+                averagePace: result.averagePace > 0 ? result.averagePace : nil,
+                bestPace: result.splits.compactMap { $0.pace }.min(),
+                averageSpeed: result.duration > 0 ? result.distance / result.duration : nil,
+                maxSpeed: nil,
+                averageHeartRate: result.averageHeartRate,
+                maxHeartRate: nil,
+                cadence: nil,
+                averagePower: nil,
+                equipmentName: nil,
+                equipmentType: nil,
+                routeCoordinatesJSON: routeJSON,
+                splitsJSON: splitsJSON,
+                startedAt: result.startTime,
+                completedAt: result.endTime
+            )
+
+            // 2. Persist to Supabase. Failure must not block the rest of
+            //    the fanout — XP/streak/feed should still apply even if the
+            //    network is briefly down (Wave 2 will switch to the
+            //    record_cardio_workout RPC and queue on failure).
+            var savedWorkoutId: String?
+            do {
+                savedWorkoutId = try await SupabaseManager.shared.saveCardioWorkout(payload)
+            } catch {
+                AppLogger.error(
+                    "❌ [\(activityKey)] Failed to save run to Supabase: \(error.localizedDescription)",
+                    category: .network
+                )
+            }
+
+            // 3. UserManager fanout (XP, streak, league, daily quests,
+            //    challenges, friend feed). Single source of truth — same
+            //    method used by Strava + HK + manual cardio paths.
+            UserManager.shared.completeCardioWorkout(
+                workoutId: savedWorkoutId ?? UUID().uuidString,
+                activityType: activityKey,
+                durationSeconds: Int(result.duration),
+                distanceMeters: result.distance,
+                caloriesBurned: Int(result.calories),
+                averageHeartRate: result.averageHeartRate
+            )
+
+            // 3b. Cardio Redesign Phase 1 — fire the verify_quests RPC so
+            //     PR / outdoor / Z2 / walk_1km / cardio_minutes_20 quests
+            //     flip immediately on the daily-goals widget. The
+            //     verifier was widened in migration 186 to accept both
+            //     'strava' and 'fit33' sources.
+            await DailyQuestService.shared.onCardioActivityImported(source: "fit33")
+
+            // 4. Strava force-sync (existing path) so users with both
+            //    Fit33 + Strava connected see the activity show up on the
+            //    bottom-half of the cardio landing within seconds.
+            if StravaService.shared.isConnected {
+                Task.detached {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    await StravaService.shared.syncActivities(daysBack: 1, force: true)
+                }
             }
         }
     }

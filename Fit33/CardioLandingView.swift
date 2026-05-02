@@ -113,120 +113,270 @@ enum CardioActivityType: String, CaseIterable, Identifiable {
 }
 
 // MARK: - Cardio Landing View
+//
+// Cardio Redesign Phase 1 — Wave 3.
+// Top-half: Walk + Run hero tiles (the only two activities the app
+// natively tracks with GPS) + a chip row of 1-tap goal presets.
+// Bottom-half: "Powered by Strava" lockup — recent activities row +
+// weekly delta when connected; a feature-rich Connect CTA + native
+// fallback stats when not. Indoor equipment + "Browse all cardio"
+// link sit below the lockup, demoted out of the way.
+//
+// The exhaustive search + filter + exercise list was moved to a
+// sheet-presented `BrowseAllCardioView`, accessible via the link at
+// the bottom. This is the single biggest decluttering move in the
+// redesign — the legacy landing was 3 stacked grids of activities,
+// now it's a hero + a viral surface.
 struct CardioLandingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.managedObjectContext) private var viewContext
     @EnvironmentObject var userManager: UserManager
     @ObservedObject private var workoutManager = WorkoutManager.shared
-    
+    @ObservedObject private var stravaService = StravaService.shared
+
     @State private var selectedActivity: CardioActivityType?
     @State private var showingGoalSetup = false
-    @State private var searchText = ""
-    @State private var selectedFilter: CardioFilter = .all
-    
-    // ⚡️ SNAPPY SEARCH: Focus state for instant keyboard dismiss
-    @FocusState private var isSearchFocused: Bool
-    
-    // Cardio exercise library is naturally small (<100 in prod), but cap so we
-    // don't load the entire exercises table if the predicate matches nothing.
-    // Per QP invariant #3.
-    @FetchRequest(fetchRequest: {
-        let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
-        request.predicate = NSPredicate(format: "category CONTAINS[cd] %@ OR workoutType CONTAINS[cd] %@", "cardio", "cardio")
-        request.fetchLimit = 200
-        return request
-    }(), animation: .default)
-    private var cardioExercises: FetchedResults<Exercise>
-    
-    enum CardioFilter: String, CaseIterable {
-        case all = "All"
-        case machines = "Machines"
-        case outdoor = "Outdoor"
-        case bodyweight = "Bodyweight"
-    }
-    
+    @State private var showingBrowseAll = false
+    /// Cardio Redesign Phase 1 — Wave 6b. Loaded on appear from
+    /// `SupabaseManager.fetchCardioStreak()`. Banner is hidden when
+    /// streak is 0 OR the streak load is still in flight.
+    @State private var cardioStreakDays: Int = 0
+    @State private var cardioStreakLoaded: Bool = false
+    /// Cardio Redesign Phase 1 — Wave 3c. Computed from local Core Data
+    /// + cardio streak data — `true` when the user has zero workouts
+    /// (strength OR cardio) logged today, surfacing the "Just one block"
+    /// 5-min walk one-tap entry as the off-day cure.
+    @State private var hasNoCardioToday: Bool = false
+
+    // Cardio Redesign Phase 1 — Wave 3 (revised 2026-05-02 per user
+    // request).
+    //
+    // PUSHED detail view, NOT sheet. Hosted from `WorkoutTabView`
+    // navigation stack via `navigationPath.append("CardioLanding")`,
+    // resolved by `navigationDestinationView(for:)`. Per PE invariant
+    // 6 we MUST NOT wrap our own `NavigationStack` here — the parent
+    // stack owns navigation, the system back chevron handles dismiss,
+    // and `.navigationDestination(for: CardioLandingDestination.self)`
+    // (registered below) propagates up the parent stack so
+    // `ConnectStravaCard`'s value-based NavigationLink keeps working.
     var body: some View {
-        NavigationStack {
-            ZStack {
-                // Background
-                backgroundGradient
-                
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 24) {
-                        // Header
-                        headerSection
+        ZStack {
+            backgroundGradient
 
-                        // Phase 4 Strava surface — week delta chip + recent
-                        // Strava activities row. Self-gates on connection
-                        // status and on having data.
-                        CardioStravaSection()
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 24) {
+                    // ── TOP HALF — native walk + run hero tiles + presets ──
+                    headerSection
+                    cardioStreakBanner
+                    justOneBlockTile
+                    walkRunHeroSection
+                    presetChipsSection
 
-                        // Quick Start Activities
-                        quickStartSection
-                        
-                        // Cardio Machines Section
-                        cardioMachinesSection
-                        
-                        // Browse All Cardio Exercises
-                        if !filteredExercises.isEmpty {
-                            cardioExercisesSection
-                        }
-                        
-                        Spacer(minLength: 100)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
+                    // ── DIVIDER between native top-half and Strava bottom-half ──
+                    sectionDivider
+
+                    // ── BOTTOM HALF — Powered by Strava ──
+                    stravaLockupSection
+
+                    // ── Indoor equipment + browse-all link (demoted) ──
+                    equipmentRowSection
+                    browseAllCardioLink
+
+                    Spacer(minLength: 80)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+            }
+        }
+        .navigationTitle("Cardio")
+        .navigationBarTitleDisplayMode(.inline)
+        .adaptiveToolbarBackground()
+        .sheet(isPresented: $showingGoalSetup) {
+            if let activity = selectedActivity {
+                CardioGoalSetupView(activityType: activity)
+                    .environmentObject(userManager)
+            }
+        }
+        .sheet(isPresented: $showingBrowseAll) {
+            BrowseAllCardioView()
+        }
+        .onChange(of: workoutManager.shouldDismissCardioFlow) { _, shouldDismiss in
+            if shouldDismiss {
+                showingGoalSetup = false
+                dismiss()
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.5))
+                    guard !Task.isCancelled else { return }
+                    WorkoutManager.shared.shouldDismissCardioFlow = false
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.ds_labelLarge)
-                            .foregroundColor(.primary)
-                    }
+        }
+        .task { await loadCardioStreak() }
+        .task { await triggerHKBackfillIfNeeded() }
+    }
+
+    // MARK: - Cardio Streak Banner (Wave 6b)
+    @ViewBuilder
+    private var cardioStreakBanner: some View {
+        if cardioStreakLoaded, cardioStreakDays > 0 {
+            HStack(spacing: 10) {
+                Image(systemName: "flame.fill")
+                    .font(.title3)
+                    .foregroundStyle(LinearGradient(
+                        colors: [.orange, .red],
+                        startPoint: .top, endPoint: .bottom
+                    ))
+                    .shadow(color: .orange.opacity(0.4), radius: 4)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(cardioStreakDays)-day cardio streak")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                    Text(cardioStreakDays == 1 ? "Day 1 — keep it going!" : "Don't break the chain.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
+                Spacer()
             }
-            .adaptiveToolbarBackground()
-            .sheet(isPresented: $showingGoalSetup) {
-                if let activity = selectedActivity {
-                    CardioGoalSetupView(activityType: activity)
-                        .environmentObject(userManager)
-                }
-            }
-            .onChange(of: workoutManager.shouldDismissCardioFlow) { _, shouldDismiss in
-                if shouldDismiss {
-                    showingGoalSetup = false
-                    dismiss()
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(0.5))
-                        guard !Task.isCancelled else { return }
-                        WorkoutManager.shared.shouldDismissCardioFlow = false
-                    }
-                }
-            }
-            .onAppear {
-                updateFilteredExercises()
-            }
-            // ⚡️ HIGH-PERFORMANCE: Instant filter updates
-            .onChange(of: searchText) { _, _ in updateFilteredExercises() }
-            .onChange(of: selectedFilter) { _, _ in updateFilteredExercises() }
-            .onChange(of: cardioExercises.count) { _, _ in updateFilteredExercises() }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.orange.opacity(0.10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+                    )
+            )
         }
     }
-    
+
+    // MARK: - Just One Block Tile (Wave 3c — off-day cure)
+    @ViewBuilder
+    private var justOneBlockTile: some View {
+        if hasNoCardioToday {
+            Button {
+                HapticManager.impact(.medium)
+                // 5-minute walk preset — straight into Walk goal-setup
+                // with a Time goal pre-filled. The CardioGoalSetupView
+                // task() will override defaults from smart-suggest, but
+                // since the user's pattern probably doesn't include
+                // 5-min walks, we don't worry about it.
+                selectedActivity = .walk
+                showingGoalSetup = true
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.mint.opacity(0.15))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "figure.walk.motion")
+                            .font(.title3)
+                            .foregroundColor(.mint)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Just one block")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                        Text("5-minute walk · keep your streak alive")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right.circle.fill")
+                        .foregroundColor(.mint)
+                        .font(.title3)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.mint.opacity(0.30), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - HealthKit 30-day backfill (Wave 2b)
+    //
+    // Cheat code — on the user's FIRST cardio-landing open after this
+    // build ships, we kick off `HealthDataService.syncAllHealthData(force:)`
+    // which pulls last-30d HKWorkout rows and upserts them into
+    // `cardio_workouts` (dedup via HK uuid → `external_id`). This means
+    // a user who joins with months of Apple-Watch / Strava-via-HK
+    // history sees a populated cardio surface immediately rather than
+    // an empty feed.
+    //
+    // Gated by a UserDefaults one-shot flag so the backfill never re-runs
+    // (subsequent opens rely on the existing background HK observer).
+    // We also flip the flag when HK isn't authorized so this isn't a
+    // forever-task on every cardio open for users who denied HK.
+    @MainActor
+    private func triggerHKBackfillIfNeeded() async {
+        let flagKey = "cardio_first_open_hk_backfill_done_v1"
+        guard !UserDefaults.standard.bool(forKey: flagKey) else { return }
+        guard HealthKitService.shared.isAuthorized else {
+            UserDefaults.standard.set(true, forKey: flagKey)
+            return
+        }
+        AppLogger.info(
+            "[CARDIO] First-cardio-open HK 30d backfill starting",
+            category: .health
+        )
+        await HealthDataService.shared.syncAllHealthData(force: true)
+        UserDefaults.standard.set(true, forKey: flagKey)
+        AppLogger.info(
+            "[CARDIO] First-cardio-open HK 30d backfill complete",
+            category: .health
+        )
+    }
+
+    // MARK: - Streak loader
+    private func loadCardioStreak() async {
+        // Streak load
+        if let streak = await SupabaseManager.shared.fetchCardioStreak() {
+            await MainActor.run {
+                cardioStreakDays = streak.currentStreak
+                cardioStreakLoaded = true
+            }
+        } else {
+            await MainActor.run { cardioStreakLoaded = true }
+        }
+        // "Has cardio today" — single quick fetch of today's cardio rows.
+        // Used by the Just-One-Block tile gating.
+        do {
+            let cal = Calendar.current
+            let startOfDay = cal.startOfDay(for: Date())
+            let stats = try await SupabaseManager.shared.fetchCardioStats(
+                startDate: startOfDay,
+                endDate: Date()
+            )
+            await MainActor.run {
+                hasNoCardioToday = stats.totalWorkouts == 0
+            }
+        } catch {
+            // Silent — banner just doesn't show. AppLogger noisy on
+            // landing-view appears, especially during launch when the
+            // session may not be ready.
+            await MainActor.run { hasNoCardioToday = false }
+        }
+    }
+
     // MARK: - Background
     private var backgroundGradient: some View {
         AnimatedOrbBackground.workout(colorScheme: colorScheme)
             .ignoresSafeArea()
     }
-    
-    // MARK: - Header
+
+    // MARK: - Header (compact)
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Cardio")
                 .font(.system(size: 38, weight: .bold))
                 .foregroundStyle(
@@ -236,78 +386,140 @@ struct CardioLandingView: View {
                         endPoint: .bottomTrailing
                     )
                 )
-            
-            Text("Choose your activity and set your goals")
+
+            Text("Walk, run, and let Strava power the rest.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-    
-    // MARK: - Quick Start Section
-    private var quickStartSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+
+    // MARK: - Walk + Run Hero Tiles (TOP HALF)
+    private var walkRunHeroSection: some View {
+        HStack(spacing: 12) {
+            WalkRunHeroCard(
+                activity: .walk,
+                title: "Walk",
+                subtitle: "GPS · Pace · Calories",
+                accent: .mint
+            ) {
+                HapticManager.impact(.medium)
+                selectedActivity = .walk
+                showingGoalSetup = true
+            }
+
+            WalkRunHeroCard(
+                activity: .outdoorRun,
+                title: "Run",
+                subtitle: "GPS · Pace · Splits",
+                accent: .green
+            ) {
+                HapticManager.impact(.medium)
+                selectedActivity = .outdoorRun
+                showingGoalSetup = true
+            }
+        }
+    }
+
+    // MARK: - Preset Chips (1-tap goal presets)
+    private var presetChipsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             Text("QUICK START")
                 .font(.caption)
                 .fontWeight(.bold)
                 .foregroundColor(.secondary)
                 .tracking(1)
-            
-            LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 12),
-                GridItem(.flexible(), spacing: 12)
-            ], spacing: 12) {
-                ForEach(CardioActivityType.allCases.prefix(6)) { activity in
-                    QuickStartCard(activity: activity) {
-                        HapticManager.impact(.medium)
-                        selectedActivity = activity
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    CardioPresetChip(label: "Open Walk", icon: "infinity", accent: .mint) {
+                        HapticManager.impact(.light)
+                        selectedActivity = .walk
+                        showingGoalSetup = true
+                    }
+                    CardioPresetChip(label: "30 min Walk", icon: "clock.fill", accent: .mint) {
+                        HapticManager.impact(.light)
+                        selectedActivity = .walk
+                        showingGoalSetup = true
+                    }
+                    CardioPresetChip(label: "Open Run", icon: "infinity", accent: .green) {
+                        HapticManager.impact(.light)
+                        selectedActivity = .outdoorRun
+                        showingGoalSetup = true
+                    }
+                    CardioPresetChip(label: "5K Run", icon: "figure.run", accent: .green) {
+                        HapticManager.impact(.light)
+                        selectedActivity = .outdoorRun
+                        showingGoalSetup = true
+                    }
+                    CardioPresetChip(label: "30 min Run", icon: "clock.fill", accent: .green) {
+                        HapticManager.impact(.light)
+                        selectedActivity = .outdoorRun
                         showingGoalSetup = true
                     }
                 }
             }
-            
-            // Show more button if needed
-            if CardioActivityType.allCases.count > 6 {
-                DisclosureGroup {
-                    LazyVGrid(columns: [
-                        GridItem(.flexible(), spacing: 12),
-                        GridItem(.flexible(), spacing: 12)
-                    ], spacing: 12) {
-                        ForEach(CardioActivityType.allCases.dropFirst(6)) { activity in
-                            QuickStartCard(activity: activity) {
-                                HapticManager.impact(.medium)
-                                selectedActivity = activity
-                                showingGoalSetup = true
-                            }
-                        }
-                    }
-                    .padding(.top, 12)
-                } label: {
-                    HStack {
-                        Text("More Activities")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                    }
-                    .foregroundColor(.green)
-                }
-            }
         }
     }
-    
-    // MARK: - Cardio Machines Section
-    private var cardioMachinesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("EQUIPMENT")
+
+    // MARK: - Section Divider (between native + Strava halves)
+    private var sectionDivider: some View {
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    colors: [.clear, .secondary.opacity(0.15), .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(height: 1)
+            .padding(.vertical, 4)
+    }
+
+    // MARK: - Powered by Strava (BOTTOM HALF)
+    private var stravaLockupSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 6) {
+                Text("POWERED BY")
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.secondary)
                     .tracking(1)
-                
+                Text("STRAVA")
+                    .font(.caption)
+                    .fontWeight(.heavy)
+                    .foregroundColor(Color(red: 0.99, green: 0.30, blue: 0.0)) // Strava brand orange
+                    .tracking(1)
                 Spacer()
-                
-                // Bluetooth indicator
+                if stravaService.isConnected {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption)
+                        Text("Connected")
+                            .font(.caption)
+                    }
+                    .foregroundColor(.green)
+                }
+            }
+
+            if stravaService.isConnected {
+                CardioStravaSection()
+            } else {
+                ConnectStravaCard()
+            }
+        }
+    }
+
+    // MARK: - Equipment Row (compact, demoted)
+    private var equipmentRowSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("INDOOR EQUIPMENT")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.secondary)
+                    .tracking(1)
+                Spacer()
                 HStack(spacing: 4) {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .font(.caption)
@@ -316,7 +528,7 @@ struct CardioLandingView: View {
                 }
                 .foregroundColor(.cyan)
             }
-            
+
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(CardioActivityType.allCases.filter { $0.supportsBluetooth }) { activity in
@@ -330,131 +542,275 @@ struct CardioLandingView: View {
             }
         }
     }
-    
-    // MARK: - Cardio Exercises Section
-    private var cardioExercisesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("CARDIO EXERCISES")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.secondary)
-                    .tracking(1)
-                
-                Spacer()
-                
-                Text("\(filteredExercises.count)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            // ⚡️ SNAPPY SEARCH: Instant response search bar
+
+    // MARK: - Browse All Cardio Link (the demoted exercise list)
+    private var browseAllCardioLink: some View {
+        Button {
+            HapticManager.selectionChanged()
+            showingBrowseAll = true
+        } label: {
             HStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.ds_heading3)
+                    .foregroundColor(.green)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Browse all cardio")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text("HIIT, swimming, stair climber, and more")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
                     .foregroundColor(.secondary)
-                
-                TextField("Search exercises...", text: $searchText)
-                    .font(.subheadline)
-                    .focused($isSearchFocused)
-                    .autocorrectionDisabled(true)
-                    .textInputAutocapitalization(.never)
-                    .submitLabel(.done)
-                    .onSubmit {
-                        isSearchFocused = false
-                    }
-                
-                if !searchText.isEmpty {
-                    Button(action: { 
-                        searchText = ""
-                        isSearchFocused = false
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                }
             }
-            .padding(Spacing.sm)
+            .padding(Spacing.md)
             .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md)
-                    .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Color(.systemGray6))
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.7))
             )
-            
-            // Filter chips
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(CardioFilter.allCases, id: \.self) { filter in
-                        CardioFilterChip(
-                            title: filter.rawValue,
-                            isSelected: selectedFilter == filter
-                        ) {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                selectedFilter = filter
-                            }
-                        }
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Walk + Run Hero Card (Cardio Redesign Phase 1, Wave 3)
+//
+// Big-impact tile that anchors the top half of the cardio landing.
+// Two of these sit side-by-side (Walk + Run). Single tap opens the
+// goal-setup sheet for that activity.
+//
+// The accent color drives the gradient + the icon glow + the corner ring,
+// reinforcing the activity identity (mint = walk, green = run).
+struct WalkRunHeroCard: View {
+    let activity: CardioActivityType
+    let title: String
+    let subtitle: String
+    let accent: Color
+    let onTap: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: onTap) {
+            ZStack(alignment: .bottomLeading) {
+                // Background gradient — softens activity color into bg
+                RoundedRectangle(cornerRadius: CornerRadius.xl)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                accent.opacity(colorScheme == .dark ? 0.35 : 0.22),
+                                accent.opacity(colorScheme == .dark ? 0.10 : 0.06)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.xl)
+                            .stroke(accent.opacity(0.35), lineWidth: 1)
+                    )
+
+                // Watermark icon — large, low-opacity, off-canvas
+                Image(systemName: activity.icon)
+                    .font(.system(size: 130, weight: .light))
+                    .foregroundColor(accent.opacity(0.18))
+                    .offset(x: 30, y: 32)
+                    .clipped()
+
+                // Foreground content
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        Image(systemName: activity.icon)
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundColor(accent)
+                            .padding(10)
+                            .background(
+                                Circle().fill(accent.opacity(colorScheme == .dark ? 0.15 : 0.20))
+                            )
+                        Spacer()
                     }
-                }
-            }
-            
-            // Exercise list
-            LazyVStack(spacing: 8) {
-                ForEach(filteredExercises.prefix(20), id: \.id) { exercise in
-                    CardioExerciseRow(exercise: exercise) {
-                        // Navigate to exercise detail or start cardio with this exercise
-                        HapticManager.selectionChanged()
+
+                    Spacer()
+
+                    Text(title)
+                        .font(.system(size: 28, weight: .heavy, design: .rounded))
+                        .foregroundColor(.primary)
+
+                    Text(subtitle)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 2)
+
+                    HStack(spacing: 4) {
+                        Text("Start")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Image(systemName: "arrow.right")
+                            .font(.caption)
+                            .fontWeight(.bold)
                     }
+                    .foregroundColor(accent)
+                    .padding(.top, 8)
                 }
+                .padding(16)
+            }
+            .frame(height: 188)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl))
+        }
+        .scaleButtonStyle(.standard, withHaptic: false)
+    }
+}
+
+// MARK: - Cardio Preset Chip (Wave 3)
+//
+// 1-tap shortcut chip for the QUICK START row beneath the hero tiles.
+// Currently routes to the goal-setup sheet pre-selected with the right
+// activity. Wave 4d will route DIRECTLY to the active screen with a
+// pre-filled goal (skipping the sheet for true 1-tap starts).
+struct CardioPresetChip: View {
+    let label: String
+    let icon: String
+    let accent: Color
+    let onTap: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption)
+                Text(label)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(accent)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                Capsule()
+                    .fill(accent.opacity(colorScheme == .dark ? 0.12 : 0.10))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(accent.opacity(0.30), lineWidth: 1)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Connect Strava Card (Wave 3)
+//
+// Empty-state card shown in the Powered-by-Strava section when the user
+// has NOT connected. Replaces the legacy `EmptyView()` no-op which
+// produced an awkward gap below the section header. Includes:
+//   • The "Powered by Strava" pitch ("If you live in Strava, we'll meet
+//     you there — your activities show up here automatically.")
+//   • A primary CTA to connect (routes to existing Strava OAuth flow)
+//   • A secondary "Or just use Fit33" reassurance — emphasizes that the
+//     native walk/run engine above does NOT depend on Strava.
+struct ConnectStravaCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var navigateToStrava = false
+
+    private let stravaOrange = Color(red: 0.99, green: 0.30, blue: 0.0)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "link")
+                    .font(.ds_heading3)
+                    .foregroundColor(stravaOrange)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(stravaOrange.opacity(0.15)))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connect Strava")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text("Auto-sync runs, rides, and segments")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+            }
+
+            Text("If you already use Strava, we'll meet you there. Your activities show up here automatically and feed your daily quests, league, and challenges.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Primary connect CTA — opens the existing Strava OAuth flow.
+            // Wired via SwiftUI navigation (the Strava connect screen lives
+            // in `StravaIntegrationView`).
+            NavigationLink(value: CardioLandingDestination.stravaIntegration) {
+                HStack {
+                    Spacer()
+                    Text("Connect Strava")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Image(systemName: "arrow.right")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                    Spacer()
+                }
+                .foregroundColor(.white)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: CornerRadius.md)
+                        .fill(stravaOrange)
+                )
+            }
+
+            Text("Or just use Fit33 — the native walk + run tracker above is fully featured on its own.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 2)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.85))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .stroke(stravaOrange.opacity(0.20), lineWidth: 1)
+        )
+        // Navigation destination is registered on the parent NavigationStack
+        // via the `.navigationDestination` modifier on `CardioLandingView`.
+        // The enum-based value is the post-PE-19 canonical pattern.
+        .navigationDestination(for: CardioLandingDestination.self) { dest in
+            switch dest {
+            case .stravaIntegration:
+                StravaSettingsView()
             }
         }
     }
-    
-    // ⚡️ HIGH-PERFORMANCE: Cached results
-    @State private var cachedFilteredExercises: [Exercise] = []
-    @State private var lastSearchText: String = ""
-    @State private var lastFilter: CardioFilter = .all
-    
-    // MARK: - Filtered Exercises
-    private var filteredExercises: [Exercise] {
-        cachedFilteredExercises
-    }
-    
-    private func updateFilteredExercises() {
-        var exercises = Array(cardioExercises)
-        
-        // ⚡️ ULTRA-FAST SEARCH: Simple string matching
-        if !searchText.isEmpty {
-            let query = searchText.lowercased()
-            exercises = exercises.filter { exercise in
-                guard let name = exercise.name?.lowercased() else { return false }
-                return name.contains(query) || name.hasPrefix(query)
-            }
-        }
-        
-        // Apply filter
-        switch selectedFilter {
-        case .all:
-            break
-        case .machines:
-            exercises = exercises.filter {
-                let equipment = $0.equipment?.lowercased() ?? ""
-                return equipment.contains("machine") || equipment.contains("treadmill") ||
-                       equipment.contains("bike") || equipment.contains("rower") ||
-                       equipment.contains("elliptical")
-            }
-        case .outdoor:
-            exercises = exercises.filter {
-                let name = $0.name?.lowercased() ?? ""
-                return name.contains("outdoor") || name.contains("run") || name.contains("walk") ||
-                       name.contains("jog") || name.contains("sprint")
-            }
-        case .bodyweight:
-            exercises = exercises.filter {
-                let equipment = $0.equipment?.lowercased() ?? ""
-                return equipment.contains("bodyweight") || equipment.isEmpty
-            }
-        }
-        
-        cachedFilteredExercises = exercises
-    }
+}
+
+/// Routing values for `CardioLandingView` — used by the value-based
+/// NavigationLink in `ConnectStravaCard` to push the Strava connect flow.
+/// Kept enum-shaped so future destinations (FAQ, history, etc.) can be
+/// added without per-case stack mutation.
+enum CardioLandingDestination: Hashable {
+    case stravaIntegration
 }
 
 // MARK: - Quick Start Card

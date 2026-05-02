@@ -2043,25 +2043,47 @@ class DailyQuestService: ObservableObject {
     /// Call from `StravaService.syncActivities` after activities were
     /// imported. Triggers `verify_strava_quests_for_today` so PR / outdoor
     /// quests flip without the user opening the daily-goals widget.
+    /// Cardio Redesign Phase 1 — internally delegates to the more general
+    /// `onCardioActivityImported(source:)` since the verifier RPC was
+    /// widened (migration 186) to accept both `'strava'` and `'fit33'`
+    /// sources.
     func onStravaActivityImported() async {
+        await onCardioActivityImported(source: "strava")
+    }
+
+    /// Call from any cardio-save call site (native `record_cardio_workout`
+    /// RPC return path, Strava webhook arrival, HK ambient-cardio sync).
+    /// Triggers `verify_strava_quests_for_today` (now widened to accept
+    /// both `'strava'` and `'fit33'` sources per migration 186) so PR /
+    /// outdoor / Z2 / walk-1km quests flip immediately without waiting for
+    /// the daily-goals widget to refresh on next foreground.
+    ///
+    /// `source` is informational (logged for triage); the verifier RPC
+    /// itself doesn't filter by source — it walks today's
+    /// `user_daily_quests` for the caller and ticks each one whose
+    /// canonical detector matches.
+    func onCardioActivityImported(source: String = "fit33") async {
         // Data invariant 26 — auth gate before RPC.
         guard SupabaseManager.shared.isAuthenticated,
               SupabaseManager.shared.currentUser?.id != nil else { return }
         guard AppConfig.FeatureFlags.smartAdaptiveQuests else { return }
 
-        // We only need to invoke the verifier when the user has at
-        // least one Strava-context quest assigned today — otherwise
-        // the RPC walks an empty list and we waste a round-trip.
-        let stravaKeys: Set<String> = [
+        // Skip the round-trip when the user has zero cardio-context
+        // quests assigned today. Walks both Strava-PR keys + the new
+        // native cardio keys (walk_1km / cardio_minutes_20 /
+        // zone_2_minutes_20 — added 2026-04-25 in #20260610).
+        let cardioKeys: Set<String> = [
             QuestKey.beatYour5kPR.rawValue,
             QuestKey.negativeSplitRun.rawValue,
             QuestKey.runOutside8km.rawValue,
             QuestKey.cycleOutside30km.rawValue,
             QuestKey.completeStravaSegment.rawValue,
             "run_outside_3km", "run_outside_5km",
-            "cycle_outside_15km"
+            "cycle_outside_15km",
+            "walk_1km", "cardio_minutes_20", "zone_2_minutes_20",
+            "active_recovery_logged", "walk_when_red", "evening_wind_down"
         ]
-        guard quests.contains(where: { stravaKeys.contains($0.questKey) && !$0.isCompleted }) else {
+        guard quests.contains(where: { cardioKeys.contains($0.questKey) && !$0.isCompleted }) else {
             return
         }
 
@@ -2072,9 +2094,18 @@ class DailyQuestService: ObservableObject {
                 ])
                 .execute()
             await fetchDailyQuests(force: true)
+            #if DEBUG
+            AppLogger.debug(
+                "✅ [QUESTS] Verified cardio quests after \(source) import",
+                category: .general
+            )
+            #endif
         } catch {
             #if DEBUG
-            AppLogger.warning("⚠️ [QUESTS] verify_strava_quests_for_today failed: \(error)", category: .general)
+            AppLogger.warning(
+                "⚠️ [QUESTS] verify_strava_quests_for_today failed (source=\(source)): \(error)",
+                category: .general
+            )
             #endif
         }
     }

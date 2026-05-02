@@ -42,44 +42,48 @@ struct CardioActiveWorkoutView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Background
+                // Background — only the gradient ignores the safe area.
+                // The outer ZStack used to apply `.ignoresSafeArea()`
+                // globally, which slid the controlButtons row off the
+                // bottom of the screen on devices with home-indicator
+                // (XR/12+/13+/14+/15+/16+) — see PP-018 / Quality §2.
                 backgroundGradient
-                
+
                 VStack(spacing: 0) {
                     // Top bar with activity and controls
                     topBar
-                    
+
                     // Main content
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(spacing: 24) {
                             // Goal Progress Ring
                             goalProgressSection
-                            
+
                             // Primary Stats Grid
                             primaryStatsGrid
-                            
+
                             // Secondary Stats (from Bluetooth if connected)
                             if bluetoothManager.connectionState == .connected {
                                 bluetoothStatsSection
                             }
-                            
+
                             // Map for GPS activities
                             if activityType.requiresGPS {
                                 mapSection
                             }
-                            
+
                             Spacer(minLength: 100)
                         }
                         .padding(.horizontal, 20)
                         .padding(.top, 20)
                     }
-                    
-                    // Bottom control buttons
+
+                    // Bottom control buttons — must remain inside the safe
+                    // area so they're visually + tappably reachable.
                     controlButtons
                 }
             }
         }
-        .ignoresSafeArea()
         .onAppear {
             startWorkout()
         }
@@ -1021,6 +1025,11 @@ struct CardioCompletionView: View {
                         averageHeartRate: workoutData.averageHeartRate
                     )
                 }
+
+                // Cardio Redesign Phase 1 — fire the verify_quests RPC
+                // so cardio-context daily quests flip on the widget
+                // without waiting for foreground refresh.
+                await DailyQuestService.shared.onCardioActivityImported(source: "fit33")
             }
             
             // Check for any new PRs achieved (these would have been saved during saveCardioWorkout)

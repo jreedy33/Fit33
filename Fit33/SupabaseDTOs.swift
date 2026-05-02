@@ -907,6 +907,47 @@ struct CardioWorkoutData {
     }
 }
 
+/// JSONB envelope for the `record_cardio_workout(p_payload JSONB)` RPC
+/// (migration 185 — Cardio Redesign Phase 1).
+///
+/// Field name + shape MUST match the SQL contract exactly. Optional fields
+/// drop to JSON null (then SQL NULL) on the server. Any new column added
+/// to `cardio_workouts` later that the RPC reads should add a matching
+/// optional field here.
+struct RecordCardioPayload: Encodable {
+    let external_id: String
+    let activity_type: String
+    let workout_name: String?
+    let goal_type: String
+    let goal_value: Double?
+    let goal_achieved: Bool
+    let duration_seconds: Int
+    let distance_meters: Double
+    let calories_burned: Double
+    let average_pace: Double?
+    let best_pace: Double?
+    let average_speed: Double?
+    let max_speed: Double?
+    let average_heart_rate: Int?
+    let max_heart_rate: Int?
+    let cadence: Int?
+    let average_power: Int?
+    /// Google-encoded polyline. Set to nil today; populated by the Wave 5
+    /// share-card / native polyline encoder.
+    let polyline_native: String?
+    /// Pre-encoded JSON string of native splits (Fit33 RunningManager).
+    /// The RPC's `p_payload->'splits_native_json'` extracts this as JSONB.
+    /// We send a JSON string and let Postgres parse it on cast.
+    let splits_native_json: String?
+    let gps_avg_accuracy_m: Double?
+    let weather_json: String?
+    let route_coordinates: String?
+    let xp_earned: Int
+    let timezone: String
+    let started_at: String
+    let completed_at: String
+}
+
 /// DTO for fetching cardio workouts from database
 struct CardioWorkoutDTO: Codable, Hashable {
     let id: String

@@ -171,12 +171,18 @@ async function orchestrate(
   const result: RunResult = { candidates: 0, enqueued: 0, suppressed: 0, deferred: 0, shadow_only: 0, errors: 0 };
 
   // Pull pending intents — most recent first within priority bucket.
+  // 15-min defer cooldown: skip intents we already considered very
+  // recently (decided_at advances on every defer below). Without this
+  // the orchestrator re-decides the same deferred intent every 5-min
+  // tick — see Migration #176 for the same-class shadow-mode bug.
+  const cooldownCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
   const cohort = modeCohortFilter(mode);
   let query = supabase
     .from("notification_intents")
     .select("*")
     .eq("status", "pending")
     .gt("expires_at", new Date().toISOString())
+    .or(`decided_at.is.null,decided_at.lt.${cooldownCutoff}`)
     .order("priority", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(MAX_INTENTS_PER_RUN);
@@ -240,13 +246,17 @@ async function orchestrate(
         }
         if (score.defer) {
           await markDecision(supabase, intent, "deferred", score.deferReason ?? "deferred", score.score, mode === "shadow");
-          // Leave status='pending' so a future run picks it up; record decision.
+          // Leave status='pending' so a future run picks it up after the
+          // 15-min cooldown (candidate scan filter), but bump decided_at so
+          // it actually reaches the cooldown gate (else: re-decide every 5min).
+          await touchIntentDeferred(supabase, intent.id);
           result.deferred++;
           continue;
         }
 
         if (enqueuedThisUser >= room) {
           await markDecision(supabase, intent, "deferred", "below_runner_up_or_capped", score.score, mode === "shadow");
+          await touchIntentDeferred(supabase, intent.id);
           result.deferred++;
           continue;
         }
@@ -609,6 +619,18 @@ async function updateIntentStatus(
   await supabase.from("notification_intents").update({
     status,
     queue_id: queueId,
+    decided_at: new Date().toISOString(),
+  }).eq("id", intentId);
+}
+
+/// Bump `decided_at` for a deferred intent so the 15-min cooldown filter in
+/// the candidate scan catches it and we don't re-decide every 5-min tick.
+/// Status stays 'pending' so it can be re-evaluated when the cooldown lapses.
+async function touchIntentDeferred(
+  supabase: ReturnType<typeof createClient>,
+  intentId: string,
+): Promise<void> {
+  await supabase.from("notification_intents").update({
     decided_at: new Date().toISOString(),
   }).eq("id", intentId);
 }

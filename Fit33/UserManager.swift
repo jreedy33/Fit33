@@ -974,19 +974,23 @@ class UserManager: ObservableObject {
         let currentStreak = Int(user.currentStreak)
 
         Task {
-            // League points (+50) — parity with strength workouts.
+            // League points fanout: +50 'workout' (strength-parity) is
+            // STILL awarded on iOS for non-RPC cardio paths (Strava
+            // webhook ingest, HealthKit ambient sync, manual entry from
+            // CardioActiveWorkoutView) because they don't go through the
+            // `record_cardio_workout` RPC.
+            //
+            // Cardio Redesign Phase 1 — the previous iOS-side
+            //     `+50 .cardioSession` award (for any session ≥15min)
+            // was REMOVED here because the server-side
+            // `record_cardio_workout` RPC (migration 185) now awards a
+            // graduated `cardio_bonus` LP using
+            //     base_per_km × km × intensity_multiplier
+            // capped at +50/day. Keeping both = double-counting on every
+            // native run/walk save. The server formula is the single
+            // source of truth for native cardio LP; iOS retains the
+            // +50 'workout' base award for parity with strength.
             await WeeklyLeagueService.shared.addPoints(source: .workout)
-
-            // 2026-04-29 — League Redesign Plan §C1.
-            // Cardio bonus: +50 league points for any cardio session of at
-            // least 15 minutes. Stacks ON TOP of the +50 strength-parity
-            // award above. No daily / weekly cap (the workout ceiling is
-            // implicit — users can't stack arbitrary "cardio sessions" in
-            // a day without doing actual cardio). Captured by HK / Strava
-            // / manual-entry call sites that all funnel through here.
-            if durationSeconds >= 15 * 60 {
-                await WeeklyLeagueService.shared.addPoints(source: .cardioSession)
-            }
 
             // Daily quest progression. Cardio has no sets, so pass 0.
             await DailyQuestService.shared.onWorkoutCompleted(

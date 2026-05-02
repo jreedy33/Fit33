@@ -414,6 +414,18 @@ enum LeaguePointSource: String {
     case streakMilestone30 = "streak_milestone_30"
     case streakMilestone100 = "streak_milestone_100"
     case dailyQuestCompleted = "daily_quest_completed"
+    /// Cardio Redesign Phase 1 (2026-04-30) — server-authoritative.
+    ///
+    /// Since the `record_cardio_workout` RPC ships (migration #185) the
+    /// LP for a cardio session is computed server-side using a graduated
+    /// formula (duration × intensity × difficulty mod) and a +50 daily
+    /// cap. The legacy client-side `+50` award was REMOVED from
+    /// `UserManager.completeCardioWorkout(...)` to prevent double-credit.
+    ///
+    /// `points: 50` remains here for legacy breakdown chips that read
+    /// the enum (display only — no awardPoints call site references
+    /// `.cardioSession` anymore, verified via repo-wide grep
+    /// 2026-05-02). Any new client-side call would be a regression.
     case cardioSession = "cardio_session"
     case bodyWeightLogged = "body_weight_logged"
     case newExerciseTried = "new_exercise_tried"

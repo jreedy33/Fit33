@@ -4,6 +4,7 @@ import SwiftUI
 import Auth
 import CoreData
 import Combine
+import CryptoKit
 
 // MARK: - Supabase Manager
 // This class handles all communication with your cloud database
@@ -3973,41 +3974,45 @@ class SupabaseManager: ObservableObject {
     
     /// Save a completed cardio workout to the cloud
     func saveCardioWorkout(_ workout: CardioWorkoutData) async throws -> String? {
-        guard let userId = currentUser?.id else {
+        // The RPC binds the row to `auth.uid()` server-side (Data inv. 7),
+        // but we still fast-fail on logged-out callers to avoid an
+        // unnecessary network round-trip.
+        guard currentUser?.id != nil else {
             AppLogger.warning("[CARDIO] Cannot save - no user logged in", category: .network)
             return nil
         }
-        
-        struct CardioWorkoutInsert: Encodable {
-            let user_id: String
-            let activity_type: String
-            let workout_name: String?
-            let goal_type: String
-            let goal_value: Double?
-            let goal_achieved: Bool
-            let duration_seconds: Int
-            let distance_meters: Double
-            let calories_burned: Double
-            let average_pace: Double?
-            let best_pace: Double?
-            let average_speed: Double?
-            let max_speed: Double?
-            let average_heart_rate: Int?
-            let max_heart_rate: Int?
-            let cadence: Int?
-            let average_power: Int?
-            let equipment_name: String?
-            let equipment_type: String?
-            let route_coordinates: String? // JSON string
-            let splits: String? // JSON string
-            let started_at: String
-            let completed_at: String
-        }
-        
+
+        // Cardio Redesign Phase 1 — switched from bare `cardio_workouts`
+        // INSERT to the `record_cardio_workout` RPC (migration 185).
+        // Single-transaction server-side fanout:
+        //   • idempotent on (user_id, source='fit33', external_id) — guards
+        //     double-tap on Finish (the previous bare insert created two
+        //     duplicate rows on a fast double-tap)
+        //   • same-origin overlap dedup (≥50% time overlap → newer wins)
+        //   • cross-origin Strava merge (a 'strava' row that overlaps the
+        //     fit33 row is DELETEd because native is canonical)
+        //   • +50 'workout' LP (parity with strength) + graduated
+        //     'cardio_bonus' LP (base_per_km × km × intensity_multiplier,
+        //     daily cap +50). The iOS-side `+50 cardioSession` award in
+        //     `UserManager.completeCardioWorkout` was removed in the same
+        //     PR train to avoid double-counting.
+        //   • PR detection
+        //   • friend feed (only when goal_achieved)
+        //
+        // External_id is generated client-side as a stable UUID — the same
+        // value SHOULD be used for retries of the same physical session
+        // so the RPC's idempotency check fires. We re-derive it from the
+        // (started_at, completed_at, activity_type) tuple so a network
+        // retry of the same payload returns the original row.
+        let externalId = stableExternalId(for: workout)
         let formatter = iso8601Formatter
-        
-        let insert = CardioWorkoutInsert(
-            user_id: userId.uuidString,
+        let timezone = TimeZone.current.identifier
+
+        // Build the JSONB envelope keys that match the RPC contract.
+        // Keep it as `[String: AnyJSON]` via a hand-rolled Encodable so
+        // optional fields drop cleanly to NULL on the SQL side.
+        let envelope = RecordCardioPayload(
+            external_id: externalId,
             activity_type: workout.activityType,
             workout_name: workout.workoutName,
             goal_type: workout.goalType,
@@ -4024,39 +4029,96 @@ class SupabaseManager: ObservableObject {
             max_heart_rate: workout.maxHeartRate,
             cadence: workout.cadence,
             average_power: workout.averagePower,
-            equipment_name: workout.equipmentName,
-            equipment_type: workout.equipmentType,
+            // Native cardio uses the new `polyline_native` column. The
+            // legacy `route_coordinates` column is kept populated (raw
+            // JSON) for back-compat with the existing recap map renderer.
+            polyline_native: nil, // populated by Wave 5 share-card path
+            splits_native_json: workout.splitsJSON,
+            gps_avg_accuracy_m: nil, // populated when result.gpsAvgAccuracy ships through
+            weather_json: nil,
             route_coordinates: workout.routeCoordinatesJSON,
-            splits: workout.splitsJSON,
+            xp_earned: 0, // friend feed XP — UserManager fills in via own path
+            timezone: timezone,
             started_at: formatter.string(from: workout.startedAt),
             completed_at: formatter.string(from: workout.completedAt)
         )
-        
-        struct CardioWorkoutResponse: Codable {
-            let id: String
+
+        // RPC returns a UUID. Supabase Swift SDK encodes a single-arg JSONB
+        // call as `params: ["p_payload": <obj>]` and returns the scalar
+        // result via `.value`.
+        struct RpcArgs: Encodable {
+            let p_payload: RecordCardioPayload
         }
-        
-        let response: [CardioWorkoutResponse] = try await client
-            .from("cardio_workouts")
-            .insert(insert)
-            .select("id")
-            .execute()
-            .value
-        
-        let workoutId = response.first?.id
-        AppLogger.info("[CARDIO] Workout saved: \(workout.activityType) - \(workout.durationSeconds)s", category: .network)
-        
-        // Check for PRs after saving workout
-        if let id = workoutId {
-            await checkAndSaveCardioPRs(workout: workout, workoutId: id)
+        let args = RpcArgs(p_payload: envelope)
+
+        let workoutId: String
+        do {
+            workoutId = try await client
+                .rpc("record_cardio_workout", params: args)
+                .execute()
+                .value
+        } catch {
+            AppLogger.error(
+                "[CARDIO] record_cardio_workout RPC failed: \(error.localizedDescription)",
+                category: .network
+            )
+            throw error
         }
-        
-        // 🔥 Update user streak (cardio workouts count as workout sessions!)
+
+        AppLogger.info(
+            "[CARDIO] Workout saved via RPC: \(workout.activityType) - \(workout.durationSeconds)s [id=\(workoutId)]",
+            category: .network
+        )
+
+        // PR detection runs server-side via _check_cardio_prs in the RPC.
+        // The legacy `checkAndSaveCardioPRs` Swift path is preserved for
+        // Strava / HK ingest paths that still use direct inserts.
+
+        // Streak update is still client-side because Core Data is the
+        // canonical streak source on iOS. Idempotent — same call from
+        // RunCompletionView just no-ops on a same-day re-fire.
         await MainActor.run {
             UserManager.shared.updateStreak()
         }
-        
+
         return workoutId
+    }
+
+    /// Deterministic external_id for a cardio session so a retry of the
+    /// same payload hits the RPC's idempotency check.
+    ///
+    /// CRITICAL: must be **stable across processes**. Swift's
+    /// `String.hashValue` is randomized per-process, so a network retry
+    /// from a fresh launch would produce a different ID and the RPC would
+    /// double-insert. SHA-256 of the (start, end, activity, distance,
+    /// duration) tuple is process-stable + collision-safe across the
+    /// (user_id, source='fit33', external_id) idempotency key.
+    /// Formatted in UUID 8-4-4-4-12 hex shape so it slots cleanly into
+    /// `external_id TEXT` and reads as a UUID in DB tools.
+    private func stableExternalId(for workout: CardioWorkoutData) -> String {
+        let formatter = iso8601Formatter
+        let raw = [
+            formatter.string(from: workout.startedAt),
+            formatter.string(from: workout.completedAt),
+            workout.activityType,
+            String(format: "%.2f", workout.distanceMeters),
+            String(workout.durationSeconds)
+        ].joined(separator: "|")
+
+        let digest = SHA256.hash(data: Data(raw.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        // Take the first 32 hex chars (128 bits) and slot into UUID
+        // 8-4-4-4-12 form. Plenty of collision resistance for a per-user
+        // (auth.uid()) idempotency key — a hash collision would require
+        // the same user logging two physically different cardio sessions
+        // that share start, end, activity_type, distance, AND duration.
+        let p = Array(hex.prefix(32))
+        let a = String(p[0..<8])
+        let b = String(p[8..<12])
+        let c = String(p[12..<16])
+        let d = String(p[16..<20])
+        let e = String(p[20..<32])
+        return "\(a)-\(b)-\(c)-\(d)-\(e)"
     }
     
     /// Check for personal records and save any new PRs

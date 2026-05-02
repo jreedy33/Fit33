@@ -667,25 +667,24 @@ struct BattleCryPickerSheet: View {
 /// Wire-up:
 ///   1. Host calls `BattleCryShoutBubble(challengeId: challenge.challengeId)`
 ///      from inside `.overlay(alignment: .top)`
-///   2. Internally the view observes
-///      `RealtimeService.shared.$latestIncomingReaction`. When that
-///      stream emits a reaction whose `challengeId` matches, the
-///      bubble springs in, plays a 700ms confetti burst, and
-///      auto-dismisses after 6 seconds (last-writer-wins if a new
-///      reaction lands during the dismissal window).
-///   3. The bubble is purely passive — tapping it just dismisses it
-///      early. It does NOT navigate; users can drill into the
-///      challenge via the card body itself.
+///   2. The view observes `RealtimeService.shared.$latestIncomingReaction`
+///      (realtime while Home is foreground) and drains
+///      `consumePendingIncomingReaction(for:)` when Home becomes visible.
+///      Matching `challengeId` → spring-in animation.
+///   3. `MainTabView` calls `setDashboardBattleCryHostVisible`; off-Home
+///      or background buffers into `pendingIncomingReactions`; leaving
+///      Home dismisses the bubble and clears the live slot.
+///   4. The bubble is passive — tap dismisses only; no navigation.
 ///
 /// Why a separate stream from `onChallengeReactionReceived`:
 ///   - `onChallengeReactionReceived` is set by a single OWNED
 ///     subscriber (the visible challenge-detail view) per the
 ///     PE invariant 9 contract. Multiple dashboard cards rendered
 ///     simultaneously can't share that single callback slot.
-///   - `RealtimeService.latestIncomingReaction` is `@Published` so
-///     SwiftUI distributes the value to every observing card; each
-///     card filters by its own `challengeId`. This is the canonical
-///     "broadcast to many widgets" pattern.
+///   - `RealtimeService.latestIncomingReaction` + pending buffer
+///     distribute to every observing card; each filters by its own
+///     `challengeId`. This is the canonical "broadcast to many widgets"
+///     pattern.
 struct BattleCryShoutBubble: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -731,10 +730,31 @@ struct BattleCryShoutBubble: View {
             }
         }
         .allowsHitTesting(displayedReaction != nil)
+        .onChange(of: realtimeService.isDashboardBattleCryHostVisible) { _, visible in
+            if visible {
+                tryPresentPending()
+            } else {
+                dismissNow()
+            }
+        }
+        .onAppear {
+            if realtimeService.isDashboardBattleCryHostVisible {
+                tryPresentPending()
+            }
+        }
         .onReceive(realtimeService.$latestIncomingReaction.compactMap { $0 }) { reaction in
+            guard realtimeService.isDashboardBattleCryHostVisible else { return }
             guard reaction.challengeId == challengeId else { return }
             present(reaction)
         }
+    }
+
+    /// Buffered reactions received while off Home; show when Home surface is active.
+    private func tryPresentPending() {
+        guard realtimeService.isDashboardBattleCryHostVisible else { return }
+        guard let pending = realtimeService.consumePendingIncomingReaction(for: challengeId) else { return }
+        HapticManager.notification(.warning)
+        present(pending)
     }
 
     private func bubbleContent(_ reaction: ChallengeReaction) -> some View {

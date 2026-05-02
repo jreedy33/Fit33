@@ -119,11 +119,18 @@ function computeQuietHoursEndUTC(prefs: Prefs): Date {
 // Compute "midnight in user's local TZ" as a UTC ISO string. Used to set
 // next_retry_at when daily_cap is hit — the row sleeps until the user's
 // local day rolls over, then re-enters the queue.
+//
+// 2026-05-02 fix (jreedy stuck-queue incident): for west-of-UTC zones the
+// previous implementation returned YESTERDAY's local midnight (24h in the
+// past). Cause: `tomorrowUtcGuess` was Date.UTC(y, m-1, d+1, 0, 0, 0) —
+// which in NY (UTC-4) viewed locally is 8 PM the previous day, giving
+// localH=20. Subtracting 20h from `tomorrowUtcGuess` lands on TODAY's
+// local midnight (already passed), not tomorrow's. The fix wraps the
+// offset across the 24h boundary: if localH > 12, treat as localH - 24
+// (negative offset, west of UTC).
 function computeNextLocalMidnightUTC(timezone: string | null): Date {
   const tz = timezone || 'America/New_York'
   const now = new Date()
-  // Get current date components in user's TZ, advance one day, build
-  // 00:00 in that TZ, then back-convert to UTC.
   const dateFmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
   })
@@ -131,17 +138,54 @@ function computeNextLocalMidnightUTC(timezone: string | null): Date {
   const y = parseInt(todayParts.find(p => p.type === 'year')?.value || '2026')
   const m = parseInt(todayParts.find(p => p.type === 'month')?.value || '1')
   const d = parseInt(todayParts.find(p => p.type === 'day')?.value || '1')
-  // Midnight tomorrow in the user's TZ (offset back-conversion)
   const tomorrowUtcGuess = new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0))
   const localFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: tz, hour: 'numeric', minute: 'numeric', hour12: false,
   })
   const localParts = localFmt.formatToParts(tomorrowUtcGuess)
-  const localH = parseInt(localParts.find(p => p.type === 'hour')?.value || '0')
-  // Subtract however many hours the conversion drifted (sign flips for
-  // east-of-UTC tz).
-  return new Date(tomorrowUtcGuess.getTime() - localH * 60 * 60 * 1000)
+  const rawLocalH = parseInt(localParts.find(p => p.type === 'hour')?.value || '0')
+  // Wrap: localH in [13, 24) means west-of-UTC (e.g. NY localH=20 → -4h).
+  const offsetHours = rawLocalH > 12 ? rawLocalH - 24 : rawLocalH
+  return new Date(tomorrowUtcGuess.getTime() - offsetHours * 60 * 60 * 1000)
 }
+
+// Notification types that BYPASS daily_cap and category_cap entirely.
+// These are reactive social pushes — fired because another user
+// explicitly took an action targeting this recipient (sent a battle
+// cry, sent a friend request, invited them to a challenge, sent a
+// workout, etc.). Capping them silently breaks the social loop and
+// makes the app feel broken (see 2026-05-02 jreedy incident: hit cap
+// at 8 sends, every subsequent battle cry / friend interaction
+// deferred indefinitely).
+//
+// Caps still apply to engagement nudges (comeback_reminder, streak_*,
+// daily_workout_reminder, challenge_nudge, morning_motivation,
+// weekly_progress, *_goal, *_reminder) — those are app-initiated and
+// should respect the user's noise budget.
+const INTERACTIVE_BYPASS_TYPES = new Set<string>([
+  'friend_request',
+  'friend_request_received',
+  'friend_request_accepted',
+  'shared_workout',
+  'workout_received',
+  'contact_joined',
+  'challenge_invite',
+  'challenge_accepted',
+  'challenge_declined',
+  'challenge_completed',
+  'challenge_won',
+  'challenge_cancelled',
+  'challenge_update',
+  'challenge_reaction',
+  'activity_reaction',
+  'group_challenge_invite',
+  'group_challenge_accepted',
+  'group_challenge_started',
+  'community_friend_joined',
+  'private_challenge_invite',
+  'private_challenge_message',
+  'private_challenge_member_joined',
+])
 
 // ── daily_cap + category_cap enforcement ─────────────────────────────────
 //
@@ -401,7 +445,11 @@ serve(async (req) => {
         }
 
         // ── Daily / category caps ─────────────────────────────────────
-        if (prefs) {
+        // Interactive social pushes (friend request, battle cry, challenge
+        // invite, workout share, etc.) bypass caps entirely. See
+        // INTERACTIVE_BYPASS_TYPES rationale above.
+        const bypassCaps = INTERACTIVE_BYPASS_TYPES.has(notifType)
+        if (prefs && !bypassCaps) {
           const counts = await countTodaysSends(supabase, userId, prefs.timezone, category)
           const dailyCap = prefs.daily_cap
           const categoryCap = (category && prefs.category_caps && typeof prefs.category_caps[category] === 'number')
@@ -413,7 +461,7 @@ serve(async (req) => {
             await pushDeliveryLog(supabase, {
               notificationId: notification.id, userId,
               event: 'cap_exceeded',
-              detail: { reason: 'daily_cap', cap: dailyCap, sent_today: counts.totalToday, retry_at: retryAt.toISOString(), category },
+              detail: { reason: 'daily_cap', cap: dailyCap, sent_today: counts.totalToday, retry_at: retryAt.toISOString(), category, type: notifType },
             })
             await supabase
               .from('push_notification_queue')
@@ -426,7 +474,7 @@ serve(async (req) => {
             await pushDeliveryLog(supabase, {
               notificationId: notification.id, userId,
               event: 'cap_exceeded',
-              detail: { reason: 'category_cap', category, cap: categoryCap, sent_today: counts.categoryToday, retry_at: retryAt.toISOString() },
+              detail: { reason: 'category_cap', category, cap: categoryCap, sent_today: counts.categoryToday, retry_at: retryAt.toISOString(), type: notifType },
             })
             await supabase
               .from('push_notification_queue')
@@ -434,6 +482,14 @@ serve(async (req) => {
               .eq('id', notification.id)
             continue
           }
+        } else if (prefs && bypassCaps) {
+          // One-line audit trail so you can grep for "interactive bypassed
+          // the cap" in delivery logs if a user later complains about noise.
+          await pushDeliveryLog(supabase, {
+            notificationId: notification.id, userId,
+            event: 'cap_bypass',
+            detail: { reason: 'interactive_type', type: notifType, category },
+          })
         }
 
         // ── Resolve device tokens ─────────────────────────────────────

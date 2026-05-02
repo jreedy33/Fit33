@@ -41,8 +41,15 @@ struct PrivateChallengeCreationFlow: View {
     @State private var maxMembers = 50
     
     // Friend invitation
-    @State private var selectedFriends: [Friend] = []
+    @State private var selectedFriends: [Friend]
     @State private var searchText = ""
+
+    /// Optional pre-selected friends to invite. When non-empty, the invite
+    /// step opens with these friends already chipped — useful for the
+    /// "mutual friends quick-add" flow from `FriendProfileView`.
+    init(preSelectedFriends: [Friend] = []) {
+        _selectedFriends = State(initialValue: preSelectedFriends)
+    }
     
     // Challenge icon photo
     @State private var iconPhotoItem: PhotosPickerItem?

@@ -26,6 +26,13 @@ struct DailyQuestsWidget: View {
     @ObservedObject private var healthKitService = HealthKitService.shared
     @ObservedObject private var mealService = MealService.shared
     @ObservedObject private var hydrationService = HydrationService.shared
+    /// 2026-05-02 — observed so the `complete_workout` daily-goal card's
+    /// completion sub-text refreshes the moment a native cardio recap
+    /// fanout, a Strava sync, or a HealthKit observer pushes a new
+    /// "today" record. Without this, the card would render the stale
+    /// "Workout completed ✓" / strength-flavored copy until the next
+    /// view re-render. See `RecentCardioCompletionStore`.
+    @ObservedObject private var recentCardio = RecentCardioCompletionStore.shared
     @Environment(\.colorScheme) private var colorScheme
 
     /// Smart Adaptive Daily Goals (20260607) — sheet binding for the
@@ -981,15 +988,48 @@ struct DailyQuestsWidget: View {
     }
     
     /// Builds a personalized "completed" caption for workout quests using
-    /// the most recent workout finished today, e.g. "Evening Arms & Shoulders
-    /// workout ✓". Falls back to the generic copy when no matching Core Data
-    /// row is available yet (e.g. HealthKit-only workouts or sync lag).
+    /// the most-recent workout finished today, e.g. "Evening Arms & Shoulders
+    /// workout ✓" / "Evening 5K Run ✓" / "Evening 5K with Strava ✓".
+    ///
+    /// Picks the cardio context (set by `RecentCardioCompletionStore` —
+    /// fed by both the native cardio fanout and the Strava sync path) when
+    /// it's strictly more recent than the most-recent strength `Workout`
+    /// row, otherwise falls back to the strength copy. The cardio-aware
+    /// path is what surfaces "Evening 5K with Strava ✓" the moment Strava
+    /// imports a finished run (2026-05-02 user request).
     private func workoutCompletionSummary() -> String {
-        guard let workout = todaysCompletedWorkouts.first,
-              let finishedAt = workout.date else {
-            return "Workout completed ✓"
+        let cardio = RecentCardioCompletionStore.shared.currentRecordForToday()
+
+        // If a cardio finished today AND it's the most-recent thing, prefer
+        // its sub-text. The strength row's `date` and the cardio's
+        // `completedAt` use the same wall-clock domain so direct compare
+        // is correct.
+        if let cardio,
+           let cardioText = RecentCardioCompletionStore.shared.completionSummaryText() {
+            if let strength = todaysCompletedWorkouts.first,
+               let strengthDate = strength.date,
+               strengthDate >= cardio.completedAt {
+                // Strength finished AFTER the most-recent cardio — keep
+                // the strength copy so the card reflects the latest action.
+                return strengthCompletionSummary(strength)
+            }
+            return cardioText
         }
 
+        guard let workout = todaysCompletedWorkouts.first else {
+            return "Workout completed ✓"
+        }
+        return strengthCompletionSummary(workout)
+    }
+
+    /// Strength-flavored completion sub-text — pulled into its own helper
+    /// so `workoutCompletionSummary()` can share it across the
+    /// "cardio more recent" / "strength more recent" / "no cardio today"
+    /// branches.
+    private func strengthCompletionSummary(_ workout: Workout) -> String {
+        guard let finishedAt = workout.date else {
+            return "Workout completed ✓"
+        }
         let cleanedName = Self.cleanWorkoutName(workout.name)
         let timeOfDay = Self.timeOfDayLabel(for: finishedAt)
 

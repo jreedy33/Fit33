@@ -271,10 +271,12 @@ struct CardioGoalSetupView: View {
             )
             .environmentObject(userManager)
         }
-        .fullScreenCover(isPresented: $startNativeWorkout) {
-            CardioActiveSessionHost(isPresented: $startNativeWorkout)
-                .environmentObject(userManager)
-        }
+        // 2026-05-02 (Wave 4f — minimize-able active screen): the active
+        // cardio cover is now mounted GLOBALLY on `MainTabView` so the
+        // user can minimize the running screen and browse other tabs
+        // mid-workout. We only flip `startNativeWorkout` here as a
+        // local trigger that pops this goal-setup view back to root —
+        // the global cover handles the actual presentation.
         .onChange(of: workoutManager.shouldDismissCardioFlow) { _, shouldDismiss in
             if shouldDismiss {
                 startWorkout = false
@@ -654,12 +656,23 @@ struct CardioGoalSetupView: View {
 
         CardioSessionManager.shared.prepare(activity: mappedActivity)
         CardioSessionManager.shared.setGoal(goal, value: value)
-        startNativeWorkout = true
         // `start()` flips the session into `.preStart` and runs the
         // 3-2-1 countdown. The host view's first render is the
         // countdown overlay sitting on top of the empty active layout
         // (map + zeroed metrics), then transitions to live.
         CardioSessionManager.shared.start()
+        // Wave 4f (2026-05-02): the active cover is mounted GLOBALLY on
+        // `MainTabView`. Navigate to the Home tab and clear the
+        // Workout-tab nav stack so the cover presents over a clean
+        // Dashboard. This also fixes a SwiftUI race where calling
+        // `dismiss()` on the pushed goal-setup view at the same time
+        // the global `.fullScreenCover` was trying to present prevented
+        // the cover from animating up — the user saw nothing happen on
+        // GO. Now the navigation pop is owned by `MainTabView`'s
+        // canonical `shouldNavigateToHomeTabInstant` handler, which
+        // sequences the tab switch + nav clear deterministically.
+        WorkoutManager.shared.shouldClearWorkoutTabNav = true
+        WorkoutManager.shared.shouldNavigateToHomeTabInstant = true
     }
 
     // MARK: - GO! Tap Handler (shared)

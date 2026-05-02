@@ -201,6 +201,11 @@ struct FriendProfileView: View {
     @State private var activeChallengesWithFriend: [ActiveChallenge] = []
     @State private var sentWorkoutsToFriend: [SentWorkout] = []
     @State private var mutualFriends: [MutualFriend] = []
+
+    // Mutual-friend section (friend profiles only). The friend profile shows
+    // a compact card (count + stacked avatars + "See all"). Tapping it opens
+    // `MutualFriendsListView`, which owns the multi-select + challenge flow.
+    @State private var showingMutualsList = false
     
     var body: some View {
         NavigationStack {
@@ -214,6 +219,14 @@ struct FriendProfileView: View {
                         profileHeader
 
                         if user.isFriend {
+                            // Mutual friends preview sits directly under the
+                            // profile header (above Goal/Level/Shared) so the
+                            // option to start a quick group/private challenge
+                            // is the first thing visible after the user's name.
+                            if !mutualFriends.isEmpty {
+                                mutualFriendsCompactSection
+                            }
+
                             statsSection
 
                             if let activeChallenge = activeChallengesWithFriend.first {
@@ -294,6 +307,15 @@ struct FriendProfileView: View {
                     }
                 }
             }
+            .fullScreenCover(isPresented: $showingMutualsList) {
+                if let primaryFriend = user.asFriend {
+                    MutualFriendsListView(
+                        primaryFriend: primaryFriend,
+                        mutuals: mutualFriends
+                    )
+                    .environmentObject(userManager)
+                }
+            }
             .sheet(isPresented: $showingChallengeDetail) {
                 if let challenge = selectedChallenge {
                     NavigationStack {
@@ -331,10 +353,12 @@ struct FriendProfileView: View {
                 UserFocusSentinel.shared.beginFocus("FriendProfile")
                 if user.isFriend {
                     loadData()
-                } else {
-                    Task {
-                        mutualFriends = await FriendService.shared.fetchMutualFriends(for: user.userId)
-                    }
+                }
+                // Always fetch mutuals so the quick-add section can seed a
+                // group challenge (friend case) or just inform context
+                // (non-friend case).
+                Task {
+                    mutualFriends = await FriendService.shared.fetchMutualFriends(for: user.userId)
                 }
             }
             .onDisappear {
@@ -533,6 +557,78 @@ struct FriendProfileView: View {
                     .fill(Color.cardBackground)
             )
         }
+    }
+
+    // MARK: - Mutual Friends Compact Preview (friends case)
+
+    /// Compact preview row that shows the mutual count and up to 5 stacked
+    /// avatars. Tapping anywhere on the card opens `MutualFriendsListView`,
+    /// which owns the multi-select + group / private challenge flow.
+    private var mutualFriendsCompactSection: some View {
+        Button(action: {
+            HapticManager.impact(.light)
+            showingMutualsList = true
+        }) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Mutual Friends (\(mutualFriends.count))")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+
+                    Spacer()
+
+                    HStack(spacing: 4) {
+                        Text("See all")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.cyan)
+                }
+
+                // Stacked rings — up to 5 mutual avatars overlapping.
+                // The inset stroke matches the card background so the ring
+                // gradient on each avatar reads as a clean, separated edge.
+                HStack(spacing: -10) {
+                    ForEach(Array(mutualFriends.prefix(5))) { mutual in
+                        CachedFriendPhoto(
+                            friendId: mutual.userId.uuidString,
+                            photoUrl: mutual.profilePhotoUrl,
+                            name: mutual.displayName,
+                            size: 38,
+                            showGradientRing: true,
+                            gradientColors: [.green, .cyan]
+                        )
+                        .overlay(Circle().stroke(Color.cardBackground, lineWidth: 2))
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(Spacing.md)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
+                        .fill(Color.cardBackground)
+
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.08), Color.clear]
+                                    : [Color.white, Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 
     private func statCard(icon: String, gradientColors: [Color], value: String, label: String) -> some View {
@@ -1243,5 +1339,272 @@ struct SharedWorkoutHistoryRow: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Mutual Friends Full-Screen List
+
+/// Full-screen mutuals picker reached from a friend profile's "See all >".
+/// - Top: 3 featured mutuals as larger avatars (visual emphasis).
+/// - Below: scrollable list of every mutual; tap a row to toggle selection.
+/// - Top-right system button: "Start Challenge" (≤2 selected → group flow)
+///   or "Private Challenge" (>2 selected → private challenge community flow).
+/// Both flows pre-include the primary friend (the profile we navigated from)
+/// in the cohort so a tap on Kayli from KC's profile creates a group of
+/// {you, KC, Kayli}.
+struct MutualFriendsListView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var userManager: UserManager
+
+    let primaryFriend: Friend
+    let mutuals: [MutualFriend]
+
+    @State private var selectedMutualIds: Set<UUID> = []
+    @State private var showingGroupChallengeFlow = false
+    @State private var showingPrivateChallengeFlow = false
+
+    /// Mutuals we still have a local Friend record for (so we can pass them
+    /// into the challenge flow without stale UUIDs).
+    @MainActor
+    private var addableFriends: [Friend] {
+        let allFriends = FriendService.shared.friends
+        return mutuals.compactMap { mutual in
+            allFriends.first(where: { $0.friendId == mutual.userId })
+        }
+    }
+
+    private var selectedFriends: [Friend] {
+        addableFriends.filter { selectedMutualIds.contains($0.friendId) }
+    }
+
+    /// >2 mutuals = total cohort of 4+ (you + primaryFriend + 3 mutuals),
+    /// which exceeds the regular group-challenge cap of 3 friends.
+    /// Switch to the Private Challenge community flow.
+    private var ctaUsesPrivate: Bool { selectedMutualIds.count > 2 }
+    private var ctaTitle: String {
+        ctaUsesPrivate ? "Private Challenge" : "Start Challenge"
+    }
+
+    private var topFeaturedMutuals: [MutualFriend] {
+        Array(mutuals.prefix(3))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 24) {
+                        if !topFeaturedMutuals.isEmpty {
+                            featuredMutualsHeader
+                        }
+
+                        mutualsList
+                    }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.top, 16)
+                    .padding(.bottom, 40)
+                }
+            }
+            .navigationTitle("Mutual Friends")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "chevron.left")
+                            .font(.ds_labelLarge)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: launchChallenge) {
+                        Text(ctaTitle)
+                            .fontWeight(.semibold)
+                    }
+                    .disabled(selectedMutualIds.isEmpty)
+                }
+            }
+            .fullScreenCover(isPresented: $showingGroupChallengeFlow) {
+                NavigationStack {
+                    ChallengeFlowStartView(
+                        preSelectedFriends: [primaryFriend] + selectedFriends
+                    )
+                    .environmentObject(userManager)
+                }
+            }
+            .fullScreenCover(isPresented: $showingPrivateChallengeFlow) {
+                NavigationStack {
+                    PrivateChallengeCreationFlow(
+                        preSelectedFriends: [primaryFriend] + selectedFriends
+                    )
+                    .environmentObject(userManager)
+                }
+            }
+        }
+    }
+
+    private func launchChallenge() {
+        guard !selectedMutualIds.isEmpty else { return }
+        HapticManager.impact(.medium)
+        if ctaUsesPrivate {
+            showingPrivateChallengeFlow = true
+        } else {
+            showingGroupChallengeFlow = true
+        }
+    }
+
+    // MARK: - Featured (top 3)
+
+    private var featuredMutualsHeader: some View {
+        HStack(spacing: 16) {
+            Spacer()
+            ForEach(topFeaturedMutuals) { mutual in
+                featuredMutualButton(mutual: mutual)
+            }
+            Spacer()
+        }
+    }
+
+    private func featuredMutualButton(mutual: MutualFriend) -> some View {
+        let isSelected = selectedMutualIds.contains(mutual.userId)
+        let isAddable = FriendService.shared.friends.contains(where: { $0.friendId == mutual.userId })
+        let firstName = mutual.name?.components(separatedBy: " ").first
+            ?? mutual.username
+            ?? "Friend"
+
+        return Button(action: { toggleSelection(mutual: mutual, isAddable: isAddable) }) {
+            VStack(spacing: 8) {
+                CachedFriendPhoto(
+                    friendId: mutual.userId.uuidString,
+                    photoUrl: mutual.profilePhotoUrl,
+                    name: mutual.displayName,
+                    size: 70,
+                    showGradientRing: true,
+                    gradientColors: isSelected ? [.blue, .cyan] : [.green, .cyan]
+                )
+                .scaleEffect(isSelected ? 1.05 : 1.0)
+                .shadow(color: isSelected ? .cyan.opacity(0.5) : .clear, radius: 10, x: 0, y: 4)
+                .overlay(alignment: .topTrailing) {
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .background(Circle().fill(Color.cardBackground))
+                            .offset(x: 4, y: -4)
+                    }
+                }
+
+                Text(firstName)
+                    .font(.caption)
+                    .fontWeight(isSelected ? .bold : .semibold)
+                    .foregroundColor(isSelected ? .cyan : .primary)
+                    .lineLimit(1)
+            }
+            .opacity(isAddable ? 1.0 : 0.5)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .disabled(!isAddable)
+    }
+
+    // MARK: - Full list
+
+    private var mutualsList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("All Mutuals (\(mutuals.count))")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                if !selectedMutualIds.isEmpty {
+                    Text("\(selectedMutualIds.count) selected")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.cyan)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.cyan.opacity(0.15)))
+                }
+            }
+            .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(mutuals.enumerated()), id: \.element.id) { index, mutual in
+                    mutualListRow(mutual: mutual)
+
+                    if index < mutuals.count - 1 {
+                        Divider().padding(.leading, 60)
+                    }
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .fill(Color.cardBackground)
+            )
+        }
+    }
+
+    private func mutualListRow(mutual: MutualFriend) -> some View {
+        let isSelected = selectedMutualIds.contains(mutual.userId)
+        let isAddable = FriendService.shared.friends.contains(where: { $0.friendId == mutual.userId })
+
+        return Button(action: { toggleSelection(mutual: mutual, isAddable: isAddable) }) {
+            HStack(spacing: 12) {
+                CachedFriendPhoto(
+                    friendId: mutual.userId.uuidString,
+                    photoUrl: mutual.profilePhotoUrl,
+                    name: mutual.displayName,
+                    size: 40,
+                    showGradientRing: isSelected,
+                    gradientColors: isSelected ? [.blue, .cyan] : [.green, .green.opacity(0.6)]
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mutual.name ?? "Unknown")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+
+                    if let username = mutual.username, !username.isEmpty {
+                        Text("@\(username)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "plus.circle")
+                    .font(.title3)
+                    .foregroundStyle(
+                        isSelected
+                            ? AnyShapeStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            : AnyShapeStyle(Color.secondary)
+                    )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .opacity(isAddable ? 1.0 : 0.5)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .disabled(!isAddable)
+    }
+
+    private func toggleSelection(mutual: MutualFriend, isAddable: Bool) {
+        guard isAddable else { return }
+        HapticManager.impact(.light)
+        if selectedMutualIds.contains(mutual.userId) {
+            selectedMutualIds.remove(mutual.userId)
+        } else {
+            selectedMutualIds.insert(mutual.userId)
+        }
     }
 }

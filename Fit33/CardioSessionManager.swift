@@ -90,6 +90,42 @@ final class CardioSessionManager: ObservableObject {
     @Published private(set) var hasPendingRecovery: Bool = false
     @Published private(set) var pendingRecoverySnapshot: CardioSessionSnapshot? = nil
 
+    // MARK: - Minimize / Restore (2026-05-02 per-user request)
+    //
+    // The active outdoor-cardio screen is presented via a GLOBAL
+    // `.fullScreenCover` mounted on `MainTabView`. The user can tap a
+    // "return to app" chevron in the top-left of the active screen to
+    // hide the cover WITHOUT ending the workout — the GPS engine, splits,
+    // pace, calories, Live Activity all keep running. Tapping the (red)
+    // Workout tab while a session is minimized restores it.
+    //
+    // `isMinimized` is the ONLY thing that flips to hide / restore the
+    // overlay; the phase machine is unchanged. `isPresentingActive`
+    // computed below combines phase + minimized into the binding the
+    // `MainTabView` cover observes.
+    @Published var isMinimized: Bool = false
+
+    /// `true` when there's a session in flight that the global active
+    /// cover should be presenting. Computed off `phase` + `isMinimized`.
+    /// `MainTabView` binds its global `.fullScreenCover` to this.
+    var isPresentingActive: Bool {
+        guard !isMinimized else { return false }
+        switch phase {
+        case .preStart, .active, .paused, .ended, .recap: return true
+        case .idle, .goalSetup, .saved:                   return false
+        }
+    }
+
+    /// `true` when there's a live workout (regardless of minimized state).
+    /// `MainTabView` reads this to drive the red "Workout" tab indicator
+    /// and re-route taps to `restore()` instead of switching tabs.
+    var hasLiveSession: Bool {
+        switch phase {
+        case .preStart, .active, .paused: return true
+        default:                          return false
+        }
+    }
+
     // MARK: - Private state
     private let userDefaults = UserDefaults.standard
     private let snapshotKey = "fit33.cardioSession.snapshot.v1"
@@ -164,6 +200,10 @@ final class CardioSessionManager: ObservableObject {
         // the right denominator on first frame.
         RunningManager.shared.setGoal(type: pendingGoal, value: pendingGoalValue)
 
+        // Fresh session — make sure we're not still minimized from a
+        // previous run that ended before the cover was restored.
+        isMinimized = false
+
         phase = .preStart
         countdownValue = 3
         Task { @MainActor in
@@ -177,6 +217,27 @@ final class CardioSessionManager: ObservableObject {
         guard phase == .preStart else { return }
         countdownValue = nil
         beginActive()
+    }
+
+    /// Hide the active-cardio cover without ending the workout — the GPS
+    /// engine + Live Activity + audio cues keep running so the user can
+    /// browse other tabs. Wired to the chevron-down "return" button in
+    /// the top-left of `OutdoorCardioActiveView`.
+    func minimize() {
+        guard hasLiveSession else { return }
+        isMinimized = true
+        // Tiny haptic so the user feels the "tucked away" gesture.
+        HapticManager.impact(.soft)
+        AppLogger.debug("📥 [CARDIO] Session minimized — workout continues in background", category: .ui)
+    }
+
+    /// Re-present the active-cardio cover. Called when the user taps the
+    /// (red) Workout tab while a session is minimized.
+    func restore() {
+        // Even safe to call when not minimized — no-ops.
+        guard isMinimized else { return }
+        isMinimized = false
+        AppLogger.debug("📤 [CARDIO] Session restored — re-presenting active cover", category: .ui)
     }
 
     /// Pause the running session. Mirrors `RunningManager.pauseRun` but
@@ -209,6 +270,10 @@ final class CardioSessionManager: ObservableObject {
             clearSnapshot()
             return
         }
+        // If the session was minimized when it ended (e.g. Live Activity
+        // "End" tap from outside the cover), un-minimize so the recap
+        // surfaces — otherwise the user has no way to see it.
+        isMinimized = false
         endedResult = result
         phase = .ended
         // Brief 250ms beat so the active screen can do a quick fade
@@ -227,6 +292,15 @@ final class CardioSessionManager: ObservableObject {
         clearSnapshot()
         endedResult = nil
         currentExternalId = nil
+        // Cover dismisses naturally because `isPresentingActive` returns
+        // false for `.saved`. Clear minimize so the next session starts
+        // with a clean slate.
+        isMinimized = false
+        // Belt-and-suspenders: `RunningManager.stopRun()` already ended
+        // the Live Activity inside `end()`. If anything raced (cold-launch
+        // recovery, manual `markSaved()` after a force-quit, etc.) the
+        // surviving activity is dismissed here.
+        RunningManager.shared.forceEndAnyLiveActivity()
     }
 
     /// Dismiss the recap and return to idle. Called on the recap's
@@ -237,6 +311,10 @@ final class CardioSessionManager: ObservableObject {
         endedResult = nil
         currentExternalId = nil
         sessionStartedAt = nil
+        isMinimized = false
+        // Same belt-and-suspenders as `markSaved()` — guarantees the
+        // lock-screen widget can never outlive the in-app session.
+        RunningManager.shared.forceEndAnyLiveActivity()
     }
 
     // MARK: - Cold-launch recovery
@@ -283,6 +361,11 @@ final class CardioSessionManager: ObservableObject {
         clearSnapshot()
         hasPendingRecovery = false
         pendingRecoverySnapshot = nil
+        // The user is explicitly walking away from a recovered session;
+        // the lock-screen Live Activity must follow. Without this the
+        // widget would persist on the lock screen until iOS's stale-after
+        // timer expired.
+        RunningManager.shared.forceEndAnyLiveActivity()
     }
 
     // MARK: - Internals

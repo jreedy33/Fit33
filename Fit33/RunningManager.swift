@@ -424,6 +424,59 @@ class RunningManager: NSObject, ObservableObject {
     override init() {
         super.init()
         setupLocationManager()
+        // 2026-05-02 — re-attach to any live activity that survived an
+        // app kill or crash. Without this, `liveActivity` stays nil for
+        // the rest of the process and a later `endLiveActivity()` from
+        // the recap save / discard / dismiss-to-idle path becomes a
+        // no-op while iOS keeps the lock-screen widget visible until
+        // its stale-after timer expires (≈4h). Attaching the surviving
+        // activity here lets the next end-cleanup tear it down properly.
+        reattachExistingLiveActivity()
+    }
+
+    /// If iOS still has a `RunningActivityAttributes` Live Activity for
+    /// this app (because the user force-quit or the app crashed
+    /// mid-session), grab a reference so subsequent `endLiveActivity()`
+    /// calls can dismiss it. Best-effort — silent no-op when ActivityKit
+    /// is unavailable / disabled.
+    private func reattachExistingLiveActivity() {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        // Newest-first — multiple activities shouldn't exist for this
+        // attribute set in practice, but if they do (defensive), end
+        // the older ones immediately and keep the newest reference.
+        let activities = Activity<RunningActivityAttributes>.activities
+        guard let newest = activities.max(by: {
+            $0.attributes.startTime < $1.attributes.startTime
+        }) else { return }
+        liveActivity = newest
+        AppLogger.debug(
+            "🔁 [CARDIO] Re-attached to surviving Live Activity \(newest.id)",
+            category: .health
+        )
+        // End any older lingering activities (shouldn't happen, but
+        // ActivityKit doesn't dedupe across requests; cheap to be safe).
+        for stale in activities where stale.id != newest.id {
+            Task { await stale.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
+    /// Ends any in-flight Live Activity even when there's no held
+    /// reference — used by the cardio recovery / discard / dismiss-to-idle
+    /// paths to guarantee the lock-screen widget tears down with the
+    /// session. Idempotent.
+    func forceEndAnyLiveActivity() {
+        // First try the normal end path (uses the held reference + final
+        // content state).
+        endLiveActivity()
+        // Belt-and-suspenders: if anything is still in `Activity.activities`
+        // (e.g. the held reference was nil because the app was just
+        // launched), end them all immediately.
+        let surviving = Activity<RunningActivityAttributes>.activities
+        guard !surviving.isEmpty else { return }
+        for activity in surviving {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        }
+        liveActivity = nil
     }
 
     // Q2-80 residual (Sprint 9 2026-04-28): the repeating `timer` is tied to

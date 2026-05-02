@@ -49,6 +49,20 @@ struct StravaSettingsView: View {
     /// sheet dismisses to keep the temp dir tidy.
     @State private var dataExportFile: DataExportFile?
 
+    /// 2026-05-02 — when the user taps a Strava-origin row in the home
+    /// dashboard's recent-activity list, we reuse this view as the
+    /// activity recap surface (per user request). The "This Period"
+    /// section's first row swaps from "This Week" totals to "This Run"
+    /// stats sourced from this single activity, while "This Month" and
+    /// every section below stays unchanged. `nil` keeps the legacy
+    /// behavior (settings entry from the dashboard widget tap or the
+    /// settings menu).
+    let focusedActivity: StravaActivity?
+
+    init(focusedActivity: StravaActivity? = nil) {
+        self.focusedActivity = focusedActivity
+    }
+
     var body: some View {
         ZStack {
             AnimatedOrbBackground.stats(colorScheme: colorScheme)
@@ -273,6 +287,15 @@ struct StravaSettingsView: View {
                 // chip live up here now. Disconnect + Export moved into
                 // `accountActionsCard` (below About). Manual sync moved
                 // to the toolbar trailing edge.
+                //
+                // 2026-05-02 (later) — also surface the Strava
+                // `@username` handle so the "this is YOUR Strava" signal
+                // is unambiguous when the page is reused as the activity
+                // recap target (focusedActivity). The avatar comes from
+                // `athlete.profile`, full name from `firstname lastname`,
+                // username from `athlete.username` (Strava's user-chosen
+                // handle, may be nil for older accounts), location from
+                // `city / state / country` joined with commas.
                 HStack(spacing: Spacing.md) {
                     profileAvatar
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
@@ -287,6 +310,12 @@ struct StravaSettingsView: View {
                         if let athlete = strava.athleteProfile {
                             Text(athlete.fullName)
                                 .font(.ds_heading3)
+                            if let handle = athlete.username, !handle.isEmpty {
+                                Text("@\(handle)")
+                                    .font(.ds_bodySmall)
+                                    .foregroundColor(Color.stravaOrange)
+                                    .accessibilityLabel("Strava username at \(handle)")
+                            }
                         }
                         if let location = athleteLocation {
                             Text(location)
@@ -390,14 +419,32 @@ struct StravaSettingsView: View {
     private var thisPeriodCard: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             VStack(spacing: Spacing.sm) {
-                periodRow(
-                    title: "This Week",
-                    activityCount: weeklyActivityCount,
-                    distanceKm: strava.weeklyDistanceKm,
-                    minutes: strava.weeklyCardioMinutes,
-                    calories: strava.weeklyCaloriesBurned,
-                    elevationM: Int(strava.weeklyElevationGain)
-                )
+                // "This Run" row replaces "This Week" when the screen
+                // was opened by tapping a specific Strava activity from
+                // the home dashboard. Same `periodRow` shape (so the
+                // visual rhythm of the card is preserved) — count is
+                // forced to 1, totals are sourced from the single
+                // activity. When unfocused (settings entry), we render
+                // the legacy "This Week" rollup.
+                if let activity = focusedActivity {
+                    periodRow(
+                        title: "This Run",
+                        activityCount: 1,
+                        distanceKm: activity.distance / 1_000,
+                        minutes: activity.movingTime / 60,
+                        calories: activity.calories ?? 0,
+                        elevationM: Int(activity.totalElevationGain ?? 0)
+                    )
+                } else {
+                    periodRow(
+                        title: "This Week",
+                        activityCount: weeklyActivityCount,
+                        distanceKm: strava.weeklyDistanceKm,
+                        minutes: strava.weeklyCardioMinutes,
+                        calories: strava.weeklyCaloriesBurned,
+                        elevationM: Int(strava.weeklyElevationGain)
+                    )
+                }
 
                 Divider().opacity(0.35)
 
@@ -410,7 +457,27 @@ struct StravaSettingsView: View {
                     elevationM: Int(monthlyElevation)
                 )
 
-                if let pace = strava.weeklyAveragePaceSecondsPerKm {
+                // Pace row swaps too: when focused, show the tapped
+                // activity's pace ("Pace this run") instead of the
+                // weekly avg ("Avg run pace this week"). Strava reports
+                // pace as seconds/meter on the activity, so we convert
+                // to the canonical seconds-per-km the rest of the page
+                // uses via `activity.paceSecondsPerKm`.
+                if let activity = focusedActivity {
+                    if let pace = activity.paceSecondsPerKm {
+                        Divider().opacity(0.35)
+                        HStack {
+                            Image(systemName: "stopwatch")
+                                .foregroundColor(.green)
+                            Text("Pace this run")
+                                .font(.ds_bodyMedium)
+                            Spacer()
+                            Text(formatPace(pace))
+                                .font(.ds_statSmall)
+                                .foregroundColor(.green)
+                        }
+                    }
+                } else if let pace = strava.weeklyAveragePaceSecondsPerKm {
                     Divider().opacity(0.35)
                     HStack {
                         Image(systemName: "stopwatch")

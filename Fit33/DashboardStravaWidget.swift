@@ -655,10 +655,27 @@ struct DashboardStravaEmptyCard: View {
     }
 }
 
-// MARK: - Strava brand color
+// MARK: - Brand colors
 
 extension Color {
     /// Strava's brand orange — used for the dashboard widget accent and any
     /// Strava-tagged surface so users instantly recognise the source.
     static let stravaOrange = Color(red: 0.988, green: 0.302, blue: 0)
+
+    /// Fit33 brand blue — single-stop accent for surfaces that want a
+    /// "Fit33-tagged" tint without a full gradient (sleek-card border
+    /// on `RecentCardioWorkoutCard`, badge fills, etc). Sampled to
+    /// match the midpoint of the cyan→blue gradient on the "33" in
+    /// the `fit33-logo` wordmark.
+    static let fit33Brand = Color(red: 0.10, green: 0.55, blue: 0.98)
+
+    /// Cyan endpoint of the "33" wordmark gradient. Pairs with
+    /// `fit33GradientEnd` to recreate the dashboard wordmark's cyan→
+    /// blue ramp on Fit33-authored cardio rows so a Fit33 run reads as
+    /// "ours" at a glance vs Strava's orange / WHOOP's red.
+    static let fit33GradientStart = Color(red: 0.20, green: 0.85, blue: 1.00)
+
+    /// Blue endpoint of the "33" wordmark gradient — see
+    /// `fit33GradientStart`.
+    static let fit33GradientEnd = Color(red: 0.05, green: 0.45, blue: 1.00)
 }

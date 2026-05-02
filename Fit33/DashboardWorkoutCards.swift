@@ -537,7 +537,43 @@ struct RecentCardioWorkoutCard: View {
 
     /// Resolved accent — override wins, falls through to the per-activity
     /// color used on the Home tab.
-    private var effectiveAccent: Color { accentColorOverride ?? activityInfo.color }
+    ///
+    /// 2026-05-02 — when no override is provided (Home tab recent
+    /// activity rows), Strava-origin cards force `Color.stravaOrange`
+    /// (the brand-canonical #FC4C02 used by `DashboardStravaWidget`,
+    /// `StravaSettingsView`, and `CardioRecentLogSection.sourceAccent`)
+    /// regardless of the per-activity color. Strava's brand identity
+    /// IS orange, and a blue "outdoor run" ring next to a "Powered by
+    /// Strava" lockup looked off-brand; system `.orange` is also too
+    /// muted vs the rest of the Strava surfaces. Fit33-origin rows do
+    /// the same with `.fit33Brand` (a single-stop blue used for the
+    /// sleek-card border tint; the icon ring / glyph render with the
+    /// two-color cyan→blue `accentGradientColors` so they pick up the
+    /// "33" wordmark gradient). The cardio landing's
+    /// `CardioRecentLogSection` supplies its own override so these
+    /// short-circuits never fire there.
+    private var effectiveAccent: Color {
+        if let override = accentColorOverride { return override }
+        if origin == .strava { return Color.stravaOrange }
+        if origin == .fit33  { return Color.fit33Brand }
+        return activityInfo.color
+    }
+
+    /// Two-color gradient stops used for the icon-ring stroke and the
+    /// icon-glyph fill. Defaults to a muted opacity ramp around the
+    /// single accent (matches the historical look for Strava and
+    /// per-activity-colored rows). Fit33-origin rows on the home
+    /// dashboard get a true cyan→blue gradient that mirrors the "33"
+    /// in the `fit33-logo` wordmark — so a glance at the icon already
+    /// tells the user "this run was authored by Fit33". Skipped when
+    /// `accentColorOverride` is in play (cardio landing recent log uses
+    /// a single-stop source-color treatment).
+    private var iconAccentColors: [Color] {
+        if origin == .fit33, accentColorOverride == nil {
+            return [Color.fit33GradientStart, Color.fit33GradientEnd]
+        }
+        return [effectiveAccent, effectiveAccent.opacity(0.6)]
+    }
     /// Hide the inline brand capsule below the date when the caller is
     /// painting the card with a source-colored accent (cardio recent
     /// log). The WHOOP wordmark logic below is unaffected.
@@ -634,6 +670,66 @@ struct RecentCardioWorkoutCard: View {
         let minutes = Int(paceValue)
         let seconds = Int((paceValue - Double(minutes)) * 60)
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    /// 2026-05-02 — Strava's `/athlete/activities` list endpoint omits
+    /// `average_pace` and reports `calories = null` (calories live only
+    /// on the detailed activity endpoint). Both fields are therefore
+    /// stored as 0/null for Strava-imported rows, which produced the
+    /// "0 calories / -- /mi" gap visible on the Home dashboard. We
+    /// derive both at display-time from the data Strava DOES provide
+    /// (distance + moving_time + activity_type), keeping rendering
+    /// purely client-side and avoiding the per-row detail fetch (which
+    /// would cost a Strava read against the 100/15-min rate limit).
+    /// The fallback also covers any other origin that omitted these
+    /// columns.
+
+    /// Effective pace in min/km — uses the stored value when present,
+    /// otherwise derives from `distance_meters / moving_time`.
+    private var displayPace: Double? {
+        if let pace = cardioWorkout.averagePace, pace > 0 {
+            return pace
+        }
+        let meters = cardioWorkout.distanceMeters
+        let seconds = Double(cardioWorkout.durationSeconds)
+        guard meters > 0, seconds > 0 else { return nil }
+        let km = meters / 1000.0
+        let minutes = seconds / 60.0
+        return minutes / km
+    }
+
+    /// Effective calories — uses the stored value when > 0, otherwise
+    /// estimates from MET × weight(kg) × hours. MET coefficients track
+    /// the Compendium of Physical Activities (Ainsworth 2011) values
+    /// already used by `RunningManager.metForCurrentPace(_:)`.
+    private var displayCalories: Int {
+        let stored = Int(cardioWorkout.caloriesBurned)
+        if stored > 0 { return stored }
+        let weightKg = Double(UserManager.shared.currentUser?.weightLbs ?? 160) * 0.453592
+        let hours = Double(cardioWorkout.durationSeconds) / 3600.0
+        guard hours > 0, weightKg > 0 else { return 0 }
+        let met = estimatedMET
+        return Int((met * weightKg * hours).rounded())
+    }
+
+    /// Activity-appropriate baseline MET coefficient. Pulled from the
+    /// same Compendium tables `RunningManager.baseMET` uses; we lean
+    /// toward the moderate-intensity end since Strava-imported sessions
+    /// are typically tempo-paced.
+    private var estimatedMET: Double {
+        let type = cardioWorkout.activityType.lowercased().replacingOccurrences(of: "_", with: " ")
+        switch type {
+        case "outdoor run", "run":              return 9.8
+        case "treadmill":                       return 9.0
+        case "walk", "hike":                    return 3.8
+        case "indoor cycle", "outdoor cycle":   return 8.0
+        case "rowing":                          return 7.0
+        case "elliptical":                      return 5.0
+        case "stair climber":                   return 8.8
+        case "hiit":                            return 8.0
+        case "swimming":                        return 7.0
+        default:                                return 6.0
+        }
     }
     
     private var isFromHealthKit: Bool {
@@ -749,7 +845,7 @@ struct RecentCardioWorkoutCard: View {
                         Circle()
                             .stroke(
                                 LinearGradient(
-                                    colors: [effectiveAccent, effectiveAccent.opacity(0.6)],
+                                    colors: iconAccentColors,
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ),
@@ -761,7 +857,7 @@ struct RecentCardioWorkoutCard: View {
                             .font(.ds_heading2)
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [effectiveAccent, effectiveAccent.opacity(0.7)],
+                                    colors: iconAccentColors,
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -778,69 +874,85 @@ struct RecentCardioWorkoutCard: View {
                             .foregroundColor(.primary)
                             .lineLimit(1)
 
-                        // Date with relative time
-                        Text(DateFormatUtils.formatSmartDate(completedDate))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                        // Date row — also hosts the WHOOP wordmark or the
+                        // "Powered by Strava" lockup so the brand
+                        // attribution travels INLINE with the timestamp
+                        // instead of stacking next to the title (per
+                        // 2026-05-02 dashboard tweak: the lockup must sit
+                        // across from the time, not at the top of the
+                        // card). Brand assets keep their canonical sizing
+                        // — 14pt WHOOP wordmark (matches the cardio detail
+                        // header), 20pt "Powered by Strava" (Strava Brand
+                        // Guidelines minimum height).
+                        HStack(spacing: 8) {
+                            Text(DateFormatUtils.formatSmartDate(completedDate))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
 
-                        // Third-party origin badge for non-WHOOP brands
-                        // (Strava / Apple Watch / Oura / Fitbit / Garmin …).
-                        // WHOOP gets its own white wordmark in the top-right
-                        // corner, so we suppress the red capsule here to
-                        // avoid redundancy.
-                        // 2026-05-02 — also suppress when an
-                        // `accentColorOverride` is in play (cardio recent
-                        // log uses source-colored accents on the card
-                        // border, so an inline brand chip is redundant).
-                        if origin != .whoop && origin != .strava && !suppressInlineOriginBadge {
+                            Spacer(minLength: 8)
+
+                            if origin == .whoop {
+                                Image("WhoopWordmark")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(height: 14)
+                                    .foregroundColor(.white)
+                                    .accessibilityLabel("WHOOP")
+                            } else if origin == .strava {
+                                Image("PoweredByStrava")
+                                    .resizable()
+                                    .renderingMode(.original)
+                                    .scaledToFit()
+                                    .frame(height: 20)
+                                    .accessibilityLabel("Powered by Strava")
+                            } else if origin == .fit33 {
+                                // Fit33-authored runs (RunningManager /
+                                // CardioActiveWorkoutView / CardioRecapView
+                                // → `record_cardio_workout` RPC) get the
+                                // Fit33 wordmark inline next to the
+                                // timestamp so a Fit33 row reads as
+                                // unambiguously ours, the same way Strava
+                                // / WHOOP rows brand their author. Image
+                                // is rendered `.original` because the
+                                // wordmark itself carries the cyan→blue
+                                // "33" gradient that the icon ring
+                                // mirrors.
+                                Image("fit33-logo")
+                                    .resizable()
+                                    .renderingMode(.original)
+                                    .scaledToFit()
+                                    .frame(height: 18)
+                                    .accessibilityLabel("Fit33")
+                            }
+                        }
+
+                        // Third-party origin badge for brands that don't
+                        // already get a dedicated wordmark on the date
+                        // row above. Suppressed for:
+                        //   • .whoop  — white WHOOP wordmark on date row
+                        //   • .strava — "Powered by Strava" lockup on date row
+                        //   • .fit33  — fit33-logo wordmark on date row
+                        //   • when `accentColorOverride` is set (cardio
+                        //     landing recent log paints the border with
+                        //     a source color, so an inline chip is
+                        //     redundant)
+                        // Apple Watch / Oura / Fitbit / Garmin / Nike /
+                        // Peloton / etc. still render the brand-colored
+                        // capsule below the date.
+                        if origin != .whoop
+                            && origin != .strava
+                            && origin != .fit33
+                            && !suppressInlineOriginBadge {
                             sourceBadge
                                 .padding(.top, 2)
                         }
                     }
-
-                    Spacer()
-
-                    // WHOOP white wordmark — sits where the legacy "goal
-                    // achieved" checkmark used to live. Only WHOOP has a
-                    // first-party white-on-transparent asset bundled
-                    // (WhoopWordmark.imageset), so other origins keep the
-                    // brand-colored capsule below the date instead.
-                    if origin == .whoop {
-                        Image("WhoopWordmark")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 14)
-                            .foregroundColor(.white)
-                            .padding(.trailing, 8)
-                            .accessibilityLabel("WHOOP")
-                    }
-
-                    // 2026-05-02 Strava brand attribution: the official
-                    // "Powered by Strava" lockup must appear on every
-                    // surface displaying Strava-sourced data. The parent
-                    // screen (CardioLandingView / DashboardStravaWidget /
-                    // StravaSettingsView) already shows it at top-of-page
-                    // when those surfaces are present, but a Strava row
-                    // can also appear in the dashboard's recent-activity
-                    // list when the user has hidden the standalone Strava
-                    // widget. Rendering the lockup inline makes the
-                    // attribution row-bound so it travels with the data
-                    // regardless of which list contains the card. Sized
-                    // 20pt — Strava Brand Guidelines minimum height for
-                    // the "Powered by Strava" lockup. Replaces the
-                    // chevron-row trailing area; the brand-colored
-                    // capsule below the date is suppressed in this case
-                    // (the lockup IS the attribution).
-                    if origin == .strava {
-                        Image("PoweredByStrava")
-                            .resizable()
-                            .renderingMode(.original)
-                            .scaledToFit()
-                            .frame(height: 20)
-                            .padding(.trailing, 8)
-                            .accessibilityLabel("Powered by Strava")
-                    }
+                    // VStack must expand to fill so the inner date-row
+                    // HStack's `Spacer` can push the brand asset (WHOOP /
+                    // Strava lockup) to the trailing edge across from the
+                    // timestamp.
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     Image(systemName: "chevron.right")
                         .font(.ds_labelMedium)
@@ -873,7 +985,7 @@ struct RecentCardioWorkoutCard: View {
                         cardioStatColumn(
                             icon: "flame.fill",
                             iconColor: .orange,
-                            value: "\(Int(cardioWorkout.caloriesBurned))",
+                            value: "\(displayCalories)",
                             label: "Calories"
                         )
                         
@@ -881,9 +993,11 @@ struct RecentCardioWorkoutCard: View {
                         
                         // For WHOOP-origin sessions (predominantly strength
                         // training, where pace is meaningless) we surface the
-                        // average heart rate in the 4th slot instead of pace
-                        // and drop the standalone bpm chip below. Other
-                        // origins still show pace + the chip as before.
+                        // average heart rate in the 4th slot instead of pace.
+                        // Other origins show pace, falling back to the
+                        // distance/duration-derived value when the source
+                        // didn't supply one (Strava list endpoint omits
+                        // `average_pace`).
                         if origin == .whoop {
                             cardioStatColumn(
                                 icon: "heart.fill",
@@ -897,37 +1011,19 @@ struct RecentCardioWorkoutCard: View {
                             cardioStatColumn(
                                 icon: "speedometer",
                                 iconColor: .purple,
-                                value: formatPace(cardioWorkout.averagePace),
+                                value: formatPace(displayPace),
                                 label: paceLabel
                             )
                         }
                     }
 
-                    // Heart rate tag (only for non-WHOOP origins; WHOOP
-                    // already shows bpm in the stats row above).
-                    if origin != .whoop,
-                       let heartRate = cardioWorkout.averageHeartRate,
-                       heartRate > 0 {
-                        HStack(spacing: 6) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "heart.fill")
-                                    .font(.ds_caption)
-                                Text("\(heartRate) bpm")
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                            }
-                            .foregroundColor(.red)
-                            .padding(.horizontal, Spacing.xs)
-                            .padding(.vertical, Spacing.xxs)
-                            .background(
-                                Capsule()
-                                    .fill(Color.red.opacity(0.12))
-                            )
-                            
-                            Spacer()
-                        }
-                        .padding(.top, 12)
-                    }
+                    // 2026-05-02 — the standalone red "183 bpm" capsule
+                    // that used to live below the stats row was removed
+                    // per dashboard tweak: average heart rate is already
+                    // visible on the cardio detail screen and the row
+                    // was visually heavy on the home feed. WHOOP rows
+                    // continue to surface bpm in the 4th stat column
+                    // instead of pace (handled above).
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.vertical, 18)

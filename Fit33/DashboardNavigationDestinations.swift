@@ -25,7 +25,30 @@ struct DashboardNavigationDestinations: ViewModifier {
                 WorkoutHistoryDetailView(workout: workout)
             }
             .navigationDestination(for: CardioWorkoutDTO.self) { cardioWorkout in
-                CardioWorkoutDetailView(cardioWorkout: cardioWorkout)
+                // 2026-05-02 — Strava-origin rows reuse the existing
+                // "Powered by Strava" full-page screen
+                // (`StravaSettingsView`) as the activity recap target,
+                // with the tapped activity passed as `focusedActivity`
+                // so the top "This Period" card swaps "This Week" for
+                // "This Run". This keeps a single brand-attributed
+                // surface for every Strava render path (settings tap,
+                // dashboard widget tap, recent-activity row tap) and
+                // means we never have to maintain a parallel detail
+                // screen for Strava data.
+                //
+                // Lookup is by `external_id` against the in-memory
+                // StravaService caches (recent + monthly). If the cache
+                // is cold (e.g., first-launch race or activity older
+                // than the 30d window), we gracefully fall back to the
+                // generic `CardioWorkoutDetailView` so the row never
+                // becomes a dead tap.
+                if cardioWorkout.resolvedOrigin == .strava,
+                   let externalId = cardioWorkout.externalId,
+                   let activity = stravaActivity(forExternalId: externalId) {
+                    StravaSettingsView(focusedActivity: activity)
+                } else {
+                    CardioWorkoutDetailView(cardioWorkout: cardioWorkout)
+                }
             }
     }
     
@@ -86,5 +109,20 @@ struct DashboardNavigationDestinations: ViewModifier {
             // NavigationStack (PE invariant 6).
             WeeklyLeagueDetailView()
         }
+    }
+
+    /// 2026-05-02 — resolves a `CardioWorkoutDTO.externalId` to the
+    /// matching `StravaActivity` from the live `StravaService` caches
+    /// so the recent-activity tap can push the recap-mode
+    /// `StravaSettingsView`. Searches `recentActivities` first (the
+    /// 30d hot cache) and falls through to `monthlyActivities`. Uses
+    /// string comparison because Strava activity IDs are stored as
+    /// strings on the cardio row but as `Int64` on `StravaActivity`.
+    private func stravaActivity(forExternalId externalId: String) -> StravaActivity? {
+        let service = StravaService.shared
+        if let hit = service.recentActivities.first(where: { String($0.id) == externalId }) {
+            return hit
+        }
+        return service.monthlyActivities.first(where: { String($0.id) == externalId })
     }
 }

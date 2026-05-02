@@ -998,6 +998,13 @@ class UserManager: ObservableObject {
                 totalSets: 0
             )
 
+            // `log_cardio` quest is its own bucket — every cardio session
+            // (run, walk, cycle, hike, etc.) ticks it regardless of duration
+            // or distance. Previously skipped, which left the quest stuck
+            // at 0/1 even after the user finished a 30-min run in-app
+            // (2026-05-02 user request).
+            await DailyQuestService.shared.onCardioLogged()
+
             // Challenge progression — reuse the Strava pipeline since it already
             // gates on workoutType + distance/duration + handles run/walk/
             // active_minutes/workout_streak.
@@ -1007,6 +1014,39 @@ class UserManager: ObservableObject {
                 durationSeconds: durationSeconds,
                 source: "cardio"
             )
+
+            // 2026-05-02 — pin "today's most-recent cardio" so the
+            // `complete_workout` daily-goal card renders cardio-aware
+            // completion sub-text ("Evening 5K Run ✓" / "Afternoon 3 mi
+            // Walk ✓"). Read by `DailyQuestsWidget.workoutCompletionSummary`.
+            // Origin is `.fit33` for everything that flows through this
+            // method (CardioRecapView native save, RunCompletionView
+            // legacy save). Strava-imported activities populate the same
+            // store from `StravaService.saveActivitiesToCloud` with
+            // origin `.strava`.
+            await MainActor.run {
+                RecentCardioCompletionStore.shared.record(
+                    activityType: activityType,
+                    workoutName: nil,
+                    distanceMeters: distanceMeters,
+                    durationSeconds: durationSeconds,
+                    completedAt: Date(),
+                    origin: .fit33
+                )
+                // 2026-05-02 (per-user request — "i don't see the fit33
+                // recent activity card when i end a native fit33 run"):
+                // ping the Dashboard so it refetches `recentCardioWorkouts`
+                // and the freshly-saved row surfaces immediately on the
+                // home tab. Strava + HealthKit + Fitbit + BackgroundSync
+                // already post this same name; the Dashboard subscribes
+                // via `.onReceive(NotificationCenter ... .externalWorkoutSynced)`.
+                // The native save was the one missing publisher in the
+                // pipeline.
+                NotificationCenter.default.post(
+                    name: .externalWorkoutSynced,
+                    object: nil
+                )
+            }
 
             // Badges (total workouts + streak milestones).
             await BadgeService.shared.onWorkoutCompleted(totalWorkouts: totalWorkouts)

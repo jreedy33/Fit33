@@ -856,7 +856,9 @@ final class StravaService: ObservableObject {
         // 🔥 Update streak if we synced any activities from today
         // Check if any synced activity was from today
         let calendar = Calendar.current
-        let todayActivities = activities.filter { calendar.isDateInToday($0.startDate) }
+        let todayActivities = activities
+            .filter { calendar.isDateInToday($0.startDate) }
+            .filter { isCardioActivity($0.type) }
         if !todayActivities.isEmpty {
             await MainActor.run {
                 UserManager.shared.updateStreak()
@@ -874,6 +876,89 @@ final class StravaService: ObservableObject {
                     )
                 }
             }
+
+            // 2026-05-02 — Strava completion now ticks the basic
+            // `complete_workout` family of daily goals (and friends:
+            // `complete_2_workouts`, `workout_30_min`, `early_bird_workout`)
+            // exactly the same way a native cardio finish does, so the
+            // user sees their daily goal card flip the moment Strava syncs
+            // a finished run / walk. Per-Strava-id dedup (UserDefaults,
+            // calendar-day-scoped) prevents the cross-source case where
+            // a Fit33 native run also pushed itself to Strava and the
+            // webhook brings it back: we'd fire workout-quest fanout
+            // twice for one physical run.
+            await fireWorkoutQuestFanout(forTodaysStravaActivities: todayActivities)
+
+            // Pin the most-recent today's Strava activity into the
+            // shared completion store. The daily-goal `complete_workout`
+            // card reads this for its sub-text — "Evening 5K with Strava ✓".
+            // Newest wins (the for-loop above already sorts the response
+            // newest-first, but be defensive in case the ordering ever
+            // changes server-side).
+            if let latest = todayActivities.max(by: { $0.startDate < $1.startDate }) {
+                let completedAt = latest.startDate.addingTimeInterval(Double(latest.movingTime))
+                RecentCardioCompletionStore.shared.record(
+                    activityType: mapStravaActivityType(latest.type),
+                    workoutName: latest.name,
+                    distanceMeters: latest.distance,
+                    durationSeconds: latest.movingTime,
+                    completedAt: completedAt,
+                    origin: .strava
+                )
+            }
+        }
+    }
+
+    /// Fires `DailyQuestService.onWorkoutCompleted` for each today's Strava
+    /// activity we haven't already counted. Per-activity dedup uses a
+    /// calendar-day-scoped UserDefaults set so re-running this sync —
+    /// or running it AFTER a native Fit33 run already triggered the
+    /// workout fanout — doesn't double-tick `complete_2_workouts` or
+    /// `workout_30_min`. Day rollover purges the set automatically.
+    private func fireWorkoutQuestFanout(forTodaysStravaActivities activities: [StravaActivity]) async {
+        let dayKey = Self.questFanoutDayKey()
+        var firedIds = Set(
+            UserDefaults.standard.stringArray(forKey: dayKey) ?? []
+        )
+        for activity in activities {
+            let activityId = String(activity.id)
+            if firedIds.contains(activityId) { continue }
+            await DailyQuestService.shared.onWorkoutCompleted(
+                durationSeconds: activity.movingTime,
+                totalSets: 0
+            )
+            // `log_cardio` is its own quest bucket — every cardio
+            // session ticks it.
+            await DailyQuestService.shared.onCardioLogged()
+            firedIds.insert(activityId)
+        }
+        UserDefaults.standard.set(Array(firedIds), forKey: dayKey)
+
+        // Best-effort cleanup of yesterday's key so the prefix doesn't
+        // accumulate. Cheap (one removeObject); safe on day-of (the key
+        // we just wrote is today's, only stale ones are removed).
+        Self.purgeStaleQuestFanoutKeys()
+    }
+
+    /// Returns the per-day UserDefaults key used to dedup Strava workout-
+    /// quest fanout. Day-scoped so day rollover automatically resets
+    /// the dedup set without us needing a daemon.
+    private static func questFanoutDayKey() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        let day = formatter.string(from: Date())
+        return "fit33.strava.questFanout.\(day)"
+    }
+
+    /// Drop any `fit33.strava.questFanout.<day>` keys that aren't today.
+    /// Saves the UserDefaults plist from accumulating one entry per day.
+    private static func purgeStaleQuestFanoutKeys() {
+        let prefix = "fit33.strava.questFanout."
+        let todayKey = questFanoutDayKey()
+        let allKeys = UserDefaults.standard.dictionaryRepresentation().keys
+        for key in allKeys where key.hasPrefix(prefix) && key != todayKey {
+            UserDefaults.standard.removeObject(forKey: key)
         }
     }
     
@@ -1298,9 +1383,22 @@ struct StravaActivity: Codable, Identifiable {
     }
     
     var paceFormatted: String? {
-        guard let speed = averageSpeed, speed > 0 else { return nil }
-        let paceSecondsPerKm = 1000 / speed
-        return UnitSettingsManager.shared.formatStravaPace(secondsPerKm: paceSecondsPerKm)
+        guard let pace = paceSecondsPerKm else { return nil }
+        return UnitSettingsManager.shared.formatStravaPace(secondsPerKm: pace)
+    }
+
+    /// Average pace in seconds per kilometer — derived from
+    /// `averageSpeed` (m/s). Falls back to `movingTime / distance` when
+    /// the speed field isn't present (rare; some old-format
+    /// list-endpoint responses). Used by the activity recap row in
+    /// `StravaSettingsView` so it can render the canonical "Pace" stat
+    /// alongside `formatStravaPace(secondsPerKm:)`.
+    var paceSecondsPerKm: Double? {
+        if let speed = averageSpeed, speed > 0 {
+            return 1_000.0 / speed
+        }
+        guard distance > 0, movingTime > 0 else { return nil }
+        return Double(movingTime) / (distance / 1_000.0)
     }
     
     var activityIcon: String {

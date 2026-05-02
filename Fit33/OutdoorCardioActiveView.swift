@@ -4,43 +4,85 @@ import CoreLocation
 
 // MARK: - OutdoorCardioActiveView
 //
-// Cardio Redesign Phase 1 — Wave 4b.
-// New active workout screen for outdoor walk / run / cycle / hike
-// sessions. Replaces the GPS half of the legacy `CardioActiveWorkoutView`
-// (which kept its own duplicate `CardioLocationManager`) and the
-// legacy `RunningWorkoutView` chrome — both are still wired in until
-// the cleanup pass; this view is the canonical experience for new
-// outdoor sessions.
+// Cardio Redesign — Wave 4b → Wave 4f visual refresh (2026-05-02).
 //
-// Layout:
-//   ┌──────────────────────────────────────┐
-//   │           GPS MAP (40-45%)            │
-//   │      polyline + user marker          │
-//   ├──────────────────────────────────────┤
-//   │     FOCUSED METRIC TILE              │  big number (Pace by default)
-//   │     pace: 7'42"/mi                   │
-//   ├──────────────────────────────────────┤
-//   │  Distance │ Time │ Calories │ HR     │  2×2 grid
-//   ├──────────────────────────────────────┤
-//   │  splits ──── ──── ──── ──── (scroll) │
-//   ├──────────────────────────────────────┤
-//   │   ⏸ Pause       ✕ End                │  control bar (sticky)
-//   └──────────────────────────────────────┘
+// Active workout screen for outdoor walk / run / cycle / hike sessions.
+// Strava-style: the GPS map fills the entire screen and frosted
+// (`.ultraThinMaterial`) widgets float on top, branded with the
+// per-activity accent color (Walk = teal, Run = blue, Cycle = cyan,
+// Hike = orange) so the user can see the route through the chrome.
+//
+// Layout (ZStack):
+//   [ Map full-bleed                                          ]
+//   [    polyline (accent color) + UserAnnotation             ]
+//   ┌──────────────────────────────────────────────────────────┐
+//   │  ◀  return     [ 🏃 Run · 12:34 ]      📍 GPS Excellent │  topBar (frosted)
+//   │                                                          │
+//   │  (map shows through here)                                │
+//   │                                                          │
+//   │  ┌────────────────────────────────────────────────────┐  │
+//   │  │ PACE                                               │  │  focused tile (frosted)
+//   │  │   7'42"                                            │  │
+//   │  │   ████████░░░░  2.30 / 3.11 mi                     │  │
+//   │  └────────────────────────────────────────────────────┘  │
+//   │  ┌──────────┐  ┌──────────┐                              │
+//   │  │ DISTANCE │  │ TIME     │                              │  2×2 frosted grid
+//   │  │ 2.30 mi  │  │ 18:42    │                              │
+//   │  └──────────┘  └──────────┘                              │
+//   │  ⏸ Pause                ✕ End                            │  control bar
+//   └──────────────────────────────────────────────────────────┘
+//
+// Top-left chevron MINIMIZES the cover — `CardioSessionManager.minimize()`
+// hides this view without ending the workout (GPS engine + Live Activity
+// keep running). The user returns by tapping the (now red) Workout tab in
+// the bottom tab bar — `MainTabView` calls `restore()` on tap.
 //
 // Sourced state:
 //   • `RunningManager.shared`  → live telemetry (distance, pace, route…)
-//   • `CardioSessionManager.shared` → phase, countdown, recap routing
-//
-// File length budget: ≤ 300 lines per `codingrules.mdc`.
+//   • `CardioSessionManager.shared` → phase, countdown, minimize/restore.
 struct OutdoorCardioActiveView: View {
     @ObservedObject private var run = RunningManager.shared
     @ObservedObject private var session = CardioSessionManager.shared
     @ObservedObject private var unitSettings = UnitSettingsManager.shared
 
+    /// Heading-up map follow with the user's location dot pushed UP into
+    /// the visible map window (above the bottom frosted stack). Strava
+    /// does the same — the user is roughly 1/3 down from the top, so the
+    /// route they're about to traverse fills the screen. We achieve this
+    /// by manually driving a `MapCamera` whose `centerCoordinate` is
+    /// offset ~80m BEHIND the user (opposite the heading direction) — in
+    /// heading-up mode that visually shifts the dot upward by ~25-30%
+    /// of the viewport. Updates on every `currentLocation` /
+    /// `currentHeading` change. Falls back to plain user-location follow
+    /// before GPS lock.
     @State private var cameraPosition: MapCameraPosition = .userLocation(
         followsHeading: true,
-        fallback: .automatic
+        fallback: .region(MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+            latitudinalMeters: 400,
+            longitudinalMeters: 400
+        ))
     )
+
+    /// How far the camera center sits BEHIND the user (opposite the
+    /// heading direction). Larger value = dot pushed higher on screen.
+    /// 100m at 1300m camera distance ≈ user dot ~25% above geometric
+    /// screen center — clears the bottom frosted stack, leaves plenty
+    /// of map ahead. Tuned 2026-05-02 (user feedback iterations: "too
+    /// zoomed in" → 1300m, "too high" → 70m, "too low, move north" →
+    /// 100m).
+    private let cameraOffsetMeters: Double = 100
+
+    /// Live camera zoom distance in meters. Seeded to 1300m — wider
+    /// default so the user sees the next 1-2 blocks ahead instead of
+    /// just the street they're on (per 2026-05-02 user feedback:
+    /// "zoom the map out by default when the walk/run starts").
+    /// If the user pinches to zoom in/out, we capture their preferred
+    /// distance via `.onMapCameraChange` and re-use it on every
+    /// subsequent programmatic camera update — so heading +
+    /// center-offset follow continues but their zoom level is
+    /// preserved instead of snapping back on the next GPS sample.
+    @State private var userCameraDistance: CLLocationDistance = 1300
     @State private var focusedMetric: FocusedMetric = .pace
     /// Cardio Redesign — Goal-Met sheet (2026-05-02 per user request).
     /// Flips `true` once `RunningManager.goalReached` rises. Shows the
@@ -64,32 +106,92 @@ struct OutdoorCardioActiveView: View {
 
     var body: some View {
         ZStack {
+            // Strava-style full-bleed map fills the entire screen — the
+            // frosted overlay cards sit ON TOP so the route shows
+            // through. Map ignores ALL safe areas (top + bottom) so the
+            // route extends edge-to-edge behind the top bar / control
+            // bar.
+            mapSection
+                .ignoresSafeArea()
+
             VStack(spacing: 0) {
-                mapSection
-                    .frame(maxHeight: .infinity)
-                metricsSection
-                    .padding(.horizontal, 16)
+                topBar
                     .padding(.top, 12)
-                splitsStrip
-                controlBar
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
+                    .padding(.horizontal, Spacing.md)
+
+                Spacer(minLength: 0)
+
+                // Bottom frosted stack — focused metric, 2×2 grid, splits,
+                // Pause / End. Padding bottom respects the home indicator.
+                VStack(spacing: Spacing.sm) {
+                    metricsSection
+                    splitsStrip
+                    controlBar
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.md)
+                .padding(.bottom, Spacing.lg)
+                .background(
+                    // Soft scrim under the metrics so white text reads
+                    // against bright map tiles. Kept very subtle — the
+                    // frosted cards do the heavy lifting; this is just
+                    // a fallback for satellite-style overlays.
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.18)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .allowsHitTesting(false)
+                    .ignoresSafeArea()
+                )
             }
 
             if run.isAutoPaused {
                 autoPausedChip
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 60)
+                    .padding(.top, 100)
             }
 
             if session.countdownValue != nil {
                 countdownOverlay
             }
         }
-        .background(Color(.systemBackground))
-        .ignoresSafeArea(.container, edges: .top)
         .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .statusBarHidden(false)
+        // Drive the camera manually so the user dot sits HIGH in the
+        // visible map (above the frosted bottom stack) — heading-up,
+        // tight zoom, center offset ~80m behind the user. See header
+        // comment on `cameraOffsetMeters`.
+        // 2026-05-02 (per-user request, "i don't want the map moving so
+        // much — keep it straight in the clear direction i'm running"):
+        // we only re-project the camera when the USER MOVES, not on
+        // every magnetometer tick. The motion-derived heading
+        // (`motionHeading`) is computed from the GPS polyline so the
+        // map only rotates when the user actually changes direction
+        // (turn left → map rotates clockwise, stand still → map sits
+        // still). The old `run.currentHeading` magnetometer onChange
+        // was the source of the jitter and has been removed.
+        .onChange(of: run.currentLocation?.latitude) { _, _ in
+            updateCameraIfReady()
+        }
+        .onChange(of: run.currentLocation?.longitude) { _, _ in
+            updateCameraIfReady()
+        }
+        // Capture user pinch-to-zoom so subsequent programmatic
+        // camera updates preserve their preferred zoom level instead
+        // of snapping back to the default on the next GPS sample.
+        // `.onEnd` fires once when the gesture completes — we don't
+        // want a per-frame storm during the pinch itself.
+        .onMapCameraChange(frequency: .onEnd) { ctx in
+            // Sanity-clamp so a runaway value can't break the follow.
+            // 100m floor keeps us readable; 5km ceiling matches the
+            // furthest a runner would ever reasonably zoom on a route.
+            userCameraDistance = max(100, min(5_000, ctx.camera.distance))
+        }
+        .onAppear {
+            updateCameraIfReady()
+        }
         // Goal-Met sheet wiring (2026-05-02 per user request).
         // We listen for the `goalReached` rising edge and open the
         // celebration sheet ONCE per session. Subsequent oscillations
@@ -141,6 +243,106 @@ struct OutdoorCardioActiveView: View {
             }
         }
         .mapControlVisibility(.hidden)
+        .mapStyle(.standard(elevation: .realistic))
+    }
+
+    // MARK: - Top Bar
+    //
+    // Strava-inspired floating chrome:
+    //   • Left chevron — minimize the cover (workout keeps running).
+    //   • Center pill   — activity icon + display name + elapsed time.
+    //   • Right pill    — GPS accuracy chip (color-coded).
+    //
+    // All three sit on `.ultraThinMaterial` capsules so the map shows
+    // through. Border picks up the activity accent (teal walk / blue run)
+    // for branding signal.
+    private var topBar: some View {
+        HStack(spacing: Spacing.sm) {
+            minimizeButton
+            Spacer(minLength: Spacing.xs)
+            activityBadge
+            Spacer(minLength: Spacing.xs)
+            gpsChip
+        }
+    }
+
+    /// Top-left chevron-LEFT (back arrow). Tapping minimizes the
+    /// active-cardio cover AND navigates the user to the Home tab —
+    /// the workout keeps running (GPS engine + Live Activity stay
+    /// alive) and the (now red) Workout tab in the bottom tab bar
+    /// re-presents this screen on tap.
+    private var minimizeButton: some View {
+        Button(action: minimize) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundColor(.primary)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle().fill(.ultraThinMaterial)
+                )
+                .overlay(
+                    Circle().stroke(activityAccent.opacity(0.35), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+        }
+        .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
+        .accessibilityLabel("Back to home")
+        .accessibilityHint("Returns to the Home tab — your \(run.activityType.displayName.lowercased()) keeps tracking. Tap the Workout tab to come back to this screen.")
+    }
+
+    /// Center activity pill — icon + display name + elapsed time. Uses
+    /// the accent color for the icon so the user's eye lands on the
+    /// brand color first.
+    private var activityBadge: some View {
+        HStack(spacing: 6) {
+            Image(systemName: run.activityType.icon)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(activityAccent)
+            Text(run.activityType.displayName.uppercased())
+                .font(.ds_labelMedium)
+                .foregroundColor(.primary)
+                .tracking(1.2)
+            Text("•")
+                .foregroundColor(.secondary)
+            Text(run.formattedElapsedTime)
+                .font(.ds_labelMedium)
+                .monospacedDigit()
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .background(
+            Capsule().fill(.ultraThinMaterial)
+        )
+        .overlay(
+            Capsule().stroke(activityAccent.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+    }
+
+    /// GPS accuracy pill — same `RunningManager.gpsAccuracy` enum that
+    /// drives the legacy chip. Color-coded so the user can glance up
+    /// and know whether the route is going to be clean.
+    private var gpsChip: some View {
+        HStack(spacing: 4) {
+            Image(systemName: run.gpsAccuracy.icon)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(gpsAccuracyColor)
+            Text(gpsShortLabel)
+                .font(.ds_labelSmall)
+                .tracking(0.5)
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, Spacing.xs)
+        .padding(.vertical, 6)
+        .background(
+            Capsule().fill(.ultraThinMaterial)
+        )
+        .overlay(
+            Capsule().stroke(gpsAccuracyColor.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+        .accessibilityLabel("GPS \(run.gpsAccuracy.rawValue)")
     }
 
     // MARK: - Metrics block (focus + 2x2)
@@ -155,16 +357,16 @@ struct OutdoorCardioActiveView: View {
     private var focusedMetricTile: some View {
         VStack(spacing: 6) {
             Text(focusedMetric.label)
-                .font(.caption)
-                .fontWeight(.bold)
+                .font(.ds_labelMedium)
                 .tracking(1.5)
                 .foregroundColor(.secondary)
             Text(focusedMetricValue)
-                .font(.system(size: 64, weight: .heavy, design: .rounded))
+                .font(.system(size: 60, weight: .heavy, design: .rounded))
                 .foregroundStyle(activityAccent)
                 .monospacedDigit()
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
+                .shadow(color: activityAccent.opacity(0.35), radius: 8, y: 2)
             if run.goalType != .none, run.goalValue > 0 {
                 // Cardio Redesign — labeled goal progress (2026-05-02
                 // per user request). The legacy bare `ProgressView`
@@ -193,11 +395,16 @@ struct OutdoorCardioActiveView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
+        .padding(.vertical, Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: 18)
+            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
                 .fill(.ultraThinMaterial)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                .stroke(activityAccent.opacity(0.30), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.20), radius: 12, y: 6)
         .onTapGesture {
             HapticManager.selectionChanged()
             cycleFocusedMetric()
@@ -220,22 +427,26 @@ struct OutdoorCardioActiveView: View {
     private func metricCard(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.caption2)
-                .fontWeight(.semibold)
+                .font(.ds_labelSmall)
                 .tracking(1)
                 .foregroundColor(.secondary)
             Text(value)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.ds_stat)
                 .monospacedDigit()
                 .foregroundColor(.primary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs + 2)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
                 .fill(.ultraThinMaterial)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: CornerRadius.md, style: .continuous)
+                .stroke(activityAccent.opacity(0.22), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
     }
 
     // MARK: - Splits strip
@@ -271,31 +482,37 @@ struct OutdoorCardioActiveView: View {
     // MARK: - Control bar
 
     private var controlBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.sm) {
             Button(action: togglePause) {
                 Label(run.isPaused ? "Resume" : "Pause",
                       systemImage: run.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.ds_labelLarge)
                     .frame(maxWidth: .infinity)
                     .frame(height: 56)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
                             .fill(.ultraThinMaterial)
                     )
-                    .foregroundColor(.primary)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
+                            .stroke(activityAccent.opacity(0.45), lineWidth: 1)
+                    )
+                    .foregroundStyle(activityAccent)
+                    .shadow(color: .black.opacity(0.20), radius: 10, y: 4)
             }
             .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
 
             Button(action: endWorkout) {
                 Label("End", systemImage: "stop.fill")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.ds_labelLarge.weight(.bold))
                     .frame(maxWidth: .infinity)
                     .frame(height: 56)
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
                             .fill(Color.red.gradient)
                     )
                     .foregroundColor(.white)
+                    .shadow(color: Color.red.opacity(0.35), radius: 12, y: 6)
             }
             .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
         }
@@ -391,6 +608,143 @@ struct OutdoorCardioActiveView: View {
     private func endWorkout() {
         HapticManager.notification(.warning)
         session.end()
+    }
+
+    /// Top-left chevron action — hide the active cover AND land the user
+    /// on the Home tab (Dashboard) without ending the workout. The user
+    /// comes back via the (red) Workout tab.
+    private func minimize() {
+        session.minimize()
+        // Land on Home so the chevron always means "back to the app",
+        // not "stay where you were". `shouldClearWorkoutTabNav` also
+        // pops the Workout-tab nav stack so a stale Cardio Landing /
+        // Goal Setup view doesn't sit underneath the (red) tab.
+        WorkoutManager.shared.shouldClearWorkoutTabNav = true
+        WorkoutManager.shared.shouldNavigateToHomeTabInstant = true
+    }
+
+    // MARK: - Camera offset (Strava-style "user dot high")
+
+    /// Recompute the `MapCamera` so the user-location dot sits in the
+    /// upper third of the visible map (above the bottom frosted stack)
+    /// using a MOTION-DERIVED heading (computed from the GPS polyline,
+    /// not the magnetometer) so the map only rotates when the user
+    /// actually changes direction. No-ops until we have a valid GPS
+    /// fix — until then the `.userLocation(...)` fallback is doing the
+    /// right thing.
+    private func updateCameraIfReady() {
+        guard let loc = run.currentLocation else { return }
+        let heading = motionHeading
+        let centerCoord = coordinateBehind(
+            from: loc,
+            headingDegrees: heading,
+            meters: cameraOffsetMeters
+        )
+        let camera = MapCamera(
+            centerCoordinate: centerCoord,
+            distance: userCameraDistance,
+            heading: heading,
+            pitch: 0
+        )
+        // Skip the SwiftUI `withAnimation` here — MapKit interpolates
+        // camera changes internally with a smoother curve than
+        // `.easeOut`, and stacking the two produces visible jitter on
+        // every GPS sample.
+        cameraPosition = .camera(camera)
+    }
+
+    /// Heading derived from the GPS polyline rather than the
+    /// magnetometer — looks back ≥25m along the route for a stable
+    /// anchor and computes the great-circle bearing from there to the
+    /// current location. Result: the map's "up" tracks ACTUAL
+    /// direction of motion, not which way the phone happens to be
+    /// pointing in the user's hand. Falls back to the magnetometer
+    /// during the first few seconds of a session before 25m of route
+    /// has accumulated (so we still face roughly the right way at the
+    /// jump-off line).
+    private var motionHeading: Double {
+        guard let current = run.currentLocation else { return run.currentHeading }
+        let coords = run.routeCoordinates
+        guard coords.count >= 2 else { return run.currentHeading }
+
+        let currentLoc = CLLocation(latitude: current.latitude, longitude: current.longitude)
+        // Scan the polyline backwards for the first sample that's at
+        // least `minAnchorMeters` away — gives a smooth bearing that
+        // doesn't whip on tiny GPS jitters at the front of the route.
+        let minAnchorMeters: CLLocationDistance = 25
+        for coord in coords.reversed() {
+            let loc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+            if loc.distance(from: currentLoc) >= minAnchorMeters {
+                return bearing(from: coord, to: current)
+            }
+        }
+        // Polyline is too short — keep the magnetometer until we have
+        // enough motion to compute a real bearing.
+        return run.currentHeading
+    }
+
+    /// Great-circle bearing from `a` to `b` in degrees (0-360, 0=N,
+    /// 90=E). Standard formula — accurate enough for the sub-100m
+    /// segments we're working with.
+    private func bearing(
+        from a: CLLocationCoordinate2D,
+        to b: CLLocationCoordinate2D
+    ) -> Double {
+        let phi1 = a.latitude  * .pi / 180
+        let phi2 = b.latitude  * .pi / 180
+        let dLambda = (b.longitude - a.longitude) * .pi / 180
+        let y = sin(dLambda) * cos(phi2)
+        let x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dLambda)
+        let theta = atan2(y, x)
+        return (theta * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+    }
+
+    /// Returns a coordinate `meters` away from `coord` in the OPPOSITE
+    /// of the supplied heading. In heading-up map mode this shifts the
+    /// camera viewport so the user's actual location renders ABOVE
+    /// screen center (Strava convention). Equirectangular approximation
+    /// is plenty accurate for sub-100m offsets.
+    private func coordinateBehind(
+        from coord: CLLocationCoordinate2D,
+        headingDegrees: Double,
+        meters: Double
+    ) -> CLLocationCoordinate2D {
+        let oppositeHeading = (headingDegrees + 180).truncatingRemainder(dividingBy: 360)
+        let radians = oppositeHeading * .pi / 180
+        let metersPerDegLat = 111_320.0
+        let metersPerDegLon = 111_320.0 * cos(coord.latitude * .pi / 180)
+        let deltaLat = meters * cos(radians) / metersPerDegLat
+        // Negative because positive longitude = east; sin(radians) is +
+        // for east-of-north headings, so deltaLon should track that.
+        let deltaLon = meters * sin(radians) / metersPerDegLon
+        return CLLocationCoordinate2D(
+            latitude: coord.latitude + deltaLat,
+            longitude: coord.longitude + deltaLon
+        )
+    }
+
+    // MARK: - GPS chip styling
+
+    private var gpsAccuracyColor: Color {
+        switch run.gpsAccuracy {
+        case .acquiring: return .secondary
+        case .excellent, .good: return .green
+        case .fair: return .yellow
+        case .weak: return .red
+        }
+    }
+
+    /// Short label for the top-bar GPS pill — the full
+    /// "GPS Excellent" reads heavy at this size, so we strip the
+    /// "GPS " prefix and uppercase what's left ("EXCELLENT").
+    private var gpsShortLabel: String {
+        switch run.gpsAccuracy {
+        case .acquiring: return "ACQUIRING…"
+        case .excellent: return "GPS HIGH"
+        case .good:      return "GPS GOOD"
+        case .fair:      return "GPS FAIR"
+        case .weak:      return "GPS WEAK"
+        }
     }
 
     // MARK: - Goal Progress Formatting (2026-05-02 user request)

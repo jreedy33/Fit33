@@ -224,6 +224,7 @@
 		7C8CF1482F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */; };
 		7C8CF4722F9FA437007CD766 /* DailyBriefTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4712F9FA437007CD766 /* DailyBriefTemplates.swift */; };
 		7C8CF4732F9FA437007CD766 /* DailyBriefStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4702F9FA437007CD766 /* DailyBriefStore.swift */; };
+		233674C459A7479781D40939 /* RecentCardioCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 790FA252417E43B99A490A73 /* RecentCardioCompletionStore.swift */; };
 		7C8CF4742F9FA437007CD766 /* DailyBriefEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF46F2F9FA437007CD766 /* DailyBriefEngine.swift */; };
 		7C8CF4772F9FA463007CD766 /* V2Analyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */; };
 		7C8CF4782F9FA463007CD766 /* WelcomeBriefRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */; };
@@ -698,6 +699,7 @@
 		7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveChallengeWidgetSnapshot.swift; sourceTree = "<group>"; };
 		7C8CF46F2F9FA437007CD766 /* DailyBriefEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyBriefEngine.swift; sourceTree = "<group>"; };
 		7C8CF4702F9FA437007CD766 /* DailyBriefStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyBriefStore.swift; sourceTree = "<group>"; };
+		790FA252417E43B99A490A73 /* RecentCardioCompletionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentCardioCompletionStore.swift; sourceTree = "<group>"; };
 		7C8CF4712F9FA437007CD766 /* DailyBriefTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyBriefTemplates.swift; sourceTree = "<group>"; };
 		7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Analyzer.swift; sourceTree = "<group>"; };
 		7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeBriefRow.swift; sourceTree = "<group>"; };
@@ -1025,6 +1027,7 @@
 				7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */,
 				7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */,
 				7C8CF4702F9FA437007CD766 /* DailyBriefStore.swift */,
+				790FA252417E43B99A490A73 /* RecentCardioCompletionStore.swift */,
 				7C8CF4712F9FA437007CD766 /* DailyBriefTemplates.swift */,
 				21B04047B245CC8F11C66346 /* ActiveWorkoutView+Actions.swift */,
 				E8354565A7AE5145685CA422 /* ActiveWorkoutView+Init.swift */,
@@ -1994,6 +1997,7 @@
 				A46140EBA8110B0E3A64191F /* DashboardView+Header.swift in Sources */,
 				7C8CF4722F9FA437007CD766 /* DailyBriefTemplates.swift in Sources */,
 				7C8CF4732F9FA437007CD766 /* DailyBriefStore.swift in Sources */,
+				233674C459A7479781D40939 /* RecentCardioCompletionStore.swift in Sources */,
 				7C8CF4742F9FA437007CD766 /* DailyBriefEngine.swift in Sources */,
 				0EF44036973BBDCE11C010EF /* DashboardView+Macros.swift in Sources */,
 				9ABC4959A15ABF09ABD3B7CD /* DashboardView+Activity.swift in Sources */,
@@ -2129,7 +2133,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RunningActivityWidget/RunningActivityWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 66;
+				CURRENT_PROJECT_VERSION = 67;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Daily Goals";
@@ -2160,7 +2164,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RunningActivityWidget/RunningActivityWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 66;
+				CURRENT_PROJECT_VERSION = 67;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Daily Goals";
@@ -2191,7 +2195,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33Watch/Fit33Watch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 66;
+				CURRENT_PROJECT_VERSION = 67;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fit33Watch/Info.plist;
@@ -2225,7 +2229,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33Watch/Fit33Watch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 66;
+				CURRENT_PROJECT_VERSION = 67;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fit33Watch/Info.plist;
@@ -2382,7 +2386,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 66;
+				CURRENT_PROJECT_VERSION = 67;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2420,7 +2424,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 66;
+				CURRENT_PROJECT_VERSION = 67;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

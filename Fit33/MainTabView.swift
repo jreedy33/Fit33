@@ -12,6 +12,10 @@ struct MainTabView: View {
     @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var badgeCounter = HomeBadgeCounter.shared
     @StateObject private var pushPermissionCoordinator = PushPermissionCoordinator.shared
+    /// Cardio Redesign — Wave 4f (2026-05-02 per-user request).
+    /// Drives the GLOBAL active-cardio cover so the user can minimize
+    /// the running/walking screen and return via the red Workout tab.
+    @ObservedObject private var cardioSession = CardioSessionManager.shared
     // ⚡️ Tab infrastructure — plain references (NOT @StateObject) to avoid
     // re-rendering ALL tabs whenever isTransitioning/isPreloadingComplete changes.
     // These are only used for method calls in onChange handlers.
@@ -32,11 +36,22 @@ struct MainTabView: View {
     ]
     
     private var currentTabColor: Color {
-        // Workout tab turns red when workout is active
-        if selectedTab == 2 && workoutManager.isWorkoutActive {
+        // Workout tab turns red when ANY workout is active — strength
+        // (`workoutManager.isWorkoutActive`) OR cardio (the new
+        // `CardioSessionManager` flow). Both paths share the same
+        // visual signal so the user always knows there's a session in
+        // flight to come back to.
+        if selectedTab == 2 && (workoutManager.isWorkoutActive || cardioSession.hasLiveSession) {
             return .red
         }
         return tabs[selectedTab].color
+    }
+
+    /// `true` when an outdoor cardio session is in flight (active /
+    /// paused / pre-start). Drives the red Workout tab indicator AND
+    /// the tap-to-restore behavior in `handleSelectedTabChange`.
+    private var hasActiveCardio: Bool {
+        cardioSession.hasLiveSession
     }
     
     var body: some View {
@@ -86,7 +101,7 @@ struct MainTabView: View {
             }
             .tabContentOptimized()
             .tabItem {
-                if workoutManager.isWorkoutActive && selectedTab != 2 {
+                if (workoutManager.isWorkoutActive || hasActiveCardio) && selectedTab != 2 {
                     Label {
                         Text(tabs[2].title)
                             .foregroundColor(.red)
@@ -308,6 +323,36 @@ struct MainTabView: View {
         .sheet(isPresented: $pushPermissionCoordinator.showPrimerSheet) {
             NotificationPrimerSheet()
         }
+        // MARK: - Global active-cardio cover (Wave 4f — 2026-05-02)
+        //
+        // `OutdoorCardioActiveView` is presented at the ROOT of the app
+        // so the user can minimize it (chevron-down in top-left) and
+        // browse other tabs while their walk / run / cycle continues
+        // running in the background. Tapping the red Workout tab in the
+        // bottom tab bar restores it (handled in `handleSelectedTabChange`).
+        // The binding's setter routes "swipe / programmatic dismiss"
+        // through `minimize()` so the GPS engine + Live Activity stay
+        // alive — the only way to actually END a session is the red
+        // "End" button inside the active view.
+        .fullScreenCover(isPresented: Binding(
+            get: { cardioSession.isPresentingActive },
+            set: { newValue in
+                if !newValue && cardioSession.hasLiveSession {
+                    cardioSession.minimize()
+                }
+            }
+        )) {
+            CardioActiveSessionHost(isPresented: Binding(
+                get: { cardioSession.isPresentingActive },
+                set: { newValue in
+                    if !newValue && cardioSession.hasLiveSession {
+                        cardioSession.minimize()
+                    }
+                }
+            ))
+            .environmentObject(userManager)
+            .environmentObject(workoutManager)
+        }
         .task {
             guard !hasCheckedNotificationPermission else { return }
             hasCheckedNotificationPermission = true
@@ -348,6 +393,25 @@ struct MainTabView: View {
     /// scroll-to-top, GO-button hide, per-tab notifications, pop-to-root, and
     /// post-switch HealthKit / wearable preloads.
     private func handleSelectedTabChange(oldValue: Int, newValue: Int) {
+        // Cardio Redesign — Wave 4f. Tapping the (red) Workout tab while
+        // a cardio session is minimized re-presents the active screen
+        // INSTEAD of switching tabs. Matches the user's "tap workout
+        // button → back to running screen" requirement. We don't change
+        // `selectedTab`; we just flip `isMinimized` so the global cover
+        // re-presents over whatever tab they were on.
+        if newValue == 2 && cardioSession.isMinimized && cardioSession.hasLiveSession {
+            cardioSession.restore()
+            // Bounce the selection back so the user lands where they
+            // were when the cover dismisses (prevents an awkward
+            // "you're suddenly on the workout tab" surprise).
+            if oldValue != 2 {
+                Task { @MainActor in
+                    selectedTab = oldValue
+                }
+            }
+            return
+        }
+
         if oldValue != newValue {
             MainThreadWatchdog.shared.setContext("tab_switch_\(oldValue)→\(newValue)")
             let isInstantSwitch = tabPreloader.isPreloadingComplete || lazyTabManager.isEagerModeEnabled

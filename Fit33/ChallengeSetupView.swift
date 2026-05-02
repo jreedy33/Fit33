@@ -1013,15 +1013,19 @@ struct TemplateCard: View {
                         .multilineTextAlignment(.center)
 
                     if template.requiresStrava == true {
-                        // Sprint 20260811 — attribution pill for Strava-gated
-                        // templates. Mandatory by Strava brand guidelines.
-                        Text("Powered by Strava")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.orange.opacity(0.18)))
-                            .foregroundColor(.orange)
+                        // 2026-05-02 Strava brand-guideline fix: was a
+                        // free-text "Powered by Strava" pill, which
+                        // violates Brand Guidelines §1 (do not freestyle
+                        // the brand mark — use the official asset).
+                        // Swapped for the canonical
+                        // `Image("PoweredByStrava")` lockup at the 20pt
+                        // brand-guideline minimum height.
+                        Image("PoweredByStrava")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(height: 20)
+                            .accessibilityLabel("Powered by Strava")
                     }
 
                     Text("\(template.defaultDurationDays) days")

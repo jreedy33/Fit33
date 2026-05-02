@@ -792,7 +792,7 @@ struct RecentCardioWorkoutCard: View {
                         // `accentColorOverride` is in play (cardio recent
                         // log uses source-colored accents on the card
                         // border, so an inline brand chip is redundant).
-                        if origin != .whoop && !suppressInlineOriginBadge {
+                        if origin != .whoop && origin != .strava && !suppressInlineOriginBadge {
                             sourceBadge
                                 .padding(.top, 2)
                         }
@@ -814,6 +814,32 @@ struct RecentCardioWorkoutCard: View {
                             .foregroundColor(.white)
                             .padding(.trailing, 8)
                             .accessibilityLabel("WHOOP")
+                    }
+
+                    // 2026-05-02 Strava brand attribution: the official
+                    // "Powered by Strava" lockup must appear on every
+                    // surface displaying Strava-sourced data. The parent
+                    // screen (CardioLandingView / DashboardStravaWidget /
+                    // StravaSettingsView) already shows it at top-of-page
+                    // when those surfaces are present, but a Strava row
+                    // can also appear in the dashboard's recent-activity
+                    // list when the user has hidden the standalone Strava
+                    // widget. Rendering the lockup inline makes the
+                    // attribution row-bound so it travels with the data
+                    // regardless of which list contains the card. Sized
+                    // 20pt — Strava Brand Guidelines minimum height for
+                    // the "Powered by Strava" lockup. Replaces the
+                    // chevron-row trailing area; the brand-colored
+                    // capsule below the date is suppressed in this case
+                    // (the lockup IS the attribution).
+                    if origin == .strava {
+                        Image("PoweredByStrava")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(height: 20)
+                            .padding(.trailing, 8)
+                            .accessibilityLabel("Powered by Strava")
                     }
 
                     Image(systemName: "chevron.right")

@@ -43,6 +43,16 @@ struct StravaActivityRecapSheet: View {
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, Spacing.xs)
+
+                        // Strava Brand Guidelines §1 (2026-05-02 compliance):
+                        // every screen that renders Strava-sourced data must
+                        // display the official "Powered by Strava" lockup.
+                        // The header already shows the orange brand glyph,
+                        // but the wordmark itself is the required attribution
+                        // — the orange color alone is not sufficient. Centered
+                        // 24pt-tall lockup keeps it visible without competing
+                        // with the metric grids above.
+                        poweredByStravaFooter
                     }
                     .padding(.horizontal, Spacing.md)
                     .padding(.vertical, Spacing.md)
@@ -215,5 +225,27 @@ struct StravaActivityRecapSheet: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 14))
         }
+    }
+
+    // MARK: - Powered-by-Strava attribution (Brand Guidelines §1)
+    //
+    // Mandatory wordmark on every screen that renders Strava-sourced data.
+    // The orange color used in the header is informational, not the
+    // attribution surface — Strava requires the actual lockup asset
+    // (`Image("PoweredByStrava")`). Centered, 24pt tall = above the 20pt
+    // minimum height in the brand guidelines while staying small enough
+    // not to compete with the recap content.
+    private var poweredByStravaFooter: some View {
+        HStack {
+            Spacer()
+            Image("PoweredByStrava")
+                .resizable()
+                .renderingMode(.original)
+                .aspectRatio(contentMode: .fit)
+                .frame(height: 24)
+                .accessibilityLabel("Powered by Strava")
+            Spacer()
+        }
+        .padding(.top, Spacing.sm)
     }
 }

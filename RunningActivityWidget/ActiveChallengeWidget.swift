@@ -1416,9 +1416,9 @@ private struct ChallengeEmptyState: View {
 // gradient + rounded-pill look (orange→red for trash talk,
 // blue→cyan for cheers) so the home-screen surface and the
 // `ChallengeReactionsView.reactionBubble` are clearly the same
-// component. Vanishes the moment the user opens the app — see
-// `SmackTalkWidgetBridge.clear()` wired into `Fit33App`'s
-// scenePhase `.active` observer.
+// component. Cleared when the app process ends or on sign-out — see
+// `SmackTalkWidgetBridge.clear()` (`AppDelegate.applicationWillTerminate`
+// + `SupabaseManager.signOut`).
 
 /// Which horizontal side of the bubble the tail attaches to. The
 /// tail's tip / base x positions mirror across the bubble's vertical

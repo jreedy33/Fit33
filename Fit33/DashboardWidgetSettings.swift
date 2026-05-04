@@ -567,8 +567,8 @@ struct WidgetSettingsSheet: View {
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    Color(red: 1.00, green: 0.84, blue: 0.00),
-                                    Color(red: 0.95, green: 0.50, blue: 0.30)
+                                    OlympianPathBluePalette.color(for: 2),
+                                    OlympianPathBluePalette.color(for: 5)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -583,7 +583,7 @@ struct WidgetSettingsSheet: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text("Path to 33")
+                        Text("Path to Olympian")
                             .font(.subheadline)
                             .fontWeight(.semibold)
                             .foregroundColor(.primary)
@@ -599,7 +599,7 @@ struct WidgetSettingsSheet: View {
                             )
                     }
 
-                    Text("Your 33 personalized goals to Olympian \(String(OlympianPathService.currentSeasonYear))")
+                    Text("Track 33 goals on your personal 365-day Path (not calendar-year only).")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(2)
@@ -613,8 +613,8 @@ struct WidgetSettingsSheet: View {
                             isSelected.wrappedValue
                                 ? LinearGradient(
                                     colors: [
-                                        Color(red: 1.00, green: 0.84, blue: 0.00),
-                                        Color(red: 0.95, green: 0.50, blue: 0.30)
+                                        OlympianPathBluePalette.color(for: 2),
+                                        OlympianPathBluePalette.color(for: 5)
                                     ],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing

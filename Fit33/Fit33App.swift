@@ -58,6 +58,10 @@ private func resetOnboardingForTesting() {
 
 // MARK: - App Delegate for Push Notifications
 class AppDelegate: NSObject, UIApplicationDelegate {
+    func applicationWillTerminate(_ application: UIApplication) {
+        SmackTalkWidgetBridge.clear()
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         Task { @MainActor in
             PushNotificationService.shared.handleDeviceToken(deviceToken)
@@ -192,7 +196,6 @@ struct Fit33App: App {
     //   • NewUserJourneyTracker.checkEnrollmentAndActivate (idempotent)
     //   • DEBUG watchdog/FPS resume
     //   • NotificationManager.performSmartCheck + clearBadge
-    //   • SmackTalkWidgetBridge.clear (UI freshness)
     //   • WorkoutManager.checkWorkoutStateOnForeground (active workout)
     //   • HealthKitManager/Service.checkAuthorizationStatus
     //   • WHOOP/Oura/Strava .refreshConnectionState (cheap keychain reads)
@@ -1005,14 +1008,10 @@ struct Fit33App: App {
                         // ═══ IMMEDIATE (main thread, sync) ═══
                         NotificationManager.shared.performSmartCheck()
                         NotificationManager.shared.clearBadge() // Clear app icon badge immediately on open
-                        // Smack-talk widget shout bubble is "show until the
-                        // user opens the app" — wipe the slot the moment
-                        // we go active so the comic-book "Do better!"
-                        // yelling out of the type emoji disappears from
-                        // the home-screen widget. Runs on every foreground
-                        // (cheap — App Group write + WidgetCenter reload
-                        // only when there's actually a payload to clear).
-                        SmackTalkWidgetBridge.clear()
+                        // Home-screen battle-cry bubble persists across
+                        // foreground/inactive transitions; it is cleared on
+                        // app termination (`AppDelegate.applicationWillTerminate`)
+                        // and sign-out so it does not leak across sessions.
                         WorkoutManager.shared.checkWorkoutStateOnForeground()
                         HealthKitManager.shared.checkAuthorizationStatus()
                         HealthKitService.shared.checkAuthorizationStatus()

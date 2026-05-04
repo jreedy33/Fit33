@@ -25,45 +25,33 @@ struct OlympianPathView: View {
     @StateObject private var service = OlympianPathService.shared
 
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.dismiss) private var dismiss
 
     @State private var selectedGoal: OlympianGoal?
     @State private var yearEndShareItem: OlympianShareItem?
 
     private var year: Int { OlympianPathService.currentSeasonYear }
 
-    /// Year as a string with NO grouping separator (`"2026"` not `"2,026"`).
-    /// SwiftUI's default `Text("\(intValue)")` runs through Locale-aware
-    /// number formatting and inserts thousands separators. Years are
-    /// identifiers, not quantities — they should never group. Used in every
-    /// "Path to YYYY" / "Olympian YYYY" string in this view.
-    private var yearText: String { String(year) }
-
     /// True between Dec 27 and Jan 7 (inclusive) — the window the year-end
     /// recap card surfaces in the detail screen. The window straddles the
     /// year boundary deliberately so the user can share their *previous*
     /// year's run for the first week of the new season.
-    private var isInYearEndRecapWindow: Bool {
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.month, .day], from: Date())
-        guard let month = components.month, let day = components.day else { return false }
-        return (month == 12 && day >= 27) || (month == 1 && day <= 7)
+    /// Also surfaces in the last ~3 weeks of the personal 365-day window so
+    /// users who finish late in their Path still see share affordance.
+    private var showSeasonRecapCard: Bool {
+        service.daysRemainingOnPath <= 21 || isInYearEndRecapWindow
     }
 
     var body: some View {
         ZStack {
-            AnimatedOrbBackground.stats(colorScheme: colorScheme)
+            AnimatedOrbBackground.olympianPath(colorScheme: colorScheme)
 
             ScrollView {
                 LazyVStack(spacing: Spacing.lg) {
                     headerCard
 
-                    // 2026-05-04 — Year-end recap: surfaces between
-                    // Dec 27 and Jan 7 so users see it on either side
-                    // of the year boundary. Tap → OS share sheet
-                    // (uses the same `OlympianShareItem` as the
-                    // celebration overlay's Share button).
-                    if isInYearEndRecapWindow {
+                    // Year-end / end-of-Path recap — Dec 27 → Jan 7, or last 21
+                    // days of the personal 365-day window.
+                    if showSeasonRecapCard {
                         yearEndRecapCard
                     }
 
@@ -94,17 +82,8 @@ struct OlympianPathView: View {
             }
             .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Path to \(yearText)")
+        .navigationTitle("Path to Olympian")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "chevron.left")
-                        .font(.ds_heading3)
-                        .foregroundColor(.primary)
-                }
-            }
-        }
         .task {
             await service.loadCurrentSeason()
         }
@@ -133,17 +112,17 @@ struct OlympianPathView: View {
     /// page below the header. Pull-to-refresh and the "Try again" tap
     /// both call `loadCurrentSeason(force: true)`.
     private var emptyStateCard: some View {
-        let goldAccent = Color(red: 1.00, green: 0.84, blue: 0.00)
+        let pathAccent = OlympianPathBluePalette.color(for: 3)
 
         return VStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(goldAccent.opacity(0.12))
+                    .fill(pathAccent.opacity(0.12))
                     .frame(width: 64, height: 64)
                 Image(systemName: service.isLoading ? "hourglass" : "crown.fill")
                     .font(.title)
                     .foregroundStyle(LinearGradient(
-                        colors: [goldAccent, service.archetype.accent],
+                        colors: [pathAccent, OlympianPathBluePalette.color(for: 5)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ))
@@ -202,7 +181,7 @@ struct OlympianPathView: View {
                     .padding(.vertical, 10)
                     .background(
                         Capsule().fill(LinearGradient(
-                            colors: [goldAccent, service.archetype.accent],
+                            colors: [pathAccent, OlympianPathBluePalette.color(for: 5)],
                             startPoint: .leading,
                             endPoint: .trailing
                         ))
@@ -213,14 +192,14 @@ struct OlympianPathView: View {
         }
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity)
-        .adaptiveSleekCard(cornerRadius: 20, accentColor: goldAccent)
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: pathAccent)
     }
 
     // MARK: - Year-end recap card
 
     private var yearEndRecapCard: some View {
-        let goldAccent = Color(red: 1.00, green: 0.84, blue: 0.00)
-        let coralAccent = Color(red: 0.95, green: 0.50, blue: 0.30)
+        let pathAccent = OlympianPathBluePalette.color(for: 2)
+        let pathDeep = OlympianPathBluePalette.color(for: 5)
 
         // Recap reflects whichever season the user actually engaged with
         // in this window — early-Jan opens reflect last year, late-Dec
@@ -236,7 +215,7 @@ struct OlympianPathView: View {
                 Image(systemName: "sparkles")
                     .font(.subheadline)
                     .foregroundStyle(LinearGradient(
-                        colors: [goldAccent, coralAccent],
+                        colors: [pathAccent, pathDeep],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ))
@@ -274,7 +253,7 @@ struct OlympianPathView: View {
                 .padding(.vertical, 10)
                 .background(
                     LinearGradient(
-                        colors: [goldAccent, coralAccent],
+                        colors: [pathAccent, pathDeep],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
@@ -285,7 +264,7 @@ struct OlympianPathView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .adaptiveSleekCard(cornerRadius: 20, accentColor: goldAccent)
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: pathAccent)
     }
 
     // MARK: - Header
@@ -303,13 +282,7 @@ struct OlympianPathView: View {
                         .trim(from: 0, to: min(1.0, Double(progress.completed) / Double(max(progress.total, 33))))
                         .stroke(
                             AngularGradient(
-                                colors: [
-                                    Color(red: 0.55, green: 0.75, blue: 0.95),
-                                    Color(red: 0.40, green: 0.85, blue: 0.65),
-                                    Color(red: 0.95, green: 0.75, blue: 0.30),
-                                    Color(red: 0.95, green: 0.50, blue: 0.30),
-                                    Color(red: 1.00, green: 0.84, blue: 0.00)
-                                ],
+                                colors: OlympianPathBluePalette.ringAngularColors,
                                 center: .center
                             ),
                             style: StrokeStyle(lineWidth: 10, lineCap: .round)
@@ -330,11 +303,17 @@ struct OlympianPathView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Your Path to Olympian \(yearText)")
+                    Text("Path to Olympian")
                         .font(.ds_heading3)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
                         .multilineTextAlignment(.leading)
+
+                    Text(service.path365Subtitle)
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     HStack(spacing: 6) {
                         Image(systemName: service.archetype.icon)
@@ -357,14 +336,16 @@ struct OlympianPathView: View {
         }
         .padding(Spacing.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .adaptiveSleekCard(cornerRadius: 24, accentColor: service.archetype.accent)
+        .adaptiveSleekCard(cornerRadius: 24, accentColor: OlympianPathBluePalette.color(for: 3))
     }
 
     private var tierProgressDots: some View {
         HStack(spacing: 4) {
             ForEach(1...5, id: \.self) { tier in
                 Circle()
-                    .fill(service.highestClearedTier >= tier ? colorForTier(tier) : Color.gray.opacity(0.25))
+                    .fill(service.highestClearedTier >= tier
+                          ? OlympianPathBluePalette.color(for: tier)
+                          : Color.gray.opacity(0.25))
                     .frame(width: 9, height: 9)
             }
 
@@ -406,7 +387,7 @@ struct OlympianPathView: View {
 
         return HStack(spacing: 10) {
             Circle()
-                .fill(colorForTier(tier))
+                .fill(OlympianPathBluePalette.color(for: tier))
                 .frame(width: 12, height: 12)
                 .overlay(
                     Circle()
@@ -421,11 +402,11 @@ struct OlympianPathView: View {
                         .foregroundColor(.primary)
                     Text(tierName(tier))
                         .font(.ds_labelMedium)
-                        .foregroundColor(colorForTier(tier))
+                        .foregroundColor(OlympianPathBluePalette.color(for: tier))
                     if isComplete {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.caption)
-                            .foregroundColor(colorForTier(tier))
+                            .foregroundColor(OlympianPathBluePalette.color(for: tier))
                     }
                 }
                 Text("\(unlocked) / \(goals.count) unlocked")
@@ -455,16 +436,18 @@ struct OlympianPathView: View {
             }
         }
         .padding(Spacing.md)
-        .adaptiveSleekCard(cornerRadius: 20, accentColor: Color(red: 1.00, green: 0.84, blue: 0.00))
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: OlympianPathBluePalette.color(for: 4))
     }
 
     private func olympianBadgeChip(_ badge: OlympianSeasonBadge) -> some View {
+        let c1 = OlympianPathBluePalette.color(for: 2)
+        let c2 = OlympianPathBluePalette.color(for: 5)
         VStack(spacing: 4) {
             Image(systemName: "crown.fill")
                 .font(.title2)
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [Color(red: 1.00, green: 0.84, blue: 0.00), badge.resolvedArchetype.accent],
+                        colors: [c1, c2],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -480,7 +463,7 @@ struct OlympianPathView: View {
                 .fill(
                     RadialGradient(
                         colors: [
-                            Color(red: 1.00, green: 0.84, blue: 0.00).opacity(0.15),
+                            c1.opacity(0.15),
                             Color.clear
                         ],
                         center: .center,
@@ -490,22 +473,11 @@ struct OlympianPathView: View {
                 )
         )
         .overlay(
-            Circle().stroke(Color(red: 1.00, green: 0.84, blue: 0.00).opacity(0.4), lineWidth: 1)
+            Circle().stroke(c1.opacity(0.4), lineWidth: 1)
         )
     }
 
     // MARK: - Helpers
-
-    private func colorForTier(_ tier: Int) -> Color {
-        switch tier {
-        case 1: return Color(red: 0.55, green: 0.75, blue: 0.95)
-        case 2: return Color(red: 0.40, green: 0.85, blue: 0.65)
-        case 3: return Color(red: 0.95, green: 0.75, blue: 0.30)
-        case 4: return Color(red: 0.95, green: 0.50, blue: 0.30)
-        case 5: return Color(red: 1.00, green: 0.84, blue: 0.00)
-        default: return .gray
-        }
-    }
 
     private func tierName(_ tier: Int) -> String {
         switch tier {
@@ -710,7 +682,7 @@ private struct GoalDetailSheet: View {
                             .fontWeight(.semibold)
                     }
                     .font(.ds_labelMedium)
-                    .foregroundColor(.orange)
+                    .foregroundColor(goal.tierColor)
                     .frame(maxWidth: .infinity)
                 }
             }

@@ -71,6 +71,12 @@ class BadgeService: ObservableObject {
     
     var unlockedCount: Int { achievements.filter(\.isUnlocked).count }
     var totalCount: Int { achievements.count }
+
+    /// When > 0, `checkAndUnlock` / `incrementAndUnlock` skip per-call
+    /// `fetchAchievements`, unlock toasts, and `lastUnlockedAchievement`
+    /// fan-out — used by `resyncOlympianProgressFromLocalTotals()` so a
+    /// first-open backfill doesn't spam 20+ celebration toasts.
+    private var achievementSyncBatchDepth: Int = 0
     
     private init() {}
     
@@ -113,7 +119,11 @@ class BadgeService: ObservableObject {
                 ))
                 .execute()
                 .value
-            return await handleUnlockResult(results: results, key: key)
+            let unlocked = await handleUnlockResult(results: results, key: key)
+            if achievementSyncBatchDepth == 0 {
+                await fetchAchievements()
+            }
+            return unlocked
         } catch {
             AppLogger.error("Failed to check achievement \(key): \(error.localizedDescription)", category: .general)
             return false
@@ -140,7 +150,11 @@ class BadgeService: ObservableObject {
                 ))
                 .execute()
                 .value
-            return await handleUnlockResult(results: results, key: key)
+            let unlocked = await handleUnlockResult(results: results, key: key)
+            if achievementSyncBatchDepth == 0 {
+                await fetchAchievements()
+            }
+            return unlocked
         } catch {
             AppLogger.error("Failed to increment achievement \(key): \(error.localizedDescription)", category: .general)
             return false
@@ -148,7 +162,7 @@ class BadgeService: ObservableObject {
     }
 
     /// Shared post-RPC handling for both `checkAndUnlock` and
-    /// `incrementAndUnlock` — XP credit, toast cache, and refresh.
+    /// `incrementAndUnlock` — XP credit, toast cache (unless batched).
     private func handleUnlockResult(results: [UnlockResult], key: String) async -> Bool {
         guard let result = results.first, result.unlocked else { return false }
 
@@ -158,32 +172,33 @@ class BadgeService: ObservableObject {
             }
         }
 
-        await MainActor.run {
-            if let match = self.achievements.first(where: { $0.achievementKey == key }) {
-                self.lastUnlockedAchievement = match
-            } else if let title = result.achievementTitle {
-                self.lastUnlockedAchievement = AchievementItem(
-                    achievementKey: key,
-                    title: title,
-                    description: "",
-                    icon: result.achievementIcon ?? "star.fill",
-                    category: "special",
-                    threshold: 1,
-                    xpReward: result.xpReward ?? 0,
-                    rarity: result.achievementRarity ?? "common",
-                    progress: 1,
-                    unlockedAt: ISO8601DateFormatter().string(from: Date()),
-                    sortOrder: 0
-                )
+        let silentBatch = achievementSyncBatchDepth > 0
+        if !silentBatch {
+            await MainActor.run {
+                if let match = self.achievements.first(where: { $0.achievementKey == key }) {
+                    self.lastUnlockedAchievement = match
+                } else if let title = result.achievementTitle {
+                    self.lastUnlockedAchievement = AchievementItem(
+                        achievementKey: key,
+                        title: title,
+                        description: "",
+                        icon: result.achievementIcon ?? "star.fill",
+                        category: "special",
+                        threshold: 1,
+                        xpReward: result.xpReward ?? 0,
+                        rarity: result.achievementRarity ?? "common",
+                        progress: 1,
+                        unlockedAt: ISO8601DateFormatter().string(from: Date()),
+                        sortOrder: 0
+                    )
+                }
+                self.showUnlockToast = true
             }
-            self.showUnlockToast = true
-        }
 
-        await fetchAchievements()
-
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_500_000_000)
-            self.showUnlockToast = false
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_500_000_000)
+                self.showUnlockToast = false
+            }
         }
 
         return true
@@ -198,8 +213,15 @@ class BadgeService: ObservableObject {
     // user's archetype path doesn't include them; the server short-circuits
     // unknown keys.
 
-    private static var olympianYearPrefix: String {
-        "olympian_\(Calendar.current.component(.year, from: Date()))"
+    /// Mirrors use `olympian_<poolYear>_…` keys seeded in Postgres. Pool year
+    /// comes from `assign_olympian_path` (stored in UserDefaults by
+    /// `OlympianPathService`) so it stays aligned with the active achievement
+    /// pool; falls back to the calendar year before the first path load.
+    private static func olympianMirrorPrefix() -> String {
+        let stored = UserDefaults.standard.integer(forKey: OlympianPathService.mirrorPoolYearDefaultsKey)
+        let calYear = Calendar.current.component(.year, from: Date())
+        let y = stored > 0 ? stored : calYear
+        return "olympian_\(y)"
     }
 
     func onWorkoutCompleted(totalWorkouts: Int) async {
@@ -210,7 +232,7 @@ class BadgeService: ObservableObject {
         await checkAndUnlock(key: "workouts_500", progress: totalWorkouts)
 
         // Olympian Path mirrors (universal + per-archetype workout counters)
-        let p = Self.olympianYearPrefix
+        let p = Self.olympianMirrorPrefix()
         await checkAndUnlock(key: "\(p)_first_workout",   progress: totalWorkouts)
         await checkAndUnlock(key: "\(p)_workouts_100",    progress: totalWorkouts)
         // Strength path mirrors (silent no-op for non-strength users)
@@ -237,7 +259,7 @@ class BadgeService: ObservableObject {
         await checkAndUnlock(key: "streak_60", progress: streak)
         await checkAndUnlock(key: "streak_100", progress: streak)
 
-        let p = Self.olympianYearPrefix
+        let p = Self.olympianMirrorPrefix()
         await checkAndUnlock(key: "\(p)_streak_7",   progress: streak)
         await checkAndUnlock(key: "\(p)_streak_14",  progress: streak)
         await checkAndUnlock(key: "\(p)_streak_30",  progress: streak)
@@ -249,7 +271,7 @@ class BadgeService: ObservableObject {
         await checkAndUnlock(key: "first_friend", progress: totalFriends)
         await checkAndUnlock(key: "friends_10", progress: totalFriends)
 
-        let p = Self.olympianYearPrefix
+        let p = Self.olympianMirrorPrefix()
         await checkAndUnlock(key: "\(p)_first_friend",  progress: totalFriends)
         await checkAndUnlock(key: "\(p)_str_friends_10", progress: totalFriends)
         await checkAndUnlock(key: "\(p)_end_friends_10", progress: totalFriends)
@@ -259,7 +281,7 @@ class BadgeService: ObservableObject {
         await checkAndUnlock(key: "first_challenge_won", progress: totalWins)
         await checkAndUnlock(key: "challenges_won_10", progress: totalWins)
 
-        let p = Self.olympianYearPrefix
+        let p = Self.olympianMirrorPrefix()
         await checkAndUnlock(key: "\(p)_won_challenge", progress: totalWins)
     }
     
@@ -267,7 +289,7 @@ class BadgeService: ObservableObject {
         await checkAndUnlock(key: "first_meal_logged", progress: totalMeals)
         await checkAndUnlock(key: "meals_logged_100", progress: totalMeals)
 
-        let p = Self.olympianYearPrefix
+        let p = Self.olympianMirrorPrefix()
         await checkAndUnlock(key: "\(p)_first_meal", progress: totalMeals)
         await checkAndUnlock(key: "\(p)_wl_meals_5",   progress: totalMeals)
         await checkAndUnlock(key: "\(p)_wl_meals_30",  progress: totalMeals)
@@ -279,7 +301,7 @@ class BadgeService: ObservableObject {
     func onWorkoutShared() async {
         await checkAndUnlock(key: "first_workout_shared")
 
-        let p = Self.olympianYearPrefix
+        let p = Self.olympianMirrorPrefix()
         await checkAndUnlock(key: "\(p)_send_challenge")
     }
     
@@ -288,7 +310,7 @@ class BadgeService: ObservableObject {
     func onReactionSent(delta: Int = 1) async {
         await incrementAndUnlock(key: "reactions_sent_50", by: delta)
 
-        let p = Self.olympianYearPrefix
+        let p = Self.olympianMirrorPrefix()
         await incrementAndUnlock(key: "\(p)_react_25",         by: delta)
         await incrementAndUnlock(key: "\(p)_str_react_friend", by: delta)
         await incrementAndUnlock(key: "\(p)_end_react_friend", by: delta)
@@ -299,7 +321,7 @@ class BadgeService: ObservableObject {
     func onPersonalRecord(totalPRs: Int = 1) async {
         await checkAndUnlock(key: "first_pr", progress: totalPRs)
 
-        let p = Self.olympianYearPrefix
+        let p = Self.olympianMirrorPrefix()
         await checkAndUnlock(key: "\(p)_first_pr",   progress: totalPRs)
         await checkAndUnlock(key: "\(p)_str_pr_5",   progress: totalPRs)
         await checkAndUnlock(key: "\(p)_str_pr_10",  progress: totalPRs)
@@ -333,5 +355,51 @@ class BadgeService: ObservableObject {
     func onLeagueMilestone(key: String) async {
         guard key.hasPrefix("milestone_") else { return }
         await checkAndUnlock(key: key)
+    }
+
+    // MARK: - Olympian Path — one-shot local backfill (silent)
+
+    /// Replays lifetime counters from Core Data + in-memory services through
+    /// the same unlock hooks as live events so Path-to-33 goals reflect what
+    /// the user already accomplished before the feature shipped. Suppresses
+    /// unlock toasts while batching; always ends with a single
+    /// `fetchAchievements()`.
+    @MainActor
+    func resyncOlympianProgressFromLocalTotals() async {
+        achievementSyncBatchDepth += 1
+        defer { achievementSyncBatchDepth -= 1 }
+
+        guard let user = UserManager.shared.currentUser else { return }
+
+        let workouts = Int(user.totalWorkouts)
+        let streak = Int(user.currentStreak)
+        let friends = FriendService.shared.friends.count
+        let meals = MealService.shared.lifetimeMealEntryCount()
+        let prApprox = max(1, ExerciseHistoryService.shared.personalRecordsCache.count)
+
+        await onWorkoutCompleted(totalWorkouts: workouts)
+        await onStreakUpdated(streak: streak)
+        await onFriendAdded(totalFriends: friends)
+        await onMealLogged(totalMeals: meals)
+        await onPersonalRecord(totalPRs: prApprox)
+
+        let leagueRank = WeeklyLeagueService.shared.standing?.tierRank ?? 0
+        if leagueRank > 0 {
+            let p = Self.olympianMirrorPrefix()
+            await checkAndUnlock(key: "\(p)_tier_gold", progress: leagueRank)
+            await checkAndUnlock(key: "\(p)_tier_diamond", progress: leagueRank)
+            await checkAndUnlock(key: "\(p)_str_tier_platinum", progress: leagueRank)
+            await checkAndUnlock(key: "\(p)_end_tier_platinum", progress: leagueRank)
+            for t in 1...leagueRank {
+                await onTierAchieved(tierRank: t)
+            }
+        }
+
+        if StravaService.shared.isConnected {
+            let p = Self.olympianMirrorPrefix()
+            await checkAndUnlock(key: "\(p)_end_connect", progress: 1)
+        }
+
+        await fetchAchievements()
     }
 }

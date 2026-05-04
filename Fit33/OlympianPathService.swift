@@ -138,11 +138,51 @@ private struct OlympianAssignmentDTO: Decodable {
     }
 }
 
-/// `assign_olympian_path` envelope.
+/// `assign_olympian_path` envelope. Decodes `pool_year` and epoch fields
+/// flexibly (PostgREST / jsonb may surface `Int` or `Double`).
 private struct AssignPathResponseDTO: Decodable {
     let created: Bool
     let archetype: String?
     let assignments: [OlympianAssignmentDTO]
+    let poolYear: Int?
+    let pathStartedAtEpoch: Double?
+    let pathEndsAtEpoch: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case created, archetype, assignments
+        case poolYear = "pool_year"
+        case pathStartedAtEpoch = "path_started_at_epoch"
+        case pathEndsAtEpoch = "path_ends_at_epoch"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        created = try c.decode(Bool.self, forKey: .created)
+        archetype = try c.decodeIfPresent(String.self, forKey: .archetype)
+        assignments = try c.decode([OlympianAssignmentDTO].self, forKey: .assignments)
+
+        if let py = try? c.decode(Int.self, forKey: .poolYear) {
+            poolYear = py
+        } else if let d = try? c.decode(Double.self, forKey: .poolYear) {
+            poolYear = Int(d)
+        } else {
+            poolYear = nil
+        }
+
+        pathStartedAtEpoch = Self.decodeFlexibleEpoch(c, key: .pathStartedAtEpoch)
+        pathEndsAtEpoch = Self.decodeFlexibleEpoch(c, key: .pathEndsAtEpoch)
+    }
+
+    private static func decodeFlexibleEpoch(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        key: CodingKeys
+    ) -> Double? {
+        guard c.contains(key) else { return nil }
+        if let d = try? c.decode(Double.self, forKey: key) { return d }
+        if let i = try? c.decode(Int.self, forKey: key) { return Double(i) }
+        if let s = try? c.decode(String.self, forKey: key), let d = Double(s) { return d }
+        return nil
+    }
 }
 
 /// One row in `user_olympian_seasons` (stackable badge).
@@ -209,19 +249,36 @@ struct OlympianGoal: Identifiable, Hashable {
         return min(1.0, Double(progress) / Double(threshold))
     }
 
-    /// Tier-weighted display color. Tier 5 (Olympian) gets a gold/legendary
-    /// treatment; lower tiers grade up cool → warm so the visual progression
-    /// is obvious at a glance.
+    /// Tier blues for Path UI — single coherent gradient-blue family (Tier 1
+    /// light → Tier 5 deep). Distinct from league tier colors.
     var tierColor: Color {
+        OlympianPathBluePalette.color(for: tier)
+    }
+}
+
+// MARK: - Path visual palette (gradient blue)
+
+enum OlympianPathBluePalette {
+    static func color(for tier: Int) -> Color {
         switch tier {
-        case 1: return Color(red: 0.55, green: 0.75, blue: 0.95)  // Sky
-        case 2: return Color(red: 0.40, green: 0.85, blue: 0.65)  // Mint
-        case 3: return Color(red: 0.95, green: 0.75, blue: 0.30)  // Amber
-        case 4: return Color(red: 0.95, green: 0.50, blue: 0.30)  // Coral
-        case 5: return Color(red: 1.00, green: 0.84, blue: 0.00)  // Gold
-        default: return .gray
+        case 1: return Color(red: 0.62, green: 0.82, blue: 1.00) // ice
+        case 2: return Color(red: 0.42, green: 0.68, blue: 0.98) // sky
+        case 3: return Color(red: 0.26, green: 0.52, blue: 0.95) // cobalt
+        case 4: return Color(red: 0.14, green: 0.36, blue: 0.88) // royal
+        case 5: return Color(red: 0.06, green: 0.22, blue: 0.72) // deep / finale
+        default: return Color(red: 0.45, green: 0.65, blue: 0.95)
         }
     }
+
+    /// Angular gradient stops for the header ring (all blues).
+    static let ringAngularColors: [Color] = [
+        Color(red: 0.62, green: 0.82, blue: 1.00),
+        Color(red: 0.42, green: 0.68, blue: 0.98),
+        Color(red: 0.26, green: 0.52, blue: 0.95),
+        Color(red: 0.14, green: 0.36, blue: 0.88),
+        Color(red: 0.06, green: 0.22, blue: 0.72),
+        Color(red: 0.62, green: 0.82, blue: 1.00)
+    ]
 }
 
 // MARK: - Service
@@ -230,8 +287,11 @@ struct OlympianGoal: Identifiable, Hashable {
 final class OlympianPathService: ObservableObject {
     static let shared = OlympianPathService()
 
-    /// Active season year. `Calendar.current` so the user's local timezone
-    /// determines when 2026 → 2027 cuts over (matches Daily Quests + League).
+    /// UserDefaults — Olympian mirror keys `olympian_<year>_…` in `BadgeService`
+    /// must match the pool seeded in Postgres. Written from `assign_olympian_path`.
+    static let mirrorPoolYearDefaultsKey = "olympian_mirror_pool_year"
+
+    /// Active season year for RPC `p_year` (matches seeded `achievements.season_year`).
     static var currentSeasonYear: Int {
         Calendar.current.component(.year, from: Date())
     }
@@ -244,6 +304,11 @@ final class OlympianPathService: ObservableObject {
 
     /// Resolved archetype for the current season (frozen at assignment).
     @Published private(set) var archetype: OlympianArchetype = .general
+
+    /// Personal Path clock — set from `assign_olympian_path` (epoch fields).
+    /// `nil` until the server returns window data (migration `20260505`).
+    @Published private(set) var pathStartedAt: Date?
+    @Published private(set) var pathEndsAt: Date?
 
     /// Highest tier (1..5) the user has fully cleared. 0 if no tier complete.
     @Published private(set) var highestClearedTier: Int = 0
@@ -265,7 +330,7 @@ final class OlympianPathService: ObservableObject {
     @Published var pendingSeasonCompletion: OlympianSeasonBadge?
 
     private var cancellables = Set<AnyCancellable>()
-    private var lastSyncedYear: Int?
+    private var lastSyncedPoolYear: Int?
 
     private init() {
         // Listen to the global achievement-unlock toast and refresh when one
@@ -301,6 +366,32 @@ final class OlympianPathService: ObservableObject {
         goals.count == 33 && goals.allSatisfy(\.unlocked)
     }
 
+    /// Calendar day index within the personal 365-day Path (1…365).
+    var currentDayOfPath: Int {
+        guard let start = pathStartedAt else { return 1 }
+        let cal = Calendar.current
+        let raw = cal.dateComponents([.day], from: cal.startOfDay(for: start), to: cal.startOfDay(for: Date())).day ?? 0
+        return min(365, max(1, raw + 1))
+    }
+
+    /// Whole days remaining until `pathEndsAt` (0 after the window passes).
+    var daysRemainingOnPath: Int {
+        guard let end = pathEndsAt else {
+            return max(0, 365 - (currentDayOfPath - 1))
+        }
+        let cal = Calendar.current
+        let d = cal.dateComponents([.day], from: cal.startOfDay(for: Date()), to: cal.startOfDay(for: end)).day ?? 0
+        return max(0, d)
+    }
+
+    /// Single-line subtitle for navigation + header (365-day cadence).
+    var path365Subtitle: String {
+        if pathStartedAt != nil {
+            return "Day \(currentDayOfPath) of 365 · \(daysRemainingOnPath) days left"
+        }
+        return "Your personalized 365-day Path"
+    }
+
     // MARK: - Load
 
     /// Resolves archetype, calls `assign_olympian_path`, fetches achievement
@@ -309,7 +400,7 @@ final class OlympianPathService: ObservableObject {
     /// already exist).
     func loadCurrentSeason(force: Bool = false) async {
         let year = Self.currentSeasonYear
-        if !force, lastSyncedYear == year, !goals.isEmpty {
+        if !force, lastSyncedPoolYear == year, !goals.isEmpty {
             return
         }
 
@@ -329,6 +420,16 @@ final class OlympianPathService: ObservableObject {
         // Server responded — clear any prior error before continuing
         lastLoadError = nil
 
+        // 2b. Mirror pool year + 365-day window (optional until migration ships)
+        let poolYear = response.poolYear ?? year
+        UserDefaults.standard.set(poolYear, forKey: Self.mirrorPoolYearDefaultsKey)
+        if let ep = response.pathStartedAtEpoch {
+            pathStartedAt = Date(timeIntervalSince1970: ep)
+        }
+        if let ee = response.pathEndsAtEpoch {
+            pathEndsAt = Date(timeIntervalSince1970: ee)
+        }
+
         // 3. Use the SERVER-provided archetype (frozen at first assignment)
         if let serverArch = response.archetype.flatMap(OlympianArchetype.init(rawValue:)) {
             archetype = serverArch
@@ -336,28 +437,35 @@ final class OlympianPathService: ObservableObject {
             archetype = resolvedArchetype
         }
 
-        // 4. Make sure the BadgeService cache is fresh (seeds .achievements
-        //    with the olympian_2026_* progress rows)
+        // 4. Retroactively sync counters / mirrors so Path reflects historical work
+        await BadgeService.shared.resyncOlympianProgressFromLocalTotals()
+
+        // 5. Canonical achievement rows + progress for rebuild
         await BadgeService.shared.fetchAchievements()
 
-        // 5. Fetch this user's stackable badges
+        // 6. Fetch this user's stackable badges
         await fetchSeasonBadges()
 
-        // 6. Build the 33-goal view
+        // 7. Build the 33-goal view
         rebuildGoals(from: response.assignments)
-        lastSyncedYear = year
+        lastSyncedPoolYear = poolYear
     }
 
     /// Refresh the goal list from the cached achievements (no network round
     /// trip if the cache is fresh enough). Triggers when one of the 33
     /// unlocks via the BadgeService toast.
     func refreshFromCachedAchievements() async {
-        // We need the assignments — fetch a fresh `assign_olympian_path`
-        // response (idempotent server-side). The round-trip is cheap and
-        // ensures the user's archetype + assignments stay in sync if they
-        // ever roll a year boundary mid-session.
         let year = Self.currentSeasonYear
         guard let response = await assignPath(year: year, archetype: archetype) else { return }
+        if let ep = response.pathStartedAtEpoch {
+            pathStartedAt = Date(timeIntervalSince1970: ep)
+        }
+        if let ee = response.pathEndsAtEpoch {
+            pathEndsAt = Date(timeIntervalSince1970: ee)
+        }
+        if let py = response.poolYear {
+            UserDefaults.standard.set(py, forKey: Self.mirrorPoolYearDefaultsKey)
+        }
         await BadgeService.shared.fetchAchievements()
         rebuildGoals(from: response.assignments)
         await maybeTriggerCelebration()

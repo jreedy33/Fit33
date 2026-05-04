@@ -404,6 +404,18 @@ class MealService: ObservableObject {
             return []
         }
     }
+
+    /// Lifetime meal rows on-device — used by `BadgeService.resyncOlympianProgressFromLocalTotals`
+    /// so Olympian nutrition goals catch up after Path opens (retroactive progress).
+    func lifetimeMealEntryCount() -> Int {
+        let request: NSFetchRequest<MealEntry> = MealEntry.fetchRequest()
+        do {
+            return try viewContext.count(for: request)
+        } catch {
+            AppLogger.warning("lifetimeMealEntryCount failed: \(error.localizedDescription)", category: .nutrition)
+            return 0
+        }
+    }
     
     func getTotalNutritionForDate(_ date: Date) -> DayNutritionSummary {
         let meals = getMealsForDate(date)

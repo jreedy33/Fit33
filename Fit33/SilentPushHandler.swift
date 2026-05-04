@@ -79,13 +79,12 @@ enum SilentPushHandler {
     // Active Challenge widget can yell it out of the icon, and
     // reload the widget timeline.
     //
-    // Foreground guard: when the user is actively in the app
-    // (`UIApplication.shared.applicationState == .active`), they
-    // can already see the smack inside `ChallengeDetailView`'s
-    // reaction feed — yelling at them through the widget on top
-    // of that is redundant. We skip the App Group write in that
-    // case; the foreground willPresent banner + in-app feed
-    // carry the message instead.
+    // Always writes the App Group payload (including when
+    // `applicationState == .active`) so the home-screen widget stays
+    // in sync with the banner; duplicate bytes are skipped inside
+    // `SmackTalkWidgetBridge.publish` via payload hash. Dashboard
+    // bubble + dedupe vs realtime live in `RealtimeService`
+    // (`ingestIncomingBattleCryFromNotificationUserInfo`).
     private static func handleChallengeReaction(
         userInfo: [AnyHashable: Any],
         completion: @escaping (UIBackgroundFetchResult) -> Void
@@ -118,9 +117,8 @@ enum SilentPushHandler {
             reactionCategory: category,
             receivedAt: Date()
         )
-        SmackTalkWidgetBridge.publish(payload, shouldWrite: {
-            UIApplication.shared.applicationState != .active
-        })
+        SmackTalkWidgetBridge.publish(payload, shouldWrite: { true })
+        RealtimeService.shared.ingestIncomingBattleCryFromNotificationUserInfo(userInfo)
         completion(.newData)
     }
 

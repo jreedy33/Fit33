@@ -526,6 +526,31 @@ struct AdaptiveGradient {
             )
         }
     }
+
+    /// Path to Olympian detail — blue-forward gradient (pairs with `AnimatedOrbBackground.olympianPath`).
+    static func olympianPath(for colorScheme: ColorScheme) -> LinearGradient {
+        if colorScheme == .dark {
+            return LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.06, green: 0.14, blue: 0.32),
+                    Color(red: 0.03, green: 0.07, blue: 0.18),
+                    Color(red: 0.02, green: 0.04, blue: 0.09)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        } else {
+            return LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.55, green: 0.76, blue: 0.98).opacity(0.42),
+                    Color(red: 0.28, green: 0.52, blue: 0.94).opacity(0.28),
+                    Color.white
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+    }
     
     static func stretch(for colorScheme: ColorScheme) -> LinearGradient {
         if colorScheme == .dark {
@@ -655,6 +680,15 @@ struct AnimatedOrbBackground: View {
             baseGradient: AdaptiveGradient.friends(for: colorScheme),
             primaryOrbColor: .blue,
             secondaryOrbColor: .cyan
+        )
+    }
+
+    /// Path to Olympian — blue orb treatment (`OlympianPathView`).
+    static func olympianPath(colorScheme: ColorScheme) -> AnimatedOrbBackground {
+        AnimatedOrbBackground(
+            baseGradient: AdaptiveGradient.olympianPath(for: colorScheme),
+            primaryOrbColor: Color(red: 0.22, green: 0.48, blue: 0.95),
+            secondaryOrbColor: Color(red: 0.45, green: 0.78, blue: 1.0)
         )
     }
     

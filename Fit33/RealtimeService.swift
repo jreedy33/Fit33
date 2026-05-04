@@ -92,6 +92,12 @@ class RealtimeService: ObservableObject {
     /// `BattleCryShoutBubble` when the Home surface becomes active.
     private var pendingIncomingReactions: [UUID: ChallengeReaction] = [:]
 
+    /// Suppresses duplicate dashboard + home-widget paint when the same
+    /// battle cry lands via `UNUserNotificationCenter` (`willPresent` /
+    /// silent push) and Supabase realtime within a short window.
+    private var lastIncomingBattleCryDedupeKey: String?
+    private var lastIncomingBattleCryDedupeAt: Date?
+
     /// `true` when `MainTabView` is on the Home tab (index 0) and
     /// `scenePhase != .background`. Drives realtime vs buffer behavior
     /// and lets `BattleCryShoutBubble` dismiss when the user leaves.
@@ -115,6 +121,40 @@ class RealtimeService: ObservableObject {
     /// per challenge while off-Home), if any.
     func consumePendingIncomingReaction(for challengeId: UUID) -> ChallengeReaction? {
         pendingIncomingReactions.removeValue(forKey: challengeId)
+    }
+
+    /// Foreground APNs path (`NotificationManager` `willPresent`) so the
+    /// dashboard `BattleCryShoutBubble` paints even when the realtime
+    /// socket is stale or the INSERT event is delayed.
+    func ingestIncomingBattleCryFromNotificationUserInfo(_ userInfo: [AnyHashable: Any]) {
+        guard let challengeIdStr = userInfo["challenge_id"] as? String,
+              let challengeId = UUID(uuidString: challengeIdStr),
+              let senderIdStr = userInfo["from_user_id"] as? String,
+              let senderId = UUID(uuidString: senderIdStr),
+              let emoji = userInfo["reaction_emoji"] as? String,
+              let text = userInfo["reaction_text"] as? String,
+              let me = SupabaseManager.shared.currentUser?.id else { return }
+        if senderId == me { return }
+
+        let reactionKey = (userInfo["reaction_key"] as? String) ?? ""
+        let category = (userInfo["reaction_category"] as? String) ?? "trash_talk"
+        let reactionId = (userInfo["reaction_id"] as? String).flatMap { UUID(uuidString: $0) } ?? UUID()
+        let senderName = userInfo["from_user_name"] as? String
+
+        let reaction = ChallengeReaction(
+            reactionId: reactionId,
+            challengeId: challengeId,
+            senderId: senderId,
+            senderName: senderName,
+            senderPhotoUrl: nil,
+            recipientId: me,
+            reactionKey: reactionKey,
+            reactionEmoji: emoji,
+            reactionText: text,
+            reactionCategory: category,
+            createdAt: Date()
+        )
+        applyIncomingBattleCry(reaction, widgetSenderDisplayName: senderName)
     }
 
     // MARK: - Debounce State
@@ -2017,6 +2057,71 @@ class RealtimeService: ObservableObject {
         )
     }
 
+    /// Writes the latest opponent battle cry into the App Group sidecar
+    /// so the home-screen Active Challenge widget can render the shout
+    /// bubble. Called for every incoming cry (realtime + APNs) — deduped
+    /// by `SmackTalkWidgetBridge.publish` hash when payloads match.
+    private func publishBattleCryToHomeScreenWidget(
+        challengeId: UUID,
+        senderDisplayName: String?,
+        reactionEmoji: String,
+        reactionText: String,
+        reactionCategory: String
+    ) {
+        let full = senderDisplayName ?? "Someone"
+        let first = full
+            .components(separatedBy: " ")
+            .first
+            .flatMap { $0.isEmpty ? nil : $0 } ?? "Someone"
+        let payload = SmackTalkWidgetBridge.WidgetSmackTalk(
+            challengeId: challengeId.uuidString.lowercased(),
+            senderFirstName: first,
+            reactionEmoji: reactionEmoji,
+            reactionText: reactionText,
+            reactionCategory: reactionCategory,
+            receivedAt: Date()
+        )
+        SmackTalkWidgetBridge.publish(payload, shouldWrite: { true })
+    }
+
+    /// Shared path for dashboard bubble + widget + pending buffer.
+    private func applyIncomingBattleCry(
+        _ reaction: ChallengeReaction,
+        widgetSenderDisplayName: String?
+    ) {
+        guard let challengeId = reaction.challengeId else { return }
+
+        let dedupeKey = "\(challengeId.uuidString)|\(reaction.senderId.uuidString)|\(reaction.reactionText)|\(reaction.reactionEmoji)"
+        let now = Date()
+        if let prevKey = lastIncomingBattleCryDedupeKey,
+           let prevAt = lastIncomingBattleCryDedupeAt,
+           prevKey == dedupeKey,
+           now.timeIntervalSince(prevAt) < 4 {
+            AppLogger.debug(
+                "[INCOMING_REACTIONS] Deduped repeat within 4s — \(reaction.reactionEmoji)",
+                category: .network
+            )
+            return
+        }
+        lastIncomingBattleCryDedupeKey = dedupeKey
+        lastIncomingBattleCryDedupeAt = now
+
+        publishBattleCryToHomeScreenWidget(
+            challengeId: challengeId,
+            senderDisplayName: widgetSenderDisplayName ?? reaction.senderName,
+            reactionEmoji: reaction.reactionEmoji,
+            reactionText: reaction.reactionText,
+            reactionCategory: reaction.reactionCategory
+        )
+
+        if isDashboardBattleCryHostVisible {
+            latestIncomingReaction = reaction
+            HapticManager.notification(.warning)
+        } else {
+            pendingIncomingReactions[challengeId] = reaction
+        }
+    }
+
     private func handleIncomingReactionInsert(_ record: [String: AnyJSON]?) async {
         guard let record = record else { return }
 
@@ -2074,15 +2179,7 @@ class RealtimeService: ObservableObject {
             details: "📣 \(reactionEmoji) \(reactionText) for challenge \(challengeIdString.prefix(8))"
         )
 
-        // Home dashboard visible → animate widgets immediately. Otherwise
-        // buffer per challenge so `BattleCryShoutBubble` can show when the
-        // user returns to Home (see `setDashboardBattleCryHostVisible`).
-        if isDashboardBattleCryHostVisible {
-            latestIncomingReaction = reaction
-            HapticManager.notification(.warning)
-        } else {
-            pendingIncomingReactions[challengeId] = reaction
-        }
+        applyIncomingBattleCry(reaction, widgetSenderDisplayName: nil)
     }
 }
 

@@ -1251,7 +1251,8 @@ struct ProfileView: View {
     // badges so the new-user experience stays clean.
     @ViewBuilder
     private var profileOlympianBadge: some View {
-        let goldAccent = Color(red: 1.00, green: 0.84, blue: 0.00)
+        let pathAccent = OlympianPathBluePalette.color(for: 3)
+        let pathDeep = OlympianPathBluePalette.color(for: 5)
         if !olympianPath.goals.isEmpty {
             VStack(spacing: 8) {
                 NavigationLink(destination: OlympianPathView()) {
@@ -1259,11 +1260,11 @@ struct ProfileView: View {
                         Image(systemName: "crown.fill")
                             .font(.subheadline)
                             .foregroundStyle(LinearGradient(
-                                colors: [goldAccent, olympianPath.archetype.accent],
+                                colors: [pathAccent, pathDeep],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ))
-                            .shadow(color: goldAccent.opacity(0.4), radius: 3)
+                            .shadow(color: pathAccent.opacity(0.4), radius: 3)
 
                         Text("\(olympianPath.progress.completed) / 33")
                             .font(.caption)
@@ -1274,10 +1275,11 @@ struct ProfileView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
 
-                            Text("Olympian \(String(OlympianPathService.currentSeasonYear))")
+                        Text(olympianPath.path365Subtitle)
                             .font(.caption)
                             .fontWeight(.semibold)
                             .foregroundColor(.primary)
+                            .lineLimit(1)
 
                         Image(systemName: "chevron.right")
                             .font(.caption2)
@@ -1289,7 +1291,7 @@ struct ProfileView: View {
                         Capsule()
                             .fill(.ultraThinMaterial)
                             .overlay(
-                                Capsule().stroke(goldAccent.opacity(0.35), lineWidth: 1)
+                                Capsule().stroke(pathAccent.opacity(0.35), lineWidth: 1)
                             )
                     )
                 }

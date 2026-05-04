@@ -48,7 +48,7 @@ struct DashboardOlympianWrapper: View {
 
     private var accessibilityLabel: String {
         let p = service.progress
-        return "Path to 33 — \(p.completed) of \(p.total) goals unlocked. \(service.archetype.displayName)."
+        return "Path to Olympian — \(p.completed) of \(p.total) goals unlocked. \(service.archetype.displayName)."
     }
 }
 
@@ -82,14 +82,7 @@ struct DashboardOlympianWidget: View {
     }
 
     private var tierAccent: Color {
-        switch currentTier {
-        case 1: return Color(red: 0.55, green: 0.75, blue: 0.95)
-        case 2: return Color(red: 0.40, green: 0.85, blue: 0.65)
-        case 3: return Color(red: 0.95, green: 0.75, blue: 0.30)
-        case 4: return Color(red: 0.95, green: 0.50, blue: 0.30)
-        case 5: return Color(red: 1.00, green: 0.84, blue: 0.00)
-        default: return .blue
-        }
+        OlympianPathBluePalette.color(for: currentTier)
     }
 
     private var tierName: String {
@@ -148,10 +141,16 @@ struct DashboardOlympianWidget: View {
             .shadow(color: tierAccent.opacity(colorScheme == .dark ? 0.4 : 0.3), radius: 8, x: 0, y: 4)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Path to \(yearText)")
+                Text("Path to Olympian")
                     .font(.ds_labelLarge)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
+
+                Text(service.path365Subtitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 6) {
                     Image(systemName: service.archetype.icon)
@@ -189,7 +188,7 @@ struct DashboardOlympianWidget: View {
                     .trim(from: 0, to: ringProgress)
                     .stroke(
                         AngularGradient(
-                            colors: [tierAccent, tierAccent.opacity(0.6), tierAccent],
+                            colors: OlympianPathBluePalette.ringAngularColors,
                             center: .center
                         ),
                         style: StrokeStyle(lineWidth: 8, lineCap: .round)
@@ -239,14 +238,7 @@ struct DashboardOlympianWidget: View {
     }
 
     private func tierColor(for tier: Int) -> Color {
-        switch tier {
-        case 1: return Color(red: 0.55, green: 0.75, blue: 0.95)
-        case 2: return Color(red: 0.40, green: 0.85, blue: 0.65)
-        case 3: return Color(red: 0.95, green: 0.75, blue: 0.30)
-        case 4: return Color(red: 0.95, green: 0.50, blue: 0.30)
-        case 5: return Color(red: 1.00, green: 0.84, blue: 0.00)
-        default: return .gray
-        }
+        OlympianPathBluePalette.color(for: tier)
     }
 
     // MARK: - Next-goal preview

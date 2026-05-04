@@ -6,9 +6,9 @@
 //  `challenge_reactions`) into the home-screen Active Challenge widget
 //  via the shared App Group. The widget paints a comic-book shout
 //  bubble yelling out of its type-emoji icon ("Do better!") whenever
-//  there's an unread incoming smack — the bubble disappears the moment
-//  the user opens the app (cleared by `Fit33App`'s scenePhase `.active`
-//  observer; see `SmackTalkWidgetBridge.clear()`).
+//  there's an unread incoming smack — the bubble stays on the widget
+//  until the app process terminates (`AppDelegate.applicationWillTerminate`)
+//  or the user signs out (`SmackTalkWidgetBridge.clear()`).
 //
 //  Wire-format contract:
 //    • Lives as a JSON sidecar file at
@@ -100,15 +100,13 @@ enum SmackTalkWidgetBridge {
     /// Group is unavailable (extension entitlement missing).
     ///
     /// `decideShouldWrite` is checked just before the App Group write —
-    /// callers pass the application state predicate so we can skip the
-    /// write when the user is already in the foreground (we only want
-    /// the widget shout when the app ISN'T open). The check happens
-    /// here rather than at the call site so the gating policy lives in
-    /// one place.
+    /// pass `{ true }` to always persist (foreground + background). The
+    /// default is `{ true }`. Callers that need conditional writes can
+    /// supply a closure; `publish` skips the write when it returns false.
     static func publish(_ payload: WidgetSmackTalk, shouldWrite: () -> Bool = { true }) {
         guard shouldWrite() else {
-            AppLogger.info("📣 [WIDGET] Smack write SKIPPED — app is foregrounded (bubble suppressed by design)", category: .social)
-            SessionLogManager.shared.log(.info, category: .pushNotification, message: "📣 [WIDGET] smack skipped — foreground")
+            AppLogger.info("📣 [WIDGET] Smack write SKIPPED by caller predicate", category: .social)
+            SessionLogManager.shared.log(.info, category: .pushNotification, message: "📣 [WIDGET] smack skipped — caller")
             return
         }
         guard let url = smackFileURL() else {
@@ -154,10 +152,10 @@ enum SmackTalkWidgetBridge {
     }
 
     /// Wipes the smack slot and reloads the widget so the shout bubble
-    /// disappears. Called from `Fit33App`'s `scenePhase == .active`
-    /// observer so the bubble vanishes the instant the user opens the
-    /// app — that's the "until the user opens the app" half of the
-    /// product contract.
+    /// disappears. Called from `AppDelegate.applicationWillTerminate`
+    /// and sign-out so the payload does not leak across app sessions.
+    /// Battle cries intentionally persist across normal foreground /
+    /// inactive transitions (see `Fit33App` scenePhase handling).
     static func clear() {
         // Best-effort cleanup of the OLD UserDefaults wire format so
         // installs that came pre-2026-04-29 don't leave orphan keys

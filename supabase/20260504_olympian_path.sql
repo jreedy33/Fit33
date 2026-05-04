@@ -192,13 +192,15 @@ BEGIN
     WHERE user_id = current_user_uuid AND season_year = p_year;
 
     IF v_existing_count = 33 THEN
+        -- Qualify uoa.* — `achievements` also has `goal_tier`, so bare
+        -- `goal_tier` in a JOIN is ambiguous in PostgreSQL.
         SELECT jsonb_agg(jsonb_build_object(
-            'goal_number', goal_number,
-            'goal_tier', goal_tier,
-            'achievement_id', achievement_id,
+            'goal_number', uoa.goal_number,
+            'goal_tier', uoa.goal_tier,
+            'achievement_id', uoa.achievement_id,
             'achievement_key', a.key,
-            'archetype', archetype
-        ) ORDER BY goal_number)
+            'archetype', uoa.archetype
+        ) ORDER BY uoa.goal_number)
         INTO v_assignments
         FROM user_olympian_assignments uoa
         JOIN achievements a ON a.id = uoa.achievement_id
@@ -345,12 +347,12 @@ BEGIN
     END IF;
 
     SELECT jsonb_agg(jsonb_build_object(
-        'goal_number', goal_number,
-        'goal_tier', goal_tier,
-        'achievement_id', achievement_id,
+        'goal_number', uoa.goal_number,
+        'goal_tier', uoa.goal_tier,
+        'achievement_id', uoa.achievement_id,
         'achievement_key', a.key,
-        'archetype', archetype
-    ) ORDER BY goal_number)
+        'archetype', uoa.archetype
+    ) ORDER BY uoa.goal_number)
     INTO v_assignments
     FROM user_olympian_assignments uoa
     JOIN achievements a ON a.id = uoa.achievement_id

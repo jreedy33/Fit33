@@ -1909,6 +1909,15 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                     // through `ActiveChallengeWidgetBridge.publish`.
                     await ChallengeService.shared.fetchActiveChallenges()
 
+                case "challenge_reaction":
+                    // APNs can arrive while realtime is reconnecting — mirror
+                    // the DB insert into `RealtimeService` so the dashboard
+                    // `BattleCryShoutBubble` + home-screen smack slot update
+                    // immediately (see `ingestIncomingBattleCryFromNotificationUserInfo`).
+                    RealtimeService.shared.ingestIncomingBattleCryFromNotificationUserInfo(userInfo)
+                    await ChallengeService.shared.fetchActiveChallenges()
+                    await ChallengeService.shared.fetchActiveGroupChallenges()
+
                 default:
                     break
                 }

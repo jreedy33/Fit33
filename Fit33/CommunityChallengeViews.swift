@@ -3074,6 +3074,7 @@ struct CommunityDetailView: View {
             detail = result
         }
         .onAppear {
+            RealtimeService.shared.dismissIncomingBattleCryBanner(for: challengeId)
             if !isLoading && detail != nil {
                 Task {
                     let result = await CommunityChallengeService.shared.getChallengeDetail(challengeId: challengeId)

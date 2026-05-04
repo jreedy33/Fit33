@@ -1183,6 +1183,7 @@ struct Fit33App: App {
 
                             // recordLastActive is a one-shot UPSERT, fire-and-forget.
                             Task { await supabaseManager.recordLastActive() }
+                            Task { await RealtimeService.shared.ackBattleCryReceiptsIfRecipient() }
 
                             // ─── Priority 1: Realtime reconnect-if-stale ───
                             //
@@ -1382,6 +1383,7 @@ struct Fit33App: App {
                         
                         // 🔌 Disconnect from Realtime to save battery (will reconnect on .active)
                         Task {
+                            await RealtimeService.shared.clearIncomingBattleCriesForAppExit()
                             await RealtimeService.shared.disconnect()
                         }
                         

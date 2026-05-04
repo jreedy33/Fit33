@@ -1208,6 +1208,12 @@ The Cardio Redesign reshapes the cardio surface around two activities native to 
 
 **Run order**: 190 → 191 (190 declares the cardio resolves directives in its DO block; 191 is the broader sweep that doesn't depend on 190 succeeding — both are idempotent, can run in any order). The companion iOS code lands in the same git commit as 190/191 so the `code_fix:classifier_routing` reasons match the actual deployed Swift on TestFlight / App Store.
 
+## 2026-05-04 Battle cry — recipient opened-app ack
+
+| # | File | Status | What it does |
+|---|------|--------|---|
+| 195 | `20260535_challenge_reactions_recipient_opened_ack.sql` | 🆕 Ready (2026-05-04) | Adds `challenge_reactions.recipient_opened_app_at` (nullable timestamptz) + partial index for unread-by-recipient lookups. **`ack_my_pending_battle_cry_receipts()`** SECURITY DEFINER (no args, `auth.uid()`-pinned): sets `recipient_opened_app_at = now()` on all rows where `recipient_id = auth.uid()` and the column is still NULL (30-day window); returns row count for telemetry. **`list_acknowledged_battle_cry_ids_for_sender()`** SECURITY DEFINER: returns `id` for rows the caller sent that already have `recipient_opened_app_at` set (30-day window) so iOS can reconcile after a missed realtime UPDATE during background disconnect. Enables sender "delivery bubble" dismissal when the opponent foregrounds Fit33. |
+
 ## 2026-05-04 Bug-Intelligence Phase 14 — Self-Tuning Drain
 
 | # | File | Status | What it does |

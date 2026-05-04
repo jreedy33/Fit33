@@ -152,6 +152,7 @@ struct ChallengeDetailView: View {
             }
         }
         .onAppear {
+            RealtimeService.shared.dismissIncomingBattleCryBanner(for: challenge.challengeId)
             // Sprint 2026-04-24 Phase 4 (N1): pause intelligence phases while
             // user is in this detail view — see UserFocusSentinel doc.
             UserFocusSentinel.shared.beginFocus("ChallengeDetail")

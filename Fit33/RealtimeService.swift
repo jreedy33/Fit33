@@ -74,23 +74,29 @@ class RealtimeService: ObservableObject {
     private var incomingReactionsChannel: RealtimeChannelV2?
     private var incomingReactionsListenerTask: Task<Void, Never>?
 
-    /// Latest battle cry / cheer the current user RECEIVED (i.e.
-    /// `recipient_id == auth.uid()`). Updated by
-    /// `subscribeIncomingReactions(userId:)` only while the user is on
-    /// the **Home** tab with the app foregrounded (see
-    /// `setDashboardBattleCryHostVisible` from `MainTabView`). When the
-    /// user is elsewhere (other tab, app backgrounded), the same INSERT
-    /// is stored in `pendingIncomingReactions` so
-    /// `BattleCryShoutBubble` can show it when they return. The bubble
-    /// auto-dismisses after ~6s; `latestIncomingReaction` is cleared
-    /// when leaving the Home surface so a stale value does not replay.
-    @Published var latestIncomingReaction: ChallengeReaction?
+    private var outgoingBattleCryAckChannel: RealtimeChannelV2?
+    private var outgoingBattleCryAckListenerTask: Task<Void, Never>?
+    private var didHydrateStickyIncomingFromDisk = false
 
-    /// Reactions that arrived while the user was not on the Home
-    /// dashboard (other tab, app in background). One entry per
-    /// `challengeId` (newest wins). Consumed by
-    /// `BattleCryShoutBubble` when the Home surface becomes active.
-    private var pendingIncomingReactions: [UUID: ChallengeReaction] = [:]
+    /// Opponent → me battle cries shown on the Home dashboard challenge
+    /// cards (`BattleCryShoutBubble`). One entry per `challenge_id`
+    /// (newest wins). Persists across tab switches and cold start
+    /// (UserDefaults) until the user opens that challenge's detail view
+    /// or backgrounds the app — see `dismissIncomingBattleCryBanner`
+    /// and `clearIncomingBattleCriesForAppExit`.
+    @Published private(set) var dashboardIncomingBattleCryByChallenge: [UUID: ChallengeReaction] = [:]
+
+    /// Me → opponent battle cries still "in flight" until their device
+    /// foregrounds Fit33 (server sets `recipient_opened_app_at`; sender
+    /// hears UPDATE or reconciles on reconnect). Keyed by `reactionId`.
+    @Published private(set) var dashboardOutgoingBattleCryByReactionId: [UUID: ChallengeReaction] = [:]
+
+    /// Bumps whenever incoming/outgoing dashboard battle-cry maps change so
+    /// `BattleCryShoutBubble` can sync without requiring `[UUID: …]` to be
+    /// `Equatable` for `.onChange`.
+    @Published private(set) var dashboardBattleCryRenderToken: UInt64 = 0
+
+    private static let stickyIncomingPersistenceKey = "Fit33.dashboardStickyIncomingBattleCries.v1"
 
     /// Suppresses duplicate dashboard + home-widget paint when the same
     /// battle cry lands via `UNUserNotificationCenter` (`willPresent` /
@@ -99,28 +105,84 @@ class RealtimeService: ObservableObject {
     private var lastIncomingBattleCryDedupeAt: Date?
 
     /// `true` when `MainTabView` is on the Home tab (index 0) and
-    /// `scenePhase != .background`. Drives realtime vs buffer behavior
-    /// and lets `BattleCryShoutBubble` dismiss when the user leaves.
+    /// `scenePhase != .background`. Used only for analytics-style gating;
+    /// incoming battle cry UI is **sticky** and no longer cleared when
+    /// switching tabs.
     @Published private(set) var isDashboardBattleCryHostVisible: Bool = false
 
     // MARK: - Dashboard battle cry host (Home tab + foreground)
 
     /// Called from `MainTabView` when the Home tab + scene phase change.
-    /// When leaving Home (other tab or app background), clears
-    /// `latestIncomingReaction` so bubbles do not replay stale shouts;
-    /// buffered rows stay in `pendingIncomingReactions`.
     func setDashboardBattleCryHostVisible(_ visible: Bool) {
         guard visible != isDashboardBattleCryHostVisible else { return }
         isDashboardBattleCryHostVisible = visible
-        if !visible {
-            latestIncomingReaction = nil
+    }
+
+    /// Clears the opponent→me dashboard bubble for one challenge when the
+    /// user opens that challenge's detail surface.
+    func dismissIncomingBattleCryBanner(for challengeId: UUID) {
+        guard dashboardIncomingBattleCryByChallenge.removeValue(forKey: challengeId) != nil else { return }
+        persistStickyIncomingBattleCries()
+        bumpBattleCryDashboardRenderToken()
+    }
+
+    /// Clears all incoming dashboard battle cries when the app is sent to
+    /// the background (user "exited" Fit33 in the product sense).
+    func clearIncomingBattleCriesForAppExit() {
+        guard !dashboardIncomingBattleCryByChallenge.isEmpty else { return }
+        dashboardIncomingBattleCryByChallenge.removeAll()
+        persistStickyIncomingBattleCries()
+        bumpBattleCryDashboardRenderToken()
+    }
+
+    /// Tear down all battle-cry dashboard state on sign-out / account switch.
+    func clearAllDashboardBattleCryStateForLogout() {
+        dashboardIncomingBattleCryByChallenge.removeAll()
+        dashboardOutgoingBattleCryByReactionId.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.stickyIncomingPersistenceKey)
+        didHydrateStickyIncomingFromDisk = false
+        bumpBattleCryDashboardRenderToken()
+    }
+
+    /// Registers a just-sent reaction so the sender sees a "delivered when
+    /// they open Fit33" bubble until `recipient_opened_app_at` is set.
+    func registerPendingOutgoingBattleCry(_ reaction: ChallengeReaction) {
+        dashboardOutgoingBattleCryByReactionId[reaction.reactionId] = reaction
+        bumpBattleCryDashboardRenderToken()
+    }
+
+    /// Latest outgoing pending reaction for a challenge card (may be nil).
+    func latestPendingOutgoingBattleCry(for challengeId: UUID) -> ChallengeReaction? {
+        dashboardOutgoingBattleCryByReactionId.values
+            .filter { $0.challengeId == challengeId }
+            .max(by: { $0.createdAt < $1.createdAt })
+    }
+
+    /// Recipient foreground — marks unread rows so senders get realtime UPDATE.
+    func ackBattleCryReceiptsIfRecipient() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        let now = Date()
+        if let last = lastAckBattleCryRpcAt, now.timeIntervalSince(last) < 45 { return }
+        lastAckBattleCryRpcAt = now
+        do {
+            try await SupabaseManager.shared.supabaseClient
+                .rpc("ack_my_pending_battle_cry_receipts")
+                .execute()
+        } catch {
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "ack_my_pending_battle_cry_receipts",
+                category: .network,
+                endpoint: "rpc/ack_my_pending_battle_cry_receipts",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
 
-    /// Removes and returns the buffered reaction for this challenge (newest
-    /// per challenge while off-Home), if any.
-    func consumePendingIncomingReaction(for challengeId: UUID) -> ChallengeReaction? {
-        pendingIncomingReactions.removeValue(forKey: challengeId)
+    private var lastAckBattleCryRpcAt: Date?
+
+    private func bumpBattleCryDashboardRenderToken() {
+        dashboardBattleCryRenderToken &+= 1
     }
 
     /// Foreground APNs path (`NotificationManager` `willPresent`) so the
@@ -417,7 +479,9 @@ class RealtimeService: ObservableObject {
         }
         
         AppLogger.debug("Connecting to realtime channels...", category: .network)
-        
+
+        hydrateStickyIncomingBattleCriesFromDiskIfNeeded()
+
         // Subscribe to all relevant channels
         await subscribeFriendships(userId: userId)
         await subscribeSharedWorkouts(userId: userId)
@@ -431,6 +495,7 @@ class RealtimeService: ObservableObject {
         await subscribePrivacyChanges(userId: userId)
         await subscribeExercises(userId: userId)
         await subscribeIncomingReactions(userId: userId)
+        await subscribeOutgoingBattleCryAcks(userId: userId)
 
         // Start periodic cadence refresh for auto-tracked challenges (steps, active_minutes, etc.)
         startAutoTrackedRefreshTimer()
@@ -440,7 +505,7 @@ class RealtimeService: ObservableObject {
         lastConnectTime = Date()
         AppLogger.info("Connected to all channels", category: .network)
         logRealtimeEvent(type: "CONNECTED", source: "RealtimeService",
-                        details: "✅ All 11 channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed, privacy_changes, exercises, incoming_reactions + auto-tracked refresh timer")
+                        details: "✅ All channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed, privacy_changes, exercises, incoming_reactions, outgoing_reaction_acks + auto-tracked refresh timer")
 
         // ─── Sync-triage 2026-04-28 Layer B — post-connect canonical resync ───
         //
@@ -481,6 +546,7 @@ class RealtimeService: ObservableObject {
         // fetches; coalescer turns parallel callers into one network
         // roundtrip).
         Task.detached(priority: .userInitiated) {
+            await RealtimeService.shared.reconcileAcknowledgedOutgoingBattleCriesFromServer()
             // Friend request cards
             await FriendService.shared.fetchPendingRequests()
             // 1v1 challenge invite cards (received)
@@ -658,6 +724,7 @@ class RealtimeService: ObservableObject {
         }
         incomingReactionsListenerTask?.cancel()
         incomingReactionsListenerTask = nil
+        await unsubscribeOutgoingBattleCryAcks()
         if let channel = incomingReactionsChannel {
             await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
         }
@@ -696,8 +763,6 @@ class RealtimeService: ObservableObject {
         // staleness gate now sees `nil → .greatestFiniteMagnitude`
         // and reliably triggers a reconnect on the next foreground.
         lastEventReceivedAt = nil
-        pendingIncomingReactions.removeAll()
-        latestIncomingReaction = nil
         isDashboardBattleCryHostVisible = false
 
         isConnected = false
@@ -2014,8 +2079,8 @@ class RealtimeService: ObservableObject {
     /// `recipient_id = userId`. Owned by `connect()` / `disconnect()`
     /// — NOT per-view. Powers the dashboard `BattleCryShoutBubble`
     /// effect: every active challenge widget the user is rendering
-    /// listens to `latestIncomingReaction` and animates a comic bubble
-    /// when the reaction's `challengeId` matches the card's challenge.
+    /// listens to `dashboardIncomingBattleCryByChallenge` via
+    /// `BattleCryShoutBubble` when the reaction's `challengeId` matches
     ///
     /// Coexists with `subscribeChallengeReactions(challengeId:)` (the
     /// per-detail-view channel). The two have different filters:
@@ -2114,12 +2179,10 @@ class RealtimeService: ObservableObject {
             reactionCategory: reaction.reactionCategory
         )
 
-        if isDashboardBattleCryHostVisible {
-            latestIncomingReaction = reaction
-            HapticManager.notification(.warning)
-        } else {
-            pendingIncomingReactions[challengeId] = reaction
-        }
+        dashboardIncomingBattleCryByChallenge[challengeId] = reaction
+        persistStickyIncomingBattleCries()
+        HapticManager.notification(.warning)
+        bumpBattleCryDashboardRenderToken()
     }
 
     private func handleIncomingReactionInsert(_ record: [String: AnyJSON]?) async {
@@ -2180,6 +2243,103 @@ class RealtimeService: ObservableObject {
         )
 
         applyIncomingBattleCry(reaction, widgetSenderDisplayName: nil)
+    }
+
+    private func persistStickyIncomingBattleCries() {
+        var encoded: [String: ChallengeReaction] = [:]
+        for (k, v) in dashboardIncomingBattleCryByChallenge {
+            encoded[k.uuidString.lowercased()] = v
+        }
+        guard let data = try? JSONEncoder().encode(encoded) else { return }
+        UserDefaults.standard.set(data, forKey: Self.stickyIncomingPersistenceKey)
+    }
+
+    private func hydrateStickyIncomingBattleCriesFromDiskIfNeeded() {
+        guard !didHydrateStickyIncomingFromDisk else { return }
+        didHydrateStickyIncomingFromDisk = true
+        guard dashboardIncomingBattleCryByChallenge.isEmpty,
+              let data = UserDefaults.standard.data(forKey: Self.stickyIncomingPersistenceKey),
+              let decoded = try? JSONDecoder().decode([String: ChallengeReaction].self, from: data) else { return }
+        var merged: [UUID: ChallengeReaction] = [:]
+        for (k, v) in decoded {
+            guard let uuid = UUID(uuidString: k) else { continue }
+            merged[uuid] = v
+        }
+        dashboardIncomingBattleCryByChallenge = merged
+        bumpBattleCryDashboardRenderToken()
+    }
+
+    /// Clears local pending-outgoing rows whose recipients already foregrounded
+    /// (covers missed realtime UPDATE while the socket was torn down).
+    func reconcileAcknowledgedOutgoingBattleCriesFromServer() async {
+        guard SupabaseManager.shared.isAuthenticated else { return }
+        struct Row: Decodable { let reaction_id: UUID }
+        do {
+            let rows: [Row] = try await SupabaseManager.shared.supabaseClient
+                .rpc("list_acknowledged_battle_cry_ids_for_sender")
+                .execute()
+                .value
+            var removedAny = false
+            for row in rows {
+                if dashboardOutgoingBattleCryByReactionId.removeValue(forKey: row.reaction_id) != nil {
+                    removedAny = true
+                }
+            }
+            if removedAny { bumpBattleCryDashboardRenderToken() }
+        } catch {
+            AppLogger.debug(
+                "[OUTGOING_REACTION_ACK] reconcile RPC: \(error.localizedDescription)",
+                category: .network
+            )
+        }
+    }
+
+    private func subscribeOutgoingBattleCryAcks(userId: UUID) async {
+        await unsubscribeOutgoingBattleCryAcks()
+        let client = SupabaseManager.shared.supabaseClient
+        let channel = client.realtimeV2.channel("outgoing_reaction_acks-\(userId.uuidString)")
+        let updates = channel.postgresChange(
+            UpdateAction.self,
+            schema: "public",
+            table: "challenge_reactions",
+            filter: "sender_id=eq.\(userId.uuidString)"
+        )
+        outgoingBattleCryAckListenerTask = Task { [weak self] in
+            for await action in updates {
+                guard let self = self else { return }
+                await self.handleOutgoingBattleCryAckUpdate(action.record)
+            }
+        }
+        await channel.subscribe()
+        outgoingBattleCryAckChannel = channel
+        logRealtimeEvent(
+            type: "SUBSCRIBED",
+            source: "challenge_reactions_acks",
+            details: "✅ Listening for UPDATE on challenge_reactions where sender_id=\(userId.uuidString.prefix(8))"
+        )
+    }
+
+    private func unsubscribeOutgoingBattleCryAcks() async {
+        outgoingBattleCryAckListenerTask?.cancel()
+        outgoingBattleCryAckListenerTask = nil
+        if let channel = outgoingBattleCryAckChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
+        outgoingBattleCryAckChannel = nil
+    }
+
+    private func handleOutgoingBattleCryAckUpdate(_ record: [String: AnyJSON]?) async {
+        guard let record = record else { return }
+        guard jsonString(record["recipient_opened_app_at"]) != nil else { return }
+        guard let idStr = jsonString(record["id"]),
+              let rid = UUID(uuidString: idStr) else { return }
+        guard dashboardOutgoingBattleCryByReactionId.removeValue(forKey: rid) != nil else { return }
+        bumpBattleCryDashboardRenderToken()
+        logRealtimeEvent(
+            type: "✅ OUTGOING_BATTLE_CRY_ACK",
+            source: "challenge_reactions",
+            details: "Recipient opened app — cleared sender bubble \(idStr.prefix(8))"
+        )
     }
 }
 

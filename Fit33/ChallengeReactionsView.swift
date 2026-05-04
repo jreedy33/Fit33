@@ -111,7 +111,7 @@ struct ChallengeReaction: Codable, Identifiable {
     let reactionId: UUID
     /// `challenge_reactions.challenge_id` — added 2026-05-02 alongside
     /// the dashboard `BattleCryShoutBubble` work. Required so the
-    /// `RealtimeService.latestIncomingReaction` stream can be filtered
+    /// `RealtimeService.dashboardIncomingBattleCryByChallenge` can be filtered
     /// per dashboard widget card to "is this reaction for the
     /// challenge I'm rendering?". Optional because the historical RPC
     /// view (`get_reactions_for_challenge`) doesn't return the column
@@ -190,7 +190,7 @@ extension ChallengeService {
         challengeId: UUID,
         recipientId: UUID,
         preset: ReactionPreset
-    ) async -> (success: Bool, remaining: Int?) {
+    ) async -> (success: Bool, remaining: Int?, reactionId: UUID?) {
         do {
             struct Params: Encodable {
                 let p_challenge_id: String
@@ -229,14 +229,35 @@ extension ChallengeService {
                     await BadgeService.shared.onReactionSent(delta: 1)
                 }
 
-                return (true, response.remainingToday)
+                let reactionUUID = response.reactionId.flatMap { UUID(uuidString: $0) }
+                if let rid = reactionUUID,
+                   let me = SupabaseManager.shared.currentUser?.id {
+                    await MainActor.run {
+                        let reaction = ChallengeReaction(
+                            reactionId: rid,
+                            challengeId: challengeId,
+                            senderId: me,
+                            senderName: UserManager.shared.currentUser?.name,
+                            senderPhotoUrl: nil,
+                            recipientId: recipientId,
+                            reactionKey: preset.id,
+                            reactionEmoji: preset.emoji,
+                            reactionText: preset.text,
+                            reactionCategory: preset.category.rawValue,
+                            createdAt: Date()
+                        )
+                        RealtimeService.shared.registerPendingOutgoingBattleCry(reaction)
+                    }
+                }
+
+                return (true, response.remainingToday, reactionUUID)
             } else {
                 AppLogger.warning("⚠️ [REACTIONS] Send failed: \(response.error ?? "unknown")", category: .social)
-                return (false, nil)
+                return (false, nil, nil)
             }
         } catch {
             AppLogger.error("❌ [REACTIONS] Error sending reaction: \(error)", category: .social)
-            return (false, nil)
+            return (false, nil, nil)
         }
     }
     

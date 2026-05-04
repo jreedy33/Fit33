@@ -1091,6 +1091,7 @@ class SupabaseManager: ObservableObject {
                 // Clear Core Data and UserDefaults
                 PersistenceController.shared.clearAllUserData()
                 SmackTalkWidgetBridge.clear()
+                RealtimeService.shared.clearAllDashboardBattleCryStateForLogout()
 
                 // Clear profile photo cache - critical for multi-user scenarios
                 ProfilePhotoCache.shared.clearCache()

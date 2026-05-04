@@ -659,57 +659,54 @@ struct BattleCryPickerSheet: View {
 // MARK: - Dashboard Shout Bubble (cross-widget)
 
 /// Comic-style speech bubble that floats out of an active challenge
-/// widget on the dashboard when the OPPONENT sends a battle cry /
-/// power-up cheer. Single-slot per challenge: the host renders this
-/// inside an `.overlay(alignment: .top)` and passes the
-/// `challengeId` of the card it's pinned to.
+/// widget on the dashboard. Shows **incoming** opponent battle cries
+/// (sticky until detail open or app background) or **outgoing** pending
+/// delivery (until the recipient foregrounds Fit33).
 ///
 /// Wire-up:
 ///   1. Host calls `BattleCryShoutBubble(challengeId: challenge.challengeId)`
 ///      from inside `.overlay(alignment: .top)`
-///   2. The view observes `RealtimeService.shared.$latestIncomingReaction`
-///      (realtime while Home is foreground) and drains
-///      `consumePendingIncomingReaction(for:)` when Home becomes visible.
-///      Matching `challengeId` → spring-in animation.
-///   3. `MainTabView` calls `setDashboardBattleCryHostVisible`; off-Home
-///      or background buffers into `pendingIncomingReactions`; leaving
-///      Home dismisses the bubble and clears the live slot.
-///   4. The bubble is passive — tap dismisses only; no navigation.
-///
-/// Why a separate stream from `onChallengeReactionReceived`:
-///   - `onChallengeReactionReceived` is set by a single OWNED
-///     subscriber (the visible challenge-detail view) per the
-///     PE invariant 9 contract. Multiple dashboard cards rendered
-///     simultaneously can't share that single callback slot.
-///   - `RealtimeService.latestIncomingReaction` + pending buffer
-///     distribute to every observing card; each filters by its own
-///     `challengeId`. This is the canonical "broadcast to many widgets"
-///     pattern.
+///   2. Incoming reads `RealtimeService.dashboardIncomingBattleCryByChallenge`;
+///      outgoing reads `latestPendingOutgoingBattleCry(for:)`.
+///   3. `MainTabView` still calls `setDashboardBattleCryHostVisible` for
+///      telemetry; tab switches no longer clear incoming shouts.
 struct BattleCryShoutBubble: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var realtimeService = RealtimeService.shared
 
-    /// The challenge this bubble is pinned to. Reactions for ANY other
-    /// challenge are ignored — even if the user has 5 active 1v1s the
-    /// shout only paints on the matching card.
     let challengeId: UUID
 
     @State private var displayedReaction: ChallengeReaction?
-    @State private var dismissTask: Task<Void, Never>?
+    @State private var displayedIsOutgoing: Bool = false
     @State private var confettiBurstId: Int = 0
 
-    /// Auto-dismiss window. Long enough to read a 4-word smack
-    /// "Catch me if you can!" without rushing; short enough to not
-    /// crowd the dashboard if the user is mid-scroll.
-    private static let visibleDuration: TimeInterval = 6
+    private var incomingReaction: ChallengeReaction? {
+        realtimeService.dashboardIncomingBattleCryByChallenge[challengeId]
+    }
+
+    private var outgoingReaction: ChallengeReaction? {
+        realtimeService.latestPendingOutgoingBattleCry(for: challengeId)
+    }
+
+    /// Incoming takes visual priority when both exist.
+    private var effectiveReaction: ChallengeReaction? {
+        incomingReaction ?? outgoingReaction
+    }
+
+    private var effectiveIsOutgoing: Bool {
+        incomingReaction == nil && outgoingReaction != nil
+    }
 
     private var isCompetition: Bool {
         displayedReaction?.reactionCategory == "trash_talk"
     }
 
     private var bubbleGradient: [Color] {
-        isCompetition ? [.orange, .red] : [.blue, .cyan]
+        if displayedIsOutgoing {
+            return [.purple, .indigo]
+        }
+        return isCompetition ? [.orange, .red] : [.blue, .cyan]
     }
 
     private var bubbleTextColor: Color { .white }
@@ -729,115 +726,86 @@ struct BattleCryShoutBubble: View {
                     .id(reaction.reactionId)
             }
         }
-        .allowsHitTesting(displayedReaction != nil)
-        .onChange(of: realtimeService.isDashboardBattleCryHostVisible) { _, visible in
-            if visible {
-                tryPresentPending()
-            } else {
-                dismissNow()
-            }
-        }
+        .allowsHitTesting(false)
         .onAppear {
-            if realtimeService.isDashboardBattleCryHostVisible {
-                tryPresentPending()
-            }
+            syncDisplayedFromService()
         }
-        .onReceive(realtimeService.$latestIncomingReaction.compactMap { $0 }) { reaction in
-            guard realtimeService.isDashboardBattleCryHostVisible else { return }
-            guard reaction.challengeId == challengeId else { return }
-            present(reaction)
+        .onChange(of: realtimeService.dashboardBattleCryRenderToken) { _, _ in
+            syncDisplayedFromService()
         }
     }
 
-    /// Buffered reactions received while off Home; show when Home surface is active.
-    private func tryPresentPending() {
-        guard realtimeService.isDashboardBattleCryHostVisible else { return }
-        guard let pending = realtimeService.consumePendingIncomingReaction(for: challengeId) else { return }
-        HapticManager.notification(.warning)
-        present(pending)
+    private func syncDisplayedFromService() {
+        guard let r = effectiveReaction else {
+            if displayedReaction != nil {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    displayedReaction = nil
+                }
+            }
+            displayedIsOutgoing = false
+            return
+        }
+        let outgoing = effectiveIsOutgoing
+        if r.reactionId != displayedReaction?.reactionId || outgoing != displayedIsOutgoing {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.62)) {
+                displayedReaction = r
+                displayedIsOutgoing = outgoing
+            }
+            confettiBurstId &+= 1
+        }
     }
 
     private func bubbleContent(_ reaction: ChallengeReaction) -> some View {
-        Button {
-            HapticManager.impact(.light)
-            dismissNow()
-        } label: {
-            HStack(spacing: Spacing.xs) {
-                Text(reaction.reactionEmoji)
-                    .font(.ds_heading3)
-                Text(reaction.reactionText)
-                    .font(.ds_caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(bubbleTextColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.xs)
-            .background(
-                ZStack {
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: bubbleGradient,
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    Capsule()
-                        .stroke(Color.white.opacity(0.4), lineWidth: 1.5)
-                }
-            )
-            .shadow(color: bubbleGradient.first?.opacity(0.45) ?? .clear, radius: 12, x: 0, y: 4)
-            .overlay(alignment: .bottom) {
-                // Comic-bubble tail pointing down at the card.
-                Triangle()
+        HStack(spacing: Spacing.xs) {
+            Text(reaction.reactionEmoji)
+                .font(.ds_heading3)
+            Text(reaction.reactionText)
+                .font(.ds_caption)
+                .fontWeight(.bold)
+                .foregroundColor(bubbleTextColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.xs)
+        .background(
+            ZStack {
+                Capsule()
                     .fill(
                         LinearGradient(
                             colors: bubbleGradient,
-                            startPoint: .top,
-                            endPoint: .bottom
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
                         )
                     )
-                    .frame(width: 14, height: 8)
-                    .offset(y: 7)
+                Capsule()
+                    .stroke(Color.white.opacity(0.4), lineWidth: 1.5)
             }
-            .overlay(
-                BattleCryConfetti(burstId: confettiBurstId, gradient: bubbleGradient)
-                    .opacity(reduceMotion ? 0 : 1)
-                    .allowsHitTesting(false)
-            )
+        )
+        .shadow(color: bubbleGradient.first?.opacity(0.45) ?? .clear, radius: 12, x: 0, y: 4)
+        .overlay(alignment: .bottom) {
+            Triangle()
+                .fill(
+                    LinearGradient(
+                        colors: bubbleGradient,
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 14, height: 8)
+                .offset(y: 7)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Battle cry: \(reaction.reactionText)")
-        .accessibilityHint("Tap to dismiss")
-    }
-
-    private func present(_ reaction: ChallengeReaction) {
-        // Cancel any in-flight dismissal so a fresh reaction extends
-        // the visible window from "now" rather than the previous one.
-        dismissTask?.cancel()
-
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.62)) {
-            displayedReaction = reaction
-        }
-        confettiBurstId &+= 1
-
-        let task = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(Self.visibleDuration * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.35)) {
-                displayedReaction = nil
-            }
-        }
-        dismissTask = task
-    }
-
-    private func dismissNow() {
-        dismissTask?.cancel()
-        withAnimation(.easeOut(duration: 0.25)) {
-            displayedReaction = nil
-        }
+        .overlay(
+            BattleCryConfetti(burstId: confettiBurstId, gradient: bubbleGradient)
+                .opacity(reduceMotion ? 0 : 1)
+                .allowsHitTesting(false)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            displayedIsOutgoing
+                ? "Battle cry sent: \(reaction.reactionText)"
+                : "Battle cry: \(reaction.reactionText)"
+        )
     }
 }
 

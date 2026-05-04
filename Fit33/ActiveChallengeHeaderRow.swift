@@ -60,7 +60,7 @@ struct ActiveChallengeHeaderRow: View {
         .padding(.vertical, Spacing.sm)
         // Battle-cry shout bubble (2026-05-02). Floats above the row
         // when the opponent sends a reaction targeted at me. The
-        // bubble subscribes via `RealtimeService.latestIncomingReaction`
+        // bubble subscribes via `RealtimeService` sticky incoming + outgoing maps
         // and filters internally to `challenge.challengeId`, so
         // multiple cards on the same dashboard each only paint their
         // own challenge's reactions. Auto-dismisses after 6s.

@@ -1290,7 +1290,7 @@ struct DashboardChallengesWrapper: View {
         .frame(height: 156)
         // Battle-cry shout bubble (2026-05-02). Pinned to the top of
         // the group widget; the bubble subscribes to
-        // `RealtimeService.latestIncomingReaction` and only paints
+        // `RealtimeService.dashboardIncomingBattleCryByChallenge` + outgoing
         // for reactions targeted at me whose `challengeId` matches
         // this group challenge. Mirrors the 1v1 hookup in
         // `ActiveChallengeHeaderRow`.

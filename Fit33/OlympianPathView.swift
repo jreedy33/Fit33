@@ -35,8 +35,15 @@ struct OlympianPathView: View {
     /// recap card surfaces in the detail screen. The window straddles the
     /// year boundary deliberately so the user can share their *previous*
     /// year's run for the first week of the new season.
-    /// Also surfaces in the last ~3 weeks of the personal 365-day window so
-    /// users who finish late in their Path still see share affordance.
+    private var isInYearEndRecapWindow: Bool {
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.month, .day], from: Date())
+        guard let month = components.month, let day = components.day else { return false }
+        return (month == 12 && day >= 27) || (month == 1 && day <= 7)
+    }
+
+    /// Recap card during Dec 27 → Jan 7, or the last ~3 weeks of the personal
+    /// 365-day Path window (so late finishers still see the share affordance).
     private var showSeasonRecapCard: Bool {
         service.daysRemainingOnPath <= 21 || isInYearEndRecapWindow
     }
@@ -442,7 +449,7 @@ struct OlympianPathView: View {
     private func olympianBadgeChip(_ badge: OlympianSeasonBadge) -> some View {
         let c1 = OlympianPathBluePalette.color(for: 2)
         let c2 = OlympianPathBluePalette.color(for: 5)
-        VStack(spacing: 4) {
+        return VStack(spacing: 4) {
             Image(systemName: "crown.fill")
                 .font(.title2)
                 .foregroundStyle(

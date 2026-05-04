@@ -60,7 +60,9 @@ jobs:
       - name: Identify changed migrations
         id: changed
         run: |
-          set -euo pipefail
+          # Do not use `set -e` — warn-only automation; unexpected
+          # non-zero from git plumbing should not fail the whole job.
+          set -uo pipefail
           if [ -n "${{ github.event.inputs.migration_glob }}" ]; then
             FILES=$(ls ${{ github.event.inputs.migration_glob }} 2>/dev/null || true)
           else
@@ -73,13 +75,20 @@ jobs:
             FILES=$(git diff --name-only --diff-filter=AM "$BEFORE" HEAD -- 'supabase/*.sql' || true)
           fi
 
+          # Never pass multiline file lists through `env:` (next step) —
+          # GitHub Actions breaks or truncates multiline env values. Use
+          # a workspace temp file within the same job instead.
+          MIGRATION_LIST="/tmp/bug_intel_changed_migrations.txt"
           if [ -z "$FILES" ]; then
+            : > "$MIGRATION_LIST"
             echo "## ℹ️ Bug-Intel Resolves Deploy" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "No supabase/*.sql files changed — nothing to deploy." >> "$GITHUB_STEP_SUMMARY"
             echo "files=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          printf '%s\n' "$FILES" > "$MIGRATION_LIST"
 
           echo "Changed migrations:" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -103,7 +112,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          FILES: ${{ steps.changed.outputs.files }}
         # `continue-on-error: true` mirrors the warn-only intent at the
         # workflow level — even if the script below `exit 1`s for any
         # reason, the run is marked passed. The Step Summary still
@@ -111,6 +119,9 @@ jobs:
         continue-on-error: true
         run: |
           set -uo pipefail   # NOT -e — we want to keep iterating on errors
+
+          MIGRATION_LIST="/tmp/bug_intel_changed_migrations.txt"
+          FILES=$(cat "$MIGRATION_LIST" 2>/dev/null || true)
 
           if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
             echo "::warning::SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — skipping RPC (warn-only)."

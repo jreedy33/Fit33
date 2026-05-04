@@ -19,30 +19,44 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Get changed files
-        id: changes
+      - name: Check secrets present
+        id: secrets
         run: |
-          CHANGED=$(git diff HEAD~1 --name-only --diff-filter=ACDMR | head -50)
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGED" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          # `echo "" | wc -l` is 1 on Linux — do not use wc for empty diffs
-          if [ -z "$CHANGED" ]; then
-            echo "count=0" >> $GITHUB_OUTPUT
+          if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" ] || [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "::warning::Required secrets missing — skipping FAQ auto-update (warn-only)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            FILE_COUNT=$(printf '%s\n' "$CHANGED" | grep -c . || true)
-            echo "count=$FILE_COUNT" >> $GITHUB_OUTPUT
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Get changed files
+        if: steps.secrets.outputs.skip != 'true'
+        id: changes
+        run: |
+          # GitHub Actions sets bash -eo pipefail; allow git/grep to fail without killing the step
+          set +e
+          CHANGED=$(git diff HEAD~1 --name-only --diff-filter=ACDMR 2>/dev/null | head -50)
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          if [ -z "$CHANGED" ]; then
+            echo "count=0" >> "$GITHUB_OUTPUT"
+          else
+            FILE_COUNT=$(printf '%s\n' "$CHANGED" | grep -c .)
+            echo "count=${FILE_COUNT:-0}" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
       - name: Skip if no relevant changes
-        if: steps.changes.outputs.count == '0'
-        run: echo "No relevant changes found, skipping FAQ update."
+        if: steps.secrets.outputs.skip == 'true' || steps.changes.outputs.count == '0'
+        run: echo "Skipping FAQ update."
 
       - name: Get diff summary
-        if: steps.changes.outputs.count != '0'
+        if: steps.secrets.outputs.skip != 'true' && steps.changes.outputs.count != '0'
         id: diff
         run: |
-          DIFF_SUMMARY=$(git diff HEAD~1 --stat | tail -5)
+          set +e
+          DIFF_SUMMARY=$(git diff HEAD~1 --stat 2>/dev/null | tail -5)
           COMMIT_MSG=$(git log -1 --format='%s')
           echo "summary<<EOF" >> $GITHUB_OUTPUT
           echo "Commit: $COMMIT_MSG" >> $GITHUB_OUTPUT
@@ -55,7 +69,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Fetch current FAQ entries
-        if: steps.changes.outputs.count != '0'
+        if: steps.secrets.outputs.skip != 'true' && steps.changes.outputs.count != '0'
         id: faq
         run: |
           FAQ_DATA=$(curl -s \
@@ -68,7 +82,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Analyze with Claude
-        if: steps.changes.outputs.count != '0'
+        if: steps.secrets.outputs.skip != 'true' && steps.changes.outputs.count != '0'
         id: analysis
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -125,7 +139,7 @@ jobs:
           printf '%s' "$CONTENT" > /tmp/faq_analysis.json
 
       - name: Apply FAQ updates
-        if: steps.changes.outputs.count != '0'
+        if: steps.secrets.outputs.skip != 'true' && steps.changes.outputs.count != '0'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

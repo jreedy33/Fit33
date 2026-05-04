@@ -68,8 +68,13 @@ jobs:
           echo "$DIFF_STATS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-          FILE_COUNT=$(echo "$ALL_FILES" | grep -c '.' || echo "0")
-          echo "count=$FILE_COUNT" >> $GITHUB_OUTPUT
+          # Avoid `grep -c '.' || echo "0"` on empty input (duplicates "0" / wrong count)
+          if [ -z "$ALL_FILES" ]; then
+            echo "count=0" >> $GITHUB_OUTPUT
+          else
+            FILE_COUNT=$(printf '%s\n' "$ALL_FILES" | grep -c . || true)
+            echo "count=$FILE_COUNT" >> $GITHUB_OUTPUT
+          fi
 
       - name: Get per-file Swift diffs
         if: steps.changes.outputs.count != '0'
@@ -173,6 +178,7 @@ jobs:
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          printf '%s' "$CONTENT" > /tmp/changelog_analysis.json
 
       - name: Write to Supabase
         if: steps.changes.outputs.count != '0'
@@ -180,7 +186,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          RESULT='${{ steps.analysis.outputs.result }}'
+          RESULT=$(cat /tmp/changelog_analysis.json 2>/dev/null || echo '{}')
           TECH_SUMMARY=$(echo "$RESULT" | jq -r '.technical_summary // "No summary"')
           USER_SUMMARY=$(echo "$RESULT" | jq -r '.user_facing_summary // ""')
           AREAS=$(echo "$RESULT" | jq -c '.areas_affected // []')

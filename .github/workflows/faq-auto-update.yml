@@ -26,8 +26,13 @@ jobs:
           echo "files<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGED" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          FILE_COUNT=$(echo "$CHANGED" | wc -l | tr -d ' ')
-          echo "count=$FILE_COUNT" >> $GITHUB_OUTPUT
+          # `echo "" | wc -l` is 1 on Linux — do not use wc for empty diffs
+          if [ -z "$CHANGED" ]; then
+            echo "count=0" >> $GITHUB_OUTPUT
+          else
+            FILE_COUNT=$(printf '%s\n' "$CHANGED" | grep -c . || true)
+            echo "count=$FILE_COUNT" >> $GITHUB_OUTPUT
+          fi
 
       - name: Skip if no relevant changes
         if: steps.changes.outputs.count == '0'
@@ -110,12 +115,14 @@ jobs:
           if [ -z "$CONTENT" ]; then
             echo "No response from Claude, skipping."
             echo "result={}" >> $GITHUB_OUTPUT
+            printf '%s' '{}' > /tmp/faq_analysis.json
             exit 0
           fi
 
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          printf '%s' "$CONTENT" > /tmp/faq_analysis.json
 
       - name: Apply FAQ updates
         if: steps.changes.outputs.count != '0'
@@ -124,7 +131,7 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
-          RESULT='${{ steps.analysis.outputs.result }}'
+          RESULT=$(cat /tmp/faq_analysis.json 2>/dev/null || echo '{}')
 
           if [ -z "$RESULT" ] || [ "$RESULT" = "{}" ]; then
             echo "No FAQ changes needed."

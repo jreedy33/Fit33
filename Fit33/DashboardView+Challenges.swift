@@ -2,6 +2,13 @@ import SwiftUI
 
 struct DashboardChallengesWrapper: View {
     @StateObject private var challengeService = ChallengeService.shared
+    /// Subscribes to incoming dashboard battle cries so the carousel
+    /// can re-sort the moment a cry lands and surface that challenge
+    /// at page 0. The published `dashboardIncomingBattleCryByChallenge`
+    /// dictionary is the canonical source — see
+    /// `Array<ActiveChallenge>.sortedByOpponentFreshness` in
+    /// ChallengeService.swift.
+    @StateObject private var realtimeService = RealtimeService.shared
     @EnvironmentObject var userManager: UserManager
     @Environment(\.colorScheme) var colorScheme
     @State private var selectedWidgetPage: Int = 0
@@ -28,11 +35,19 @@ struct DashboardChallengesWrapper: View {
     @ViewBuilder
     private var stackedChallengesBody: some View {
         let activeIds = Set(challengeService.activeChallenges.map { $0.id })
-        // Sort by opponent freshness BEFORE truncating so the most-updated
-        // challenges are guaranteed to make the cut (and land on page 0).
-        // See `Array<ActiveChallenge>.sortedByOpponentFreshness` in
+        // Sort by opponent freshness + incoming battle cries BEFORE
+        // truncating so attention-worthy challenges are guaranteed to
+        // make the cut (and land on page 0). Battle-cry challenges win
+        // the top slot so the user sees the `BattleCryShoutBubble`
+        // overlay without a swipe. See
+        // `Array<ActiveChallenge>.sortedByOpponentFreshness` in
         // ChallengeService.swift for tier definitions.
-        let activeChallenges = Array(challengeService.activeChallenges.sortedByOpponentFreshness().prefix(8))
+        let battleCryChallengeIds = Set(realtimeService.dashboardIncomingBattleCryByChallenge.keys)
+        let activeChallenges = Array(
+            challengeService.activeChallenges
+                .sortedByOpponentFreshness(incomingBattleCryChallengeIds: battleCryChallengeIds)
+                .prefix(8)
+        )
         let groupChallenges = challengeService.activeGroupChallenges.filter { $0.iHaveAccepted }
         let activeCount = activeChallenges.count + groupChallenges.count
         
@@ -49,11 +64,34 @@ struct DashboardChallengesWrapper: View {
             .prefix(remainingSlots)
         let pendingArray = Array(pendingSent)
         
-        let allItems: [StackedChallengeItem] = (
+        let typeSorted: [StackedChallengeItem] = (
             activeChallenges.map { StackedChallengeItem.active($0) } +
             groupChallenges.map { .group($0) } +
             pendingArray.map { .pending($0) }
         ).sorted { $0.typeKey < $1.typeKey }
+        
+        // The type-alphabetical sort above scatters challenges by type for
+        // a clean visual grouping, but it would also push a challenge with
+        // a pending battle cry off page 0 if its `typeKey` happened to
+        // sort late. Hoist any active challenge whose opponent has just
+        // shouted at us back to the front so the user lands on that card
+        // and the `BattleCryShoutBubble` overlay paints without a swipe.
+        // (Group / pending items have no battle-cry signal today.)
+        let allItems: [StackedChallengeItem]
+        if battleCryChallengeIds.isEmpty {
+            allItems = typeSorted
+        } else {
+            var bumped: [StackedChallengeItem] = []
+            var rest: [StackedChallengeItem] = []
+            for item in typeSorted {
+                if case .active(let c) = item, battleCryChallengeIds.contains(c.challengeId) {
+                    bumped.append(item)
+                } else {
+                    rest.append(item)
+                }
+            }
+            allItems = bumped + rest
+        }
         
         if allItems.isEmpty {
             getStartedChallengeWidget
@@ -73,6 +111,14 @@ struct DashboardChallengesWrapper: View {
                 bottomRowPage = 0
             }
             .onChange(of: challengeService.activeGroupChallenges.count) { _, _ in
+                selectedWidgetPage = 0
+                bottomRowPage = 0
+            }
+            // When a fresh battle cry lands (e.g. via realtime / silent push
+            // while the dashboard is visible, or on app foreground hydration
+            // of the sticky buffer), snap both rows back to page 0 so the
+            // freshly-prioritized card is the one the user sees.
+            .onChange(of: battleCryChallengeIds) { _, _ in
                 selectedWidgetPage = 0
                 bottomRowPage = 0
             }
@@ -169,13 +215,19 @@ struct DashboardChallengesWrapper: View {
         // 4. If no active AND no pending → show default "Challenge a Friend" widget only
         
         // Get active challenges (deduplicated by ID)
-        // Sort by opponent freshness BEFORE the 3-card cap so a challenge
-        // where the opponent has updated today wins page 0 over a stale
-        // sibling card (opponent at 0 with hours-old `last_progress_at`).
-        // See `Array<ActiveChallenge>.sortedByOpponentFreshness` in
+        // Sort by opponent freshness + incoming battle cries BEFORE the
+        // 3-card cap so a challenge where the opponent has updated today
+        // (or just sent a battle cry) wins page 0 over a stale sibling
+        // card (opponent at 0 with hours-old `last_progress_at`). See
+        // `Array<ActiveChallenge>.sortedByOpponentFreshness` in
         // ChallengeService.swift for tier definitions.
         let activeIds = Set(challengeService.activeChallenges.map { $0.id })
-        let activeChallenges = Array(challengeService.activeChallenges.sortedByOpponentFreshness().prefix(3))
+        let battleCryChallengeIds = Set(realtimeService.dashboardIncomingBattleCryByChallenge.keys)
+        let activeChallenges = Array(
+            challengeService.activeChallenges
+                .sortedByOpponentFreshness(incomingBattleCryChallengeIds: battleCryChallengeIds)
+                .prefix(3)
+        )
         let groupChallenges = challengeService.activeGroupChallenges.filter { $0.iHaveAccepted }
         let activeCount = activeChallenges.count + groupChallenges.count
         
@@ -385,6 +437,14 @@ struct DashboardChallengesWrapper: View {
                     if selectedWidgetPage >= total {
                         selectedWidgetPage = max(0, total - 1)
                     }
+                }
+                // When a fresh battle cry lands (realtime / silent push /
+                // app-foreground hydration of the sticky buffer), snap to
+                // page 0 so the freshly-prioritized card — the one carrying
+                // the `BattleCryShoutBubble` overlay — is what the user
+                // sees, even if they were sitting on a later page.
+                .onChange(of: battleCryChallengeIds) { _, _ in
+                    selectedWidgetPage = 0
                 }
             } else {
                 // Fallback: no cards at all (shouldn't happen since showDefaultInCarousel covers < 3)
@@ -1289,14 +1349,14 @@ struct DashboardChallengesWrapper: View {
         .shadow(color: reducedGlow ? challengeColor.opacity(colorScheme == .dark ? 0.2 : 0.12) : challengeColor.opacity(0.08), radius: reducedGlow ? 20 : 25, x: 0, y: reducedGlow ? 10 : 4)
         .frame(height: 156)
         // Battle-cry shout bubble (2026-05-02). Pinned to the top of
-        // the group widget; the bubble subscribes to
-        // `RealtimeService.dashboardIncomingBattleCryByChallenge` + outgoing
-        // for reactions targeted at me whose `challengeId` matches
-        // this group challenge. Mirrors the 1v1 hookup in
+        // the group widget; the bubble self-aligns to the LEFT for
+        // outgoing (I sent it) and to the RIGHT for incoming (they
+        // sent it). Mirrors the 1v1 hookup in
         // `ActiveChallengeHeaderRow`.
         .overlay(alignment: .top) {
             BattleCryShoutBubble(challengeId: challenge.challengeId)
-                .offset(x: Spacing.xl + 5, y: Spacing.sm + 35)
+                .padding(.horizontal, Spacing.md)
+                .offset(y: Spacing.sm + 35)
                 .allowsHitTesting(true)
                 .zIndex(20)
         }

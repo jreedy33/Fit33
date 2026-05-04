@@ -59,15 +59,18 @@ struct ActiveChallengeHeaderRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, Spacing.sm)
         // Battle-cry shout bubble (2026-05-02). Floats above the row
-        // when the opponent sends a reaction targeted at me. The
-        // bubble subscribes via `RealtimeService` sticky incoming + outgoing maps
-        // and filters internally to `challenge.challengeId`, so
-        // multiple cards on the same dashboard each only paint their
-        // own challenge's reactions. Nudged toward trailing + lower so
-        // the tail reads as anchored on the card (not floating mid-gap).
+        // when there's an active battle cry on this challenge.
+        // Self-aligns horizontally:
+        //   • Incoming (they sent it) → hugs the RIGHT edge, tail points
+        //     down-right at the opponent's photo.
+        //   • Outgoing (I sent it)    → hugs the LEFT edge, tail points
+        //     down-left at the type icon.
+        // Vertical offset keeps both at the same height regardless of
+        // direction.
         .overlay(alignment: .top) {
             BattleCryShoutBubble(challengeId: challenge.challengeId)
-                .offset(x: Spacing.xl + 5, y: Spacing.sm + 35)
+                .padding(.horizontal, Spacing.md)
+                .offset(y: Spacing.sm + 35)
                 .allowsHitTesting(true)
                 .zIndex(20)
         }

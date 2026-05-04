@@ -495,9 +495,13 @@ struct TutorialPageView: View {
         // the user joins from this screen — needs more vertical room than the
         // discovery card so the mini-leaderboard rows aren't clipped.
         case .community:                          return geometry.size.height * 0.52
+        // Find-Friends renders a 3×3 grid of real PYMK-ranked suggestions
+        // so the user can quick-add inline — needs more height than the old
+        // 5-circle decorative cluster.
+        case .findFriends:                        return geometry.size.height * 0.48
         case .challenges1v1:                      return geometry.size.height * 0.42
         case .programs, .fuel, .league:           return geometry.size.height * 0.38
-        case .autoWorkout, .findFriends:          return geometry.size.height * 0.36
+        case .autoWorkout:                        return geometry.size.height * 0.36
         }
     }
 
@@ -552,40 +556,154 @@ struct TutorialWelcomeHero: View {
 struct TutorialFindFriendsHero: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var contactsService = ContactsService.shared
+    @ObservedObject private var friendService = FriendService.shared
+    @ObservedObject private var orientation = OrientationManager.shared
     let kind: TutorialPageKind
     let isAnimating: Bool
 
     @State private var isWorking = false
+    @State private var didFetchPYMK = false
+    /// Tutorial-local optimistic state. Avoid mutating `friendService.sentRequests`
+    /// directly — the service refreshes from server on its own cadence and we
+    /// don't want UI flicker mid-animation.
+    @State private var sentIds: Set<UUID> = []
+    @State private var loadingIds: Set<UUID> = []
+    @State private var failedIds: Set<UUID> = []
 
     private var matchedCount: Int { contactsService.suggestedFriends.count }
     private var hasSynced: Bool {
         contactsService.canAccessContacts && contactsService.hasCheckedContacts
     }
 
-    var body: some View {
-        VStack(spacing: Spacing.md) {
-            // Avatar cluster
-            avatarCluster
-
-            // Status / action card
-            VStack(spacing: Spacing.sm) {
-                if hasSynced {
-                    syncedState
-                } else if contactsService.permissionDenied {
-                    deniedState
-                } else {
-                    pendingState
-                }
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.vertical, Spacing.md)
-            .frame(maxWidth: 360)
-            .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: kind.accentColor)
-        }
-        .padding(.horizontal, Spacing.md)
+    /// Top-of-friends-tab uses `allSuggestions(...)` which sorts by:
+    /// (1) is friend-of-friend, (2) has photo, (3) mutual_friend_count DESC,
+    /// (4) name. That is the "smart interaction" ranking the user asked for —
+    /// we mirror it exactly so the tutorial grid agrees with the in-app strip.
+    private var rankedSuggestions: [SuggestedFriend] {
+        let friendIds = Set(friendService.friends.map { $0.friendId })
+        let serverSent = Set(friendService.sentRequests.map { $0.toUserId })
+        return contactsService.allSuggestions(
+            excludingFriendIds: friendIds,
+            excludingSentIds: serverSent
+        )
     }
 
-    // MARK: - Avatar cluster
+    /// Hard ceiling on rows × cols. 3 cols × 3 rows = 9 slots on standard;
+    /// 2 cols × 3 rows = 6 on compact (iPhone SE-class). The actual column
+    /// count below is clamped down by `displayedSuggestions.count` so the
+    /// grid never renders an orphan-only row.
+    private var maxColumnCap: Int {
+        orientation.deviceTier == .compact ? 2 : 3
+    }
+    private var maxQuickAddSlots: Int {
+        maxColumnCap * 3
+    }
+
+    /// Suggestions actually rendered in the grid (capped at `maxQuickAddSlots`).
+    /// Shared between `gridColumnCount` (drives column layout) and
+    /// `quickAddGrid` (drives the ForEach), so the column math always agrees
+    /// with the row count even mid-frame.
+    private var displayedSuggestions: [SuggestedFriend] {
+        Array(rankedSuggestions.prefix(maxQuickAddSlots))
+    }
+
+    /// Smart column count — picks the layout that produces the cleanest
+    /// rectangle for the friends-on-Fit33 count, capped at the device tier:
+    ///   1 → 1 col (single avatar)            5 → 3 cols (3 + 2)
+    ///   2 → 2 cols                           6 → 3 cols (3 × 2)
+    ///   3 → 3 cols (single row, or 2 cols    7 → 3 cols (3 + 3 + 1)
+    ///       on compact)                      8 → 3 cols (3 + 3 + 2)
+    ///   4 → 2 cols (2 × 2 — special-case so  9 → 3 cols (3 × 3)
+    ///       we don't get an ugly 3 + 1)
+    /// On compact tier (max 2 cols) the same rules apply but capped at 2.
+    private var gridColumnCount: Int {
+        let n = displayedSuggestions.count
+        guard n > 0 else { return maxColumnCap }
+        if n == 4 { return min(2, maxColumnCap) }
+        return min(n, maxColumnCap)
+    }
+
+    var body: some View {
+        VStack(spacing: Spacing.sm) {
+            if hasSynced && !displayedSuggestions.isEmpty {
+                quickAddGrid
+            } else if contactsService.permissionDenied {
+                statusCard { deniedState }
+            } else if hasSynced && displayedSuggestions.isEmpty {
+                statusCard { emptyState }
+            } else {
+                statusCard { pendingState }
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .onAppear { triggerPYMKFetchIfNeeded() }
+    }
+
+    // MARK: - Quick-add grid
+
+    private var quickAddGrid: some View {
+        VStack(spacing: Spacing.md) {
+            LazyVGrid(
+                columns: Array(
+                    repeating: GridItem(.flexible(), spacing: Spacing.md),
+                    count: gridColumnCount
+                ),
+                spacing: Spacing.md
+            ) {
+                ForEach(displayedSuggestions) { suggestion in
+                    TutorialFriendQuickAddCircle(
+                        suggestion: suggestion,
+                        isSent: sentIds.contains(suggestion.userId),
+                        isLoading: loadingIds.contains(suggestion.userId),
+                        hasFailed: failedIds.contains(suggestion.userId),
+                        onTap: { sendRequest(to: suggestion) }
+                    )
+                    .scaleEffect(isAnimating ? 1.01 : 1.0)
+                }
+            }
+            .frame(maxWidth: gridMaxWidth)
+
+            // Caption sits BELOW the grid so it acts as a footer / context
+            // line rather than a banner, and so the layout reads top-down:
+            // avatars first, then "21 on Fit33 — tap to add".
+            HStack(spacing: Spacing.xxs) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.ds_caption)
+                    .foregroundColor(.green)
+                Text("\(matchedCount) on Fit33 — tap to add")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.adaptiveSecondaryText)
+            }
+        }
+    }
+
+    /// Width budget for the LazyVGrid. Sized with extra slack per column so
+    /// the cells breathe (vs. hugging a tight 72pt-per-cell minimum) — the
+    /// avatar inside is fixed at 60pt, so the surplus shows up as horizontal
+    /// padding around each circle, which is what "spaced out more" really
+    /// means visually.
+    private var gridMaxWidth: CGFloat? {
+        switch gridColumnCount {
+        case 3: return 340
+        case 2: return 240
+        case 1: return 120
+        default: return nil
+        }
+    }
+
+    // MARK: - Status card
+
+    private func statusCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(spacing: Spacing.sm) {
+            avatarCluster
+
+            VStack(spacing: Spacing.sm) { content() }
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.md)
+                .frame(maxWidth: 360)
+                .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: kind.accentColor)
+        }
+    }
 
     private var avatarCluster: some View {
         HStack(spacing: -12) {
@@ -651,7 +769,7 @@ struct TutorialFindFriendsHero: View {
         }
     }
 
-    private var syncedState: some View {
+    private var emptyState: some View {
         VStack(spacing: Spacing.sm) {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "checkmark.seal.fill")
@@ -661,18 +779,11 @@ struct TutorialFindFriendsHero: View {
                     .font(.ds_heading3)
                     .foregroundColor(.adaptiveText)
             }
-            if matchedCount > 0 {
-                Text("Found \(matchedCount) \(matchedCount == 1 ? "friend" : "friends") already on Fit33")
-                    .font(.ds_bodyRegular)
-                    .foregroundColor(.adaptiveSecondaryText)
-                    .multilineTextAlignment(.center)
-            } else {
-                Text("No matches yet — invite some friends from the Social tab.")
-                    .font(.ds_bodyRegular)
-                    .foregroundColor(.adaptiveSecondaryText)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("No matches yet — invite some friends from the Social tab.")
+                .font(.ds_bodyRegular)
+                .foregroundColor(.adaptiveSecondaryText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -715,6 +826,7 @@ struct TutorialFindFriendsHero: View {
                 await contactsService.fetchContactsAndFindFriends()
             }
             isWorking = false
+            triggerPYMKFetchIfNeeded()
         }
     }
 
@@ -722,6 +834,167 @@ struct TutorialFindFriendsHero: View {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
         }
+    }
+
+    /// Without PYMK enrichment, `allSuggestions` can't compute `isMutual` /
+    /// `mutualFriendCount` so the ranking degrades to "has photo + name" —
+    /// we want the smart FoF boost. Fire-and-forget on first appear.
+    private func triggerPYMKFetchIfNeeded() {
+        guard !didFetchPYMK,
+              hasSynced,
+              SupabaseManager.shared.isAuthenticated else { return }
+        didFetchPYMK = true
+        Task { @MainActor in
+            await contactsService.fetchPeopleYouMayKnow()
+        }
+    }
+
+    @MainActor
+    private func sendRequest(to suggestion: SuggestedFriend) {
+        guard !sentIds.contains(suggestion.userId),
+              !loadingIds.contains(suggestion.userId) else { return }
+
+        failedIds.remove(suggestion.userId)
+        loadingIds.insert(suggestion.userId)
+        HapticManager.impact(.medium)
+
+        Task { @MainActor in
+            let success = await FriendService.shared.sendFriendRequest(toUserId: suggestion.userId)
+            loadingIds.remove(suggestion.userId)
+            if success {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    _ = sentIds.insert(suggestion.userId)
+                }
+                HapticManager.notification(.success)
+                AppLogger.info(
+                    "[TUTORIAL] Friend request sent to \(suggestion.displayName)",
+                    category: .social
+                )
+            } else {
+                failedIds.insert(suggestion.userId)
+                HapticManager.notification(.error)
+                AppLogger.error(
+                    "[TUTORIAL] Failed to send friend request to \(suggestion.displayName)",
+                    category: .social
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Tutorial Friend Quick-Add Circle
+//
+// Visual twin of `FriendsSuggestionCircle` (Friends-tab top strip) but with
+// inline-send semantics — tap fires `sendFriendRequest` directly instead of
+// opening a profile sheet, which would interrupt the tutorial flow.
+
+private struct TutorialFriendQuickAddCircle: View {
+    let suggestion: SuggestedFriend
+    let isSent: Bool
+    let isLoading: Bool
+    let hasFailed: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: {
+            guard !isSent && !isLoading else { return }
+            onTap()
+        }) {
+            VStack(spacing: 4) {
+                ZStack {
+                    CachedFriendPhoto(
+                        friendId: suggestion.userId.uuidString,
+                        photoUrl: suggestion.profilePhotoUrl,
+                        name: suggestion.name ?? suggestion.username ?? "?",
+                        size: 56,
+                        showGradientRing: false,
+                        gradientColors: [.blue.opacity(0.6), .cyan.opacity(0.4)]
+                    )
+
+                    if isLoading {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 56, height: 56)
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(0.8)
+                    } else if isSent {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 56, height: 56)
+                        VStack(spacing: 1) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.ds_heading3)
+                                .foregroundColor(.green)
+                            Text("Sent")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.green)
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
+                .frame(width: 60, height: 60)
+                .overlay(
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: isSent
+                                    ? [.green.opacity(0.6), .green.opacity(0.3)]
+                                    : [.blue.opacity(0.5), .cyan.opacity(0.3)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2
+                        )
+                        .frame(width: 62, height: 62)
+                )
+                .overlay(alignment: .bottomTrailing) {
+                    if !isSent && !isLoading {
+                        ZStack {
+                            Circle()
+                                .fill(Color(.systemBackground))
+                                .frame(width: 20, height: 20)
+
+                            Image(systemName: hasFailed ? "exclamationmark.circle.fill" : "plus.circle.fill")
+                                .font(.ds_bodySmall)
+                                .foregroundStyle(
+                                    hasFailed
+                                        ? AnyShapeStyle(Color.orange)
+                                        : AnyShapeStyle(LinearGradient(
+                                            colors: [.blue, .cyan],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ))
+                                )
+                        }
+                        .offset(x: 2, y: 2)
+                    }
+                }
+
+                Text(displayFirstName)
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSent ? .green : .primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(width: 72)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            isSent
+                ? "Friend request sent to \(suggestion.displayName)"
+                : "Add \(suggestion.displayName) as friend"
+        )
+        .accessibilityHint(isSent ? "" : "Sends a friend request")
+    }
+
+    private var displayFirstName: String {
+        if let name = suggestion.name?.components(separatedBy: " ").first, !name.isEmpty {
+            return name
+        }
+        if let username = suggestion.username, !username.isEmpty { return username }
+        return "Add"
     }
 }
 
@@ -849,16 +1122,88 @@ struct TutorialProgramHero: View {
 // MARK: - 1v1 Challenge Hero
 
 struct TutorialChallengeHero: View {
+    @ObservedObject private var rankingService = FriendRankingService.shared
+    @ObservedObject private var friendService = FriendService.shared
     let kind: TutorialPageKind
     let isAnimating: Bool
 
+    @State private var didTriggerRanking = false
+    @State private var sendState: SendState = .ready
+
+    private enum SendState {
+        case ready
+        case sending
+        case sent
+    }
+
+    /// Top-interaction friend the tutorial targets for the quick-start
+    /// challenge. Prefers `FriendRankingService.rankedFriends` (sorted by
+    /// `relationship_score` — interactions, shared workouts, prior
+    /// challenges), falling back to the raw friend list when ranking
+    /// hasn't loaded yet.
+    private var topFriend: TopFriend? {
+        if let ranked = rankingService.rankedFriends.first {
+            return TopFriend(
+                friendId: ranked.friendId,
+                displayName: ranked.friendName?.components(separatedBy: " ").first
+                    ?? ranked.friendUsername
+                    ?? "your friend",
+                handle: ranked.friendUsername,
+                avatarURL: ranked.profilePhotoUrl
+            )
+        }
+        if let fallback = friendService.friends.first {
+            return TopFriend(
+                friendId: fallback.friendId,
+                displayName: fallback.friendName?.components(separatedBy: " ").first
+                    ?? fallback.friendUsername
+                    ?? "your friend",
+                handle: fallback.friendUsername,
+                avatarURL: fallback.profilePhotoUrl
+            )
+        }
+        return nil
+    }
+
+    private struct TopFriend {
+        let friendId: UUID
+        let displayName: String
+        let handle: String?
+        let avatarURL: String?
+    }
+
+    /// 1v1 Steps + 7-day window is the canonical "first challenge" in the
+    /// app — universal HealthKit support, doesn't require wearable
+    /// pairing, and 10k matches the project's default daily Steps target.
+    private static let tutorialChallengeType: ChallengeType = .steps
+    private static let tutorialDurationDays: Int = 7
+    private static let tutorialDailyTarget: Int = 10_000
+
+    private var personalization: ChallengeAFriendEntryWidget.Personalization? {
+        guard let friend = topFriend else { return nil }
+        let widgetState: ChallengeAFriendEntryWidget.Personalization.LiveState
+        switch sendState {
+        case .ready:   widgetState = .ready
+        case .sending: widgetState = .sending
+        case .sent:    widgetState = .sent
+        }
+        return .init(
+            friendId: friend.friendId,
+            displayName: friend.displayName,
+            handle: friend.handle,
+            avatarURL: friend.avatarURL,
+            challengeType: Self.tutorialChallengeType,
+            state: widgetState
+        )
+    }
+
     var body: some View {
         VStack(spacing: Spacing.sm) {
-            // Use the real "Challenge a Friend!" entry widget that ships on the
-            // Home dashboard and Friends tab so users see exactly what they'll
-            // tap once they're in the app.
-            ChallengeAFriendEntryWidget()
-                .frame(maxWidth: 360)
+            ChallengeAFriendEntryWidget(
+                onTap: handleTap,
+                personalization: personalization
+            )
+            .frame(maxWidth: 360)
 
             HStack(spacing: Spacing.xs) {
                 badge(icon: "person.2.fill", label: "1v1")
@@ -869,6 +1214,7 @@ struct TutorialChallengeHero: View {
         .scaleEffect(0.9)
         .offset(y: isAnimating ? -2 : 2)
         .padding(.horizontal, Spacing.md)
+        .onAppear { triggerRankingRefreshIfNeeded() }
     }
 
     private func badge(icon: String, label: String) -> some View {
@@ -883,6 +1229,73 @@ struct TutorialChallengeHero: View {
             Capsule().fill(kind.accentColor.opacity(0.12))
         )
         .overlay(Capsule().stroke(kind.accentColor.opacity(0.3), lineWidth: 1))
+    }
+
+    // MARK: - Actions
+
+    /// Pull ranked friends so we can target the user's top-interaction friend
+    /// (instead of just `friends.first`). Cheap RPC, gated by 5-min cache
+    /// inside the service so back-to-back tutorial appearances don't refetch.
+    private func triggerRankingRefreshIfNeeded() {
+        guard !didTriggerRanking,
+              SupabaseManager.shared.isAuthenticated else { return }
+        didTriggerRanking = true
+        Task { @MainActor in
+            await rankingService.fetchRankedFriends(forceRefresh: false)
+        }
+    }
+
+    private func handleTap() {
+        switch sendState {
+        case .sending, .sent:
+            return
+        case .ready:
+            break
+        }
+
+        // No friend yet — onboarding hasn't surfaced one. Fall back to the
+        // generic "open the challenge creation flow" affordance: a no-op
+        // here keeps the tutorial moving without sending a phantom
+        // challenge to nobody. (The page subtitle already explains the
+        // feature.)
+        guard let friend = topFriend else { return }
+
+        sendState = .sending
+        HapticManager.impact(.medium)
+
+        Task { @MainActor in
+            let title = "Steps Showdown"
+            let challengeId = await ChallengeService.shared.createChallenge(
+                opponentId: friend.friendId,
+                type: Self.tutorialChallengeType,
+                title: title,
+                description: "Quick-start challenge from your Fit33 welcome tour.",
+                dailyTarget: Self.tutorialDailyTarget,
+                totalTarget: Self.tutorialDailyTarget * Self.tutorialDurationDays,
+                targetUnit: "steps",
+                durationDays: Self.tutorialDurationDays
+            )
+
+            if challengeId != nil {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    sendState = .sent
+                }
+                HapticManager.notification(.success)
+                AppLogger.info(
+                    "[TUTORIAL] Sent 1v1 Steps challenge to \(friend.displayName)",
+                    category: .social
+                )
+            } else {
+                // Failure — drop back to ready so the user can retry. Service
+                // already classified + logged via NetworkErrorClassifier.
+                sendState = .ready
+                HapticManager.notification(.error)
+                AppLogger.warning(
+                    "[TUTORIAL] Quick-start challenge failed: \(ChallengeService.shared.lastCreateChallengeError ?? "unknown")",
+                    category: .social
+                )
+            }
+        }
     }
 }
 
@@ -899,6 +1312,7 @@ struct TutorialChallengeHero: View {
 struct TutorialCommunityHero: View {
     @ObservedObject private var communityService = CommunityChallengeService.shared
     @ObservedObject private var contactsService = ContactsService.shared
+    @ObservedObject private var orientation = OrientationManager.shared
     let kind: TutorialPageKind
     let isAnimating: Bool
 
@@ -912,30 +1326,79 @@ struct TutorialCommunityHero: View {
     /// friend-only `discoverableChallenges`.
     @State private var pymkCommunities: [DiscoverableCommunityChallenge] = []
 
-    /// Priority 1 — communities the user's DIRECT friends are in (the
-    /// discoverable RPC orders by `friends_count DESC, participant_count
-    /// DESC` server-side; the service re-sorts client-side as a
-    /// belt-and-suspenders).
-    private var topFriendCommunity: DiscoverableCommunityChallenge? {
-        communityService.discoverableChallenges.first
+    /// One row in the community card stack. Either a friend / PYMK
+    /// community (renders as `FriendDiscoveryCard`, joins via the
+    /// friend-chain RPC) or a generic featured community (renders as
+    /// `FeaturedChallengeCard`, joins via `joinChallenge(code:)`).
+    private enum CommunityRecommendation: Identifiable {
+        case discoverable(DiscoverableCommunityChallenge)
+        case featured(FeaturedCommunityChallenge)
+
+        var id: UUID {
+            switch self {
+            case .discoverable(let c): return c.challengeId
+            case .featured(let c):     return c.challengeId
+            }
+        }
     }
 
-    /// Priority 2 — communities the user's PEOPLE-YOU-MAY-KNOW (friends
-    /// of friends + contact-derived suggestions) are in. Used when the
-    /// direct-friend list is empty (typical brand-new-account case
-    /// because the user just synced contacts but hasn't friended anyone
-    /// yet). Joining is still gated by `can_join_community_challenge`
-    /// which accepts FoF — so the same `joinChallengeFriendGated` flow
-    /// handles both this and the direct-friend case.
-    private var topPYMKCommunity: DiscoverableCommunityChallenge? {
-        pymkCommunities.first
+    /// 3 cards on standard / large devices, 2 on the iPhone SE-class
+    /// compact width tier (vertical room is tight there — fitting 3
+    /// cards plus the page subtitle/description copy block clips).
+    private var maxRecommendations: Int {
+        orientation.deviceTier == .compact ? 2 : 3
     }
 
-    /// Priority 3 — top popular non-joined featured challenge. Last
-    /// resort when the user has neither friends nor PYMK in any
-    /// community.
-    private var topFeaturedCommunity: FeaturedCommunityChallenge? {
-        communityService.featuredChallenges.first(where: { !$0.alreadyJoined })
+    /// Build the deduped, prioritized recommendation list. Direct-friend
+    /// communities first, then PYMK / FoF, then top-active featured
+    /// fillers — capped at `maxRecommendations`. The Community Step
+    /// always shows SOMETHING joinable as long as the server has any
+    /// active community at all.
+    private var recommendations: [CommunityRecommendation] {
+        var seen = Set<UUID>()
+        var out: [CommunityRecommendation] = []
+
+        let friendCommunities = communityService.discoverableChallenges
+        let pymk = pymkCommunities
+        // "Most active" filler = top participant_count featured. The
+        // discover RPC already returns featured ordered by recency /
+        // creation; we sort client-side so the pool is participant-count
+        // descending (= "most active").
+        let featuredByActivity = communityService.featuredChallenges
+            .filter { !$0.alreadyJoined }
+            .sorted { $0.participantCount > $1.participantCount }
+
+        for challenge in friendCommunities {
+            guard out.count < maxRecommendations else { break }
+            if seen.insert(challenge.challengeId).inserted {
+                out.append(.discoverable(challenge))
+            }
+        }
+        for challenge in pymk {
+            guard out.count < maxRecommendations else { break }
+            if seen.insert(challenge.challengeId).inserted {
+                out.append(.discoverable(challenge))
+            }
+        }
+        for challenge in featuredByActivity {
+            guard out.count < maxRecommendations else { break }
+            if seen.insert(challenge.challengeId).inserted {
+                out.append(.featured(challenge))
+            }
+        }
+        return out
+    }
+
+    /// Total connection count surfaced across the recommendation stack —
+    /// used for the footer caption when the rendered cards span both
+    /// friend + PYMK sources.
+    private var totalConnectionsAcrossRecommendations: Int {
+        recommendations.reduce(0) { acc, item in
+            switch item {
+            case .discoverable(let c): return acc + c.friendsCount
+            case .featured: return acc
+            }
+        }
     }
 
     /// The just-joined challenge (live `CommunityChallenge` from
@@ -948,15 +1411,27 @@ struct TutorialCommunityHero: View {
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
-            featuredCard
+            content
                 .frame(maxWidth: 360)
 
             footerCaption
         }
-        .scaleEffect(joinedChallenge != nil ? 0.82 : 0.88)
+        .scaleEffect(stackScale)
         .offset(y: isAnimating ? -2 : 2)
         .padding(.horizontal, Spacing.md)
         .onAppear { triggerInitialFetch() }
+    }
+
+    /// Aggressive scale-down once we're stacking 2-3 cards so the whole
+    /// stack fits the hero's vertical budget alongside the page copy
+    /// block, without clipping the page-dots / Continue CTA below.
+    private var stackScale: CGFloat {
+        if joinedChallenge != nil { return 0.82 }
+        switch recommendations.count {
+        case 3:  return 0.78
+        case 2:  return 0.84
+        default: return 0.88
+        }
     }
 
     // MARK: - Initial fetch + PYMK fallback
@@ -969,11 +1444,15 @@ struct TutorialCommunityHero: View {
             // discoverable + featured lists, even if the service
             // already ran its 5s-throttled refresh during sign-in.
             await communityService.refreshAll(force: true)
-            // If no DIRECT friends in any community, broaden to
-            // friends-of-friends / contact suggestions (PYMK) so the
-            // tutorial can still feature a community filled with people
-            // the new user is one connection away from.
-            if communityService.discoverableChallenges.isEmpty {
+            // Always broaden to friends-of-friends / contact suggestions
+            // when DIRECT friend matches don't fill the recommendation
+            // stack. Only skip when we already have enough friend
+            // communities to satisfy the slot count (typical established
+            // user); for everyone else (especially brand-new accounts
+            // that just synced contacts and haven't friended anyone) the
+            // PYMK pass is what makes the stack feel populated by people
+            // they actually know rather than random featured fillers.
+            if communityService.discoverableChallenges.count < maxRecommendations {
                 await loadPYMKCommunities()
             }
         }
@@ -1013,39 +1492,22 @@ struct TutorialCommunityHero: View {
         }
     }
 
-    // MARK: - Card priority selection
+    // MARK: - Card stack
 
     @ViewBuilder
-    private var featuredCard: some View {
+    private var content: some View {
         if let joined = joinedChallenge {
             // Real-time win moment: user just joined, so flip to the
             // live leaderboard widget that shows them alongside their
-            // friends / people-you-may-know.
+            // friends / people-you-may-know. Other recommendations
+            // collapse out so the leaderboard takes the full space.
             CommunityLeaderboardWidget(challenge: joined)
                 .transition(.asymmetric(
                     insertion: .scale(scale: 0.94).combined(with: .opacity),
                     removal: .opacity
                 ))
                 .accessibilityLabel("You joined the \(joined.title) community")
-        } else if let friendCommunity = topFriendCommunity {
-            FriendDiscoveryCard(challenge: friendCommunity) {
-                joinDiscoverableCommunity(friendCommunity)
-            }
-            .opacity(isJoining ? 0.6 : 1.0)
-            .disabled(isJoining)
-        } else if let pymkCommunity = topPYMKCommunity {
-            FriendDiscoveryCard(challenge: pymkCommunity) {
-                joinDiscoverableCommunity(pymkCommunity)
-            }
-            .opacity(isJoining ? 0.6 : 1.0)
-            .disabled(isJoining)
-        } else if let featured = topFeaturedCommunity {
-            FeaturedChallengeCard(challenge: featured) {
-                joinFeaturedCommunity(featured)
-            }
-            .opacity(isJoining ? 0.6 : 1.0)
-            .disabled(isJoining)
-        } else {
+        } else if recommendations.isEmpty {
             // Loading / empty fallback — keeps layout stable on cold
             // launch before the discoverable + featured RPCs return.
             FeaturedChallengeCard(
@@ -1054,6 +1516,29 @@ struct TutorialCommunityHero: View {
             )
             .allowsHitTesting(false)
             .redacted(reason: communityService.isLoading ? .placeholder : [])
+        } else {
+            VStack(spacing: Spacing.sm) {
+                ForEach(recommendations) { item in
+                    recommendationCard(item)
+                }
+            }
+            .opacity(isJoining ? 0.6 : 1.0)
+            .disabled(isJoining)
+            .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private func recommendationCard(_ item: CommunityRecommendation) -> some View {
+        switch item {
+        case .discoverable(let challenge):
+            FriendDiscoveryCard(challenge: challenge) {
+                joinDiscoverableCommunity(challenge)
+            }
+        case .featured(let challenge):
+            FeaturedChallengeCard(challenge: challenge) {
+                joinFeaturedCommunity(challenge)
+            }
         }
     }
 
@@ -1071,62 +1556,64 @@ struct TutorialCommunityHero: View {
                     .foregroundColor(.adaptiveSecondaryText)
             }
             .accessibilityElement(children: .combine)
-        } else if let friendCommunity = topFriendCommunity {
-            HStack(spacing: Spacing.xs) {
-                Image(systemName: "person.3.fill")
-                    .font(.ds_caption)
-                    .foregroundStyle(kind.accent)
-                Text(friendCountCaption(friendCommunity.friendsCount))
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.adaptiveSecondaryText)
-            }
-            .accessibilityElement(children: .combine)
-        } else if let pymkCommunity = topPYMKCommunity {
-            HStack(spacing: Spacing.xs) {
-                Image(systemName: "person.3.fill")
-                    .font(.ds_caption)
-                    .foregroundStyle(kind.accent)
-                Text(pymkCountCaption(pymkCommunity.friendsCount))
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.adaptiveSecondaryText)
-            }
-            .accessibilityElement(children: .combine)
-        } else if let featured = topFeaturedCommunity {
-            HStack(spacing: Spacing.xs) {
-                Image(systemName: "person.3.fill")
-                    .font(.ds_caption)
-                    .foregroundStyle(kind.accent)
-                Text("\(featured.formattedParticipantCount) athletes already in")
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.adaptiveSecondaryText)
-            }
-            .accessibilityElement(children: .combine)
         } else {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "person.3.fill")
                     .font(.ds_caption)
                     .foregroundStyle(kind.accent)
-                Text("Featured challenges, real people")
+                Text(stackCaption)
                     .font(.ds_labelMedium)
                     .foregroundColor(.adaptiveSecondaryText)
             }
+            .accessibilityElement(children: .combine)
         }
     }
 
-    private func friendCountCaption(_ count: Int) -> String {
+    /// Caption for the recommendation-stack state. Surfaces the strongest
+    /// signal available: friend-density first, then PYMK, then a generic
+    /// "most active" line for featured-only fallback.
+    private var stackCaption: String {
+        let connections = totalConnectionsAcrossRecommendations
+        let hasFriendCommunities = !communityService.discoverableChallenges.isEmpty
+        let hasPYMKCommunities = !pymkCommunities.isEmpty
+
+        if hasFriendCommunities && connections > 0 {
+            return connectionsCaption(connections, label: "your contacts")
+        }
+        if hasPYMKCommunities && connections > 0 {
+            return connectionsCaption(connections, label: "people you may know")
+        }
+        if recommendations.isEmpty {
+            return "Featured challenges, real people"
+        }
+        // Pure featured-fallback (no friend/PYMK overlap) — show
+        // aggregate participant count across the rendered cards so the
+        // user sees the activity scale.
+        let participants = recommendations.reduce(0) { acc, item in
+            switch item {
+            case .discoverable(let c): return acc + c.participantCount
+            case .featured(let c):     return acc + c.participantCount
+            }
+        }
+        if participants > 0 {
+            return "\(formattedParticipants(participants)) athletes already pushing"
+        }
+        return "Featured challenges, real people"
+    }
+
+    private func connectionsCaption(_ count: Int, label: String) -> String {
         switch count {
         case 0:  return "Athletes pushing the same goal"
-        case 1:  return "1 of your contacts is already in"
-        default: return "\(count) of your contacts are already in"
+        case 1:  return "1 of \(label) is already in"
+        default: return "\(count) of \(label) are already in"
         }
     }
 
-    private func pymkCountCaption(_ count: Int) -> String {
-        switch count {
-        case 0:  return "Athletes pushing the same goal"
-        case 1:  return "1 person you may know is already in"
-        default: return "\(count) people you may know are already in"
+    private func formattedParticipants(_ count: Int) -> String {
+        if count >= 1000 {
+            return String(format: "%.1fK", Double(count) / 1000)
         }
+        return "\(count)"
     }
 
     // MARK: - Real-time Join

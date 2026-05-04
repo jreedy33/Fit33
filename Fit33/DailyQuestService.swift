@@ -1179,7 +1179,24 @@ class DailyQuestService: ObservableObject {
         // the "advanced user sees Send a Challenge" flash on relaunch.
         if isLikelyDay1User(totalWorkouts: ctx.totalWorkouts, workoutStreak: ctx.workoutStreak) {
             AppLogger.info("📋 [QUESTS] Day 1 — showing beginner goal cards", category: .general)
-            self.quests = [beginnerSocialQuest(), beginnerWorkoutQuest(), beginnerProgramQuest()]
+
+            // Preserve completion state across re-fetches. Beginner cards have
+            // no server-side row, so a `force: true` refresh would otherwise
+            // reset `isCompleted` back to false (and re-award XP via the
+            // backfill below). Carry forward any completion already in
+            // memory or loaded from cache.
+            let previouslyCompleted = Set(self.quests.filter(\.isCompleted).map(\.questKey))
+            var beginnerQuests = [beginnerSocialQuest(), beginnerWorkoutQuest(), beginnerProgramQuest()]
+            for i in beginnerQuests.indices where previouslyCompleted.contains(beginnerQuests[i].questKey) {
+                beginnerQuests[i] = markedCompleted(beginnerQuests[i])
+            }
+            self.quests = beginnerQuests
+
+            // Pre-complete cards for actions taken during onboarding/tutorial
+            // (e.g. friend requests sent before the dashboard existed). Safe
+            // to call every fetch — completion is idempotent.
+            await backfillBeginnerQuestsFromOnboarding()
+
             self.isLoading = false
             return
         }
@@ -1667,13 +1684,49 @@ class DailyQuestService: ObservableObject {
         }
     }
 
+    /// Returns a copy of `quest` with completion fields set. Used by the
+    /// Day-1 fetch branch to carry completion state across `force: true`
+    /// re-fetches without re-awarding XP via `completeBeginnerQuestLocally`.
+    private func markedCompleted(_ quest: DailyQuest) -> DailyQuest {
+        DailyQuest(
+            id: quest.id,
+            questKey: quest.questKey,
+            title: quest.title,
+            description: quest.description,
+            icon: quest.icon,
+            category: quest.category,
+            targetValue: quest.targetValue,
+            currentValue: quest.targetValue,
+            targetUnit: quest.targetUnit,
+            xpReward: quest.xpReward,
+            leaguePoints: quest.leaguePoints,
+            difficulty: quest.difficulty,
+            isCompleted: true,
+            completedAt: quest.completedAt ?? ISO8601DateFormatter().string(from: Date()),
+            funLabel: quest.funLabel,
+            verificationType: quest.verificationType,
+            tier: quest.tier,
+            doubleXp: quest.doubleXp,
+            isCustom: quest.isCustom,
+            isReroll: quest.isReroll,
+            isBriefInfluenced: quest.isBriefInfluenced
+        )
+    }
+
     /// Marks a Day-1 beginner placeholder quest complete in-memory and awards
     /// XP + league points, mirroring the success branch of `reportProgress`.
     /// Used by the `beginnerEquivalent` fall-through above because the
     /// hardcoded beginner cards have no server-side `user_daily_quests` row
     /// and `update_quest_progress` would silently no-op for them.
+    ///
+    /// `withCelebration` is `false` for backfill paths (e.g.
+    /// `backfillBeginnerQuestsFromOnboarding`) where the user took the action
+    /// minutes ago during onboarding/tutorial — popping a fullscreen
+    /// celebration the moment the dashboard appears would be jarring.
+    /// XP / league / bonus credits still happen regardless; only the
+    /// celebratory UI overlays are suppressed.
     @MainActor
-    private func completeBeginnerQuestLocally(_ questKey: QuestKey) async {
+    private func completeBeginnerQuestLocally(_ questKey: QuestKey, withCelebration: Bool = true) async {
         guard let idx = quests.firstIndex(where: {
             $0.questKey == questKey.rawValue && !$0.isCompleted
         }) else { return }
@@ -1703,8 +1756,10 @@ class DailyQuestService: ObservableObject {
             isBriefInfluenced: old.isBriefInfluenced
         )
 
-        lastCompletedQuest = quests[idx]
-        showQuestCompletionCelebration = true
+        if withCelebration {
+            lastCompletedQuest = quests[idx]
+            showQuestCompletionCelebration = true
+        }
 
         if old.xpReward > 0 {
             UserManager.shared.addXP(Int32(old.xpReward))
@@ -1725,27 +1780,52 @@ class DailyQuestService: ObservableObject {
             bonusXp = 50
             bonusLeaguePoints = 30
             UserManager.shared.addXP(Int32(bonusXp))
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                showBonusCelebration = true
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                showBonusCelebration = false
+            if withCelebration {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    showBonusCelebration = true
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    showBonusCelebration = false
+                }
             }
         }
 
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            showQuestCompletionCelebration = false
+        if withCelebration {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                showQuestCompletionCelebration = false
+            }
         }
 
         cacheQuests()
 
         #if DEBUG
         AppLogger.info(
-            "✅ [QUESTS] Completed beginner '\(questKey.rawValue)' (+\(old.xpReward) XP, +\(old.leaguePoints) league pts) [local]",
+            "✅ [QUESTS] Completed beginner '\(questKey.rawValue)' (+\(old.xpReward) XP, +\(old.leaguePoints) league pts) [local\(withCelebration ? "" : ", silent")]",
             category: .general
         )
         #endif
+    }
+
+    /// Pre-completes Day-1 beginner cards for actions the user already took
+    /// before the quest array existed — most importantly friend requests sent
+    /// during the onboarding `addFriends` step or the welcome tutorial.
+    ///
+    /// Without this, the user would tap "Add" during onboarding (which calls
+    /// `reportProgress(.addFriend)` against an empty `quests` array — a silent
+    /// no-op), then exit the tutorial only to see the "Add a Friend" card
+    /// still at 0/1 on the dashboard. Pre-completing here gives the user a
+    /// "preview of completed goals" the moment they land on the dashboard.
+    ///
+    /// Idempotent: `completeBeginnerQuestLocally` early-returns if the quest
+    /// is already complete, so re-running this on every fetch is safe.
+    @MainActor
+    private func backfillBeginnerQuestsFromOnboarding() async {
+        let hasFriendActivity = !FriendService.shared.friends.isEmpty
+            || !FriendService.shared.sentRequests.isEmpty
+        if hasFriendActivity, hasQuest(.beginnerAddFriend) {
+            await completeBeginnerQuestLocally(.beginnerAddFriend, withCelebration: false)
+        }
     }
 
     // MARK: - Backfill (catch-up after quest reassignment)

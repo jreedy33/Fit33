@@ -712,6 +712,32 @@ struct BattleCryShoutBubble: View {
     private var bubbleTextColor: Color { .white }
 
     var body: some View {
+        // Outgoing (I sent it) → hug the LEFT side of the row, tail points
+        // down-left at the type icon. Incoming (they sent it) → hug the
+        // RIGHT side, tail points down-right at the opponent's photo.
+        HStack(spacing: 0) {
+            if displayedIsOutgoing {
+                renderedBubble
+                Spacer(minLength: 0)
+            } else {
+                Spacer(minLength: 0)
+                renderedBubble
+                    // Nudge the incoming bubble slightly inward so the
+                    // tail visually lands on the opponent's photo.
+                    .padding(.trailing, 3)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .allowsHitTesting(false)
+        .onAppear {
+            syncDisplayedFromService()
+        }
+        .onChange(of: realtimeService.dashboardBattleCryRenderToken) { _, _ in
+            syncDisplayedFromService()
+        }
+    }
+
+    private var renderedBubble: some View {
         ZStack {
             if let reaction = displayedReaction {
                 bubbleContent(reaction)
@@ -725,13 +751,6 @@ struct BattleCryShoutBubble: View {
                     )
                     .id(reaction.reactionId)
             }
-        }
-        .allowsHitTesting(false)
-        .onAppear {
-            syncDisplayedFromService()
-        }
-        .onChange(of: realtimeService.dashboardBattleCryRenderToken) { _, _ in
-            syncDisplayedFromService()
         }
     }
 
@@ -783,7 +802,7 @@ struct BattleCryShoutBubble: View {
             }
         )
         .shadow(color: bubbleGradient.first?.opacity(0.45) ?? .clear, radius: 12, x: 0, y: 4)
-        .overlay(alignment: .bottomTrailing) {
+        .overlay(alignment: displayedIsOutgoing ? .bottomLeading : .bottomTrailing) {
             FourOClockTailTriangle()
                 .fill(
                     LinearGradient(
@@ -793,7 +812,10 @@ struct BattleCryShoutBubble: View {
                     )
                 )
                 .frame(width: 26, height: 14)
-                .offset(x: -2, y: 4)
+                // Mirror the tail horizontally for outgoing so it leans
+                // toward 9 o'clock instead of 3 o'clock.
+                .scaleEffect(x: displayedIsOutgoing ? -1 : 1, y: 1, anchor: .center)
+                .offset(x: displayedIsOutgoing ? 2 : -2, y: 4)
         }
         .overlay(
             BattleCryConfetti(burstId: confettiBurstId, gradient: bubbleGradient)

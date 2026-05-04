@@ -4845,16 +4845,22 @@ struct FriendChallenge: Codable, Identifiable, ChallengeTypeResolvable {
 // active challenges still has a stale opponent value (e.g. opponent at "0"
 // with a 16h-old `opponent_last_progress_at`) it would be misleading to
 // surface that card first while a sibling challenge has a freshly-updated
-// opponent. This sort moves "live" challenges to the front so page 0 is
-// always the most informative card the user has — without filtering any
-// challenges out of the carousel (users can still swipe to the stale ones).
+// opponent. This sort moves "live" challenges — and any challenge with a
+// pending incoming battle cry — to the front so page 0 is always the most
+// attention-worthy card the user has, without filtering any challenges out
+// of the carousel (users can still swipe to the stale ones).
 extension Array where Element == ActiveChallenge {
-    /// Returns a copy ordered so challenges with a recently-updated opponent
+    /// Returns a copy ordered so the most attention-worthy challenges
     /// appear first. Stable within tiers (preserves the server's
     /// `get_active_challenges` ordering — typically by `daysRemaining`
     /// ascending — as a tiebreaker).
     ///
     /// Priority tiers (lower = shown first):
+    ///  -1. Opponent has sent a battle cry that's pending in the dashboard
+    ///      banner buffer (`RealtimeService.dashboardIncomingBattleCryByChallenge`).
+    ///      The user MUST land on this card the moment they open the app
+    ///      so the `BattleCryShoutBubble` overlay is visible without a
+    ///      swipe. Highest priority of all.
     ///   0. Opponent has logged progress TODAY (`opponentTodayProgress > 0`)
     ///   1. Opponent's last progress timestamp is `.fresh` or `.recent`
     ///      (< 2h old) — they're active, just haven't moved the today
@@ -4864,8 +4870,17 @@ extension Array where Element == ActiveChallenge {
     ///      least once
     ///   3. Opponent at 0 with no recent activity — true "stale" cards
     ///      (the ones the user explicitly called out as bad defaults)
-    func sortedByOpponentFreshness(now: Date = Date()) -> [ActiveChallenge] {
+    ///
+    /// - Parameter incomingBattleCryChallengeIds: snapshot of
+    ///   `RealtimeService.dashboardIncomingBattleCryByChallenge.keys`.
+    ///   Pass an empty set when battle-cry context is unavailable
+    ///   (e.g. unit tests, surfaces that don't surface the bubble).
+    func sortedByOpponentFreshness(
+        now: Date = Date(),
+        incomingBattleCryChallengeIds: Set<UUID> = []
+    ) -> [ActiveChallenge] {
         func tier(_ c: ActiveChallenge) -> Int {
+            if incomingBattleCryChallengeIds.contains(c.challengeId) { return -1 }
             if let today = c.opponentTodayProgress, today > 0 { return 0 }
             switch ProgressFreshnessKit.freshness(for: c.opponentLastProgressAt, now: now) {
             case .fresh, .recent: return 1

@@ -22,17 +22,16 @@ jobs:
           xcodebuild clean build \
             -project Fit33.xcodeproj \
             -scheme Fit33 \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.5' \
             -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tail -20
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Check warnings
         run: |
           xcodebuild build \
             -project Fit33.xcodeproj \
             -scheme Fit33 \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.5' \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
             2>&1 | grep -c "warning:" || echo "0 warnings"

@@ -38,11 +38,10 @@ jobs:
           xcodebuild test \
             -project Fit33.xcodeproj \
             -scheme Fit33 \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.5' \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
-            -resultBundlePath TestResults.xcresult \
-            2>&1 | tail -50
+            -resultBundlePath TestResults.xcresult
 
       - name: Upload test results
         if: always()

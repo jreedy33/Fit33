@@ -209,10 +209,13 @@ struct FriendProfileView: View {
     // no completed seasons yet.
     @State private var friendOlympianSeasons: [OlympianSeasonBadge] = []
 
-    // Mutual-friend section (friend profiles only). The friend profile shows
-    // a compact card (count + stacked avatars + "See all"). Tapping it opens
-    // `MutualFriendsListView`, which owns the multi-select + challenge flow.
+    // Mutual-friend section. Friend profile shows a compact card (count +
+    // stacked avatars + "See all"). Non-friend profile shows the same card
+    // PLUS a "See friends >" CTA that opens `UserFriendsListView`
+    // (Instagram-style list of every friend the target user has, with
+    // per-row Add/Pending/Friends/Accept state).
     @State private var showingMutualsList = false
+    @State private var showingUserFriendsList = false
     
     var body: some View {
         NavigationStack {
@@ -260,9 +263,18 @@ struct FriendProfileView: View {
                         } else {
                             nonFriendStatsSection
 
+                            // Same compact stacked-rings card the friend
+                            // profile uses — single tap opens
+                            // `MutualFriendsListView` in read-only mode
+                            // (challenge CTA hidden because there's no
+                            // primary friend to seed a challenge with).
                             if !mutualFriends.isEmpty {
-                                mutualFriendsSection
+                                mutualFriendsCompactSection
                             }
+
+                            // "See friends >" Instagram-style entry into
+                            // the target user's full friend list.
+                            seeUserFriendsButton
 
                             addFriendButton
                             blockButton
@@ -319,13 +331,18 @@ struct FriendProfileView: View {
                 }
             }
             .fullScreenCover(isPresented: $showingMutualsList) {
-                if let primaryFriend = user.asFriend {
-                    MutualFriendsListView(
-                        primaryFriend: primaryFriend,
-                        mutuals: mutualFriends
-                    )
+                // `primaryFriend` may be nil here when opened from a non-friend
+                // profile — `MutualFriendsListView` honors the optional and
+                // hides the challenge CTA when it's nil.
+                MutualFriendsListView(
+                    primaryFriend: user.asFriend,
+                    mutuals: mutualFriends
+                )
+                .environmentObject(userManager)
+            }
+            .fullScreenCover(isPresented: $showingUserFriendsList) {
+                UserFriendsListView(targetUser: user)
                     .environmentObject(userManager)
-                }
             }
             .sheet(isPresented: $showingChallengeDetail) {
                 if let challenge = selectedChallenge {
@@ -596,72 +613,60 @@ struct FriendProfileView: View {
         }
     }
     
-    private var mutualFriendsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: "person.2.fill")
-                    .font(.caption)
-                    .foregroundColor(.blue)
-                Text("\(mutualFriends.count) Mutual Friend\(mutualFriends.count == 1 ? "" : "s")")
-                    .font(.ds_bodySmall)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-            }
-            .padding(.horizontal, 4)
+    // MARK: - "See friends >" CTA (non-friend case)
 
-            VStack(spacing: 0) {
-                ForEach(Array(mutualFriends.enumerated()), id: \.element.id) { index, mutual in
-                    HStack(spacing: 12) {
-                        CachedFriendPhoto(
-                            friendId: mutual.userId.uuidString,
-                            photoUrl: mutual.profilePhotoUrl,
-                            name: mutual.displayName,
-                            size: 36,
-                            showGradientRing: true,
-                            gradientColors: [.green, .green.opacity(0.6)]
-                        )
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(mutual.name ?? "Unknown")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-
-                            if let username = mutual.username, !username.isEmpty {
-                                Text("@\(username)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-
-                        Spacer()
-
-                        Text("Friends")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(Color.green.opacity(0.15)))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-
-                    if index < mutualFriends.count - 1 {
-                        Divider()
-                            .padding(.leading, 60)
-                    }
+    /// Single-row card that opens the target user's full friend list as an
+    /// Instagram-style scroller. Sits below the mutual-friends compact card
+    /// on a non-friend's profile so the user can browse the wider social
+    /// graph (not just the intersection).
+    private var seeUserFriendsButton: some View {
+        Button(action: {
+            HapticManager.impact(.light)
+            showingUserFriendsList = true
+        }) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(
+                            colors: [.blue, .cyan],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "person.2.crop.square.stack.fill")
+                        .font(.subheadline)
+                        .foregroundColor(.white)
                 }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("See friends")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+
+                    Text("Browse \(user.name?.components(separatedBy: " ").first ?? user.username ?? "their")'s full friend list")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
+            .padding(Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.lg)
                     .fill(Color.cardBackground)
             )
+            .contentShape(Rectangle())
         }
+        .buttonStyle(PlainButtonStyle())
     }
 
-    // MARK: - Mutual Friends Compact Preview (friends case)
+    // MARK: - Mutual Friends Compact Preview (shared by friend & non-friend)
 
     /// Compact preview row that shows the mutual count and up to 5 stacked
     /// avatars. Tapping anywhere on the card opens `MutualFriendsListView`,
@@ -1459,7 +1464,11 @@ struct MutualFriendsListView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var userManager: UserManager
 
-    let primaryFriend: Friend
+    /// When non-nil, the toolbar exposes a "Start Challenge" / "Private
+    /// Challenge" CTA that pre-includes this friend in the cohort. When nil
+    /// (e.g. opened from a non-friend's profile), the challenge button is
+    /// hidden — the surface becomes a read-only mutuals browser.
+    let primaryFriend: Friend?
     let mutuals: [MutualFriend]
 
     @State private var selectedMutualIds: Set<UUID> = []
@@ -1520,28 +1529,37 @@ struct MutualFriendsListView: View {
                             .font(.ds_labelLarge)
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: launchChallenge) {
-                        Text(ctaTitle)
-                            .fontWeight(.semibold)
+                // Read-only mode (no `primaryFriend`) hides the CTA — opened
+                // from a non-friend profile, where there's no friend to seed
+                // a challenge with.
+                if primaryFriend != nil {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: launchChallenge) {
+                            Text(ctaTitle)
+                                .fontWeight(.semibold)
+                        }
+                        .disabled(selectedMutualIds.isEmpty)
                     }
-                    .disabled(selectedMutualIds.isEmpty)
                 }
             }
             .fullScreenCover(isPresented: $showingGroupChallengeFlow) {
-                NavigationStack {
-                    ChallengeFlowStartView(
-                        preSelectedFriends: [primaryFriend] + selectedFriends
-                    )
-                    .environmentObject(userManager)
+                if let primaryFriend {
+                    NavigationStack {
+                        ChallengeFlowStartView(
+                            preSelectedFriends: [primaryFriend] + selectedFriends
+                        )
+                        .environmentObject(userManager)
+                    }
                 }
             }
             .fullScreenCover(isPresented: $showingPrivateChallengeFlow) {
-                NavigationStack {
-                    PrivateChallengeCreationFlow(
-                        preSelectedFriends: [primaryFriend] + selectedFriends
-                    )
-                    .environmentObject(userManager)
+                if let primaryFriend {
+                    NavigationStack {
+                        PrivateChallengeCreationFlow(
+                            preSelectedFriends: [primaryFriend] + selectedFriends
+                        )
+                        .environmentObject(userManager)
+                    }
                 }
             }
         }
@@ -1708,5 +1726,371 @@ struct MutualFriendsListView: View {
         } else {
             selectedMutualIds.insert(mutual.userId)
         }
+    }
+}
+
+// MARK: - User Friends Full-Screen List (Instagram-style)
+
+/// Instagram-style scrollable list of *another user's* friends. Reached from
+/// the "See friends >" CTA on a non-friend's profile (`FriendProfileView`).
+/// Each row renders the right per-row CTA based on the caller's relationship
+/// with that friend:
+///   - **Friends**          → green "Friends" pill
+///   - **Pending (sent)**   → muted "Pending" pill
+///   - **Pending (recv'd)** → blue "Accept" button → `acceptFriendRequest`
+///   - **Stranger**         → blue "+ Add" button → `sendFriendRequest`
+///
+/// Backed by `FriendService.fetchUserFriendsList(for:)` → RPC
+/// `get_user_friends_list` (#196). Rows that yield friend-request actions
+/// optimistically toggle local state so the user gets instant feedback while
+/// the network call completes.
+struct UserFriendsListView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject var userManager: UserManager
+
+    let targetUser: ProfileUser
+
+    @State private var entries: [UserFriendListEntry] = []
+    @State private var isLoading = true
+    @State private var searchText = ""
+    @State private var sentRequestIds: Set<UUID> = []
+    @State private var inFlightRequestIds: Set<UUID> = []
+    @State private var acceptedRequestIds: Set<UUID> = []
+    @State private var selectedProfile: ProfileUser?
+
+    private var filtered: [UserFriendListEntry] {
+        guard !searchText.isEmpty else { return entries }
+        let query = searchText.lowercased()
+        return entries.filter { entry in
+            (entry.name?.lowercased().contains(query) ?? false)
+                || (entry.username?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    private var headerSubtitle: String {
+        let firstName = targetUser.name?.components(separatedBy: " ").first
+            ?? targetUser.username
+            ?? "they"
+        if entries.isEmpty {
+            return isLoading ? "Loading…" : "\(firstName) has no friends yet"
+        }
+        return "\(entries.count) friend\(entries.count == 1 ? "" : "s")"
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AnimatedOrbBackground.friends(colorScheme: colorScheme)
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        searchBar
+                            .padding(.horizontal, Spacing.md)
+                            .padding(.top, 12)
+                            .padding(.bottom, 8)
+
+                        if isLoading && entries.isEmpty {
+                            loadingState
+                                .padding(.top, 60)
+                        } else if filtered.isEmpty {
+                            emptyState
+                                .padding(.top, 60)
+                        } else {
+                            friendsListCard
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.bottom, 40)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(targetUser.name?.components(separatedBy: " ").first.map { "\($0)'s Friends" } ?? "Friends")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "chevron.left")
+                            .font(.ds_labelLarge)
+                    }
+                }
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 0) {
+                        Text(targetUser.name?.components(separatedBy: " ").first ?? targetUser.username ?? "Friends")
+                            .font(.headline)
+                        Text(headerSubtitle)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .task { await loadFriends() }
+            .sheet(item: $selectedProfile) { profile in
+                FriendProfileView(user: profile)
+                    .environmentObject(userManager)
+            }
+        }
+    }
+
+    // MARK: - Subviews
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+                .font(.subheadline)
+
+            TextField("Search friends", text: $searchText)
+                .font(.subheadline)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+
+            if !searchText.isEmpty {
+                Button(action: { searchText = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                        .font(.subheadline)
+                }
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.md)
+                .fill(Color.cardBackground)
+        )
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(1.2)
+            Text("Loading friends…")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var emptyState: some View {
+        let firstName = targetUser.name?.components(separatedBy: " ").first
+            ?? targetUser.username
+            ?? "This user"
+        return VStack(spacing: 12) {
+            Image(systemName: "person.2.slash")
+                .font(.title)
+                .foregroundColor(.secondary)
+            Text(searchText.isEmpty ? "\(firstName) has no friends yet" : "No friends matching \"\(searchText)\"")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, Spacing.lg)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var friendsListCard: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(filtered.enumerated()), id: \.element.id) { index, entry in
+                friendRow(entry: entry)
+
+                if index < filtered.count - 1 {
+                    Divider().padding(.leading, 64)
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(Color.cardBackground)
+        )
+    }
+
+    private func friendRow(entry: UserFriendListEntry) -> some View {
+        Button(action: { openProfile(for: entry) }) {
+            HStack(spacing: 12) {
+                CachedFriendPhoto(
+                    friendId: entry.userId.uuidString,
+                    photoUrl: entry.profilePhotoUrl,
+                    name: entry.name ?? entry.username ?? "?",
+                    size: 44,
+                    showGradientRing: entry.isMyFriend,
+                    gradientColors: [.green, .green.opacity(0.6)]
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(entry.name ?? "Unknown")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+
+                        if (entry.isVerified ?? false) || (entry.isGoldVerified ?? false) {
+                            VerifiedBadge(size: 12, isGold: entry.isGoldVerified ?? false)
+                        }
+                    }
+
+                    if let username = entry.username, !username.isEmpty {
+                        Text("@\(username)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer()
+
+                rowActionPill(entry: entry)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    @ViewBuilder
+    private func rowActionPill(entry: UserFriendListEntry) -> some View {
+        let optimisticallySent = sentRequestIds.contains(entry.userId)
+        let optimisticallyAccepted = acceptedRequestIds.contains(entry.userId)
+        let isInFlight = inFlightRequestIds.contains(entry.userId)
+
+        if entry.isMyFriend || optimisticallyAccepted {
+            // Green "Friends" pill — already in our circle.
+            Text("Friends")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.green)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.green.opacity(0.15)))
+        } else if entry.hasOutgoingRequest || optimisticallySent {
+            // Muted "Pending" pill — request already sent.
+            Text("Pending")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.gray.opacity(0.15)))
+        } else if entry.hasIncomingRequest {
+            // Inbound request → "Accept" button.
+            Button(action: { Task { await acceptIncoming(entry: entry) } }) {
+                HStack(spacing: 4) {
+                    if isInFlight {
+                        ProgressView().scaleEffect(0.6).tint(.white)
+                    } else {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    Text("Accept")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule().fill(LinearGradient(
+                        colors: [.blue, .cyan],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ))
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+            .disabled(isInFlight)
+        } else {
+            // Stranger → "+ Add" button (sends a friend request).
+            Button(action: { Task { await sendRequest(entry: entry) } }) {
+                HStack(spacing: 4) {
+                    if isInFlight {
+                        ProgressView().scaleEffect(0.6).tint(.white)
+                    } else {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    Text("Add")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule().fill(LinearGradient(
+                        colors: [.blue, .cyan],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ))
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+            .disabled(isInFlight)
+        }
+    }
+
+    // MARK: - Actions
+
+    @MainActor
+    private func loadFriends() async {
+        isLoading = true
+        let fetched = await FriendService.shared.fetchUserFriendsList(for: targetUser.userId)
+        entries = fetched
+        isLoading = false
+    }
+
+    @MainActor
+    private func openProfile(for entry: UserFriendListEntry) {
+        // Map to a ProfileUser via the existing UserSearchResult bridge.
+        // Note: argument order must match the struct's memberwise init
+        // (userId, name, email, username, fitnessGoal, experienceLevel,
+        // profilePhotoUrl, isFriend, hasPendingRequest, hasOutgoingRequest,
+        // hasIncomingRequest, isVerified, isGoldVerified).
+        let pendingEither = entry.hasOutgoingRequest
+            || entry.hasIncomingRequest
+            || sentRequestIds.contains(entry.userId)
+        let synthesizedSearch = UserSearchResult(
+            userId: entry.userId,
+            name: entry.name,
+            email: nil,
+            username: entry.username,
+            fitnessGoal: nil,
+            experienceLevel: nil,
+            profilePhotoUrl: entry.profilePhotoUrl,
+            isFriend: entry.isMyFriend || acceptedRequestIds.contains(entry.userId),
+            hasPendingRequest: pendingEither,
+            hasOutgoingRequest: entry.hasOutgoingRequest || sentRequestIds.contains(entry.userId),
+            hasIncomingRequest: entry.hasIncomingRequest,
+            isVerified: entry.isVerified,
+            isGoldVerified: entry.isGoldVerified
+        )
+        selectedProfile = ProfileUser(searchResult: synthesizedSearch)
+    }
+
+    @MainActor
+    private func sendRequest(entry: UserFriendListEntry) async {
+        guard !inFlightRequestIds.contains(entry.userId) else { return }
+        HapticManager.impact(.medium)
+        inFlightRequestIds.insert(entry.userId)
+        let success = await FriendService.shared.sendFriendRequest(toUserId: entry.userId)
+        inFlightRequestIds.remove(entry.userId)
+        if success {
+            sentRequestIds.insert(entry.userId)
+            HapticManager.notification(.success)
+        }
+    }
+
+    @MainActor
+    private func acceptIncoming(entry: UserFriendListEntry) async {
+        guard !inFlightRequestIds.contains(entry.userId) else { return }
+        HapticManager.impact(.medium)
+        inFlightRequestIds.insert(entry.userId)
+        // Find the matching pending-request id from the FriendService cache —
+        // the list RPC doesn't carry the request UUID, so we look it up here.
+        if let request = FriendService.shared.pendingRequests.first(where: { $0.fromUserId == entry.userId }) {
+            let ok = await FriendService.shared.acceptFriendRequest(requestId: request.requestId)
+            if ok {
+                acceptedRequestIds.insert(entry.userId)
+                HapticManager.notification(.success)
+            }
+        }
+        inFlightRequestIds.remove(entry.userId)
     }
 }

@@ -63,10 +63,11 @@ struct ActiveChallengeHeaderRow: View {
         // bubble subscribes via `RealtimeService` sticky incoming + outgoing maps
         // and filters internally to `challenge.challengeId`, so
         // multiple cards on the same dashboard each only paint their
-        // own challenge's reactions. Auto-dismisses after 6s.
+        // own challenge's reactions. Nudged toward trailing + lower so
+        // the tail reads as anchored on the card (not floating mid-gap).
         .overlay(alignment: .top) {
             BattleCryShoutBubble(challengeId: challenge.challengeId)
-                .offset(y: -28)
+                .offset(x: Spacing.xl, y: Spacing.sm)
                 .allowsHitTesting(true)
                 .zIndex(20)
         }

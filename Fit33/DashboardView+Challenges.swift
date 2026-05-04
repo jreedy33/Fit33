@@ -1296,7 +1296,7 @@ struct DashboardChallengesWrapper: View {
         // `ActiveChallengeHeaderRow`.
         .overlay(alignment: .top) {
             BattleCryShoutBubble(challengeId: challenge.challengeId)
-                .offset(y: -28)
+                .offset(x: Spacing.xl, y: Spacing.sm)
                 .allowsHitTesting(true)
                 .zIndex(20)
         }

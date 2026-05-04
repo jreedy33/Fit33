@@ -1307,9 +1307,83 @@ class FriendService: ObservableObject {
             return []
         }
     }
+
+    // MARK: - Other User's Friends List (Instagram-style)
+
+    /// Fetches the *target user's* accepted friend list (not the caller's).
+    /// Powers `UserFriendsListView` reached via "See friends >" on a non-friend
+    /// profile. Each entry includes per-row signals (`isMyFriend`,
+    /// `hasOutgoingRequest`, `hasIncomingRequest`) so the UI can render the
+    /// right CTA per row without an extra round-trip.
+    /// Backed by RPC `get_user_friends_list(p_target_user_id, p_limit)` —
+    /// see `supabase/20260504_get_user_friends_list.sql`.
+    func fetchUserFriendsList(for targetUserId: UUID, limit: Int = 200) async -> [UserFriendListEntry] {
+        guard SupabaseManager.shared.isAuthenticated else { return [] }
+        do {
+            let result: [UserFriendListEntry] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_user_friends_list", params: [
+                    "p_target_user_id": targetUserId.uuidString,
+                    "p_limit": String(max(1, min(limit, 500)))
+                ])
+                .execute()
+                .value
+            return result
+        } catch {
+            _ = NetworkErrorClassifier.log(
+                error,
+                context: "Failed to fetch user friends list",
+                category: .social,
+                op: PerformanceSignposts.Op.friendsList.rawValue,
+                endpoint: "rpc/get_user_friends_list",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
+            return []
+        }
+    }
 }
 
 // MARK: - Data Models
+
+/// Row of `get_user_friends_list(p_target_user_id, p_limit)` (#196). Used by
+/// `UserFriendsListView` to render an Instagram-style list of *another user's*
+/// friends with per-row CTA state (already friends / pending / can-add /
+/// can-accept) so we don't need a per-row roundtrip.
+struct UserFriendListEntry: Codable, Identifiable {
+    let userId: UUID
+    let name: String?
+    let username: String?
+    let profilePhotoUrl: String?
+    let isVerified: Bool?
+    let isGoldVerified: Bool?
+    /// True when the caller is already friends with this user — render a
+    /// "Friends" badge instead of an "Add" button.
+    let isMyFriend: Bool
+    /// True when the caller has already sent this user a friend request and
+    /// it's still pending — render "Pending".
+    let hasOutgoingRequest: Bool
+    /// True when this user has sent the caller a friend request that's still
+    /// pending — render "Accept".
+    let hasIncomingRequest: Bool
+
+    var id: UUID { userId }
+
+    var displayName: String {
+        if let username, !username.isEmpty { return "@\(username)" }
+        return name ?? "Unknown"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case name
+        case username
+        case profilePhotoUrl = "profile_photo_url"
+        case isVerified = "is_verified"
+        case isGoldVerified = "is_gold_verified"
+        case isMyFriend = "is_my_friend"
+        case hasOutgoingRequest = "has_outgoing_request"
+        case hasIncomingRequest = "has_incoming_request"
+    }
+}
 
 struct MutualFriend: Codable, Identifiable {
     let userId: UUID

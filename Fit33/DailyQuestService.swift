@@ -1504,7 +1504,22 @@ class DailyQuestService: ObservableObject {
     }
     
     // MARK: - Update Quest Progress
-    
+
+    /// Day-1 onboarding cards (`beginnerSocialQuest()` / `beginnerWorkoutQuest()`
+    /// / `beginnerProgramQuest()`) are hardcoded client-side and have NO row
+    /// in `user_daily_quests`, so the regular `update_quest_progress` RPC is
+    /// a no-op for them. When a user takes an action whose canonical
+    /// `QuestKey` matches one of these placeholders, we fall through to a
+    /// local-only completion path. Without this map, e.g. sending a friend
+    /// request fires `reportProgress(.addFriend)` which logs
+    /// "Quest 'add_friend' not active today, skipping" while the
+    /// "Add a Friend" beginner card stays at 0/1 forever.
+    private static let beginnerEquivalent: [QuestKey: QuestKey] = [
+        .addFriend:       .beginnerAddFriend,
+        .completeWorkout: .beginnerFirstWorkout,
+        .sendChallenge:   .beginnerSendChallenge
+    ]
+
     /// Call this when the user completes an action that might advance a quest.
     /// The function checks if the quest is active today before making the RPC call.
     func reportProgress(questKey: QuestKey, increment: Int = 1) async {
@@ -1516,6 +1531,15 @@ class DailyQuestService: ObservableObject {
         
         // Only call RPC if this quest is actually assigned today and not yet done
         guard hasQuest(questKey) else {
+            // Day-1 fall-through: the Day-1 beginner equivalent placeholder
+            // may be on screen instead of the canonical server-quest row.
+            // Flip it locally so the card ticks to ✓ and the user gets XP /
+            // league points immediately.
+            if let beginnerKey = Self.beginnerEquivalent[questKey],
+               hasQuest(beginnerKey) {
+                await completeBeginnerQuestLocally(beginnerKey)
+                return
+            }
             #if DEBUG
             AppLogger.debug("📋 [QUESTS] Quest '\(questKey.rawValue)' not active today, skipping", category: .general)
             #endif
@@ -1642,7 +1666,88 @@ class DailyQuestService: ObservableObject {
             // Silently fail — quest progress is best-effort
         }
     }
-    
+
+    /// Marks a Day-1 beginner placeholder quest complete in-memory and awards
+    /// XP + league points, mirroring the success branch of `reportProgress`.
+    /// Used by the `beginnerEquivalent` fall-through above because the
+    /// hardcoded beginner cards have no server-side `user_daily_quests` row
+    /// and `update_quest_progress` would silently no-op for them.
+    @MainActor
+    private func completeBeginnerQuestLocally(_ questKey: QuestKey) async {
+        guard let idx = quests.firstIndex(where: {
+            $0.questKey == questKey.rawValue && !$0.isCompleted
+        }) else { return }
+
+        let old = quests[idx]
+        quests[idx] = DailyQuest(
+            id: old.id,
+            questKey: old.questKey,
+            title: old.title,
+            description: old.description,
+            icon: old.icon,
+            category: old.category,
+            targetValue: old.targetValue,
+            currentValue: old.targetValue,
+            targetUnit: old.targetUnit,
+            xpReward: old.xpReward,
+            leaguePoints: old.leaguePoints,
+            difficulty: old.difficulty,
+            isCompleted: true,
+            completedAt: ISO8601DateFormatter().string(from: Date()),
+            funLabel: old.funLabel,
+            verificationType: old.verificationType,
+            tier: old.tier,
+            doubleXp: old.doubleXp,
+            isCustom: old.isCustom,
+            isReroll: old.isReroll,
+            isBriefInfluenced: old.isBriefInfluenced
+        )
+
+        lastCompletedQuest = quests[idx]
+        showQuestCompletionCelebration = true
+
+        if old.xpReward > 0 {
+            UserManager.shared.addXP(Int32(old.xpReward))
+        }
+
+        // Mirror reportProgress's dual-source league award (legacy
+        // `.challengeTarget` + `.dailyQuestCompleted`) so the league
+        // scoreboard stays consistent regardless of completion path.
+        await WeeklyLeagueService.shared.addPoints(source: .challengeTarget)
+        await WeeklyLeagueService.shared.addPoints(source: .dailyQuestCompleted)
+
+        // Bonus when all 3 Day-1 cards complete. Beginner quests don't go
+        // through the server's `unlock_quest_bonus` trigger, so credit the
+        // bonus locally here using the same +50 / +30 amounts the server
+        // uses when the regular slate completes.
+        if quests.allSatisfy(\.isCompleted) && !allComplete {
+            allComplete = true
+            bonusXp = 50
+            bonusLeaguePoints = 30
+            UserManager.shared.addXP(Int32(bonusXp))
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                showBonusCelebration = true
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                showBonusCelebration = false
+            }
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            showQuestCompletionCelebration = false
+        }
+
+        cacheQuests()
+
+        #if DEBUG
+        AppLogger.info(
+            "✅ [QUESTS] Completed beginner '\(questKey.rawValue)' (+\(old.xpReward) XP, +\(old.leaguePoints) league pts) [local]",
+            category: .general
+        )
+        #endif
+    }
+
     // MARK: - Backfill (catch-up after quest reassignment)
 
     /// Walks today's local data sources and replays `reportProgress` for any

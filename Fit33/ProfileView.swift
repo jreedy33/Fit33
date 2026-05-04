@@ -1304,7 +1304,7 @@ struct ProfileView: View {
                                 Image(systemName: "crown.fill")
                                     .font(.caption2)
                                     .foregroundStyle(LinearGradient(
-                                        colors: [goldAccent, badge.resolvedArchetype.accent],
+                                        colors: [pathAccent, pathDeep],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     ))
@@ -1315,10 +1315,10 @@ struct ProfileView: View {
                             .padding(.vertical, 4)
                             .padding(.horizontal, 6)
                             .background(
-                                Capsule().fill(goldAccent.opacity(0.12))
+                                Capsule().fill(pathAccent.opacity(0.12))
                             )
                             .overlay(
-                                Capsule().stroke(goldAccent.opacity(0.3), lineWidth: 0.5)
+                                Capsule().stroke(pathAccent.opacity(0.3), lineWidth: 0.5)
                             )
                         }
 

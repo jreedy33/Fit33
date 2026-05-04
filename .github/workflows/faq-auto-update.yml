@@ -71,7 +71,10 @@ jobs:
       - name: Fetch current FAQ entries
         if: steps.secrets.outputs.skip != 'true' && steps.changes.outputs.count != '0'
         id: faq
+        continue-on-error: true
         run: |
+          set +e
+          set +o pipefail
           FAQ_DATA=$(curl -s \
             -H "apikey: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
@@ -84,9 +87,12 @@ jobs:
       - name: Analyze with Claude
         if: steps.secrets.outputs.skip != 'true' && steps.changes.outputs.count != '0'
         id: analysis
+        continue-on-error: true
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          set +e
+          set +o pipefail
           PROMPT=$(cat <<'PROMPT_EOF'
           You are a support agent for the Fit33 fitness app. Analyze the code changes below and determine if any FAQ entries need updating or if new ones should be created.
 
@@ -140,11 +146,15 @@ jobs:
 
       - name: Apply FAQ updates
         if: steps.secrets.outputs.skip != 'true' && steps.changes.outputs.count != '0'
+        continue-on-error: true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
+          # Disable bash -eo pipefail defaults; this step must never fail the workflow
+          set +e
+          set +o pipefail
           RESULT=$(cat /tmp/faq_analysis.json 2>/dev/null || echo '{}')
 
           if [ -z "$RESULT" ] || [ "$RESULT" = "{}" ]; then

@@ -23,25 +23,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
+      - name: Select Xcode + diagnostics
         run: |
           sudo xcode-select -s /Applications/Xcode_15.4.app
+          echo "=== xcodebuild -version ==="
           xcodebuild -version
-          xcrun simctl list runtimes available
-          xcrun simctl list devices available iPhone 15
-
-      - name: List schemes
-        run: xcodebuild -project Fit33.xcodeproj -list
+          echo ""
+          echo "=== Available iOS Simulator runtimes ==="
+          xcrun simctl list runtimes available || true
+          echo ""
+          echo "=== Available iPhone 15 devices ==="
+          xcrun simctl list devices available 'iPhone 15' || true
+          echo ""
+          echo "=== Project schemes ==="
+          xcodebuild -project Fit33.xcodeproj -list || true
 
       - name: Resolve packages
+        id: resolve
+        continue-on-error: true
         run: |
+          set +e
+          set -o pipefail
           xcodebuild -resolvePackageDependencies \
             -project Fit33.xcodeproj \
             -scheme Fit33 \
-            -skipPackagePluginValidation
+            -skipPackagePluginValidation \
+            2>&1 | tee resolve.log
+          RC=${PIPESTATUS[0]}
+          echo "resolve_rc=$RC" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Run unit tests
+        id: tests
+        continue-on-error: true
         run: |
+          set +e
           set -o pipefail
           xcodebuild test \
             -project Fit33.xcodeproj \
@@ -49,7 +65,22 @@ jobs:
             -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.5' \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
-            -resultBundlePath TestResults.xcresult
+            -resultBundlePath TestResults.xcresult \
+            2>&1 | tee xcodebuild.log
+          RC=${PIPESTATUS[0]}
+          echo "test_rc=$RC" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload xcodebuild log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: |
+            xcodebuild.log
+            resolve.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload test results
         if: always()
@@ -58,3 +89,19 @@ jobs:
           name: test-results
           path: TestResults.xcresult
           retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Fail job on real test/build failure
+        run: |
+          RESOLVE_RC="${{ steps.resolve.outputs.resolve_rc }}"
+          TEST_RC="${{ steps.tests.outputs.test_rc }}"
+          echo "resolve_rc=$RESOLVE_RC test_rc=$TEST_RC"
+          if [ "$RESOLVE_RC" != "0" ] && [ -n "$RESOLVE_RC" ]; then
+            echo "::error::Package resolution failed (exit $RESOLVE_RC). See xcodebuild-log artifact (resolve.log)."
+            exit 1
+          fi
+          if [ "$TEST_RC" != "0" ] && [ -n "$TEST_RC" ]; then
+            echo "::error::xcodebuild test failed (exit $TEST_RC). See xcodebuild-log artifact (xcodebuild.log)."
+            exit 1
+          fi
+          echo "All steps passed."

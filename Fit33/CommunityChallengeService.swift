@@ -813,6 +813,53 @@ class CommunityChallengeService: ObservableObject {
         }
     }
     
+    // MARK: - Fetch PYMK / Friends-of-Friends Communities
+    //
+    // Powers the onboarding tutorial's Community step on accounts that
+    // haven't friended anyone yet. `fetchDiscoverableChallenges()` only
+    // returns communities the user's DIRECT friends are in (server-side
+    // filter via `get_friend_ids`), which always returns empty for a
+    // brand-new account. This call passes the PYMK / contact user-id list
+    // explicitly so the tutorial can still show "the community most of the
+    // people you may know are in".
+    //
+    // Returns the result instead of mutating a `@Published` property — the
+    // tutorial owns its own `@State` for this list and we don't want it
+    // bleeding into other surfaces (Friends tab, Community Hub) that
+    // already render via the friend-only `discoverableChallenges`.
+    func fetchPYMKCommunityChallenges(userIds: [UUID], limit: Int = 10) async -> [DiscoverableCommunityChallenge] {
+        guard SupabaseManager.shared.isAuthenticated else { return [] }
+        guard !userIds.isEmpty else { return [] }
+        do {
+            struct PYMKDiscoverParams: Encodable {
+                let p_user_ids: [String]
+                let p_limit: Int
+            }
+            let result: [DiscoverableCommunityChallenge] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_discoverable_community_challenges_for_users", params: PYMKDiscoverParams(
+                    p_user_ids: userIds.map { $0.uuidString },
+                    p_limit: limit
+                ))
+                .execute()
+                .value
+            // Belt-and-suspenders client-side sort — server already orders
+            // by friends_count DESC, participant_count DESC.
+            return result.sorted { $0.friendsCount > $1.friendsCount }
+        } catch {
+            if !Task.isCancelled {
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Error fetching PYMK community challenges",
+                    category: .social,
+                    transientLevel: .warning,
+                    op: "challenges.fetch",
+                    endpoint: "rpc/get_discoverable_community_challenges_for_users"
+                )
+            }
+            return []
+        }
+    }
+
     // MARK: - Fetch Featured / Discover
     
     func fetchFeaturedChallenges(category: String? = nil) async {

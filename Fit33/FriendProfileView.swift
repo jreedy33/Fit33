@@ -237,6 +237,12 @@ struct FriendProfileView: View {
                                 mutualFriendsCompactSection
                             }
 
+                            // "See friends >" is useful on friend profiles too
+                            // (browse a friend's wider network — handy for
+                            // discovering people you might also know without
+                            // requiring a mutual intersection).
+                            seeUserFriendsButton
+
                             statsSection
 
                             if !friendOlympianSeasons.isEmpty {

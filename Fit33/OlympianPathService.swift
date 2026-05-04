@@ -412,8 +412,13 @@ final class OlympianPathService: ObservableObject {
 
         // 2. Ask the server for the user's 33 (idempotent)
         guard let response = await assignPath(year: year, archetype: resolvedArchetype) else {
-            AppLogger.warning("OlympianPathService: assign_olympian_path returned nil (year=\(year))", category: .general)
-            // lastLoadError is already populated by `assignPath`'s catch
+            // If `lastLoadError` is empty here, `assignPath` returned nil for a
+            // benign reason (transient task cancellation). Don't warn — the
+            // next foreground refresh / pull-to-refresh will retry. Only the
+            // real-error branch populates `lastLoadError`.
+            if lastLoadError != nil {
+                AppLogger.warning("OlympianPathService: assign_olympian_path returned nil (year=\(year))", category: .general)
+            }
             return
         }
 
@@ -504,7 +509,27 @@ final class OlympianPathService: ObservableObject {
                 .execute()
                 .value
             return response
+        } catch is CancellationError {
+            // Transient — typically the parent SwiftUI `.task` was torn down
+            // (scenePhase blip during cold start, view going away). NOT a
+            // real failure: we leave `lastLoadError` empty so the empty-state
+            // card stays clean and the next foreground refresh retries.
+            AppLogger.debug(
+                "assign_olympian_path cancelled (transient task teardown) — no error surfaced",
+                category: .general
+            )
+            return nil
         } catch {
+            // URLError.cancelled is the same story (network task cancelled when
+            // SwiftUI tore down the parent task). Don't log as `error` and
+            // don't surface to the empty-state card.
+            if let urlErr = error as? URLError, urlErr.code == .cancelled {
+                AppLogger.debug(
+                    "assign_olympian_path URL cancelled (transient task teardown)",
+                    category: .general
+                )
+                return nil
+            }
             // Surface the real Postgres / network error to the user-facing
             // empty state. Common cases worth distinguishing:
             //   • PGRST202 / "function … does not exist" → migration not

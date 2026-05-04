@@ -491,7 +491,11 @@ struct TutorialPageView: View {
         switch kind {
         case .welcome, .trial:                    return geometry.size.height * 0.46
         case .wearables:                          return geometry.size.height * 0.50
-        case .challenges1v1, .community:          return geometry.size.height * 0.42
+        // Community step renders the live `CommunityLeaderboardWidget` once
+        // the user joins from this screen — needs more vertical room than the
+        // discovery card so the mini-leaderboard rows aren't clipped.
+        case .community:                          return geometry.size.height * 0.52
+        case .challenges1v1:                      return geometry.size.height * 0.42
         case .programs, .fuel, .league:           return geometry.size.height * 0.38
         case .autoWorkout, .findFriends:          return geometry.size.height * 0.36
         }
@@ -883,32 +887,294 @@ struct TutorialChallengeHero: View {
 }
 
 // MARK: - Community Hero
+//
+// The community step on the welcome tutorial is REAL — not a static mock.
+// It picks the most contact-relevant community challenge to feature
+// (top friend-density first, then top popular fallback) and lets the new
+// user actually join from this screen. Once joined, the card flips to the
+// live `CommunityLeaderboardWidget` so the user immediately sees themselves
+// alongside their friends on the leaderboard before they even leave the
+// onboarding flow. (Replaces the prior demo "5K Morning Walk" mock card.)
 
 struct TutorialCommunityHero: View {
+    @ObservedObject private var communityService = CommunityChallengeService.shared
+    @ObservedObject private var contactsService = ContactsService.shared
     let kind: TutorialPageKind
     let isAnimating: Bool
 
+    @State private var didTriggerRefresh = false
+    @State private var didLoadPYMKCommunities = false
+    @State private var isJoining = false
+    @State private var joinedChallengeId: UUID?
+    /// Communities surfaced via friends-of-friends / "people you may know".
+    /// Held locally (not on the service) because it's onboarding-only —
+    /// other surfaces (Friends tab, Community Hub) keep using the
+    /// friend-only `discoverableChallenges`.
+    @State private var pymkCommunities: [DiscoverableCommunityChallenge] = []
+
+    /// Priority 1 — communities the user's DIRECT friends are in (the
+    /// discoverable RPC orders by `friends_count DESC, participant_count
+    /// DESC` server-side; the service re-sorts client-side as a
+    /// belt-and-suspenders).
+    private var topFriendCommunity: DiscoverableCommunityChallenge? {
+        communityService.discoverableChallenges.first
+    }
+
+    /// Priority 2 — communities the user's PEOPLE-YOU-MAY-KNOW (friends
+    /// of friends + contact-derived suggestions) are in. Used when the
+    /// direct-friend list is empty (typical brand-new-account case
+    /// because the user just synced contacts but hasn't friended anyone
+    /// yet). Joining is still gated by `can_join_community_challenge`
+    /// which accepts FoF — so the same `joinChallengeFriendGated` flow
+    /// handles both this and the direct-friend case.
+    private var topPYMKCommunity: DiscoverableCommunityChallenge? {
+        pymkCommunities.first
+    }
+
+    /// Priority 3 — top popular non-joined featured challenge. Last
+    /// resort when the user has neither friends nor PYMK in any
+    /// community.
+    private var topFeaturedCommunity: FeaturedCommunityChallenge? {
+        communityService.featuredChallenges.first(where: { !$0.alreadyJoined })
+    }
+
+    /// The just-joined challenge (live `CommunityChallenge` from
+    /// `myChallenges`), resolved by id so the leaderboard widget
+    /// renders with real top-5 data.
+    private var joinedChallenge: CommunityChallenge? {
+        guard let id = joinedChallengeId else { return nil }
+        return communityService.myChallenges.first(where: { $0.challengeId == id })
+    }
+
     var body: some View {
         VStack(spacing: Spacing.sm) {
+            featuredCard
+                .frame(maxWidth: 360)
+
+            footerCaption
+        }
+        .scaleEffect(joinedChallenge != nil ? 0.82 : 0.88)
+        .offset(y: isAnimating ? -2 : 2)
+        .padding(.horizontal, Spacing.md)
+        .onAppear { triggerInitialFetch() }
+    }
+
+    // MARK: - Initial fetch + PYMK fallback
+
+    private func triggerInitialFetch() {
+        guard !didTriggerRefresh else { return }
+        didTriggerRefresh = true
+        Task { @MainActor in
+            // Force-refresh so the brand-new account always pulls fresh
+            // discoverable + featured lists, even if the service
+            // already ran its 5s-throttled refresh during sign-in.
+            await communityService.refreshAll(force: true)
+            // If no DIRECT friends in any community, broaden to
+            // friends-of-friends / contact suggestions (PYMK) so the
+            // tutorial can still feature a community filled with people
+            // the new user is one connection away from.
+            if communityService.discoverableChallenges.isEmpty {
+                await loadPYMKCommunities()
+            }
+        }
+    }
+
+    @MainActor
+    private func loadPYMKCommunities() async {
+        guard !didLoadPYMKCommunities else { return }
+        didLoadPYMKCommunities = true
+
+        var candidateIds = Set(contactsService.peopleYouMayKnow.map { $0.userId })
+        // Also fold in raw contacts-on-Fit33 (matched suggested friends) —
+        // these are people the user literally has in their phone but
+        // hasn't friended yet. They're not in the friend graph and may
+        // not be in PYMK either if they share zero mutual friends.
+        for suggestion in contactsService.suggestedFriends where !suggestion.isFriend {
+            candidateIds.insert(suggestion.userId)
+        }
+
+        // PYMK list might not have been fetched yet (cold launch). Trigger
+        // a server fetch and re-collect.
+        if candidateIds.isEmpty, SupabaseManager.shared.isAuthenticated {
+            await contactsService.fetchPeopleYouMayKnow()
+            candidateIds = Set(contactsService.peopleYouMayKnow.map { $0.userId })
+            for suggestion in contactsService.suggestedFriends where !suggestion.isFriend {
+                candidateIds.insert(suggestion.userId)
+            }
+        }
+
+        guard !candidateIds.isEmpty else { return }
+
+        let result = await communityService.fetchPYMKCommunityChallenges(
+            userIds: Array(candidateIds)
+        )
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+            pymkCommunities = result
+        }
+    }
+
+    // MARK: - Card priority selection
+
+    @ViewBuilder
+    private var featuredCard: some View {
+        if let joined = joinedChallenge {
+            // Real-time win moment: user just joined, so flip to the
+            // live leaderboard widget that shows them alongside their
+            // friends / people-you-may-know.
+            CommunityLeaderboardWidget(challenge: joined)
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.94).combined(with: .opacity),
+                    removal: .opacity
+                ))
+                .accessibilityLabel("You joined the \(joined.title) community")
+        } else if let friendCommunity = topFriendCommunity {
+            FriendDiscoveryCard(challenge: friendCommunity) {
+                joinDiscoverableCommunity(friendCommunity)
+            }
+            .opacity(isJoining ? 0.6 : 1.0)
+            .disabled(isJoining)
+        } else if let pymkCommunity = topPYMKCommunity {
+            FriendDiscoveryCard(challenge: pymkCommunity) {
+                joinDiscoverableCommunity(pymkCommunity)
+            }
+            .opacity(isJoining ? 0.6 : 1.0)
+            .disabled(isJoining)
+        } else if let featured = topFeaturedCommunity {
+            FeaturedChallengeCard(challenge: featured) {
+                joinFeaturedCommunity(featured)
+            }
+            .opacity(isJoining ? 0.6 : 1.0)
+            .disabled(isJoining)
+        } else {
+            // Loading / empty fallback — keeps layout stable on cold
+            // launch before the discoverable + featured RPCs return.
             FeaturedChallengeCard(
                 challenge: TutorialDemoData.demoCommunityChallenge,
                 onJoin: {}
             )
-            .frame(maxWidth: 360)
             .allowsHitTesting(false)
+            .redacted(reason: communityService.isLoading ? .placeholder : [])
+        }
+    }
 
+    // MARK: - Footer caption
+
+    @ViewBuilder
+    private var footerCaption: some View {
+        if let joined = joinedChallenge {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.ds_caption)
+                    .foregroundColor(.green)
+                Text("You're in! \(joined.formattedParticipantCount) members")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.adaptiveSecondaryText)
+            }
+            .accessibilityElement(children: .combine)
+        } else if let friendCommunity = topFriendCommunity {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "person.3.fill")
                     .font(.ds_caption)
                     .foregroundStyle(kind.accent)
-                Text("234 athletes joined this week")
+                Text(friendCountCaption(friendCommunity.friendsCount))
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.adaptiveSecondaryText)
+            }
+            .accessibilityElement(children: .combine)
+        } else if let pymkCommunity = topPYMKCommunity {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "person.3.fill")
+                    .font(.ds_caption)
+                    .foregroundStyle(kind.accent)
+                Text(pymkCountCaption(pymkCommunity.friendsCount))
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.adaptiveSecondaryText)
+            }
+            .accessibilityElement(children: .combine)
+        } else if let featured = topFeaturedCommunity {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "person.3.fill")
+                    .font(.ds_caption)
+                    .foregroundStyle(kind.accent)
+                Text("\(featured.formattedParticipantCount) athletes already in")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.adaptiveSecondaryText)
+            }
+            .accessibilityElement(children: .combine)
+        } else {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "person.3.fill")
+                    .font(.ds_caption)
+                    .foregroundStyle(kind.accent)
+                Text("Featured challenges, real people")
                     .font(.ds_labelMedium)
                     .foregroundColor(.adaptiveSecondaryText)
             }
         }
-        .scaleEffect(0.88)
-        .offset(y: isAnimating ? -2 : 2)
-        .padding(.horizontal, Spacing.md)
+    }
+
+    private func friendCountCaption(_ count: Int) -> String {
+        switch count {
+        case 0:  return "Athletes pushing the same goal"
+        case 1:  return "1 of your contacts is already in"
+        default: return "\(count) of your contacts are already in"
+        }
+    }
+
+    private func pymkCountCaption(_ count: Int) -> String {
+        switch count {
+        case 0:  return "Athletes pushing the same goal"
+        case 1:  return "1 person you may know is already in"
+        default: return "\(count) people you may know are already in"
+        }
+    }
+
+    // MARK: - Real-time Join
+
+    /// Used for both direct-friend AND PYMK communities — they share the
+    /// `DiscoverableCommunityChallenge` shape, and the server-side join
+    /// gate (`can_join_community_challenge`) accepts both direct friends
+    /// and friends-of-friends as the qualifying connection.
+    private func joinDiscoverableCommunity(_ challenge: DiscoverableCommunityChallenge) {
+        guard !isJoining else { return }
+        isJoining = true
+        HapticManager.impact(.medium)
+        Task { @MainActor in
+            let joinedId = await communityService.joinChallengeFriendGated(
+                challengeId: challenge.challengeId
+            )
+            isJoining = false
+            guard joinedId != nil else { return }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                joinedChallengeId = challenge.challengeId
+                // Drop the just-joined community from the local PYMK
+                // list so it doesn't flicker back if state ever
+                // re-evaluates pre-leaderboard render.
+                pymkCommunities.removeAll { $0.challengeId == challenge.challengeId }
+            }
+            AppLogger.info(
+                "[TUTORIAL] Joined friend-chain community '\(challenge.title)' from onboarding tour (\(challenge.friendsCount) connections)",
+                category: .social
+            )
+        }
+    }
+
+    private func joinFeaturedCommunity(_ challenge: FeaturedCommunityChallenge) {
+        guard !isJoining else { return }
+        isJoining = true
+        HapticManager.impact(.medium)
+        Task { @MainActor in
+            let joinedId = await communityService.joinChallenge(code: challenge.joinCode)
+            isJoining = false
+            guard joinedId != nil else { return }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                joinedChallengeId = challenge.challengeId
+            }
+            AppLogger.info(
+                "[TUTORIAL] Joined featured community '\(challenge.title)' from onboarding tour",
+                category: .social
+            )
+        }
     }
 }
 

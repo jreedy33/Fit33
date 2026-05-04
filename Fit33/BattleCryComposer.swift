@@ -783,8 +783,8 @@ struct BattleCryShoutBubble: View {
             }
         )
         .shadow(color: bubbleGradient.first?.opacity(0.45) ?? .clear, radius: 12, x: 0, y: 4)
-        .overlay(alignment: .bottom) {
-            Triangle()
+        .overlay(alignment: .bottomTrailing) {
+            FourOClockTailTriangle()
                 .fill(
                     LinearGradient(
                         colors: bubbleGradient,
@@ -792,8 +792,8 @@ struct BattleCryShoutBubble: View {
                         endPoint: .bottom
                     )
                 )
-                .frame(width: 14, height: 8)
-                .offset(y: 7)
+                .frame(width: 26, height: 14)
+                .offset(x: -2, y: 4)
         }
         .overlay(
             BattleCryConfetti(burstId: confettiBurstId, gradient: bubbleGradient)
@@ -816,6 +816,28 @@ private struct Triangle: Shape {
         path.move(to: CGPoint(x: rect.midX, y: rect.maxY))
         path.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Asymmetric "speech-bubble tail" leaning toward roughly 3 o'clock
+/// (mostly to the right with a slight downward angle). Base is short
+/// and is positioned to overlap the bubble bottom by ~50% so the seam
+/// disappears under the capsule fill — only the leaning tip sticks out.
+private struct FourOClockTailTriangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        // Compact base anchored on the LEFT side of the rect (under
+        // the capsule when overlapped). Width ≈ 30% of frame so the
+        // start of the tail doesn't crowd the bubble's curved corner.
+        let baseLeft = CGPoint(x: rect.minX, y: rect.minY)
+        let baseRight = CGPoint(x: rect.maxX * 0.30, y: rect.minY)
+        // Tip — far right, partway down for the 3-o'clock lean.
+        let tip = CGPoint(x: rect.maxX, y: rect.maxY * 0.85)
+        path.move(to: baseLeft)
+        path.addLine(to: baseRight)
+        path.addLine(to: tip)
         path.closeSubpath()
         return path
     }

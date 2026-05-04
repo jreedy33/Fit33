@@ -5,7 +5,7 @@ struct PreviousSetData {
     let setNumber: Int
     let weight: Double
     let reps: Int
-    var isSmartRecommendation: Bool = false  // True if this is an AI-generated recommendation
+    var isSmartRecommendation: Bool = false  // True if this is a Smart Workout recommendation (algorithm-driven; NEVER call "AI" in user copy)
     var recommendationNote: String? = nil    // Optional note about the recommendation
     
     var displayString: String {

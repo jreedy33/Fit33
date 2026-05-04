@@ -175,12 +175,21 @@ class AchievementService: ObservableObject {
         // 5 league-milestone achievements — placeholders until Sprint 2/3 wires
         // the real event sources. They render as "not earned" with progress 0,
         // so the achievement grid still shows them as goals but no false-claims.
+        // 2026-05-04 — Olympian Path PR: aligned the milestone keys with
+        // their canonical unlock-side string in `WeeklyLeagueService.swift`
+        // (the `WeeklyLeagueService.detectAndQueueTierPromotion` switch
+        // calls `BadgeService.shared.onLeagueMilestone(key:)` with these
+        // exact strings). Pre-fix this view used `milestone_first_bounceback`
+        // and `milestone_first_shield` while the service emitted
+        // `milestone_bounceback` and `milestone_shield_burned` — the
+        // achievement grid rendered the milestones as forever-locked because
+        // the unlock fanout never matched the row IDs.
         let milestoneAchievements: [(id: String, title: String, description: String, icon: String, color: Color)] = [
             ("milestone_first_crown",      "First Crown",         "Finish #1 in your weekly league",     "crown.fill",                  .yellow),
-            ("milestone_first_bounceback", "Bounceback",          "Promote the week after a relegation", "arrow.uturn.up.circle.fill",  .green),
-            ("milestone_first_shield",     "Shield Earned",       "Promote into a new tier",             "shield.lefthalf.filled",      .blue),
-            ("milestone_standout",         "Stand-Out",           "Top-3 finishes 3 weeks in a row",     "sparkles",                    .purple),
-            ("milestone_verified_4w",      "Verified Holder",     "Hold the Verified tier 4 weeks",      "checkmark.seal.fill",         Color(red: 0.11, green: 0.63, blue: 0.95))
+            ("milestone_bounceback",       "Bounceback",          "Promote the week after a relegation", "arrow.uturn.up.circle.fill",  .green),
+            ("milestone_shield_burned",    "Shield Earned",       "Promote into a new tier",             "shield.lefthalf.filled",      .blue),
+            ("milestone_stand_out",        "Stand-Out",           "Top-3 finishes 3 weeks in a row",     "sparkles",                    .purple),
+            ("milestone_verified",         "Verified Holder",     "Hold the Verified tier 4 weeks",      "checkmark.seal.fill",         Color(red: 0.11, green: 0.63, blue: 0.95))
         ]
 
         for milestone in milestoneAchievements {

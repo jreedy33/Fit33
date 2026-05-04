@@ -147,19 +147,21 @@ struct ReceivedWorkoutsView: View {
         return workoutCount + adCount
     }
     
-    /// Check if this position should show an ad (positions 2, 5, 8, 11, etc.)
+    /// Check if this position should show an ad. Cadence tightened
+    /// to every 4th position (Phase 1, 2026-05-03 monetization sweep)
+    /// to match dashboard density — see DashboardWorkoutHistory.
     private func isAdPosition(_ index: Int) -> Bool {
         guard adsEnabled else { return false }
-        // Ad at positions 2, 5, 8, 11... (every 3rd position)
-        return (index + 1) % 3 == 0
+        return (index + 1) % 4 == 0
     }
     
     /// Get the actual workout index for a display index (accounting for ads)
     private func getWorkoutIndex(for displayIndex: Int) -> Int {
         guard adsEnabled else { return displayIndex }
-        
-        // Calculate how many ads appear before this position
-        let adsBeforeThisIndex = displayIndex / 3
+
+        // Mirrors `% 4` cadence from `isAdPosition` so the workout
+        // mapping stays correct after the density tightening.
+        let adsBeforeThisIndex = displayIndex / 4
         return displayIndex - adsBeforeThisIndex
     }
     
@@ -203,9 +205,16 @@ struct ReceivedWorkoutCard: View {
         workout.viewedAt == nil && workout.status == "pending"
     }
     
-    /// Check if this saved workout requires premium to open
+    /// Whether tapping this card requires premium. Phase 2 monetization
+    /// (2026-05-03): STARTING a saved-shared workout is now FREE — was
+    /// previously gated, which killed the most viral surface in the app
+    /// (friends sharing workouts, recipients hitting a paywall before
+    /// they ever experienced the value). The SAVE action (creating a
+    /// reusable template) remains Pro — that's the high-value action.
+    /// Result: free users can always experience a friend's shared
+    /// workout but must subscribe to keep their own template library.
     private var requiresPremium: Bool {
-        workout.status == "saved" && !premiumManager.isPremiumUser
+        false
     }
     
     // Workout accent gradient (blue/purple for received workouts)
@@ -473,9 +482,12 @@ struct ReceivedWorkoutDetailView: View {
     private let themeColor: Color = .blue
     private let secondaryThemeColor: Color = .purple
     
-    /// Check if user needs premium to start this received workout
+    /// Phase 2 monetization (2026-05-03): STARTING a received workout
+    /// is now FREE for everyone (previously gated, which made shared
+    /// workouts a dead-end paywall surface for free users). The Save
+    /// action below remains Pro-only; that's the conversion lever.
     private var requiresPremiumToStart: Bool {
-        !premiumManager.isPremiumUser
+        false
     }
     
     private var totalSets: Int {

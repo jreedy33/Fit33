@@ -860,8 +860,14 @@ struct FriendsTabView: View {
     // MARK: - Active Challenges Carousel
     
     private var activeChallengesCarousel: some View {
+        // Sort by opponent freshness BEFORE the 3-card cap so the user lands
+        // on a challenge whose opponent has actually moved today, not a
+        // sibling that's still showing "0 · 16h ago". Mirrors the dashboard
+        // carousel ordering. See
+        // `Array<ActiveChallenge>.sortedByOpponentFreshness` in
+        // ChallengeService.swift.
         let activeIds = Set(challengeService.activeChallenges.map { $0.id })
-        let activeChallenges = Array(challengeService.activeChallenges.prefix(3))
+        let activeChallenges = Array(challengeService.activeChallenges.sortedByOpponentFreshness().prefix(3))
         let groupChallenges = challengeService.activeGroupChallenges.filter { $0.iHaveAccepted }
         let activeCount = activeChallenges.count + groupChallenges.count
         

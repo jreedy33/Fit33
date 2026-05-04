@@ -108,6 +108,11 @@ struct DashboardNavigationDestinations: ViewModifier {
             // header inside the dashboard's stack — no nested
             // NavigationStack (PE invariant 6).
             WeeklyLeagueDetailView()
+        case .olympianPath:
+            // 2026-05-04 — Path to 33 (annual Olympian track) detail
+            // screen. Pushed by the dashboard Olympian widget and the
+            // `fit33://olympian` deep link.
+            OlympianPathView()
         }
     }
 

@@ -113,63 +113,114 @@ class BadgeService: ObservableObject {
                 ))
                 .execute()
                 .value
-            
-            guard let result = results.first, result.unlocked else { return false }
-            
-            // Award XP locally
-            if let xp = result.xpReward, xp > 0 {
-                await MainActor.run {
-                    UserManager.shared.addXP(Int32(xp))
-                }
-            }
-            
-            // Show toast
-            await MainActor.run {
-                if let match = self.achievements.first(where: { $0.achievementKey == key }) {
-                    self.lastUnlockedAchievement = match
-                } else if let title = result.achievementTitle {
-                    self.lastUnlockedAchievement = AchievementItem(
-                        achievementKey: key,
-                        title: title,
-                        description: "",
-                        icon: result.achievementIcon ?? "star.fill",
-                        category: "special",
-                        threshold: 1,
-                        xpReward: result.xpReward ?? 0,
-                        rarity: result.achievementRarity ?? "common",
-                        progress: 1,
-                        unlockedAt: ISO8601DateFormatter().string(from: Date()),
-                        sortOrder: 0
-                    )
-                }
-                self.showUnlockToast = true
-            }
-            
-            // Refresh achievements list
-            await fetchAchievements()
-            
-            // Auto-hide toast
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 3_500_000_000)
-                self.showUnlockToast = false
-            }
-            
-            return true
+            return await handleUnlockResult(results: results, key: key)
         } catch {
             AppLogger.error("Failed to check achievement \(key): \(error.localizedDescription)", category: .general)
             return false
         }
     }
+
+    /// Additive variant — calls `increment_achievement_progress` server-side.
+    /// Use this when the iOS only sees event deltas (reactions sent, meals
+    /// logged, etc.) and doesn't have a stable lifetime counter to pass to
+    /// `checkAndUnlock`.
+    @discardableResult
+    func incrementAndUnlock(key: String, by delta: Int = 1) async -> Bool {
+        guard delta > 0 else { return false }
+        do {
+            struct IncParams: Encodable {
+                let p_achievement_key: String
+                let p_delta: Int
+            }
+
+            let results: [UnlockResult] = try await SupabaseManager.shared.supabaseClient
+                .rpc("increment_achievement_progress", params: IncParams(
+                    p_achievement_key: key,
+                    p_delta: delta
+                ))
+                .execute()
+                .value
+            return await handleUnlockResult(results: results, key: key)
+        } catch {
+            AppLogger.error("Failed to increment achievement \(key): \(error.localizedDescription)", category: .general)
+            return false
+        }
+    }
+
+    /// Shared post-RPC handling for both `checkAndUnlock` and
+    /// `incrementAndUnlock` — XP credit, toast cache, and refresh.
+    private func handleUnlockResult(results: [UnlockResult], key: String) async -> Bool {
+        guard let result = results.first, result.unlocked else { return false }
+
+        if let xp = result.xpReward, xp > 0 {
+            await MainActor.run {
+                UserManager.shared.addXP(Int32(xp))
+            }
+        }
+
+        await MainActor.run {
+            if let match = self.achievements.first(where: { $0.achievementKey == key }) {
+                self.lastUnlockedAchievement = match
+            } else if let title = result.achievementTitle {
+                self.lastUnlockedAchievement = AchievementItem(
+                    achievementKey: key,
+                    title: title,
+                    description: "",
+                    icon: result.achievementIcon ?? "star.fill",
+                    category: "special",
+                    threshold: 1,
+                    xpReward: result.xpReward ?? 0,
+                    rarity: result.achievementRarity ?? "common",
+                    progress: 1,
+                    unlockedAt: ISO8601DateFormatter().string(from: Date()),
+                    sortOrder: 0
+                )
+            }
+            self.showUnlockToast = true
+        }
+
+        await fetchAchievements()
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            self.showUnlockToast = false
+        }
+
+        return true
+    }
     
     // MARK: - Convenience Checkers
-    
+    //
+    // 2026-05-04 — Olympian Path: every convenience helper now fans out to
+    // the matching `olympian_<currentYear>_*` mirror keys so the same event
+    // (workout, friend, PR, etc.) progresses both the legacy badge AND the
+    // user's personalized 33-goal path. Mirror keys are no-ops when the
+    // user's archetype path doesn't include them; the server short-circuits
+    // unknown keys.
+
+    private static var olympianYearPrefix: String {
+        "olympian_\(Calendar.current.component(.year, from: Date()))"
+    }
+
     func onWorkoutCompleted(totalWorkouts: Int) async {
         await checkAndUnlock(key: "first_workout", progress: totalWorkouts)
         await checkAndUnlock(key: "workouts_10", progress: totalWorkouts)
         await checkAndUnlock(key: "workouts_50", progress: totalWorkouts)
         await checkAndUnlock(key: "workouts_100", progress: totalWorkouts)
         await checkAndUnlock(key: "workouts_500", progress: totalWorkouts)
-        
+
+        // Olympian Path mirrors (universal + per-archetype workout counters)
+        let p = Self.olympianYearPrefix
+        await checkAndUnlock(key: "\(p)_first_workout",   progress: totalWorkouts)
+        await checkAndUnlock(key: "\(p)_workouts_100",    progress: totalWorkouts)
+        // Strength path mirrors (silent no-op for non-strength users)
+        await checkAndUnlock(key: "\(p)_str_first_lift",  progress: totalWorkouts)
+        await checkAndUnlock(key: "\(p)_str_workouts_5",  progress: totalWorkouts)
+        await checkAndUnlock(key: "\(p)_str_workouts_25", progress: totalWorkouts)
+        await checkAndUnlock(key: "\(p)_str_workouts_50", progress: totalWorkouts)
+        await checkAndUnlock(key: "\(p)_str_workouts_75", progress: totalWorkouts)
+        await checkAndUnlock(key: "\(p)_str_workouts_150",progress: totalWorkouts)
+
         let hour = Calendar.current.component(.hour, from: Date())
         if hour < 6 {
             await checkAndUnlock(key: "early_bird")
@@ -185,33 +236,74 @@ class BadgeService: ObservableObject {
         await checkAndUnlock(key: "streak_30", progress: streak)
         await checkAndUnlock(key: "streak_60", progress: streak)
         await checkAndUnlock(key: "streak_100", progress: streak)
+
+        let p = Self.olympianYearPrefix
+        await checkAndUnlock(key: "\(p)_streak_7",   progress: streak)
+        await checkAndUnlock(key: "\(p)_streak_14",  progress: streak)
+        await checkAndUnlock(key: "\(p)_streak_30",  progress: streak)
+        await checkAndUnlock(key: "\(p)_streak_60",  progress: streak)
+        await checkAndUnlock(key: "\(p)_streak_100", progress: streak)
     }
     
     func onFriendAdded(totalFriends: Int) async {
         await checkAndUnlock(key: "first_friend", progress: totalFriends)
         await checkAndUnlock(key: "friends_10", progress: totalFriends)
+
+        let p = Self.olympianYearPrefix
+        await checkAndUnlock(key: "\(p)_first_friend",  progress: totalFriends)
+        await checkAndUnlock(key: "\(p)_str_friends_10", progress: totalFriends)
+        await checkAndUnlock(key: "\(p)_end_friends_10", progress: totalFriends)
     }
     
     func onChallengeWon(totalWins: Int) async {
         await checkAndUnlock(key: "first_challenge_won", progress: totalWins)
         await checkAndUnlock(key: "challenges_won_10", progress: totalWins)
+
+        let p = Self.olympianYearPrefix
+        await checkAndUnlock(key: "\(p)_won_challenge", progress: totalWins)
     }
     
     func onMealLogged(totalMeals: Int) async {
         await checkAndUnlock(key: "first_meal_logged", progress: totalMeals)
         await checkAndUnlock(key: "meals_logged_100", progress: totalMeals)
+
+        let p = Self.olympianYearPrefix
+        await checkAndUnlock(key: "\(p)_first_meal", progress: totalMeals)
+        await checkAndUnlock(key: "\(p)_wl_meals_5",   progress: totalMeals)
+        await checkAndUnlock(key: "\(p)_wl_meals_30",  progress: totalMeals)
+        await checkAndUnlock(key: "\(p)_wl_meals_50",  progress: totalMeals)
+        await checkAndUnlock(key: "\(p)_wl_meals_100", progress: totalMeals)
+        await checkAndUnlock(key: "\(p)_wl_meals_200", progress: totalMeals)
     }
     
     func onWorkoutShared() async {
         await checkAndUnlock(key: "first_workout_shared")
+
+        let p = Self.olympianYearPrefix
+        await checkAndUnlock(key: "\(p)_send_challenge")
     }
     
-    func onReactionSent(totalReactions: Int) async {
-        await checkAndUnlock(key: "reactions_sent_50", progress: totalReactions)
+    /// Increment-style: server adds `delta` to lifetime reactions count.
+    /// Use when iOS only sees the per-reaction event (no lifetime counter).
+    func onReactionSent(delta: Int = 1) async {
+        await incrementAndUnlock(key: "reactions_sent_50", by: delta)
+
+        let p = Self.olympianYearPrefix
+        await incrementAndUnlock(key: "\(p)_react_25",         by: delta)
+        await incrementAndUnlock(key: "\(p)_str_react_friend", by: delta)
+        await incrementAndUnlock(key: "\(p)_end_react_friend", by: delta)
+        await incrementAndUnlock(key: "\(p)_str_react_50",     by: delta)
+        await incrementAndUnlock(key: "\(p)_end_react_50",     by: delta)
     }
     
-    func onPersonalRecord() async {
-        await checkAndUnlock(key: "first_pr")
+    func onPersonalRecord(totalPRs: Int = 1) async {
+        await checkAndUnlock(key: "first_pr", progress: totalPRs)
+
+        let p = Self.olympianYearPrefix
+        await checkAndUnlock(key: "\(p)_first_pr",   progress: totalPRs)
+        await checkAndUnlock(key: "\(p)_str_pr_5",   progress: totalPRs)
+        await checkAndUnlock(key: "\(p)_str_pr_10",  progress: totalPRs)
+        await checkAndUnlock(key: "\(p)_str_pr_20",  progress: totalPRs)
     }
 
     // MARK: - Weekly League — Tier + Milestone unlock hooks

@@ -128,22 +128,32 @@
 37. **US Epic v Apple injunction (Jan 2024 / 2025): external web payment links are allowed but not required.** We do NOT enable the web purchase link until MRR > $50K/mo (cost of the disclosure modal + tax handling complexity). Tracked in `MASTER_TODO.md` under Monetization → Phase 4.
 38. **Tax: Apple handles VAT/GST/state tax via App Store.** The price the user sees IS the price they pay; Apple remits tax. We never assess or charge tax. Documented for the agent's reference (this confuses many indie devs). When/if web payments turn on, Stripe Tax handles it.
 
+### 10. Cheat-code retention loops (Phase 5 — added 2026-05-03)
+
+39. **Sunday Pro Recap push deep-links to `fit33://profile/pro-recap`.** The push is sent by `supabase/functions/sunday-pro-recap/index.ts` (cron-triggered every hour Sunday; per-user-timezone-local 10am gating happens inside the function via `Intl.DateTimeFormat`). Recipients are pulled by `get_sunday_recap_candidates(p_user_ids UUID[] DEFAULT NULL)` RPC — service-role-only, INNER JOIN on `user_push_tokens` so users without a valid device token are filtered out client-side of the send loop. The cron schedule is `5 * * * 0` (DOW=0 = Sunday). NEVER repurpose the `fit33://profile/*` host for OAuth callbacks or other transient flows — it is now reserved for monetization recap surfaces. Adding new sub-routes under `profile/` is fine; the parser keys on the path.
+40. **Pro Recap presentation is push-only, never auto-on-launch.** `MonetizationState.requestProRecapPresentation()` is called ONLY by `MainTabView.handleDeepLinkDestination(.proRecap)` (the deep-link router). It MUST NOT be triggered from `Fit33App.task` / `ContentView.onAppear` / any other launch path — surprising users with a recap on app launch tanks D1 retention (per invariant 10's "no cold-start modal" rule). The recap view is the LANDING for a push tap, not a daily ritual.
+41. **The recap's Pro/free branch is resolved at render time, not at push time.** `ProRecapView.isProForView` reads `PremiumManager.isPremiumUser || MonetizationState.isInProPreview`. The push body itself is the conversion teaser for free users; the view is where the gold-crown reveal happens for Pro members. Drift between the push body's Pro/free guess and the view's reality (e.g. user upgrades between push send and tap) is fine — the view is always the truth.
+42. **Recap stats are read from on-device Core Data, NOT from the server.** `ProRecapView.recentWorkouts` is a `@FetchRequest` bounded to last 14 days. Why: (a) the recap renders instantly on push tap with no spinner; (b) the push payload never leaks Pro-tier numbers to a free user; (c) the recap works offline. The push body uses its OWN server-side numbers from `get_sunday_recap_candidates` — small drift between push body and recap view is expected and acceptable.
+43. **Sunday Pro Recap RPC is service-role-only.** `get_sunday_recap_candidates` raises `EXCEPTION 'get_sunday_recap_candidates is service-role-only'` if `auth.uid() IS NOT NULL`. The cron path uses `current_setting('app.service_role_key', true)` from a pg_cron `DO` block. Manual re-fires (testing) require a service-role JWT in the `x-cron-key` header. Never expose this RPC to a user JWT — it returns push tokens for OTHER users.
+
 ---
 
-## Pricing Strategy (current target)
+## Pricing Strategy (current target — locked 2026-05-03)
 
 | Tier | Price | Annualized | Notes |
 |---|---|---|---|
-| Pro Monthly | **$9.99/mo** | $119.88 | Discovery channel — lower friction "try it" |
-| Pro Yearly | **$59.99/yr** | $59.99 | Anchor "Best Value" — 50% off vs monthly annualized |
-| Pro Lifetime (future) | $199 one-time | — | Conversion lever; gates strongest LTV signal users |
-| Free | $0 | $0 | Core workouts + dashboard + history (last 30 days) |
+| Pro Monthly | **$3.99/mo** | $47.88 | Discovery channel — lower-friction "try it"; aggressive vs. Strong $4.99 / Hevy $5.99. |
+| Pro Yearly | **$29.99/yr** | $29.99 | Anchor "Best Value" — `(3.99 - 2.49) / 3.99 = 37.6%` savings vs. monthly annualized. Equivalent monthly cost: $2.49/mo. |
+| Pro Lifetime | **$149.99 one-time** | — | Conversion + anchor lever; gates strongest LTV signal users. New non-renewing IAP `com.gofit.app.pro.lifetime` (Phase 4 ship — 2026-05-03). |
+| Free | $0 | $0 | Core workouts + dashboard + history (last 30 days) + 1 smart-workout/wk + 1 recipe/day. |
 
-**Free trial**: 7 days on yearly only (industry standard; 7-day converts ~10%, 14-day converts ~13% but doubles trial volume → net wash with worse cash flow).
+**Why we chose lower prices than the original $9.99/$59.99 plan**: at our current scale (pre-$10K MRR) we need to optimize for trial start volume, not ARPU. $3.99 + $29.99 lands inside the impulse-buy band on iOS (median paid-app price is $1.99-$4.99). We can A/B raise prices later via App Store Connect price-tier changes; we cannot easily lower without grandfathering ugliness.
 
-**Intro offer (regional)**: First-month $1 in price-sensitive markets (LATAM, SEA, India) — funnel into yearly upgrade.
+**Free trial**: 7 days on yearly only (industry standard; 7-day converts ~10%, 14-day converts ~13% but doubles trial volume → net wash with worse cash flow). **No trial on lifetime** — the $149.99 commitment at App Store Connect doesn't support intro offers on non-renewing IAPs anyway.
 
-**Family Sharing**: ON for both monthly and yearly. Apple covers up to 5 family members on one purchase. Increases word-of-mouth and review rate (one-time benefit per household).
+**Intro offer (regional)**: First-month $0.99 in price-sensitive markets (LATAM, SEA, India) — funnel into yearly upgrade. App Store Connect Phase 8 task for the user.
+
+**Family Sharing**: ON for monthly + yearly + lifetime. Apple covers up to 5 family members on one purchase. Increases word-of-mouth and review rate (one-time benefit per household). MUST be toggled in App Store Connect → Pricing and Availability → "Available with Family Sharing" for ALL three product IDs (`com.gofit.app.pro.monthly`, `com.gofit.app.pro.yearly`, `com.gofit.app.pro.lifetime`). The iOS UX surfacing for family-shared status lives in `Fit33/SettingsSubscriptionSection.swift` (reads `Transaction.ownershipType == .familyShared` via `StoreKitManager.SubscriptionStatusInfo.isFamilyShared`).
 
 ---
 
@@ -182,6 +192,10 @@
 | `Fit33/AdManager.swift` | AdMob wrapper — interstitial (rest timer) + rewarded (daily quest), ATT lifecycle, premium skip |
 | `Fit33/NativeAdView.swift` | Native ad rendering inside dashboard / list contexts |
 | `Fit33/SettingsView.swift` | Manage Subscription deep-link + Restore button + ad-toggle (dev) |
+| `Fit33/SettingsSubscriptionSection.swift` | Subscription Status row (Pro tier + expiry + family-shared hint) + Restore + Manage Subscription rows. Mounted in `SettingsView` above the dev section. |
+| `Fit33/MonetizationState.swift` | Centralized `@MainActor` ObservableObject for all monetization-related UserDefaults flags (Pro Preview, smart-workout cap, recipe cap, achievement reveal redemptions, earn-Pro grants, cancellation survey, Sunday recap presentation). NEVER mutates `PremiumManager.isPremiumUser` — composes alongside it. |
+| `Fit33/MonetizationCheatCodeViews.swift` | Trial countdown banner, Pro badge ladder view, streak-saver paywall modal, achievement Pro Reveal modal, cancellation survey sheet. |
+| `Fit33/ProRecapView.swift` | Phase 5 — Sunday Pro Recap landing surface (deep-linked from `fit33://profile/pro-recap` push). Pro tier sees full breakdown; free tier sees teaser + upgrade card. |
 | `Fit33/PerformanceSignposts.swift` | Add `iapPurchase` op for classifier wiring (invariant 33) |
 | `Fit33/ScreenCodeMap.swift` | `"premium"` screen → `PremiumUpgradeView.swift` (line 354) |
 
@@ -197,11 +211,16 @@
 | `paywall_experiment_assignments` | **Not yet created** | Per-user variant assignment + outcome (purchased / dismissed) |
 | `user_profiles.subscription_tier` | **Not yet added** — column add | `'free' \| 'pro_monthly' \| 'pro_yearly' \| 'pro_lifetime' \| 'comp'`; mirrors `subscriptions.status` for cheap RLS gating |
 
-### Edge functions (planned)
+### Edge functions (planned + shipped)
 
-- `supabase/functions/assn-webhook/index.ts` — App Store Server Notifications v2 receiver. Verifies JWS, writes `iap_receipts`, updates `subscriptions`, fans out to `revenue_daily_rollup` deltas.
-- `supabase/functions/validate-iap-receipt/index.ts` — server-side receipt validation (used for backfill, restore-on-new-device verification, and audit). Apple public-key JWS.
-- `supabase/functions/issue-promotional-offer/index.ts` — generates signed JWS for Apple Promotional Offer (churn-save / win-back flow).
+- `supabase/functions/assn-webhook/index.ts` — App Store Server Notifications v2 receiver. Verifies JWS, writes `iap_receipts`, updates `subscriptions`, fans out to `revenue_daily_rollup` deltas. **Planned (Phase 1b).**
+- `supabase/functions/validate-iap-receipt/index.ts` — server-side receipt validation (used for backfill, restore-on-new-device verification, and audit). Apple public-key JWS. **Planned (Phase 1c).**
+- `supabase/functions/issue-promotional-offer/index.ts` — generates signed JWS for Apple Promotional Offer (churn-save / win-back flow). **Planned (Phase 6).**
+- `supabase/functions/sunday-pro-recap/index.ts` — **shipped 2026-05-03 (Phase 5).** Cron-triggered every hour Sunday; per-user-timezone-local 10am gate inside Deno; sends APNs alert via `_shared/apns.ts::sendApnsAlert`; deep-link payload is `fit33://profile/pro-recap`. Pro tier gets full recap; free tier gets teaser + upsell. Recipients pulled by `get_sunday_recap_candidates` RPC.
+
+### RPCs (shipped)
+
+- `public.get_sunday_recap_candidates(p_user_ids UUID[] DEFAULT NULL)` — see invariants 39 + 43. Service-role-only. Returns `(user_id, display_name, is_pro, workouts_this_week, workouts_last_week, push_token, apns_environment, timezone)` per user with a valid push token. Defensive against missing `user_profiles.subscription_tier` column (Phase 1a). Migration: `supabase/20260503_sunday_pro_recap_rpc.sql`.
 
 ### CMS — files (this agent owns)
 
@@ -235,6 +254,7 @@
 | 3 | `/revenue/subscribers` + `/revenue/transactions` + `/revenue/users/[id]` panel | Phase 2 deployed |
 | 4 | `/revenue/grants` audit log + comp-grant / refund-ack / trial-extend admin actions | `subscription_grants` write path |
 | 5 | `paywall_experiments` schema + assignment RPC + `/revenue/experiments` UI | Phase 4 deployed |
+| 5b | **Sunday Pro Recap retention loop — SHIPPED 2026-05-03.** Edge function `sunday-pro-recap` + RPC `get_sunday_recap_candidates` + iOS `ProRecapView` + deep-link route `fit33://profile/pro-recap`. | none — already shipped |
 | 6 | Churn-save flow — `manageSubscriptionsSheet` interception + `issue-promotional-offer` edge function | Apple Promotional Offer signing key in App Store Connect |
 | 7 | Family-Sharing UX polish + ASSN `FAMILY_SHARED` event coverage | Phase 1 |
 | 8 | Web-payment-link disclosure (US, post-Epic v Apple) — gated to MRR > $50K/mo | Legal review + Stripe Tax integration |

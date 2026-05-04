@@ -40,6 +40,13 @@ struct DailyQuestsWidget: View {
     /// embedded on any surface without a NavigationStack contract.
     @State private var showQuestInsights: Bool = false
 
+    /// Free-tier Pro upsell. Tapping the upgrade footer opens the
+    /// canonical paywall (`PremiumUpgradeView(.proQuests)`) — replaces
+    /// the legacy dev `togglePremiumStatus()` stand-in. Triggering
+    /// feature is `.proQuests` so the conversion attribution lands
+    /// against the right surface in NewUserJourneyTracker analytics.
+    @State private var showProQuestsPaywall: Bool = false
+
     /// Phase 3 (2026-04-27 — Daily Mission Unification): observed
     /// from `DailyBriefStore.shared` so the brief's `.focusQuest(key)`
     /// CTA can highlight the matching card. Read-only — the wrapper
@@ -102,6 +109,9 @@ struct DailyQuestsWidget: View {
             NavigationStack {
                 QuestInsightsView(questService: questService)
             }
+        }
+        .fullScreenCover(isPresented: $showProQuestsPaywall) {
+            PremiumUpgradeView(triggeringFeature: .proQuests)
         }
         // Phase 3 (2026-04-27 — Daily Mission Unification): when the
         // welcome card's `.focusQuest(key)` CTA fires, briefly glow
@@ -271,12 +281,12 @@ struct DailyQuestsWidget: View {
     /// decision.
     private var freeUpgradeFooter: some View {
         Button {
-            // No dedicated PaywallView ships in the iOS app yet; the
-            // existing developer toggle stands in until the real
-            // upgrade flow lands. PremiumManager.isPremiumUser
-            // currently defaults to TRUE in DEBUG so this branch
-            // primarily exists for the future state.
-            PremiumManager.shared.togglePremiumStatus()
+            // Real paywall — opens `PremiumUpgradeView(.proQuests)` so
+            // analytics attribute the conversion to the correct
+            // triggering feature. Replaces the legacy dev
+            // `togglePremiumStatus()` shim that previously stood in.
+            HapticManager.impact(.light)
+            showProQuestsPaywall = true
         } label: {
             HStack(alignment: .center, spacing: 10) {
                 Image(systemName: "sparkles")

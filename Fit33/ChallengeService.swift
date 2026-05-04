@@ -4837,3 +4837,48 @@ struct FriendChallenge: Codable, Identifiable, ChallengeTypeResolvable {
         case targetUnit = "target_unit"
     }
 }
+
+// MARK: - Active Challenge Display Sort
+//
+// The Active Challenges carousel (Dashboard "stacked" + single-row variants
+// and Friends tab) lands the user on page 0 by default. When one of several
+// active challenges still has a stale opponent value (e.g. opponent at "0"
+// with a 16h-old `opponent_last_progress_at`) it would be misleading to
+// surface that card first while a sibling challenge has a freshly-updated
+// opponent. This sort moves "live" challenges to the front so page 0 is
+// always the most informative card the user has — without filtering any
+// challenges out of the carousel (users can still swipe to the stale ones).
+extension Array where Element == ActiveChallenge {
+    /// Returns a copy ordered so challenges with a recently-updated opponent
+    /// appear first. Stable within tiers (preserves the server's
+    /// `get_active_challenges` ordering — typically by `daysRemaining`
+    /// ascending — as a tiebreaker).
+    ///
+    /// Priority tiers (lower = shown first):
+    ///   0. Opponent has logged progress TODAY (`opponentTodayProgress > 0`)
+    ///   1. Opponent's last progress timestamp is `.fresh` or `.recent`
+    ///      (< 2h old) — they're active, just haven't moved the today
+    ///      counter yet
+    ///   2. Opponent has any total progress in this challenge but the
+    ///      `lastProgressAt` is stale or unknown — they've engaged at
+    ///      least once
+    ///   3. Opponent at 0 with no recent activity — true "stale" cards
+    ///      (the ones the user explicitly called out as bad defaults)
+    func sortedByOpponentFreshness(now: Date = Date()) -> [ActiveChallenge] {
+        func tier(_ c: ActiveChallenge) -> Int {
+            if let today = c.opponentTodayProgress, today > 0 { return 0 }
+            switch ProgressFreshnessKit.freshness(for: c.opponentLastProgressAt, now: now) {
+            case .fresh, .recent: return 1
+            case .stale, .unknown:
+                return c.opponentTotalProgress > 0 ? 2 : 3
+            }
+        }
+        return enumerated()
+            .map { (index: $0.offset, tier: tier($0.element), challenge: $0.element) }
+            .sorted { lhs, rhs in
+                if lhs.tier != rhs.tier { return lhs.tier < rhs.tier }
+                return lhs.index < rhs.index
+            }
+            .map { $0.challenge }
+    }
+}

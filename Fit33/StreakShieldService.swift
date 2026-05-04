@@ -13,6 +13,15 @@ class StreakShieldService: ObservableObject {
     @Published var lastShieldUsedDate: Date?
     @Published var isStreakAtRisk: Bool = false
     @Published var hoursUntilStreakLost: Int = 0
+
+    /// Phase 3 monetization (cheat-code: streak-loss-aversion paywall).
+    /// True when a free user is in the danger zone (streak about to
+    /// break AND 0 shields remaining). Loss aversion is ~2× stronger
+    /// than gain motivation — the highest-converting paywall trigger
+    /// in the app. Pro / Pro Preview users don't need this surface.
+    /// Observed by `DashboardView` (or any streak-display surface)
+    /// to decide whether to present `StreakSaverPaywallModal`.
+    @Published var shouldPresentStreakSaverPaywall: Bool = false
     
     // MARK: - Constants
     private let maxShieldsPerMonth = 2  // Free users get 2 per month
@@ -77,8 +86,14 @@ class StreakShieldService: ObservableObject {
     }
     
     // MARK: - Streak Risk Detection
-    
-    /// Check if user's streak is at risk and update state
+
+    /// Check if user's streak is at risk and update state.
+    /// `@MainActor` because we both mutate `@Published` properties
+    /// (which SwiftUI observes on the main actor) and read
+    /// `MonetizationState.shared.isInProPreview`, which is itself
+    /// `@MainActor`-isolated. All current callsites (DashboardView)
+    /// already run on the main actor.
+    @MainActor
     func checkStreakRisk(lastWorkoutDate: Date?, currentStreak: Int) {
         guard currentStreak > 0 else {
             isStreakAtRisk = false
@@ -114,6 +129,16 @@ class StreakShieldService: ObservableObject {
             isStreakAtRisk = false
             hoursUntilStreakLost = hoursRemaining
         }
+
+        // Phase 3 cheat-code: streak-loss-aversion paywall trigger.
+        // Fires when free user is in danger zone AND has 0 shields
+        // remaining (consumed all monthly shields). Pro users have
+        // 3 shields/month + are bypassed automatically.
+        let isFree = !PremiumManager.shared.isPremiumUser
+            && !MonetizationState.shared.isInProPreview
+        let dangerZone = isStreakAtRisk && hoursUntilStreakLost <= 12
+        let exhaustedShields = availableShields == 0
+        shouldPresentStreakSaverPaywall = isFree && dangerZone && exhaustedShields && currentStreak >= 3
     }
     
     // MARK: - Shield Usage

@@ -402,11 +402,13 @@ struct ExerciseLibraryView: View {
                 VStack(spacing: 0) {
                     compactFiltersView
 
-                    // Banner ad - integrated below filters for free users
-                    if !PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled {
-                        BannerAdView()
-                            .padding(.top, 8)
-                    }
+                    // Banner ad killed (Phase 1, 2026-05-03 monetization
+                    // sweep) — Exercise Library is a high-engagement
+                    // surface where banner clutter hurt scroll quality
+                    // for marginal eCPM. The dashboard `NativeAdCardView`
+                    // now carries the heavier ad load on home, and any
+                    // user clearly motivated to browse the library is a
+                    // higher-value Pro candidate than a banner-impression.
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.bottom, 12)

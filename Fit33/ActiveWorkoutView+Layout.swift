@@ -420,9 +420,36 @@ extension ActiveWorkoutView {
             .padding(.bottom, 4)
             
             if shouldShowInlineAds {
-                BannerAdView()
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.bottom, 4)
+                ZStack(alignment: .topTrailing) {
+                    BannerAdView()
+
+                    // Always-visible "Remove ads" pill in the upper-right
+                    // corner of every banner — turns the banner itself
+                    // into a paywall surface (Phase 1 cheat-code:
+                    // every ad impression is also a Pro upsell impression).
+                    Button {
+                        HapticManager.impact(.light)
+                        showingPremiumUpsell = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .heavy))
+                            Text("Remove Ads")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.black.opacity(0.55)))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
+                    .padding(.trailing, 4)
+                    .accessibilityLabel("Remove ads")
+                    .accessibilityHint("Open Pro upgrade to remove all ads")
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.bottom, 4)
             }
         }
         .background(Color.clear)

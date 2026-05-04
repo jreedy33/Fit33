@@ -20,6 +20,10 @@
 		1ABC401DB6E59CDD4FBDFBFE /* DashboardStreakViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2684E7190B23B3E0D98B717 /* DashboardStreakViews.swift */; };
 		1D5D4F5DA3DA9FB7DF1F1DA8 /* OnboardingInfrastructure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 939742FBB40A49F30A3C3E1B /* OnboardingInfrastructure.swift */; };
 		206D40A999C045BEBB25C348 /* OuraSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB5A1DFFE964AB298BE7010 /* OuraSettingsView.swift */; };
+		7C0D05012F803F0100000001 /* MonetizationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05002F803F0000000001 /* MonetizationState.swift */; };
+		7C0D05032F803F0100000002 /* MonetizationCheatCodeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05022F803F0000000002 /* MonetizationCheatCodeViews.swift */; };
+		7C0D05052F803F0100000003 /* SettingsSubscriptionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05042F803F0000000003 /* SettingsSubscriptionSection.swift */; };
+		7C0D05072F803F0100000004 /* ProRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05062F803F0000000004 /* ProRecapView.swift */; };
 		20C34991BC0CD301AFD3E797 /* SmartProgramMiniCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E748445FAA426582F14ACB75 /* SmartProgramMiniCard.swift */; };
 		215140E880E70DF8CFA8EB1A /* AddExerciseDuringWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E084A5F84A623567A84C480 /* AddExerciseDuringWorkoutView.swift */; };
 		32912B2C4F82F346AF065386 /* PushNotificationDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAE31DB8143B34C9F67019D2 /* PushNotificationDebugView.swift */; };
@@ -60,6 +64,11 @@
 		B05A2A0550220502BC050009 /* CardioShareCardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */; };
 		B05A2A0650220502BC05000B /* CardioFirstOpenIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */; };
 		B05A2A0750220502BC05000D /* DashboardCardioWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */; };
+		C05A2026050420260001000D /* OlympianPathService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260001000C /* OlympianPathService.swift */; };
+		C05A2026050420260002000D /* DashboardOlympianWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260002000C /* DashboardOlympianWidget.swift */; };
+		C05A2026050420260003000D /* OlympianPathView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260003000C /* OlympianPathView.swift */; };
+		C05A2026050420260004000D /* OlympianCelebrationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260004000C /* OlympianCelebrationOverlay.swift */; };
+		C05A2026050420260005000D /* PaywallFirstScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260005000C /* PaywallFirstScreenView.swift */; };
 		7C0C41F22F09C91F00F02E84 /* CardioGoalSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */; };
 		7C0C41F42F09C92400F02E84 /* CardioActiveWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */; };
 		7C0C41F62F09CE0100F02E84 /* ExerciseNicknameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */; };
@@ -531,6 +540,11 @@
 		B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioShareCardSheet.swift; sourceTree = "<group>"; };
 		B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioFirstOpenIntroView.swift; sourceTree = "<group>"; };
 		B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardCardioWidget.swift; sourceTree = "<group>"; };
+		C05A2026050420260001000C /* OlympianPathService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlympianPathService.swift; sourceTree = "<group>"; };
+		C05A2026050420260002000C /* DashboardOlympianWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardOlympianWidget.swift; sourceTree = "<group>"; };
+		C05A2026050420260003000C /* OlympianPathView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlympianPathView.swift; sourceTree = "<group>"; };
+		C05A2026050420260004000C /* OlympianCelebrationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlympianCelebrationOverlay.swift; sourceTree = "<group>"; };
+		C05A2026050420260005000C /* PaywallFirstScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallFirstScreenView.swift; sourceTree = "<group>"; };
 		7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioGoalSetupView.swift; sourceTree = "<group>"; };
 		7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioActiveWorkoutView.swift; sourceTree = "<group>"; };
 		7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseNicknameService.swift; sourceTree = "<group>"; };
@@ -608,6 +622,10 @@
 		7C558B282ED63D3D00A01E1F /* UserManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserManager.swift; sourceTree = "<group>"; };
 		7C590B8C2ED2C1DB002BD2B0 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		7C590B8F2ED2D1DB002BD2B0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		7C0D05002F803F0000000001 /* MonetizationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonetizationState.swift; sourceTree = "<group>"; };
+		7C0D05022F803F0000000002 /* MonetizationCheatCodeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonetizationCheatCodeViews.swift; sourceTree = "<group>"; };
+		7C0D05042F803F0000000003 /* SettingsSubscriptionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSubscriptionSection.swift; sourceTree = "<group>"; };
+		7C0D05062F803F0000000004 /* ProRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProRecapView.swift; sourceTree = "<group>"; };
 		7C590B922ED2E1DB002BD2B0 /* DeveloperAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperAnalyticsView.swift; sourceTree = "<group>"; };
 		7C590B972ED2E2DB002BD2B0 /* SevenDayProgramDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SevenDayProgramDetailView.swift; sourceTree = "<group>"; };
 		7C6DE30A2F5B5A1400BCA276 /* ExerciseDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseDataProvider.swift; sourceTree = "<group>"; };
@@ -1067,6 +1085,11 @@
 				B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */,
 				B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */,
 				B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */,
+				C05A2026050420260001000C /* OlympianPathService.swift */,
+				C05A2026050420260002000C /* DashboardOlympianWidget.swift */,
+				C05A2026050420260003000C /* OlympianPathView.swift */,
+				C05A2026050420260004000C /* OlympianCelebrationOverlay.swift */,
+				C05A2026050420260005000C /* PaywallFirstScreenView.swift */,
 				7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */,
 				7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */,
 				7C0C41EF2F09C91A00F02E84 /* CardioLandingView.swift */,
@@ -1334,6 +1357,10 @@
 				7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */,
 				7C6DE40E2F5DEAA700BCA276 /* ServiceProtocols.swift */,
 				7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */,
+				7C0D05002F803F0000000001 /* MonetizationState.swift */,
+				7C0D05022F803F0000000002 /* MonetizationCheatCodeViews.swift */,
+				7C0D05062F803F0000000004 /* ProRecapView.swift */,
+				7C0D05042F803F0000000003 /* SettingsSubscriptionSection.swift */,
 				7C590B8F2ED2D1DB002BD2B0 /* SettingsView.swift */,
 				7C590B972ED2E2DB002BD2B0 /* SevenDayProgramDetailView.swift */,
 				7C8405DD2EE8B78E0009ED0F /* SharedUtilities.swift */,
@@ -1734,6 +1761,11 @@
 				B05A2A0550220502BC050009 /* CardioShareCardSheet.swift in Sources */,
 				B05A2A0650220502BC05000B /* CardioFirstOpenIntroView.swift in Sources */,
 				B05A2A0750220502BC05000D /* DashboardCardioWidget.swift in Sources */,
+				C05A2026050420260001000D /* OlympianPathService.swift in Sources */,
+				C05A2026050420260002000D /* DashboardOlympianWidget.swift in Sources */,
+				C05A2026050420260003000D /* OlympianPathView.swift in Sources */,
+				C05A2026050420260004000D /* OlympianCelebrationOverlay.swift in Sources */,
+				C05A2026050420260005000D /* PaywallFirstScreenView.swift in Sources */,
 				7CB08C652ED6A33C00236ECB /* WorkoutGeneratorService.swift in Sources */,
 				DDA48A0D52DCCDCB7D45FBC6 /* WorkoutSuggestionEngine.swift in Sources */,
 				7C558B1F2ED5027200A01E1F /* FoodDetailsView.swift in Sources */,
@@ -1979,6 +2011,10 @@
 				7C590B8B2ED2C1DB002BD2B0 /* ProfileView.swift in Sources */,
 				7C81613F2EF8722A007556A7 /* DeepLinkManager.swift in Sources */,
 				7C590B8E2ED2D1DB002BD2B0 /* SettingsView.swift in Sources */,
+				7C0D05012F803F0100000001 /* MonetizationState.swift in Sources */,
+				7C0D05032F803F0100000002 /* MonetizationCheatCodeViews.swift in Sources */,
+				7C0D05052F803F0100000003 /* SettingsSubscriptionSection.swift in Sources */,
+				7C0D05072F803F0100000004 /* ProRecapView.swift in Sources */,
 				7C590B932ED2E1DB002BD2B0 /* DeveloperAnalyticsView.swift in Sources */,
 				7C8405E22EE8BEE80009ED0F /* LimitationsService.swift in Sources */,
 				7C590B982ED2E2DB002BD2B0 /* SevenDayProgramDetailView.swift in Sources */,

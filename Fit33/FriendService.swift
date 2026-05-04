@@ -583,7 +583,17 @@ class FriendService: ObservableObject {
                 NotificationManager.shared.updateBadgeCount()
                 logger.log(.info, category: .social, message: "✅ Friend request ACCEPTED", metadata: ["request_id": requestId.uuidString.prefix(8)])
                 AppLogger.info("Friend request accepted", category: .social)
-                
+
+                // 2026-05-04 — Olympian Path: previously-dormant friend-add
+                // achievement hook now fires. `BadgeService.onFriendAdded`
+                // also fans out to Olympian Path mirror keys
+                // (`olympian_<year>_first_friend`, `*_friends_10`). Fire-and-
+                // forget so the friend-accept tap doesn't block on RPCs.
+                let totalFriends = self.friends.count
+                Task.detached {
+                    await BadgeService.shared.onFriendAdded(totalFriends: totalFriends)
+                }
+
                 SessionLogManager.shared.log(.info, category: .pushNotification, message: "Friend request accepted — flushing push queue", metadata: ["request_id": requestId.uuidString.prefix(8)])
                 PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "friend_request_accepted")
             }

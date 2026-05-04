@@ -126,30 +126,14 @@ final class RequestDeduplicationService {
     }
 }
 
-// MARK: - 2. SYNC COORDINATOR
-/// Tracks sync state - actual sync logic is in SupabaseManager
-/// The deduplication is now built into SupabaseManager.syncAllDataFromCloud()
-
-@MainActor
-final class SyncCoordinator: ObservableObject {
-    static let shared = SyncCoordinator()
-    
-    @Published private(set) var isSyncing = false
-    @Published private(set) var lastSyncTime: Date?
-    
-    private init() {}
-    
-    /// Mark sync as started (called by SupabaseManager)
-    func markSyncStarted() {
-        isSyncing = true
-    }
-    
-    /// Mark sync as completed (called by SupabaseManager)
-    func markSyncCompleted() {
-        isSyncing = false
-        lastSyncTime = Date()
-    }
-}
+// MARK: - 2. (was SyncCoordinator — removed 2026-05-03 perf sprint)
+//
+// SyncCoordinator was an unused @Published wrapper. The sync state it
+// tracked is now read directly from SupabaseManager.syncAllDataFromCloud()
+// (the deduplication is built into that method via RequestCoalescer).
+// No view or service called `SyncCoordinator.shared`, so the entire class
+// was dead — removing it eliminates an idle ObservableObject and the
+// associated Combine subscription book-keeping.
 
 // MARK: - 3. MEMORY PRESSURE HANDLER
 /// Responds to system memory warnings by clearing caches
@@ -167,10 +151,20 @@ final class MemoryPressureHandler {
     private let cleanupCooldown: TimeInterval = 15 // Generous cooldown to prevent main thread churn
     private let emergencyCooldown: TimeInterval = 60 // Prevent emergency spam loop
     private let maxEmergencyAttempts: Int = 3 // Stop after 3 failed attempts
-    /// Sprint 2 Q2-26 — retained so the 30s monitor can be paused when the
-    /// app is backgrounded (prevents a wall clock Timer from firing, spinning
+    /// Sprint 2 Q2-26 — retained so the 15s monitor can be paused when the
+    /// app is backgrounded (prevents a wall clock timer from firing, spinning
     /// task_info, and defeating iOS's "do nothing while suspended" contract).
-    private var monitorTimer: Timer?
+    ///
+    /// 2026-05-03 perf sprint: replaced `Timer.scheduledTimer` +
+    /// `RunLoop.main.add(timer, forMode: .common)` with a `DispatchSourceTimer`
+    /// on a utility queue. The OLD design ticked on the main run loop in
+    /// `.common` mode, meaning the 15s poll fired DURING active scrolling and
+    /// tab transitions (`task_info` syscall + threshold compare on main).
+    /// One syscall is cheap (~100µs), but main-thread cost during scroll is
+    /// the only cost we measure. The bg timer dispatches to main only when a
+    /// threshold is actually crossed — i.e. only when work is needed.
+    private var monitorTimer: DispatchSourceTimer?
+    private let monitorQueue = DispatchQueue(label: "com.fit33.memory-monitor", qos: .utility)
     private var lifecycleObservers: [NSObjectProtocol] = []
     
     // ⚡️ MEMORY THRESHOLDS — tuned for iPhone 16 Pro (8GB RAM)
@@ -206,7 +200,8 @@ final class MemoryPressureHandler {
         for observer in lifecycleObservers {
             NotificationCenter.default.removeObserver(observer)
         }
-        monitorTimer?.invalidate()
+        monitorTimer?.cancel()
+        monitorTimer = nil
     }
 
     private func setupMemoryWarningObserver() {
@@ -221,34 +216,42 @@ final class MemoryPressureHandler {
     }
 
     private func startPeriodicMonitoring() {
-        monitorTimer?.invalidate()
+        monitorTimer?.cancel()
         // Sprint 2026-04-24: 30s → 15s. 1.38 (53) session logs showed memory
         // climbing ~45MB per tab switch; at 30s poll the app could be 50+MB
         // over threshold before we notice. 15s poll still has negligible cost
         // (`task_info` is a single syscall, ~100µs) and catches bursts earlier.
-        let timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        //
+        // 2026-05-03 perf sprint: ticks now run on a utility-qos background
+        // queue. `checkMemoryPressure` is pure `task_info` + threshold compare
+        // — fully thread-safe (no Core Data, no UI). Only the actual cleanup
+        // (`handleMemoryWarning`) hops to main, and only when a threshold has
+        // been crossed. This eliminates the ~100µs main-thread spike that
+        // previously fired in `.common` mode every 15s during scrolling.
+        let timer = DispatchSource.makeTimerSource(queue: monitorQueue)
+        timer.schedule(deadline: .now() + 15, repeating: 15, leeway: .seconds(1))
+        timer.setEventHandler { [weak self] in
             self?.checkMemoryPressure()
         }
-        // Keep running even while the user is scrolling — the check is fast.
-        RunLoop.main.add(timer, forMode: .common)
+        timer.resume()
         monitorTimer = timer
     }
 
-    /// Sprint 2 Q2-26 — pause the 30s polling Timer on background/inactive
+    /// Sprint 2 Q2-26 — pause the 15s polling timer on background/inactive
     /// and restart on active. Prevents the ObservableObject from doing any
-    /// work while the app is suspended and avoids the Timer surviving as a
+    /// work while the app is suspended and avoids the timer surviving as a
     /// retained cycle if the handler ever changed ownership.
     private func setupLifecycleObservers() {
         let nc = NotificationCenter.default
         lifecycleObservers.append(
             nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.monitorTimer?.invalidate()
+                self?.monitorTimer?.cancel()
                 self?.monitorTimer = nil
             }
         )
         lifecycleObservers.append(
             nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.monitorTimer?.invalidate()
+                self?.monitorTimer?.cancel()
                 self?.monitorTimer = nil
             }
         )
@@ -259,24 +262,46 @@ final class MemoryPressureHandler {
         )
     }
     
+    /// 2026-05-03 perf sprint: this body is invoked from the
+    /// `monitorQueue` (utility QoS) background timer. `getMemoryUsageMB()`
+    /// is a `task_info` syscall — fully thread-safe. Only the actual
+    /// cleanup (`handleMemoryWarning`) hops to main; the threshold-check
+    /// and counter-reset path stays off-main so a healthy poll has zero
+    /// main-thread cost (the previous Timer.scheduledTimer + RunLoop.main
+    /// path spent ~100µs per tick on main, fired during scrolling).
     private func checkMemoryPressure() {
         let memoryMB = getMemoryUsageMB()
         
+        let level: MemoryWarningLevel?
         if memoryMB > emergencyThreshold {
-            handleMemoryWarning(level: .emergency)
+            level = .emergency
         } else if memoryMB > criticalThreshold {
-            handleMemoryWarning(level: .critical)
+            level = .critical
         } else if memoryMB > warningThreshold {
-            handleMemoryWarning(level: .warning)
+            level = .warning
         } else {
-            // Memory is back to healthy — reset all attempt counters
-            if emergencyAttemptCount > 0 || criticalFailCount > 0 {
-                emergencyAttemptCount = 0
-                criticalFailCount = 0
-                #if DEBUG
-                AppLogger.info("✅ [MEMORY] Memory healthy (\(Int(memoryMB))MB) — counters reset", category: .general)
-                #endif
+            level = nil
+        }
+        
+        if let level = level {
+            DispatchQueue.main.async { [weak self] in
+                self?.handleMemoryWarning(level: level)
             }
+            return
+        }
+        
+        // Memory is healthy — reset counters off-main. Reads/writes here
+        // are confined to this background queue, so no synchronization
+        // needed against the timer body itself; main-thread `handleMemoryWarning`
+        // also mutates these counters but only after a level-cross, which by
+        // definition won't be racing with this branch (we only land here when
+        // memory is below all thresholds).
+        if emergencyAttemptCount > 0 || criticalFailCount > 0 {
+            emergencyAttemptCount = 0
+            criticalFailCount = 0
+            #if DEBUG
+            AppLogger.info("✅ [MEMORY] Memory healthy (\(Int(memoryMB))MB) — counters reset", category: .general)
+            #endif
         }
     }
     
@@ -498,110 +523,19 @@ actor TaskThrottler {
     }
 }
 
-// MARK: - 5. BACKGROUND WORK SCHEDULER
-/// Ensures heavy operations run on background threads at low priority
-/// Solves: Learning engine taking 5675ms on main thread
-
-final class BackgroundWorkScheduler {
-    static let shared = BackgroundWorkScheduler()
-    
-    private let heavyWorkQueue = DispatchQueue(
-        label: "com.fit33.heavyWork",
-        qos: .utility,
-        attributes: .concurrent
-    )
-    
-    private let lightWorkQueue = DispatchQueue(
-        label: "com.fit33.lightWork",
-        qos: .userInitiated
-    )
-    
-    private init() {}
-    
-    /// Schedule heavy work (analysis, map building, etc.)
-    /// Automatically yields to prevent blocking
-    func scheduleHeavyWork<T>(
-        _ work: @escaping () async throws -> T
-    ) async throws -> T {
-        return try await withCheckedThrowingContinuation { continuation in
-            heavyWorkQueue.async {
-                Task(priority: .utility) {
-                    do {
-                        let result = try await work()
-                        continuation.resume(returning: result)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
-        }
-    }
-    
-    /// Schedule work with periodic yields to prevent blocking
-    func scheduleChunkedWork<T, Element>(
-        items: [Element],
-        chunkSize: Int = 100,
-        process: @escaping (Element) async throws -> T
-    ) async throws -> [T] {
-        var results: [T] = []
-        results.reserveCapacity(items.count)
-        
-        for (index, item) in items.enumerated() {
-            let result = try await process(item)
-            results.append(result)
-            
-            // Yield every chunkSize items to let UI breathe
-            if index % chunkSize == 0 {
-                await Task.yield()
-            }
-        }
-        
-        return results
-    }
-}
-
-// MARK: - 6. STARTUP OPTIMIZER
-/// Defers non-critical work to after UI is responsive
-/// Reduces perceived startup time
-
-@MainActor
-final class StartupOptimizer {
-    static let shared = StartupOptimizer()
-    
-    private var deferredTasks: [() async -> Void] = []
-    private var hasCompletedCriticalPath = false
-    
-    private init() {}
-    
-    /// Mark a task as deferrable (will run after UI is ready)
-    func deferTask(_ task: @escaping () async -> Void) {
-        if hasCompletedCriticalPath {
-            // If we're past startup, run immediately
-            Task { await task() }
-        } else {
-            deferredTasks.append(task)
-        }
-    }
-    
-    /// Call this after the main UI is visible
-    func criticalPathCompleted() {
-        guard !hasCompletedCriticalPath else { return }
-        hasCompletedCriticalPath = true
-        
-        AppLogger.debug("🚀 [STARTUP] Critical path complete - running \(deferredTasks.count) deferred tasks", category: .general)
-        
-        // Run deferred tasks with delays to spread out the load
-        for (index, task) in deferredTasks.enumerated() {
-            let delay = Double(index) * 0.5 // 500ms between each task
-            Task {
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                await task()
-            }
-        }
-        
-        deferredTasks.removeAll()
-    }
-}
+// MARK: - 5/6. (was BackgroundWorkScheduler + StartupOptimizer — removed 2026-05-03)
+//
+// Both classes were defined but never invoked:
+//   • `BackgroundWorkScheduler.shared.scheduleHeavyWork(...)` — 0 call sites
+//   • `BackgroundWorkScheduler.shared.scheduleChunkedWork(...)` — 0 call sites
+//   • `StartupOptimizer.shared.deferTask(...)` — 0 call sites
+//   • `StartupOptimizer.shared.criticalPathCompleted()` — 0 call sites
+//
+// `StartupCoordinator` (defined further down in this file) is the actual
+// active sequencer for cold-start phases. `Task.detached(priority:)` +
+// `await Task.yield()` cover the chunked-work pattern at the call site
+// (see TabPreloader, IntelligenceEngine), so the wrapper helpers were
+// redundant. Removing them shrinks main-thread ObservableObject pressure.
 
 // MARK: - INTEGRATION HELPERS
 // Note: VideoPlaybackEngine methods (clearWarmCache, reduceMemoryFootprint, pausePrefetching)
@@ -1009,54 +943,18 @@ final class CPUProtection {
     }
 }
 
-// MARK: - INITIALIZATION
-/// Call this early in app startup
-
-enum PerformanceOptimizationsInitializer {
-    static func initialize() {
-        // Start memory monitoring
-        _ = MemoryPressureHandler.shared
-        
-        // Initialize task throttler
-        _ = TaskThrottler.shared
-        
-        // Initialize CPU protection
-        _ = CPUProtection.shared
-        
-        // Initialize heavy work sentinel
-        _ = HeavyWorkSentinel.shared
-
-        // MetricKit runs in Release — captures real-world hangs/crashes
-        _ = MetricKitSubscriber.shared
-
-        // MainThreadWatchdog + ProductionFPSMonitor are DEBUG-only.
-        // QUALITY_PERFORMANCE_AGENT invariant: these tools sample every frame
-        // and emit `.warning`/`.error` logs that the bug-intelligence rollup
-        // treats as user-facing errors. Running them in TestFlight/Release
-        // produces dozens of false-positive fingerprints per session. The
-        // canonical start call lives in Fit33App.swift inside a `#if DEBUG`
-        // block; this is a defensive second gate.
-        #if DEBUG
-        MainThreadWatchdog.shared.start()
-        ProductionFPSMonitor.shared.start()
-        #endif
-
-        Task { @MainActor in
-            StartupCoordinator.shared.beginStartupSequence()
-        }
-
-        #if DEBUG
-        AppLogger.info("✅ [PERF] Performance optimizations initialized (watchdog + MetricKit + FPS monitor)", category: .general)
-        #else
-        AppLogger.info("✅ [PERF] Performance optimizations initialized (MetricKit)", category: .general)
-        #endif
-    }
-}
-
-/// Convenience function for app startup
-func initializePerformanceOptimizations() {
-    PerformanceOptimizationsInitializer.initialize()
-}
+// MARK: - INITIALIZATION (was PerformanceOptimizationsInitializer — removed 2026-05-03)
+//
+// `PerformanceOptimizationsInitializer.initialize()` and the wrapper
+// `initializePerformanceOptimizations()` were never called from app code.
+// The actual cold-start sequence in `Fit33App.swift` directly touches
+// each singleton (`_ = MemoryPressureHandler.shared`, MetricKit registration,
+// gated DEBUG-only `MainThreadWatchdog.start()` etc.) and invokes
+// `StartupCoordinator.shared.beginStartupSequence()`. The wrapper class was
+// historical scaffolding from sprint 1 that no longer reflected the boot
+// path. Keeping it caused confusion for readers tracing the cold-start —
+// the agent docs even mentioned it as the canonical entry point even
+// though it was orphaned. Removed.
 
 // MARK: - 8. PREVIEW WARMUP SERVICE
 /// Pre-loads all data needed for the active workout screen while user is on preview

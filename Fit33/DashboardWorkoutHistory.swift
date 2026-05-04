@@ -27,7 +27,22 @@ struct WorkoutHistoryFullView: View {
     private var allWorkouts: FetchedResults<Workout>
     
     @StateObject private var adManager = AdManager.shared
+    @ObservedObject private var premiumManager = PremiumManager.shared
     @State private var cardioWorkouts: [CardioWorkoutDTO] = []
+    @State private var showHistoryUnlockPaywall = false
+
+    /// Phase 2 monetization (2026-05-03): Free users see the last 30
+    /// days of history. Pro users see everything. The paywall surfaces
+    /// AFTER the 30-day cutoff with a "Unlock Unlimited History" banner
+    /// — never silently truncates without an upsell. Pro Preview also
+    /// passes (silent until MON-14).
+    private static let freeHistoryDays: Int = 30
+    private var freeHistoryCutoff: Date {
+        Calendar.current.date(byAdding: .day, value: -Self.freeHistoryDays, to: Date()) ?? .distantPast
+    }
+    private var historyCapApplies: Bool {
+        !premiumManager.isPremiumUser && !MonetizationState.shared.isInProPreview
+    }
     
     enum HistoryItem: Identifiable {
         case strength(Workout)
@@ -66,10 +81,30 @@ struct WorkoutHistoryFullView: View {
         var items: [HistoryItem] = allWorkouts.map { .strength($0) }
         items.append(contentsOf: merged.filteredCardio.map { .cardio($0) })
 
+        // Apply 30-day free-tier cap (Phase 2 monetization). The
+        // truncated rows still exist in Core Data — they just don't
+        // render. The paywall banner below the list nudges to unlock.
+        if historyCapApplies {
+            let cutoff = freeHistoryCutoff
+            items = items.filter { $0.date >= cutoff }
+        }
+
         let grouped = Dictionary(grouping: items) { item in
             calendar.startOfDay(for: item.date)
         }
         return grouped.sorted { $0.key > $1.key }
+    }
+
+    /// Number of pre-cap items hidden from the free tier — drives the
+    /// upsell banner copy ("View 47 more workouts with Pro →").
+    private var hiddenItemsCount: Int {
+        guard historyCapApplies else { return 0 }
+        let cutoff = freeHistoryCutoff
+        let strengthHidden = allWorkouts.filter { ($0.date ?? .distantPast) < cutoff }.count
+        let cardioHidden = mergedCardio.filteredCardio.filter {
+            ISO8601Parser.parse($0.completedAt, fallback: .distantPast) < cutoff
+        }.count
+        return strengthHidden + cardioHidden
     }
 
     private var totalWorkouts: Int { allWorkouts.count + mergedCardio.filteredCardio.count }
@@ -127,6 +162,12 @@ struct WorkoutHistoryFullView: View {
                                 .padding(.horizontal, 20)
                             }
                         }
+
+                        if hiddenItemsCount > 0 {
+                            unlockHistoryBanner
+                                .padding(.horizontal, 20)
+                                .padding(.top, 8)
+                        }
                     }
                 }
                 .padding(.bottom, 100)
@@ -137,6 +178,54 @@ struct WorkoutHistoryFullView: View {
         .task {
             await loadCardioWorkouts()
         }
+        .fullScreenCover(isPresented: $showHistoryUnlockPaywall) {
+            PremiumUpgradeView(triggeringFeature: .unlimitedHistory)
+        }
+    }
+
+    /// Free-tier 30-day-cap upsell banner. Sits below the visible
+    /// workout history. Always personalized ("X more workouts behind
+    /// the cutoff") so the user knows there's real value to unlock,
+    /// not just abstract Pro features.
+    private var unlockHistoryBanner: some View {
+        Button {
+            HapticManager.impact(.light)
+            showHistoryUnlockPaywall = true
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.ds_bodyRegular)
+                        .foregroundColor(.white)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(hiddenItemsCount) more workouts behind the cutoff")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text("Free shows last 30 days · Pro unlocks your full history")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Text("Unlock")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)))
+            }
+            .padding(14)
+            .background(AdaptiveCardSurface(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
     
     private func loadCardioWorkouts() async {
@@ -270,16 +359,21 @@ struct WorkoutHistoryDaySectionWithAds: View {
         return workoutCount + adCount
     }
     
-    // Check if position should show an ad (positions 2, 5, 8...)
+    // Native ad cadence: every 4th display position (positions 3, 7,
+    // 11...). Tightened from `% 3` to `% 4` (Phase 1, 2026-05-03
+    // monetization sweep) — matches the ad-load best practice from
+    // Strong/Hevy/MyFitnessPal: lower density per scroll = higher
+    // CTR per impression + lower uninstall rate. Net eCPM lift > 0
+    // even with 25% fewer impressions.
     private func isAdPosition(_ index: Int) -> Bool {
         guard showAds else { return false }
-        return (index + 1) % 3 == 0
+        return (index + 1) % 4 == 0
     }
-    
+
     // Get the actual workout index accounting for ads
     private func getWorkoutIndex(for displayIndex: Int) -> Int {
         guard showAds else { return displayIndex }
-        let adsBeforeThisIndex = displayIndex / 3
+        let adsBeforeThisIndex = displayIndex / 4
         return displayIndex - adsBeforeThisIndex
     }
     
@@ -362,7 +456,7 @@ struct WorkoutHistoryDaySectionCombined: View {
             
             VStack(spacing: 12) {
                 ForEach(Array(sortedItems.enumerated()), id: \.element.id) { index, item in
-                    if showAds && index > 0 && index % 3 == 0 {
+                    if showAds && index > 0 && index % 4 == 0 {
                         NativeAdCardView()
                     }
                     

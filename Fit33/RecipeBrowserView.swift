@@ -13,8 +13,12 @@ struct RecipeBrowserView: View {
     @State private var showingPremiumUpgrade = false
     @State private var showingPreferences = false
     
-    // Free users can only view 1 recipe
-    private let freeRecipeLimit = 1
+    // Phase 2 monetization (2026-05-03): free tier was "1 recipe forever"
+    // (too punishing — users hit it on Day 1 and never came back to
+    // recipes). Now "1 recipe per day, rotating" — counter resets at
+    // midnight, free users can choose which recipe each day. Drives
+    // habit + still preserves the upsell signal. Source of truth =
+    // `MonetizationState.shared.canViewAnotherRecipe()`.
     @State private var viewedRecipeIds: Set<Int> = []
     
     var body: some View {
@@ -325,16 +329,27 @@ struct RecipeBrowserView: View {
                 GridItem(.flexible(), spacing: 16),
                 GridItem(.flexible(), spacing: 16)
             ], spacing: 16) {
-                ForEach(Array(viewModel.recipes.enumerated()), id: \.element.id) { index, recipe in
-                    // First recipe is always free, rest require premium
-                    let isLocked = !premiumManager.isPremiumUser && index >= freeRecipeLimit
-                    
+                ForEach(Array(viewModel.recipes.enumerated()), id: \.element.id) { _, recipe in
+                    // Phase 2 monetization: cards display unlocked. Tap-time
+                    // gate uses `MonetizationState.canViewAnotherRecipe()`
+                    // which returns true for Pro users always, and for free
+                    // users 1× per calendar day (rotating). Already-viewed-
+                    // today recipes can be re-opened freely (no punishment
+                    // for revisiting your own pick).
+                    let alreadyViewedToday = viewedRecipeIds.contains(recipe.id)
+                    let canOpen = alreadyViewedToday
+                        || MonetizationState.shared.canViewAnotherRecipe()
+                    let isLocked = !premiumManager.isPremiumUser && !canOpen
+
                     PremiumRecipeGridCard(recipe: recipe, isLocked: isLocked) {
                         if isLocked {
                             showingPremiumUpgrade = true
                         } else {
                             selectedRecipe = recipe
                             showingRecipeDetail = true
+                            if !alreadyViewedToday {
+                                MonetizationState.shared.recordRecipeView()
+                            }
                             viewedRecipeIds.insert(recipe.id)
                         }
                     }

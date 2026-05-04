@@ -165,6 +165,66 @@ struct Fit33App: App {
         }
     }
 
+    // ⚡️ 2026-05-03 perf sprint — foreground re-sync staleness gate.
+    //
+    // PROBLEM: every `scenePhase` → `.active` event used to fire the full
+    // resync pipeline: WHOOP / Oura / Strava force-syncs (4–8 network
+    // calls each + `ReadinessService.recompute`) AND the big coordinated
+    // Task (auth recover → `forceReconnectIfStale` → 10-fan social
+    // fanout → `HealthDataService.syncAllHealthData` → community/private
+    // leaderboard refresh). That fired on ALL active transitions —
+    // including brief `.inactive → .active` interruptions (control
+    // center pull-down, notification banner peek, app-switcher peek-and-
+    // return) where no data is meaningfully stale, AND on rapid
+    // `.background → .active` toggling.
+    //
+    // GATE: skip the heavy resync when EITHER:
+    //   1. `oldPhase == .inactive` — the user never actually left the
+    //      app; this is a transient UI overlay (control center, notif
+    //      banner, multitasking gesture) and re-syncing is pure waste.
+    //   2. We resynced within the last 30s — debounces rapid foreground
+    //      events. 30s matches the realtime "channel might be stale"
+    //      threshold in `RealtimeService.forceReconnectIfStale()` so
+    //      the realtime rejoin path is the only thing left to do.
+    //
+    // CHEAP / always-needed work stays unconditional:
+    //   • SessionLogManager.log
+    //   • NewUserJourneyTracker.checkEnrollmentAndActivate (idempotent)
+    //   • DEBUG watchdog/FPS resume
+    //   • NotificationManager.performSmartCheck + clearBadge
+    //   • SmackTalkWidgetBridge.clear (UI freshness)
+    //   • WorkoutManager.checkWorkoutStateOnForeground (active workout)
+    //   • HealthKitManager/Service.checkAuthorizationStatus
+    //   • WHOOP/Oura/Strava .refreshConnectionState (cheap keychain reads)
+    //   • OAuthAuditLog.flushToDevLog
+    //
+    /// Wall-clock timestamp of the last successful heavy foreground resync.
+    /// `nil` until the first `scenePhase=.active` resync runs (so cold-start
+    /// resync ALWAYS fires; the gate only kicks in for subsequent foregrounds).
+    @MainActor private static var lastForegroundResyncTime: Date?
+    
+    /// Decides whether to fire the heavy foreground resync block. Returns
+    /// `true` and updates the timestamp when the gate passes; returns
+    /// `false` (and logs at `.debug`) when skipped.
+    @MainActor
+    private static func shouldRunForegroundResync(oldPhase: ScenePhase) -> Bool {
+        if oldPhase == .inactive {
+            #if DEBUG
+            AppLogger.debug("⚡️ [FOREGROUND GATE] Skipping resync — oldPhase=.inactive (brief interruption)", category: .performance)
+            #endif
+            return false
+        }
+        if let last = lastForegroundResyncTime, Date().timeIntervalSince(last) < 30 {
+            let ageMs = Int(Date().timeIntervalSince(last) * 1000)
+            #if DEBUG
+            AppLogger.debug("⚡️ [FOREGROUND GATE] Skipping resync — last fired \(ageMs)ms ago (<30s debounce)", category: .performance)
+            #endif
+            return false
+        }
+        lastForegroundResyncTime = Date()
+        return true
+    }
+
     /// Async helper used by the consolidated startup pipeline (Phase 2.7) to
     /// gate stages on coordinator phases. Returns immediately if the phase
     /// is already complete; otherwise suspends until the phase fires.
@@ -987,6 +1047,42 @@ struct Fit33App: App {
                         // saveAndVerify wrapper for access-token writes.
                         OAuthAuditLog.flushToDevLog()
 
+                        // ⚡️ 2026-05-03 perf sprint — foreground resync staleness gate.
+                        //
+                        // Skip the wearable force-syncs + the heavy parts of
+                        // the big coordinated Task (10-fan social fanout,
+                        // HealthDataService.syncAllHealthData, community/
+                        // private leaderboard refresh) when oldPhase was
+                        // `.inactive` (brief UI overlay — control center /
+                        // notification banner / app-switcher peek; the user
+                        // never actually left the app) OR when we already
+                        // resynced in the last 30s (rapid foreground
+                        // toggling). See `shouldRunForegroundResync` above
+                        // for the full rationale + decision matrix.
+                        //
+                        // What stays UNCONDITIONAL on every `.active`:
+                        //   • Realtime channel rejoin (cheap, idempotent —
+                        //     `forceReconnectIfStale` no-ops if last event
+                        //     <30s old).
+                        //   • Auth session recovery (idempotent guard inside
+                        //     `recoverSessionIfNeeded`).
+                        //   • `recordLastActive` UPSERT (single RPC).
+                        //   • Cheap housekeeping after Priority 5: push
+                        //     re-registration, daily-reset, profile sync,
+                        //     badge count, retry-queue drain, opponent
+                        //     wake (each has its own internal throttle).
+                        //
+                        // What's GATED (the actual cost):
+                        //   • WHOOP / Oura / Strava force-sync blocks
+                        //     (each spawns 4–8 network calls + recompute).
+                        //   • The 10-fan social fanout (s1-s10).
+                        //   • HealthDataService.syncAllHealthData.
+                        //   • CommunityChallengeService / PrivateChallengeService
+                        //     refreshAll + the conditional sync*ToCommunity/
+                        //     PrivateChallenges Priority 4.5 follow-ups.
+                        let runFullResync = Self.shouldRunForegroundResync(oldPhase: oldPhase)
+                        if runFullResync {
+
                         // ⚡️ Cold-start speedup Phase 1.6 (2026-04-25):
                         // On cold start, gate the wearable force-syncs behind
                         // `StartupCoordinator.essential`. Each force-sync spawns
@@ -1058,6 +1154,7 @@ struct Fit33App: App {
                             }
                             }
                         }
+                        } // end if runFullResync — wearable force-syncs gated above (2026-05-03 perf sprint)
                         
                         // ═══ FOREGROUND TASKS (single coordinated Task) ═══
                         // Consolidate into ONE Task to prevent 7+ concurrent Tasks
@@ -1182,39 +1279,50 @@ struct Fit33App: App {
                             // path stays intact — that's the existing
                             // FriendService behavior the previous
                             // foreground block invoked.
-                            async let s1: () = FriendService.shared.fetchPendingRequests()
-                            async let s2: () = ChallengeService.shared.fetchPendingInvites()
-                            async let s3: () = ChallengeService.shared.fetchPendingSentChallenges()
-                            async let s4: () = ChallengeService.shared.fetchActiveGroupChallenges()
-                            async let s5: () = PrivateChallengeService.shared.fetchPendingInvites()
-                            async let s6: () = PrivateChallengeService.shared.fetchMyChallenges()
-                            async let s7: () = CommunityChallengeService.shared.fetchMyChallenges()
-                            async let s8: () = ActivityFeedService.shared.fetchFeed()
-                            async let s9: () = FriendService.shared.checkForNewWorkouts()
-                            async let s10: () = ChallengeService.shared.fetchActiveChallenges()
-                            _ = await (s1, s2, s3, s4, s5, s6, s7, s8, s9, s10)
-                            
-                            // Priority 3: Health sync FIRST so HealthKit values are fresh
-                            // (must run BEFORE community/private refresh so leaderboard data is current)
-                            // Snapshot which challenge types were loaded BEFORE health sync.
-                            // HealthDataService.syncAllSourcesToChallenges() skips empty services,
-                            // so we only re-sync after refresh for services that were empty.
-                            let hadCommunity = !CommunityChallengeService.shared.myChallenges.isEmpty
-                            let hadPrivate = !PrivateChallengeService.shared.myChallenges.isEmpty
-                            await HealthDataService.shared.syncAllHealthData()
-                            
-                            // Priority 4: Community + Private challenge leaderboards (now has up-to-date health data)
-                            async let communityRefresh: () = CommunityChallengeService.shared.refreshAll(force: false)
-                            async let privateRefresh: () = PrivateChallengeService.shared.refreshAll(force: false)
-                            _ = await (communityRefresh, privateRefresh)
-                            
-                            // Priority 4.5: Only re-sync tracking for services that were empty during
-                            // HealthDataService's sync (challenges weren't loaded yet).
-                            if !hadCommunity && !CommunityChallengeService.shared.myChallenges.isEmpty {
-                                await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
-                            }
-                            if !hadPrivate && !PrivateChallengeService.shared.myChallenges.isEmpty {
-                                await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
+                            //
+                            // 2026-05-03 perf sprint: Priorities 2-4.5 below
+                            // are gated by the `runFullResync` foreground
+                            // staleness check (declared above the wearable
+                            // syncs). Priority 1 (realtime rejoin) and the
+                            // housekeeping after this block stay unconditional
+                            // — they're cheap and idempotent. See the gate
+                            // helper `Fit33App.shouldRunForegroundResync`
+                            // for the full rationale.
+                            if runFullResync {
+                                async let s1: () = FriendService.shared.fetchPendingRequests()
+                                async let s2: () = ChallengeService.shared.fetchPendingInvites()
+                                async let s3: () = ChallengeService.shared.fetchPendingSentChallenges()
+                                async let s4: () = ChallengeService.shared.fetchActiveGroupChallenges()
+                                async let s5: () = PrivateChallengeService.shared.fetchPendingInvites()
+                                async let s6: () = PrivateChallengeService.shared.fetchMyChallenges()
+                                async let s7: () = CommunityChallengeService.shared.fetchMyChallenges()
+                                async let s8: () = ActivityFeedService.shared.fetchFeed()
+                                async let s9: () = FriendService.shared.checkForNewWorkouts()
+                                async let s10: () = ChallengeService.shared.fetchActiveChallenges()
+                                _ = await (s1, s2, s3, s4, s5, s6, s7, s8, s9, s10)
+                                
+                                // Priority 3: Health sync FIRST so HealthKit values are fresh
+                                // (must run BEFORE community/private refresh so leaderboard data is current)
+                                // Snapshot which challenge types were loaded BEFORE health sync.
+                                // HealthDataService.syncAllSourcesToChallenges() skips empty services,
+                                // so we only re-sync after refresh for services that were empty.
+                                let hadCommunity = !CommunityChallengeService.shared.myChallenges.isEmpty
+                                let hadPrivate = !PrivateChallengeService.shared.myChallenges.isEmpty
+                                await HealthDataService.shared.syncAllHealthData()
+                                
+                                // Priority 4: Community + Private challenge leaderboards (now has up-to-date health data)
+                                async let communityRefresh: () = CommunityChallengeService.shared.refreshAll(force: false)
+                                async let privateRefresh: () = PrivateChallengeService.shared.refreshAll(force: false)
+                                _ = await (communityRefresh, privateRefresh)
+                                
+                                // Priority 4.5: Only re-sync tracking for services that were empty during
+                                // HealthDataService's sync (challenges weren't loaded yet).
+                                if !hadCommunity && !CommunityChallengeService.shared.myChallenges.isEmpty {
+                                    await CommunityChallengeService.shared.syncAllTrackingToCommunityChallenges()
+                                }
+                                if !hadPrivate && !PrivateChallengeService.shared.myChallenges.isEmpty {
+                                    await PrivateChallengeService.shared.syncAllTrackingToPrivateChallenges()
+                                }
                             }
                             
                             // ════ Critical blocking path ends here. Remaining work ════

@@ -417,7 +417,7 @@ struct MealPlanGeneratorSheet: View {
                     .foregroundColor(.white)
             }
             
-            Text("AI Meal Planner")
+            Text("Smart Meal Planner")
                 .font(.title2)
                 .fontWeight(.bold)
             

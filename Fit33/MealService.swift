@@ -128,6 +128,24 @@ class MealService: ObservableObject {
                 if foodEntry.protein >= 30 {
                     await DailyQuestService.shared.onHighProteinMealLogged()
                 }
+
+                // 2026-05-04 — Olympian Path: previously-dormant
+                // `BadgeService.onMealLogged` now fires (additive — server
+                // increments the lifetime meal counter atomically). Fans out
+                // to `first_meal_logged` / `meals_logged_100` and the
+                // matching `olympian_<year>_*_meals_*` mirrors so weight-loss
+                // and general archetype paths progress on every meal log.
+                Task.detached {
+                    await BadgeService.shared.incrementAndUnlock(key: "first_meal_logged",  by: 1)
+                    await BadgeService.shared.incrementAndUnlock(key: "meals_logged_100",   by: 1)
+                    let p = "olympian_\(Calendar.current.component(.year, from: Date()))"
+                    await BadgeService.shared.incrementAndUnlock(key: "\(p)_first_meal",    by: 1)
+                    await BadgeService.shared.incrementAndUnlock(key: "\(p)_wl_meals_5",    by: 1)
+                    await BadgeService.shared.incrementAndUnlock(key: "\(p)_wl_meals_30",   by: 1)
+                    await BadgeService.shared.incrementAndUnlock(key: "\(p)_wl_meals_50",   by: 1)
+                    await BadgeService.shared.incrementAndUnlock(key: "\(p)_wl_meals_100",  by: 1)
+                    await BadgeService.shared.incrementAndUnlock(key: "\(p)_wl_meals_200",  by: 1)
+                }
                 
                 // Update protein goal progress with total today's protein
                 let todayProtein = self.todaysMeals.reduce(0) { $0 + $1.protein }

@@ -623,6 +623,11 @@ class ExerciseHistoryService: ObservableObject {
             .execute()
             .value
         
+        // 2026-05-04 — Olympian Path: track if this update produces ANY new
+        // PR so we can fan out to BadgeService.onPersonalRecord exactly once
+        // per session-level PR event (not once per metric-row-update).
+        var producedNewPR = false
+
         if let existing = existingRecords.first {
             // Update existing record
             var updates: [String: AnyJSON] = [
@@ -636,24 +641,28 @@ class ExerciseHistoryService: ObservableObject {
             
             // Check for new PRs
             if maxWeight > existing.maxWeight {
+                producedNewPR = true
                 updates["max_weight"] = .double(maxWeight)
                 updates["max_weight_date"] = .string(isoNow)
                 AppLogger.debug("🏆 [ExerciseHistory] NEW PR! Max weight for '\(exerciseName)': \(Int(maxWeight)) lbs", category: .workout)
             }
             
             if maxReps > existing.maxReps {
+                producedNewPR = true
                 updates["max_reps"] = .integer(maxReps)
                 updates["max_reps_date"] = .string(isoNow)
                 AppLogger.debug("🏆 [ExerciseHistory] NEW PR! Max reps for '\(exerciseName)': \(maxReps)", category: .workout)
             }
             
             if maxVolumeSingleSet > existing.maxVolumeSingleSet {
+                producedNewPR = true
                 updates["max_volume_single_set"] = .double(maxVolumeSingleSet)
                 updates["max_volume_single_set_date"] = .string(isoNow)
                 AppLogger.debug("🏆 [ExerciseHistory] NEW PR! Max volume single set for '\(exerciseName)': \(Int(maxVolumeSingleSet))", category: .workout)
             }
             
             if totalVolume > existing.maxVolumeSession {
+                producedNewPR = true
                 updates["max_volume_session"] = .double(totalVolume)
                 updates["max_volume_session_date"] = .string(isoNow)
                 AppLogger.debug("🏆 [ExerciseHistory] NEW PR! Max volume session for '\(exerciseName)': \(Int(totalVolume))", category: .workout)
@@ -665,6 +674,7 @@ class ExerciseHistoryService: ObservableObject {
             }
             
             if best1rm > existing.estimated1rm {
+                producedNewPR = true
                 updates["estimated_1rm"] = .double(best1rm)
                 updates["estimated_1rm_date"] = .string(isoNow)
                 updates["estimated_1rm_weight"] = .double(best1rmWeight)
@@ -679,6 +689,8 @@ class ExerciseHistoryService: ObservableObject {
                 .execute()
             
         } else {
+            // Brand-new PR record always counts as a new PR
+            producedNewPR = true
             // Create new PR record
             let newRecord: [String: AnyJSON] = [
                 "user_id": .string(userId.uuidString),
@@ -713,6 +725,21 @@ class ExerciseHistoryService: ObservableObject {
                 .execute()
             
             AppLogger.info("✅ [ExerciseHistory] Created new PR record for '\(exerciseName)'", category: .workout)
+        }
+
+        // 2026-05-04 — Olympian Path: PR achievement fan-out (was dormant).
+        // Increment lifetime PR count by 1 each time we observe ANY new PR
+        // metric on this exercise, regardless of how many sub-metrics broke
+        // simultaneously (one workout = one PR event for badge purposes).
+        if producedNewPR {
+            Task.detached {
+                await BadgeService.shared.incrementAndUnlock(key: "first_pr", by: 1)
+                let p = "olympian_\(Calendar.current.component(.year, from: Date()))"
+                await BadgeService.shared.incrementAndUnlock(key: "\(p)_first_pr",  by: 1)
+                await BadgeService.shared.incrementAndUnlock(key: "\(p)_str_pr_5",  by: 1)
+                await BadgeService.shared.incrementAndUnlock(key: "\(p)_str_pr_10", by: 1)
+                await BadgeService.shared.incrementAndUnlock(key: "\(p)_str_pr_20", by: 1)
+            }
         }
     }
     

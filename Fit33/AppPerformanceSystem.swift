@@ -87,7 +87,18 @@ final class MetricKitSubscriber: NSObject, MXMetricManagerSubscriber {
                     let callStackJSON = Self.jsonString(from: crash.callStackTree.jsonRepresentation())
                     let metaJSON = Self.jsonString(from: crash.metaData.jsonRepresentation())
 
-                    AppLogger.error(
+                    // MetricKit reports crashes the OS already recorded (often
+                    // SIGKILL/jetsam, OOM, watchdog) AFTER the fact via its own
+                    // crash channel — they are not signals OUR catch path can
+                    // act on. Log at .warning (not .error) so MetricKit
+                    // diagnostics flow into dev_session_logs + the
+                    // AdvancedSessionLogger persist below WITHOUT firing a
+                    // duplicate `crash_reports` row via Logger.swift's
+                    // `level >= .error → CrashReportingService.reportError`
+                    // gate. The `metrickit_crash` AdvancedSessionLogger entry
+                    // already carries the canonical record. (Bug-intel
+                    // `64dc8967` — MetricKit signal 9 cluster.)
+                    AppLogger.warning(
                         "[METRICKIT] Crash diagnostic v\(crashVersion) (current: v\(currentVersion)), signal: \(signal) exc: \(exceptionType)/\(exceptionCode)",
                         category: .performance
                     )
@@ -686,29 +697,13 @@ final class SmartPrefetch: ObservableObject {
         }
     }
     
-    private func prefetchProgressData() {
-        guard prefetchTasks["progress"] == nil else { return }
-        
-        prefetchTasks["progress"] = Task(priority: .background) {
-            // Pre-compute achievement states (expensive operation)
-            if let stats = StartupCache.shared.cachedUserStats {
-                let _ = AchievementService.shared.generateAllAchievements(
-                    totalWorkouts: stats.totalWorkouts,
-                    currentStreak: stats.currentStreak,
-                    longestStreak: stats.longestStreak,
-                    heaviestWeight: 0, // Will be updated
-                    highestReps: 0,
-                    longestWorkoutMinutes: 0,
-                    mostSetsInWorkout: 0,
-                    workoutsThisMonth: 0,
-                    userLevel: stats.userLevel,
-                    userXP: stats.xp
-                )
-            }
-            
-            self.prefetchTasks["progress"] = nil
-        }
-    }
+    // 2026-05-03 perf sprint: `prefetchProgressData` removed. The Progress
+    // tab no longer exists as a top-level tab — achievements compute on
+    // demand inside the dedicated Achievements view, and the
+    // `prefetchForTab(_:)` switch above no longer routes `.progress`. The
+    // prefetcher was running `AchievementService.generateAllAchievements`
+    // on every tab switch and discarding the result (no return path), pure
+    // CPU waste.
     
     private func prefetchNutritionData() {
         // Nutrition prefetch is handled by the view itself
@@ -729,124 +724,22 @@ final class SmartPrefetch: ObservableObject {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MARK: - 5. RENDER COALESCER (Batch state updates)
+// MARK: - 5/6. (was RenderCoalescer + ComputationCache + Memoized — removed 2026-05-03)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/// Batches multiple state updates into single render passes
-final class RenderCoalescer {
-    static let shared = RenderCoalescer()
-    
-    private var pendingUpdates: [() -> Void] = []
-    private var isScheduled = false
-    private let queue = DispatchQueue(label: "com.fit33.renderCoalescer", qos: .userInteractive)
-    
-    private init() {}
-    
-    /// Schedule a state update to be batched
-    func scheduleUpdate(_ update: @escaping @MainActor () -> Void) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            
-            self.pendingUpdates.append {
-                Task { @MainActor in
-                    update()
-                }
-            }
-            
-            if !self.isScheduled {
-                self.isScheduled = true
-                
-                // Batch updates in next run loop
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    
-                    // Execute all pending updates in one transaction
-                    let updates = self.queue.sync {
-                        let u = self.pendingUpdates
-                        self.pendingUpdates = []
-                        self.isScheduled = false
-                        return u
-                    }
-                    
-                    // Single withAnimation block for all updates
-                    withAnimation(.none) {
-                        updates.forEach { $0() }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// MARK: - 6. MEMOIZED COMPUTATIONS (Cache expensive operations)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/// Thread-safe memoization cache for expensive computed properties
-actor ComputationCache {
-    static let shared = ComputationCache()
-    
-    private var cache: [String: CacheEntry] = [:]
-    private let maxEntries = 50
-    
-    struct CacheEntry {
-        let value: Any
-        let timestamp: Date
-        let ttl: TimeInterval
-        
-        var isValid: Bool {
-            Date().timeIntervalSince(timestamp) < ttl
-        }
-    }
-    
-    func get<T>(_ key: String) -> T? {
-        guard let entry = cache[key], entry.isValid else {
-            return nil
-        }
-        return entry.value as? T
-    }
-    
-    func set<T>(_ key: String, value: T, ttl: TimeInterval = 60) {
-        // Evict oldest entries if at capacity
-        if cache.count >= maxEntries {
-            let oldestKey = cache.min { $0.value.timestamp < $1.value.timestamp }?.key
-            if let key = oldestKey {
-                cache.removeValue(forKey: key)
-            }
-        }
-        
-        cache[key] = CacheEntry(value: value, timestamp: Date(), ttl: ttl)
-    }
-    
-    func invalidate(_ key: String) {
-        cache.removeValue(forKey: key)
-    }
-    
-    func invalidateAll() {
-        cache.removeAll()
-    }
-}
-
-// MARK: - Memoize Property Wrapper
-
-@propertyWrapper
-struct Memoized<Value> {
-    private let key: String
-    private let ttl: TimeInterval
-    private let compute: () -> Value
-    
-    init(key: String, ttl: TimeInterval = 60, compute: @escaping () -> Value) {
-        self.key = key
-        self.ttl = ttl
-        self.compute = compute
-    }
-    
-    var wrappedValue: Value {
-        // For now, always compute (actor access is async)
-        // In production, use a sync cache or Task
-        return compute()
-    }
-}
+//
+// All three were defined but never invoked anywhere in the app:
+//   • `RenderCoalescer.shared.scheduleUpdate(...)` — 0 call sites
+//   • `ComputationCache.shared.get/set/invalidate` — 0 call sites
+//   • `@Memoized` property wrapper — 0 usages (its `wrappedValue`
+//     impl was a no-op TODO that always computed; even if used, it
+//     wouldn't memoize anything)
+//
+// SwiftUI already coalesces state updates within a single run-loop pass,
+// and concrete memoization is implemented at the call site by services
+// that need it (`ExercisePopularityService.popCache`, `ExerciseLibraryService`
+// in-memory cache, `RequestDeduplicationService.resultCache`, etc.). The
+// generic infrastructure was never adopted because per-call-site
+// memoization gave better control over invalidation. Removed.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MARK: - 7. TAB SWITCH OPTIMIZER
@@ -1402,52 +1295,19 @@ final class StartupWaterfall {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MARK: - 8. FETCH REQUEST OPTIMIZER
+// MARK: - 8. (was FetchOptimizer — removed 2026-05-03 perf sprint)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/// Optimized fetch request helpers that minimize main thread work
-enum FetchOptimizer {
-    
-    /// Create a non-animated fetch request (prevents UI stutters)
-    static func optimizedWorkoutFetch(limit: Int = 20) -> NSFetchRequest<Workout> {
-        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
-        request.fetchLimit = limit
-        request.predicate = NSPredicate(format: "isCompleted == true")
-        request.returnsObjectsAsFaults = true // Lazy load properties
-        request.includesPropertyValues = false // Don't pre-fetch all properties
-        return request
-    }
-    
-    /// Create optimized exercise fetch
-    static func optimizedExerciseFetch(limit: Int = 100) -> NSFetchRequest<Exercise> {
-        let request: NSFetchRequest<Exercise> = Exercise.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Exercise.name, ascending: true)]
-        request.fetchLimit = limit
-        request.returnsObjectsAsFaults = true
-        // Only fetch properties needed for list display
-        request.propertiesToFetch = ["name", "category", "equipment"]
-        return request
-    }
-    
-    /// Perform fetch in background and return IDs
-    static func backgroundFetch<T: NSManagedObject>(
-        request: NSFetchRequest<T>,
-        context: NSManagedObjectContext
-    ) async -> [NSManagedObjectID] {
-        await withCheckedContinuation { continuation in
-            context.perform {
-                do {
-                    let results = try context.fetch(request)
-                    continuation.resume(returning: results.map { $0.objectID })
-                } catch {
-                    AppLogger.error("⚠️ [FETCH] Background fetch failed: \(error)", category: .performance)
-                    continuation.resume(returning: [])
-                }
-            }
-        }
-    }
-}
+//
+// Three static helpers that were never called:
+//   • `FetchOptimizer.optimizedWorkoutFetch(limit:)` — 0 call sites
+//   • `FetchOptimizer.optimizedExerciseFetch(limit:)` — 0 call sites
+//   • `FetchOptimizer.backgroundFetch(request:context:)` — 0 call sites
+//
+// In practice each `@FetchRequest` site applies these settings inline
+// (see `DashboardView` `recentWorkouts` with `fetchLimit: 10` +
+// `returnsObjectsAsFaults: true`), and bulk background fetches use
+// `bgContext.perform { context.fetch(request) }` directly — there's no
+// shared call shape that benefits from a wrapper. Removed.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MARK: - 9. VIEW EXTENSIONS FOR PERFORMANCE

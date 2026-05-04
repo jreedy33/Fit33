@@ -218,10 +218,12 @@ struct RecipeImportSheet: View {
             // Nutrition
             recipeNutritionCard(recipe)
             
-            // Banner Ad for free users
-            if !PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled {
-                BannerAdView()
-            }
+            // Banner ad killed (Phase 1, 2026-05-03 monetization sweep)
+            // — recipes are a Pro upsell surface; injecting a banner
+            // between nutrition and ingredients hurt the upsell
+            // narrative ("you're already paying with attention; might
+            // as well unlock unlimited recipes"). Inline ad removed.
+
             
             // Ingredients
             recipeIngredientsCard(recipe)

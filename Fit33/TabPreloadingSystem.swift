@@ -39,7 +39,9 @@ final class TabPreloader: ObservableObject {
     private(set) var exerciseLibraryData: PreloadedExerciseLibraryData?
     private(set) var workoutTabData: PreloadedWorkoutTabData?
     private(set) var nutritionTabData: PreloadedNutritionTabData?
-    private(set) var progressTabData: PreloadedProgressTabData?
+    // 2026-05-03 perf sprint: `progressTabData` removed alongside Phase 3.
+    // Achievements + workout-stats now compute on-demand inside the
+    // dedicated Achievements view.
     
     // Timing
     private var preloadStartTime: CFTimeInterval = 0
@@ -286,78 +288,15 @@ final class TabPreloader: ObservableObject {
         )
     }
     
-    // MARK: - Phase 3: Pre-compute Expensive Operations
-    
-    private func preloadPhase3_Computations(context: NSManagedObjectContext) async {
-        let startTime = CACurrentMediaTime()
-        
-        // Pre-compute in parallel
-        async let achievementsFetch = precomputeAchievements()
-        async let workoutStatsFetch = precomputeWorkoutStats(context: context)
-        async let exerciseFiltersFetch = precomputeExerciseFilters()
-        
-        let achievements = await achievementsFetch
-        let stats = await workoutStatsFetch
-        _ = await exerciseFiltersFetch
-        
-        // Store progress tab data
-        progressTabData = PreloadedProgressTabData(
-            achievements: achievements,
-            workoutStats: stats
-        )
-        
-        let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        AppLogger.debug("  └─ Phase 3 (Computations): \(String(format: "%.0f", elapsed))ms", category: .ui)
-    }
-    
-    private func precomputeAchievements() async -> [Achievement] {
-        guard let stats = StartupCache.shared.cachedUserStats else { return [] }
-        
-        return AchievementService.shared.generateAllAchievements(
-            totalWorkouts: stats.totalWorkouts,
-            currentStreak: stats.currentStreak,
-            longestStreak: stats.longestStreak,
-            heaviestWeight: 0,
-            highestReps: 0,
-            longestWorkoutMinutes: 0,
-            mostSetsInWorkout: 0,
-            workoutsThisMonth: 0,
-            userLevel: stats.userLevel,
-            userXP: stats.xp
-        )
-    }
-    
-    private func precomputeWorkoutStats(context: NSManagedObjectContext) async -> WorkoutStatsSnapshot {
-        return await withCheckedContinuation { continuation in
-            context.perform {
-                let fetchRequest: NSFetchRequest<Workout> = Workout.fetchRequest()
-                fetchRequest.predicate = NSPredicate(format: "isCompleted == true")
-                
-                var totalVolume: Double = 0
-                var totalWorkouts = 0
-                var totalDuration: TimeInterval = 0
-                
-                do {
-                    let workouts = try context.fetch(fetchRequest)
-                    totalWorkouts = workouts.count
-                    
-                    for workout in workouts {
-                        totalVolume += workout.totalVolume
-                        totalDuration += Double(workout.duration)
-                    }
-                } catch {
-                    // Continue with zeros
-                }
-                
-                continuation.resume(returning: WorkoutStatsSnapshot(
-                    totalWorkouts: totalWorkouts,
-                    totalVolume: totalVolume,
-                    totalDuration: totalDuration,
-                    averageWorkoutDuration: totalWorkouts > 0 ? totalDuration / Double(totalWorkouts) : 0
-                ))
-            }
-        }
-    }
+    // MARK: - Phase 3: REMOVED (2026-05-03 perf sprint)
+    //
+    // Was `preloadPhase3_Computations` + `precomputeAchievements` +
+    // `precomputeWorkoutStats`. The pipeline above already skipped this
+    // phase ("Phase 3: SKIPPED — was computing 400+ achievements + workout
+    // stats. Stats are now embedded in Workout tab and achievements compute
+    // on-demand"). The methods themselves were never called from anywhere
+    // else. Removing the dead code shrinks the file and clears the
+    // confusion of seeing referenced-but-unused infrastructure.
     
     private func precomputeExerciseFilters() async {
         // Pre-build search index for exercises
@@ -447,10 +386,8 @@ final class TabPreloader: ObservableObject {
         return exerciseLibraryData?.equipment ?? ["All"]
     }
     
-    /// Get preloaded achievements
-    func getPreloadedAchievements() -> [Achievement] {
-        return progressTabData?.achievements ?? []
-    }
+    // 2026-05-03 perf sprint: `getPreloadedAchievements()` removed alongside
+    // Phase 3. Achievements compute on-demand inside the Achievements view.
     
     /// ⚡️ MEMORY FIX: Public entry point for MemoryPressureHandler to release data
     func releaseDataForMemoryPressure() {
@@ -465,7 +402,6 @@ final class TabPreloader: ObservableObject {
         exerciseLibraryData = nil
         workoutTabData = nil
         nutritionTabData = nil
-        progressTabData = nil
         AppLogger.debug("💾 [TAB PRELOAD] Released preloaded data (\(exerciseCount) exercises freed from memory)", category: .ui)
     }
     
@@ -478,7 +414,6 @@ final class TabPreloader: ObservableObject {
         exerciseLibraryData = nil
         workoutTabData = nil
         nutritionTabData = nil
-        progressTabData = nil
     }
 }
 
@@ -504,17 +439,8 @@ struct PreloadedNutritionTabData {
     var waterIntake: Double
 }
 
-struct PreloadedProgressTabData {
-    var achievements: [Achievement]
-    var workoutStats: WorkoutStatsSnapshot
-}
-
-struct WorkoutStatsSnapshot {
-    var totalWorkouts: Int
-    var totalVolume: Double
-    var totalDuration: TimeInterval
-    var averageWorkoutDuration: TimeInterval
-}
+// 2026-05-03 perf sprint: `PreloadedProgressTabData` + `WorkoutStatsSnapshot`
+// removed. They were only consumed by the deleted Phase 3 path.
 
 // MARK: - EXERCISE LIBRARY FILTER CACHE (Pre-computed for instant tab load)
 
@@ -911,37 +837,12 @@ final class ExerciseLibraryFilterCache: ObservableObject {
     }
 }
 
-// MARK: - 3. EAGER TAB CONTENT WRAPPER
-
-/// Eagerly initialized tab content - views are kept in memory for instant switching
-struct EagerTabContent<Content: View>: View {
-    let tabIndex: Int
-    let content: () -> Content
-    
-    @StateObject private var preloader = TabPreloader.shared
-    @State private var contentView: AnyView?
-    @State private var isInitialized = false
-    
-    init(tabIndex: Int, @ViewBuilder content: @escaping () -> Content) {
-        self.tabIndex = tabIndex
-        self.content = content
-    }
-    
-    var body: some View {
-        Group {
-            if isInitialized || preloader.isTabReady(tabIndex) {
-                content()
-            } else {
-                // Minimal placeholder - just background color
-                Color.clear
-                    .onAppear {
-                        // Initialize immediately without delay
-                        isInitialized = true
-                    }
-            }
-        }
-    }
-}
+// MARK: - 3. (was EagerTabContent — removed 2026-05-03 perf sprint)
+//
+// `LazyTabContent` (in `AppPerformanceSystem.swift`) is the only tab-content
+// wrapper used by `MainTabView`. `EagerTabContent` was an earlier prototype
+// of the same idea that never reached the call site (no `MainTabView`
+// reference). Removed to avoid two divergent wrappers.
 
 // MARK: - 4. TAB PRELOAD TRIGGER VIEW MODIFIER
 
@@ -966,66 +867,13 @@ extension View {
     }
 }
 
-// MARK: - 5. INSTANT TAB SWITCH COORDINATOR
-
-/// Coordinates tab switches to ensure zero-lag transitions
-@MainActor
-final class InstantTabSwitchCoordinator: ObservableObject {
-    static let shared = InstantTabSwitchCoordinator()
-    
-    @Published var currentTab: Int = 0
-    @Published var isTransitioning: Bool = false
-    
-    private var preloadCheckTask: Task<Void, Never>?
-    
-    private init() {}
-    
-    /// Switch to a tab with guaranteed instant transition
-    func switchTo(tab: Int) {
-        guard tab != currentTab else { return }
-        
-        let preloader = TabPreloader.shared
-        
-        // If preloading is complete, switch instantly
-        if preloader.isTabReady(tab) {
-            performInstantSwitch(to: tab)
-            return
-        }
-        
-        // If not ready, wait briefly then switch anyway
-        isTransitioning = true
-        preloadCheckTask?.cancel()
-        preloadCheckTask = Task {
-            // Wait up to 100ms for preload to complete
-            for _ in 0..<10 {
-                if preloader.isTabReady(tab) {
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
-            }
-            
-            performInstantSwitch(to: tab)
-        }
-    }
-    
-    private func performInstantSwitch(to tab: Int) {
-        // Disable animations for instant feel
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        
-        withTransaction(transaction) {
-            currentTab = tab
-            isTransitioning = false
-        }
-        
-        // Haptic feedback
-        HapticManager.selectionChanged()
-        
-        #if DEBUG
-        AppLogger.debug("⚡️ [TAB SWITCH] Instant switch to tab \(tab)", category: .ui)
-        #endif
-    }
-}
+// MARK: - 5. (was InstantTabSwitchCoordinator — removed 2026-05-03 perf sprint)
+//
+// Never instantiated outside this file. `MainTabView` uses
+// `TabSwitchOptimizer` (in `AppPerformanceSystem.swift`) as the canonical
+// tab-switch controller, which already wraps the SwiftUI `selectedTab`
+// binding with freeze-detection + signpost telemetry. `InstantTabSwitchCoordinator`
+// duplicated the responsibility but was never wired up.
 
 // MARK: - 6. EXERCISE LIBRARY SERVICE EXTENSION
 
@@ -1051,26 +899,9 @@ extension VideoPlaybackEngine {
     }
 }
 
-// MARK: - 8. PRELOAD PROGRESS INDICATOR (Optional UI)
-
-struct PreloadProgressIndicator: View {
-    @StateObject private var preloader = TabPreloader.shared
-    
-    var body: some View {
-        if !preloader.isPreloadingComplete && preloader.preloadProgress > 0 {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .scaleEffect(0.8)
-                
-                Text("Loading...")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, 6)
-            .background(.ultraThinMaterial)
-            .cornerRadius(20)
-            .transition(.opacity)
-        }
-    }
-}
+// MARK: - 8. (was PreloadProgressIndicator — removed 2026-05-03 perf sprint)
+//
+// Never placed in any view. The product decision was to never expose a
+// "loading…" indicator at the top of the app — the dashboard renders
+// from cached data immediately, then upgrades in place. The view struct
+// was orphaned scaffolding.

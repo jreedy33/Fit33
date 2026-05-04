@@ -221,6 +221,14 @@ extension ChallengeService {
                 // 'challenge_reaction' push to the recipient — flush immediately
                 // so battle cries land like Instagram DMs.
                 PushNotificationService.shared.flushPushNotificationQueue(triggeredBy: "challenge_reaction_sent")
+
+                // 2026-05-04 — Olympian Path: wires the dormant reaction
+                // hook through the new `incrementAndUnlock` additive RPC.
+                // Fire-and-forget so the reaction-send tap stays snappy.
+                Task.detached {
+                    await BadgeService.shared.onReactionSent(delta: 1)
+                }
+
                 return (true, response.remainingToday)
             } else {
                 AppLogger.warning("⚠️ [REACTIONS] Send failed: \(response.error ?? "unknown")", category: .social)

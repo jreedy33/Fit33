@@ -3,6 +3,15 @@
 -- Date: 2026-04-27 (Daily Mission Unification — Phase 1)
 -- Agent: Supabase / Data & Backend
 --
+-- Resolves: bb8db6c13848652a253a41efbadc871d Daily quests duplicate key constraint violation (crash)
+-- Resolves: da16c5c17b9230313fe5322fcd5c04e1 Daily quest duplicate key constraint violation (log)
+-- Resolves: 015bf5a86d2bfcb50033edfe19825e53 Daily quest duplicate key constraint violation (log raw error)
+-- Resolves: 84138481f406a2e4a460870e132a2717 Daily quest duplicate key constraint violation (crash, raw)
+-- ↑ Restored ON CONFLICT (user_id, quest_date, quest_key) DO NOTHING on the
+--   slate INSERT — guard was present in v2 (20260509b), dropped by the v3
+--   rewrite (20260605), restored here for v4. Re-introduces idempotency on
+--   concurrent get_daily_quests calls.
+--
 -- WHY:
 --   Before this migration, the Daily Brief engine and the daily quest slate
 --   were computed independently. The brief read every integration (WHOOP,
@@ -743,7 +752,19 @@ BEGIN
             qt.difficulty
         FROM quest_templates qt
         WHERE qt.quest_key = ANY(v_quest_keys)
-        ORDER BY array_position(v_quest_keys, qt.quest_key);
+        ORDER BY array_position(v_quest_keys, qt.quest_key)
+        -- Race guard: two concurrent `get_daily_quests` calls (foreground
+        -- fetch + push-prompted background refresh) can both pass the
+        -- `v_quest_count = 0` check before either commits. Both then hit
+        -- this INSERT with the same (v_user_id, v_today, quest_key) rows
+        -- and the second loses on the unique constraint
+        -- `user_daily_quests_user_id_quest_date_quest_key_key` → PostgREST
+        -- surfaces SQLSTATE 23505 → iOS catches and treats as a bug.
+        -- The guard restores behavior from v2 (`20260509b`) that the v3
+        -- rewrite (`20260605`) inadvertently dropped. (Bug-intel resolves:
+        -- bb8db6c1 / da16c5c1 / 015bf5a8 / 84138481 — daily-quest seed
+        -- duplicate-key cluster.)
+        ON CONFLICT (user_id, quest_date, quest_key) DO NOTHING;
     END IF;
 
     -- ── Streak + completion summary (unchanged) ────────────────────────

@@ -149,6 +149,7 @@ struct DashboardView: View {
     @AppStorage("showOuraWidget") var showOuraWidget = true  // Oura Readiness widget (only renders when connected)
     @AppStorage("showStravaWidget") var showStravaWidget = true  // Strava latest-activity widget (only renders when connected + fresh activity)
     @AppStorage("showCardioWidget") var showCardioWidget = true  // Dashboard cardio streak / "Just one block" walk CTA
+    @AppStorage("showOlympianWidget") var showOlympianWidget = true  // Path to 33 — annual Olympian track widget
     
     // Nutrition data for macros widget (plain let — macros widget wraps its own @ObservedObject)
     let mealService = MealService.shared
@@ -331,6 +332,18 @@ struct DashboardView: View {
                             .padding(.bottom, 20)
                     }
 
+                    // 2026-05-04 — Path to 33 (annual Olympian track).
+                    // Wrapper owns its own @StateObject OlympianPathService
+                    // (PE invariant 9 widget isolation). Always renders when
+                    // toggled on; calls `loadCurrentSeason()` on first
+                    // appearance which is idempotent server-side, so
+                    // existing users see their 33 immediately on first
+                    // dashboard view of the season.
+                    if showOlympianWidget {
+                        DashboardOlympianWrapper(navigationPath: $dashboardNavPath)
+                            .padding(.bottom, 20)
+                    }
+
                     // Recent workouts section (in-app + synced HealthKit/Strava/Fitbit)
                     if !recentWorkouts.isEmpty || !recentCardioWorkouts.isEmpty {
                         recentWorkoutsSection
@@ -477,7 +490,8 @@ struct DashboardView: View {
                     showWhoop: $showWhoopWidget,
                     showOura: $showOuraWidget,
                     showStrava: $showStravaWidget,
-                    showCardio: $showCardioWidget
+                    showCardio: $showCardioWidget,
+                    showOlympian: $showOlympianWidget
                 )
                 .presentationDragIndicator(.visible)
             }
@@ -854,6 +868,21 @@ struct DashboardView: View {
         if route.hasPrefix("ChallengeDetail:") {
             let idStr = String(route.dropFirst("ChallengeDetail:".count))
             pushChallengeDetailIfPossible(idStr: idStr, attempt: 0)
+            return
+        }
+        if route == "olympian" {
+            // 2026-05-04 — Path to 33 deep link / push handler. Push the
+            // Olympian Path detail onto the dashboard NavigationStack with
+            // animation disabled so the transition from push tap → detail
+            // is instant (matches the challenge-detail pattern above).
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                dashboardNavPath.append(DashboardRoute.olympianPath)
+            }
+            deepLinkManager.pendingDashboardRoute = nil
+            AppLogger.debug("[DEEPLINK] Pushed Olympian Path", category: .ui)
+            return
         }
     }
 

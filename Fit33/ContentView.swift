@@ -13,10 +13,45 @@ struct ContentView: View {
     // moment `pendingTierPromotion` changes (set by detection in
     // `fetchOrJoinLeague`, cleared by the overlay's onDismiss).
     @StateObject private var weeklyLeagueService = WeeklyLeagueService.shared
-    
+
+    // 2026-05-04 — Path to 33 (annual Olympian track) celebration host.
+    // Fires once when the user completes all 33 goals of the season; cleared
+    // by the overlay's onDismiss. The badge is minted server-side by
+    // `complete_olympian_season_if_done` (called at the tail of
+    // `unlock_achievement` for any olympian-tagged row), and surfaced here
+    // via `OlympianPathService.pendingSeasonCompletion`.
+    @StateObject private var olympianPathService = OlympianPathService.shared
+
+    // Bridge state for the celebration share button — when set, presents
+    // the share sheet via standard `ShareLink` plumbing.
+    @State private var olympianShareItem: OlympianShareItem?
+
     // Welcome tutorial state - shown once per session when user completes onboarding
     @State private var showWelcomeTutorial = false
     @State private var hasShownTutorialThisSession = false
+
+    // First-screen paywall (post-activation soft-sell). Auto-presented
+    // ONCE after the user completes their 3rd workout. Per
+    // MONETIZATION_AGENT invariant 7 — never present during onboarding
+    // or first 3 workouts. Throttled by `MonetizationState.shared.shouldPresentFirstScreenPaywall`.
+    @State private var showFirstScreenPaywall = false
+
+    // Pro Preview expiry modal — fires once when the 7-day Pro
+    // Preview window has just lapsed (within 48h grace). Drives the
+    // warm cohort to the real paywall (Headspace/Calm pattern).
+    @State private var showProPreviewExpiryModal = false
+
+    // Sunday Pro Recap (Phase 5) — set true by the deep-link router
+    // (`MainTabView.handleDeepLinkDestination(.proRecap)` →
+    // `MonetizationState.requestProRecapPresentation()`). Observed
+    // here so the recap cover presents from the root regardless of
+    // which tab the user lands on.
+    @ObservedObject private var monetizationState = MonetizationState.shared
+
+    @FetchRequest(
+        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
+        predicate: NSPredicate(format: "isCompleted == true")
+    ) private var allCompletedWorkouts: FetchedResults<Workout>
 
     // 2026-04-29 — League Redesign Plan §B1 ship gate.
     // One-time "Your level is now your tier" framing card. Triggered for
@@ -86,6 +121,47 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showWelcomeTutorial) {
             WelcomeTutorialView(isPresented: $showWelcomeTutorial)
         }
+        // First-Screen Paywall (post-activation soft-sell). Wraps in
+        // its own fullScreenCover so it composes cleanly with the
+        // welcome tutorial above (only presents AFTER tutorial dismiss).
+        .fullScreenCover(isPresented: $showFirstScreenPaywall, onDismiss: {
+            MonetizationState.shared.markFirstScreenPaywallSeen()
+        }) {
+            PaywallFirstScreenView(
+                onPurchased: { showFirstScreenPaywall = false },
+                onContinueFree: { showFirstScreenPaywall = false }
+            )
+        }
+        // Pro Preview Expiry Modal — fires once when the silent
+        // 7-day in-app preview lapses. Same fullScreenCover pattern.
+        .fullScreenCover(isPresented: $showProPreviewExpiryModal, onDismiss: {
+            MonetizationState.shared.markProPreviewExpiryModalShown()
+        }) {
+            PremiumUpgradeView(triggeringFeature: .lifetime)
+        }
+        // Sunday Pro Recap (Phase 5) — landing surface for the
+        // `fit33://profile/pro-recap` deep-link push. Routed here from
+        // `MainTabView.handleDeepLinkDestination(.proRecap)` via the
+        // shared `MonetizationState.pendingProRecapPresentation` flag.
+        // Pro and free both present the same view; content branches
+        // internally on premium status.
+        .fullScreenCover(
+            isPresented: Binding(
+                get: { monetizationState.pendingProRecapPresentation },
+                set: { newValue in
+                    if !newValue { monetizationState.clearProRecapPresentation() }
+                }
+            )
+        ) {
+            ProRecapView()
+                .environment(\.managedObjectContext, viewContext)
+        }
+        // Re-evaluate auto-presentation any time the completed-workout
+        // count changes. Cheap (read-only check on UserDefaults) so
+        // no debounce needed.
+        .onChange(of: allCompletedWorkouts.count) { _, newCount in
+            evaluateAutoPaywallPresentation(completedWorkouts: newCount)
+        }
         .sheet(isPresented: $showLevelToTierMigration, onDismiss: {
             LevelToTierMigrationGate.markShown()
         }) {
@@ -124,6 +200,31 @@ struct ContentView: View {
             }
         }
         .animation(.spring(response: 0.5, dampingFraction: 0.8), value: weeklyLeagueService.pendingTierPromotion)
+        // 2026-05-04 — Path to 33 (annual Olympian track) season-completion
+        // overlay. Sits at the same zIndex band as the tier-promotion overlay
+        // (the two are mutually exclusive in practice — tier promotion fires
+        // weekly, Olympian fires once a year on goal #33).
+        .overlay {
+            if let badge = olympianPathService.pendingSeasonCompletion {
+                OlympianCelebrationOverlay(
+                    badge: badge,
+                    onDismiss: {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            olympianPathService.clearPendingCompletion()
+                        }
+                    },
+                    onShare: {
+                        olympianShareItem = OlympianShareItem(badge: badge)
+                    }
+                )
+                .transition(.opacity.combined(with: .scale))
+                .zIndex(1000)
+            }
+        }
+        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: olympianPathService.pendingSeasonCompletion)
+        .sheet(item: $olympianShareItem) { item in
+            ShareSheet(items: [item.shareText])
+        }
         .onChange(of: userManager.hasCompletedOnboarding) { oldValue, newValue in
             AppLogger.debug("[TUTORIAL] hasCompletedOnboarding changed: \(oldValue) → \(newValue), lastKnown: \(String(describing: lastKnownOnboardingState))", category: .ui)
             
@@ -196,7 +297,55 @@ struct ContentView: View {
                 UserDefaults.standard.set(currentExerciseVersion, forKey: "exerciseDataVersion")
                 AppLogger.info("Exercise data updated to \(currentExerciseVersion)", category: .ui)
             }
+
+            // First-Screen Paywall + Pro Preview Expiry — initial check.
+            // Done inside the existing `.task` so we share the same
+            // 100ms UserManager-init wait. Both surfaces are throttled
+            // to never-spam (each fires at most once per device until
+            // explicitly reset).
+            await MainActor.run {
+                MonetizationState.shared.recomputeProPreview()
+                evaluateAutoPaywallPresentation(completedWorkouts: allCompletedWorkouts.count)
+                evaluateProPreviewExpiry()
+            }
         }
+    }
+
+    /// Decides whether to surface `PaywallFirstScreenView` automatically.
+    /// Driven by `MonetizationState.shouldPresentFirstScreenPaywall`,
+    /// which gates on workout count + premium status + cooldown.
+    /// Never presents over the tutorial or the Pro Preview expiry modal.
+    @MainActor
+    private func evaluateAutoPaywallPresentation(completedWorkouts: Int) {
+        guard shouldShowMainApp else { return }
+        guard !showWelcomeTutorial,
+              !showLevelToTierMigration,
+              !showProPreviewExpiryModal else { return }
+        guard !showFirstScreenPaywall else { return }
+        guard MonetizationState.shared.shouldPresentFirstScreenPaywall(
+            completedWorkouts: completedWorkouts
+        ) else { return }
+
+        // Tiny delay so we don't fight a tab-switch animation if the
+        // user just landed back on the dashboard from Active Workout.
+        Task {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            await MainActor.run {
+                AppLogger.info("Auto-presenting PaywallFirstScreenView (workout #\(completedWorkouts))", category: .general)
+                showFirstScreenPaywall = true
+            }
+        }
+    }
+
+    /// Surfaces the Pro Preview expiry modal once, in the 48h grace
+    /// window after the silent 7-day in-app preview lapses.
+    @MainActor
+    private func evaluateProPreviewExpiry() {
+        guard shouldShowMainApp else { return }
+        guard !showWelcomeTutorial, !showFirstScreenPaywall else { return }
+        guard MonetizationState.shared.shouldShowProPreviewExpiryModal else { return }
+        AppLogger.info("Auto-presenting Pro Preview expiry modal", category: .general)
+        showProPreviewExpiryModal = true
     }
 }
 

@@ -6,6 +6,7 @@ import MapKit
 struct CardioWorkoutDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var unitSettings = UnitSettingsManager.shared
     let cardioWorkout: CardioWorkoutDTO
     
     // MARK: - Computed Properties
@@ -64,24 +65,33 @@ struct CardioWorkoutDetailView: View {
     }
     
     private func formatDistance(_ meters: Double) -> String {
-        let km = meters / 1000
-        if km < 1 {
-            return String(format: "%.0f m", meters)
-        } else {
-            return String(format: "%.2f km", km)
-        }
+        unitSettings.formatStravaDistance(meters: meters)
     }
-    
+
+    /// Pace label suffix matching the user's distance unit ("/km" or "/mi").
+    private var paceUnitLabel: String { unitSettings.stravaPaceUnitLabel }
+
+    /// Pace input is canonical decimal **minutes per km** (matches our
+    /// cardio_workouts schema). Converts to min/mile for imperial users.
     private func formatPace(_ pace: Double?) -> String {
         guard let pace = pace, pace > 0 else { return "--:--" }
-        let minutes = Int(pace)
-        let seconds = Int((pace - Double(minutes)) * 60)
+        let secondsPerKm = pace * 60
+        let secondsInUserUnit = unitSettings.stravaPaceValue(secondsPerKm: secondsPerKm)
+        let total = Int(secondsInUserUnit.rounded())
+        let minutes = total / 60
+        let seconds = total % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
-    
+
+    /// Speed input is canonical km/h. Converts to mph for imperial users.
     private func formatSpeed(_ speed: Double?) -> String {
         guard let speed = speed, speed > 0 else { return "--" }
-        return String(format: "%.1f km/h", speed)
+        switch unitSettings.distanceUnit {
+        case .imperial:
+            return String(format: "%.1f mph", speed * 0.621371)
+        case .metric:
+            return String(format: "%.1f km/h", speed)
+        }
     }
     
     private func formatFullDate(_ date: Date) -> String {
@@ -128,14 +138,9 @@ struct CardioWorkoutDetailView: View {
             }
         }
         .background(
-            LinearGradient(
-                gradient: Gradient(colors: colorScheme == .dark
-                    ? [Color(red: 0.05, green: 0.05, blue: 0.07), Color(red: 0.08, green: 0.08, blue: 0.10)]
-                    : [Color(.systemGroupedBackground), Color.white.opacity(0.95)]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            AnimatedOrbBackground.workout(colorScheme: colorScheme)
+                .ignoresSafeArea(.all, edges: .all)
+                .accessibilityHidden(true)
         )
         .navigationTitle(activityInfo.name)
         .navigationBarTitleDisplayMode(.large)
@@ -290,7 +295,7 @@ struct CardioWorkoutDetailView: View {
                             .font(.ds_bodyRegular).fontWeight(.bold).fontDesign(.rounded)
                             .foregroundColor(.primary)
                     }
-                    Text("/km")
+                    Text(paceUnitLabel)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -405,7 +410,7 @@ struct CardioWorkoutDetailView: View {
             let minutes = Int(value)
             return "\(minutes) min"
         case "distance":
-            return String(format: "%.2f km", value / 1000)
+            return unitSettings.formatStravaDistance(meters: value)
         case "calories":
             return "\(Int(value)) cal"
         default:
@@ -447,7 +452,7 @@ struct CardioWorkoutDetailView: View {
             VStack(spacing: 8) {
                 // Best Pace
                 if let bestPace = cardioWorkout.bestPace, bestPace > 0 {
-                    highlightRow(title: "Best Pace", value: "\(formatPace(bestPace)) /km", icon: "bolt.fill", color: .orange)
+                    highlightRow(title: "Best Pace", value: "\(formatPace(bestPace)) \(paceUnitLabel)", icon: "bolt.fill", color: .orange)
                 }
                 
                 // Max Speed
@@ -507,7 +512,7 @@ struct CardioWorkoutDetailView: View {
             
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 // Average Pace
-                detailStatCell(title: "Avg Pace", value: formatPace(cardioWorkout.averagePace) + " /km", icon: "speedometer", color: .purple)
+                detailStatCell(title: "Avg Pace", value: formatPace(cardioWorkout.averagePace) + " " + paceUnitLabel, icon: "speedometer", color: .purple)
                 
                 // Average Speed
                 detailStatCell(title: "Avg Speed", value: formatSpeed(cardioWorkout.averageSpeed), icon: "gauge.with.needle", color: .blue)
@@ -676,7 +681,7 @@ struct CardioWorkoutDetailView: View {
         ⏱️ Duration: \(duration)
         📏 Distance: \(distance)
         🔥 Calories: \(calories)
-        ⚡ Avg Pace: \(pace) /km
+        ⚡ Avg Pace: \(pace) \(paceUnitLabel)
         """
         
         if cardioWorkout.goalAchieved {

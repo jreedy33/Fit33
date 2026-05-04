@@ -916,15 +916,11 @@ struct CustomWorkoutBuilderView: View {
                 }
             }
             
-            // Banner ad overlay - floats on top, scroll content has space reserved
-            if !PremiumManager.shared.isPremiumUser && AdManager.shared.adsEnabled {
-                VStack {
-                    Spacer().frame(height: 160) // Position below filters
-                    BannerAdView()
-                        .padding(.horizontal, Spacing.md)
-                    Spacer()
-                }
-            }
+            // Banner ad killed (Phase 1, 2026-05-03 monetization sweep)
+            // — the floating banner overlay on the custom builder
+            // disrupted exercise selection (the highest-intent
+            // pre-Pro surface in the app) for marginal eCPM. Builder
+            // users are converting; don't punish them with a banner.
         }
         .navigationTitle(mode.title)
         .navigationBarTitleDisplayMode(.inline)

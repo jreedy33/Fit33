@@ -1320,9 +1320,22 @@ class PremiumManager: ObservableObject {
         return isPremiumUser
     }
     
-    /// Check if user has access to AI workout generation
-    var hasAIWorkoutGeneration: Bool {
+    /// Check if user has access to Smart Workout generation (algorithm-
+    /// driven workout builder). Free users get 1 generation/week; Pro
+    /// users get unlimited. NEVER refer to this as "AI" in user-facing
+    /// copy — Fit33's workouts are algorithm-tailored, not AI-generated
+    /// (locked 2026-05-03 by user decision).
+    var hasSmartWorkoutGeneration: Bool {
         return isPremiumUser
+    }
+
+    /// Backwards-compat shim — old call sites still reference this name.
+    /// Routes to the new `hasSmartWorkoutGeneration`. Remove once the
+    /// codebase is fully migrated (no remaining call sites at this writing,
+    /// kept defensively for any straggler patches).
+    @available(*, deprecated, renamed: "hasSmartWorkoutGeneration", message: "Fit33 workouts are algorithm-driven, not AI-generated. Use hasSmartWorkoutGeneration.")
+    var hasAIWorkoutGeneration: Bool {
+        return hasSmartWorkoutGeneration
     }
     
     /// Check if user has access to unlimited workout history
@@ -1361,17 +1374,19 @@ class PremiumManager: ObservableObject {
     
     // MARK: - Feature Descriptions
     
-    /// Get description of what premium unlocks
+    /// Get description of what premium unlocks. NEVER use "AI" — the
+    /// workouts are algorithm-driven, not AI-generated. Canonical
+    /// user-facing term is "Smart Workouts" (locked 2026-05-03).
     var premiumFeatures: [String] {
         return [
-            "🏋️ Unlimited AI Workout Generation",
-            "📊 Advanced Analytics & Progress Tracking", 
-            "🍽️ Custom Meal Plans & Nutrition Insights",
-            "💪 Premium Exercise Library (500+ exercises)",
+            "🏋️ Unlimited Smart Workouts",
+            "📊 Advanced Analytics & Progress Tracking",
+            "🍽️ Unlimited Recipes & Nutrition Insights",
+            "💪 500+ Exercise Library",
             "📈 Unlimited Workout History",
-            "🎯 Personalized Recommendations",
-            "🔥 Advanced Achievement System",
-            "⚡ Priority Support"
+            "🎯 Personalized Daily Goals (5 rerolls/day)",
+            "🔥 3 Streak Shields per Month",
+            "⚡ No Ads · Ever"
         ]
     }
     

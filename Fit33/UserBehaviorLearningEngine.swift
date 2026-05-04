@@ -1363,7 +1363,9 @@ struct UserBehaviorProfile: Codable {
     /// Total workouts analyzed
     var totalWorkoutsAnalyzed: Int
     
-    /// AI-generated insights about user behavior
+    /// Algorithm-generated insights about user behavior (NOT AI —
+    /// canonical user-facing term is "Smart insights"; never surface
+    /// the word "AI" in any string derived from these).
     let insights: [String]
     
     /// Last time profile was updated

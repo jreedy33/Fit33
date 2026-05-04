@@ -140,7 +140,7 @@ enum TutorialPageKind: CaseIterable, Identifiable {
         switch self {
         case .welcome:        return "Your intelligent fitness companion"
         case .findFriends:    return "Sync contacts, train together"
-        case .autoWorkout:    return "AI-built or fully custom"
+        case .autoWorkout:    return "Smart-built or fully custom"
         case .programs:       return "30-day transformations"
         case .challenges1v1:  return "Compete head-to-head"
         case .community:      return "Featured challenges, real people"
@@ -158,7 +158,7 @@ enum TutorialPageKind: CaseIterable, Identifiable {
         case .findFriends:
             return "We'll match contacts already on Fit33\nso you can challenge them in seconds."
         case .autoWorkout:
-            return "Pick your time, muscles, and equipment\nfor an AI workout — or build from 6,000+ exercises."
+            return "Pick your time, muscles, and equipment\nfor a Smart Workout — or build from 6,000+ exercises."
         case .programs:
             return "Progressive 7, 14, 21, or 30-day programs\nbuilt around your goals and schedule."
         case .challenges1v1:
@@ -172,7 +172,7 @@ enum TutorialPageKind: CaseIterable, Identifiable {
         case .fuel:
             return "Log meals with USDA + label OCR.\nStay hydrated with one-tap water tracking."
         case .trial:
-            return "Unlimited AI workouts, advanced analytics,\ncustom meal plans, and more."
+            return "Unlimited Smart Workouts, advanced analytics,\ncustom meal plans, and more."
         }
     }
 
@@ -1527,7 +1527,7 @@ struct TutorialTrialCTA: View {
     }
 
     private let features: [TrialFeature] = [
-        TrialFeature(icon: "sparkles", text: "Unlimited AI Workout Generation"),
+        TrialFeature(icon: "wand.and.stars", text: "Unlimited Smart Workouts"),
         TrialFeature(icon: "chart.xyaxis.line", text: "Advanced Analytics & Insights"),
         TrialFeature(icon: "fork.knife", text: "Custom Meal Plans & Recipes"),
         TrialFeature(icon: "flame.fill", text: "Streak Shields & Premium Features")

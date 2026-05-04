@@ -72,16 +72,42 @@ enum NetworkErrorClassifier {
             }
         }
 
-        // BGTaskSchedulerErrorDomain code 1 (BGTaskSchedulerError.unavailable):
-        // device is currently unavailable for background tasks — Low Power
-        // Mode, "Background App Refresh" disabled in Settings, simulator,
-        // or scheduler rate-limit. Apple-documented expected state, never a
-        // bug. `BackgroundChallengeSyncService.scheduleNext()` already
-        // swallows the throw internally; this routes any legacy log call
-        // sites to `.warning` instead of `.error`. Pairs with the server
-        // filter `bgtask_scheduler_unavailable` from migration `20260713_…`.
-        if nsError.domain == "BGTaskSchedulerErrorDomain" && nsError.code == 1 {
+        // BGTaskSchedulerErrorDomain — every code in this domain reflects
+        // device / scheduler state, never an app malfunction:
+        //   1 unavailable   — Low Power Mode, "Background App Refresh"
+        //                     disabled in Settings, simulator, or scheduler
+        //                     rate-limit. Apple-documented expected state.
+        //   2 tooManyPendingTaskRequests — `submit()` called more than once
+        //                     for the same identifier without `cancel()`.
+        //                     Self-healing on next launch.
+        //   3 notPermitted   — task identifier not in `Info.plist`
+        //                     `BGTaskSchedulerPermittedIdentifiers`. Real
+        //                     misconfig — but caught at first launch in
+        //                     internal builds and not a per-device bug.
+        // Bucket the entire domain at `.transientNetwork` (warning, no
+        // fingerprint) so wrapped/alternate codes don't refingerprint.
+        // Pairs with `bg_sync_schedule_failure` server-side filter and
+        // resolves bug-intel `90369817` / `2fe2cbd7` clusters.
+        if nsError.domain == "BGTaskSchedulerErrorDomain" {
             return .transientNetwork
+        }
+
+        // ASAuthorizationError (Apple Sign In) — every code in this domain
+        // is user-state, not an app malfunction:
+        //   1000 unknown    — device-side error (auth service down, network
+        //                     during the credential request). User can
+        //                     retry; don't fingerprint.
+        //   1001 canceled   — user tapped "Cancel" on the sheet. Pure user
+        //                     action, never a bug.
+        //   1002 invalidResponse / 1003 notHandled / 1004 failed — Apple
+        //                     server-side flap; recovery is "tap again".
+        //   1005 notInteractive — only fires inside ASCredentialIdentity
+        //                     refresh flows we don't use.
+        // Bucket all of them at .expectedUserState (debug log + no
+        // fingerprint). (Bug-intel `8622fc3a`, `94944900`, `e5986611`,
+        // `a22cd96f` — Apple Sign In + password-reset rate-limit cluster.)
+        if nsError.domain == "com.apple.AuthenticationServices.AuthorizationError" {
+            return .expectedUserState
         }
 
         let lower = nsError.localizedDescription.lowercased()
@@ -98,7 +124,17 @@ enum NetworkErrorClassifier {
             || lower.contains("not connected to the internet")
             || lower.contains("request timed out")
             || lower.contains("the operation couldn’t be completed. (\(nsError.domain) error -999)")
-            || lower.contains("cancelled") {
+            || lower.contains("cancelled")
+            // PostgreSQL `statement_timeout` (SQLSTATE 57014) — query exceeded
+            // the per-session timeout limit. PostgREST surfaces the message
+            // verbatim; on the iOS side it can wear different domains
+            // depending on whether it traverses URLSession or Postgres-Swift's
+            // own decoder. Bucket as transient — the same query rerun under
+            // less DB load typically succeeds. (Bug-intel `97ec4ac4` —
+            // ExerciseIntelligenceEngine catalogue load timeout.)
+            || lower.contains("canceling statement due to statement timeout")
+            || lower.contains("statement timeout")
+            || (lower.contains("57014") && lower.contains("statement")) {
             return .transientNetwork
         }
 
@@ -122,7 +158,21 @@ enum NetworkErrorClassifier {
 
         if lower.contains("not authenticated")
             || lower.contains("jwt expired")
-            || lower.contains("invalid jwt") {
+            || lower.contains("invalid jwt")
+            // Edge-function `requireUserAuth` returns 401 with body
+            // `{"error":"Unauthorized"}` when the user JWT failed to validate
+            // (most often: app backgrounded long enough for access_token to
+            // expire BEFORE the SDK's auto-refresh fired, or refresh failed
+            // due to no network). The thrown `Error.localizedDescription`
+            // is just `"Unauthorized"` — match the exact lowercase form
+            // (NOT a substring, because real RLS / forbidden messages may
+            // legitimately contain "unauthorized" with more context, and
+            // those should fall through to .rlsViolation / .realError).
+            // Treat as authExpired so the SDK's next refresh + retry
+            // handles it instead of fingerprinting. (Bug-intel `e6aaf4bb`,
+            // `64639cbd`, `1298d708`, `ebe9f665` — Nutrition USDA
+            // Unauthorized cluster, 70+ occ × 8 users on build 63.)
+            || lower == "unauthorized" {
             return .authExpired
         }
 
@@ -142,7 +192,33 @@ enum NetworkErrorClassifier {
         if lower.contains("user already registered")
             || lower.contains("user already exists")
             || lower.contains("email already registered")
-            || lower.contains("forbidden: new_user_id must match caller") {
+            || lower.contains("forbidden: new_user_id must match caller")
+            // Private-challenge invite send: the iOS UI optimistically
+            // re-tries an "Invite" tap; the second hit lands a
+            // PRE-existing pending row → server returns
+            // "User already has a pending invite". This is the desired
+            // idempotent outcome, not a bug. (Bug-intel `60158c57`,
+            // `de033a16`, 2 occ each.)
+            || lower.contains("user already has a pending invite")
+            || lower.contains("already has a pending invite")
+            // Server-side idempotency falling through to the client:
+            // duplicate-key on user_daily_quests / user_achievements /
+            // similar (UPSERT failure shapes), 23505 SQLSTATE. Catch
+            // sites already fall back to the existing row. Surfacing
+            // these as .error inflates the rollup despite zero user
+            // impact. Server should be using ON CONFLICT DO NOTHING —
+            // when it isn't, the iOS catch path treats it as expected
+            // user state. (Bug-intel `bb8db6c1`, `da16c5c1`, `015bf5a8`,
+            // `84138481` — daily-quest seed cluster.)
+            || lower.contains("duplicate key value violates unique constraint")
+            || (lower.contains("23505") && lower.contains("duplicate"))
+            // Apple Sign In: Apple's NSError lowercased description
+            // sometimes drops the canonical domain string and just renders
+            // "(error 1001.)". The domain check above catches the typed
+            // case; this is the belt-and-suspenders fallback for cases
+            // where the error has been wrapped in a Swift error type
+            // that flattens the domain.
+            || lower.contains("authorizationerror error 1001") {
             return .expectedUserState
         }
 

@@ -147,6 +147,13 @@ struct WorkoutTabView: View {
                  .workoutHistory, .personalRecord, .streakInfo, .addFood,
                  .leagues, .readinessDetail, .smackTalk, .mealLogger:
                 break  // Handled by ContentView (tab switch + scroll) / target tab views
+            case .proRecap, .olympianPath:
+                // 2026-05-04 — Path to 33 (`.olympianPath`) and `.proRecap`
+                // are dashboard-tab destinations; ContentView switches the
+                // tab and DashboardView pushes the route. The Workout tab
+                // intentionally ignores them — DON'T clear `pendingDestination`
+                // here or the dashboard tab will never see the deep link.
+                break
             }
         }
         .onChange(of: workoutManager.shouldShowWorkoutGenerator) { _, shouldShow in
@@ -295,6 +302,38 @@ struct WorkoutTabView: View {
     }
 }
 
+// MARK: - Recent Activity item (Workout tab)
+//
+// Parallel to `DashboardView.RecentWorkoutItem` but scoped to this
+// file so the workout-tab recent-activity section can wrap both a
+// `Workout` (Core Data strength row) and a `CardioWorkoutDTO` in a
+// single `ForEach`. `enrichment` mirrors the wearable-overlap
+// `CardioWorkoutDTO` that `WorkoutWearableMerger` attaches to a
+// strength row (WHOOP / Apple Watch / Oura / Fitbit / Garmin) so
+// `RecentWorkoutCard` can render the origin chip.
+enum RecentActivityItem: Identifiable {
+    case strength(Workout, isMostRecent: Bool, enrichment: CardioWorkoutDTO?)
+    case cardio(CardioWorkoutDTO, isMostRecent: Bool)
+
+    var id: String {
+        switch self {
+        case .strength(let w, _, _):
+            return "strength-\(w.objectID.uriRepresentation().absoluteString)"
+        case .cardio(let c, _):
+            return "cardio-\(c.id)"
+        }
+    }
+
+    var date: Date {
+        switch self {
+        case .strength(let w, _, _):
+            return w.date ?? Date.distantPast
+        case .cardio(let c, _):
+            return ISO8601Parser.parse(c.completedAt, fallback: Date.distantPast)
+        }
+    }
+}
+
 struct WorkoutHomeView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.scrollToTopTrigger) private var scrollToTopTrigger
@@ -360,22 +399,46 @@ struct WorkoutHomeView: View {
             ScrollViewReader { scrollProxy in
             ScrollView(.vertical) {
                 Color.clear.frame(height: 0).id("top")
-                
-                VStack(spacing: 0) {
-                VStack(spacing: 20) {
-                    // Quick Actions
-                    quickActionsSection
+
+                // New IA (revised 2026-05-04 per user request):
+                // primary actions → programs widget → secondary strip →
+                // recent activity → next-up → stats. The programs
+                // widget slots between the two tap groups as a
+                // full-width anchor: active program (day + Start CTA)
+                // when one's underway, else a program recommendation
+                // card — replaces the generic "Ready to train" box
+                // above primary actions that added no signal.
+                VStack(spacing: Spacing.md) {
+                    // 1. Primary Actions (Custom + Auto) — 2-up hero row
+                    primaryActionsRow
                         .id(forceRenderID)
-                    
-                    // Program Widget (matches Dashboard active program widget exactly)
-                    workoutTabProgramWidget
-                    
-                    // My Stats Dashboard
+
+                    // 2. Programs widget — full-width. Active program
+                    // day preview OR recommendation card if user has
+                    // no active program. Self-hides nothing; always
+                    // occupies this slot so the page rhythm stays
+                    // stable regardless of program state.
+                    programsWidget
+
+                    // 3. Secondary Actions (Favorites / Cardio /
+                    // Stretch) — 3-up compact strip. Programs was
+                    // promoted out of this strip into the full-width
+                    // widget above.
+                    secondaryActionsStrip
+
+                    // 4. Recent Activity — mirrors DashboardView's
+                    // `recentWorkoutsSection` (prefix 3 + "View All").
+                    recentActivitySection
+
+                    // 5. Next Up — single highest-priority `NextGoal`
+                    // from `generateNextGoals()`. Self-hides when empty.
+                    nextUpCard
+
+                    // 6. My Stats Dashboard (chart wall) — owned by QP.
                     WorkoutStatsSection()
                 }
-            }
-            .padding(.horizontal, Spacing.md)
-            .padding(.bottom, 20)
+                .padding(.horizontal, Spacing.md)
+                .padding(.bottom, Spacing.lg)
             }
             .scrollContentBackground(.hidden)
             .onAppear {
@@ -412,154 +475,192 @@ struct WorkoutHomeView: View {
     }
     
     // MARK: - Custom Header View
+    //
+    // Pinned title row + 1-line sub-brief, matches the Dashboard/Friends
+    // header rhythm. Title uses the canonical Workout-tab gradient
+    // (white → green) from `FriendsTabView` for tab parity.
     private var customWorkoutHeaderView: some View {
-        HStack(alignment: .center) {
-            Text("Workout")
-                .font(.ds_displayLarge)
-                .italic()
-                .foregroundStyle(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .white, location: 0.0),
-                            .init(color: .white, location: 0.68),
-                            .init(color: Color.green, location: 0.82),
-                            .init(color: Color(red: 0.4, green: 0.95, blue: 0.5), location: 1.0)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            HStack(alignment: .center) {
+                Text("Workout")
+                    .font(.ds_displayLarge)
+                    .italic()
+                    .foregroundStyle(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .white, location: 0.0),
+                                .init(color: .white, location: 0.68),
+                                .init(color: Color.green, location: 0.82),
+                                .init(color: Color(red: 0.4, green: 0.95, blue: 0.5), location: 1.0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
                     )
-                )
-                .shadow(color: Color.green.opacity(0.2), radius: 4, x: 0, y: 1)
-                .frame(height: 55)
-            
-            Spacer()
-            
-            if WorkoutManager.shared.isWorkoutActive {
-                Text(WorkoutManager.shared.formattedDuration)
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.sm)
-                            .fill(.ultraThinMaterial)
-                    )
+                    .shadow(color: Color.green.opacity(0.2), radius: 4, x: 0, y: 1)
+                    .frame(height: 55)
+
+                Spacer()
+
+                if WorkoutManager.shared.isWorkoutActive {
+                    Text(WorkoutManager.shared.formattedDuration)
+                        .font(.ds_labelMedium.monospacedDigit())
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, Spacing.xs)
+                        .padding(.vertical, Spacing.xxs)
+                        .background(
+                            Capsule()
+                                .fill(.ultraThinMaterial)
+                        )
+                }
             }
+
+            Text(headerSubBriefCopy)
+                .font(.ds_bodyMedium)
+                .foregroundColor(.adaptiveSecondaryText)
+                .padding(.leading, Spacing.xxs)
         }
         .padding(.horizontal, Spacing.xxs)
     }
 
+    /// One-line coaching sub-brief under the page title. Mirrors the
+    /// Dashboard's "WELCOME BACK" secondary-line pattern so the two tabs
+    /// share visual rhythm. Copy adapts to user state (active workout,
+    /// already trained today, general morning/evening nudge) — the tab
+    /// feels alive instead of static.
+    private var headerSubBriefCopy: String {
+        if WorkoutManager.shared.isWorkoutActive {
+            return "Locked in — finish strong."
+        }
+        if calculateWorkoutsToday() > 0 {
+            return "Great work today. Tomorrow's you is watching."
+        }
+        let hour = Calendar.current.component(.hour, from: Date())
+        if hour < 11 { return "Start the day strong." }
+        if hour < 17 { return "Let's get after it." }
+        return "One more session before bed?"
+    }
+
     
-    // MARK: - Quick Actions
-    private var quickActionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
-                // Custom Workout Button (using DepthQuickActionCard for dark mode support)
-                DepthQuickActionCard(
-                    title: "Custom Workout",
-                    subtitle: "Build your own",
-                    icon: "plus.circle.fill",
-                    gradient: [Color.blue, Color.cyan],
-                    action: {
-                        // 🔧 Debounce: Prevent double-taps
-                        guard !isNavigating else { return }
-                        isNavigating = true
-                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
-                        
-                        // 🔧 Clear any pending home tab navigation
-                        WorkoutManager.shared.shouldNavigateToHomeTab = false
-                        
-                        SessionLogManager.shared.logTap("Custom Workout", screen: .workoutTab, element: .dashboardCustomButton)
-                        SessionLogManager.shared.beginTransition(to: .customWorkoutBuilder, action: "custom_workout_tap")
-                        navigationPath.append("CustomWorkout")
-                    }
-                )
-                
-                // Auto Workout Button (using DepthQuickActionCard for dark mode support)
-                DepthQuickActionCard(
-                    title: "Auto Workout",
-                    subtitle: "Auto-generated routine",
-                    icon: "dumbbell.fill",
-                    gradient: [Color.purple, Color.pink],
-                    action: {
-                        // 🔧 Debounce: Prevent double-taps
-                        guard !isNavigating else { return }
-                        isNavigating = true
-                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
-                        
-                        // 🔧 Clear any pending home tab navigation (prevents race condition)
-                        WorkoutManager.shared.shouldNavigateToHomeTab = false
-                        
-                        SessionLogManager.shared.logTap("Auto Workout", screen: .workoutTab, element: .dashboardAutoGenButton)
-                        SessionLogManager.shared.beginTransition(to: .workoutGenerator, action: "auto_workout_tap")
-                        navigationPath.append("WorkoutGenerator")
-                    }
-                )
-                
-                // Training Programs
-                DepthQuickActionCard(
-                    title: "Training Programs",
-                    subtitle: "10 personalized programs",
-                    icon: "calendar.badge.checkmark",
-                    gradient: [Color.green, Color.teal],
-                    action: {
-                        guard !isNavigating else { return }
-                        isNavigating = true
-                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+    // MARK: - Primary Actions (2-up hero row)
+    //
+    // Custom + Auto Workout = THE two daily-driver entry points for
+    // strength training. Promoted to a dedicated 2-up row with full-size
+    // `DepthQuickActionCard`s so the tab's most common taps are an
+    // unmissable pair at the top, not lost in a 6-tile grid.
+    //
+    // Gradients (Lead Designer spec 2026-05-03):
+    //   Custom = blue→cyan  (maps to DesignSystem "Back=Blue" category)
+    //   Auto   = purple→indigo (maps to "Shoulders=Purple", pulls the
+    //            pink that was colliding with Stretch off the page)
+    private var primaryActionsRow: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: Spacing.sm), count: 2),
+            spacing: Spacing.sm
+        ) {
+            DepthQuickActionCard(
+                title: "Custom Workout",
+                subtitle: "Build your own",
+                icon: "plus.circle.fill",
+                gradient: [Color.blue, Color.cyan],
+                action: {
+                    guard !isNavigating else { return }
+                    isNavigating = true
+                    Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
 
-                        SessionLogManager.shared.logTap("Training Programs", screen: .workoutTab)
-                        SessionLogManager.shared.beginTransition(to: .programsList, action: "training_programs_tap")
-                        navigationPath.append("PersonalizedPrograms")
-                    }
-                )
-                
-                // Favorite Routines
-                DepthQuickActionCard(
-                    title: "Favorites",
-                    subtitle: "Your saved routines",
-                    icon: "star.fill",
-                    gradient: [Color.orange, Color.yellow],
-                    action: {
-                        guard !isNavigating else { return }
-                        isNavigating = true
-                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
-                        
-                        navigationPath.append("FavoriteRoutines")
-                    }
-                )
-                
-                // Cardio
-                DepthQuickActionCard(
-                    title: "Cardio",
-                    subtitle: "Run • Cycle • Row",
-                    icon: "figure.run",
-                    gradient: [Color.green, Color.mint],
-                    action: {
-                        guard !isNavigating else { return }
-                        isNavigating = true
-                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+                    WorkoutManager.shared.shouldNavigateToHomeTab = false
 
-                        navigationPath.append("CardioLanding")
+                    SessionLogManager.shared.logTap("Custom Workout", screen: .workoutTab, element: .dashboardCustomButton)
+                    SessionLogManager.shared.beginTransition(to: .customWorkoutBuilder, action: "custom_workout_tap")
+                    navigationPath.append("CustomWorkout")
+                }
+            )
+
+            DepthQuickActionCard(
+                title: "Auto Workout",
+                subtitle: "Auto-generated routine",
+                icon: "dumbbell.fill",
+                gradient: [Color.purple, Color(red: 0.45, green: 0.40, blue: 0.95)],
+                action: {
+                    guard !isNavigating else { return }
+                    isNavigating = true
+                    Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+
+                    WorkoutManager.shared.shouldNavigateToHomeTab = false
+
+                    SessionLogManager.shared.logTap("Auto Workout", screen: .workoutTab, element: .dashboardAutoGenButton)
+                    SessionLogManager.shared.beginTransition(to: .workoutGenerator, action: "auto_workout_tap")
+                    navigationPath.append("WorkoutGenerator")
+                }
+            )
+        }
+    }
+
+    // MARK: - Secondary Actions (3-up compact strip)
+    //
+    // Favorites / Cardio / Stretch. Programs was promoted OUT of this
+    // strip (2026-05-04 per user request) into the full-width
+    // `programsWidget` slot between primary and secondary actions —
+    // the dedicated widget gives Programs its deserved visual weight
+    // and makes room for a full recommendation card on the no-program
+    // path. The three remaining tiles are truly peer-level alternative
+    // paths (your saved routines / a different training mode).
+    //
+    // Gradients mapped to canonical `DESIGN_AGENT.md` category accents:
+    //   Favorites = orange → yellow (canonical Arms/Core warm)
+    //   Cardio    = cyan   → sky     (canonical Cardio=Cyan)
+    //   Stretch   = mint   → soft-green (canonical Flexibility=Mint)
+    private var secondaryActionsStrip: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: Spacing.sm), count: 3),
+            spacing: Spacing.sm
+        ) {
+            DepthQuickActionCard(
+                title: "Favorites",
+                subtitle: nil,
+                icon: "star.fill",
+                gradient: [Color.orange, Color.yellow],
+                compact: true,
+                action: {
+                    guard !isNavigating else { return }
+                    isNavigating = true
+                    Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+
+                    navigationPath.append("FavoriteRoutines")
+                }
+            )
+
+            DepthQuickActionCard(
+                title: "Cardio",
+                subtitle: nil,
+                icon: "figure.run",
+                gradient: [Color.cyan, Color(red: 0.40, green: 0.80, blue: 0.98)],
+                compact: true,
+                action: {
+                    guard !isNavigating else { return }
+                    isNavigating = true
+                    Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+
+                    navigationPath.append("CardioLanding")
+                }
+            )
+
+            DepthQuickActionCard(
+                title: "Stretch",
+                subtitle: nil,
+                icon: "figure.flexibility",
+                gradient: [Color.mint, Color(red: 0.50, green: 0.92, blue: 0.70)],
+                compact: true,
+                action: {
+                    guard !isNavigating else { return }
+                    isNavigating = true
+                    Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showingStretchModeOverlay = true
                     }
-                )
-                
-                // Stretch
-                DepthQuickActionCard(
-                    title: "Stretch",
-                    subtitle: "Recovery • Mobility",
-                    icon: "figure.flexibility",
-                    gradient: [Color.purple, Color.pink],
-                    action: {
-                        guard !isNavigating else { return }
-                        isNavigating = true
-                        Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
-                        
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            showingStretchModeOverlay = true
-                        }
-                    }
-                )
-            }
+                }
+            )
         }
     }
     
@@ -576,11 +677,150 @@ struct WorkoutHomeView: View {
             .first
     }
     
+    // MARK: - Programs Widget
+    //
+    // Full-width slot between primary and secondary actions (layout
+    // revised 2026-05-04 per user request — the generic "Ready to
+    // train" empty-state card was dropped, and Programs was promoted
+    // out of the secondary-actions strip into this full-width surface).
+    //
+    //   State A — active program, today not done → day name + muscle
+    //             targets + Start CTA (existing ping-pong via
+    //             `WorkoutManager.shouldNavigateToProgramDay`).
+    //   State B — active program, today done     → Great work + Next
+    //             day preview CTA.
+    //   State C — no active program                → program
+    //             recommendation card driven by
+    //             `SmartProgramRecommender.shared.getSuggestedProgram`,
+    //             tap → PersonalizedPrograms.
     @ViewBuilder
-    private var workoutTabProgramWidget: some View {
+    private var programsWidget: some View {
         if let activeProgram = activeSmartProgramForWidget {
             activeSmartProgramDetailWidget(program: activeProgram)
+        } else {
+            programRecommendationCard
         }
+    }
+
+    /// State C — no active program. Full-width recommendation card
+    /// surfaced by `SmartProgramRecommender`. Hero medallion +
+    /// recommended program name + description + two stat chips
+    /// (days/week + duration) + "View Programs" CTA. Tap anywhere
+    /// routes to the Programs list; the specific recommendation is a
+    /// preview — users pick from the full library there.
+    private var programRecommendationCard: some View {
+        let suggested = getRecommendedProgram()
+        let accent = suggested.primaryColor
+
+        return Button {
+            guard !isNavigating else { return }
+            isNavigating = true
+            Task { @MainActor in try? await Task.sleep(for: .seconds(0.5)); isNavigating = false }
+
+            HapticManager.impact(.light)
+            SessionLogManager.shared.logTap("Program Recommendation", screen: .workoutTab)
+            SessionLogManager.shared.beginTransition(to: .programsList, action: "program_recommendation_tap")
+            navigationPath.append("PersonalizedPrograms")
+        } label: {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack(alignment: .center, spacing: Spacing.sm) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [suggested.primaryColor, suggested.secondaryColor],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 48, height: 48)
+                            .shadow(color: accent.opacity(0.35), radius: 8, x: 0, y: 4)
+
+                        Image(systemName: suggested.icon)
+                            .font(.ds_heading3)
+                            .foregroundColor(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Recommended for you")
+                            .font(.ds_labelSmall)
+                            .foregroundColor(.adaptiveSecondaryText)
+                            .tracking(1)
+
+                        Text(suggested.title)
+                            .font(.ds_heading3)
+                            .foregroundColor(.adaptiveText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "chevron.right")
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.adaptiveSecondaryText)
+                }
+
+                Text(suggested.description)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.adaptiveSecondaryText)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: Spacing.xs) {
+                    recommendationStatChip(
+                        icon: "calendar",
+                        label: suggested.workoutsPerWeek,
+                        color: accent
+                    )
+                    recommendationStatChip(
+                        icon: "clock.fill",
+                        label: suggested.duration,
+                        color: accent
+                    )
+                    recommendationStatChip(
+                        icon: "chart.line.uptrend.xyaxis",
+                        label: suggested.difficulty,
+                        color: accent
+                    )
+
+                    Spacer(minLength: 0)
+
+                    Text("View Programs")
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule().fill(
+                                LinearGradient(
+                                    colors: [suggested.primaryColor, suggested.secondaryColor],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        )
+                }
+            }
+            .padding(Spacing.md)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: accent)
+    }
+
+    private func recommendationStatChip(icon: String, label: String, color: Color) -> some View {
+        HStack(spacing: Spacing.xxs) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(label)
+                .font(.ds_labelSmall)
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, Spacing.xs)
+        .padding(.vertical, 4)
+        .background(
+            Capsule().fill(color.opacity(0.15))
+        )
     }
     
     private func activeSmartProgramDetailWidget(program: SmartActiveProgram) -> some View {
@@ -1267,63 +1507,128 @@ struct WorkoutHomeView: View {
     }
     
     // MARK: - Recent Activity
+    //
+    // Mirrors DashboardView+Activity.swift `recentWorkoutsSection`
+    // exactly so the two tabs share visual DNA (Lead Designer north
+    // star: "If your screen doesn't feel like the Dashboard, it's
+    // wrong."). Top 3 combined strength + cardio rows (WHOOP / Apple
+    // Watch / Oura overlap-dedup via `WorkoutWearableMerger`, matching
+    // the dashboard) + "View All" chevron into the full history page.
+    //
+    // Self-hides when there are zero strength + cardio rows — empty
+    // placeholders clutter the tab surface for brand-new users who are
+    // staring at a fresh Quick Actions grid directly above this.
+    @ViewBuilder
     private var recentActivitySection: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            // Header with stats
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
+        let combined = combinedRecentForTab
+        if !combined.isEmpty {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack(alignment: .center, spacing: Spacing.xs) {
+                    Image(systemName: "clock.fill")
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.blue, .cyan],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .font(.ds_heading3)
                     Text("Recent Activity")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primary)
-                    
-                    Text("\(Int(userManager.currentUser?.totalWorkouts ?? 0)) workouts completed")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                NavigationLink(value: "WorkoutHistory") {
-                    Text("View All")
-                        .font(.subheadline)
+                        .font(.ds_heading2)
+                        .foregroundColor(.adaptiveText)
+
+                    Spacer()
+
+                    NavigationLink(value: "WorkoutHistory") {
+                        HStack(spacing: 4) {
+                            Text("View All")
+                                .font(.ds_labelMedium)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
                         .foregroundColor(.blue)
-                        .fontWeight(.semibold)
+                    }
                 }
-            }
-            
-            // Workout cards with enhanced design
-            if workouts.isEmpty {
-                EmptyRecentActivityCard()
-            } else {
-                VStack(spacing: 12) {
-                    ForEach(Array(workouts.prefix(3).enumerated()), id: \.element.id) { index, workout in
-                        RecentWorkoutCard(workout: workout, isMostRecent: index == 0)
+
+                VStack(spacing: Spacing.sm) {
+                    ForEach(combined, id: \.id) { item in
+                        switch item {
+                        case .strength(let workout, let isMostRecent, let enrichment):
+                            RecentWorkoutCard(
+                                workout: workout,
+                                isMostRecent: isMostRecent,
+                                wearableEnrichment: enrichment
+                            )
+                        case .cardio(let cardioWorkout, let isMostRecent):
+                            RecentCardioWorkoutCard(
+                                cardioWorkout: cardioWorkout,
+                                isMostRecent: isMostRecent
+                            )
+                        }
                     }
                 }
             }
         }
-        .padding(Spacing.lg)
-        .background(
-            ZStack {
-                // Main background — adaptive (frosted ↔ solid via setting)
-                AdaptiveCardSurface(cornerRadius: 24)
-                
-                // Subtle top highlight
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.08), Color.clear]
-                                : [Color.white, Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
-            }
+    }
+
+    /// Top 3 combined strength + cardio rows for the tab's Recent
+    /// Activity section. Uses `WorkoutWearableMerger` (same helper the
+    /// Home tab uses in `DashboardView.rebuildCombinedWorkouts`) so
+    /// wearable-origin strength cardio that overlaps a Fit33 strength
+    /// session doesn't double-appear. Strength `isMostRecent` lights
+    /// the top-of-list card's accent outline — matches the dashboard's
+    /// signature "this is fresh" treatment.
+    private var combinedRecentForTab: [RecentActivityItem] {
+        let strengthList = Array(workouts.prefix(5))
+        let merged = WorkoutWearableMerger.merge(
+            strength: strengthList,
+            cardio: cardioWorkoutsThisWeek
         )
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.25 : 0.06), radius: 10, x: 0, y: 4)
+
+        var items: [RecentActivityItem] = []
+        for workout in strengthList {
+            let enrichment = workout.id.flatMap { merged.enrichmentByWorkoutID[$0] }
+            items.append(.strength(workout, isMostRecent: false, enrichment: enrichment))
+        }
+        for cardio in merged.filteredCardio {
+            items.append(.cardio(cardio, isMostRecent: false))
+        }
+
+        items.sort { lhs, rhs in lhs.date > rhs.date }
+
+        if !items.isEmpty {
+            switch items[0] {
+            case .strength(let w, _, let e):
+                items[0] = .strength(w, isMostRecent: true, enrichment: e)
+            case .cardio(let c, _):
+                items[0] = .cardio(c, isMostRecent: true)
+            }
+        }
+
+        return Array(items.prefix(3))
+    }
+
+    // MARK: - Next Up Card
+    //
+    // Single full-width sleek card rendering the highest-priority
+    // `NextGoal` from `generateNextGoals()`. The goal engine already
+    // surfaces 7 goal types (daily/weekly challenge, streak maintain,
+    // PR close, muscle balance, level up, weight milestone) sorted by
+    // priority — we pick the top one and render it as a "here's the
+    // single thing to chase next" card. Self-hides when the engine
+    // returns no goals.
+    //
+    // Gated on `!WorkoutManager.shared.isWorkoutActive` so the card
+    // doesn't surface during active workouts (distracts from the
+    // timer/exercises overlay).
+    @ViewBuilder
+    private var nextUpCard: some View {
+        if !WorkoutManager.shared.isWorkoutActive,
+           let top = generateNextGoals().first {
+            WorkoutTabNextUpCard(goal: top) { action in
+                handleGoalAction(action)
+            }
+        }
     }
     
     // Get the glow color based on the most recent workout's muscle group (kept for card content)
@@ -1533,22 +1838,76 @@ struct QuickActionCard: View {
 }
 
 // MARK: - Depth Quick Action Card (with 3D effect)
+//
+// Categorical quick-action tile (design-system sanctioned third
+// variant per DESIGN_AGENT §Card System: primary = `.sleekCard()`,
+// list-row = `Color.cardBackground`, tile-of-actions = this). Two
+// sizes:
+//
+//   - Default (hero 2-up): 140pt tall, 50pt icon circle, title +
+//     subtitle. Daily-driver entry points (Custom + Auto Workout).
+//   - Compact (`compact: true`): 88pt tall, 38pt icon circle, title
+//     only (subtitle ignored). Secondary paths — Programs /
+//     Favorites / Cardio / Stretch — so they read as "alternative
+//     paths," not as peers of the hero pair.
 struct DepthQuickActionCard: View {
     @Environment(\.colorScheme) private var colorScheme
-    
+
     let title: String
-    let subtitle: String
+    let subtitle: String?
     let icon: String
     let gradient: [Color]
+    var compact: Bool = false
     let action: () -> Void
-    
-    
+
+    // Backwards-compat convenience (pre-refresh callers passed
+    // non-optional subtitle + no compact flag).
+    init(
+        title: String,
+        subtitle: String,
+        icon: String,
+        gradient: [Color],
+        compact: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.icon = icon
+        self.gradient = gradient
+        self.compact = compact
+        self.action = action
+    }
+
+    // New call-style used by the refreshed secondary-actions strip
+    // where subtitle is intentionally omitted.
+    init(
+        title: String,
+        subtitle: String?,
+        icon: String,
+        gradient: [Color],
+        compact: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.icon = icon
+        self.gradient = gradient
+        self.compact = compact
+        self.action = action
+    }
+
+    private var iconCircleSize: CGFloat { compact ? 38 : 50 }
+    private var iconFont: Font { compact ? .ds_labelLarge : .ds_heading3 }
+    private var cardMinHeight: CGFloat { compact ? 88 : 140 }
+    private var titleFont: Font { compact ? .ds_labelMedium : .ds_heading3 }
+    private var innerSpacing: CGFloat { compact ? Spacing.xxs : Spacing.sm }
+
     var body: some View {
         Button(action: {
             HapticManager.impact(.medium)
             action()
         }) {
-            VStack(spacing: 12) {
+            VStack(spacing: innerSpacing) {
                 ZStack {
                     Circle()
                         .fill(
@@ -1558,52 +1917,53 @@ struct DepthQuickActionCard: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 50, height: 50)
+                        .frame(width: iconCircleSize, height: iconCircleSize)
                         .shadow(color: gradient.first?.opacity(0.4) ?? .clear, radius: 8, x: 0, y: 4)
-                    
+
                     Image(systemName: icon)
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                        .font(iconFont)
                         .foregroundColor(.white)
                 }
-                
-                VStack(spacing: 4) {
+
+                VStack(spacing: Spacing.xxs) {
                     Text(title)
-                        .font(.headline)
-                        .fontWeight(.semibold)
+                        .font(titleFont)
                         .foregroundColor(.primary)
                         .multilineTextAlignment(.center)
-                        .lineLimit(2)
+                        .lineLimit(compact ? 1 : 2)
                         .minimumScaleFactor(0.8)
-                    
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+
+                    if let subtitle = subtitle, !compact {
+                        Text(subtitle)
+                            .font(.ds_bodySmall)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 140)
+            .padding(.vertical, compact ? Spacing.xs : 0)
+            .frame(maxWidth: .infinity, minHeight: cardMinHeight)
             .background(
                 ZStack {
                     // Bottom shadow layer (deepest) - colored based on gradient
-                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.xl + 4, style: .continuous)
                         .fill((gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.15 : 0.08))
                         .offset(y: 8)
                         .blur(radius: 4)
-                    
+
                     // Middle shadow layer
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.xl + 2, style: .continuous)
                         .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
                         .offset(y: 4)
-                    
+
                     // Main card background — adaptive (frosted ↔ solid via setting)
-                    AdaptiveCardSurface(cornerRadius: 24)
-                    
+                    AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
+
                     // Inner highlight (top edge glow)
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                         .stroke(
                             LinearGradient(
-                                colors: colorScheme == .dark 
+                                colors: colorScheme == .dark
                                     ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
                                     : [Color.white, Color.white.opacity(0.5), Color.clear],
                                 startPoint: .top,
@@ -1611,9 +1971,9 @@ struct DepthQuickActionCard: View {
                             ),
                             lineWidth: 1.5
                         )
-                    
+
                     // Colored accent border
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 colors: [
@@ -2647,6 +3007,145 @@ struct EmptyNextGoalsCard: View {
         )
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
         .shadow(color: Color.green.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
+    }
+}
+
+// MARK: - Workout Tab Next Up Card
+//
+// Full-width single-goal card rendering the highest-priority
+// `NextGoal` from `generateNextGoals()`. Previously the goal engine
+// output was unused on-screen — this card wires it into the
+// refreshed workout-tab IA as the "here's what to chase next" slot.
+// Self-hides (caller guards) when no goals qualify.
+//
+// Visual treatment: `.adaptiveSleekCard(cornerRadius: .xl)` matches
+// the canonical dashboard widget depth. Progress ring on the left
+// doubles as the icon container; goal remaining + XP reward on the
+// right. Tap triggers the goal's `GoalAction` through the parent's
+// `handleGoalAction(_:)` (debounced by the parent's `isNavigating`).
+struct WorkoutTabNextUpCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let goal: NextGoal
+    let onAction: (GoalAction) -> Void
+
+    private var gradientColors: [Color] {
+        switch goal.accentColor {
+        case .orange: return [.orange, .yellow]
+        case .blue:   return [.blue, .cyan]
+        case .green:  return [.green, .teal]
+        case .purple: return [.purple, .pink]
+        case .red:    return [.red, .orange]
+        case .yellow: return [.yellow, .orange]
+        case .pink:   return [.pink, .purple]
+        case .mint:   return [.mint, .teal]
+        case .cyan:   return [.cyan, .blue]
+        default:      return [goal.accentColor, goal.accentColor.opacity(0.7)]
+        }
+    }
+
+    var body: some View {
+        Button {
+            HapticManager.impact(.light)
+            onAction(goal.action)
+        } label: {
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                progressRing
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: Spacing.xxs) {
+                        Text("Next up")
+                            .font(.ds_labelSmall)
+                            .foregroundColor(.adaptiveSecondaryText)
+                            .tracking(1)
+
+                        if let context = goal.timeContext {
+                            Text("• \(context)")
+                                .font(.ds_labelSmall)
+                                .foregroundColor(.adaptiveSecondaryText)
+                        }
+                    }
+
+                    Text(goal.title)
+                        .font(.ds_heading3)
+                        .foregroundColor(.adaptiveText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+
+                    Text(goal.remaining)
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.adaptiveSecondaryText)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                trailingChip
+            }
+            .padding(Spacing.md)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: goal.accentColor)
+    }
+
+    private var progressRing: some View {
+        ZStack {
+            Circle()
+                .stroke(goal.accentColor.opacity(0.15), lineWidth: 4)
+                .frame(width: 48, height: 48)
+
+            Circle()
+                .trim(from: 0, to: max(0.02, min(goal.progress, 1.0)))
+                .stroke(
+                    LinearGradient(
+                        colors: gradientColors,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                )
+                .frame(width: 48, height: 48)
+                .rotationEffect(.degrees(-90))
+
+            Image(systemName: goal.icon)
+                .font(.ds_labelLarge)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: gradientColors,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        }
+    }
+
+    @ViewBuilder
+    private var trailingChip: some View {
+        HStack(spacing: Spacing.xxs) {
+            if let xp = goal.xpReward {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("+\(xp) XP")
+                    .font(.ds_labelMedium)
+            } else {
+                Text("\(Int(goal.progress * 100))%")
+                    .font(.ds_labelMedium)
+            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(
+            LinearGradient(
+                colors: gradientColors,
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(gradientColors[0].opacity(colorScheme == .dark ? 0.18 : 0.10))
+        )
     }
 }
 

@@ -154,7 +154,20 @@ extension SocialAuthService: ASAuthorizationControllerDelegate {
             self.errorMessage = error.localizedDescription
         }
         
-        AppLogger.error("🍎 [APPLE AUTH] ❌ Authorization error: \(error.localizedDescription)", category: .auth)
+        // Route through NetworkErrorClassifier so user-cancelled (1001) and
+        // Apple's transient invalidResponse / failed codes don't manufacture
+        // a bug-intelligence fingerprint per cancel-tap. The classifier
+        // recognizes ASAuthorizationError domain and downgrades to
+        // .expectedUserState (.debug). (Bug-intel `8622fc3a` — Apple Sign In
+        // authorization error cluster.)
+        NetworkErrorClassifier.log(
+            error,
+            context: "🍎 [APPLE AUTH] Authorization error",
+            category: .auth,
+            op: "auth.apple_signin",
+            endpoint: "ASAuthorizationController",
+            startedAt: Date()
+        )
         appleSignInCompletion?(.failure(error))
     }
 }

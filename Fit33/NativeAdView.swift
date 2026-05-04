@@ -8,15 +8,40 @@ struct NativeAdCardView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var adLoader = NativeAdLoader()
     @StateObject private var premiumManager = PremiumManager.shared
-    
-    
+    @State private var showRemoveAdsPaywall = false
+
     var body: some View {
         Group {
             // Only show ads for free users
             if !premiumManager.isPremiumUser {
                 if let nativeAd = adLoader.nativeAd {
-                    // Native ad loaded - show custom layout
-                    NativeAdContentView(nativeAd: nativeAd)
+                    // Native ad with always-visible "Remove Ads" button —
+                    // turns every ad impression into a Pro upsell impression
+                    // (Phase 1 cheat-code, 2026-05-03 monetization sweep).
+                    ZStack(alignment: .topTrailing) {
+                        NativeAdContentView(nativeAd: nativeAd)
+
+                        Button {
+                            HapticManager.impact(.light)
+                            showRemoveAdsPaywall = true
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 9, weight: .heavy))
+                                Text("Remove")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.black.opacity(0.55)))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                        .padding(.trailing, 10)
+                        .accessibilityLabel("Remove ads")
+                        .accessibilityHint("Open Pro upgrade to remove all ads")
+                    }
                 }
                 // If no ad loaded, show nothing (no grey placeholder)
             }
@@ -26,6 +51,9 @@ struct NativeAdCardView: View {
             if !premiumManager.isPremiumUser {
                 adLoader.loadAd()
             }
+        }
+        .fullScreenCover(isPresented: $showRemoveAdsPaywall) {
+            PremiumUpgradeView(triggeringFeature: .removeAds)
         }
     }
 }

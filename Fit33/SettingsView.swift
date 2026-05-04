@@ -63,7 +63,21 @@ struct SettingsView: View {
                                 videoGenderRow()
                             }
                         }
-                        
+
+                        // Subscription Section
+                        // Houses Pro status, View Plans CTA, Manage
+                        // Subscription deep-link, and Restore Purchases.
+                        // App Review 3.1.1 requires Restore in Settings;
+                        // section also serves as the canonical entry
+                        // point for users who want to upgrade or change
+                        // plan post-purchase. (MONETIZATION_AGENT inv 3, 13.)
+                        settingsSection(title: "Subscription") {
+                            SettingsSubscriptionSection(
+                                premiumManager: premiumManager,
+                                storeKit: StoreKitManager.shared
+                            )
+                        }
+
                         // Developer/Testing Section
                         settingsSection(title: "Developer Testing") {
                             VStack(spacing: 0) {

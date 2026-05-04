@@ -18,6 +18,11 @@ enum DashboardRoute: Hashable {
     /// taps the new league badge in the welcome card. Mirrors the
     /// FriendsTab `LeagueDetail` push so the surface is identical.
     case weeklyLeague
+    /// Olympian Path detail screen (2026-05-04). Pushed when the user
+    /// taps the dashboard Olympian widget or follows the
+    /// `fit33://olympian` deep link. Renders the user's 33 personalized
+    /// goals as a 5-tier constellation.
+    case olympianPath
 }
 
 enum WorkoutCreationType {
@@ -89,6 +94,10 @@ struct DashboardNotificationCarousel: View {
     @ObservedObject private var challengeService = ChallengeService.shared
     @ObservedObject private var privateChallengeService = PrivateChallengeService.shared
     @ObservedObject private var stravaService = StravaService.shared
+    // 2026-05-04 — Path to 33: drives the 30/33 "3 to go for Olympian YYYY"
+    // ping in this carousel. Idempotent — `loadCurrentSeason()` is a no-op
+    // once goals are loaded for the year.
+    @ObservedObject private var olympianPath = OlympianPathService.shared
     @Environment(\.colorScheme) var colorScheme
     
     @State private var selectedWorkout: ReceivedWorkoutDTO?
@@ -113,6 +122,11 @@ struct DashboardNotificationCarousel: View {
         case groupChallenge(ActiveGroupChallenge)
         case privateChallenge(PrivateChallengeInvite)
         case stravaRecap(StravaActivity)
+        // 2026-05-04 — Path to 33: nudge card surfaced once the user is at
+        // 30/33 of the season ("3 to go for Olympian YYYY"). Tap navigates
+        // to the Olympian Path detail screen. Self-hides when the user is
+        // either below 30 or has already completed all 33.
+        case olympianAlmostThere(remaining: Int, year: Int)
 
         var id: String {
             switch self {
@@ -122,6 +136,7 @@ struct DashboardNotificationCarousel: View {
             case .groupChallenge(let g): return "gc-\(g.challengeId)"
             case .privateChallenge(let p): return "pc-\(p.inviteId)"
             case .stravaRecap(let a): return "sr-\(a.id)"
+            case .olympianAlmostThere(_, let year): return "oly-\(year)"
             }
         }
         
@@ -133,6 +148,11 @@ struct DashboardNotificationCarousel: View {
             case .groupChallenge(let g): return g.startDate
             case .privateChallenge(let p): return p.createdAt ?? .distantPast
             case .stravaRecap(let a): return a.startDate
+            // Olympian nudge sits at the front of the "others" stack
+            // (the carousel sort puts oldest first; `.distantPast` wins).
+            // Reasoning: 30/33 with 3 left is a once-a-year prize — it
+            // should render BEFORE Strava recaps and challenge invites.
+            case .olympianAlmostThere: return .distantPast
             }
         }
         
@@ -188,7 +208,19 @@ struct DashboardNotificationCarousel: View {
         if let stravaActivity = freshStravaActivity {
             items.append(.stravaRecap(stravaActivity))
         }
-        
+
+        // 2026-05-04 — Path to 33 nudge: surface a "3 to go for Olympian YYYY"
+        // card once the user has unlocked at least 30 of their 33 goals (and
+        // hasn't completed the season yet). Self-hides until then.
+        let olyProgress = olympianPath.progress
+        if olyProgress.completed >= 30 && olyProgress.completed < 33 {
+            let remaining = 33 - olyProgress.completed
+            items.append(.olympianAlmostThere(
+                remaining: remaining,
+                year: OlympianPathService.currentSeasonYear
+            ))
+        }
+
         // Friend requests always first, then oldest-first for the rest
         let friendRequests = items.filter(\.isFriendRequest).sorted { $0.date < $1.date }
         let others = items.filter { !$0.isFriendRequest }.sorted { $0.date < $1.date }
@@ -311,6 +343,16 @@ struct DashboardNotificationCarousel: View {
                     dismissStravaRecap(activityId: activity.id)
                 }
             )
+
+        case .olympianAlmostThere(let remaining, let year):
+            OlympianAlmostThereCard(
+                remaining: remaining,
+                year: year,
+                onTap: {
+                    HapticManager.tap()
+                    DeepLinkManager.shared.pendingDestination = .olympianPath
+                }
+            )
         }
     }
 }
@@ -379,5 +421,84 @@ struct StravaRecapNotificationCard: View {
         var parts: [String] = [activity.distanceFormatted, activity.durationFormatted]
         if let pace = activity.paceFormatted { parts.append(pace) }
         return parts.joined(separator: " • ")
+    }
+}
+
+// MARK: - Olympian "Almost There" Notification Card (2026-05-04)
+
+/// Surfaced once the user has unlocked at least 30 of their 33 Olympian
+/// goals (and hasn't completed the season). Tap routes to the Olympian
+/// Path detail screen via the pending-destination deep-link queue. Visual
+/// language matches the gold/coral Olympian palette so the once-a-year
+/// milestone is unmistakable.
+struct OlympianAlmostThereCard: View {
+    let remaining: Int
+    let year: Int
+    let onTap: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var goldAccent: Color { Color(red: 1.00, green: 0.84, blue: 0.00) }
+    private var coralAccent: Color { Color(red: 0.95, green: 0.50, blue: 0.30) }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: Spacing.sm) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [goldAccent.opacity(0.25), coralAccent.opacity(0.18)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "crown.fill")
+                        .font(.title3)
+                        .foregroundStyle(LinearGradient(
+                            colors: [goldAccent, coralAccent],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                }
+                .shadow(color: goldAccent.opacity(0.4), radius: 6, x: 0, y: 2)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(remaining) to go for Olympian \(year)")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Text("You're 30+ deep — tap to see what's left.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity)
+            .background(AdaptiveCardSurface(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [goldAccent.opacity(0.55), coralAccent.opacity(0.45)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel("\(remaining) goals remaining to reach Olympian \(year)")
+        .accessibilityHint("Tap to open the Olympian Path detail screen.")
     }
 }

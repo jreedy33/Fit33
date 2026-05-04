@@ -2,9 +2,20 @@ import SwiftUI
 import StoreKit
 
 // MARK: - Premium Feature Enum
+//
+// `PremiumFeature` enum drives the contextual paywall surface
+// (`PremiumUpgradeView(triggeringFeature:)`). The case names are
+// internal API and free of marketing language — but the rawValues
+// ARE user-visible (rendered in the "You're unlocking" header) and
+// must follow the canonical product vocabulary:
+//   - NEVER use "AI" anywhere user-facing — Fit33's workouts are
+//     algorithm-driven, not AI-generated. Canonical user-facing term
+//     is "Smart Workouts" (locked 2026-05-03).
+//   - Every Pro feature surface must have a case here so analytics
+//     can attribute conversions to the right trigger.
 enum PremiumFeature: String, CaseIterable {
     case recipes = "Unlimited Recipes"
-    case aiWorkouts = "AI Workout Generation"
+    case smartWorkouts = "Smart Workouts"
     case advancedAnalytics = "Advanced Analytics"
     case customMealPlans = "Custom Meal Plans"
     case unlimitedHistory = "Unlimited History"
@@ -12,16 +23,21 @@ enum PremiumFeature: String, CaseIterable {
     case nutritionInsights = "Nutrition Insights"
     case progressTracking = "Advanced Progress"
     case streakEdit = "Edit Streak"
+    case streakSaver = "Save Your Streak"
     case weightTracking = "Weight Tracking"
     case homescreenWidgets = "Homescreen Widgets"
     case savedWorkouts = "Saved Workouts"
     case saveSharedWorkouts = "Save Shared Workouts"
     case removeAds = "Remove Ads"
-    
+    case proQuests = "Pro Daily Goals"
+    case multiWearable = "Connect All Wearables"
+    case proBadge = "Pro Badge"
+    case lifetime = "Pro for Life"
+
     var icon: String {
         switch self {
         case .recipes: return "fork.knife"
-        case .aiWorkouts: return "brain.head.profile"
+        case .smartWorkouts: return "wand.and.stars"
         case .advancedAnalytics: return "chart.xyaxis.line"
         case .customMealPlans: return "menucard"
         case .unlimitedHistory: return "clock.arrow.circlepath"
@@ -29,18 +45,23 @@ enum PremiumFeature: String, CaseIterable {
         case .nutritionInsights: return "leaf.fill"
         case .progressTracking: return "chart.line.uptrend.xyaxis"
         case .streakEdit: return "flame.fill"
+        case .streakSaver: return "shield.lefthalf.filled"
         case .weightTracking: return "scalemass.fill"
         case .homescreenWidgets: return "square.grid.2x2.fill"
         case .savedWorkouts: return "bookmark.fill"
         case .saveSharedWorkouts: return "bookmark.fill"
         case .removeAds: return "nosign"
+        case .proQuests: return "target"
+        case .multiWearable: return "applewatch.radiowaves.left.and.right"
+        case .proBadge: return "rosette"
+        case .lifetime: return "infinity"
         }
     }
-    
+
     var shortDescription: String {
         switch self {
         case .recipes: return "Thousands of healthy recipes"
-        case .aiWorkouts: return "Smart personalized workouts"
+        case .smartWorkouts: return "Adapts to your goals & equipment"
         case .advancedAnalytics: return "Deep fitness insights"
         case .customMealPlans: return "Personalized meal planning"
         case .unlimitedHistory: return "Complete workout history"
@@ -48,18 +69,23 @@ enum PremiumFeature: String, CaseIterable {
         case .nutritionInsights: return "Detailed macro tracking"
         case .progressTracking: return "Track strength gains"
         case .streakEdit: return "Fix or adjust your streak"
+        case .streakSaver: return "3 streak shields per month"
         case .weightTracking: return "Daily weight tracking & trends"
         case .homescreenWidgets: return "Customize your dashboard"
-        case .savedWorkouts: return "Start workouts shared by friends"
+        case .savedWorkouts: return "Save unlimited workout templates"
         case .saveSharedWorkouts: return "Save workouts from friends"
         case .removeAds: return "Ad-free workout experience"
+        case .proQuests: return "5 rerolls · custom goals · 2× XP"
+        case .multiWearable: return "Connect all your wearables at once"
+        case .proBadge: return "Pro badge + tier rewards"
+        case .lifetime: return "Pay once, own Fit33 forever"
         }
     }
-    
+
     var accentColor: Color {
         switch self {
         case .recipes: return .orange
-        case .aiWorkouts: return .purple
+        case .smartWorkouts: return .purple
         case .advancedAnalytics: return .blue
         case .customMealPlans: return .green
         case .unlimitedHistory: return .cyan
@@ -67,18 +93,23 @@ enum PremiumFeature: String, CaseIterable {
         case .nutritionInsights: return .mint
         case .progressTracking: return .indigo
         case .streakEdit: return .orange
+        case .streakSaver: return .red
         case .weightTracking: return .orange
         case .homescreenWidgets: return .purple
         case .savedWorkouts: return .blue
         case .saveSharedWorkouts: return .blue
         case .removeAds: return .yellow
+        case .proQuests: return .purple
+        case .multiWearable: return .green
+        case .proBadge: return .yellow
+        case .lifetime: return .yellow
         }
     }
-    
+
     var gradient: [Color] {
         switch self {
         case .recipes: return [.orange, .yellow]
-        case .aiWorkouts: return [.purple, .pink]
+        case .smartWorkouts: return [.purple, .pink]
         case .advancedAnalytics: return [.blue, .cyan]
         case .customMealPlans: return [.green, .mint]
         case .unlimitedHistory: return [.cyan, .blue]
@@ -86,31 +117,60 @@ enum PremiumFeature: String, CaseIterable {
         case .nutritionInsights: return [.mint, .green]
         case .progressTracking: return [.indigo, .purple]
         case .streakEdit: return [.orange, .red]
+        case .streakSaver: return [.red, .orange]
         case .weightTracking: return [.orange, .yellow]
         case .homescreenWidgets: return [.purple, .pink]
         case .savedWorkouts: return [.blue, .purple]
         case .saveSharedWorkouts: return [.blue, .purple]
         case .removeAds: return [.yellow, .orange]
+        case .proQuests: return [.purple, .indigo]
+        case .multiWearable: return [.green, .teal]
+        case .proBadge: return [.yellow, .orange]
+        case .lifetime: return [Color(red: 1.0, green: 0.84, blue: 0), Color(red: 1.0, green: 0.6, blue: 0.1)]
         }
     }
 }
 
 // MARK: - Subscription Plan
+//
+// Three-tier anchored pricing (decoy-effect aware):
+//   - Monthly is the high-friction "discovery" tier; intentionally
+//     looks expensive next to yearly to push users toward annual.
+//   - Yearly is the "MOST POPULAR" anchor — 7-day free trial only
+//     attaches here. ~50–75% of revenue lives in this tier at scale.
+//   - Lifetime is the LTV-signal tier — its presence makes yearly
+//     look reasonable AND captures the 5–8% of users who think
+//     "I'll definitely use this for years" (Strong / Hevy don't
+//     offer it; Freeletics does and converts well there).
+//
+// Pricing locked 2026-05-03 by user decision (intentionally LOWER
+// than the previous $9.99 / $59.99 anchor — the user wants to
+// optimize for trial-start volume, then raise based on demand
+// signal). MONETIZATION_AGENT.md pricing table updated to match.
+//
+//   Monthly  $3.99/mo   (= $47.88 annualized)
+//   Yearly   $29.99/yr  (= $2.49/mo equivalent — Save 37%)
+//   Lifetime $149.99    (= ~5 years of yearly; one-time non-renewing IAP)
+//
+// All values are math-verified:
+//   - Yearly $29.99 / 12 = $2.499 → "$2.49/mo"  ✓
+//   - (3.99 × 12 - 29.99) / (3.99 × 12) = 17.89 / 47.88 = 37.4% → "Save 37%"  ✓
+//
+// Display fallback: when StoreKit hasn't loaded `displayPrice` yet,
+// these hardcoded strings render. Once products load, every paywall
+// surface uses `storeKit.<plan>Product.displayPrice` for locale-aware
+// formatting (per MONETIZATION_AGENT invariant 6 — the UI MUST agree
+// with what App Store charges).
 enum SubscriptionPlan: String, CaseIterable {
     case monthly = "Monthly"
     case yearly = "Yearly"
+    case lifetime = "Lifetime"
 
-    // Cardio Redesign Phase 1 — pricing aligned with canonical
-    // MONETIZATION_AGENT.md §pricing-table: Pro Monthly $9.99/mo,
-    // Pro Yearly $59.99/yr. The previous $3.99 / $29.99 strings were
-    // stale fallbacks from pre-StoreKit copy and would fail App Review
-    // 4.0/4.5/3.1.2(b) "intro offer disclosure binding" if shipped.
-    // These remain UI fallback values only — actual prices come from
-    // StoreKit `Product.displayPrice` once products load.
     var price: String {
         switch self {
-        case .monthly: return "$9.99"
-        case .yearly: return "$59.99"
+        case .monthly: return "$3.99"
+        case .yearly: return "$29.99"
+        case .lifetime: return "$149.99"
         }
     }
 
@@ -118,25 +178,38 @@ enum SubscriptionPlan: String, CaseIterable {
         switch self {
         case .monthly: return "/month"
         case .yearly: return "/year"
+        case .lifetime: return "one-time"
         }
     }
 
     var monthlyEquivalent: String {
         switch self {
-        case .monthly: return "$9.99/mo"
-        // $59.99 / 12 = $4.999 → display as $5.00/mo
-        case .yearly: return "$5.00/mo"
+        case .monthly: return "$3.99/mo"
+        case .yearly: return "$2.49/mo"
+        case .lifetime: return "Pay once"
         }
     }
 
     var savings: String? {
         switch self {
         case .monthly: return nil
-        // ($9.99 × 12 − $59.99) / ($9.99 × 12) = ~50%
-        case .yearly: return "Save 50%"
+        case .yearly: return "Save 37%"
+        case .lifetime: return "Best value"
         }
     }
-    
+
+    /// Marketing badge above each plan card. Copy is intentionally
+    /// distinct so each tier has a reason to be looked at:
+    ///   - yearly = "MOST POPULAR" (social proof)
+    ///   - lifetime = "BEST VALUE" (LTV anchor + decoy)
+    var badge: String? {
+        switch self {
+        case .monthly: return nil
+        case .yearly: return "MOST POPULAR"
+        case .lifetime: return "BEST VALUE"
+        }
+    }
+
     var isBestValue: Bool {
         self == .yearly
     }
@@ -161,14 +234,17 @@ struct PremiumUpgradeView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     
-    // Premium benefits with tiles - matching app icon style
+    // Premium benefits with tiles - matching app icon style.
+    // No "AI" copy anywhere — Fit33's workouts are algorithm-driven,
+    // not AI-generated. Canonical user-facing term is "Smart Workouts"
+    // (locked 2026-05-03). MONETIZATION_AGENT.md vocabulary section.
     private let benefits: [(icon: String, title: String, subtitle: String, gradient: [Color])] = [
-        ("plus", "Unlimited Workouts", "No restrictions", [.blue, .cyan]),
-        ("brain.head.profile", "AI-Powered", "Smart adaptation", [.purple, .pink]),
-        ("flame.fill", "Streak Protection", "Never lose progress", [.orange, .yellow]),
-        ("fork.knife", "Recipes & Meals", "Healthy options", [.green, .mint]),
-        ("scalemass.fill", "Weight Tracking", "Body composition", [.pink, .red]),
-        ("figure.strengthtraining.traditional", "500+ Exercises", "HD tutorials", [.indigo, .purple])
+        ("wand.and.stars", "Smart Workouts", "Adapts to you", [.purple, .pink]),
+        ("chart.xyaxis.line", "Deep Analytics", "PRs · volume · trends", [.blue, .cyan]),
+        ("flame.fill", "Streak Protection", "3 shields per month", [.orange, .yellow]),
+        ("fork.knife", "Recipes & Meals", "Unlimited library", [.green, .mint]),
+        ("scalemass.fill", "Weight Tracking", "Daily trends & body comp", [.pink, .red]),
+        ("nosign", "Zero Ads", "Never see one again", [.indigo, .purple])
     ]
     
     var body: some View {
@@ -594,7 +670,11 @@ struct PremiumUpgradeView: View {
         )
     }
     
-    // MARK: - Pricing Section
+    // MARK: - Pricing Section (3-tier anchored: Monthly · Yearly · Lifetime)
+    //
+    // Yearly defaults selected (LTV anchor). Lifetime exists primarily
+    // as a decoy that makes Yearly look reasonable AND captures the
+    // 5–8% high-LTV-signal segment. Monthly is the friction-tier.
     private var pricingSection: some View {
         VStack(spacing: 10) {
             ForEach(SubscriptionPlan.allCases, id: \.self) { plan in
@@ -603,80 +683,118 @@ struct PremiumUpgradeView: View {
         }
         .opacity(contentOpacity)
     }
-    
+
     private func pricingOption(plan: SubscriptionPlan) -> some View {
         let isSelected = selectedPlan == plan
-        
+        let badgeColor: Color = plan == .lifetime
+            ? Color(red: 1.0, green: 0.84, blue: 0)
+            : .green
+
         return Button(action: {
             withAnimation(.spring(response: 0.3)) { selectedPlan = plan }
             HapticManager.selectionChanged()
         }) {
-            HStack(spacing: 12) {
-                // Radio
-                Circle()
-                    .stroke(isSelected ? Color.blue : Color.white.opacity(0.3), lineWidth: 2)
-                    .frame(width: 20, height: 20)
-                    .overlay(
-                        Circle()
-                            .fill(Color.blue)
-                            .frame(width: 10, height: 10)
-                            .opacity(isSelected ? 1 : 0)
-                    )
-                
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 8) {
-                        Text(plan.rawValue)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white)
-                        
-                        if let savings = plan.savings {
-                            Text(savings)
-                                .font(.ds_caption)
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.green))
-                        }
+            VStack(spacing: 0) {
+                if let badge = plan.badge {
+                    HStack {
+                        Spacer()
+                        Text(badge)
+                            .font(.system(size: 10, weight: .heavy))
+                            .tracking(0.5)
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(badgeColor))
+                            .offset(y: 8)
+                        Spacer()
                     }
-                    
-                    Text(plan.monthlyEquivalent)
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.5))
                 }
-                
-                Spacer()
-                
-                Text(displayPrice(for: plan))
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
+
+                HStack(spacing: 12) {
+                    Circle()
+                        .stroke(isSelected ? Color.blue : Color.white.opacity(0.3), lineWidth: 2)
+                        .frame(width: 20, height: 20)
+                        .overlay(
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 10, height: 10)
+                                .opacity(isSelected ? 1 : 0)
+                        )
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 8) {
+                            Text(plan.rawValue)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+
+                            if let savings = plan.savings, plan.badge == nil {
+                                Text(savings)
+                                    .font(.ds_caption)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.green))
+                            }
+                        }
+
+                        Text(plan.monthlyEquivalent)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(displayPrice(for: plan))
+                            .font(.headline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        Text(plan.period)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.white.opacity(isSelected ? 0.08 : 0.03))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(
+                                    isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.08),
+                                    lineWidth: isSelected ? 2 : 1
+                                )
+                        )
+                )
             }
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.white.opacity(isSelected ? 0.08 : 0.03))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(
-                                isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.08),
-                                lineWidth: isSelected ? 2 : 1
-                            )
-                    )
-            )
         }
         .buttonStyle(PlainButtonStyle())
     }
-    
+
     private func displayPrice(for plan: SubscriptionPlan) -> String {
         switch plan {
         case .monthly:
             return storeKit.monthlyProduct?.displayPrice ?? plan.price
         case .yearly:
             return storeKit.yearlyProduct?.displayPrice ?? plan.price
+        case .lifetime:
+            return storeKit.lifetimeProduct?.displayPrice ?? plan.price
         }
     }
-    
+
+    /// Yearly = 7-day free trial CTA; Monthly = direct subscribe;
+    /// Lifetime = direct one-time purchase. Copy MUST exactly match
+    /// App Store Connect intro offer config or App Review will reject
+    /// (MONETIZATION_AGENT invariant 6).
+    private var ctaText: String {
+        switch selectedPlan {
+        case .yearly:   return "Start 7-Day Free Trial"
+        case .monthly:  return "Subscribe Monthly"
+        case .lifetime: return "Get Pro for Life"
+        }
+    }
+
     // MARK: - CTA Section
     private var ctaSection: some View {
         VStack(spacing: 10) {
@@ -689,10 +807,10 @@ struct PremiumUpgradeView: View {
                         ProgressView()
                             .tint(.white)
                     } else {
-                        Text("Start 7-Day Free Trial")
+                        Text(ctaText)
                             .font(.headline)
                             .fontWeight(.bold)
-                        
+
                         Image(systemName: "arrow.right")
                             .font(.subheadline.weight(.bold))
                     }
@@ -717,12 +835,12 @@ struct PremiumUpgradeView: View {
             }
             .disabled(storeKit.purchaseState == .purchasing)
             .scaleEffect(buttonPulse ? 1.02 : 1.0)
-            
-            HStack(spacing: 4) {
+
+            HStack(spacing: 6) {
                 Image(systemName: "checkmark.shield.fill")
                     .font(.caption2)
                     .foregroundColor(.green)
-                Text("Cancel anytime • No commitment")
+                Text("Cancel in 2 taps • Auto-renew off anytime")
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.5))
             }
@@ -734,20 +852,21 @@ struct PremiumUpgradeView: View {
             Text(errorMessage)
         }
     }
-    
+
     private func purchaseSelectedPlan() async {
         let product: Product?
         switch selectedPlan {
-        case .monthly: product = storeKit.monthlyProduct
-        case .yearly: product = storeKit.yearlyProduct
+        case .monthly:  product = storeKit.monthlyProduct
+        case .yearly:   product = storeKit.yearlyProduct
+        case .lifetime: product = storeKit.lifetimeProduct
         }
-        
+
         guard let product else {
             errorMessage = "Product not available. Please try again later."
             showError = true
             return
         }
-        
+
         let success = await storeKit.purchase(product)
         if success {
             HapticManager.notification(.success)

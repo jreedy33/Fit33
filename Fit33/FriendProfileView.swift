@@ -202,6 +202,13 @@ struct FriendProfileView: View {
     @State private var sentWorkoutsToFriend: [SentWorkout] = []
     @State private var mutualFriends: [MutualFriend] = []
 
+    // 2026-05-04 — Path to 33 (annual Olympian track). Friend's stackable
+    // season badges are publicly readable to accepted friends (RLS policy
+    // `users_select_friend_olympian_seasons` in 20260504_olympian_path.sql).
+    // Loaded on profile appearance; stays empty + hides for friends with
+    // no completed seasons yet.
+    @State private var friendOlympianSeasons: [OlympianSeasonBadge] = []
+
     // Mutual-friend section (friend profiles only). The friend profile shows
     // a compact card (count + stacked avatars + "See all"). Tapping it opens
     // `MutualFriendsListView`, which owns the multi-select + challenge flow.
@@ -228,6 +235,10 @@ struct FriendProfileView: View {
                             }
 
                             statsSection
+
+                            if !friendOlympianSeasons.isEmpty {
+                                friendOlympianBadgesSection
+                            }
 
                             if let activeChallenge = activeChallengesWithFriend.first {
                                 activeChallengeSection(challenge: activeChallenge)
@@ -360,6 +371,13 @@ struct FriendProfileView: View {
                 Task {
                     mutualFriends = await FriendService.shared.fetchMutualFriends(for: user.userId)
                 }
+
+                // 2026-05-04 — Path to 33: load this friend's stackable
+                // Olympian seasons (RLS-protected; only readable when
+                // accepted friends).
+                Task {
+                    await loadFriendOlympianSeasons()
+                }
             }
             .onDisappear {
                 UserFocusSentinel.shared.endFocus("FriendProfile")
@@ -471,7 +489,91 @@ struct FriendProfileView: View {
             )
         }
     }
-    
+
+    // MARK: - Olympian Badges (2026-05-04 — Path to 33)
+
+    /// Stackable Olympian YYYY crowns for the friend. Self-hides when
+    /// `friendOlympianSeasons` is empty (new friend, never completed a path).
+    /// Read access is RLS-gated: only accepted friends see a friend's badges
+    /// (mirrors `user_achievements` social-visibility pattern).
+    private var friendOlympianBadgesSection: some View {
+        let goldAccent = Color(red: 1.00, green: 0.84, blue: 0.00)
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "crown.fill")
+                    .font(.caption)
+                    .foregroundStyle(LinearGradient(
+                        colors: [goldAccent, .orange],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                Text("Olympian Track")
+                    .font(.ds_bodySmall)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                Spacer()
+                Text("\(friendOlympianSeasons.count) season\(friendOlympianSeasons.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 4)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(friendOlympianSeasons) { badge in
+                        VStack(spacing: 2) {
+                            Image(systemName: "crown.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(LinearGradient(
+                                    colors: [goldAccent, badge.resolvedArchetype.accent],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ))
+                            Text("'\(String(badge.seasonYear).suffix(2))")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.primary)
+                        }
+                        .frame(width: 44, height: 44)
+                        .background(
+                            Circle().fill(goldAccent.opacity(0.10))
+                        )
+                        .overlay(
+                            Circle().stroke(goldAccent.opacity(0.35), lineWidth: 1)
+                        )
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: CornerRadius.lg)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: CornerRadius.lg)
+                        .stroke(goldAccent.opacity(0.25), lineWidth: 1)
+                )
+        )
+    }
+
+    @MainActor
+    private func loadFriendOlympianSeasons() async {
+        struct FriendSeasonsRequest: Encodable {}
+        do {
+            let response: [OlympianSeasonBadge] = try await SupabaseManager.shared.supabaseClient
+                .from("user_olympian_seasons")
+                .select("season_year, archetype, completed_at")
+                .eq("user_id", value: user.userId.uuidString)
+                .order("season_year", ascending: false)
+                .execute()
+                .value
+            self.friendOlympianSeasons = response
+        } catch {
+            AppLogger.warning("Failed to load friend Olympian seasons: \(error.localizedDescription)", category: .social)
+        }
+    }
+
     private var nonFriendStatsSection: some View {
         HStack(spacing: 12) {
             if let goal = user.fitnessGoal, !goal.isEmpty {

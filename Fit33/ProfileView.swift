@@ -27,6 +27,9 @@ struct ProfileView: View {
     @StateObject private var fitbitService = FitbitService.shared
     @StateObject private var whoopService = WhoopService.shared
     @StateObject private var healthKitService = HealthKitService.shared
+    // 2026-05-04 — Path to 33 (annual Olympian track) — drives the
+    // "X / 33" chip + stackable past-season crowns under the stats row.
+    @StateObject private var olympianPath = OlympianPathService.shared
     
     // Editing states
     @State private var isEditingPersonal = false
@@ -1005,6 +1008,12 @@ struct ProfileView: View {
             // streak — any cardio day (native, Strava, HK, Watch)
             // counts. Self-hides when streak == 0 OR not loaded yet.
             profileCardioStreakBadge
+
+            // 2026-05-04 — Path to 33 (annual Olympian track).
+            // Compact this-year ratio chip ("23 / 33 — Olympian 2026")
+            // plus stackable past-season crowns. Self-hides when the
+            // service hasn't loaded yet to avoid a placeholder flash.
+            profileOlympianBadge
         }
         .confirmationDialog("Profile Photo", isPresented: $showingPhotoOptions) {
             Button("Take Photo") {
@@ -1231,6 +1240,102 @@ struct ProfileView: View {
             cardioStreakDays = streak.currentStreak
         }
         cardioStreakLoaded = true
+    }
+
+    // MARK: - Olympian Badge (2026-05-04 — Path to 33)
+    //
+    // Compact "X / 33" chip + horizontal scroll of past-season crowns.
+    // Tap → push the OlympianPathView. The chip self-hides until the
+    // service has loaded the user's 33 (avoids a placeholder flash on
+    // cold start). The crowns row hides when the user has no past-season
+    // badges so the new-user experience stays clean.
+    @ViewBuilder
+    private var profileOlympianBadge: some View {
+        let goldAccent = Color(red: 1.00, green: 0.84, blue: 0.00)
+        if !olympianPath.goals.isEmpty {
+            VStack(spacing: 8) {
+                NavigationLink(destination: OlympianPathView()) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "crown.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(LinearGradient(
+                                colors: [goldAccent, olympianPath.archetype.accent],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
+                            .shadow(color: goldAccent.opacity(0.4), radius: 3)
+
+                        Text("\(olympianPath.progress.completed) / 33")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+
+                        Text("·")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Text("Olympian \(OlympianPathService.currentSeasonYear)")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Capsule().stroke(goldAccent.opacity(0.35), lineWidth: 1)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+
+                if !olympianPath.seasonBadges.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(olympianPath.seasonBadges.prefix(5)) { badge in
+                            VStack(spacing: 1) {
+                                Image(systemName: "crown.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(LinearGradient(
+                                        colors: [goldAccent, badge.resolvedArchetype.accent],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ))
+                                Text("'\(String(badge.seasonYear).suffix(2))")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.primary)
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 6)
+                            .background(
+                                Capsule().fill(goldAccent.opacity(0.12))
+                            )
+                            .overlay(
+                                Capsule().stroke(goldAccent.opacity(0.3), lineWidth: 0.5)
+                            )
+                        }
+
+                        if olympianPath.seasonBadges.count > 5 {
+                            Text("+\(olympianPath.seasonBadges.count - 5)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .padding(.top, 4)
+            .task { await olympianPath.loadCurrentSeason() }
+            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+        } else {
+            Color.clear
+                .frame(height: 0)
+                .task { await olympianPath.loadCurrentSeason() }
+        }
     }
 
     private var defaultAvatarContent: some View {

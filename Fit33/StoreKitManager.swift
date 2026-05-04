@@ -7,9 +7,19 @@ class StoreKitManager: ObservableObject {
     
     // MARK: - Product IDs (must match App Store Connect)
     
+    /// Pinned product IDs — NEVER rename a deployed ID. App Store
+    /// Connect treats a renamed ID as a brand new product and orphans
+    /// existing subscribers (MONETIZATION_AGENT invariant 5).
+    /// New tier = new product ID, never edit.
+    ///
+    /// Tier matrix (locked 2026-05-03):
+    ///   - `monthlyPro`  — $3.99/mo auto-renewing subscription
+    ///   - `yearlyPro`   — $29.99/yr auto-renewing subscription with 7-day trial
+    ///   - `lifetimePro` — $149.99 one-time non-renewing IAP
     enum ProductID: String, CaseIterable {
-        case monthlyPro = "com.gofit.app.pro.monthly"
-        case yearlyPro = "com.gofit.app.pro.yearly"
+        case monthlyPro  = "com.gofit.app.pro.monthly"
+        case yearlyPro   = "com.gofit.app.pro.yearly"
+        case lifetimePro = "com.gofit.app.pro.lifetime"
     }
     
     // MARK: - Published State
@@ -32,6 +42,12 @@ class StoreKitManager: ObservableObject {
         let expirationDate: Date?
         let isInTrial: Bool
         let willAutoRenew: Bool
+        /// True when this entitlement was purchased by another family
+        /// member and shared via Family Sharing. The current device
+        /// can't manage the subscription (Apple's manage sheet routes
+        /// to the original purchaser). Use to surface a "Shared by
+        /// your family" hint in Settings → Subscription.
+        var isFamilyShared: Bool = false
     }
     
     var hasActiveSubscription: Bool {
@@ -41,9 +57,17 @@ class StoreKitManager: ObservableObject {
     var monthlyProduct: Product? {
         products.first { $0.id == ProductID.monthlyPro.rawValue }
     }
-    
+
     var yearlyProduct: Product? {
         products.first { $0.id == ProductID.yearlyPro.rawValue }
+    }
+
+    /// Lifetime is a non-renewing IAP — once purchased it stays in
+    /// `Transaction.currentEntitlements` forever (no renewal events).
+    /// `assn-webhook` will see one `SUBSCRIBED` (or `OFFER_REDEEMED`)
+    /// and that's it; `subscriptions.tier='pro_lifetime'` + `expires_at=NULL`.
+    var lifetimeProduct: Product? {
+        products.first { $0.id == ProductID.lifetimePro.rawValue }
     }
     
     // MARK: - Private
@@ -197,25 +221,42 @@ class StoreKitManager: ObservableObject {
     func updatePurchasedProducts() async {
         var purchased: Set<String> = []
         var latestStatus: SubscriptionStatusInfo?
-        
+        var lifetimeFallback: SubscriptionStatusInfo?
+
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? Self.checkVerified(result) else { continue }
-            
+
             if transaction.revocationDate == nil {
                 purchased.insert(transaction.productID)
-                
+
+                let isFamilyShared = transaction.ownershipType == .familyShared
                 if let expirationDate = transaction.expirationDate {
+                    // Auto-renewing subscription path (monthly / yearly).
                     let isInTrial = transaction.offerType == .introductory
                     latestStatus = SubscriptionStatusInfo(
                         productID: transaction.productID,
                         expirationDate: expirationDate,
                         isInTrial: isInTrial,
-                        willAutoRenew: true
+                        willAutoRenew: true,
+                        isFamilyShared: isFamilyShared
+                    )
+                } else if transaction.productID == ProductID.lifetimePro.rawValue {
+                    // Non-renewing IAP (lifetime) — no expirationDate
+                    // means "owned forever". Track separately so that a
+                    // user with both yearly + lifetime still surfaces
+                    // the active subscription (yearly will eventually
+                    // be canceled; lifetime is the durable truth).
+                    lifetimeFallback = SubscriptionStatusInfo(
+                        productID: transaction.productID,
+                        expirationDate: nil,
+                        isInTrial: false,
+                        willAutoRenew: false,
+                        isFamilyShared: isFamilyShared
                     )
                 }
             }
         }
-        
+
         if let info = latestStatus {
             var willAutoRenew = true
             if let product = products.first(where: { $0.id == info.productID }),
@@ -231,13 +272,17 @@ class StoreKitManager: ObservableObject {
                 productID: info.productID,
                 expirationDate: info.expirationDate,
                 isInTrial: info.isInTrial,
-                willAutoRenew: willAutoRenew
+                willAutoRenew: willAutoRenew,
+                isFamilyShared: info.isFamilyShared
             )
+        } else if latestStatus == nil, let lifetime = lifetimeFallback {
+            // Lifetime is the only entitlement we have — surface it.
+            latestStatus = lifetime
         }
-        
+
         purchasedProductIDs = purchased
         subscriptionStatus = latestStatus
-        
+
         PremiumManager.shared.updateFromStoreKit(hasSubscription: !purchased.isEmpty)
     }
     

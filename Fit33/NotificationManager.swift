@@ -652,7 +652,23 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             actions: [],
             intentIdentifiers: []
         )
-        
+
+        // 2026-05-04 — Path to 33 (annual Olympian track) push category.
+        // Used by the 30/33 progress nudge ("3 to go for Olympian YYYY")
+        // and the goal-unlocked confirmation pushes. Tap deep-links into
+        // `fit33://olympian` (the Olympian Path detail screen) — see
+        // `MainTabView.handleDeepLinkDestination(.olympianPath)`.
+        let viewOlympianAction = UNNotificationAction(
+            identifier: "VIEW_OLYMPIAN_PATH",
+            title: "Open Path",
+            options: [.foreground]
+        )
+        let olympianGoalCompletedCategory = UNNotificationCategory(
+            identifier: "OLYMPIAN_GOAL_COMPLETED",
+            actions: [viewOlympianAction],
+            intentIdentifiers: []
+        )
+
         UNUserNotificationCenter.current().setNotificationCategories([
             workoutCategory,
             nutritionCategory,
@@ -660,7 +676,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             challengeInviteCategory,
             contactJoinedCategory,
             privateChallengeInviteCategory,
-            privateChallengeMessageCategory
+            privateChallengeMessageCategory,
+            olympianGoalCompletedCategory
         ])
     }
     
@@ -1956,6 +1973,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 await PrivateChallengeService.shared.fetchPendingInvites()
                 DeepLinkManager.shared.pendingDestination = .dashboard
                 AppLogger.debug("User tapped private challenge action", category: .general)
+
+            case "VIEW_OLYMPIAN_PATH":
+                // 2026-05-04 — Path to 33: route the action button on
+                // OLYMPIAN_GOAL_COMPLETED pushes (30/33 ping, etc.)
+                // straight into the detail screen via the dashboard tab.
+                DeepLinkManager.shared.pendingDestination = .olympianPath
+                AppLogger.debug("User tapped View Path action — routing to Olympian Path", category: .general)
                 
             case "SNOOZE_1H":
                 // Reschedule notification for 1 hour later
@@ -2172,6 +2196,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         case "level_up", "goal_achieved":
             DeepLinkManager.shared.pendingDestination = .statsTab
             AppLogger.debug("Opening stats tab for achievement", category: .general)
+
+        case "olympian_goal_completed", "olympian_path":
+            // 2026-05-04 — Path to 33 push types. Both fire `.olympianPath`
+            // which routes through MainTabView → DashboardRoute.olympianPath.
+            DeepLinkManager.shared.pendingDestination = .olympianPath
+            AppLogger.debug("Opening Olympian Path detail (push type)", category: .general)
             
         // Health/Nutrition notifications
         case "nutrition_reminder", "protein_goal":
@@ -2306,12 +2336,20 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         default:
             // Sprint 2 Q2-36 — hard allowlist. Anything not in
             // `NotificationManager.knownNotificationTypes` is a server drift
-            // bug; log at .error so it surfaces in crash reports / analytics
-            // instead of silently no-opping.
+            // bug; log at .warning so it surfaces in dev_session_logs +
+            // SessionLogManager for analytics — but NOT at .error, since
+            // server-pushing an unrecognized type is a server-side
+            // operational issue (forgotten client release / staged rollout
+            // mismatch), not a per-device crash. Logging at .error fired
+            // `crash_reports` rows + a bug-intel fingerprint per push,
+            // generating noise that drowned the real device-side bugs.
+            // (Bug-intel `184e70c6` activity_reaction — now allowlisted
+            // above; `a20d732f` hydration_pace — server drift, no client
+            // crash possible at this point in the dispatch.)
             if NotificationManager.knownNotificationTypes.contains(type) {
                 AppLogger.debug("Notification type \(type) known but routed to default — review handleNotificationType", category: .general)
             } else {
-                AppLogger.error("⚠️ Unknown notification type received from server: \(type)", category: .general)
+                AppLogger.warning("⚠️ Unknown notification type received from server: \(type) — add to handleNotificationType + knownNotificationTypes", category: .general)
                 SessionLogManager.shared.log(.warning, category: .pushNotification, message: "Unknown notification type", metadata: ["type": type])
             }
             DeepLinkManager.shared.pendingDestination = .dashboard
@@ -2410,7 +2448,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         case "CONTACT_JOINED":
             DeepLinkManager.shared.pendingDestination = .friendRequests
             AppLogger.debug("Opening friend requests from contact joined notification", category: .general)
-            
+
+        case "OLYMPIAN_GOAL_COMPLETED":
+            // 2026-05-04 — Path to 33 push category default action.
+            DeepLinkManager.shared.pendingDestination = .olympianPath
+            AppLogger.debug("Opening Olympian Path from goal-completed notification", category: .general)
+
         default:
             AppLogger.debug("User opened notification: \(category)", category: .general)
         }

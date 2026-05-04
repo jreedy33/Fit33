@@ -25,6 +25,15 @@ struct WorkoutGeneratorSelectionView: View {
     @State private var isNavigatingForward = true
     @State private var equipmentLocation: EquipmentLocation = .gym
     @State private var equipmentLocationInitialized = false
+
+    /// Smart Workout weekly-cap paywall. Free tier: 1 generation per
+    /// rolling 7 days (`MonetizationState.smartWorkoutFreeWeeklyCap`).
+    /// Once cap is hit, surface `PremiumUpgradeView(.smartWorkouts)`
+    /// instead of starting generation. Pro / Pro Preview users bypass.
+    /// Silent under always-premium until MON-14 ships — `canGenerateSmartWorkout`
+    /// returns true for Pro users so the gate is effectively no-op
+    /// today.
+    @State private var showSmartWorkoutCapPaywall = false
     
     // Slide transition based on navigation direction
     private var slideTransition: AnyTransition {
@@ -692,6 +701,11 @@ struct WorkoutGeneratorSelectionView: View {
         } message: {
             Text(errorMessage)
         }
+        // Smart Workout weekly cap paywall — surfaced when free user
+        // hits the cap. Triggering feature attribution = `.smartWorkouts`.
+        .fullScreenCover(isPresented: $showSmartWorkoutCapPaywall) {
+            PremiumUpgradeView(triggeringFeature: .smartWorkouts)
+        }
         // 🐛 FIX: navigationDestination MUST be on the ZStack, not on EmptyView inside it
         // EmptyView inside ZStack doesn't reliably trigger navigation
         .navigationDestination(isPresented: $navigateToPreview) {
@@ -719,6 +733,16 @@ struct WorkoutGeneratorSelectionView: View {
         // 🔧 Guard against rapid re-generation (crash prevention)
         guard !isGenerating, !navigateToPreview, !workoutManager.isWorkoutActive else {
             AppLogger.warning("⚠️ [Generator] Blocked duplicate generation request", category: .workout)
+            return
+        }
+        // Smart Workout weekly cap (Phase 2 monetization gate). Free
+        // users get N/week (`MonetizationState.smartWorkoutFreeWeeklyCap`).
+        // Pro / in-Pro-Preview users always pass. Surfaces paywall
+        // instead of starting generation when capped.
+        guard MonetizationState.shared.canGenerateSmartWorkout else {
+            AppLogger.info("Smart Workout weekly cap reached — surfacing paywall", category: .workout)
+            HapticManager.notification(.warning)
+            showSmartWorkoutCapPaywall = true
             return
         }
         isGenerating = true
@@ -759,7 +783,11 @@ struct WorkoutGeneratorSelectionView: View {
                     } else {
                         // 🚀 PERF: Dispatch prefetch to background immediately
                         // ⚡️ MEMORY FIX: Disabled video prefetching — videos load on-demand.
-                        
+
+                        // Phase 2 monetization: record successful generation
+                        // for the free-tier weekly cap. No-op for Pro users.
+                        MonetizationState.shared.recordSmartWorkoutGenerated()
+
                         // Navigate immediately
                         navigateToPreview = true
                     }
@@ -791,6 +819,16 @@ struct WorkoutGeneratorSelectionView: View {
         guard !isGenerating, !navigateToPreview, !workoutManager.isWorkoutActive else {
             AppLogger.warning("⚠️ [Generator] Blocked duplicate generation request", category: .workout)
             AppLogger.error("   ❌ isGenerating=\(isGenerating), navigateToPreview=\(navigateToPreview), isWorkoutActive=\(workoutManager.isWorkoutActive)", category: .workout)
+            return
+        }
+        // Smart Workout weekly cap (Phase 2 monetization gate). Free
+        // tier capped at `MonetizationState.smartWorkoutFreeWeeklyCap`.
+        // Pro / Pro Preview always passes; gate is silent under always-
+        // premium until MON-14 ships.
+        guard MonetizationState.shared.canGenerateSmartWorkout else {
+            AppLogger.info("Smart Workout weekly cap reached — surfacing paywall", category: .workout)
+            HapticManager.notification(.warning)
+            showSmartWorkoutCapPaywall = true
             return
         }
         isGenerating = true
@@ -854,7 +892,11 @@ struct WorkoutGeneratorSelectionView: View {
                         AppLogger.info("✅ [AUTOGEN] Generated \(exercises.count) exercises - navigating to preview", category: .workout)
                         // 🚀 PERF: Dispatch prefetch to background immediately
                         // ⚡️ MEMORY FIX: Disabled video prefetching — videos load on-demand.
-                        
+
+                        // Phase 2 monetization: record successful generation
+                        // for the free-tier weekly cap. No-op for Pro users.
+                        MonetizationState.shared.recordSmartWorkoutGenerated()
+
                         // Navigate immediately
                         navigateToPreview = true
                     }

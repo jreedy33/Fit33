@@ -60,6 +60,21 @@ class DeepLinkManager: ObservableObject {
         case readinessDetail    // Home tab > Readiness drill-down sheet
         case smackTalk(challengeId: String)  // Challenge detail with composer open
         case mealLogger(mealType: String?)   // Open meal logger (alias for addFood)
+
+        // Monetization Phase 5 (2026-05-03) — Sunday Pro Recap.
+        // Push deep-link `fit33://profile/pro-recap` lands here. The
+        // recap view is a celebratory weekly summary (`ProRecapView`)
+        // presented as a fullScreenCover from the root so it works
+        // regardless of which tab the user lands on. Pro tier sees the
+        // full breakdown, free tier sees the teaser + upsell.
+        case proRecap
+
+        // 2026-05-04 — Path to 33 (annual Olympian track).
+        // Push / share-card deep-link `fit33://olympian` lands on the
+        // Olympian Path detail screen (Dashboard tab → push
+        // `DashboardRoute.olympianPath`). Used by the 30/33 ping push
+        // and the season-completion share card.
+        case olympianPath
     }
     
     @Published var pendingDestination: Destination?
@@ -338,7 +353,44 @@ class DeepLinkManager: ObservableObject {
                 AppLogger.debug("🔒 [DEEPLINK] Navigating to private challenge invite: \(challengeId)", category: .network)
             }
             return true
-            
+
+        case "profile":
+            // Monetization Phase 5 — Sunday Pro Recap deep-link.
+            // Format: fit33://profile/pro-recap
+            //
+            // The path is `/pro-recap`. Anything else under /profile is
+            // currently unhandled (kept narrow on purpose so the same
+            // `profile` host can grow new sub-routes later).
+            let path = url.path
+            let route = path.hasPrefix("/") ? String(path.dropFirst()) : path
+            switch route {
+            case "pro-recap":
+                pendingDestination = .proRecap
+                AppLogger.debug("[DEEPLINK] Navigating to Pro Recap (Sunday weekly summary)", category: .network)
+                return true
+            default:
+                return false
+            }
+
+        case "pro-recap":
+            // Convenience host alias: fit33://pro-recap
+            // Same destination as `fit33://profile/pro-recap` so the
+            // recap can be opened from in-app banners without nesting.
+            pendingDestination = .proRecap
+            AppLogger.debug("[DEEPLINK] Navigating to Pro Recap (alias host)", category: .network)
+            return true
+
+        case "olympian":
+            // 2026-05-04 — Path to 33 deep link: `fit33://olympian`
+            // Lands on the Olympian Path detail screen via the dashboard
+            // tab's NavigationStack (registered as
+            // `DashboardRoute.olympianPath`). Used by the 30/33 progress
+            // push notification and the season-completion share card.
+            pendingDestination = .olympianPath
+            pendingDashboardRoute = "olympian"
+            AppLogger.debug("[DEEPLINK] Navigating to Olympian Path", category: .network)
+            return true
+
         default:
             return false
         }

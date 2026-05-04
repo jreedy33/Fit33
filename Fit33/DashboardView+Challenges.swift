@@ -28,7 +28,11 @@ struct DashboardChallengesWrapper: View {
     @ViewBuilder
     private var stackedChallengesBody: some View {
         let activeIds = Set(challengeService.activeChallenges.map { $0.id })
-        let activeChallenges = Array(challengeService.activeChallenges.prefix(8))
+        // Sort by opponent freshness BEFORE truncating so the most-updated
+        // challenges are guaranteed to make the cut (and land on page 0).
+        // See `Array<ActiveChallenge>.sortedByOpponentFreshness` in
+        // ChallengeService.swift for tier definitions.
+        let activeChallenges = Array(challengeService.activeChallenges.sortedByOpponentFreshness().prefix(8))
         let groupChallenges = challengeService.activeGroupChallenges.filter { $0.iHaveAccepted }
         let activeCount = activeChallenges.count + groupChallenges.count
         
@@ -165,8 +169,13 @@ struct DashboardChallengesWrapper: View {
         // 4. If no active AND no pending → show default "Challenge a Friend" widget only
         
         // Get active challenges (deduplicated by ID)
+        // Sort by opponent freshness BEFORE the 3-card cap so a challenge
+        // where the opponent has updated today wins page 0 over a stale
+        // sibling card (opponent at 0 with hours-old `last_progress_at`).
+        // See `Array<ActiveChallenge>.sortedByOpponentFreshness` in
+        // ChallengeService.swift for tier definitions.
         let activeIds = Set(challengeService.activeChallenges.map { $0.id })
-        let activeChallenges = Array(challengeService.activeChallenges.prefix(3))
+        let activeChallenges = Array(challengeService.activeChallenges.sortedByOpponentFreshness().prefix(3))
         let groupChallenges = challengeService.activeGroupChallenges.filter { $0.iHaveAccepted }
         let activeCount = activeChallenges.count + groupChallenges.count
         

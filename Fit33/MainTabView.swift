@@ -419,9 +419,11 @@ struct MainTabView: View {
 
             if let tab = LazyTabManager.Tab(rawValue: newValue) {
                 lazyTabManager.markVisited(tab)
-                if !isInstantSwitch {
-                    SmartPrefetch.shared.prefetchForTab(tab)
-                }
+                // 2026-05-03 perf sprint: do NOT call SmartPrefetch.prefetchForTab here.
+                // tabSwitchOptimizer.beginTransition(from:to:) above already invokes
+                // SmartPrefetch.shared.prefetchForTab(tab); calling it a second time
+                // duplicated the Core Data prefetch task on every non-instant tab switch.
+                _ = isInstantSwitch
             }
 
             logTabSwitch(oldValue: oldValue, newValue: newValue, isInstantSwitch: isInstantSwitch)
@@ -719,6 +721,16 @@ struct MainTabView: View {
             deepLinkManager.pendingDestination = nil
             AppLogger.debug("[DEEPLINK] Switched to Home tab → smack-talk composer for: \(challengeId)", category: .ui)
 
+        case .proRecap:
+            // Monetization Phase 5 — Sunday Pro Recap. Switch to Home
+            // tab so the cover presents over the dashboard (same surface
+            // the user lives on after a push tap), then flip the
+            // showProRecap flag observed by ContentView.
+            selectedTab = 0
+            deepLinkManager.pendingDestination = nil
+            MonetizationState.shared.requestProRecapPresentation()
+            AppLogger.debug("[DEEPLINK] Routed to Pro Recap — Home tab + recap cover", category: .ui)
+
         case .mealLogger(let mealType):
             // Alias of addFood when meal type provided, or mealsTab landing.
             selectedTab = 3
@@ -727,6 +739,16 @@ struct MainTabView: View {
             }
             deepLinkManager.pendingDestination = nil
             AppLogger.debug("[DEEPLINK] Switched to Meals tab for meal logger (\(mealType ?? "any"))", category: .ui)
+
+        case .olympianPath:
+            // 2026-05-04 — Path to 33 deep link `fit33://olympian`.
+            // Switch to Home tab; DashboardView already observes
+            // `pendingDashboardRoute == "olympian"` to push
+            // `DashboardRoute.olympianPath` onto its NavigationStack.
+            selectedTab = 0
+            deepLinkManager.pendingDashboardRoute = "olympian"
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Switched to Home tab → pushing Olympian Path", category: .ui)
         }
     }
     
@@ -734,16 +756,8 @@ struct MainTabView: View {
     private func updateWorkoutTabLabelColor(isRed: Bool) {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 100_000_000)
-            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                  let window = windowScene.windows.first else { return }
-            
-            if let tabBar = findTabBar(in: window) {
-                let tabBarButtons = tabBar.subviews.filter { String(describing: type(of: $0)).contains("Button") }
-                if tabBarButtons.count > 2 {
-                    let workoutButton = tabBarButtons.sorted { $0.frame.minX < $1.frame.minX }[2]
-                    updateLabelsInView(workoutButton, isRed: isRed)
-                }
-            }
+            guard let workoutButton = TabBarLookupCache.shared.resolveWorkoutTabButton() else { return }
+            updateLabelsInView(workoutButton, isRed: isRed)
         }
     }
     
@@ -756,6 +770,79 @@ struct MainTabView: View {
         }
     }
     
+    // Scale the Workout tab (index 2) when GO button is visible
+    private func updateTabBarScale(isGoButtonVisible: Bool) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard let workoutButton = TabBarLookupCache.shared.resolveWorkoutTabButton() else { return }
+            
+            UIView.animate(withDuration: 0.2) {
+                if isGoButtonVisible {
+                    workoutButton.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
+                    workoutButton.alpha = 0.2
+                } else {
+                    workoutButton.transform = .identity
+                    workoutButton.alpha = 1.0
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Tab Bar Lookup Cache (2026-05-03 perf sprint)
+//
+// `updateWorkoutTabLabelColor` + `updateTabBarScale` are called from
+// SwiftUI `.onChange` handlers tied to `workoutManager.isWorkoutActive`,
+// `selectedTab`, and `GoButtonState.isVisible`. Each call USED to walk
+// the entire UIView hierarchy from `windowScene.windows.first` down,
+// recursively, and then sort + filter all subviews of `UITabBar` to
+// locate the third `*Button*`-typed view (the "Workout" tab button).
+//
+// The walk is small (depth ~5), but the work is pure waste — the
+// `UITabBar` and its child buttons are constructed once per scene and
+// never replaced for the lifetime of the `MainTabView`. Caching a
+// weak reference to the resolved workout button removes the recursive
+// `findTabBar` + the `subviews.filter { String(describing: type(of: $0))…}`
+// + the `sorted` on every state change.
+//
+// `weak` so that if iOS rebuilds the tab bar (rotation, multitasking
+// transitions, scene reconfiguration) the cache transparently falls
+// back to a fresh lookup. No invalidation hooks needed.
+@MainActor
+final class TabBarLookupCache {
+    static let shared = TabBarLookupCache()
+    
+    private weak var cachedWorkoutButton: UIView?
+    
+    private init() {}
+    
+    /// Returns the resolved Workout tab button. Uses a cached weak
+    /// reference when valid; otherwise re-walks the view hierarchy and
+    /// re-caches. Returns `nil` only when the window scene isn't yet
+    /// attached or the tab bar hasn't been laid out.
+    func resolveWorkoutTabButton() -> UIView? {
+        if let cached = cachedWorkoutButton {
+            return cached
+        }
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first,
+              let tabBar = findTabBar(in: window) else {
+            return nil
+        }
+        let tabBarButtons = tabBar.subviews.filter { String(describing: type(of: $0)).contains("Button") }
+        guard tabBarButtons.count > 2 else { return nil }
+        let resolved = tabBarButtons.sorted { $0.frame.minX < $1.frame.minX }[2]
+        cachedWorkoutButton = resolved
+        return resolved
+    }
+    
+    /// Force a re-walk on the next call. Intended for testing / future
+    /// scene-reconfiguration hooks; the `weak` reference handles the
+    /// common cases automatically.
+    func invalidate() {
+        cachedWorkoutButton = nil
+    }
+    
     private func findTabBar(in view: UIView) -> UITabBar? {
         if let tabBar = view as? UITabBar {
             return tabBar
@@ -766,32 +853,5 @@ struct MainTabView: View {
             }
         }
         return nil
-    }
-    
-    // Scale the Workout tab (index 2) when GO button is visible
-    private func updateTabBarScale(isGoButtonVisible: Bool) {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                  let window = windowScene.windows.first else { return }
-            
-            if let tabBar = findTabBar(in: window) {
-                let tabBarButtons = tabBar.subviews.filter { String(describing: type(of: $0)).contains("Button") }
-                if tabBarButtons.count > 2 {
-                    let sortedButtons = tabBarButtons.sorted { $0.frame.minX < $1.frame.minX }
-                    let workoutButton = sortedButtons[2]
-                    
-                    UIView.animate(withDuration: 0.2) {
-                        if isGoButtonVisible {
-                            workoutButton.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
-                            workoutButton.alpha = 0.2
-                        } else {
-                            workoutButton.transform = .identity
-                            workoutButton.alpha = 1.0
-                        }
-                    }
-                }
-            }
-        }
     }
 }

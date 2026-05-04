@@ -11,6 +11,7 @@ struct WidgetSettingsSheet: View {
     @Binding var showOura: Bool
     @Binding var showStrava: Bool
     @Binding var showCardio: Bool
+    @Binding var showOlympian: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var premiumManager = PremiumManager.shared
@@ -112,6 +113,13 @@ struct WidgetSettingsSheet: View {
                             subtitle: "Streak status & one-tap walk start",
                             gradientColors: [Color.green, Color.orange],
                             isSelected: $showCardio
+                        )
+
+                        // 2026-05-04 — Path to 33 (annual Olympian track).
+                        // 100% free, no premium gate per the free-achievability
+                        // contract. Toggle ON by default.
+                        olympianWidgetOptionRow(
+                            isSelected: $showOlympian
                         )
 
                         // Challenge widget - show for all users, but locked for free users
@@ -537,5 +545,117 @@ struct WidgetSettingsSheet: View {
         }
         .buttonStyle(PlainButtonStyle())
         .opacity(!premiumManager.isPremiumUser ? 0.85 : 1.0)
+    }
+
+    // MARK: - Olympian Path Widget (FREE — no premium gate)
+    //
+    // 2026-05-04 — Per the Path to 33 free-achievability contract, this widget
+    // is fully free to view AND toggle. No premium upsell or PRO badge — it is
+    // an explicit "free for everyone" surface (Monetization invariant 31:
+    // explicit-label rule).
+    @ViewBuilder
+    private func olympianWidgetOptionRow(isSelected: Binding<Bool>) -> some View {
+        Button(action: {
+            HapticManager.selectionChanged()
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isSelected.wrappedValue.toggle()
+            }
+        }) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 1.00, green: 0.84, blue: 0.00),
+                                    Color(red: 0.95, green: 0.50, blue: 0.30)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+
+                    Image(systemName: "crown.fill")
+                        .font(.ds_heading3)
+                        .foregroundColor(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("Path to 33")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+
+                        Text("FREE")
+                            .font(.system(size: 9, weight: .bold))
+                            .tracking(0.5)
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule().fill(Color.green.opacity(0.15))
+                            )
+                    }
+
+                    Text("Your 33 personalized goals to Olympian \(OlympianPathService.currentSeasonYear)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(
+                            isSelected.wrappedValue
+                                ? LinearGradient(
+                                    colors: [
+                                        Color(red: 1.00, green: 0.84, blue: 0.00),
+                                        Color(red: 0.95, green: 0.50, blue: 0.30)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                                : LinearGradient(colors: [Color.clear], startPoint: .top, endPoint: .bottom)
+                        )
+                        .frame(width: 26, height: 26)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(isSelected.wrappedValue ? Color.clear : Color.secondary.opacity(0.4), lineWidth: 2)
+                        )
+
+                    if isSelected.wrappedValue {
+                        Image(systemName: "checkmark")
+                            .font(.ds_bodySmall).fontWeight(.bold)
+                            .foregroundColor(.white)
+                    }
+                }
+            }
+            .padding(Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .fill(colorScheme == .dark ? Color(white: 0.15) : Color(white: 0.97))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.lg)
+                    .stroke(
+                        isSelected.wrappedValue
+                            ? LinearGradient(
+                                colors: [
+                                    Color(red: 1.00, green: 0.84, blue: 0.00),
+                                    Color(red: 0.95, green: 0.50, blue: 0.30)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            : LinearGradient(colors: [Color.clear], startPoint: .top, endPoint: .bottom),
+                        lineWidth: 2
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }

@@ -49,7 +49,7 @@ Food search (USDA edge function) · **Nutrition-label OCR** (NOT barcode lookup)
 Add friends (QR, contacts, search) · Friend profiles · 1v1 challenges · Group challenges · Community challenges · Shared workouts · Reactions · Rankings · **Block + Report** (Settings → Privacy & Security · Long-press context menu on chat and feed).
 
 ### Gamification
-XP + Levels · Daily Quests (3/day, resets midnight local) · Weekly Leagues (Duolingo-style, placement Monday 00:15 UTC) · Streaks · Streak Shields · PRs · Achievements.
+XP + Levels · Daily Quests (3/day, resets midnight local) · Weekly Leagues (Duolingo-style, placement Monday 00:15 UTC) · Streaks · Streak Shields · PRs · Achievements · **Path to 33** (annual Olympian track — 33 personalized goals, stackable "Olympian YYYY" badge).
 
 ### Health Integrations
 | Integration | Data | Connect |
@@ -116,6 +116,68 @@ Related Agent
 
 ---
 
+## Path to 33 — User FAQ (2026-05-04, "Path to 33" launch)
+
+The "Path to 33" annual Olympian track is on the dashboard (toggleable via
+the widget settings sheet) and on a dedicated detail screen. Users get 33
+personalized goals every Jan 1 — completing all 33 mints a stackable
+"Olympian YYYY" badge that lives on their profile forever. Below are the
+canonical user-facing FAQ entries.
+
+### What is the Path to 33?
+> 33 personalized goals you complete over the year. Hit all 33 and you earn
+> the **Olympian YYYY** badge — a permanent crown on your profile. The
+> goals get harder as you go: Foundation → Habits → Strength → Mastery →
+> Olympian (5 tiers, ~7 goals each).
+
+### Why are mine different from my friend's?
+> Goals are personalized by your fitness goal at onboarding (strength,
+> endurance, weight loss, balanced, athletic) and by the wearables you
+> have connected. Strava + WHOOP both connected → Athletic path. Strength
+> goal → more lifting milestones. The 33 are LOCKED for the year on first
+> open — your path won't reshuffle if you change your fitness goal mid-year.
+
+### Does completing a goal cost anything?
+> No. The Path to 33 is **fully free** — no goal requires Premium. Every
+> goal can be completed in 12 months on the free tier.
+
+### What counts as progress?
+> Same actions you already do — workouts, meals logged, friends, streaks,
+> daily quests, PRs, distance covered, league tier promotions. When the
+> achievement that backs a goal unlocks, the goal unlocks. No extra opt-in.
+
+### What happens on Jan 1?
+> A brand-new set of 33 goals seeded for the new year, personalized fresh
+> from your current onboarding profile + wearables. Your previous
+> "Olympian YYYY" badge stays on your profile permanently. You can stack
+> multiple Olympian years.
+
+### My streak / workout / meal got deleted — does the goal un-unlock?
+> No. Once a goal is unlocked it stays unlocked for the year. Deleting a
+> source workout or meal doesn't roll back goal progress.
+
+### What if I move to a different time zone mid-year?
+> The Path follows your device's local calendar year. The Jan 1 reset uses
+> `Calendar.current` — same convention as Daily Quests and the Weekly
+> League. Travel doesn't reset your goals.
+
+### Can I see what's left?
+> Tap the dashboard "Path to 33" widget. The detail screen shows all 33
+> grouped by tier with progress bars and "How to complete" hints. The
+> next-to-unlock goal is highlighted on the widget itself.
+
+### What's the "30 to go" notification I just got?
+> Once you've unlocked 30 of your 33 goals, a small dashboard ping reminds
+> you to push through the last 3 — they tend to be Tier 5 (Olympian) and
+> the meta goal #33 ("Complete all 32 prior goals").
+
+### What do I get for completing all 33?
+> A full-screen celebration overlay, the **Olympian YYYY** crown badge on
+> your profile, the option to share to social, and a year-end recap card
+> (visible Dec 27 → Jan 7) you can share again at the year boundary.
+
+---
+
 ## Bug-to-Feature Mapping (most common user reports)
 
 | User reports | Actual situation | Response strategy |
@@ -131,6 +193,9 @@ Related Agent
 | "My Strava run isn't showing in Fit33" | Strava token expired OR sync delay (typical ≤60s) | Check `StravaService.shared.isConnected`; ask user to re-authorize if needed |
 | "Why is my walk credited the same as a run?" | By design — gamification rails treat cardio uniformly; calorie counts differ | Explain Wave 7b graduated LP; confirm walks still count toward streak/quests |
 | "I imported a HK workout and it's missing distance" | HK source app didn't write distance (e.g., yoga, strength) | Confirm activity type; if cardio, escalate to Data & Backend |
+| "Why are my Path to 33 goals different from my friend's?" | Personalization by onboarding fitness goal + wearable connections; goals lock at first open of the year | Explain personalization; reassure no goal is harder than another's overall — Olympian = 33 goals on YOUR path |
+| "I deleted a workout and now my streak goal didn't unlock" | Goal progress doesn't roll back on source delete; streak goals re-evaluate on the next workout | Confirm progress is sticky; suggest waiting for next workout to re-trigger evaluation |
+| "Can I get more goals if I'm Premium?" | No — Path to 33 is fully free, no premium tier exists | Explicit "Path to 33 is free for everyone, including the Olympian badge" |
 
 ---
 

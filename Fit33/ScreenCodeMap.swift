@@ -365,6 +365,26 @@ enum ScreenCodeMap {
         "streaks":          ["Fit33/DashboardStreakViews.swift", "Fit33/StreakShieldService.swift"],
         "body metrics":     ["Fit33/WeightTrackingService.swift", "Fit33/DashboardWeightWidget.swift"],
 
+        // 2026-05-04 — Path to 33 (annual Olympian track). Three new
+        // surfaces: dashboard widget, detail view, season-completion
+        // overlay. The detail view is the most likely rage-shake target.
+        "olympian path view": [
+            "Fit33/OlympianPathView.swift",
+            "Fit33/OlympianPathService.swift",
+            "Fit33/AchievementService.swift",
+            "Fit33/DashboardOlympianWidget.swift",
+        ],
+        "olympian goal sheet": [
+            "Fit33/OlympianPathView.swift",
+            "Fit33/OlympianPathService.swift",
+            "Fit33/AchievementService.swift",
+        ],
+        "olympian celebration": [
+            "Fit33/OlympianCelebrationOverlay.swift",
+            "Fit33/OlympianPathService.swift",
+            "Fit33/ContentView.swift",
+        ],
+
         // ═══════════════════════════════════════════════════════════
         // WEARABLE SETTINGS
         // ═══════════════════════════════════════════════════════════

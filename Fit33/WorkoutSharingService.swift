@@ -26,11 +26,11 @@ class WorkoutSharingService: ObservableObject {
     func shareApp(from viewController: UIViewController? = nil) {
         let shareMessage = """
         💪 Check out Fit33 - the smart workout app that creates personalized programs just for you!
-        
-        🎯 AI-powered exercise selection
+
+        🎯 Smart exercise selection that adapts to your goals
         📊 Track your progress & PRs
         🏋️ 500+ exercises with video demos
-        
+
         Download free: \(appStoreURL)
         """
         

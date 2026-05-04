@@ -68,7 +68,7 @@ struct WorkoutReplayView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.primary)
             
-            Text("AI-powered insights from your session")
+            Text("Smart insights from your session")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }

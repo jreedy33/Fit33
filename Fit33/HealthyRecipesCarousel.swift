@@ -16,8 +16,12 @@ struct HealthyRecipesCarousel: View {
     @State private var refreshTimer: Timer?
     @State private var viewedRecipeCount = 0
     
-    // Free users can only view 1 recipe
-    private let freeRecipeLimit = 1
+    // Phase 2 monetization (2026-05-03): free tier was "1 recipe forever"
+    // (too punishing). Now "1 recipe per day, rotating" — counter
+    // resets at midnight, free users can choose which recipe each day.
+    // See `RecipeBrowserView.swift` for the same migration. Source of
+    // truth = `MonetizationState.shared.canViewAnotherRecipe()`.
+    @State private var carouselViewedRecipeIds: Set<Int> = []
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -140,9 +144,12 @@ struct HealthyRecipesCarousel: View {
             VStack(alignment: .leading, spacing: 12) {
                 // Top Row
                 HStack(spacing: 16) {
-                    ForEach(Array(topRow.enumerated()), id: \.element.id) { index, recipe in
-                        let isLocked = !premiumManager.isPremiumUser && index >= freeRecipeLimit
-                        
+                    ForEach(Array(topRow.enumerated()), id: \.element.id) { _, recipe in
+                        let alreadyViewedToday = carouselViewedRecipeIds.contains(recipe.id)
+                        let canOpen = alreadyViewedToday
+                            || MonetizationState.shared.canViewAnotherRecipe()
+                        let isLocked = !premiumManager.isPremiumUser && !canOpen
+
                         PremiumRecipeCard(
                             recipe: recipe,
                             isLocked: isLocked,
@@ -152,6 +159,10 @@ struct HealthyRecipesCarousel: View {
                                 } else {
                                     selectedRecipe = recipe
                                     showingRecipeDetail = true
+                                    if !alreadyViewedToday {
+                                        MonetizationState.shared.recordRecipeView()
+                                    }
+                                    carouselViewedRecipeIds.insert(recipe.id)
                                     viewedRecipeCount += 1
                                     preferenceService.trackRecipeView(recipe: recipe)
                                 }
@@ -159,14 +170,16 @@ struct HealthyRecipesCarousel: View {
                         )
                     }
                 }
-                
+
                 // Bottom Row
                 if !bottomRow.isEmpty {
                     HStack(spacing: 16) {
-                        ForEach(Array(bottomRow.enumerated()), id: \.element.id) { index, recipe in
-                            let globalIndex = midpoint + index
-                            let isLocked = !premiumManager.isPremiumUser && globalIndex >= freeRecipeLimit
-                            
+                        ForEach(Array(bottomRow.enumerated()), id: \.element.id) { _, recipe in
+                            let alreadyViewedToday = carouselViewedRecipeIds.contains(recipe.id)
+                            let canOpen = alreadyViewedToday
+                                || MonetizationState.shared.canViewAnotherRecipe()
+                            let isLocked = !premiumManager.isPremiumUser && !canOpen
+
                             PremiumRecipeCard(
                                 recipe: recipe,
                                 isLocked: isLocked,
@@ -176,6 +189,10 @@ struct HealthyRecipesCarousel: View {
                                     } else {
                                         selectedRecipe = recipe
                                         showingRecipeDetail = true
+                                        if !alreadyViewedToday {
+                                            MonetizationState.shared.recordRecipeView()
+                                        }
+                                        carouselViewedRecipeIds.insert(recipe.id)
                                         viewedRecipeCount += 1
                                         preferenceService.trackRecipeView(recipe: recipe)
                                     }

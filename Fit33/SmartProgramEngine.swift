@@ -3,7 +3,10 @@
 //  GoFit
 //
 //  Smart Program Engine - Generates 10 personalized training programs
-//  with progressive series, lazy day generation, and AI-powered recommendations
+//  with progressive series, lazy day generation, and algorithm-driven
+//  recommendations. (Per MONETIZATION_AGENT.md: NEVER say "AI" in
+//  user-facing copy. This file ships internal logic only — strings
+//  surfaced to users live in PremiumUpgradeView / WorkoutGeneratorSelectionView.)
 //
 
 import Foundation
@@ -580,12 +583,14 @@ class SmartProgramEngine: ObservableObject {
             minExperienceLevel: "Intermediate"
         ),
         
-        // 10. CUSTOM GOAL - AI Generated based on user
+        // 10. CUSTOM GOAL - smart-generated based on user inputs.
+        // Description is user-visible (rendered in program selection UI);
+        // NEVER use "AI" — workouts are algorithm-driven (locked 2026-05-03).
         SmartProgramTemplate(
             id: "custom-goal",
             category: .custom,
             baseName: "Your Personal Plan",
-            description: "AI-generated program tailored specifically to your goals, equipment, and schedule. Updated weekly based on your progress.",
+            description: "Smart program tailored to your goals, equipment, and schedule. Updated weekly based on your progress.",
             totalDays: 28,
             daysPerWeek: 0,  // Determined by user
             difficulty: .intermediate,  // Adapts to user

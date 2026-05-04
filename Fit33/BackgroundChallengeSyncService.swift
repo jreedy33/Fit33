@@ -435,7 +435,20 @@ class BackgroundChallengeSyncService {
             try BGTaskScheduler.shared.submit(request)
             AppLogger.debug("📅 [BG SYNC] Next BGAppRefresh scheduled (earliest: ~15 min)", category: .social)
         } catch {
-            AppLogger.error("❌ [BG SYNC] Failed to schedule BGAppRefreshTask: \(error.localizedDescription)", category: .social)
+            // Route through NetworkErrorClassifier so BGTaskSchedulerErrorDomain
+            // failures classify as `.transientNetwork` (warning, no fingerprint)
+            // instead of bare `.error` which fired bug-intel `90369817`.
+            // BGTaskScheduler errors reflect device/scheduler state (Low Power
+            // Mode, Background App Refresh disabled, simulator, rate-limit)
+            // — never an app malfunction.
+            NetworkErrorClassifier.log(
+                error,
+                context: "[BG SYNC] Failed to schedule BGAppRefreshTask",
+                category: .social,
+                op: "bg_sync.schedule_app_refresh",
+                endpoint: "BGTaskScheduler.submit",
+                startedAt: Date()
+            )
         }
     }
     
@@ -453,7 +466,16 @@ class BackgroundChallengeSyncService {
             try BGTaskScheduler.shared.submit(request)
             AppLogger.debug("📅 [BG SYNC] Next BGProcessing scheduled (earliest: ~2h)", category: .social)
         } catch {
-            AppLogger.error("❌ [BG SYNC] Failed to schedule BGProcessingTask: \(error.localizedDescription)", category: .social)
+            // Route through NetworkErrorClassifier (see scheduleNextBackgroundSync
+            // above) — closes bug-intel `2fe2cbd7` cluster.
+            NetworkErrorClassifier.log(
+                error,
+                context: "[BG SYNC] Failed to schedule BGProcessingTask",
+                category: .social,
+                op: "bg_sync.schedule_processing",
+                endpoint: "BGTaskScheduler.submit",
+                startedAt: Date()
+            )
         }
     }
     

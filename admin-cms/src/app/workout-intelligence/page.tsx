@@ -112,6 +112,9 @@ export default function WorkoutIntelligencePage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [statsErr, setStatsErr] = useState<string | null>(null)
 
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null)
+
   const isoFrom = applied.dateFrom ? `${applied.dateFrom}T00:00:00.000Z` : undefined
   const isoTo = applied.dateTo ? `${applied.dateTo}T23:59:59.999Z` : undefined
 
@@ -160,6 +163,51 @@ export default function WorkoutIntelligencePage() {
     setPage(0)
   }
 
+  // Manual backfill — re-enqueues completed workouts that the iOS app
+  // never enqueued (TestFlight builds < 1.38(64), Migration #156). Honors
+  // the User filter input — leave blank to backfill across all users.
+  // The cron drains the resulting `pending` rows within 10 minutes.
+  async function runBackfill() {
+    const scope = userFilter.trim()
+      ? `user "${userFilter.trim()}"`
+      : 'all users'
+    if (!confirm(
+      `Backfill missing workout-intel rows for ${scope}?\n\n`
+      + 'Up to 200 most-recent completed workouts will be enqueued. '
+      + 'The cron will analyze them within 10 minutes.\n\n'
+      + 'Idempotent — safe to run repeatedly.',
+    )) return
+
+    setBackfilling(true)
+    setBackfillMsg(null)
+    try {
+      const res = await adminApi('backfill_workout_intel', {
+        userId: userFilter.trim() || undefined,
+        limit: 200,
+      })
+      const m = res as {
+        scanned?: number; scored?: number; enqueued?: number;
+        skipped?: number; errors?: number; message?: string;
+        errorSamples?: string[];
+      }
+      const parts = [
+        `${m.enqueued ?? 0} enqueued`,
+        `${m.scored ?? 0} newly scored`,
+        `${m.skipped ?? 0} skipped (low quality)`,
+      ]
+      if ((m.errors ?? 0) > 0) parts.push(`${m.errors} error${m.errors === 1 ? '' : 's'}`)
+      setBackfillMsg(`${m.message || 'Done.'} (${parts.join(' · ')})`)
+      // Give the user a moment to see the message, then refresh the table
+      // so any new `pending` rows show up. Stats refresh too so the
+      // "Total reports" tile bumps.
+      await Promise.all([loadRows(), loadStats()])
+    } catch (e) {
+      setBackfillMsg(e instanceof Error ? e.message : 'Backfill failed')
+    } finally {
+      setBackfilling(false)
+    }
+  }
+
   const canPrev = page > 0
   const canNext = (page + 1) * PAGE_SIZE < total
 
@@ -175,6 +223,21 @@ export default function WorkoutIntelligencePage() {
             <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
               Claude-generated post-workout analysis (one row per quality workout)
             </p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              className="btn btn-ghost text-sm"
+              disabled={backfilling}
+              onClick={() => void runBackfill()}
+              title="Re-enqueue completed workouts that pre-date build 1.38(64) or were finished on an older TestFlight."
+            >
+              {backfilling ? 'Backfilling…' : 'Backfill missing workouts'}
+            </button>
+            {backfillMsg && (
+              <p className="text-xs max-w-[420px] text-right" style={{ color: 'var(--text-muted)' }}>
+                {backfillMsg}
+              </p>
+            )}
           </div>
         </div>
 

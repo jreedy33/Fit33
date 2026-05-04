@@ -65,6 +65,12 @@ const WRITE_ACTIONS = new Set([
   // mutates `new_user_journey_reports.review_status`.
   'generate_new_user_report',
   'update_nuj_report_status',
+  // Workout Intelligence (#156) — manual backfill of `ai_workout_reports`
+  // for users on TestFlight builds < 1.38(64) (the build that introduced
+  // the iOS-side `enqueue_quality_workout_for_analysis` hook). Idempotent
+  // server-side via UNIQUE(workout_id) but writes Anthropic-bound queue
+  // rows + scoring updates → must be audit-logged + rate-limited.
+  'backfill_workout_intel',
 ])
 const BULK_ACTIONS = new Set([
   'bulk_update_bug_reports', 'bulk_update_crash_reports',
@@ -4416,6 +4422,134 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ rows, total: count || 0 })
       }
 
+      // ─────────────────────────────────────────────────────────────────────
+      // backfill_workout_intel — manually enqueue past workouts that the
+      // iOS app never enqueued. Needed because the
+      // `enqueue_quality_workout_for_analysis` hook only landed in build
+      // 1.38(64) (Migration #156, 2026-04-29) — every workout finished
+      // before that build, or by a user still on an older TestFlight,
+      // is silently invisible to the Workout Intelligence pipeline.
+      //
+      // Two RPCs, both already granted to service_role + idempotent:
+      //   1. score_workout_quality(p_workout_id) — fills
+      //      workout_history.quality_score / quality_band if NULL.
+      //   2. enqueue_quality_workout_for_analysis(p_workout_id) — inserts
+      //      a `pending` row in ai_workout_reports if there isn't one
+      //      already (UNIQUE(workout_id) + ON CONFLICT DO NOTHING).
+      //
+      // Cron `analyze-quality-workout-run` (every 10 min) drains the
+      // `pending` rows on its next tick. No edge call needed from here.
+      // ─────────────────────────────────────────────────────────────────────
+      case 'backfill_workout_intel': {
+        const { userId, limit: rawLimit } = params as { userId?: string; limit?: number }
+        const lim = Math.min(Math.max(1, Number(rawLimit) || 200), 500)
+
+        // Resolve userId (UUID or email substring → user_id list). Empty/
+        // missing => backfill across ALL users in one run, capped by `lim`.
+        let scopedUserIds: string[] | null = null
+        if (userId && typeof userId === 'string' && userId.trim()) {
+          const v = userId.trim()
+          if (/^[0-9a-fA-F-]{36}$/.test(v)) {
+            scopedUserIds = [v]
+          } else {
+            const { data: prof } = await admin.from('user_profiles')
+              .select('id')
+              .ilike('email', `%${sanitizeSearch(v)}%`)
+              .limit(50)
+            scopedUserIds = (prof || []).map((p: { id: string }) => p.id)
+            if (scopedUserIds.length === 0) {
+              return NextResponse.json({
+                scanned: 0, scored: 0, enqueued: 0, skipped: 0, errors: 0,
+                message: `No user matched "${v}".`,
+              })
+            }
+          }
+        }
+
+        // Find workout_history rows that don't yet have an ai_workout_reports
+        // row. Strategy: pull `lim*5` recent completed workouts (scoped by
+        // user if specified), then check which already have a report row in
+        // a single bounded `IN(...)` query. Skips already-enqueued ones.
+        let candidateQ = admin.from('workout_history')
+          .select('id, user_id, quality_score, is_completed, date')
+          .eq('is_completed', true)
+          .order('date', { ascending: false })
+          .limit(lim * 5)
+
+        if (scopedUserIds) {
+          candidateQ = candidateQ.in('user_id', scopedUserIds)
+        }
+
+        const { data: candidates, error: candErr } = await candidateQ
+        if (candErr) {
+          return NextResponse.json({ error: candErr.message }, { status: 500 })
+        }
+
+        const candidateIds = (candidates || []).map((w: { id: string }) => w.id)
+        let existingIds = new Set<string>()
+        if (candidateIds.length > 0) {
+          const { data: existingRows, error: existErr } = await admin.from('ai_workout_reports')
+            .select('workout_id')
+            .in('workout_id', candidateIds)
+          if (existErr) {
+            return NextResponse.json({ error: existErr.message }, { status: 500 })
+          }
+          existingIds = new Set((existingRows || []).map((r: { workout_id: string }) => r.workout_id))
+        }
+
+        const todo = (candidates || [])
+          .filter((w: { id: string }) => !existingIds.has(w.id))
+          .slice(0, lim)
+
+        let scored = 0
+        let enqueued = 0
+        let skipped = 0
+        let errors = 0
+        const errorSamples: string[] = []
+
+        for (const w of todo as Array<{ id: string; quality_score: number | null }>) {
+          // 1. score (idempotent — re-scoring writes the same value).
+          //    Skip the RPC if the row already has a score; saves a roundtrip.
+          if (w.quality_score == null) {
+            const { error: scoreErr } = await admin.rpc('score_workout_quality', { p_workout_id: w.id })
+            if (scoreErr) {
+              errors++
+              if (errorSamples.length < 3) errorSamples.push(`score ${w.id.slice(0, 8)}: ${scoreErr.message}`)
+              continue
+            }
+            scored++
+          }
+
+          // 2. enqueue (idempotent — UNIQUE(workout_id) ON CONFLICT DO NOTHING).
+          const { data: enqRes, error: enqErr } = await admin.rpc('enqueue_quality_workout_for_analysis', { p_workout_id: w.id })
+          if (enqErr) {
+            errors++
+            if (errorSamples.length < 3) errorSamples.push(`enqueue ${w.id.slice(0, 8)}: ${enqErr.message}`)
+            continue
+          }
+          // RPC returns { success, queued, reason } — `queued: false` means
+          // the workout didn't qualify (score < 60). Count it as skipped.
+          const r = enqRes as { success?: boolean; queued?: boolean; reason?: string } | null
+          if (r && r.queued === true) {
+            enqueued++
+          } else {
+            skipped++
+          }
+        }
+
+        return NextResponse.json({
+          scanned: todo.length,
+          scored,
+          enqueued,
+          skipped,
+          errors,
+          errorSamples,
+          message: enqueued > 0
+            ? `Enqueued ${enqueued} workout${enqueued === 1 ? '' : 's'}. Cron drains them within 10 minutes.`
+            : 'No new workouts needed enqueueing.',
+        })
+      }
+
       case 'get_workout_intel_report': {
         const { id } = params
         if (!id || typeof id !== 'string') {
@@ -4621,10 +4755,16 @@ export async function POST(req: NextRequest) {
       // Edge fn: generate-new-user-report (Anthropic optional)
       // See SUPABASE migration `20260803_new_user_journey_tracking.sql`.
 
+      // NOTE: PostgREST embeds (e.g. `user_profiles(...)`) require a direct FK
+      // between the two tables. `new_user_journey_*` tables FK to `auth.users(id)`,
+      // not `public.user_profiles(id)`, so embeds error out with PGRST200 and
+      // the list silently returns empty. We fetch the parent row(s) first, then
+      // do a second `user_profiles` lookup keyed by user_id and merge in JS.
+
       case 'get_nuj_enrollments': {
         const { limit = 50, only_active } = params as { limit?: number; only_active?: boolean }
         let query = admin.from('new_user_journey_enrollment')
-          .select('*, user_profiles(name, email, username)')
+          .select('*')
           .order('enrolled_at', { ascending: false })
           .limit(Math.min(Math.max(limit, 1), 200))
         if (only_active) {
@@ -4632,16 +4772,35 @@ export async function POST(req: NextRequest) {
         }
         const { data, error } = await query
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        return NextResponse.json({ enrollments: data })
+
+        const rows = data ?? []
+        const userIds = Array.from(new Set(rows.map(r => (r as { user_id: string }).user_id))).filter(Boolean)
+        let profilesById = new Map<string, { name: string | null; email: string | null; username: string | null }>()
+        if (userIds.length > 0) {
+          const { data: profiles, error: profilesErr } = await admin
+            .from('user_profiles')
+            .select('id, name, email, username')
+            .in('id', userIds)
+          if (profilesErr) return NextResponse.json({ error: profilesErr.message }, { status: 500 })
+          profilesById = new Map((profiles ?? []).map(p => [
+            (p as { id: string }).id,
+            { name: (p as { name: string | null }).name, email: (p as { email: string | null }).email, username: (p as { username: string | null }).username },
+          ]))
+        }
+        const enrollments = rows.map(r => ({
+          ...r,
+          user_profiles: profilesById.get((r as { user_id: string }).user_id) ?? null,
+        }))
+        return NextResponse.json({ enrollments })
       }
 
       case 'get_nuj_user_detail': {
         const { user_id } = params as { user_id: string }
         if (!user_id) return NextResponse.json({ error: 'Missing user_id' }, { status: 400 })
 
-        const [enrollmentRes, sessionsRes, reportsRes, recentEventsRes] = await Promise.all([
+        const [enrollmentRes, sessionsRes, reportsRes, recentEventsRes, profileRes] = await Promise.all([
           admin.from('new_user_journey_enrollment')
-            .select('*, user_profiles(name, email, username)')
+            .select('*')
             .eq('user_id', user_id)
             .maybeSingle(),
           admin.from('new_user_journey_sessions')
@@ -4658,11 +4817,18 @@ export async function POST(req: NextRequest) {
             .eq('user_id', user_id)
             .order('occurred_at', { ascending: false })
             .limit(200),
+          admin.from('user_profiles')
+            .select('name, email, username')
+            .eq('id', user_id)
+            .maybeSingle(),
         ])
 
         if (enrollmentRes.error) return NextResponse.json({ error: enrollmentRes.error.message }, { status: 500 })
+        const enrollment = enrollmentRes.data
+          ? { ...enrollmentRes.data, user_profiles: profileRes.data ?? null }
+          : null
         return NextResponse.json({
-          enrollment: enrollmentRes.data,
+          enrollment,
           sessions: sessionsRes.data ?? [],
           reports: reportsRes.data ?? [],
           recent_events: recentEventsRes.data ?? [],
@@ -4673,11 +4839,19 @@ export async function POST(req: NextRequest) {
         const { report_id } = params as { report_id: string }
         if (!report_id) return NextResponse.json({ error: 'Missing report_id' }, { status: 400 })
         const { data, error } = await admin.from('new_user_journey_reports')
-          .select('*, user_profiles(name, email, username)')
+          .select('*')
           .eq('id', report_id)
           .maybeSingle()
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-        return NextResponse.json({ report: data })
+        if (!data) return NextResponse.json({ report: null })
+
+        const { data: profile, error: profileErr } = await admin
+          .from('user_profiles')
+          .select('name, email, username')
+          .eq('id', (data as { user_id: string }).user_id)
+          .maybeSingle()
+        if (profileErr) return NextResponse.json({ error: profileErr.message }, { status: 500 })
+        return NextResponse.json({ report: { ...data, user_profiles: profile ?? null } })
       }
 
       case 'get_nuj_cohort_summary': {

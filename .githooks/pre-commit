@@ -52,4 +52,48 @@ if [ -f "$REPO_ROOT/scripts/pre_commit_migration_check.sh" ]; then
   fi
 fi
 
+# Resolves: directive existence check — when staged migrations contain
+# `-- Resolves: <fingerprint>` directives, verify each fingerprint exists
+# in either bug_intelligence_fingerprints or bug_intel_resolved_history.
+# This catches typos / stale hashes before the migration deploys. We use
+# --existence-only because the FP is by definition "still open" pre-deploy
+# (the migration hasn't run yet); a post-deploy daily audit handles the
+# stricter "did the directive actually drain it?" check.
+#
+# Skips silently when no migrations are staged or audit script is missing.
+# Skips silently when SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY are unset
+# (offline-safe — never blocks an offline commit).
+STAGED_MIGRATIONS=$(git diff --cached --name-only --diff-filter=AM | grep -E '^supabase/.*\.sql$' || true)
+
+if [ -n "$STAGED_MIGRATIONS" ] && [ -f "$REPO_ROOT/scripts/audit_resolves_directives.py" ]; then
+  HAS_DIRECTIVES=0
+  for f in $STAGED_MIGRATIONS; do
+    if grep -qiE '^[[:space:]\*\-/]*Resolves:[[:space:]]*[a-f0-9]{32}' "$REPO_ROOT/$f" 2>/dev/null; then
+      HAS_DIRECTIVES=1
+      break
+    fi
+  done
+
+  if [ "$HAS_DIRECTIVES" = "1" ]; then
+    if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -f "$REPO_ROOT/.env" ]; then
+      DRIFT=0
+      for f in $STAGED_MIGRATIONS; do
+        if ! python3 "$REPO_ROOT/scripts/audit_resolves_directives.py" \
+                --migration "$f" \
+                --existence-only \
+                --quiet-when-clean \
+                --strict 2>/dev/null; then
+          DRIFT=1
+        fi
+      done
+      if [ "$DRIFT" = "1" ] && [ "${STRICT_RESOLVES:-0}" = "1" ]; then
+        echo ""
+        echo "pre-commit: Resolves: directive references a fingerprint not in the DB." >&2
+        echo "            Likely a typo / stale hash. Set STRICT_RESOLVES=0 to bypass." >&2
+        exit 1
+      fi
+    fi
+  fi
+fi
+
 exit 0

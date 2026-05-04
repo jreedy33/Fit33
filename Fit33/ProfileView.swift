@@ -1274,7 +1274,7 @@ struct ProfileView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
 
-                        Text("Olympian \(OlympianPathService.currentSeasonYear)")
+                            Text("Olympian \(String(OlympianPathService.currentSeasonYear))")
                             .font(.caption)
                             .fontWeight(.semibold)
                             .foregroundColor(.primary)

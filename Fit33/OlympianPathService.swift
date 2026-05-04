@@ -251,6 +251,13 @@ final class OlympianPathService: ObservableObject {
     /// Loading state — `true` while `loadCurrentSeason()` is in flight.
     @Published private(set) var isLoading: Bool = false
 
+    /// Last load failure surfaced to the empty-state card. Populated when
+    /// `assign_olympian_path` throws (most often: migration not deployed
+    /// yet, RLS misconfig, or assignment-short EXCEPTION) so the user
+    /// sees the actual server message instead of a silent blank page.
+    /// Cleared on successful load.
+    @Published private(set) var lastLoadError: String?
+
     /// Set when the current season was just minted (33/33 unlocked); the
     /// celebration overlay reads + clears this. Drives
     /// `OlympianCelebrationOverlay` in the same way `pendingTierPromotion`
@@ -315,8 +322,12 @@ final class OlympianPathService: ObservableObject {
         // 2. Ask the server for the user's 33 (idempotent)
         guard let response = await assignPath(year: year, archetype: resolvedArchetype) else {
             AppLogger.warning("OlympianPathService: assign_olympian_path returned nil (year=\(year))", category: .general)
+            // lastLoadError is already populated by `assignPath`'s catch
             return
         }
+
+        // Server responded — clear any prior error before continuing
+        lastLoadError = nil
 
         // 3. Use the SERVER-provided archetype (frozen at first assignment)
         if let serverArch = response.archetype.flatMap(OlympianArchetype.init(rawValue:)) {
@@ -386,7 +397,31 @@ final class OlympianPathService: ObservableObject {
                 .value
             return response
         } catch {
-            AppLogger.error("assign_olympian_path failed: \(error.localizedDescription)", category: .general)
+            // Surface the real Postgres / network error to the user-facing
+            // empty state. Common cases worth distinguishing:
+            //   • PGRST202 / "function … does not exist" → migration not
+            //     deployed; retry won't help until SQL runs.
+            //   • "Olympian assignment short" → seed pool incomplete; the
+            //     ALTER TABLE / INSERT INTO achievements step partially
+            //     failed mid-migration.
+            //   • 401 / 403 → auth state / RLS regression.
+            // Stripped of the "PostgrestError(...)" wrapper noise so the
+            // copy fits the empty-state card cleanly.
+            let raw = error.localizedDescription
+            let cleaned: String = {
+                if let range = raw.range(of: #"message: "(.*?)""#, options: .regularExpression) {
+                    let extracted = String(raw[range])
+                        .replacingOccurrences(of: #"message: ""#, with: "", options: .regularExpression)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                    return extracted.isEmpty ? raw : extracted
+                }
+                return raw
+            }()
+            self.lastLoadError = cleaned
+            AppLogger.error(
+                "assign_olympian_path failed: \(raw)",
+                category: .general
+            )
             return nil
         }
     }
@@ -409,6 +444,34 @@ final class OlympianPathService: ObservableObject {
         let cache = Dictionary(uniqueKeysWithValues:
             BadgeService.shared.achievements.map { ($0.achievementKey, $0) }
         )
+
+        // Distinguish "RPC returned nothing" (server bug / migration mid-fail)
+        // from "RPC returned 33 but local achievement cache is missing those
+        // rows" (BadgeService.fetchAchievements race / category filter regression).
+        // Both produce a blank UI but need different fixes, so we surface them.
+        let missingKeys: [String] = assignments
+            .map(\.achievementKey)
+            .filter { cache[$0] == nil }
+
+        if assignments.isEmpty {
+            self.lastLoadError = "Server returned 0 goals. Migration may not be fully applied — check seed pool."
+            AppLogger.warning(
+                "OlympianPathService.rebuildGoals: 0 assignments returned from server",
+                category: .general
+            )
+        } else if missingKeys.count == assignments.count {
+            self.lastLoadError = "Goals assigned but achievement rows missing from local cache. Try Force Quit + reopen."
+            AppLogger.warning(
+                "OlympianPathService.rebuildGoals: assignments=\(assignments.count) but cache lacks all keys (sample: \(missingKeys.prefix(3).joined(separator: ", ")))",
+                category: .general
+            )
+        } else if !missingKeys.isEmpty {
+            // Partial mismatch — surface as a warning, but still render what we have.
+            AppLogger.warning(
+                "OlympianPathService.rebuildGoals: \(missingKeys.count) of \(assignments.count) keys missing from cache (sample: \(missingKeys.prefix(3).joined(separator: ", ")))",
+                category: .general
+            )
+        }
 
         let mapped: [OlympianGoal] = assignments.compactMap { a in
             guard let row = cache[a.achievementKey] else { return nil }

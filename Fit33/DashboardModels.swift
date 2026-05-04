@@ -465,7 +465,7 @@ struct OlympianAlmostThereCard: View {
                 .shadow(color: goldAccent.opacity(0.4), radius: 6, x: 0, y: 2)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(remaining) to go for Olympian \(year)")
+                    Text("\(remaining) to go for Olympian \(String(year))")
                         .font(.subheadline)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
@@ -498,7 +498,7 @@ struct OlympianAlmostThereCard: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
-        .accessibilityLabel("\(remaining) goals remaining to reach Olympian \(year)")
+        .accessibilityLabel("\(remaining) goals remaining to reach Olympian \(String(year))")
         .accessibilityHint("Tap to open the Olympian Path detail screen.")
     }
 }

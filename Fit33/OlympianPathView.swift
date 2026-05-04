@@ -32,6 +32,13 @@ struct OlympianPathView: View {
 
     private var year: Int { OlympianPathService.currentSeasonYear }
 
+    /// Year as a string with NO grouping separator (`"2026"` not `"2,026"`).
+    /// SwiftUI's default `Text("\(intValue)")` runs through Locale-aware
+    /// number formatting and inserts thousands separators. Years are
+    /// identifiers, not quantities — they should never group. Used in every
+    /// "Path to YYYY" / "Olympian YYYY" string in this view.
+    private var yearText: String { String(year) }
+
     /// True between Dec 27 and Jan 7 (inclusive) — the window the year-end
     /// recap card surfaces in the detail screen. The window straddles the
     /// year boundary deliberately so the user can share their *previous*
@@ -60,8 +67,21 @@ struct OlympianPathView: View {
                         yearEndRecapCard
                     }
 
-                    ForEach(1...5, id: \.self) { tier in
-                        tierSection(tier: tier)
+                    if service.goals.isEmpty {
+                        // Empty-state cases (in priority order):
+                        //   • Loading on first open — show skeleton
+                        //   • Migration not yet deployed to this Supabase
+                        //     project (assignments table empty / RPC
+                        //     missing) — show "setting up" copy + retry
+                        //   • Network failure — same UI, retry restores
+                        // We never let the screen go blank below the
+                        // header card; the user paid $0 for these 33
+                        // goals but they paid attention to find them.
+                        emptyStateCard
+                    } else {
+                        ForEach(1...5, id: \.self) { tier in
+                            tierSection(tier: tier)
+                        }
                     }
 
                     if !service.seasonBadges.isEmpty {
@@ -74,7 +94,7 @@ struct OlympianPathView: View {
             }
             .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Path to \(year)")
+        .navigationTitle("Path to \(yearText)")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -99,6 +119,101 @@ struct OlympianPathView: View {
         .sheet(item: $yearEndShareItem) { item in
             ShareSheet(items: [item.shareText])
         }
+    }
+
+    // MARK: - Empty state (no goals loaded yet)
+
+    /// Shown when the path returns 0 goals — covers three real cases:
+    ///   1. First-open loading (the 200-300ms before the RPC resolves)
+    ///   2. Migration not yet deployed (`assign_olympian_path` 404s OR
+    ///      `achievements` table has no `olympian_path` rows so
+    ///      `rebuildGoals` filter-misses every assignment)
+    ///   3. Transient network failure
+    /// Same card for all three so the user is never staring at a blank
+    /// page below the header. Pull-to-refresh and the "Try again" tap
+    /// both call `loadCurrentSeason(force: true)`.
+    private var emptyStateCard: some View {
+        let goldAccent = Color(red: 1.00, green: 0.84, blue: 0.00)
+
+        return VStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(goldAccent.opacity(0.12))
+                    .frame(width: 64, height: 64)
+                Image(systemName: service.isLoading ? "hourglass" : "crown.fill")
+                    .font(.title)
+                    .foregroundStyle(LinearGradient(
+                        colors: [goldAccent, service.archetype.accent],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                    .symbolEffect(.bounce, value: service.isLoading)
+            }
+
+            Text(service.isLoading
+                 ? "Setting up your 33 goals…"
+                 : "Your 33 goals aren't loaded yet")
+                .font(.ds_heading3)
+                .fontWeight(.bold)
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.center)
+
+            Text(service.isLoading
+                 ? "Picking goals tailored to your path. This only happens once a year."
+                 : "Pull down to refresh, or tap below to try again. If this keeps happening, the Olympian Path migration may not be live yet for your account.")
+                .font(.ds_bodySmall)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Spacing.sm)
+
+            // Surface the actual server error if there is one. This is the
+            // single most useful debug signal during the rollout — a
+            // PGRST202 means "migration not deployed", a "Olympian
+            // assignment short" means "seed pool incomplete", an auth
+            // error means "session expired". Without this, every failure
+            // looks identical to the user.
+            if !service.isLoading, let err = service.lastLoadError {
+                Text(err)
+                    .font(.ds_caption)
+                    .foregroundColor(.orange.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Spacing.sm)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.orange.opacity(0.08))
+                    )
+                    .accessibilityLabel("Server error: \(err)")
+            }
+
+            if !service.isLoading {
+                Button(action: {
+                    HapticManager.tap()
+                    Task { await service.loadCurrentSeason(force: true) }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Try again")
+                            .fontWeight(.bold)
+                    }
+                    .font(.ds_labelLarge)
+                    .foregroundColor(.black)
+                    .padding(.horizontal, Spacing.lg)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule().fill(LinearGradient(
+                            colors: [goldAccent, service.archetype.accent],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ))
+                    )
+                }
+                .accessibilityHint("Refreshes the Olympian Path from the server.")
+            }
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity)
+        .adaptiveSleekCard(cornerRadius: 20, accentColor: goldAccent)
     }
 
     // MARK: - Year-end recap card
@@ -133,8 +248,8 @@ struct OlympianPathView: View {
             }
 
             Text(isFromBadge
-                 ? "You hit Olympian \(recapYear). Share the moment."
-                 : "Your \(recapYear) run: \(completed) of 33. Share the milestone you're proudest of.")
+                 ? "You hit Olympian \(String(recapYear)). Share the moment."
+                 : "Your \(String(recapYear)) run: \(completed) of 33. Share the milestone you're proudest of.")
                 .font(.ds_bodyMedium)
                 .foregroundColor(.primary)
                 .lineLimit(3)
@@ -215,7 +330,7 @@ struct OlympianPathView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Your Path to Olympian \(year)")
+                    Text("Your Path to Olympian \(yearText)")
                         .font(.ds_heading3)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
@@ -354,7 +469,7 @@ struct OlympianPathView: View {
                         endPoint: .bottomTrailing
                     )
                 )
-            Text("\(badge.seasonYear)")
+            Text(String(badge.seasonYear))
                 .font(.caption)
                 .fontWeight(.bold)
                 .foregroundColor(.primary)

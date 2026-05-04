@@ -60,7 +60,9 @@
     - `transient_single_incident` — Phase 12 single-incident drainer (≥14 days silent + occ=1 + user=1 + transient class)
     - `noise_filter_expanded` — Phase 9/10 + Phase 12 denylist expansion
     - `migration_resolved:<id>` — `mark_fingerprints_resolved_by_migration` from a `Resolves:` directive
-    - `silent_fix:matched_root_cause:<source_fp>` — Phase 13 cross-source twin of an already-resolved FP
+    - `silent_fix:matched_root_cause:<source_fp>` — Phase 13 cross-source twin of an already-resolved FP (root_cause OR Phase-14b structural-fingerprint match)
+    - `silent_fix:build_aged_out:<src>:<live>` — **Phase 14 (#193, 2026-05-04)**: drained because `last_seen_build < live_max_build − 5` AND silent ≥7d AND unclaimed. `<src>` = the FP's last_seen_build, `<live>` = the live cohort max at drain time. Cron `45 4 * * *` daily. Cosmetically excluded from the silent-fix counter (same as `transient_single_incident`).
+    - `code_fix:<sub>` — manual close-out via `20260*_bug_intel_*_drain.sql` migrations (e.g. `code_fix:classifier_routing`, `code_fix:warning_downgrade`, `code_fix:debug_only_path`). Use exact subcategory strings; the `audit_resolves_directives.py` audit infers intent from `Resolves:` description text (matches "classifier_routing", "warning_downgrade", "migration_resolved", "silent_fix", "code_fix").
 16. **Migration → fingerprint resolution convention**: every fix-bearing migration's header includes `-- Resolves: <fingerprint-md5> <short justification>` lines. The deploy hook (or manual replay) calls `mark_fingerprints_resolved_by_migration('<migration_id>', ARRAY[...])`. **PR REQUIREMENT**: any migration that fixes a known FP MUST include the directive in its header AND the index entry MUST mention which FPs it resolves. Phase 13 backfilled 8 missing replays — don't accumulate that debt again.
 17. **`fixed_in_build` triggers regression detection.** When admin triage stamps a build, the rollup auto-flips `regressed_after_fix=true` if `last_seen_build > fixed_in_build` (per `bug_intel_compare_semver`). Genuine regressions are non-negotiable export inclusions even past the 48h stale-fix grace window.
 
@@ -126,6 +128,7 @@
 - `v_bug_intelligence_inbox` (`security_invoker = on`) — pending reports joined with FPs for CMS inbox
 - `v_bug_intelligence_metrics` (`security_invoker = on`) — per-agent leaderboard
 - `bug_intel_improvement_tracker` (`security_invoker = on`) — latest-two-snapshot deltas
+- `v_bug_intel_classifier_coverage` (`security_invoker = on`, **Phase 14a #193**) — error_class × open-FP × noise-filter coverage with operator-readable `coverage_action` PROPOSE rows ("PROPOSE: add `bug_intel_noise_filter` row for this pg_code" / "PROPOSE: classify these FPs (error_class = unknown)"). Drives the next-sprint CMS classifier-coverage panel
 
 ### Database — RPCs (most-used at the top)
 
@@ -140,7 +143,9 @@
 | `bug_intel_recompute_severity()` | `20260528` | Hourly batch recompute (cron `10 * * * *`) |
 | `bug_intel_calibrate_severity_weights(window_days)` | `20260531` | Nightly observability (cron `30 0 * * *`) |
 | `bug_intel_find_similar_resolutions(...)` | `20260530` (+ `20260714` Phase-13 gate) | Top-N past resolutions for triage handoff |
-| `bug_intel_resolve_by_root_cause()` | `20260714` | Nightly cross-source twin drain (cron `45 0 * * *`) |
+| `bug_intel_resolve_by_root_cause()` | `20260714` | Nightly cross-source twin drain by `root_cause_fingerprint` (cron `45 0 * * *`) |
+| `bug_intel_resolve_by_structural_fp()` | `20260504_…_phase14_…structural…` (#194) | **Phase 14b** — twin-drain by `structural_fingerprint` for message-shape twins Phase 13 misses (cron `50 0 * * *`) |
+| `bug_intel_resolve_build_aged_out(p_build_cushion=5, p_min_silent_days=7)` | `20260504_…_phase14_build_aged_resolver.sql` (#193) | **Phase 14a** — drain FPs whose `last_seen_build` is >cushion builds behind live cohort AND silent ≥days. Computes `live_max_build` dynamically from `crash_reports` last 3 days; bails out if no cohort observed (cron `45 4 * * *`) |
 | `bug_intel_patch_root_cause_fingerprint()` | `20260714` | Post-rollup patch (cron `10 4 * * *`) |
 | `bug_intel_resolve_single_incident_transients()` | `20260527` | Single-incident drainer (cron `30 4 * * *`) |
 | `bug_intel_revive_regressed_fingerprints(grace_h)` | `20260623` | Re-open auto-resolved on regression (cron `20 * * * *`) |
@@ -183,13 +188,15 @@
 
 ### CI / scripts / docs
 
-- `scripts/classifier_lint.py` — PR gate enforcing invariant 1
+- `scripts/classifier_lint.py` — PR gate enforcing invariant 1; supports `--root=<file>` for per-staged-file pre-commit invocation (file-mode bug fixed 2026-05-04 — was silently no-op'ing every staged file since 2026-04-27 because `os.walk(<file>)` yields nothing)
+- `scripts/audit_resolves_directives.py` — **Phase 14 (2026-05-04)**: parses every `-- Resolves: <md5>` directive in `supabase/*.sql` and verifies the FP exists in either `bug_intelligence_fingerprints` (live) OR `bug_intel_resolved_history` (archive). Modes: `--existence-only` for pre-commit (only checks typo, skips status), `--strict` for CI / post-deploy gate (exit 1 on `still_open` or `not_found`), `--quiet-when-clean` for hook ergonomics. Classifications: `ok` / `archived_ok` / `still_open` / `not_found` / `drained_by_other_reason`. Uses `curl` instead of `urllib` because of LibreSSL cert chain inconsistency on macOS toolchains
+- `.githooks/pre-commit` — runs (1) `classifier_lint.py` per staged Swift file (warn-only unless `STRICT_CLASSIFIER=1`), (2) `pre_commit_migration_check.sh` (hard fail on `MIGRATION_INDEX.md` drift), (3) `audit_resolves_directives.py --existence-only` per staged migration with `Resolves:` directives (warn-only unless `STRICT_RESOLVES=1`; offline-safe)
 - `.github/workflows/classifier-lint.yml` — runs the script
 - `.github/workflows/bug-intel-rpc-smoke.yml` — calls the smoke edge function
 - `.github/workflows/bug-intel-release-gate.yml` — blocks release when high-severity fingerprints exceed budget
 - `.github/workflows/bug-intel-resolves-deploy.yml` — auto-replays `Resolves:` directives post-migration deploy
 - `BUG_INTEL_BACKLOG.md` — working list of unmatched error classes / pipeline gaps
-- `supabase/MIGRATION_INDEX.md` §"Sprint 8 — Bug Intelligence Pipeline" through §"Phase 13 — Collapse + Classify"
+- `supabase/MIGRATION_INDEX.md` §"Sprint 8 — Bug Intelligence Pipeline" through §"Phase 14 — Self-Tuning Drain"
 
 ---
 
@@ -203,12 +210,14 @@
 | `17 */4 * * *` | `triage-bugs-run` | `trigger_triage_bugs()` | 4h Claude triage tick |
 | `20 * * * *` | `bug-intel-revive-regressed-fingerprints` | `bug_intel_revive_regressed_fingerprints(48)` | Hourly regression revive |
 | `30 0 * * *` | `bug-intel-severity-calibration` | `bug_intel_calibrate_severity_weights(60)` | Nightly weights observability |
-| `45 0 * * *` | `bug-intel-resolve-by-root-cause` | `bug_intel_resolve_by_root_cause()` | Cross-source twin drain |
+| `45 0 * * *` | `bug-intel-resolve-by-root-cause` | `bug_intel_resolve_by_root_cause()` | Cross-source twin drain by `root_cause_fingerprint` |
+| `50 0 * * *` | `bug-intel-resolve-by-structural-fp` | `bug_intel_resolve_by_structural_fp()` | **Phase 14b (#194)**: twin drain by `structural_fingerprint` for message-shape twins |
 | `30 3 * * *` | `bug-intel-retention-cleanup` | `cleanup_bug_intelligence_rollup()` | Rollup/trend retention |
 | `45 3 * * *` | `cleanup-bug-intelligence-reports` | `cleanup_bug_intelligence_reports()` | Old terminal report prune |
 | `15 4 * * *` | `bug-intel-cleanup-stale` | `cleanup_stale_bug_reports()` | Terminal noise cleanup |
 | `10 4 * * *` | `bug-intel-patch-root-cause-fingerprint` | `bug_intel_patch_root_cause_fingerprint()` | Post-rollup root_cause patch |
 | `30 4 * * *` | `bug-intel-single-incident-autoresolve` | `bug_intel_resolve_single_incident_transients()` | 14-day single-incident drain |
+| `45 4 * * *` | `bug-intel-build-aged-out-autoresolve` | `bug_intel_resolve_build_aged_out()` | **Phase 14a (#193)**: build-cohort drain (cushion=5, silent_days=7) |
 
 ---
 
@@ -230,6 +239,7 @@
 | 12 | `20260526–31` (+ `20260623`, `20260627`) | Call-site capture, single-incident resolver, `severity_score`, `Resolves:` RPC, resolved history + `find_similar_resolutions`, severity weights + calibration, regression auto-revive |
 | 12.5 | `20260614` | `latest_resolving_migration_at` + 48h stale-fix export filter |
 | 13 | `20260714` | `root_cause_fingerprint`, `bug_intel_extract_pg_code`, classifier rewrite, similar-resolution gate, `bug_intel_resolve_by_root_cause`, root_cause patch cron, inline `Resolves:` backfill |
+| 14 | `20260504` (#193, #194) + `scripts/audit_resolves_directives.py` + `classifier_lint.py --root=<file>` fix | **Self-tuning drain**: build-aged-out auto-resolver (cushion=5/silent=7d, dynamic live cohort from `crash_reports`), structural-fingerprint twin collapse (catches message-shape twins Phase 13 misses), `v_bug_intel_classifier_coverage` view with PROPOSE rows, `Resolves:` directive existence audit (live + history lookup, `--existence-only` for pre-commit, `--strict` for CI), pre-commit hook wires both audits in warn-only mode |
 
 ---
 
@@ -244,7 +254,7 @@ When ANY agent ships a change, this agent asks:
 5. **New silent push / background task?** → does the catch path classify failures correctly (transient vs error vs expectedUserState)?
 6. **New transient-by-design failure mode?** → `bug_intel_noise_filter` row + Swift classifier branch in same commit?
 7. **New error_class observed in `class=unknown` reports?** → `bug_intel_classify_error` heuristic + `BUG_INTEL_BACKLOG.md` entry?
-8. **Migration that fixes a known FP?** → `-- Resolves: <md5>` directive in header + `MIGRATION_INDEX.md` entry mentions the FPs?
+8. **Migration that fixes a known FP?** → `-- Resolves: <md5>` directive in header + `MIGRATION_INDEX.md` entry mentions the FPs? Pre-commit existence audit (`audit_resolves_directives.py --existence-only`) catches typos; daily strict audit (`--strict`) catches still-open drift 24h post-deploy.
 9. **CMS export schema change?** → `formatExportAsMarkdown` AND `triage-bugs/index.ts` SYSTEM_PROMPT updated together?
 10. **New cron job in the pipeline?** → `cron.unschedule` before `cron.schedule` for idempotency + entry in §Cron schedule above?
 

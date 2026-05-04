@@ -599,7 +599,7 @@ struct WidgetSettingsSheet: View {
                             )
                     }
 
-                    Text("Your 33 personalized goals to Olympian \(OlympianPathService.currentSeasonYear)")
+                    Text("Your 33 personalized goals to Olympian \(String(OlympianPathService.currentSeasonYear))")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(2)

@@ -61,6 +61,12 @@ struct DashboardOlympianWidget: View {
 
     private var year: Int { OlympianPathService.currentSeasonYear }
 
+    /// Year as plain digits — `Text("\(intYear)")` adds a thousands
+    /// separator (renders `2,026`) because SwiftUI runs Int interpolation
+    /// through the Locale number formatter. Years are identifiers, not
+    /// quantities; always render via this stringified value.
+    private var yearText: String { String(year) }
+
     private var ringProgress: Double {
         let p = service.progress
         guard p.total > 0 else { return 0 }
@@ -142,7 +148,7 @@ struct DashboardOlympianWidget: View {
             .shadow(color: tierAccent.opacity(colorScheme == .dark ? 0.4 : 0.3), radius: 8, x: 0, y: 4)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Path to \(year)")
+                Text("Path to \(yearText)")
                     .font(.ds_labelLarge)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
@@ -207,7 +213,7 @@ struct DashboardOlympianWidget: View {
             VStack(alignment: .leading, spacing: 6) {
                 tierDots
                 Text(service.seasonComplete
-                     ? "Olympian \(year) — Complete"
+                     ? "Olympian \(yearText) — Complete"
                      : "\(33 - service.progress.completed) goals to Olympian")
                     .font(.ds_labelMedium)
                     .fontWeight(.semibold)

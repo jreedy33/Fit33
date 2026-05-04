@@ -250,8 +250,21 @@ def main() -> int:
         print(f"classifier_lint: source root not found: {root}", file=sys.stderr)
         return 0
 
+    # `--root` accepts EITHER a directory (default: scan all .swift under it)
+    # OR a single file (used by the `.githooks/pre-commit` per-staged-file
+    # invocation). Without this branch the file path silently no-ops because
+    # `os.walk` on a file yields nothing — meaning the pre-commit hook was
+    # silently passing every staged file (regression introduced when the
+    # hook switched from full-tree scan to staged-only scan, 2026-04-27).
+    if root.is_file():
+        if not root.name.endswith(".swift"):
+            return 0
+        files_to_scan = [root]
+    else:
+        files_to_scan = sorted(iter_swift_files(root))
+
     all_violations: List[dict] = []
-    for f in sorted(iter_swift_files(root)):
+    for f in files_to_scan:
         try:
             rel = f.relative_to(REPO)
         except ValueError:
@@ -274,10 +287,14 @@ def main() -> int:
             # outer brace.
             line_for_diag = v.get("applogger_line") or v.get("catch_line")
             print(f"{v['file']}:{line_for_diag}: warning: [CLASSIFIER LINT] {v['message']}")
+        try:
+            scope_label = root.relative_to(REPO)
+        except ValueError:
+            scope_label = root
         print(
             f"[CLASSIFIER LINT] {len(all_violations)} violation"
             f"{'' if len(all_violations) == 1 else 's'} "
-            f"in {root.relative_to(REPO)}.",
+            f"in {scope_label}.",
             file=sys.stderr,
         )
 

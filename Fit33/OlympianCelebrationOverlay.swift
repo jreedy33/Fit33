@@ -116,7 +116,7 @@ struct OlympianCelebrationOverlay: View {
                 .scaleEffect(iconScale)
 
                 VStack(spacing: Spacing.sm) {
-                    Text("OLYMPIAN \(badge.seasonYear)")
+                    Text("OLYMPIAN \(String(badge.seasonYear))")
                         .font(.ds_displayLarge)
                         .fontWeight(.black)
                         .tracking(2)
@@ -143,7 +143,7 @@ struct OlympianCelebrationOverlay: View {
                     .padding(.vertical, 6)
                     .background(Capsule().fill(Color.white.opacity(0.12)))
 
-                    Text("Your Olympian \(badge.seasonYear) badge is on your profile forever.")
+                    Text("Your Olympian \(String(badge.seasonYear)) badge is on your profile forever.")
                         .font(.ds_bodyMedium)
                         .foregroundColor(.white.opacity(0.75))
                         .multilineTextAlignment(.center)
@@ -152,7 +152,7 @@ struct OlympianCelebrationOverlay: View {
                 }
                 .opacity(textOpacity)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Olympian \(badge.seasonYear). All 33 goals complete on the \(archetype.displayName).")
+                .accessibilityLabel("Olympian \(String(badge.seasonYear)). All 33 goals complete on the \(archetype.displayName).")
 
                 HStack(spacing: Spacing.md) {
                     Button(action: {

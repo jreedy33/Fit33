@@ -83,6 +83,7 @@ class BadgeService: ObservableObject {
     // MARK: - Fetch
     
     func fetchAchievements(forUserId userId: UUID? = nil) async {
+        let startedAt = Date()
         do {
             var params: [String: String] = [:]
             if let userId = userId {
@@ -98,7 +99,20 @@ class BadgeService: ObservableObject {
                 self.achievements = result
             }
         } catch {
-            AppLogger.error("Failed to fetch achievements: \(error.localizedDescription)", category: .general)
+            // QP invariant 25a: route through NetworkErrorClassifier so
+            // CancellationError (tab switch / dashboard re-render mid-fetch)
+            // and transient 401s classify as `.transientNetwork` (warning,
+            // no fingerprint) instead of manufacturing a bug-intel
+            // fingerprint per occurrence. Closes `878468de` (28 occ × 3 users).
+            NetworkErrorClassifier.log(
+                error,
+                context: "Failed to fetch achievements",
+                category: .general,
+                op: PerformanceSignposts.Op.achievementFetch.rawValue,
+                endpoint: "rpc/get_user_achievements",
+                startedAt: startedAt,
+                userId: userId ?? SupabaseManager.shared.currentUser?.id
+            )
         }
     }
     
@@ -106,6 +120,7 @@ class BadgeService: ObservableObject {
     
     @discardableResult
     func checkAndUnlock(key: String, progress: Int = 1) async -> Bool {
+        let startedAt = Date()
         do {
             struct UnlockParams: Encodable {
                 let p_achievement_key: String
@@ -125,7 +140,24 @@ class BadgeService: ObservableObject {
             }
             return unlocked
         } catch {
-            AppLogger.error("Failed to check achievement \(key): \(error.localizedDescription)", category: .general)
+            // QP invariant 25a: every fanout `onWorkoutCompleted` /
+            // `onMealLogged` / etc. invokes `checkAndUnlock` for ~10–20
+            // achievement keys in parallel. When the user navigates
+            // (tab switch on Dashboard return after workout finish),
+            // every in-flight RPC throws `CancellationError` → bare
+            // `AppLogger.error` previously fired a fingerprint per key.
+            // Closes `40779673`/`5c5d0f3c`/`43add712`/`a7b890fd`/
+            // `3840b05d`/`a5e13a94`/`dfb5892d`/`8a3fbd08` cluster (357+
+            // occurrences across 4 users on build 1.39 (68)).
+            NetworkErrorClassifier.log(
+                error,
+                context: "Failed to check achievement \(key)",
+                category: .general,
+                op: PerformanceSignposts.Op.achievementCheck.rawValue,
+                endpoint: "rpc/unlock_achievement",
+                startedAt: startedAt,
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }
@@ -137,6 +169,7 @@ class BadgeService: ObservableObject {
     @discardableResult
     func incrementAndUnlock(key: String, by delta: Int = 1) async -> Bool {
         guard delta > 0 else { return false }
+        let startedAt = Date()
         do {
             struct IncParams: Encodable {
                 let p_achievement_key: String
@@ -156,7 +189,17 @@ class BadgeService: ObservableObject {
             }
             return unlocked
         } catch {
-            AppLogger.error("Failed to increment achievement \(key): \(error.localizedDescription)", category: .general)
+            // Same routing rationale as `checkAndUnlock` above. Companion
+            // call site for additive-delta achievement progress.
+            NetworkErrorClassifier.log(
+                error,
+                context: "Failed to increment achievement \(key)",
+                category: .general,
+                op: PerformanceSignposts.Op.achievementIncrement.rawValue,
+                endpoint: "rpc/increment_achievement_progress",
+                startedAt: startedAt,
+                userId: SupabaseManager.shared.currentUser?.id
+            )
             return false
         }
     }

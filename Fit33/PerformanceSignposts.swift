@@ -125,6 +125,19 @@ enum PerformanceSignposts {
         case foodSearch               = "food.search"
         case foodDetails              = "food.details"
 
+        // Achievements (Cluster I — added 2026-05-07 to drain the
+        // `40779673`/`5c5d0f3c`/`43add712`/`a7b890fd`/`3840b05d`/
+        // `a5e13a94`/`878468de`/`dfb5892d`/`8a3fbd08` cluster, 357+ occ
+        // across 4 users on build 1.39 (68). `AchievementService.checkAndUnlock`
+        // and `fetchAchievements` were AppLogger.error'ing every
+        // CancellationError thrown when a parent task was cancelled
+        // mid-RPC (tab switch on workout completion). Routing through
+        // NetworkErrorClassifier.log(op:) collapses transient cancels to
+        // `.transientNetwork` (warning, no fingerprint) per QPA invariant 25a.
+        case achievementCheck         = "achievement.check_unlock"
+        case achievementIncrement     = "achievement.increment"
+        case achievementFetch         = "achievement.fetch"
+
         // Monetization / In-App Purchase (Phase 1d — added 2026-04-29 per
         // MONETIZATION_AGENT.md invariants 32–33 + BUG_INTELLIGENCE_AGENT
         // invariants 1–2. StoreKit transactions are async network calls —

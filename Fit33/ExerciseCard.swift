@@ -52,6 +52,20 @@ struct ExerciseCard: View {
     @StateObject private var cardRestTimer = RestTimer()
     
     private let cardHeight: CGFloat = 180 // Approximate card height for drag calculations
+
+    // ⚡️ SCROLL PERF: Lift per-render Color allocations to `static let` so the
+    // body closure doesn't re-allocate them every frame. `Color(red:green:blue:)`
+    // is *not* free — it boxes into an `UIColor` the first time SwiftUI rasterizes
+    // it, and re-allocating per re-eval defeats SwiftUI's color identity diff.
+    // (See QUALITY_PERFORMANCE_AGENT.md invariant #20 — same rule, generalized
+    // beyond formatters: any reusable value used inside a hot SwiftUI body that
+    // doesn't depend on view state belongs in a `static let`.)
+    private static let activeAccentColor = Color(red: 0.0, green: 0.7, blue: 1.0)
+    private static let inactiveAccentColor = Color(white: 0.5)
+    private static let setsBackgroundColor = Color(red: 0.08, green: 0.08, blue: 0.10)
+    private static let activeAccentShadowColor = Color(red: 0.0, green: 0.7, blue: 1.0).opacity(0.25)
+    private static let activeAccentTintColor = Color(red: 0.0, green: 0.7, blue: 1.0).opacity(0.15)
+    private static let baseShadowColor = Color.black.opacity(0.3)
     
     // Computed property to determine if this exercise is currently being worked on
     private var isExerciseActive: Bool {
@@ -72,17 +86,52 @@ struct ExerciseCard: View {
             
             // Sets — dark
             setsRows
-                .background(Color(red: 0.08, green: 0.08, blue: 0.10))
+                .background(Self.setsBackgroundColor)
             
             // Add set button — dark
             addSetButton
-                .background(Color(red: 0.08, green: 0.08, blue: 0.10))
+                .background(Self.setsBackgroundColor)
         }
-        .background(SleekCardBackground(cornerRadius: CornerRadius.xl, accentColor: isActiveCard ? Color(red: 0.0, green: 0.7, blue: 1.0) : Color(white: 0.5)))
+        // ⚡️ SCROLL PERF (2026-05-04): the active-workout scroll was visibly
+        // laggy vs. the Exercise Library scroll. The dominant cost was THIS
+        // exact modifier chain — `SleekCardBackground` is a 5-layer ZStack
+        // (4 RoundedRectangle gradient/stroke layers + 1 with `.blur(radius: 4)`),
+        // and the dual `.shadow(...)` modifiers below each independently
+        // re-rasterized that entire 5-layer composite + all card content
+        // (sets, buttons, headers) to compute a shadow alpha — TWO offscreen
+        // passes per scroll frame per visible card.
+        //
+        // Two surgical fixes flatten this:
+        //   1. `.drawingGroup()` on the background: the background is pure
+        //      shapes/gradients (no text — `.drawingGroup()`'s usual gotcha
+        //      doesn't apply), so it's safe to rasterize the 5 layers into
+        //      a single Metal texture once per (size, accent, colorScheme)
+        //      change. SleekCardBackground only re-rasterizes when
+        //      `isActiveCard` flips — never per scroll frame.
+        //   2. `.compositingGroup()` AFTER `.clipShape(...)` and BEFORE the
+        //      shadows: this flattens the (already-rasterized background +
+        //      content) into a single offscreen buffer ONCE, so both
+        //      `.shadow()` modifiers operate on that flat buffer instead of
+        //      re-rasterizing the full subtree twice. Canonical SwiftUI
+        //      shadow-stacking optimization (see QUALITY_PERFORMANCE_AGENT
+        //      invariant #28).
+        //
+        // We also drop `.contentShape(RoundedRectangle(... .continuous))` —
+        // it computed a continuous-corner Bezier hit-test path on every
+        // render (and the default rectangular hit area covers the entire
+        // card just fine), and we lift all `Color(red:...)` literals to
+        // `static let` so the body doesn't re-allocate them per re-eval.
+        .background(
+            SleekCardBackground(
+                cornerRadius: CornerRadius.xl,
+                accentColor: isActiveCard ? Self.activeAccentColor : Self.inactiveAccentColor
+            )
+            .drawingGroup()
+        )
         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
-        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
-        .shadow(color: isActiveCard ? Color(red: 0.0, green: 0.7, blue: 1.0).opacity(0.25) : .clear, radius: 16, x: 0, y: 0)
-        .contentShape(RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous))
+        .compositingGroup()
+        .shadow(color: Self.baseShadowColor, radius: 10, x: 0, y: 5)
+        .shadow(color: isActiveCard ? Self.activeAccentShadowColor : .clear, radius: 16, x: 0, y: 0)
         // Plain `.onTapGesture` (NOT `.simultaneousGesture`) so the embedded
         // `Menu` ("..." actions) and `Button`s (shuffle / favorite) cleanly
         // absorb their own taps without ALSO firing this card-level focus
@@ -107,12 +156,12 @@ struct ExerciseCard: View {
                 Text(formatCountdownTime(cardRestTimer.timeRemaining))
                     .font(.system(.caption, design: .monospaced))
                     .fontWeight(.semibold)
-                    .foregroundColor(Color(red: 0.0, green: 0.7, blue: 1.0))
+                    .foregroundColor(Self.activeAccentColor)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
-                            .fill(Color(red: 0.0, green: 0.7, blue: 1.0).opacity(0.15))
+                            .fill(Self.activeAccentTintColor)
                     )
                     .padding(10)
             }
@@ -123,7 +172,7 @@ struct ExerciseCard: View {
                 TimerBorderShape(cornerRadius: CornerRadius.xl)
                     .trim(from: cardRestTimer.visualProgress, to: 1)
                     .stroke(
-                        Color(red: 0.0, green: 0.7, blue: 1.0),
+                        Self.activeAccentColor,
                         style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
                     )
                     .padding(1.5)
@@ -131,7 +180,7 @@ struct ExerciseCard: View {
                 // Selected card — full electric blue glow
                 RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
                     .strokeBorder(
-                        Color(red: 0.0, green: 0.7, blue: 1.0),
+                        Self.activeAccentColor,
                         lineWidth: 2.5
                     )
             }
@@ -333,40 +382,46 @@ struct ExerciseCard: View {
                         showingExerciseDetail = true
                     }
                 }
-                .onLongPressGesture(minimumDuration: 0.75, pressing: { isPressing in
-                    // Don't do anything on pressing - wait for the full duration
-                    AppLogger.debug("👆 Long press pressing: \(isPressing)", category: .workout)
+                .onLongPressGesture(minimumDuration: 0.75, pressing: { _ in
+                    // Pressing-state ticks fire on EVERY touch-down/up over the
+                    // exercise title, including innocuous taps that turn into a
+                    // vertical scroll. We do NOT log here — see comment on the
+                    // simultaneousGesture below for the full performance story.
                 }, perform: {
-                    // Long press completed - NOW activate drag mode
-                    AppLogger.debug("✅ Long press completed - activating drag mode for index \(currentIndex)", category: .workout)
                     let generator = UIImpactFeedbackGenerator(style: .medium)
                     generator.impactOccurred()
                     onDragChanged?(currentIndex)
                 })
                 .simultaneousGesture(
-                    DragGesture(minimumDistance: 5, coordinateSpace: .global)
+                    // ⚡️ SCROLL PERF (2026-05-04): this DragGesture USED to fire
+                    // hundreds of `AppLogger.warning("⚠️ Drag ignored …")` calls
+                    // PER SECOND while the user was simply scrolling the active
+                    // workout. Cause: SwiftUI dispatches `.onChanged` on every
+                    // touch movement past `minimumDistance`, and each
+                    // `AppLogger.warning` synchronously runs string interpolation
+                    // + `AdvancedSessionLogger.log` + extras-dict allocation +
+                    // `os.Logger` dispatch on the main thread. At 60+ events/s
+                    // that's a multi-second main-thread freeze (the user saw
+                    // `0fps for 5622ms` in `ProductionFPSMonitor`). Two fixes:
+                    //   1. SILENT no-op when not in drag mode. Hot-path gesture
+                    //      handlers must NEVER log — see QUALITY_PERFORMANCE_AGENT
+                    //      invariant #29.
+                    //   2. Bump `minimumDistance` 5 → 25 to match
+                    //      `swiftui-rules.mdc` (sub-25 thresholds compete with
+                    //      vertical scroll and fire `.onChanged` for every
+                    //      casual scroll touch that originates on the title).
+                    DragGesture(minimumDistance: 25, coordinateSpace: .local)
                         .onChanged { value in
-                            guard isBeingDragged else { 
-                                AppLogger.warning("⚠️ Drag ignored - not in drag mode", category: .workout)
-                                return 
-                            }
+                            guard isBeingDragged else { return }
                             dragOffset = value.translation.height
-                            
-                            // Calculate target index and notify parent
+
                             let movement = Int(round(value.translation.height / cardHeight))
                             let targetIndex = max(0, min(totalCount - 1, currentIndex + movement))
                             onDragChanged?(targetIndex)
                         }
-                        .onEnded { value in
-                            guard isBeingDragged else { 
-                                AppLogger.warning("⚠️ Drag end ignored - not in drag mode", category: .workout)
-                                return 
-                            }
-                            AppLogger.debug("🏁 Drag gesture ended", category: .workout)
-                            // Reset drag offset instantly - parent handles the rest
+                        .onEnded { _ in
+                            guard isBeingDragged else { return }
                             dragOffset = 0
-                            
-                            // Notify parent to finalize the move
                             onDragEnded?()
                             let generator = UINotificationFeedbackGenerator()
                             generator.notificationOccurred(.success)

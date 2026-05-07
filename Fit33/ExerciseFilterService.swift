@@ -464,6 +464,94 @@ final class ExerciseFilterService {
         "Medicine Ball", "Battle Ropes", "Foam Roller"
     ]
     
+    // MARK: - Equipment Cohorts (Stability/Feel-Based Grouping)
+    //
+    // Canonical 3-cohort taxonomy used by `ExerciseSwapService` to bias
+    // same-family equipment variants toward the source's stability/feel
+    // cohort. The axis is "stability demand on the lifter" — which is what
+    // users actually pick equipment on (a Machine source is a deliberate
+    // pick of low stabilizer demand; surfacing a Barbell variant of the
+    // same exercise as the top swap violates that intent).
+    //
+    // Keyed on snake_case `equipment_category` values from the catalog
+    // (the canonical 16 categories per the Fitness Expert agent doc).
+    // `foam_roller` is intentionally `.recovery` — never a swap target
+    // for a strength exercise.
+    enum EquipmentCohort: String {
+        case stableGuided        // machine, cable, smith_machine — fixed/semi-fixed path
+        case freeWeight          // barbell, dumbbell, ez_bar, kettlebell, plate, medicine_ball
+        case bodyweightElastic   // bodyweight, band, trx, gymnastic_rings, pull_up_bar, stability_ball
+        case recovery            // foam_roller (never a swap target)
+        case unknown
+    }
+
+    /// Snake_case `equipment_category` → cohort.
+    static let equipmentCohortMap: [String: EquipmentCohort] = [
+        "machine": .stableGuided,
+        "cable": .stableGuided,
+        "smith_machine": .stableGuided,
+
+        "barbell": .freeWeight,
+        "dumbbell": .freeWeight,
+        "ez_bar": .freeWeight,
+        "kettlebell": .freeWeight,
+        "plate": .freeWeight,
+        "medicine_ball": .freeWeight,
+
+        "bodyweight": .bodyweightElastic,
+        "band": .bodyweightElastic,
+        "trx": .bodyweightElastic,
+        "gymnastic_rings": .bodyweightElastic,
+        "pull_up_bar": .bodyweightElastic,
+        "stability_ball": .bodyweightElastic,
+
+        "foam_roller": .recovery,
+    ]
+
+    /// Resolve an exercise's equipment-category (snake_case raw value, or a
+    /// user-display alias) to its canonical cohort.
+    static func equipmentCohort(forCategory category: String?) -> EquipmentCohort {
+        guard let raw = category?.lowercased().trimmingCharacters(in: .whitespaces),
+              !raw.isEmpty else { return .unknown }
+        if let direct = equipmentCohortMap[raw] { return direct }
+        if let mapped = equipmentCategoryMap[raw] {
+            return equipmentCohort(forUserCategory: mapped)
+        }
+        return equipmentCohort(forUserCategory: raw)
+    }
+
+    /// Map user-display categories ("Dumbbells", "Cables", etc.) → cohort.
+    /// Used as a fallback when callers pass non-snake_case values.
+    private static func equipmentCohort(forUserCategory userCategory: String) -> EquipmentCohort {
+        switch userCategory.lowercased() {
+        case "machines", "cables", "smith machine":
+            return .stableGuided
+        case "dumbbells", "barbell", "kettlebell", "medicine ball":
+            return .freeWeight
+        case "bodyweight", "resistance bands", "trx/rings", "stability ball", "pull-up bar":
+            return .bodyweightElastic
+        case "foam roller":
+            return .recovery
+        default:
+            return .unknown
+        }
+    }
+
+    /// Cohort closeness ladder (0-100).
+    /// 100 = same cohort, 60-70 = adjacent (Stable/Guided ↔ Free Weight, Free Weight ↔ Bodyweight),
+    /// 50 = far (Stable/Guided ↔ Bodyweight), 0 = recovery boundary or unknown.
+    static func cohortCloseness(_ a: EquipmentCohort, _ b: EquipmentCohort) -> Int {
+        if a == .unknown || b == .unknown { return 0 }
+        if a == .recovery || b == .recovery { return 0 }
+        if a == b { return 100 }
+        switch (a, b) {
+        case (.stableGuided, .freeWeight), (.freeWeight, .stableGuided): return 70
+        case (.freeWeight, .bodyweightElastic), (.bodyweightElastic, .freeWeight): return 60
+        case (.stableGuided, .bodyweightElastic), (.bodyweightElastic, .stableGuided): return 50
+        default: return 0
+        }
+    }
+
     /// Equipment mapping from database format to user-selectable categories
     /// This handles the updated equipment format (e.g., "Cable Machine" → "Cables")
     static let equipmentCategoryMap: [String: String] = [

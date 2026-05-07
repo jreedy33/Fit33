@@ -414,6 +414,7 @@ struct ExerciseSubstitutionView: View {
                         let reason: SubstituteExercise.MatchReason = {
                             switch suggestion.swapType {
                             case .equipmentVariant: return .sameEquipment
+                            case .adjacentFamily: return .sameMuscle
                             case .complementary: return .samePattern
                             case .similar: return .popular
                             }

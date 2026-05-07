@@ -309,6 +309,7 @@ struct SmartExerciseSwapView: View {
         let typeColor: Color = {
             switch suggestion.swapType {
             case .equipmentVariant: return .blue
+            case .adjacentFamily: return .indigo
             case .complementary: return .purple
             case .similar: return .gray
             }

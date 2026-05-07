@@ -20,12 +20,14 @@ struct SwapSuggestion: Identifiable {
     
     enum SwapType: String {
         case equipmentVariant = "Same Movement"      // Same family, different equipment
-        case complementary = "Complementary"          // Different family, works well together
+        case adjacentFamily = "Same Muscle"           // Different family, shares primary muscle
+        case complementary = "Complementary"          // Antagonist / pairing partner from complementaryFamilies
         case similar = "Similar"                      // Fallback algorithmic match
         
         var icon: String {
             switch self {
             case .equipmentVariant: return "arrow.triangle.swap"
+            case .adjacentFamily: return "figure.strengthtraining.traditional"
             case .complementary: return "sparkles"
             case .similar: return "arrow.triangle.2.circlepath"
             }
@@ -34,6 +36,7 @@ struct SwapSuggestion: Identifiable {
         var color: String {
             switch self {
             case .equipmentVariant: return "blue"
+            case .adjacentFamily: return "indigo"
             case .complementary: return "purple"
             case .similar: return "gray"
             }
@@ -68,8 +71,74 @@ final class ExerciseSwapService: ObservableObject {
         let fallback: [SwapSuggestion]
     }
     
+    // MARK: - Cohort Ranking Constants
+    //
+    // Equipment-cohort biasing for swap ranking. Per Fitness Expert ruling
+    // 2026-05-04 — when the user picks a Machine variant they're picking
+    // for stability/joint feel; surfacing a Barbell variant of the same
+    // family violates that intent. Bias values are additive on the same
+    // priority axis as `priority<Goal>` (0-100 scale), so a same-cohort
+    // candidate at priority 70 outranks a cross-cohort candidate at 85.
+    //
+    // Tunable: `sameCohortBonus` flips a 70-priority cable past an
+    // 85-priority barbell while still letting two user-rejections
+    // (swapPenalty grows ~20 per rejection) push the cable below.
+    private static let sameCohortBonus: Double = 25
+    private static let adjacentCohortBonus: Double = 8   // closeness >= 60
+    private static let crossCohortBonus: Double = 0
+    private static let olympicLiftBlock: Double = 1000   // hard-block when source isolation
+
+    /// Olympic-lift family tokens (snake_case `exerciseFamily` values).
+    /// Per FE invariant (beginner safety + appropriateness): never surface
+    /// these as a swap for an isolation source. The user's reported case
+    /// included "Olympic (Barbell) Hammer Curl" being suggested for
+    /// Bicep Curl (Machine) — that's the literal anti-pattern.
+    private static let olympicFamilies: Set<String> = [
+        "clean", "snatch", "jerk",
+        "clean_and_jerk", "hang_clean", "power_clean", "power_snatch",
+        "muscle_snatch", "split_jerk", "push_jerk",
+    ]
+
+    /// Olympic-lift name keywords (catch catalog rows whose `exerciseFamily`
+    /// isn't tagged — a Bicep Curl row whose `name` starts with "Olympic"
+    /// must still be blocked when source is isolation).
+    private static let olympicNameKeywords: Set<String> = [
+        "olympic", "snatch", "clean and jerk", "hang clean", "power clean",
+        "power snatch", "muscle snatch", "split jerk", "push jerk",
+    ]
+
     private init() {
         AppLogger.debug("🔄 [SWAP SERVICE] Initialized", category: .workout)
+    }
+
+    /// Cohort bonus magnitude for a candidate against a source.
+    /// Hard-block via large negative when candidate is an Olympic-lift
+    /// family AND source is isolation (`is_compound = FALSE`).
+    private func cohortAdjustment(
+        for candidate: Exercise,
+        source: Exercise,
+        sourceCohort: ExerciseFilterService.EquipmentCohort,
+        sourceIsCompound: Bool
+    ) -> Double {
+        // Olympic-lift hard-block against isolation source.
+        if !sourceIsCompound {
+            let candidateFamily = ((candidate.value(forKey: "exerciseFamily") as? String) ?? "").lowercased()
+            if Self.olympicFamilies.contains(candidateFamily) {
+                return -Self.olympicLiftBlock
+            }
+            let candidateName = (candidate.name ?? "").lowercased()
+            if Self.olympicNameKeywords.contains(where: { candidateName.contains($0) }) {
+                return -Self.olympicLiftBlock
+            }
+        }
+
+        let candidateCategory = (candidate.value(forKey: "equipmentCategory") as? String)
+            ?? candidate.equipment
+        let candidateCohort = ExerciseFilterService.equipmentCohort(forCategory: candidateCategory)
+        let closeness = ExerciseFilterService.cohortCloseness(sourceCohort, candidateCohort)
+        if closeness >= 100 { return Self.sameCohortBonus }
+        if closeness >= 60  { return Self.adjacentCohortBonus }
+        return Self.crossCohortBonus
     }
     
     /// Pre-compute swap candidates for all exercises in a workout (call at workout start)
@@ -160,8 +229,30 @@ final class ExerciseSwapService: ObservableObject {
                 suggestions: equipmentVariants
             ))
         }
-        
-        // Section 2: Complementary Exercises (different movement, works well together)
+
+        // Section 2: Adjacent-Family Variations (different family, same primary muscle).
+        // The "Reverse Curl / Hammer Curl / Preacher Curl" slot when source is
+        // Bicep Curl — a different movement family that hits the same target.
+        let adjacent = getAdjacentFamilyVariations(
+            for: exercise,
+            sourceFamily: family,
+            userGoal: userGoal,
+            userLocation: userLocation,
+            userEquipment: userEquipment,
+            excludeIds: excludeIds,
+            limit: 4
+        )
+
+        if !adjacent.isEmpty {
+            sections.append(SwapSection(
+                title: "Same Muscle",
+                subtitle: "Different exercise variation",
+                icon: "figure.strengthtraining.traditional",
+                suggestions: adjacent
+            ))
+        }
+
+        // Section 3: Complementary Exercises (different movement, works well together)
         let complementary = getComplementaryExercises(
             for: exercise,
             complementaryFamilies: complementaryFamiliesString,
@@ -306,7 +397,14 @@ final class ExerciseSwapService: ObservableObject {
     
     // MARK: - Private Methods
     
-    /// Get equipment variants (same family, different equipment)
+    /// Get equipment variants (same family, different equipment).
+    ///
+    /// Cohort-biased ranking (FE ruling 2026-05-04): same-cohort candidates
+    /// get +25 priority, adjacent-cohort +8, cross-cohort 0. Olympic-lift
+    /// families are hard-blocked when source is isolation. Effect: a Machine
+    /// source surfaces Cable variants before Barbell variants of the same
+    /// family, even when the Barbell entries score higher on the catalog
+    /// `priority<Goal>` column. Tunable via `sameCohortBonus` constant.
     private func getEquipmentVariants(
         for exercise: Exercise,
         family: String,
@@ -320,10 +418,11 @@ final class ExerciseSwapService: ObservableObject {
         
         let allExercises = ExerciseLibraryService.shared.getAllExercises()
         
-        // Get priority column based on context
         let priorityKey = getPriorityKey(userGoal: userGoal, userLocation: userLocation)
+        let sourceCategory = (exercise.value(forKey: "equipmentCategory") as? String) ?? exercise.equipment
+        let sourceCohort = ExerciseFilterService.equipmentCohort(forCategory: sourceCategory)
+        let sourceIsCompound = (exercise.value(forKey: "isCompound") as? Bool) ?? true
         
-        // Filter to same family, different exercise
         var variants = allExercises.filter { candidate in
             guard let candidateId = candidate.id,
                   candidateId != exercise.id,
@@ -333,7 +432,6 @@ final class ExerciseSwapService: ObservableObject {
             return candidateFamily == family
         }
         
-        // Filter by user equipment if provided
         if !userEquipment.isEmpty {
             let userEquipLower = Set(userEquipment.map { $0.lowercased() })
             variants = variants.filter { candidate in
@@ -342,26 +440,30 @@ final class ExerciseSwapService: ObservableObject {
             }
         }
         
-        // Sort by priority score adjusted by swap history penalty
-        variants.sort { a, b in
-            let aPriority = Double((a.value(forKey: priorityKey) as? Int) ?? 70)
-            let bPriority = Double((b.value(forKey: priorityKey) as? Int) ?? 70)
-            let aPenalty = UserBehaviorLearningEngine.swapPenalty(for: a.name ?? "")
-            let bPenalty = UserBehaviorLearningEngine.swapPenalty(for: b.name ?? "")
-            return (aPriority - aPenalty) > (bPriority - bPenalty)
-        }
-        
-        // Convert to SwapSuggestions
-        return variants.prefix(limit).map { candidate in
-            let equipCat = candidate.value(forKey: "equipmentCategory") as? String ?? "bodyweight"
-            let basePriority = Double((candidate.value(forKey: priorityKey) as? Int) ?? 70)
+        let scored: [(Exercise, Double)] = variants.map { candidate in
+            let priority = Double((candidate.value(forKey: priorityKey) as? Int) ?? 70)
             let penalty = UserBehaviorLearningEngine.swapPenalty(for: candidate.name ?? "")
-            
+            let cohortBonus = cohortAdjustment(
+                for: candidate,
+                source: exercise,
+                sourceCohort: sourceCohort,
+                sourceIsCompound: sourceIsCompound
+            )
+            return (candidate, priority - penalty + cohortBonus)
+        }
+        // Drop hard-blocked candidates entirely (negative cohortBonus pushes
+        // their score below zero — there's no realistic priority/penalty
+        // combo that recovers a -1000 hit).
+        .filter { $0.1 > -500 }
+        .sorted { $0.1 > $1.1 }
+        
+        return scored.prefix(limit).map { (candidate, score) in
+            let equipCat = candidate.value(forKey: "equipmentCategory") as? String ?? "bodyweight"
             return SwapSuggestion(
                 exercise: candidate,
                 swapType: .equipmentVariant,
                 reason: "\(equipCat.capitalized) variation",
-                priorityScore: Int(basePriority - penalty)
+                priorityScore: Int(score)
             )
         }
     }
@@ -424,27 +526,150 @@ final class ExerciseSwapService: ObservableObject {
             }
         }
         
-        // Combine and sort (factoring in swap history penalty)
+        // Combine and sort (priority + swap penalty + cohort bonus reduced
+        // by half — cohort matters less for "totally different exercise"
+        // rows than for equipment variants per FE ruling).
+        let sourceCategory = (exercise.value(forKey: "equipmentCategory") as? String) ?? exercise.equipment
+        let sourceCohort = ExerciseFilterService.equipmentCohort(forCategory: sourceCategory)
+        let sourceIsCompound = (exercise.value(forKey: "isCompound") as? Bool) ?? true
+
         let combined = primaryFirst + others
-        let sorted = combined.sorted { a, b in
-            let aPriority = Double((a.value(forKey: priorityKey) as? Int) ?? 70)
-            let bPriority = Double((b.value(forKey: priorityKey) as? Int) ?? 70)
-            let aPenalty = UserBehaviorLearningEngine.swapPenalty(for: a.name ?? "")
-            let bPenalty = UserBehaviorLearningEngine.swapPenalty(for: b.name ?? "")
-            return (aPriority - aPenalty) > (bPriority - bPenalty)
-        }
-        
-        // Convert to SwapSuggestions
-        return sorted.prefix(limit).map { candidate in
-            let baseName = candidate.value(forKey: "baseExerciseName") as? String ?? candidate.name ?? ""
-            let basePriority = Double((candidate.value(forKey: priorityKey) as? Int) ?? 70)
+        let scored: [(Exercise, Double)] = combined.map { candidate in
+            let priority = Double((candidate.value(forKey: priorityKey) as? Int) ?? 70)
             let penalty = UserBehaviorLearningEngine.swapPenalty(for: candidate.name ?? "")
-            
+            let cohortBonus = cohortAdjustment(
+                for: candidate,
+                source: exercise,
+                sourceCohort: sourceCohort,
+                sourceIsCompound: sourceIsCompound
+            ) * 0.4   // half-strength bias for complementary slot
+            return (candidate, priority - penalty + cohortBonus)
+        }
+        .filter { $0.1 > -500 }
+        .sorted { $0.1 > $1.1 }
+
+        return scored.prefix(limit).map { (candidate, score) in
+            let baseName = candidate.value(forKey: "baseExerciseName") as? String ?? candidate.name ?? ""
             return SwapSuggestion(
                 exercise: candidate,
                 swapType: .complementary,
                 reason: baseName,
-                priorityScore: Int(basePriority - penalty)
+                priorityScore: Int(score)
+            )
+        }
+    }
+
+    /// Get adjacent-family variations: exercises in a DIFFERENT
+    /// `exerciseFamily` that share the source's #1 primary muscle.
+    /// This is the "Reverse Curl / Hammer Curl / Preacher Curl" slot when
+    /// the source is `Bicep Curl (Machine)` — same target muscle, different
+    /// movement family, NOT a complementary pairing.
+    ///
+    /// Excludes families already listed in source's `complementaryFamilies`
+    /// so the slate's Row 2 and Row 3 don't collide. Same cohort bias as
+    /// equipment variants (preferred but not required).
+    private func getAdjacentFamilyVariations(
+        for exercise: Exercise,
+        sourceFamily: String,
+        userGoal: String,
+        userLocation: String,
+        userEquipment: [String],
+        excludeIds: Set<UUID>,
+        limit: Int
+    ) -> [SwapSuggestion] {
+        // The Core Data `Exercise` entity attribute is `muscleGroups`
+        // (Transformable NSArray of String) — there is NO `primaryMuscles`
+        // KVC key. The previous `value(forKey: "primaryMuscles")` raised
+        // NSUnknownKeyException → SIGABRT every time the user opened the
+        // Custom Workout Builder's overdue suggestions sheet (bug-intel
+        // `1a0c9263`, REGRESSED on build 1.39 (68) after a fix that
+        // didn't hold). Read via the typed accessor like the rest of the
+        // codebase (`WorkoutGeneratorService`, `ProgramGenerationAudit`,
+        // `ActiveWorkoutView+Persistence`).
+        let primaryMuscles = ((exercise.muscleGroups as? [String]) ?? [])
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty }
+        guard let topMuscle = primaryMuscles.first else { return [] }
+
+        // Exclude families that are already in the complementaryFamilies CSV
+        // (they belong on Row 3 — don't surface them twice).
+        let complementaryFamiliesString = (exercise.value(forKey: "complementaryFamilies") as? String) ?? ""
+        let complementarySet: Set<String> = Set(
+            complementaryFamiliesString
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+                .filter { !$0.isEmpty }
+        )
+
+        let sourceFamilyLower = sourceFamily.lowercased()
+        let priorityKey = getPriorityKey(userGoal: userGoal, userLocation: userLocation)
+        let sourceCategory = (exercise.value(forKey: "equipmentCategory") as? String) ?? exercise.equipment
+        let sourceCohort = ExerciseFilterService.equipmentCohort(forCategory: sourceCategory)
+        let sourceIsCompound = (exercise.value(forKey: "isCompound") as? Bool) ?? true
+
+        let allExercises = ExerciseLibraryService.shared.getAllExercises()
+
+        var candidates = allExercises.filter { candidate in
+            guard let candidateId = candidate.id,
+                  candidateId != exercise.id,
+                  !excludeIds.contains(candidateId) else { return false }
+            let candidateFamily = ((candidate.value(forKey: "exerciseFamily") as? String) ?? "").lowercased()
+            if candidateFamily.isEmpty { return false }
+            if candidateFamily == sourceFamilyLower { return false }
+            if complementarySet.contains(candidateFamily) { return false }
+            // Same fix as the source-side read above — typed accessor on
+            // the canonical `muscleGroups` attribute, NOT KVC on a non-
+            // existent `primaryMuscles` key. (bug-intel `1a0c9263`)
+            let candidateMuscles = ((candidate.muscleGroups as? [String]) ?? [])
+                .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            return candidateMuscles.contains(topMuscle)
+        }
+
+        if !userEquipment.isEmpty {
+            let userEquipLower = Set(userEquipment.map { $0.lowercased() })
+            candidates = candidates.filter { candidate in
+                let equipCat = (candidate.value(forKey: "equipmentCategory") as? String ?? "bodyweight").lowercased()
+                return userEquipLower.contains(equipCat) || equipCat == "bodyweight"
+            }
+        }
+
+        // Prefer one entry per (different) family — primary variant first.
+        var seenFamilies: Set<String> = []
+        var primaryFirst: [Exercise] = []
+        var others: [Exercise] = []
+        for candidate in candidates {
+            let family = ((candidate.value(forKey: "exerciseFamily") as? String) ?? "").lowercased()
+            let isPrimary = (candidate.value(forKey: "isEquipmentPrimary") as? Bool) ?? false
+            if isPrimary && !seenFamilies.contains(family) {
+                primaryFirst.append(candidate)
+                seenFamilies.insert(family)
+            } else {
+                others.append(candidate)
+            }
+        }
+
+        let combined = primaryFirst + others
+        let scored: [(Exercise, Double)] = combined.map { candidate in
+            let priority = Double((candidate.value(forKey: priorityKey) as? Int) ?? 70)
+            let penalty = UserBehaviorLearningEngine.swapPenalty(for: candidate.name ?? "")
+            let cohortBonus = cohortAdjustment(
+                for: candidate,
+                source: exercise,
+                sourceCohort: sourceCohort,
+                sourceIsCompound: sourceIsCompound
+            )
+            return (candidate, priority - penalty + cohortBonus)
+        }
+        .filter { $0.1 > -500 }
+        .sorted { $0.1 > $1.1 }
+
+        return scored.prefix(limit).map { (candidate, score) in
+            let baseName = candidate.value(forKey: "baseExerciseName") as? String ?? candidate.name ?? ""
+            return SwapSuggestion(
+                exercise: candidate,
+                swapType: .adjacentFamily,
+                reason: baseName,
+                priorityScore: Int(score)
             )
         }
     }

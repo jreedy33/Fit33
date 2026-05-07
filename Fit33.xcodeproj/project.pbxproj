@@ -20,12 +20,9 @@
 		1ABC401DB6E59CDD4FBDFBFE /* DashboardStreakViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2684E7190B23B3E0D98B717 /* DashboardStreakViews.swift */; };
 		1D5D4F5DA3DA9FB7DF1F1DA8 /* OnboardingInfrastructure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 939742FBB40A49F30A3C3E1B /* OnboardingInfrastructure.swift */; };
 		206D40A999C045BEBB25C348 /* OuraSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB5A1DFFE964AB298BE7010 /* OuraSettingsView.swift */; };
-		7C0D05012F803F0100000001 /* MonetizationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05002F803F0000000001 /* MonetizationState.swift */; };
-		7C0D05032F803F0100000002 /* MonetizationCheatCodeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05022F803F0000000002 /* MonetizationCheatCodeViews.swift */; };
-		7C0D05052F803F0100000003 /* SettingsSubscriptionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05042F803F0000000003 /* SettingsSubscriptionSection.swift */; };
-		7C0D05072F803F0100000004 /* ProRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05062F803F0000000004 /* ProRecapView.swift */; };
 		20C34991BC0CD301AFD3E797 /* SmartProgramMiniCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E748445FAA426582F14ACB75 /* SmartProgramMiniCard.swift */; };
 		215140E880E70DF8CFA8EB1A /* AddExerciseDuringWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E084A5F84A623567A84C480 /* AddExerciseDuringWorkoutView.swift */; };
+		233674C459A7479781D40939 /* RecentCardioCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 790FA252417E43B99A490A73 /* RecentCardioCompletionStore.swift */; };
 		32912B2C4F82F346AF065386 /* PushNotificationDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAE31DB8143B34C9F67019D2 /* PushNotificationDebugView.swift */; };
 		33333861626261352D313262652D343338302D623465642D /* StringArrayValueTransformer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61306134393365612D636432392D343930382D393365622D /* StringArrayValueTransformer.swift */; };
 		3A5A490282C7308CC0EB73ED /* SelectAllTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4042F3898D77AA0F43BE33 /* SelectAllTextField.swift */; };
@@ -57,18 +54,6 @@
 		7C0C41EC2F09BCFD00F02E84 /* FitnessEquipmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41EB2F09BCFD00F02E84 /* FitnessEquipmentView.swift */; };
 		7C0C41EE2F09BD0300F02E84 /* BluetoothFitnessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */; };
 		7C0C41F02F09C91A00F02E84 /* CardioLandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41EF2F09C91A00F02E84 /* CardioLandingView.swift */; };
-		B05A2A0150220502BC050001 /* BrowseAllCardioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0150220502BC050000 /* BrowseAllCardioView.swift */; };
-		B05A2A0250220502BC050003 /* CardioSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0250220502BC050002 /* CardioSessionManager.swift */; };
-		B05A2A0350220502BC050005 /* OutdoorCardioActiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0350220502BC050004 /* OutdoorCardioActiveView.swift */; };
-		B05A2A0450220502BC050007 /* CardioRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0450220502BC050006 /* CardioRecapView.swift */; };
-		B05A2A0550220502BC050009 /* CardioShareCardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */; };
-		B05A2A0650220502BC05000B /* CardioFirstOpenIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */; };
-		B05A2A0750220502BC05000D /* DashboardCardioWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */; };
-		C05A2026050420260001000D /* OlympianPathService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260001000C /* OlympianPathService.swift */; };
-		C05A2026050420260002000D /* DashboardOlympianWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260002000C /* DashboardOlympianWidget.swift */; };
-		C05A2026050420260003000D /* OlympianPathView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260003000C /* OlympianPathView.swift */; };
-		C05A2026050420260004000D /* OlympianCelebrationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260004000C /* OlympianCelebrationOverlay.swift */; };
-		C05A2026050420260005000D /* PaywallFirstScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260005000C /* PaywallFirstScreenView.swift */; };
 		7C0C41F22F09C91F00F02E84 /* CardioGoalSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */; };
 		7C0C41F42F09C92400F02E84 /* CardioActiveWorkoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */; };
 		7C0C41F62F09CE0100F02E84 /* ExerciseNicknameService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */; };
@@ -84,6 +69,10 @@
 		7C0C428A2F1897E400F02E84 /* ShareWorkoutSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42892F1897E400F02E84 /* ShareWorkoutSheet.swift */; };
 		7C0C428C2F18A4DA00F02E84 /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C428B2F18A4DA00F02E84 /* PushNotificationService.swift */; };
 		7C0C42BE2F194EB700F02E84 /* NativeAdView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0C42BD2F194EB700F02E84 /* NativeAdView.swift */; };
+		7C0D05012F803F0100000001 /* MonetizationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05002F803F0000000001 /* MonetizationState.swift */; };
+		7C0D05032F803F0100000002 /* MonetizationCheatCodeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05022F803F0000000002 /* MonetizationCheatCodeViews.swift */; };
+		7C0D05052F803F0100000003 /* SettingsSubscriptionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05042F803F0000000003 /* SettingsSubscriptionSection.swift */; };
+		7C0D05072F803F0100000004 /* ProRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C0D05062F803F0000000004 /* ProRecapView.swift */; };
 		7C1B0A372F4F74380094AF68 /* SupabaseDTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1B0A362F4F74380094AF68 /* SupabaseDTOs.swift */; };
 		7C1B0A392F4F74520094AF68 /* Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1B0A382F4F74520094AF68 /* Secrets.swift */; };
 		7C1B0A532F4F7D5C0094AF68 /* SocialSystemSimulatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1B0A522F4F7D5C0094AF68 /* SocialSystemSimulatorView.swift */; };
@@ -233,7 +222,6 @@
 		7C8CF1482F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */; };
 		7C8CF4722F9FA437007CD766 /* DailyBriefTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4712F9FA437007CD766 /* DailyBriefTemplates.swift */; };
 		7C8CF4732F9FA437007CD766 /* DailyBriefStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4702F9FA437007CD766 /* DailyBriefStore.swift */; };
-		233674C459A7479781D40939 /* RecentCardioCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 790FA252417E43B99A490A73 /* RecentCardioCompletionStore.swift */; };
 		7C8CF4742F9FA437007CD766 /* DailyBriefEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF46F2F9FA437007CD766 /* DailyBriefEngine.swift */; };
 		7C8CF4772F9FA463007CD766 /* V2Analyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */; };
 		7C8CF4782F9FA463007CD766 /* WelcomeBriefRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */; };
@@ -412,6 +400,13 @@
 		A56D4A399CE1B55A533EF264 /* MealPlanComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD54B3F97813EA9F3A90228 /* MealPlanComponents.swift */; };
 		AB0C42948B3EFC1DAA689E96 /* OnboardingPhotoPickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC5458D8A66EB61E8BB665F /* OnboardingPhotoPickers.swift */; };
 		ABAB453F8DC93B27AA9FDD26 /* WorkoutUIHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B94982A8B87143C4F2CB59 /* WorkoutUIHelpers.swift */; };
+		B05A2A0150220502BC050001 /* BrowseAllCardioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0150220502BC050000 /* BrowseAllCardioView.swift */; };
+		B05A2A0250220502BC050003 /* CardioSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0250220502BC050002 /* CardioSessionManager.swift */; };
+		B05A2A0350220502BC050005 /* OutdoorCardioActiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0350220502BC050004 /* OutdoorCardioActiveView.swift */; };
+		B05A2A0450220502BC050007 /* CardioRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0450220502BC050006 /* CardioRecapView.swift */; };
+		B05A2A0550220502BC050009 /* CardioShareCardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */; };
+		B05A2A0650220502BC05000B /* CardioFirstOpenIntroView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */; };
+		B05A2A0750220502BC05000D /* DashboardCardioWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */; };
 		B0B3B0B30000000000000001 /* WorkoutOriginMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B3B0B30000000000000002 /* WorkoutOriginMapper.swift */; };
 		B0B3B0B40000000000000001 /* WorkoutWearableMerger.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B3B0B40000000000000002 /* WorkoutWearableMerger.swift */; };
 		B1234567890123456789A001 /* WorkoutProgramEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1234567890123456789A002 /* WorkoutProgramEngine.swift */; };
@@ -421,6 +416,11 @@
 		B5544A2A92A17C5136C65DA0 /* OnboardingCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DC439CB611C041F0E107CA /* OnboardingCardViews.swift */; };
 		B73342438D839C0B690363BE /* OnboardingLimitationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3949420BA2820C7360DFF975 /* OnboardingLimitationViews.swift */; };
 		BA5F47348D1ED95F4C4593F2 /* NewOnboardingView+Auth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E574927AFCC2F7305B723B1 /* NewOnboardingView+Auth.swift */; };
+		C05A2026050420260001000D /* OlympianPathService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260001000C /* OlympianPathService.swift */; };
+		C05A2026050420260002000D /* DashboardOlympianWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260002000C /* DashboardOlympianWidget.swift */; };
+		C05A2026050420260003000D /* OlympianPathView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260003000C /* OlympianPathView.swift */; };
+		C05A2026050420260004000D /* OlympianCelebrationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260004000C /* OlympianCelebrationOverlay.swift */; };
+		C05A2026050420260005000D /* PaywallFirstScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A2026050420260005000C /* PaywallFirstScreenView.swift */; };
 		CBB944AF8FE077EE026478EF /* TrainingHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 308E48E79BD7DC13649B4812 /* TrainingHubView.swift */; };
 		CCE348C1BA801D31638EA67E /* SimpleMealPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C63A407AADBE0D7C19E3A51F /* SimpleMealPlanView.swift */; };
 		D1CA44CAA0E6DBF2FA54CDCE /* DashboardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0954704AEDC9D0BCAFFB73A /* DashboardModels.swift */; };
@@ -521,6 +521,7 @@
 		6E4042F3898D77AA0F43BE33 /* SelectAllTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SelectAllTextField.swift; path = Fit33/SelectAllTextField.swift; sourceTree = SOURCE_ROOT; };
 		741C41078B34368F572BC6C7 /* ExerciseReplacementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ExerciseReplacementView.swift; path = Fit33/ExerciseReplacementView.swift; sourceTree = SOURCE_ROOT; };
 		77E94FEDA734B8C13DD21DFD /* MealPlanSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MealPlanSetup.swift; path = Fit33/MealPlanSetup.swift; sourceTree = SOURCE_ROOT; };
+		790FA252417E43B99A490A73 /* RecentCardioCompletionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentCardioCompletionStore.swift; sourceTree = "<group>"; };
 		7C0C41CD2F00A63D00F02E84 /* LimitationFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitationFilterEngine.swift; sourceTree = "<group>"; };
 		7C0C41CF2F00B0A900F02E84 /* LimitationRuleTables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitationRuleTables.swift; sourceTree = "<group>"; };
 		7C0C41D12F00B21600F02E84 /* ExerciseMetadataClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseMetadataClassifier.swift; sourceTree = "<group>"; };
@@ -533,18 +534,6 @@
 		7C0C41EB2F09BCFD00F02E84 /* FitnessEquipmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FitnessEquipmentView.swift; sourceTree = "<group>"; };
 		7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothFitnessManager.swift; sourceTree = "<group>"; };
 		7C0C41EF2F09C91A00F02E84 /* CardioLandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioLandingView.swift; sourceTree = "<group>"; };
-		B05A2A0150220502BC050000 /* BrowseAllCardioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseAllCardioView.swift; sourceTree = "<group>"; };
-		B05A2A0250220502BC050002 /* CardioSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioSessionManager.swift; sourceTree = "<group>"; };
-		B05A2A0350220502BC050004 /* OutdoorCardioActiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutdoorCardioActiveView.swift; sourceTree = "<group>"; };
-		B05A2A0450220502BC050006 /* CardioRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioRecapView.swift; sourceTree = "<group>"; };
-		B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioShareCardSheet.swift; sourceTree = "<group>"; };
-		B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioFirstOpenIntroView.swift; sourceTree = "<group>"; };
-		B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardCardioWidget.swift; sourceTree = "<group>"; };
-		C05A2026050420260001000C /* OlympianPathService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlympianPathService.swift; sourceTree = "<group>"; };
-		C05A2026050420260002000C /* DashboardOlympianWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardOlympianWidget.swift; sourceTree = "<group>"; };
-		C05A2026050420260003000C /* OlympianPathView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlympianPathView.swift; sourceTree = "<group>"; };
-		C05A2026050420260004000C /* OlympianCelebrationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlympianCelebrationOverlay.swift; sourceTree = "<group>"; };
-		C05A2026050420260005000C /* PaywallFirstScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallFirstScreenView.swift; sourceTree = "<group>"; };
 		7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioGoalSetupView.swift; sourceTree = "<group>"; };
 		7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioActiveWorkoutView.swift; sourceTree = "<group>"; };
 		7C0C41F52F09CE0100F02E84 /* ExerciseNicknameService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseNicknameService.swift; sourceTree = "<group>"; };
@@ -561,6 +550,10 @@
 		7C0C42892F1897E400F02E84 /* ShareWorkoutSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareWorkoutSheet.swift; sourceTree = "<group>"; };
 		7C0C428B2F18A4DA00F02E84 /* PushNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationService.swift; sourceTree = "<group>"; };
 		7C0C42BD2F194EB700F02E84 /* NativeAdView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAdView.swift; sourceTree = "<group>"; };
+		7C0D05002F803F0000000001 /* MonetizationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonetizationState.swift; sourceTree = "<group>"; };
+		7C0D05022F803F0000000002 /* MonetizationCheatCodeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonetizationCheatCodeViews.swift; sourceTree = "<group>"; };
+		7C0D05042F803F0000000003 /* SettingsSubscriptionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSubscriptionSection.swift; sourceTree = "<group>"; };
+		7C0D05062F803F0000000004 /* ProRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProRecapView.swift; sourceTree = "<group>"; };
 		7C1B0A362F4F74380094AF68 /* SupabaseDTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseDTOs.swift; sourceTree = "<group>"; };
 		7C1B0A382F4F74520094AF68 /* Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secrets.swift; sourceTree = "<group>"; };
 		7C1B0A522F4F7D5C0094AF68 /* SocialSystemSimulatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialSystemSimulatorView.swift; sourceTree = "<group>"; };
@@ -622,10 +615,6 @@
 		7C558B282ED63D3D00A01E1F /* UserManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserManager.swift; sourceTree = "<group>"; };
 		7C590B8C2ED2C1DB002BD2B0 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		7C590B8F2ED2D1DB002BD2B0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		7C0D05002F803F0000000001 /* MonetizationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonetizationState.swift; sourceTree = "<group>"; };
-		7C0D05022F803F0000000002 /* MonetizationCheatCodeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonetizationCheatCodeViews.swift; sourceTree = "<group>"; };
-		7C0D05042F803F0000000003 /* SettingsSubscriptionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSubscriptionSection.swift; sourceTree = "<group>"; };
-		7C0D05062F803F0000000004 /* ProRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProRecapView.swift; sourceTree = "<group>"; };
 		7C590B922ED2E1DB002BD2B0 /* DeveloperAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperAnalyticsView.swift; sourceTree = "<group>"; };
 		7C590B972ED2E2DB002BD2B0 /* SevenDayProgramDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SevenDayProgramDetailView.swift; sourceTree = "<group>"; };
 		7C6DE30A2F5B5A1400BCA276 /* ExerciseDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseDataProvider.swift; sourceTree = "<group>"; };
@@ -717,7 +706,6 @@
 		7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveChallengeWidgetSnapshot.swift; sourceTree = "<group>"; };
 		7C8CF46F2F9FA437007CD766 /* DailyBriefEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyBriefEngine.swift; sourceTree = "<group>"; };
 		7C8CF4702F9FA437007CD766 /* DailyBriefStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyBriefStore.swift; sourceTree = "<group>"; };
-		790FA252417E43B99A490A73 /* RecentCardioCompletionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentCardioCompletionStore.swift; sourceTree = "<group>"; };
 		7C8CF4712F9FA437007CD766 /* DailyBriefTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyBriefTemplates.swift; sourceTree = "<group>"; };
 		7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2Analyzer.swift; sourceTree = "<group>"; };
 		7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeBriefRow.swift; sourceTree = "<group>"; };
@@ -903,6 +891,13 @@
 		A51843319E2F9599DA6EBC99 /* DashboardView+Macros.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "DashboardView+Macros.swift"; path = "Fit33/DashboardView+Macros.swift"; sourceTree = SOURCE_ROOT; };
 		AB2C49A7B94119EE17AEC8D6 /* NutritionDetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NutritionDetailViews.swift; path = Fit33/NutritionDetailViews.swift; sourceTree = SOURCE_ROOT; };
 		AE5149DF9FC46167F14F6A9A /* DashboardWidgetSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DashboardWidgetSettings.swift; path = Fit33/DashboardWidgetSettings.swift; sourceTree = SOURCE_ROOT; };
+		B05A2A0150220502BC050000 /* BrowseAllCardioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowseAllCardioView.swift; sourceTree = "<group>"; };
+		B05A2A0250220502BC050002 /* CardioSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioSessionManager.swift; sourceTree = "<group>"; };
+		B05A2A0350220502BC050004 /* OutdoorCardioActiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutdoorCardioActiveView.swift; sourceTree = "<group>"; };
+		B05A2A0450220502BC050006 /* CardioRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioRecapView.swift; sourceTree = "<group>"; };
+		B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioShareCardSheet.swift; sourceTree = "<group>"; };
+		B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardioFirstOpenIntroView.swift; sourceTree = "<group>"; };
+		B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardCardioWidget.swift; sourceTree = "<group>"; };
 		B0954704AEDC9D0BCAFFB73A /* DashboardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DashboardModels.swift; path = Fit33/DashboardModels.swift; sourceTree = SOURCE_ROOT; };
 		B0B3B0B30000000000000002 /* WorkoutOriginMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutOriginMapper.swift; sourceTree = "<group>"; };
 		B0B3B0B40000000000000002 /* WorkoutWearableMerger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutWearableMerger.swift; sourceTree = "<group>"; };
@@ -915,6 +910,11 @@
 		B92C47D5937FC5C5249B2431 /* NewOnboardingView+Completion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "NewOnboardingView+Completion.swift"; path = "Fit33/NewOnboardingView+Completion.swift"; sourceTree = SOURCE_ROOT; };
 		BAE31DB8143B34C9F67019D2 /* PushNotificationDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PushNotificationDebugView.swift; path = Fit33/PushNotificationDebugView.swift; sourceTree = SOURCE_ROOT; };
 		BBBE4C32A0EB49426E33E81C /* GoButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GoButton.swift; path = Fit33/GoButton.swift; sourceTree = SOURCE_ROOT; };
+		C05A2026050420260001000C /* OlympianPathService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlympianPathService.swift; sourceTree = "<group>"; };
+		C05A2026050420260002000C /* DashboardOlympianWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardOlympianWidget.swift; sourceTree = "<group>"; };
+		C05A2026050420260003000C /* OlympianPathView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlympianPathView.swift; sourceTree = "<group>"; };
+		C05A2026050420260004000C /* OlympianCelebrationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OlympianCelebrationOverlay.swift; sourceTree = "<group>"; };
+		C05A2026050420260005000C /* PaywallFirstScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallFirstScreenView.swift; sourceTree = "<group>"; };
 		C63A407AADBE0D7C19E3A51F /* SimpleMealPlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SimpleMealPlanView.swift; path = Fit33/SimpleMealPlanView.swift; sourceTree = SOURCE_ROOT; };
 		C9F943EB92FA4D6F9EC4F971 /* RenameExerciseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RenameExerciseView.swift; path = Fit33/RenameExerciseView.swift; sourceTree = SOURCE_ROOT; };
 		CA3747D1BED74EEAC4C46388 /* PlateCalculatorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PlateCalculatorView.swift; path = Fit33/PlateCalculatorView.swift; sourceTree = SOURCE_ROOT; };
@@ -2169,7 +2169,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RunningActivityWidget/RunningActivityWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 68;
+				CURRENT_PROJECT_VERSION = 69;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Daily Goals";
@@ -2180,7 +2180,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.40;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -2200,7 +2200,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RunningActivityWidget/RunningActivityWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 68;
+				CURRENT_PROJECT_VERSION = 69;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Daily Goals";
@@ -2211,7 +2211,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.40;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.RunningActivityWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -2231,7 +2231,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33Watch/Fit33Watch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 68;
+				CURRENT_PROJECT_VERSION = 69;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fit33Watch/Info.plist;
@@ -2242,7 +2242,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.40;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
@@ -2265,7 +2265,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33Watch/Fit33Watch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 68;
+				CURRENT_PROJECT_VERSION = 69;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fit33Watch/Info.plist;
@@ -2276,7 +2276,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.40;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
@@ -2422,7 +2422,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 68;
+				CURRENT_PROJECT_VERSION = 69;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2444,7 +2444,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.40;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2460,7 +2460,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 68;
+				CURRENT_PROJECT_VERSION = 69;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2482,7 +2482,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.39;
+				MARKETING_VERSION = 1.40;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fit33.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

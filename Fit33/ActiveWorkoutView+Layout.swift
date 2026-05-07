@@ -57,7 +57,19 @@ extension ActiveWorkoutView {
                 PhoneToWatchLiveWorkoutBridge.shared.clearLive()
             }
             .overlay { settingsPanelOverlay }
-            .overlay(alignment: .bottom) {
+            // Music player lives in `.safeAreaInset(edge: .bottom)` (NOT
+            // a floating `.overlay`) so the underlying `ScrollView` shrinks
+            // its content area to leave clean space above it. This is the
+            // load-bearing piece behind "the bottom set always sits cleanly
+            // above the keyboard or music player when adding a set" —
+            // SwiftUI's automatic keyboard avoidance reduces the visible
+            // scroll area by both the keyboard height AND any safeAreaInset,
+            // so `scrollProxy.scrollTo(card, anchor: .bottom)` lands the
+            // card's bottom edge cleanly above keyboard + music player.
+            // Previously the music player was a floating overlay, which
+            // visually covered the bottom of tall exercise cards
+            // (2026-05-04).
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 if showMusicPlayer {
                     NowPlayingBar()
                         .padding(.horizontal, Spacing.lg)
@@ -89,7 +101,8 @@ extension ActiveWorkoutView {
                         .padding(.top, 8)
                 }
                 
-                // Music player is a floating overlay at the bottom (see mainWorkoutContent)
+                // Music player is a `.safeAreaInset(edge: .bottom)` (see mainWorkoutContent),
+                // so the ScrollView below already accounts for its height.
                 
                 // Workout Notes
                 HStack(spacing: Spacing.xs) {
@@ -178,6 +191,38 @@ extension ActiveWorkoutView {
                                             newSet.reps = lastSet.reps
                                         }
                                         workoutManager.addSetToExercise(id: exerciseId, set: newSet)
+
+                                        // Scroll the entire card up so the new bottom set
+                                        // sits cleanly above the keyboard + music player.
+                                        // Anchor `.bottom` aligns the card's bottom edge
+                                        // with the bottom of the visible scroll area —
+                                        // and because the music player is a
+                                        // `.safeAreaInset(edge: .bottom)` and SwiftUI's
+                                        // automatic keyboard avoidance reduces the
+                                        // visible area by keyboard height, the card's
+                                        // bottom (and therefore the new last set + ADD
+                                        // SET button) lands cleanly above both.
+                                        //
+                                        // We must suppress the auto-focus scroll-to-top
+                                        // that the new set fires via `onFocusChanged`
+                                        // (otherwise it would immediately undo this
+                                        // scroll-to-bottom). The 500ms suppression
+                                        // window covers the 0.3s scroll animation plus
+                                        // a small buffer for keyboard appearance.
+                                        suppressFocusScrollForExerciseId = exerciseId
+                                        Task { @MainActor in
+                                            // Wait one runloop for the LazyVStack to
+                                            // re-measure with the new set's row before
+                                            // computing the scroll target.
+                                            try? await Task.sleep(for: .milliseconds(50))
+                                            withAnimation(.easeInOut(duration: 0.3)) {
+                                                scrollProxy.scrollTo(exerciseId, anchor: .bottom)
+                                            }
+                                            try? await Task.sleep(for: .milliseconds(500))
+                                            if suppressFocusScrollForExerciseId == exerciseId {
+                                                suppressFocusScrollForExerciseId = nil
+                                            }
+                                        }
                                     },
                                     onRemoveExercise: {
                                         removeExercise(at: index)
@@ -233,13 +278,29 @@ extension ActiveWorkoutView {
                                     onFocusChanged: { isFocused in
                                         if isFocused {
                                             activeExerciseId = exerciseId
-                                            withAnimation(.easeInOut(duration: 0.3)) {
-                                                scrollProxy.scrollTo(exerciseId, anchor: .top)
+                                            // Skip the usual scroll-to-top when this
+                                            // focus event was triggered by the new set
+                                            // that was just added — `onAddSet` is
+                                            // already running its own scroll-to-bottom
+                                            // so the new bottom set lands above the
+                                            // keyboard + music player. Without this
+                                            // guard, the focus scroll-to-top would
+                                            // immediately undo the scroll-to-bottom and
+                                            // the new last set would be hidden behind
+                                            // the keyboard for tall cards (2026-05-04).
+                                            if suppressFocusScrollForExerciseId != exerciseId {
+                                                withAnimation(.easeInOut(duration: 0.3)) {
+                                                    scrollProxy.scrollTo(exerciseId, anchor: .top)
+                                                }
                                             }
                                         }
                                     },
                                     onDragChanged: { targetIdx in
-                                        AppLogger.debug("🔄 Drag changed: index=\(index), target=\(targetIdx), current draggingIndex=\(String(describing: draggingIndex))", category: .workout)
+                                        // ⚡️ SCROLL PERF (2026-05-04): no logging in
+                                        // this hot path — it fires on every drag
+                                        // tick once reorder mode is active. Per
+                                        // QUALITY_PERFORMANCE_AGENT invariant #29,
+                                        // gesture handlers must be silent.
                                         draggingIndex = index
                                         dragTargetIndex = targetIdx
                                     },
@@ -293,7 +354,10 @@ extension ActiveWorkoutView {
                             .clipShape(Capsule())
                         }
                         .padding(.top, 8)
-                        .padding(.bottom, showMusicPlayer ? 80 : 24)
+                        // Music player no longer needs a manual `+ 80pt` shim —
+                        // it's a `.safeAreaInset(edge: .bottom)` on `mainWorkoutContent`,
+                        // so the ScrollView's bottom inset already includes it.
+                        .padding(.bottom, 24)
                     }
                     .padding(.horizontal, Spacing.md + 8)
                     .padding(.top, 8)

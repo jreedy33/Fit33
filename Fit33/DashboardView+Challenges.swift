@@ -77,10 +77,12 @@ struct DashboardChallengesWrapper: View {
         // shouted at us back to the front so the user lands on that card
         // and the `BattleCryShoutBubble` overlay paints without a swipe.
         // (Group / pending items have no battle-cry signal today.)
-        let allItems: [StackedChallengeItem]
-        if battleCryChallengeIds.isEmpty {
-            allItems = typeSorted
-        } else {
+        //
+        // Wrapped in a closure because SwiftUI's `@ViewBuilder` doesn't
+        // allow `for` / `var` at the top-level of the body — the closure
+        // hides the imperative work behind a single returned value.
+        let allItems: [StackedChallengeItem] = {
+            guard !battleCryChallengeIds.isEmpty else { return typeSorted }
             var bumped: [StackedChallengeItem] = []
             var rest: [StackedChallengeItem] = []
             for item in typeSorted {
@@ -90,8 +92,8 @@ struct DashboardChallengesWrapper: View {
                     rest.append(item)
                 }
             }
-            allItems = bumped + rest
-        }
+            return bumped + rest
+        }()
         
         if allItems.isEmpty {
             getStartedChallengeWidget

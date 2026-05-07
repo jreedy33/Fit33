@@ -1352,6 +1352,7 @@ struct CustomWorkoutBuilderView: View {
     private func swapTypeColor(_ type: SwapSuggestion.SwapType) -> Color {
         switch type {
         case .equipmentVariant: return .blue
+        case .adjacentFamily: return .indigo
         case .complementary: return .purple
         case .similar: return .gray
         }
@@ -1359,20 +1360,26 @@ struct CustomWorkoutBuilderView: View {
     
     /// Build the 3-row "Suggested Replacements" strip shown in replace-mode.
     ///
-    /// Picks for VARIETY — the 3 rows must complement each other AND the
-    /// exercise being swapped. The previous implementation grabbed the top-2
-    /// equipment variants which often surfaced two near-identical rows
-    /// (e.g. "Assisted Chin Up (Lever Machine)" + "Assisted Chin Up (Lever
-    /// Machine) — Neutral Grip"). New ranking:
-    ///   1. ONE equipment variant (same movement, different equipment) —
-    ///      caters to the "I don't have that machine today" use case.
-    ///   2. UP TO TWO complementary exercises (different movement family,
-    ///      same muscle group) — different families preferred for spread.
-    ///   3. Backfill with algorithmic similar matches if complementary is
-    ///      sparse.
+    /// Per Fitness Expert ruling 2026-05-04, the slate is a generalizable
+    /// 3-row template (any exercise source):
+    ///   1. **Equipment Cohort Variant** — same `exerciseFamily`, ranked by
+    ///      cohort similarity (Machine source surfaces a Cable variant,
+    ///      not a Barbell variant). Sourced from `.equipmentVariant` section
+    ///      which is now cohort-biased inside `ExerciseSwapService`.
+    ///   2. **Adjacent-Family Variation** — different `exerciseFamily` but
+    ///      shares the source's #1 primary muscle (e.g. Reverse Curl /
+    ///      Preacher Curl when source is Bicep Curl). Sourced from the new
+    ///      `.adjacentFamily` section.
+    ///   3. **Complementary Pairing** — antagonist or pairing partner from
+    ///      the catalog's `complementaryFamilies` CSV (e.g. Tricep Pushdown
+    ///      paired with Bicep Curl). Front-delt isolation is BLOCKED
+    ///      catalog-side; this view trusts the CSV.
+    ///
     /// Across all three picks we dedupe by `baseExerciseName` and prefer
     /// distinct `exerciseFamily` so the user never sees two rows that read
-    /// like the same exercise.
+    /// like the same exercise. If any tier is empty we backfill from the
+    /// next tier so the strip never renders fewer than 3 rows when
+    /// candidates exist.
     private func loadSuggestedSwaps(for exercise: Exercise) {
         let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
         let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
@@ -1411,20 +1418,36 @@ struct CustomWorkoutBuilderView: View {
         }
         
         let variantSection = sections.first(where: { $0.suggestions.first?.swapType == .equipmentVariant })
+        let adjacentSection = sections.first(where: { $0.suggestions.first?.swapType == .adjacentFamily })
         let complementarySection = sections.first(where: { $0.suggestions.first?.swapType == .complementary })
         let similarSection = sections.first(where: { $0.suggestions.first?.swapType == .similar })
         
-        // 1) One equipment variant — same exact movement, different equipment.
+        // Row 1 — top equipment cohort variant (same family, cohort-biased
+        // inside the engine so a Machine source surfaces a Cable variant).
         if let variants = variantSection?.suggestions {
             if let pick = variants.first(where: { canAdd($0, allowSameFamily: true) }) {
                 consume(pick)
             }
         }
         
-        // 2) Up to two complementary exercises, preferring NEW families so
-        // the strip spans the muscle group rather than re-suggesting the same
-        // movement pattern. Pass 1 enforces unique families; pass 2 relaxes
-        // that constraint if we still don't have enough rows.
+        // Row 2 — top adjacent-family variation (different family, same
+        // primary muscle). For Bicep Curl this is Reverse Curl / Preacher
+        // Curl / Hammer Curl. `allowSameFamily: false` enforces a different
+        // family from Row 1 so the strip never reads as two near-identical
+        // movements.
+        if let adjacent = adjacentSection?.suggestions {
+            for suggestion in adjacent {
+                guard swaps.count < 2 else { break }
+                if canAdd(suggestion, allowSameFamily: false) {
+                    consume(suggestion)
+                }
+            }
+        }
+        
+        // Row 3 — top complementary pairing (antagonist / pairing partner
+        // from `complementaryFamilies` CSV). For Bicep Curl this should
+        // be Tricep Pushdown / Face Pull / Reverse Fly — antagonist-first
+        // ordering is enforced catalog-side, not here.
         if let complementary = complementarySection?.suggestions {
             for suggestion in complementary {
                 guard swaps.count < 3 else { break }
@@ -1442,27 +1465,25 @@ struct CustomWorkoutBuilderView: View {
             }
         }
         
-        // 3) Backfill with algorithmic similar matches.
-        if swaps.count < 3, let similar = similarSection?.suggestions {
-            for suggestion in similar {
+        // Backfill — if a tier was empty, sweep adjacent → complementary →
+        // similar → all sections so the strip never renders fewer than 3
+        // rows when candidates exist. Base-name dedup is preserved.
+        if swaps.count < 3, let adjacent = adjacentSection?.suggestions {
+            for suggestion in adjacent {
                 guard swaps.count < 3 else { break }
-                if canAdd(suggestion, allowSameFamily: false) {
+                if canAdd(suggestion, allowSameFamily: true) {
                     consume(suggestion)
                 }
             }
-            if swaps.count < 3 {
-                for suggestion in similar {
-                    guard swaps.count < 3 else { break }
-                    if canAdd(suggestion, allowSameFamily: true) {
-                        consume(suggestion)
-                    }
+        }
+        if swaps.count < 3, let similar = similarSection?.suggestions {
+            for suggestion in similar {
+                guard swaps.count < 3 else { break }
+                if canAdd(suggestion, allowSameFamily: true) {
+                    consume(suggestion)
                 }
             }
         }
-        
-        // 4) Last-resort fill — relax the family constraint and sweep every
-        // section so the strip never renders fewer than 3 rows when candidates
-        // exist. Base-name dedup is preserved to avoid visual repeats.
         if swaps.count < 3 {
             for section in sections {
                 for suggestion in section.suggestions {

@@ -45,6 +45,17 @@ struct ActiveWorkoutView: View {
     // Active exercise tracking for highlight and auto-scroll
     @State var activeExerciseId: String? = nil
     
+    // When the user taps "ADD SET", the new bottom set auto-focuses (per
+    // `SetRowView.shouldAutoFocus` rule), which would normally fire
+    // `onFocusChanged` → scroll the card to its TOP. For tall cards with
+    // many sets, scroll-to-top hides the just-added bottom set behind the
+    // keyboard / music player. We instead want to scroll the card's BOTTOM
+    // cleanly above keyboard + music player. This flag, set inside
+    // `onAddSet`, suppresses the next focus-triggered scroll-to-top for
+    // that specific exercise so the explicit scroll-to-bottom wins
+    // (2026-05-04). Cleared automatically after the scroll animation.
+    @State var suppressFocusScrollForExerciseId: String? = nil
+    
     // Track which exercise currently has an active rest timer (to stop when switching)
     @State var exerciseWithActiveTimer: String? = nil
     

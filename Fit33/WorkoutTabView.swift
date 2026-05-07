@@ -362,6 +362,24 @@ struct WorkoutHomeView: View {
     
     // Cardio workouts for combined goal tracking (includes Strava activities)
     @State private var cardioWorkoutsThisWeek: [CardioWorkoutDTO] = []
+
+    // ⚡️ SCROLL PERF (2026-05-04): `getRecommendedProgram()` calls
+    // `SmartProgramRecommender.shared.getSuggestedProgram(for: user)`, which
+    // synchronously scores all ~10 `WorkoutProgram` entries on the main thread.
+    // It USED to be invoked inline from `programRecommendationCard`'s body, so
+    // every body re-eval (navigation push/pop, state flip, even ActiveWorkoutView
+    // overlay state changes — `WorkoutTabView` is the parent) re-ran the full
+    // scoring pass. The trace showed `SmartProgramRecommender` analyzing the
+    // catalog 20+ times per scroll session.
+    //
+    // We now cache the result in `@State` and refresh it ONLY on:
+    //   - first appear
+    //   - userManager.currentUser identity change
+    //   - userManager.currentUser.equipment / goal / experience change (the
+    //     inputs the recommender actually consults)
+    // Per QUALITY_PERFORMANCE_AGENT invariant #30 — "expensive computed
+    // properties read from a SwiftUI body must be cached in `@State`".
+    @State private var cachedRecommendedProgram: SuggestedProgram?
     
     private var topFadeOverlay: some View {
         VStack(spacing: 0) {
@@ -442,8 +460,19 @@ struct WorkoutHomeView: View {
             }
             .scrollContentBackground(.hidden)
             .onAppear {
-                // Force immediate rendering
                 forceRenderID = UUID()
+                // Populate the recommended-program cache so the
+                // `programRecommendationCard` body never has to call
+                // `SmartProgramRecommender` synchronously. See the cache
+                // invariant on `cachedRecommendedProgram`.
+                if cachedRecommendedProgram == nil {
+                    refreshCachedRecommendedProgram()
+                }
+            }
+            .onChange(of: userManager.currentUser?.id) { _, _ in
+                // User switched (login/logout or profile swap) — recompute the
+                // program recommendation off the new user's profile.
+                refreshCachedRecommendedProgram()
             }
             .task {
                 // Sprint 2026-04-24: defer non-critical fetch past the tab-transition
@@ -1665,13 +1694,33 @@ struct WorkoutHomeView: View {
     // MARK: - Helper Functions
     
     private func getRecommendedProgram() -> SuggestedProgram {
-        // Use Smart Program Recommender for personalized recommendations
-        // Considers: equipment, goals, experience, age, training history, and more
+        // Read from the `@State` cache first so a body re-eval is just a load,
+        // not a full SmartProgramRecommender scoring pass. The cache is
+        // populated/refreshed by `refreshCachedRecommendedProgram()` from
+        // `.onAppear` and (currently) on user identity changes — see the
+        // declaration of `cachedRecommendedProgram` for the cache invariant.
+        if let cached = cachedRecommendedProgram { return cached }
         guard let user = userManager.currentUser else {
-            return getDefaultProgram()
+            let fallback = getDefaultProgram()
+            cachedRecommendedProgram = fallback
+            return fallback
         }
-        
-        return SmartProgramRecommender.shared.getSuggestedProgram(for: user)
+        let computed = SmartProgramRecommender.shared.getSuggestedProgram(for: user)
+        cachedRecommendedProgram = computed
+        return computed
+    }
+
+    /// Forces a fresh `SmartProgramRecommender` scoring pass and writes the
+    /// result back into `cachedRecommendedProgram`. Call from `.onAppear` and
+    /// from `.onChange` of any input the recommender consumes (equipment,
+    /// goal, experience). NEVER call from a view body — the recommender
+    /// scores ~10 programs and emits several AppLogger entries per call.
+    private func refreshCachedRecommendedProgram() {
+        guard let user = userManager.currentUser else {
+            cachedRecommendedProgram = getDefaultProgram()
+            return
+        }
+        cachedRecommendedProgram = SmartProgramRecommender.shared.getSuggestedProgram(for: user)
     }
     
     private func getDefaultProgram() -> SuggestedProgram {

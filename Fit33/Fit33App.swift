@@ -205,6 +205,16 @@ struct Fit33App: App {
     /// `nil` until the first `scenePhase=.active` resync runs (so cold-start
     /// resync ALWAYS fires; the gate only kicks in for subsequent foregrounds).
     @MainActor private static var lastForegroundResyncTime: Date?
+
+    /// Snappiness Overhaul Phase 5.B
+    /// (`PerfFlags.phase5RecommenderPrewarm`): single-shot gate so the
+    /// `SmartProgramRecommender.getSuggestedProgram(for:)` pre-warm Task
+    /// only runs once per app process. Re-foregrounds reuse the in-memory
+    /// cache populated on the first attempt. The gate is reset (back to
+    /// `false`) when a pre-warm attempt aborts because no `currentUser`
+    /// was available — that lets a subsequent foreground (after sign-in)
+    /// re-attempt the pre-warm instead of permanently burning the slot.
+    @MainActor private static var didPrewarmRecommender: Bool = false
     
     /// Decides whether to fire the heavy foreground resync block. Returns
     /// `true` and updates the timestamp when the gate passes; returns
@@ -1353,6 +1363,67 @@ struct Fit33App: App {
                             // throttle; this call is also device-debounced to 60s.
                             // Observed 1856ms in 1.38 (55) logs — always defer.
                             Task { await ChallengeOpponentWakeService.shared.requestWake(trigger: .foreground) }
+
+                            // Snappiness Overhaul Phase 5.B
+                            // (`PerfFlags.phase5RecommenderPrewarm`):
+                            // pre-warm `SmartProgramRecommender.getSuggestedProgram(for:)`
+                            // once per app session so the FIRST tap of the
+                            // Workout tab hits the cache instead of running
+                            // the scorer 4× during initial body re-eval.
+                            //
+                            // Hook point chosen: end of the scenePhase=.active
+                            // critical-path Task — at this point auth is
+                            // resolved (`supabaseManager.isAuthenticated`
+                            // guard at the top of the Task), `WorkoutProgramEngine`
+                            // is statically-defined (no I/O wait needed), and
+                            // we're past the heavy social/health fanout so we
+                            // don't compete for CPU with first-paint work.
+                            //
+                            // Deferred 2.0s past `.active` so cold-start work
+                            // (Core Data store load, exercise library warm,
+                            // dashboard hydrate) settles first — verified
+                            // 2026-05-07 cold-start traces show first
+                            // Workout-tab paint at ~3.5–6s post-launch, so a
+                            // 2.0s deferral still beats the user there with
+                            // ~1.5s of headroom.
+                            //
+                            // Single-shot per process via `didPrewarmRecommender`
+                            // — re-foregrounds don't repeat the work because
+                            // the cache survives in-memory until sign-out.
+                            // `clearSuggestedProgramCache()` is called from
+                            // `signOut()` to prevent cross-user leakage.
+                            //
+                            // Behavior preservation when flag OFF: this whole
+                            // block is gated on `PerfFlags.phase5RecommenderPrewarm`.
+                            if PerfFlags.phase5RecommenderPrewarm,
+                               !Self.didPrewarmRecommender {
+                                Self.didPrewarmRecommender = true
+                                // `Task.detached(priority: .utility)` — sleep
+                                // runs off the main actor; only the brief
+                                // recommender call hops back to MainActor for
+                                // safe Core Data `User` access.
+                                Task.detached(priority: .utility) {
+                                    try? await Task.sleep(for: .seconds(2.0))
+                                    guard !Task.isCancelled else { return }
+                                    await MainActor.run {
+                                        guard let user = UserManager.shared.currentUser else {
+                                            // Reset the gate so a later
+                                            // foreground (after sign-in) can
+                                            // re-attempt the pre-warm. Without
+                                            // this an unauthenticated cold
+                                            // start would burn the only
+                                            // attempt.
+                                            Self.didPrewarmRecommender = false
+                                            return
+                                        }
+                                        _ = SmartProgramRecommender.shared.getSuggestedProgram(for: user)
+                                        AppLogger.info(
+                                            "perf.signpost.recommender.prewarm=1",
+                                            category: .performance
+                                        )
+                                    }
+                                }
+                            }
                         }
                     case .inactive:
                         SessionLogManager.shared.log(.info, category: .session, message: "App became inactive")

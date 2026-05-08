@@ -443,7 +443,24 @@ class PrivateChallengeService: ObservableObject {
     
     /// Realtime channel for live updates
     private var realtimeChannel: RealtimeChannelV2?
-    
+
+    /// Phase 6 — actor-reentrancy sentinel for `subscribeToRealtimeUpdates()`.
+    /// Set BEFORE any `await` in the subscribe path so a concurrent re-entry
+    /// (released by the `await channel.subscribe()` suspension) bails before
+    /// re-running the 7 `.postgresChange(...)` registrations on the same
+    /// (now subscribed) channel instance returned by
+    /// `client.realtimeV2.channel("private-challenges")`. See
+    /// `PerfFlags.phase6RealtimeCallbackOrder` for the full rationale.
+    private var isSubscribing = false
+
+    /// Phase 6 — one-shot telemetry guard so the
+    /// `perf.signpost.realtime.subscribe_order=fixed` signpost emits at most
+    /// once per process lifetime (not on every reconnect). Resetting in
+    /// `unsubscribeFromRealtimeUpdates()` would re-emit the signpost on
+    /// background → foreground churn, defeating its purpose as a "did the
+    /// fix ship?" marker.
+    private var didEmitFixedOrderSignpost = false
+
     /// Throttle
     private var lastRefreshTime: Date?
     private var lastRealtimeRefresh: Date = .distantPast
@@ -601,6 +618,22 @@ class PrivateChallengeService: ObservableObject {
             #endif
             return
         }
+
+        // Phase 4 (Snappiness Overhaul, 2026-05-07): emit freshness delta
+        // BEFORE firing the RPC. Parity-test parser greps for
+        // `perf.signpost.foreground.rpc_freshness_delta_ms.<rpc>` to
+        // validate that the 30s foreground gate threshold is appropriate
+        // (i.e. that we're not refetching data that's still warm). `-1`
+        // signals "no prior fetch in this process". Pure observability;
+        // gated so OFF path emits nothing.
+        if PerfFlags.phase4Telemetry {
+            let deltaMs: Int = lastRefreshTime.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
+            AppLogger.info(
+                "perf.signpost.foreground.rpc_freshness_delta_ms.private_refresh_all=\(deltaMs)",
+                category: .performance
+            )
+        }
+
         lastRefreshTime = now
 
         async let challenges: () = fetchMyChallenges()
@@ -1423,7 +1456,37 @@ class PrivateChallengeService: ObservableObject {
             AppLogger.debug("Already subscribed to private real-time updates — skipping", category: .social)
             return
         }
-        
+
+        // Phase 6 — actor-reentrancy guard.
+        //
+        // This function is `@MainActor`, but the `await channel.subscribe()` at
+        // the bottom releases the actor isolation. Two concurrent callers
+        // (DashboardView fires a `Task { ... }` from BOTH the inline cold-start
+        // path AND the SWR refresh path) can both observe
+        // `realtimeChannel == nil`, both call
+        // `client.realtimeV2.channel("private-challenges")` (which returns the
+        // SAME `RealtimeChannelV2` instance for a matching name), and the
+        // second caller registers its 7 `.postgresChange(...)` callbacks on a
+        // channel whose `.subscribe()` has already started — silently dropped
+        // by the SDK. The cold-start log signature is exactly 7 warnings, one
+        // per `.postgresChange(...)` call below, so we know all 7 are
+        // dropped on the duplicate-call path.
+        //
+        // The sentinel is set BEFORE any `await` so the actor-reentry race is
+        // closed for free — no need to widen anything to a serial queue.
+        if PerfFlags.phase6RealtimeCallbackOrder {
+            if isSubscribing {
+                AppLogger.debug("subscribeToRealtimeUpdates: another call in flight — skipping (actor-reentry guard)", category: .social)
+                return
+            }
+            isSubscribing = true
+        }
+        defer {
+            if PerfFlags.phase6RealtimeCallbackOrder {
+                isSubscribing = false
+            }
+        }
+
         let client = SupabaseManager.shared.supabaseClient
         let channel = client.realtimeV2.channel("private-challenges")
         
@@ -1536,15 +1599,44 @@ class PrivateChallengeService: ObservableObject {
             }
         }
 
-        await channel.subscribe()
-        realtimeChannel = channel
+        if PerfFlags.phase6RealtimeCallbackOrder {
+            // Phase 6 — assign BEFORE the `await` so a concurrent re-entry
+            // that somehow defeated the `isSubscribing` sentinel still hits
+            // the `realtimeChannel != nil` early-return at function top.
+            // Defense-in-depth: `subscribe()` is non-throwing in this code
+            // path, so we don't risk leaving a non-subscribed channel set
+            // on failure.
+            realtimeChannel = channel
+            await channel.subscribe()
+
+            if !didEmitFixedOrderSignpost {
+                didEmitFixedOrderSignpost = true
+                AppLogger.info("perf.signpost.realtime.subscribe_order=fixed", category: .network)
+            }
+        } else {
+            // Original (buggy) order — preserved for flag-OFF byte-parity.
+            await channel.subscribe()
+            realtimeChannel = channel
+        }
         AppLogger.info("Successfully subscribed to private real-time updates", category: .social)
     }
     
     func unsubscribeFromRealtimeUpdates() async {
         if let channel = realtimeChannel {
-            await channel.unsubscribe()
-            realtimeChannel = nil
+            // Phase 6 — clear the channel BEFORE awaiting unsubscribe so the
+            // actor-isolation suspension doesn't expose a window where
+            // `realtimeChannel` is non-nil but the channel is already torn
+            // down (would defeat the "skip if already subscribed" guard at
+            // the top of subscribeToRealtimeUpdates the next time a
+            // reconnect path tries to re-subscribe). Symmetric counterpart
+            // to the subscribe-side ordering swap above.
+            if PerfFlags.phase6RealtimeCallbackOrder {
+                realtimeChannel = nil
+                await channel.unsubscribe()
+            } else {
+                await channel.unsubscribe()
+                realtimeChannel = nil
+            }
             AppLogger.debug("Unsubscribed from private real-time updates", category: .social)
         }
     }

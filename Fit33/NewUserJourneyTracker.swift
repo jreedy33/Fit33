@@ -394,11 +394,28 @@ final class NewUserJourneyTracker: ObservableObject {
                              severity: String? = nil) {
         guard Self.isActive else { return }
 
+        // `is_error` is denormalized on the server table for fast filtering
+        // (`new_user_journey_events.is_error BOOLEAN NOT NULL DEFAULT FALSE`).
+        // The server-side RPC historically computed this value itself, but a
+        // three-valued-logic bug (`FALSE OR NULL = NULL` when severity was
+        // omitted) was causing every flush to fail with a 23502 / not-null
+        // violation, re-queueing the entire batch indefinitely. We now stamp
+        // the flag client-side so the value is always a concrete bool by the
+        // time the row reaches PostgreSQL — see migration
+        // `20260823_nuj_is_error_default.sql`. Only the canonical error /
+        // crash event types and explicitly-severe entries flag TRUE; every
+        // other event (`screen`, `tap`, `funnel`, `state`, `api`, `workout`,
+        // `meal`, `social`, `paywall`, `integration`, `permission`,
+        // `notification`, `background`, `performance`) is FALSE.
+        let isError = (eventType == "error" || eventType == "crash")
+            || (severity == "error" || severity == "critical")
+
         var entry: [String: Any] = [
             "event_type": eventType,
             "session_id": sessionId,
             "occurred_at_ms": Int(Date().timeIntervalSince1970 * 1000),
-            "payload": JSONSerialization.isValidJSONObject(payload) ? payload : [:]
+            "payload": JSONSerialization.isValidJSONObject(payload) ? payload : [:],
+            "is_error": isError
         ]
         if let screen { entry["screen"] = screen }
         entry["detail"] = detail

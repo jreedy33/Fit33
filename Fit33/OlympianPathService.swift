@@ -332,6 +332,51 @@ final class OlympianPathService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var lastSyncedPoolYear: Int?
 
+    // MARK: - Snappiness Overhaul Phase 1.2 — 60s TTL cache
+    //
+    // `loadCurrentSeason()` was being invoked 50+ times during cold start
+    // because multiple SwiftUI view-tree branches (`ProfileView`,
+    // `OlympianPathView`, dashboard wrappers) each kicked it from
+    // `.task` / `.onAppear`. Even though the function short-circuits on
+    // `lastSyncedPoolYear == year && !goals.isEmpty`, the FIRST burst of
+    // 50 callers can fire before the first one completes, so each one
+    // hit the `assign_olympian_path` RPC. The TTL gates the entry point
+    // so a successful fetch within the last 60s short-circuits before
+    // any work is done. Invalidation hooks on the relevant
+    // `NotificationCenter` events (workout completed, meal logged, etc.)
+    // ensure the cache never serves stale data after a user action that
+    // would have changed Olympian progress.
+    //
+    // All TTL behavior is gated by `PerfFlags.phase1BodyChurn` — when
+    // OFF the function behaves byte-for-byte as it did pre-overhaul.
+    private var lastFetchedAt: Date?
+    private var cachedSeason: AssignPathResponseDTO?
+    private var notificationTokens: [NSObjectProtocol] = []
+    private static let cacheTTL: TimeInterval = 60
+
+    // Snappiness Overhaul Phase 1.2 (extension, 2026-05-07) — parallel TTL
+    // cache for `fetchSeasonBadges()`. Phase 1.2 added a 60s TTL to
+    // `loadCurrentSeason()` but `fetchSeasonBadges()` was a separate code
+    // path that did NOT short-circuit, so any caller who raced past the
+    // outer `loadCurrentSeason` TTL check (multiple parallel cold-start
+    // callers before `lastFetchedAt` was populated) re-fetched badges
+    // unconditionally. Cancellations of those races fingerprinted as
+    // `❌ fetchSeasonBadges failed: cancelled` (logged at .error pre-fix).
+    //
+    // Independent endpoint determination: `fetchSeasonBadges()` queries
+    // `user_olympian_seasons` (past completed seasons). The
+    // `assign_olympian_path` response only carries the CURRENT-year
+    // assignments; past seasons are NOT derivable from the cached DTO.
+    // Hence we add a parallel TTL cache (same 60s window) instead of
+    // computing from `cachedSeason`.
+    //
+    // All TTL behavior gated by `PerfFlags.phase1BodyChurn` — flag OFF
+    // restores byte-identical pre-overhaul behavior. Invalidation reuses
+    // the existing `registerCacheInvalidationObservers()` infrastructure
+    // (the invalidate closure clears BOTH `lastFetchedAt` and
+    // `cachedBadgesAt`) — no duplicate notification observer wiring.
+    private var cachedBadgesAt: Date?
+
     private init() {
         // Listen to the global achievement-unlock toast and refresh when one
         // of the 33 unlocks. We don't refresh on EVERY unlock because most
@@ -347,6 +392,89 @@ final class OlympianPathService: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+
+        // Snappiness Overhaul Phase 1.2 — register cache-invalidation
+        // observers behind the flag. Each `addObserver` returns a token
+        // we hold in `notificationTokens` so `deinit` can clean up.
+        // NOTE: as of 2026-05-07, NONE of the 5 spec'd notification
+        // names are emitted anywhere in the codebase. We leave FIXMEs
+        // for each so a future PR that wires them up only needs to
+        // un-skip the registration. The 60s TTL is the floor in the
+        // meantime — invalidation just makes it tighter.
+        if PerfFlags.phase1BodyChurn {
+            registerCacheInvalidationObservers()
+        }
+    }
+
+    deinit {
+        // Snappiness Overhaul Phase 1.2 — clean up any observers we
+        // registered. The block-API tokens are removed individually
+        // (NOT `removeObserver(self)` which only cleans selector-API
+        // registrations). Singleton in practice never deallocs, but
+        // defense-in-depth + matches the existing pattern in
+        // `PerformanceOptimizations.swift`.
+        let center = NotificationCenter.default
+        for token in notificationTokens {
+            center.removeObserver(token)
+        }
+    }
+
+    /// Wires the 5 spec'd cache-invalidation events. Each invalidation
+    /// just nils `lastFetchedAt`; the next `loadCurrentSeason()` call
+    /// will hit the network. Skipped entries leave a FIXME so a future
+    /// PR can wire them up by simply un-commenting.
+    private func registerCacheInvalidationObservers() {
+        let center = NotificationCenter.default
+        let invalidate: @Sendable (Notification) -> Void = { [weak self] _ in
+            Task { @MainActor in
+                // Phase 1.2 — invalidate BOTH the season TTL and the badges
+                // TTL when a user action that could affect Olympian progress
+                // fires. We invalidate both off the same notification set so
+                // we never have to add a parallel observer chain.
+                self?.lastFetchedAt = nil
+                self?.cachedBadgesAt = nil
+                AppLogger.debug(
+                    "OlympianPathService: TTL cache (season + badges) invalidated by notification",
+                    category: .general
+                )
+            }
+        }
+
+        // FIXME: notification not yet emitted by UserManager — once
+        // `UserManager.workoutCompleted` Notification.Name is added, register here:
+        // notificationTokens.append(center.addObserver(
+        //     forName: Notification.Name("UserManager.workoutCompleted"),
+        //     object: nil, queue: .main, using: invalidate))
+
+        // FIXME: notification not yet emitted by MealService — once
+        // `MealService.mealLogged` Notification.Name is added, register here:
+        // notificationTokens.append(center.addObserver(
+        //     forName: Notification.Name("MealService.mealLogged"),
+        //     object: nil, queue: .main, using: invalidate))
+
+        // FIXME: notification not yet emitted by FriendService — once
+        // `FriendService.friendAdded` Notification.Name is added, register here:
+        // notificationTokens.append(center.addObserver(
+        //     forName: Notification.Name("FriendService.friendAdded"),
+        //     object: nil, queue: .main, using: invalidate))
+
+        // FIXME: notification not yet emitted by ExerciseHistoryService — once
+        // `ExerciseHistoryService.personalRecord` Notification.Name is added, register here:
+        // notificationTokens.append(center.addObserver(
+        //     forName: Notification.Name("ExerciseHistoryService.personalRecord"),
+        //     object: nil, queue: .main, using: invalidate))
+
+        // FIXME: notification not yet emitted by AchievementService — once
+        // `AchievementService.achievementUnlocked` Notification.Name is added, register here:
+        // notificationTokens.append(center.addObserver(
+        //     forName: Notification.Name("AchievementService.achievementUnlocked"),
+        //     object: nil, queue: .main, using: invalidate))
+
+        // Reference `invalidate` so the closure isn't elided by the
+        // compiler before the FIXMEs are wired up. (Cheap, single
+        // assignment; the closure itself is not invoked here.)
+        _ = invalidate
+        _ = center
     }
 
     // MARK: - Computed
@@ -400,6 +528,27 @@ final class OlympianPathService: ObservableObject {
     /// already exist).
     func loadCurrentSeason(force: Bool = false) async {
         let year = Self.currentSeasonYear
+
+        // Snappiness Overhaul Phase 1.2 — 60s TTL short-circuit.
+        // Sits ABOVE the existing `lastSyncedPoolYear` check so a burst
+        // of 50 cold-start callers all return immediately on the first
+        // post-fetch frame instead of each spinning up an RPC. `force:
+        // true` callers (manual pull-to-refresh, post-completion
+        // recompute) bypass the TTL — they explicitly asked for fresh
+        // data. With the flag OFF, this whole block is skipped and the
+        // function behaves byte-for-byte as it did pre-overhaul.
+        if PerfFlags.phase1BodyChurn,
+           !force,
+           let lastFetched = lastFetchedAt,
+           cachedSeason != nil,
+           Date().timeIntervalSince(lastFetched) < Self.cacheTTL {
+            AppLogger.debug(
+                "OlympianPathService: TTL cache hit (age=\(Int(Date().timeIntervalSince(lastFetched)))s, year=\(year))",
+                category: .general
+            )
+            return
+        }
+
         if !force, lastSyncedPoolYear == year, !goals.isEmpty {
             return
         }
@@ -442,18 +591,92 @@ final class OlympianPathService: ObservableObject {
             archetype = resolvedArchetype
         }
 
-        // 4. Retroactively sync counters / mirrors so Path reflects historical work
-        await BadgeService.shared.resyncOlympianProgressFromLocalTotals()
+        // 4. Retroactively sync counters / mirrors so Path reflects historical work.
+        //
+        // Phase 6 (atomic-goals): when ON, the resync's tail `fetchAchievements`
+        // logs cancellations at `.debug` (the gate is about to retry, so the
+        // first-attempt cancellation isn't worth a warning). When OFF we keep
+        // the default `.warning` to preserve byte-identical pre-Phase-6 behavior.
+        if PerfFlags.phase6OlympianGoalsAtomic {
+            await BadgeService.shared.resyncOlympianProgressFromLocalTotals(transientLevel: .debug)
+        } else {
+            await BadgeService.shared.resyncOlympianProgressFromLocalTotals()
+        }
 
-        // 5. Canonical achievement rows + progress for rebuild
-        await BadgeService.shared.fetchAchievements()
+        // 5 + 6 + 7. Canonical achievement rows + badges + atomic rebuild.
+        //
+        // Pre-Phase-6 ordering (flag OFF) was:
+        //   await BadgeService.shared.fetchAchievements()   // step 5 (duplicate of resync's tail)
+        //   await fetchSeasonBadges()                       // step 6
+        //   rebuildGoals(from: response.assignments)        // step 7 — reads BadgeService.achievements
+        //
+        // The race: `get_user_achievements` is cancellable (parent SwiftUI
+        // `.task` teardown / superseded fetch). When cancelled, the cache
+        // stays empty; rebuildGoals's `compactMap` against an empty cache
+        // yields `goals=[]` → all 33 paths render blank. Phase 1.2's TTL
+        // cache then HITS for 60s, so the empty state persists.
+        //
+        // Phase 6 fix: gate `rebuildGoals` on a populated achievements
+        // cache. If the resync's tail fetch left the cache empty, schedule
+        // exactly ONE retry after 350ms BEFORE rebuilding. If the retry
+        // also fails, surface `.olympianGoalsStale` + a single `.warning`
+        // log instead of writing fake-empty goals.
+        var phase6RetryFailed = false
+        if PerfFlags.phase6OlympianGoalsAtomic {
+            let cacheState = await ensureAchievementsPopulatedWithRetry()
 
-        // 6. Fetch this user's stackable badges
-        await fetchSeasonBadges()
+            // Step 6 — badges (independent endpoint; race-safe).
+            await fetchSeasonBadges()
 
-        // 7. Build the 33-goal view
-        rebuildGoals(from: response.assignments)
-        lastSyncedPoolYear = poolYear
+            switch cacheState {
+            case .populatedNoRetryNeeded, .populatedAfterRetry:
+                rebuildGoals(
+                    from: response.assignments,
+                    afterRetry: cacheState == .populatedAfterRetry
+                )
+            case .emptyAfterRetry:
+                // Single retry already fired and the cache is STILL empty.
+                // Don't blank the existing goals — preserve last known state
+                // and surface a stale notification so views can present a
+                // "tap to refresh" affordance instead of fake-empty progress.
+                AppLogger.warning(
+                    "OlympianPathService.rebuildGoals: achievements cache permanently empty after retry (assignments=\(response.assignments.count))",
+                    category: .general
+                )
+                self.lastLoadError = "Couldn't load goals — tap to refresh"
+                NotificationCenter.default.post(
+                    name: .olympianGoalsStale,
+                    object: nil,
+                    userInfo: ["assignmentCount": response.assignments.count]
+                )
+                phase6RetryFailed = true
+            }
+        } else {
+            // Pre-Phase-6 path — byte-identical to original.
+            await BadgeService.shared.fetchAchievements()
+            await fetchSeasonBadges()
+            rebuildGoals(from: response.assignments)
+        }
+
+        // Phase 6 — when the gate's retry left the cache permanently empty,
+        // SKIP populating `lastSyncedPoolYear` AND the Phase 1.2 TTL cache
+        // markers. Otherwise the next `loadCurrentSeason()` call (e.g. the
+        // user tapping "refresh" on the stale-state card) would hit either
+        // the TTL short-circuit (60s lockout) or the `lastSyncedPoolYear ==
+        // year && !goals.isEmpty` early-return — preventing recovery.
+        // Leaving these unwritten means the next call goes full-fetch,
+        // which is exactly what the stale-state UX expects.
+        if !phase6RetryFailed {
+            lastSyncedPoolYear = poolYear
+
+            // Snappiness Overhaul Phase 1.2 — populate the TTL cache markers
+            // ONLY when the new path is enabled, so flag-OFF behavior stays
+            // byte-identical (no extra writes, no behavioral drift).
+            if PerfFlags.phase1BodyChurn {
+                lastFetchedAt = Date()
+                cachedSeason = response
+            }
+        }
     }
 
     /// Refresh the goal list from the cached achievements (no network round
@@ -560,6 +783,29 @@ final class OlympianPathService: ObservableObject {
     }
 
     private func fetchSeasonBadges() async {
+        // Snappiness Overhaul Phase 1.2 (extension, 2026-05-07) — TTL
+        // short-circuit. Mirrors the `loadCurrentSeason()` 60s gate.
+        // Independent endpoint (queries `user_olympian_seasons`, NOT
+        // derivable from the `assign_olympian_path` DTO), so we cannot
+        // skip the network entirely on a `cachedSeason` hit; we cache the
+        // badges fetch separately. Invalidation reuses the existing
+        // `registerCacheInvalidationObservers()` infrastructure — the
+        // invalidate closure clears both `lastFetchedAt` AND
+        // `cachedBadgesAt` so a future `MealService.mealLogged` /
+        // `AchievementService.achievementUnlocked` notification (when the
+        // FIXMEs in `registerCacheInvalidationObservers` are wired) re-pulls
+        // both. With the flag OFF this whole block is skipped — byte-for-
+        // byte pre-overhaul behavior.
+        if PerfFlags.phase1BodyChurn,
+           let last = cachedBadgesAt,
+           Date().timeIntervalSince(last) < Self.cacheTTL {
+            AppLogger.debug(
+                "OlympianPathService: badges TTL cache hit (age=\(Int(Date().timeIntervalSince(last)))s)",
+                category: .general
+            )
+            return
+        }
+
         do {
             let response: [OlympianSeasonBadge] = try await SupabaseManager.shared.supabaseClient
                 .from("user_olympian_seasons")
@@ -568,23 +814,111 @@ final class OlympianPathService: ObservableObject {
                 .execute()
                 .value
             self.seasonBadges = response
+
+            if PerfFlags.phase1BodyChurn {
+                cachedBadgesAt = Date()
+            }
+        } catch is CancellationError {
+            // Transient — typically the parent SwiftUI `.task` was torn down
+            // (scenePhase blip during cold start, view going away). Same
+            // story as `assignPath` cancellation handling above; demote to
+            // .debug so it doesn't fingerprint as a real error and contribute
+            // to bug-intel noise.
+            AppLogger.debug(
+                "fetchSeasonBadges cancelled (transient task teardown) — no error surfaced",
+                category: .general
+            )
         } catch {
+            if let urlErr = error as? URLError, urlErr.code == .cancelled {
+                AppLogger.debug(
+                    "fetchSeasonBadges URL cancelled (transient task teardown)",
+                    category: .general
+                )
+                return
+            }
             AppLogger.error("fetchSeasonBadges failed: \(error.localizedDescription)", category: .general)
         }
     }
 
-    private func rebuildGoals(from assignments: [OlympianAssignmentDTO]) {
+    // MARK: - Phase 6 — Atomic goals gate (achievements-cache retry)
+
+    /// Result of the Phase 6 atomic gate. Tells `loadCurrentSeason` whether
+    /// the achievements cache was populated immediately, populated after a
+    /// single retry, or remained empty after the retry — so the caller can
+    /// pick between rebuildGoals / rebuildGoals(afterRetry:) / posting
+    /// `.olympianGoalsStale`.
+    private enum AchievementsCacheState {
+        case populatedNoRetryNeeded
+        case populatedAfterRetry
+        case emptyAfterRetry
+    }
+
+    /// Phase 6 — guarantee the achievements cache is populated before
+    /// rebuildGoals fires. Called from `loadCurrentSeason` AFTER
+    /// `resyncOlympianProgressFromLocalTotals` (whose tail
+    /// `fetchAchievements` is the first attempt).
+    ///
+    /// Behavior:
+    ///   • Cache populated → return `.populatedNoRetryNeeded` (no retry, no log).
+    ///   • Cache empty → log a `.debug` line, sleep 350ms, retry exactly once
+    ///     with `transientLevel: .warning` so a SECOND cancellation is
+    ///     surfaced (single warning per cold-start race instead of zero).
+    ///   • If still empty after retry → return `.emptyAfterRetry`; the
+    ///     caller posts `.olympianGoalsStale` and writes a single `.warning`.
+    ///
+    /// The 350ms backoff is intentional — immediate retry would just spam
+    /// during real cancellation cascades (rapid scenePhase blips, dashboard
+    /// transition tear-downs), and longer backoffs delay Path UI render
+    /// past the user's first dashboard view. 350ms is the empirical sweet
+    /// spot from `[bg-init] CloudSync` waterfall measurements: long enough
+    /// for the supersession storm to settle, short enough to land within
+    /// the user's first frame budget.
+    private func ensureAchievementsPopulatedWithRetry() async -> AchievementsCacheState {
+        if !BadgeService.shared.achievements.isEmpty {
+            return .populatedNoRetryNeeded
+        }
+
+        AppLogger.debug(
+            "OlympianPathService: achievements cache empty after initial fetch (probable cancellation), scheduling single retry in 350ms",
+            category: .general
+        )
+
+        try? await Task.sleep(nanoseconds: 350_000_000)
+
+        // Retry — this attempt's transient cancellation IS visible (`.warning`)
+        // because we won't retry again. Real / non-transient errors still
+        // log at `.error` via the classifier regardless of transientLevel.
+        await BadgeService.shared.fetchAchievements(transientLevel: .warning)
+
+        return BadgeService.shared.achievements.isEmpty ? .emptyAfterRetry : .populatedAfterRetry
+    }
+
+    private func rebuildGoals(from assignments: [OlympianAssignmentDTO], afterRetry: Bool = false) {
         let cache = Dictionary(uniqueKeysWithValues:
             BadgeService.shared.achievements.map { ($0.achievementKey, $0) }
         )
 
-        // Distinguish "RPC returned nothing" (server bug / migration mid-fail)
-        // from "RPC returned 33 but local achievement cache is missing those
-        // rows" (BadgeService.fetchAchievements race / category filter regression).
-        // Both produce a blank UI but need different fixes, so we surface them.
+        // Distinguish three failure modes — Phase 6 tiered diagnostics:
+        //  (a) RPC returned nothing — server bug / migration mid-fail.
+        //      Always a `.warning`.
+        //  (b) Cache is COMPLETELY EMPTY — race symptom (cancellation).
+        //      Under phase 6 ON the gate prevents this branch firing
+        //      (caller posts `.olympianGoalsStale` instead). Under phase 6
+        //      OFF (or any rebuildGoals call from a path that bypassed the
+        //      gate) we fall through to the legacy warning.
+        //  (c) Cache populated but ALL assignment keys are missing — real
+        //      data integrity issue (seed migration didn't run for this
+        //      user, achievement keys drifted between server + iOS, etc.).
+        //      Always a `.warning` and never silenced — this is the
+        //      legitimate alarm the prompt asks us to keep loud.
+        //  (d) Cache populated, partial mismatch — render what we have +
+        //      `.warning` so the missing slice is visible without blanking
+        //      the rest of the path.
         let missingKeys: [String] = assignments
             .map(\.achievementKey)
             .filter { cache[$0] == nil }
+
+        let cacheIsCompletelyEmpty = BadgeService.shared.achievements.isEmpty
 
         if assignments.isEmpty {
             self.lastLoadError = "Server returned 0 goals. Migration may not be fully applied — check seed pool."
@@ -592,10 +926,48 @@ final class OlympianPathService: ObservableObject {
                 "OlympianPathService.rebuildGoals: 0 assignments returned from server",
                 category: .general
             )
+        } else if missingKeys.count == assignments.count && cacheIsCompletelyEmpty {
+            // Race-symptom branch. Phase 6 gate should keep us out of here,
+            // but if a caller bypassed the gate (flag OFF, future path), fall
+            // back to the original message so behavior is preserved.
+            if PerfFlags.phase6OlympianGoalsAtomic && afterRetry {
+                // Defensive — phase6 ON path lands here only if the caller
+                // did NOT route through `.emptyAfterRetry` (shouldn't happen
+                // today; future-proofing). Treat as the post-retry permanent
+                // failure case.
+                self.lastLoadError = "Couldn't load goals — tap to refresh"
+                AppLogger.warning(
+                    "OlympianPathService.rebuildGoals: achievements cache permanently empty after retry (assignments=\(assignments.count))",
+                    category: .general
+                )
+            } else if PerfFlags.phase6OlympianGoalsAtomic {
+                // Phase 6 ON, retry not yet fired — this should never trip
+                // because `loadCurrentSeason` gates ahead of us. Demote to
+                // `.debug` so the (impossible-by-construction) trip doesn't
+                // fingerprint a warning. Don't overwrite `self.goals` with
+                // an empty array — preserve last-known state so any prior
+                // render survives until the gate's retry completes.
+                AppLogger.debug(
+                    "OlympianPathService.rebuildGoals: deferring — achievements cache empty, retry scheduled (assignments=\(assignments.count))",
+                    category: .general
+                )
+                return
+            } else {
+                // Phase 6 OFF — legacy path. Preserve byte-identical original
+                // warning so 1.39 and earlier behavior is unchanged.
+                self.lastLoadError = "Goals assigned but achievement rows missing from local cache. Try Force Quit + reopen."
+                AppLogger.warning(
+                    "OlympianPathService.rebuildGoals: assignments=\(assignments.count) but cache lacks all keys (sample: \(missingKeys.prefix(3).joined(separator: ", ")))",
+                    category: .general
+                )
+            }
         } else if missingKeys.count == assignments.count {
+            // Cache has rows but NONE match the assigned keys — this is a
+            // legitimate data-integrity warning (NOT a race), kept loud per
+            // the prompt's step 3.
             self.lastLoadError = "Goals assigned but achievement rows missing from local cache. Try Force Quit + reopen."
             AppLogger.warning(
-                "OlympianPathService.rebuildGoals: assignments=\(assignments.count) but cache lacks all keys (sample: \(missingKeys.prefix(3).joined(separator: ", ")))",
+                "OlympianPathService.rebuildGoals: assignments=\(assignments.count) but cache lacks all keys (sample: \(missingKeys.prefix(3).joined(separator: ", "))) — data integrity, not race",
                 category: .general
             )
         } else if !missingKeys.isEmpty {
@@ -659,4 +1031,21 @@ final class OlympianPathService: ObservableObject {
     func clearPendingCompletion() {
         pendingSeasonCompletion = nil
     }
+}
+
+// MARK: - Phase 6 — Goals-stale notification
+
+extension Notification.Name {
+    /// Phase 6 (`PerfFlags.phase6OlympianGoalsAtomic`) — Posted by
+    /// `OlympianPathService.loadCurrentSeason` when the achievements cache
+    /// stayed empty after the gate's single retry pass. Views observing
+    /// this can show a "tap to refresh" stale state instead of fake-empty
+    /// progress (the pre-Phase-6 race default that fingerprinted the
+    /// 1.39 (70) blank-goals report).
+    ///
+    /// `userInfo["assignmentCount"]` carries the number of path
+    /// assignments the server returned — if this is 33 (the canonical
+    /// pool size), the failure is purely on the achievements-fetch leg
+    /// and a manual refresh is the right user affordance.
+    static let olympianGoalsStale = Notification.Name("OlympianPathService.olympianGoalsStale")
 }

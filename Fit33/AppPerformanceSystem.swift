@@ -1186,11 +1186,40 @@ final class StartupWaterfall {
     }
     
     private init() {}
-    
+
+    // Phase 4 (Snappiness Overhaul, 2026-05-07): runtime-detected thread tag.
+    //
+    // The previous shape was `Thread.isMainThread ? "main" : "bg"` — fine for
+    // distinguishing "this ran on the main actor" from "this didn't", but it
+    // reported `[bg]` for every off-main task regardless of QoS. The intel
+    // build / similarity-map / TabPreloader chains all run at different QoS
+    // classes (background vs userInitiated vs utility), and a freeze on a
+    // userInitiated bg task is a very different signal from a slow .background
+    // task. Reading `Thread.current.qualityOfService` lets the waterfall
+    // attribute work to the correct lane. Gated on `PerfFlags.phase4Telemetry`
+    // at each emit site so the existing waterfall format stays byte-identical
+    // when the flag is off.
+    private static var threadTag: String {
+        if Thread.isMainThread { return "main" }
+        switch Thread.current.qualityOfService {
+        case .userInteractive: return "bg-ui"
+        case .userInitiated:   return "bg-init"
+        case .utility:         return "bg-util"
+        case .background:      return "bg-bg"
+        case .default:         return "bg-default"
+        @unknown default:      return "bg-unknown"
+        }
+    }
+
     /// Mark the START of an operation. Returns immediately.
     func mark(_ label: String) {
         let offset = CACurrentMediaTime() - appLaunch
-        let thread = Thread.isMainThread ? "main" : "bg"
+        let thread: String
+        if PerfFlags.phase4Telemetry {
+            thread = Self.threadTag
+        } else {
+            thread = Thread.isMainThread ? "main" : "bg"
+        }
         lock.lock()
         events.append(Event(label: label, startOffset: offset, endOffset: nil, thread: thread))
         lock.unlock()
@@ -1199,7 +1228,12 @@ final class StartupWaterfall {
     /// Mark the END of a previously-started operation.
     func end(_ label: String) {
         let offset = CACurrentMediaTime() - appLaunch
-        let thread = Thread.isMainThread ? "main" : "bg"
+        let thread: String
+        if PerfFlags.phase4Telemetry {
+            thread = Self.threadTag
+        } else {
+            thread = Thread.isMainThread ? "main" : "bg"
+        }
         lock.lock()
         if let idx = events.lastIndex(where: { $0.label == label && $0.endOffset == nil }) {
             events[idx].endOffset = offset

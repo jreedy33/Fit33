@@ -1191,7 +1191,21 @@ class WorkoutManager: ObservableObject {
         // ═══════════════════════════════════════════════════════════════════════
         Task { @MainActor in
             NotificationManager.shared.workoutCompleted()
-            
+
+            // Snappiness Overhaul Phase 5.A
+            // (`PerfFlags.phase5DashboardCache`): broadcast a process-wide
+            // `workoutCompleted` notification so the dashboard social-fanout
+            // disk cache can drop its 5-min snapshot. Without this, a user
+            // who finishes a workout and immediately taps the Home tab
+            // would see stale streak/XP/feed state for up to 5 min.
+            // Gated behind the flag so behavior is byte-equivalent when OFF
+            // (no observer, no post — the call site itself is conditional).
+            // See `DashboardSocialFanoutCache` and
+            // `Notification.Name.workoutCompleted` for the contract.
+            if PerfFlags.phase5DashboardCache {
+                NotificationCenter.default.post(name: .workoutCompleted, object: nil)
+            }
+
             // Sync workout completion to active challenges (lift/workout_streak)
             await ChallengeService.shared.syncFit33WorkoutToChallenge(workoutType: "strength")
         }

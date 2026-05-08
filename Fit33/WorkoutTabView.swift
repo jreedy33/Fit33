@@ -380,7 +380,19 @@ struct WorkoutHomeView: View {
     // Per QUALITY_PERFORMANCE_AGENT invariant #30 — "expensive computed
     // properties read from a SwiftUI body must be cached in `@State`".
     @State private var cachedRecommendedProgram: SuggestedProgram?
-    
+
+    // Snappiness Overhaul Phase 6 — first-render telemetry.
+    //
+    // `phase6FirstAppearStart` is captured at @State default-init time, which
+    // SwiftUI evaluates exactly once per WorkoutHomeView struct lifetime
+    // (preserved across re-renders, recomputed on full re-mount). The
+    // delta from this timestamp to the moment `.onAppear` fires on the
+    // ScrollView approximates the body-construction + initial-layout cost.
+    // `phase6DidLogFirstRender` guards single-shot logging — a tab
+    // re-visit re-fires `.onAppear` but doesn't re-init @State.
+    @State private var phase6FirstAppearStart: CFTimeInterval = CACurrentMediaTime()
+    @State private var phase6DidLogFirstRender: Bool = false
+
     private var topFadeOverlay: some View {
         VStack(spacing: 0) {
             let fadeColor = colorScheme == .dark
@@ -436,7 +448,21 @@ struct WorkoutHomeView: View {
                     // no active program. Self-hides nothing; always
                     // occupies this slot so the page rhythm stays
                     // stable regardless of program state.
-                    programsWidget
+                    if PerfFlags.phase1BodyChurn {
+                        // Snappiness Overhaul Phase 1.1: drive the
+                        // recommendation cache from a `.task(id:)` instead
+                        // of a body-time @State write. Fires on first
+                        // appear AND on user identity change — the same
+                        // lifecycle as the original `.onAppear` +
+                        // `.onChange(of: userManager.currentUser?.id)`
+                        // pair, but routed off the SwiftUI render pass.
+                        programsWidget
+                            .task(id: userManager.currentUser?.id) {
+                                refreshCachedRecommendedProgram()
+                            }
+                    } else {
+                        programsWidget
+                    }
 
                     // 3. Secondary Actions (Favorites / Cardio /
                     // Stretch) — 3-up compact strip. Programs was
@@ -453,7 +479,21 @@ struct WorkoutHomeView: View {
                     nextUpCard
 
                     // 6. My Stats Dashboard (chart wall) — owned by QP.
-                    WorkoutStatsSection()
+                    //
+                    // Snappiness Overhaul Phase 6 (`perf_phase6_workout_tab_render`):
+                    // wrap in a 500ms-deferred mount so the initial
+                    // tab-transition frame does NOT pay the cost of
+                    // instantiating 12 chart widgets (`WorkoutStatsView.swift:94`
+                    // explicitly uses non-lazy `VStack` so children evaluate
+                    // their `body` even off-screen). Off-screen, below the
+                    // fold, deferral is visually imperceptible. When the flag
+                    // is OFF this falls back to the inline mount — byte-identical
+                    // to pre-Phase-6 behavior.
+                    if PerfFlags.phase6WorkoutTabRender {
+                        Phase6DeferredWorkoutStatsSection()
+                    } else {
+                        WorkoutStatsSection()
+                    }
                 }
                 .padding(.horizontal, Spacing.md)
                 .padding(.bottom, Spacing.lg)
@@ -468,6 +508,10 @@ struct WorkoutHomeView: View {
                 if cachedRecommendedProgram == nil {
                     refreshCachedRecommendedProgram()
                 }
+                // Phase 6 telemetry — measure body-construction → first-appear.
+                // Always emits (independent of flag) so a single build can be
+                // compared with the flag flipped via UserDefaults override.
+                logPhase6FirstRenderIfNeeded()
             }
             .onChange(of: userManager.currentUser?.id) { _, _ in
                 // User switched (login/logout or profile swap) — recompute the
@@ -1694,6 +1738,22 @@ struct WorkoutHomeView: View {
     // MARK: - Helper Functions
     
     private func getRecommendedProgram() -> SuggestedProgram {
+        // Snappiness Overhaul Phase 1.1 (flag `perf_phase1_body_churn`):
+        // when the flag is ON, this function MUST be a pure read — no
+        // `@State` writes from inside `body`. Cache population is owned by
+        // the `.task(id: userManager.currentUser?.id)` modifier on
+        // `programsWidget` (see body) which calls
+        // `refreshCachedRecommendedProgram()`. On the first frame before
+        // `.task` fires, we still compute on-the-fly so the card renders
+        // a real recommendation — we just don't write back.
+        if PerfFlags.phase1BodyChurn {
+            if let cached = cachedRecommendedProgram { return cached }
+            guard let user = userManager.currentUser else {
+                return getDefaultProgram()
+            }
+            return SmartProgramRecommender.shared.getSuggestedProgram(for: user)
+        }
+        // Original behavior — preserved byte-for-byte when flag is OFF.
         // Read from the `@State` cache first so a body re-eval is just a load,
         // not a full SmartProgramRecommender scoring pass. The cache is
         // populated/refreshed by `refreshCachedRecommendedProgram()` from
@@ -1708,6 +1768,23 @@ struct WorkoutHomeView: View {
         let computed = SmartProgramRecommender.shared.getSuggestedProgram(for: user)
         cachedRecommendedProgram = computed
         return computed
+    }
+
+    /// Phase 6 telemetry — emit `perf.signpost.workout_tab.first_render_ms`
+    /// once per WorkoutHomeView lifecycle. Captures the elapsed
+    /// `CACurrentMediaTime()` between @State default-init (struct birth,
+    /// before `body` runs) and the first `.onAppear` firing on the
+    /// ScrollView. Both endpoints are well-defined SwiftUI hooks; the
+    /// reading approximates body-build + initial-layout. Single-shot via
+    /// `phase6DidLogFirstRender`.
+    private func logPhase6FirstRenderIfNeeded() {
+        guard !phase6DidLogFirstRender else { return }
+        phase6DidLogFirstRender = true
+        let elapsedMs = (CACurrentMediaTime() - phase6FirstAppearStart) * 1000
+        AppLogger.info(
+            "perf.signpost.workout_tab.first_render_ms=\(Int(elapsedMs)) flag=\(PerfFlags.phase6WorkoutTabRender ? "on" : "off")",
+            category: .performance
+        )
     }
 
     /// Forces a fresh `SmartProgramRecommender` scoring pass and writes the
@@ -2040,373 +2117,6 @@ struct DepthQuickActionCard: View {
             .shadow(color: (gradient.first ?? .gray).opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
         }
         .scaleButtonStyle(.standard, withHaptic: true)
-    }
-}
-
-// MARK: - Smart Program Widget
-struct SmartProgramWidget: View {
-    @Environment(\.colorScheme) private var colorScheme
-    
-    let user: User?
-    let onViewProgram: (String?) -> Void  // Passes program ID
-    
-    @State private var recommendation: ProgramRecommendation?
-    @State private var isLoading = true
-    
-    private var matchScore: Int {
-        Int(recommendation?.matchScore ?? 0)
-    }
-    
-    private var matchColor: Color {
-        if matchScore >= 200 { return .green }
-        if matchScore >= 150 { return .blue }
-        if matchScore >= 100 { return .orange }
-        return .gray
-    }
-    
-    private var matchLabel: String {
-        if matchScore >= 200 { return "Excellent Match" }
-        if matchScore >= 150 { return "Great Match" }
-        if matchScore >= 100 { return "Good Match" }
-        return "Suggested"
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Your Perfect Program")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
-                    if let user = user {
-                        Text("Based on your \(user.fitnessGoal ?? "fitness") goals")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                // Star icon
-                Image(systemName: "star.fill")
-                    .font(.title3)
-                    .foregroundColor(.yellow)
-            }
-            .padding(.horizontal, Spacing.xxs)
-            
-            // Widget Card
-            if isLoading {
-                loadingCard
-            } else if let recommendation = recommendation {
-                smartProgramCard(recommendation)
-            } else {
-                fallbackCard
-            }
-        }
-        .onAppear {
-            loadRecommendation()
-        }
-    }
-    
-    private var loadingCard: some View {
-        HStack {
-            Spacer()
-            VStack(spacing: 12) {
-                ProgressView()
-                    .scaleEffect(1.2)
-                Text("Analyzing your profile...")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.vertical, 40)
-            Spacer()
-        }
-        .background(Color(.systemGray6))
-        .cornerRadius(CornerRadius.lg)
-    }
-    
-    private var fallbackCard: some View {
-        Button(action: { HapticManager.impact(.light); onViewProgram(nil) }) {
-            HStack {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Explore Programs")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                    Text("Find the perfect program for your goals")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                Image(systemName: "arrow.right.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(.blue)
-            }
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(CornerRadius.lg)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    private func smartProgramCard(_ rec: ProgramRecommendation) -> some View {
-        Button(action: { HapticManager.impact(.light); onViewProgram(rec.program.id) }) {
-            VStack(spacing: 0) {
-                // Top Section - Program Info
-                HStack(alignment: .top, spacing: 14) {
-                    // Program Icon with animated ring
-                    ZStack {
-                        // Match score ring
-                        Circle()
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 4)
-                            .frame(width: 64, height: 64)
-                        
-                        Circle()
-                            .trim(from: 0, to: min(CGFloat(matchScore) / 250.0, 1.0))
-                            .stroke(
-                                LinearGradient(colors: [matchColor, matchColor.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                style: StrokeStyle(lineWidth: 4, lineCap: .round)
-                            )
-                            .frame(width: 64, height: 64)
-                            .rotationEffect(.degrees(-90))
-                        
-                        // Icon
-                        Image(systemName: iconForProgram(rec.program))
-                            .font(.title2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(matchColor)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 6) {
-                        // Match badge
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.caption2)
-                            Text(matchLabel)
-                                .font(.caption)
-                                .fontWeight(.bold)
-                            Text("• \(matchScore) pts")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .foregroundColor(matchColor)
-                        
-                        // Program name
-                        Text(rec.program.name)
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
-                        
-                        // Primary reason
-                        if let reason = rec.reasons.first {
-                            Text(reason)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                    
-                    Spacer()
-                }
-                .padding(Spacing.md)
-                
-                Divider()
-                    .padding(.horizontal, Spacing.md)
-                
-                // Middle Section - Why This Program
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Why This Program")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-                        .textCase(.uppercase)
-                    
-                    // Compatibility indicators
-                    HStack(spacing: 12) {
-                        compatibilityBadge(
-                            icon: "dumbbell.fill",
-                            label: "Equipment",
-                            status: rec.equipmentCompatibility.rawValue,
-                            color: colorForCompatibility(rec.equipmentCompatibility)
-                        )
-                        
-                        compatibilityBadge(
-                            icon: "chart.line.uptrend.xyaxis",
-                            label: "Difficulty",
-                            status: rec.difficultyMatch.rawValue,
-                            color: colorForDifficulty(rec.difficultyMatch)
-                        )
-                        
-                        compatibilityBadge(
-                            icon: "calendar",
-                            label: "Duration",
-                            status: "\(rec.program.duration) days",
-                            color: .blue
-                        )
-                    }
-                }
-                .padding(Spacing.md)
-                
-                Divider()
-                    .padding(.horizontal, Spacing.md)
-                
-                // Bottom Section - Program Stats & CTA
-                HStack(spacing: 12) {
-                    // Stats - spread evenly across available space
-                    HStack(spacing: 0) {
-                        miniStat(icon: "flame.fill", value: "\(rec.program.workoutsPerWeek)", label: "days/wk", color: .orange)
-                            .frame(maxWidth: .infinity)
-                        miniStat(icon: "clock.fill", value: "~45", label: "min", color: .blue)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .frame(maxWidth: .infinity)
-                    
-                    // CTA Button
-                    HStack(spacing: 6) {
-                        Text("View Program")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Image(systemName: "arrow.right")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, 10)
-                    .background(
-                        LinearGradient(colors: [matchColor, matchColor.opacity(0.8)], startPoint: .leading, endPoint: .trailing)
-                    )
-                    .cornerRadius(CornerRadius.md)
-                }
-                .padding(Spacing.md)
-            }
-            .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
-            .background(
-                ZStack {
-                    // Depth shadow layers
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(matchColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                        .offset(y: 8)
-                        .blur(radius: 4)
-                    
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                        .offset(y: 4)
-                    
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .fill(Color.cardBackground)
-                    
-                    // Inner highlight
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .stroke(
-                            LinearGradient(
-                                colors: colorScheme == .dark 
-                                    ? [Color.white.opacity(0.1), Color.clear]
-                                    : [Color.white, Color.clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
-                        )
-                    
-                    // Colored accent border
-                    RoundedRectangle(cornerRadius: CornerRadius.lg)
-                        .stroke(
-                            LinearGradient(colors: [matchColor.opacity(colorScheme == .dark ? 0.4 : 0.3), matchColor.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            lineWidth: 1
-                        )
-                }
-            )
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-            .shadow(color: matchColor.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
-        }
-        .scaleButtonStyle(.standard, withHaptic: true)
-    }
-    
-    private func compatibilityBadge(icon: String, label: String, status: String, color: Color) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundColor(color)
-            Text(status)
-                .font(.caption2)
-                .fontWeight(.medium)
-                .foregroundColor(.primary)
-                .lineLimit(1)
-            Text(label)
-                .font(.system(size: 9))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Spacing.xs)
-        .background(color.opacity(0.1))
-        .cornerRadius(CornerRadius.sm)
-    }
-    
-    private func miniStat(icon: String, value: String, label: String, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption2)
-                .foregroundColor(color)
-            Text(value)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-        }
-    }
-    
-    private func loadRecommendation() {
-        guard let user = user else {
-            isLoading = false
-            return
-        }
-        
-        // Load recommendation in background
-        DispatchQueue.global(qos: .userInitiated).async {
-            let recs = SmartProgramRecommender.shared.getTopRecommendedPrograms(for: user, limit: 1)
-            DispatchQueue.main.async {
-                self.recommendation = recs.first
-                withAnimation(.easeOut(duration: 0.3)) {
-                    self.isLoading = false
-                }
-            }
-        }
-    }
-    
-    private func iconForProgram(_ program: WorkoutProgram) -> String {
-        let focusString = program.focus.rawValue.lowercased()
-        if focusString.contains("strength") { return "figure.strengthtraining.traditional" }
-        if focusString.contains("muscle") || focusString.contains("hyper") { return "figure.arms.open" }
-        if focusString.contains("fat") || focusString.contains("loss") { return "flame.fill" }
-        if focusString.contains("full") { return "figure.mixed.cardio" }
-        if focusString.contains("upper") { return "figure.boxing" }
-        if focusString.contains("lower") || focusString.contains("leg") { return "figure.run" }
-        if focusString.contains("core") { return "figure.core.training" }
-        return "figure.cooldown"
-    }
-    
-    private func colorForCompatibility(_ compat: EquipmentCompatibility) -> Color {
-        switch compat {
-        case .perfect: return .green
-        case .good: return .blue
-        case .partial: return .orange
-        case .poor: return .red
-        }
-    }
-    
-    private func colorForDifficulty(_ match: DifficultyMatch) -> Color {
-        switch match {
-        case .perfect: return .green
-        case .challenging: return .blue
-        case .comfortable: return .cyan
-        case .tooEasy: return .orange
-        case .tooHard: return .red
-        }
     }
 }
 
@@ -4480,6 +4190,53 @@ struct WorkoutTabProgramCard: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(programColor.opacity(0.3), lineWidth: 1)
         )
+    }
+}
+
+// MARK: - Phase 6 Deferred Stats Section
+//
+// Snappiness Overhaul Phase 6 (`PerfFlags.phase6WorkoutTabRender`).
+// `WorkoutStatsSection` is a non-lazy `VStack` of 12 chart widgets
+// (per the explicit `// Use VStack (not LazyVStack)` directive at
+// `WorkoutStatsView.swift:94`) — every child evaluates `body` on
+// first parent eval even though stats live below the fold. On the
+// Workout tab's first cold-start render that work compounded with
+// `CloudProgramService` / `GeneratedProgramService` cache loads to
+// blow past the 300ms tab-transition budget (1.39 (70) cold-start
+// log: `[TAB SWITCH] Slow transition: 777.0ms`).
+//
+// This wrapper renders a 1pt-tall `Color.clear` placeholder until
+// 500ms past first appear (mirrors `loadCardioWorkoutsThisWeek`'s
+// 250ms QP-19 sleep, doubled because chart widgets are heavier than
+// a single Supabase fetch and a below-fold deferral is invisible).
+// The first frame paints without 12 chart-widget body evals; the
+// real `WorkoutStatsSection` mounts after, swapping in well past
+// the tab-transition animation commit. Per QP-19 ("tab switch
+// handlers are minimal"), the deferred mount lives entirely in a
+// child `.task` — no `Task.sleep` lands on the parent's render
+// path. `.task` cancels automatically when the user leaves the tab,
+// so a fast tab away never strands the deferred mount.
+private struct Phase6DeferredWorkoutStatsSection: View {
+    @State private var isMounted = false
+
+    var body: some View {
+        Group {
+            if isMounted {
+                WorkoutStatsSection()
+            } else {
+                // Zero-height placeholder so the surrounding VStack
+                // ordering and spacing doesn't shift on mount. (Real
+                // `WorkoutStatsSection` is below the fold of the
+                // initial viewport — there's nothing for the user to
+                // see in this gap on first paint.)
+                Color.clear.frame(height: 1)
+            }
+        }
+        .task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            isMounted = true
+        }
     }
 }
 

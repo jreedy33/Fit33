@@ -16,6 +16,7 @@
 
 import Foundation
 import CoreData
+import CryptoKit
 import QuartzCore
 import Supabase
 
@@ -529,7 +530,59 @@ class UserBehaviorLearningEngine: ObservableObject {
     
     /// Builds similarity map on a BACKGROUND thread using pre-extracted data.
     /// This was previously blocking the main thread for ~6 seconds with 5500+ exercises.
-    nonisolated private func buildExerciseSimilarityMapBackground(_ exerciseData: [(name: String, muscles: String, equipment: String)]) {
+    ///
+    /// Phase 3 (Snappiness Overhaul, May 2026 — `PerfFlags.phase3SimilarityCache`):
+    /// the result is persisted to `Library/Caches/similarity_map.<key>.plist`
+    /// keyed on a SHA256 prefix of the sorted (name|muscles|equipment) catalog
+    /// rows. On the next cold start with the same catalog the disk hit avoids
+    /// the ~23.8s rebuild entirely. With the flag OFF the body is byte-identical
+    /// to the pre-Phase-3 implementation. `forceRebuild: true` bypasses the
+    /// disk hit (e.g. when the caller knows underlying data has changed).
+    nonisolated private func buildExerciseSimilarityMapBackground(
+        _ exerciseData: [(name: String, muscles: String, equipment: String)],
+        forceRebuild: Bool = false
+    ) {
+        // Phase 3 disk-cache HIT path. Computed BEFORE the build so a successful
+        // load can early-return and skip the entire compute.
+        let phase3CacheURL: URL?
+        let phase3CatalogVersionKey: String?
+        if PerfFlags.phase3SimilarityCache {
+            // Catalog version key — total ordering on (name, muscles, equipment)
+            // so two cold starts on the same static catalog produce the exact
+            // same hash regardless of input array order.
+            let sortedExercises = exerciseData.sorted { lhs, rhs in
+                if lhs.name != rhs.name { return lhs.name < rhs.name }
+                if lhs.muscles != rhs.muscles { return lhs.muscles < rhs.muscles }
+                return lhs.equipment < rhs.equipment
+            }
+            let body = sortedExercises
+                .map { "\($0.name)|\($0.muscles)|\($0.equipment)" }
+                .joined(separator: "\n")
+            let digest = SHA256.hash(data: Data(body.utf8))
+            let key = digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+            phase3CatalogVersionKey = key
+
+            if let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+                phase3CacheURL = cachesDir.appendingPathComponent("similarity_map.\(key).plist")
+            } else {
+                phase3CacheURL = nil
+            }
+
+            if !forceRebuild,
+               let url = phase3CacheURL,
+               let data = try? Data(contentsOf: url),
+               let decoded = try? PropertyListDecoder().decode([String: [String]].self, from: data) {
+                let variationCache: [String: Set<String>] = decoded.mapValues { Set($0) }
+                LearningCacheStorage.shared.exerciseVariationCache = variationCache
+                AppLogger.info("similarity_map.disk_hit (key=\(key)) — skipped 23800ms rebuild", category: .performance)
+                AppLogger.info("perf.signpost.similarity_map.disk_hit=1", category: .performance)
+                return
+            }
+        } else {
+            phase3CacheURL = nil
+            phase3CatalogVersionKey = nil
+        }
+
         let startTime = CACurrentMediaTime()
         
         // Group exercises by movement pattern and muscle+equipment
@@ -575,6 +628,28 @@ class UserBehaviorLearningEngine: ObservableObject {
         
         let elapsedMs = (CACurrentMediaTime() - startTime) * 1000
         AppLogger.debug("🧠 [LEARNING ENGINE] Built similarity map for \(variationCache.count) exercises in \(String(format: "%.0f", elapsedMs))ms (background thread)", category: .workout)
+
+        // Phase 3 disk-cache MISS path — persist serially on this same Task
+        // AFTER the build completes. Failure is non-fatal; the next launch
+        // simply rebuilds and re-attempts persistence.
+        if PerfFlags.phase3SimilarityCache,
+           let url = phase3CacheURL,
+           let key = phase3CatalogVersionKey {
+            AppLogger.info("perf.signpost.similarity_map.disk_hit=0", category: .performance)
+            do {
+                // Sort each Set's elements so the encoded plist is byte-stable
+                // across rebuilds on the same catalog (lets us verify the file
+                // hasn't churned and helps the OS keep dedup-friendly storage).
+                let serializable: [String: [String]] = variationCache.mapValues { $0.sorted() }
+                let encoder = PropertyListEncoder()
+                encoder.outputFormat = .binary
+                let data = try encoder.encode(serializable)
+                try data.write(to: url, options: .atomic)
+                AppLogger.info("similarity_map.disk_write (key=\(key), bytes=\(data.count), entries=\(variationCache.count))", category: .performance)
+            } catch {
+                AppLogger.error("similarity_map.disk_write_failed (key=\(key)): \(error)", category: .performance)
+            }
+        }
     }
     
     /// Get similar exercises based on movement pattern and muscle group

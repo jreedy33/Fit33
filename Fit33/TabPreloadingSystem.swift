@@ -298,31 +298,14 @@ final class TabPreloader: ObservableObject {
     // else. Removing the dead code shrinks the file and clears the
     // confusion of seeing referenced-but-unused infrastructure.
     
-    private func precomputeExerciseFilters() async {
-        // Pre-build search index for exercises
-        guard let exercises = exerciseLibraryData?.allExercises else { return }
-        
-        let startTime = CACurrentMediaTime()
-        
-        // Create a search index by first letter for instant filtering
-        var searchIndex: [Character: [Exercise]] = [:]
-        for exercise in exercises {
-            guard let firstChar = exercise.name?.lowercased().first else { continue }
-            searchIndex[firstChar, default: []].append(exercise)
-        }
-        
-        // Store search index
-        exerciseLibraryData?.searchIndex = searchIndex
-        
-        // ⚡️ PRE-COMPUTE the recommended exercise list so the Exercises tab has ZERO work on appear
-        // NOTE: Runs on MainActor since ExerciseLibraryFilterCache is @MainActor,
-        // but the guard inside prevents duplicate computation
-        ExerciseLibraryFilterCache.shared.precomputeRecommendedList(allExercises: exercises)
-        
-        let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        AppLogger.debug("  └─ Pre-built search index + recommended list for \(exercises.count) exercises in \(String(format: "%.0f", elapsed))ms", category: .ui)
-    }
-    
+    // 2026-05-07 (Snappiness Overhaul Phase 4.3): `precomputeExerciseFilters`
+    // removed. Zero call sites repo-wide (verified via grep at deletion
+    // time). The search-index it built (`exerciseLibraryData.searchIndex`)
+    // and the `ExerciseLibraryFilterCache.precomputeRecommendedList` warmup
+    // are still reachable via direct invocation from the Exercise Library
+    // view and `ExerciseLibraryService.preloadAll()` — neither relied on
+    // this private helper.
+
     // MARK: - Phase 4: Pre-warm Services
     
     private func preloadPhase4_Services() async {
@@ -664,13 +647,29 @@ final class ExerciseLibraryFilterCache: ObservableObject {
         guard !exerciseIndex.isEmpty else { return }
         isComputing = true
 
-        StartupWaterfall.shared.mark("FilterCache.precompute")
+        // Phase 5.C (Snappiness Overhaul, 2026-05-07) — when
+        // `PerfFlags.phase5OffMain` is ON, the StartupWaterfall mark moves
+        // INSIDE the Task.detached body below so `threadTag` attributes
+        // FilterCache.precompute to `bg-init` instead of `main`. The
+        // matching/sorting/pre-fault work is already off-main; only the
+        // mark/end endpoints were producing the [main] tag in the
+        // waterfall. Pairs with the matching `end` gate further down so
+        // `effectiveThread` resolves to a single [bg-init] tag (mark
+        // thread == end thread → no "mixed" label). When OFF, both
+        // endpoints stay on main for byte-identical pre-flag behavior.
+        // QP invariants 31, 35.
+        if !PerfFlags.phase5OffMain {
+            StartupWaterfall.shared.mark("FilterCache.precompute")
+        }
         let startTime = CACurrentMediaTime()
 
         let recSet = recommendedExerciseNames
         let usageCounts = personalUsageCounts
 
         Task.detached(priority: .userInitiated) { [weak self] in
+            if PerfFlags.phase5OffMain {
+                StartupWaterfall.shared.mark("FilterCache.precompute")
+            }
             // (1) Snapshot popularity data on bg — was previously on main.
             let (popCache, favCache) = await MainActor.run {
                 ExercisePopularityService.shared.snapshotPopularityData()
@@ -743,6 +742,15 @@ final class ExerciseLibraryFilterCache: ObservableObject {
                 _ = (try? bgContext.fetch(request)) ?? []
             }
 
+            // Phase 5.C — when the off-main flag is ON, end from the bg
+            // task BEFORE the @Published-publish hop so the waterfall
+            // `effectiveThread` resolves to a single [bg-init] tag (matching
+            // the bg `mark` above). When OFF, end stays inside the
+            // MainActor.run block below for byte-identical pre-flag behavior.
+            if PerfFlags.phase5OffMain {
+                StartupWaterfall.shared.end("FilterCache.precompute")
+            }
+
             // (3) Final main-thread block — minimal. Wrapper construction +
             // @Published assignment only; rows are already cache-hydrated.
             await MainActor.run {
@@ -752,7 +760,9 @@ final class ExerciseLibraryFilterCache: ObservableObject {
                 self.isReady = true
                 self.isComputing = false
 
-                StartupWaterfall.shared.end("FilterCache.precompute")
+                if !PerfFlags.phase5OffMain {
+                    StartupWaterfall.shared.end("FilterCache.precompute")
+                }
                 let elapsed = (CACurrentMediaTime() - startTime) * 1000
                 AppLogger.debug("⚡️ [FILTER CACHE] Pre-computed \(matched.count) recommended exercises in \(String(format: "%.1f", elapsed))ms", category: .ui)
             }

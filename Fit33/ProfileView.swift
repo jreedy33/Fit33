@@ -1334,9 +1334,23 @@ struct ProfileView: View {
             .task { await olympianPath.loadCurrentSeason() }
             .transition(.opacity.combined(with: .scale(scale: 0.95)))
         } else {
-            Color.clear
-                .frame(height: 0)
-                .task { await olympianPath.loadCurrentSeason() }
+            // Snappiness Overhaul Phase 1.2/1.3 — the `.task` on this
+            // 0-height Color.clear was firing `loadCurrentSeason()` from
+            // an invisible view in addition to the visible-branch
+            // `.task` above (line ~1334), doubling the work on cold
+            // start. With the flag ON we drop the redundant `.task`;
+            // OlympianPathService is loaded by other call sites
+            // (`OlympianPathView`, dashboard wrappers) which now share
+            // the 60s TTL cache. With the flag OFF we keep the original
+            // wiring byte-for-byte.
+            if PerfFlags.phase1BodyChurn {
+                Color.clear
+                    .frame(height: 0)
+            } else {
+                Color.clear
+                    .frame(height: 0)
+                    .task { await olympianPath.loadCurrentSeason() }
+            }
         }
     }
 

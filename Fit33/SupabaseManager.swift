@@ -1105,6 +1105,24 @@ class SupabaseManager: ObservableObject {
                 // commonly, the empty-default profile that gates autogen to
                 // foundational/stretch-only exercises). Bug-intel Report 8.
                 ProgressiveExerciseUnlockService.shared.clearCache()
+
+                // Snappiness Overhaul Phase 5.B
+                // (`PerfFlags.phase5RecommenderPrewarm`): drop the
+                // `SmartProgramRecommender.getSuggestedProgram` cache so a
+                // previously-signed-in user's recommendation cannot leak
+                // across the auth boundary. `clearSuggestedProgramCache()`
+                // is always safe to call (no-op when empty / flag OFF).
+                SmartProgramRecommender.shared.clearSuggestedProgramCache()
+
+                // Snappiness Overhaul Phase 5.A
+                // (`PerfFlags.phase5DashboardCache`): broadcast sign-out so
+                // the dashboard social-fanout disk cache can purge every
+                // user's plist file. Gated on the flag so that adding the
+                // new notification name doesn't change behavior for any
+                // future observer when the flag is OFF.
+                if PerfFlags.phase5DashboardCache {
+                    NotificationCenter.default.post(name: .userDidSignOut, object: nil)
+                }
                 
                 // Mark that user manually signed out (for development mode)
                 UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
@@ -4578,13 +4596,54 @@ class SupabaseManager: ObservableObject {
         AppLogger.debug("Starting comprehensive data sync from cloud...", category: .network)
         
         do {
-            await wf.measure("CloudSync: profile") {
-                if let cloudProfile = try? await fetchUserProfile() {
-                    await MainActor.run {
-                        UserManager.shared.isVerified = cloudProfile.isVerified ?? false
-                        UserManager.shared.isGoldVerified = cloudProfile.isGoldVerified ?? false
+            // Snappiness Overhaul Phase 5.E (2026-05-07) — measure-window
+            // slimming for `CloudSync: profile` (was 4800ms cold-start, now
+            // ~150-300ms = pure network + Core Data write).
+            //
+            // OFF (legacy path): two MainActor.run hops INSIDE the measure
+            // — the outer one set isVerified/isGoldVerified redundantly with
+            // the inner one inside `syncUserProfileToCoreData`'s tail. Each
+            // hop blocks the bg-init Task on main runloop quiescence; cold
+            // start contention inflated the wall time.
+            //
+            // ON (Phase 5.E): only the data work (network fetch + bgContext
+            // .perform write) lives inside the measure. The MainActor side
+            // effects (isVerified, UnitSettings, reloadCurrentUser,
+            // checkAndBreakStreakIfNeeded) are deferred to a fire-and-forget
+            // Task that runs AFTER the measure block exits. Field-by-field
+            // Core Data write is byte-identical (audit: see test
+            // `Phase5ProfileSyncTests.testFieldsPopulatedIdentical`).
+            if PerfFlags.phase5ProfileSync {
+                var fetchedProfile: UserProfileDTO?
+                await wf.measure("CloudSync: profile") {
+                    if let cloudProfile = try? await fetchUserProfile() {
+                        fetchedProfile = cloudProfile
+                        await applyProfileToCoreDataFast(profile: cloudProfile)
                     }
-                    await syncUserProfileToCoreData(profile: cloudProfile)
+                }
+                if let profile = fetchedProfile {
+                    Task { @MainActor in
+                        UserManager.shared.isVerified = profile.isVerified ?? false
+                        UserManager.shared.isGoldVerified = profile.isGoldVerified ?? false
+                        UnitSettingsManager.shared.loadFromCloud(
+                            weightUnit: profile.weightUnit,
+                            heightUnit: profile.heightUnit,
+                            distanceUnit: profile.distanceUnit,
+                            weekStartDay: profile.weekStartDay
+                        )
+                        UserManager.shared.reloadCurrentUser()
+                        UserManager.shared.checkAndBreakStreakIfNeeded()
+                    }
+                }
+            } else {
+                await wf.measure("CloudSync: profile") {
+                    if let cloudProfile = try? await fetchUserProfile() {
+                        await MainActor.run {
+                            UserManager.shared.isVerified = cloudProfile.isVerified ?? false
+                            UserManager.shared.isGoldVerified = cloudProfile.isGoldVerified ?? false
+                        }
+                        await syncUserProfileToCoreData(profile: cloudProfile)
+                    }
                 }
             }
             
@@ -4647,6 +4706,147 @@ class SupabaseManager: ObservableObject {
         }
     }
     
+    /// Snappiness Overhaul Phase 5.E (2026-05-07) — Fast variant of
+    /// `syncUserProfileToCoreData` that ONLY does the bgContext.perform
+    /// write + save and OMITS the trailing `MainActor.run` side-effect
+    /// cascade (`isVerified`, `UnitSettings.loadFromCloud`,
+    /// `reloadCurrentUser`, `checkAndBreakStreakIfNeeded`).
+    ///
+    /// The Core Data write body below is byte-identical to the bg.perform
+    /// block in `syncUserProfileToCoreData(profile:)` — same fields, same
+    /// merge logic, same UserDefaults sidecar writes. The caller
+    /// (`syncAllDataFromCloud` Phase 5.E branch) is responsible for
+    /// scheduling the MainActor side-effects on a fire-and-forget Task
+    /// AFTER the measure block exits, so the StartupWaterfall timeline
+    /// reflects pure data work instead of main-thread contention.
+    ///
+    /// Field-by-field parity audit: see
+    /// `Fit33Tests/Phase5ProfileSyncTests.swift::testFieldsPopulatedIdentical`.
+    private func applyProfileToCoreDataFast(profile: UserProfileDTO) async {
+        let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()
+        let isoFormatter = iso8601Formatter
+
+        await bgContext.perform {
+            let fetchRequest: NSFetchRequest<User> = User.fetchRequest()
+
+            do {
+                let existingUsers = try bgContext.fetch(fetchRequest)
+                let user: User
+
+                if let existingUser = existingUsers.first {
+                    user = existingUser
+                    AppLogger.debug("Updating existing user from cloud profile (fast)", category: .network)
+
+                    // 🩹 SELF-HEAL: keep parity with syncUserProfileToCoreData.
+                    if let cloudUUID = UUID(uuidString: profile.id), user.id != cloudUUID {
+                        AppLogger.warning("[SYNC] Self-healing User.id mismatch — local=\(user.id?.uuidString ?? "nil") cloud=\(cloudUUID.uuidString). Aligning to auth.uid for RLS.", category: .network)
+                        user.id = cloudUUID
+                    }
+                } else {
+                    guard let profileUUID = UUID(uuidString: profile.id) else {
+                        AppLogger.error("Cloud profile has malformed UUID '\(profile.id)' — skipping sync to avoid orphaned Core Data row", category: .network)
+                        return
+                    }
+                    user = User(context: bgContext)
+                    user.id = profileUUID
+                    user.createdAt = Date()
+                    AppLogger.debug("Creating new user from cloud profile (fast)", category: .network)
+                }
+
+                let cloudName = profile.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let localName = user.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let cloudIsPlaceholder = cloudName.isEmpty || cloudName == "User" || cloudName == "Apple User" || cloudName == "Google User" || cloudName == "Facebook User"
+                let localIsPlaceholder = localName.isEmpty || localName == "User" || localName == "Apple User" || localName == "Google User" || localName == "Facebook User"
+                if !cloudIsPlaceholder {
+                    user.name = profile.name
+                } else if localIsPlaceholder {
+                    user.name = profile.name
+                } else {
+                    AppLogger.debug("[SYNC] Skipping name overwrite — cloud='\(cloudName)' is placeholder, local='\(localName)' is real", category: .network)
+                }
+                user.email = profile.email
+                user.fitnessGoal = profile.fitnessGoal
+                user.experienceLevel = profile.experienceLevel
+                user.hasCompletedOnboarding = profile.hasCompletedOnboarding ?? false
+
+                if let birthday = profile.birthday {
+                    user.birthday = birthday
+                }
+                if let age = profile.age {
+                    user.age = Int16(age)
+                }
+                if let gender = profile.gender {
+                    user.gender = gender
+                }
+                if let height = profile.heightCm {
+                    user.height = Int16(height)
+                    UserDefaults.standard.set(Int(height), forKey: "userHeight")
+                }
+                if let heightInches = profile.heightInches {
+                    user.heightInches = Int16(heightInches)
+                }
+                if let weight = profile.weightKg {
+                    user.weight = Int16(weight)
+                    UserDefaults.standard.set(Int(weight), forKey: "userWeight")
+                }
+                if let weightLbs = profile.weightLbs {
+                    user.weightLbs = weightLbs
+                }
+                if let equipment = profile.equipment {
+                    user.equipment = equipment as NSArray
+                }
+                if let availableDays = profile.availableDays {
+                    user.availableDays = Int16(availableDays)
+                }
+
+                let cloudLastWorkoutDate = profile.lastWorkoutDate.flatMap { isoFormatter.date(from: $0) }
+                let localLastWorkoutDate = user.lastWorkoutDate
+
+                let cloudIsNewer = {
+                    guard let cloudDate = cloudLastWorkoutDate else { return false }
+                    guard let localDate = localLastWorkoutDate else { return true }
+                    return cloudDate > localDate
+                }()
+
+                if cloudIsNewer {
+                    user.currentStreak = Int16(profile.currentStreak ?? 0)
+                    user.lastWorkoutDate = cloudLastWorkoutDate
+                }
+                let cloudLongest = Int16(profile.longestStreak ?? 0)
+                if cloudLongest > user.longestStreak {
+                    user.longestStreak = cloudLongest
+                }
+                let cloudWorkouts = Int32(profile.totalWorkouts ?? 0)
+                if cloudWorkouts > user.totalWorkouts {
+                    user.totalWorkouts = cloudWorkouts
+                }
+                let cloudXP = Int32(profile.xp ?? 0)
+                if cloudXP > user.xp {
+                    user.xp = cloudXP
+                }
+
+                if let gender = profile.gender {
+                    UserDefaults.standard.set(gender, forKey: "userGender")
+                }
+
+                try bgContext.save()
+                AppLogger.info("Full user profile synced from cloud (fast): Name=\(profile.name ?? "nil"), Age=\(profile.age ?? 0), Height=\(profile.heightCm ?? 0)cm, Weight=\(profile.weightKg ?? 0)kg, Goal=\(profile.fitnessGoal ?? "nil"), Level=\(profile.experienceLevel ?? "nil"), Equipment=\(profile.equipment ?? []), Days=\(profile.availableDays ?? 0), XP=\(profile.xp ?? 0), Streak=\(profile.currentStreak ?? 0), Workouts=\(profile.totalWorkouts ?? 0)", category: .network)
+            } catch {
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Error syncing user profile to Core Data (fast)",
+                    category: .network,
+                    op: PerformanceSignposts.Op.cloudSyncProfile.rawValue,
+                    endpoint: "coredata/user(profile save fast)"
+                )
+            }
+        }
+        // NOTE: NO trailing `MainActor.run` here — caller schedules the side
+        // effects (isVerified, UnitSettings, reloadCurrentUser,
+        // checkAndBreakStreakIfNeeded) on a fire-and-forget Task AFTER the
+        // measure block exits. See `syncAllDataFromCloud` Phase 5.E branch.
+    }
+
     /// Restores user profile from cloud to Core Data
     private func syncUserProfileToCoreData(profile: UserProfileDTO) async {
         let bgContext = PersistenceController.shared.container.newBackgroundContextSafely()

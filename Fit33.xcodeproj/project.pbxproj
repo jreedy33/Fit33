@@ -341,6 +341,8 @@
 		7CB08CA72EDE398A00236ECB /* DevMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08CA62EDE398A00236ECB /* DevMenuView.swift */; };
 		7CD6DD322FA4382700E49D30 /* NewUserJourneyTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */; };
 		7CD6E66D2FA468FE00E49D30 /* ChallengeCreationCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */; };
+		7CDEAD022E5F0507007F1A60 /* PerfFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CDEAD012E5F0507007F1A60 /* PerfFlags.swift */; };
+		7CDEAD042E5F0508007F1A60 /* DashboardSocialFanoutCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CDEAD032E5F0508007F1A60 /* DashboardSocialFanoutCache.swift */; };
 		7CEA1ED52F54FB2D00CC468C /* WeeklyLeagueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA1ED42F54FB2D00CC468C /* WeeklyLeagueViews.swift */; };
 		7CEA1ED72F54FB3A00CC468C /* WeeklyLeagueService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA1ED62F54FB3A00CC468C /* WeeklyLeagueService.swift */; };
 		7CEA1EDA2F5A58EA00CC468C /* DailyQuestViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CEA1ED92F5A58EA00CC468C /* DailyQuestViews.swift */; };
@@ -830,6 +832,8 @@
 		7CB08CA62EDE398A00236ECB /* DevMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevMenuView.swift; sourceTree = "<group>"; };
 		7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewUserJourneyTracker.swift; sourceTree = "<group>"; };
 		7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeCreationCards.swift; sourceTree = "<group>"; };
+		7CDEAD012E5F0507007F1A60 /* PerfFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerfFlags.swift; sourceTree = "<group>"; };
+		7CDEAD032E5F0508007F1A60 /* DashboardSocialFanoutCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardSocialFanoutCache.swift; sourceTree = "<group>"; };
 		7CEA1ED42F54FB2D00CC468C /* WeeklyLeagueViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyLeagueViews.swift; sourceTree = "<group>"; };
 		7CEA1ED62F54FB3A00CC468C /* WeeklyLeagueService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyLeagueService.swift; sourceTree = "<group>"; };
 		7CEA1ED92F5A58EA00CC468C /* DailyQuestViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyQuestViews.swift; sourceTree = "<group>"; };
@@ -1022,31 +1026,12 @@
 		A12345678901234567890138 /* Fit33 */ = {
 			isa = PBXGroup;
 			children = (
-				7C8CF9D02FA1EC6C007CD766 /* TierPromotionOverlay.swift */,
-				7C8CFD532FA426F9007CD766 /* BarcodeScannerView.swift */,
-				7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */,
-				7C8CFBBA2FA2B7AD007CD766 /* WorkoutQualityScorer.swift */,
 				7C6DE3802F5BE05F00BCA276 /* AchievementService.swift */,
-				7C8CF97D2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift */,
 				7C6DE3822F5BE06300BCA276 /* AchievementsView.swift */,
-				7C8CF10C2F9EB22C007CD766 /* ActiveChallengeWidgetBridge.swift */,
-				8689D6E7E65D34B42C3F6179 /* SmackTalkWidgetBridge.swift */,
 				8B2F3E4D5C6B7A8B9C0D1E2F /* ActiveChallengeHeaderRow.swift */,
-				9D4F5E6D7C8B9A0C1D2E3F40 /* AddHomescreenWidgetSheet.swift */,
-				9D4F5E6D7C8B9A0C1D2E3F41 /* ChallengeDetailKit.swift */,
-				9D4F5E6D7C8B9A0C1D2E3F42 /* BattleCryComposer.swift */,
+				7C8CF10C2F9EB22C007CD766 /* ActiveChallengeWidgetBridge.swift */,
 				7C8CF1472F9EBAC4007CD766 /* ActiveChallengeWidgetSnapshot.swift */,
-				7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */,
 				A12345678901234567890221 /* ActiveWorkoutView.swift */,
-				7C8CF46F2F9FA437007CD766 /* DailyBriefEngine.swift */,
-				7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */,
-				7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */,
-				7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */,
-				7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */,
-				7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */,
-				7C8CF4702F9FA437007CD766 /* DailyBriefStore.swift */,
-				790FA252417E43B99A490A73 /* RecentCardioCompletionStore.swift */,
-				7C8CF4712F9FA437007CD766 /* DailyBriefTemplates.swift */,
 				21B04047B245CC8F11C66346 /* ActiveWorkoutView+Actions.swift */,
 				E8354565A7AE5145685CA422 /* ActiveWorkoutView+Init.swift */,
 				60944C90B2EE8BB0F4FAB032 /* ActiveWorkoutView+Layout.swift */,
@@ -1057,13 +1042,12 @@
 				300AF85F42C21294DB8B79FF /* AdaptiveGoalNudgeCard.swift */,
 				7C8CEA412F99C136007CD766 /* AdaptiveGoalService.swift */,
 				8E084A5F84A623567A84C480 /* AddExerciseDuringWorkoutView.swift */,
+				9D4F5E6D7C8B9A0C1D2E3F40 /* AddHomescreenWidgetSheet.swift */,
 				7CB08C772ED816FF00236ECB /* AdManager.swift */,
 				7C8405C72EE685400009ED0F /* AdvancedIntelligenceService.swift */,
 				7CA81D842F6EF0E80020170A /* AdvancedSessionLogger.swift */,
-				7CA81D862F6EF1010020170A /* NewUserJourneyTracker.swift */,
 				7C3DF1D52F2D6FD900A9CDA7 /* AppConfig.swift */,
 				7CB08C722ED810A500236ECB /* AppearanceManager.swift */,
-				7C8CF9D22FA1EC80007CD766 /* LevelToTierMigrationCard.swift */,
 				7CAA1F802F424534008200B9 /* AppHealthDiagnostics.swift */,
 				7CAA1F822F42453A008200B9 /* AppHealthDiagnosticsView.swift */,
 				7C0C42792F182C6500F02E84 /* AppPerformanceSystem.swift */,
@@ -1071,33 +1055,30 @@
 				149F1F9A361C4E178E9EF77A /* AuthView.swift */,
 				7CB08C662ED6A34F00236ECB /* AutoWorkoutPreviewView.swift */,
 				7C1B0A562F4F8BA00094AF68 /* BackgroundChallengeSyncService.swift */,
+				7C8CFD532FA426F9007CD766 /* BarcodeScannerView.swift */,
+				9D4F5E6D7C8B9A0C1D2E3F42 /* BattleCryComposer.swift */,
 				7CAA26040001000000000042 /* BlockedUsersView.swift */,
 				7C0C41ED2F09BD0300F02E84 /* BluetoothFitnessManager.swift */,
 				7C3DF1D12F2D263900A9CDA7 /* BodyCompositionTrackingService.swift */,
+				B05A2A0150220502BC050000 /* BrowseAllCardioView.swift */,
 				7CB08CA22EDE395600236ECB /* BugReportService.swift */,
 				9F79CB6A4C33FAA95E80AB9A /* BugReportStateSnapshot.swift */,
 				5E1D94931B46115CBE7725B3 /* BugReportStateSnapshot+Providers.swift */,
 				7CB08CA42EDE397200236ECB /* BugReportView.swift */,
-				B05A2A0150220502BC050000 /* BrowseAllCardioView.swift */,
-				B05A2A0250220502BC050002 /* CardioSessionManager.swift */,
-				B05A2A0350220502BC050004 /* OutdoorCardioActiveView.swift */,
-				B05A2A0450220502BC050006 /* CardioRecapView.swift */,
-				B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */,
-				B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */,
-				B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */,
-				C05A2026050420260001000C /* OlympianPathService.swift */,
-				C05A2026050420260002000C /* DashboardOlympianWidget.swift */,
-				C05A2026050420260003000C /* OlympianPathView.swift */,
-				C05A2026050420260004000C /* OlympianCelebrationOverlay.swift */,
-				C05A2026050420260005000C /* PaywallFirstScreenView.swift */,
 				7C0C41F32F09C92400F02E84 /* CardioActiveWorkoutView.swift */,
+				B05A2A0650220502BC05000A /* CardioFirstOpenIntroView.swift */,
 				7C0C41F12F09C91F00F02E84 /* CardioGoalSetupView.swift */,
 				7C0C41EF2F09C91A00F02E84 /* CardioLandingView.swift */,
+				B05A2A0450220502BC050006 /* CardioRecapView.swift */,
+				B05A2A0250220502BC050002 /* CardioSessionManager.swift */,
+				B05A2A0550220502BC050008 /* CardioShareCardSheet.swift */,
 				A12345678901234567890309 /* CardioStravaSection.swift */,
 				7C0C41F72F09D76A00F02E84 /* CardioWorkoutDetailView.swift */,
-				A12345678901234567890401 /* ChallengeAFriendEntryWidget.swift */,
 				7C53E2232F353B7700C2F7EC /* ChallengeActivityType.swift */,
+				A12345678901234567890401 /* ChallengeAFriendEntryWidget.swift */,
+				7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */,
 				7C53E2252F353B7700C2F7ED /* ChallengeCreationCards.swift */,
+				9D4F5E6D7C8B9A0C1D2E3F41 /* ChallengeDetailKit.swift */,
 				7CACB57A2F2E971E003A7C91 /* ChallengeDetailView.swift */,
 				7C53E22D2F35522100C2F7EC /* ChallengeFlowStartView.swift */,
 				7C8CE7E32F968F46007CD766 /* ChallengeOpponentWakeService.swift */,
@@ -1111,6 +1092,8 @@
 				7CB08C6A2ED73A6F00236ECB /* CloudProgramService.swift */,
 				7CAA26060001000000000042 /* CloudSyncRetryQueue.swift */,
 				7C8405D92EE8AF830009ED0F /* CollaborativeLearningEngine.swift */,
+				7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */,
+				7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */,
 				7CAA1FAE2F428898008200B9 /* CommunityChallengeService.swift */,
 				7CAA1FAC2F428889008200B9 /* CommunityChallengeViews.swift */,
 				7C8405C52EE65E490009ED0F /* CommunityIntelligenceService.swift */,
@@ -1126,14 +1109,19 @@
 				7C1B0AB82F50DE3C0094AF68 /* CrashReportingService.swift */,
 				7C6DE3F42F5CAD7400BCA276 /* CriticalPathTests.swift */,
 				A12345678901234567890187 /* CustomWorkoutBuilderView.swift */,
+				7C8CF46F2F9FA437007CD766 /* DailyBriefEngine.swift */,
+				7C8CF4702F9FA437007CD766 /* DailyBriefStore.swift */,
+				7C8CF4712F9FA437007CD766 /* DailyBriefTemplates.swift */,
 				7C8CF10E2F9EB239007CD766 /* DailyGoalsWidgetBridge.swift */,
 				7C8CE8A52F971261007CD766 /* DailyQuestService.swift */,
 				7CEA1ED92F5A58EA00CC468C /* DailyQuestViews.swift */,
 				7C8CEA352F99C0FD007CD766 /* DailyReadinessSnapshot.swift */,
 				7C53E1E72F328FF800C2F7EC /* DailyResetService.swift */,
+				B05A2A0750220502BC05000C /* DashboardCardioWidget.swift */,
 				7D264056B4628D9D55844A39 /* DashboardHydrationWidget.swift */,
 				B0954704AEDC9D0BCAFFB73A /* DashboardModels.swift */,
 				567E4D019E321EDAAE192E38 /* DashboardNavigationDestinations.swift */,
+				C05A2026050420260002000C /* DashboardOlympianWidget.swift */,
 				E8DCB31EA13C425893DF2D7F /* DashboardOuraWidget.swift */,
 				A12345678901234567890301 /* DashboardStravaWidget.swift */,
 				F2684E7190B23B3E0D98B717 /* DashboardStreakViews.swift */,
@@ -1227,7 +1215,7 @@
 				B1234567890123456789A008 /* IntelligentWorkoutGenerator.swift */,
 				7CAA1FA22F4AAAA0008200B9 /* KeychainHelper.swift */,
 				7C0C421F2F09DB7200F02E84 /* LearningEngineDebugView.swift */,
-				7CADB1A02F4AAAB0008200B9 /* OAuthAuditLog.swift */,
+				7C8CF9D22FA1EC80007CD766 /* LevelToTierMigrationCard.swift */,
 				7C6DE37E2F5BE05500BCA276 /* LevelUpCelebrationOverlay.swift */,
 				7C0C41CD2F00A63D00F02E84 /* LimitationFilterEngine.swift */,
 				7C0C41CF2F00B0A900F02E84 /* LimitationRuleTables.swift */,
@@ -1243,6 +1231,8 @@
 				7C558B222ED63C2C00A01E1F /* MealService.swift */,
 				7C558B1A2ED5025500A01E1F /* MealService.swift */,
 				7C792AF52F2B9F400048A97E /* MealsQuickActionsView.swift */,
+				7C0D05022F803F0000000002 /* MonetizationCheatCodeViews.swift */,
+				7C0D05002F803F0000000001 /* MonetizationState.swift */,
 				7C47F9DC2EE336F200BEC4D7 /* MuscleRecoveryTracker.swift */,
 				7C53E21D2F33FD7500C2F7EC /* MyQRCodeView.swift */,
 				7C0C42BD2F194EB700F02E84 /* NativeAdView.swift */,
@@ -1256,17 +1246,19 @@
 				EF7F4EB0AB2ADBE287AC1AC4 /* NewOnboardingView+Social.swift */,
 				F1E3406881B826760E5E531D /* NewOnboardingView+Steps.swift */,
 				4F4A4117978615CECC0201DA /* NewOnboardingView+Verification.swift */,
+				7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */,
+				7CA81D862F6EF1010020170A /* NewUserJourneyTracker.swift */,
 				7CB08C8C2EDAB01300236ECB /* NotificationManager.swift */,
 				7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */,
 				7CB08C8D2EDAB01300236ECB /* NotificationSettingsView.swift */,
-				7C8E80002FB10001007CD766 /* PushPayload.swift */,
-				7C8E80082FB10005007CD766 /* PushEventReporter.swift */,
-				7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */,
-				7C8E800A2FB10006007CD766 /* SmartNotificationSettingsSection.swift */,
 				B74E45D48B3421428E5D57F5 /* NowPlayingBar.swift */,
 				AB2C49A7B94119EE17AEC8D6 /* NutritionDetailViews.swift */,
 				240444B5A733024477A024FC /* NutritionModels.swift */,
 				7CB08C5E2ED644E700236ECB /* NutritionScannerView.swift */,
+				7CADB1A02F4AAAB0008200B9 /* OAuthAuditLog.swift */,
+				C05A2026050420260004000C /* OlympianCelebrationOverlay.swift */,
+				C05A2026050420260001000C /* OlympianPathService.swift */,
+				C05A2026050420260003000C /* OlympianPathView.swift */,
 				D2DC439CB611C041F0E107CA /* OnboardingCardViews.swift */,
 				7C8405E32EE8C57E0009ED0F /* OnboardingComponents.swift */,
 				935D4A858C8C3C8A31F67156 /* OnboardingConfirmationViews.swift */,
@@ -1278,18 +1270,23 @@
 				7C792ACB2F2ABA150048A97E /* OrientationManager.swift */,
 				D4FED9E19F69446F994B8FA9 /* OuraService.swift */,
 				8FB5A1DFFE964AB298BE7010 /* OuraSettingsView.swift */,
+				B05A2A0350220502BC050004 /* OutdoorCardioActiveView.swift */,
+				C05A2026050420260005000C /* PaywallFirstScreenView.swift */,
+				7CDEAD012E5F0507007F1A60 /* PerfFlags.swift */,
+				7CDEAD032E5F0508007F1A60 /* DashboardSocialFanoutCache.swift */,
 				7C8CEA752F9A75DC007CD766 /* PerformanceMetricsUploader.swift */,
-				7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */,
 				7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */,
+				7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */,
 				7C8CEA732F9A75B1007CD766 /* PerformanceSignposts.swift */,
 				7CEAFD142EF9D38900874B57 /* PersistenceController.swift */,
 				A12345678901234567890161 /* PersistenceController.swift */,
 				7C53E1EB2F3294A200C2F7EC /* PersonalizedInsightsService.swift */,
 				7C8405D12EE7D2ED0009ED0F /* PersonalizedProgramsView.swift */,
-				7C8CEFC02FA10001007CD766 /* PhoneToWatchSyncBridge.swift */,
 				7C8CEFD02FA20001007CD766 /* PhoneToWatchLiveWorkoutBridge.swift */,
+				7C8CEFC02FA10001007CD766 /* PhoneToWatchSyncBridge.swift */,
 				7C53E1DF2F32496600C2F7EC /* PhoneVerificationService.swift */,
 				7C53E1E12F32535F00C2F7EC /* PhoneVerificationSheet.swift */,
+				7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */,
 				CA3747D1BED74EEAC4C46388 /* PlateCalculatorView.swift */,
 				7C792AF12F2B04610048A97E /* PremiumUpgradeView.swift */,
 				A12345678901234567890144 /* Preview Content */,
@@ -1321,18 +1318,24 @@
 				7C8405C32EE650B60009ED0F /* ProgressiveWorkoutIntelligence.swift */,
 				7CAAA0042F5BF00100AAA005 /* ProgressPhotoService.swift */,
 				7CAAA0062F5BF00100AAA007 /* ProgressPhotoViews.swift */,
+				7C0D05062F803F0000000004 /* ProRecapView.swift */,
 				7C792B012F2C2F7B0048A97E /* PulsingRedDot.swift */,
+				7C8E80082FB10005007CD766 /* PushEventReporter.swift */,
 				BAE31DB8143B34C9F67019D2 /* PushNotificationDebugView.swift */,
 				7C0C428B2F18A4DA00F02E84 /* PushNotificationService.swift */,
+				7C8E80002FB10001007CD766 /* PushPayload.swift */,
+				7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */,
 				7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */,
 				7C53E21F2F33FD7500C2F7EC /* QRCodeService.swift */,
 				A12345678901234567890311 /* QuestInsightsView.swift */,
 				7C8CEA3D2F99C126007CD766 /* ReadinessAdjustmentBanner.swift */,
+				CAAA139ADB4065DDE6D7096C /* ReadinessDrillDownSheet.swift */,
 				7C8CEA372F99C109007CD766 /* ReadinessService.swift */,
 				7C8CEA3B2F99C11E007CD766 /* ReadinessWorkoutAdjuster.swift */,
 				7C53E1DD2F31B27500C2F7EC /* RealtimeService.swift */,
 				7C792AFB2F2C23AC0048A97E /* ReceivedWorkoutPreviewWidget.swift */,
 				7C0C42832F18340E00F02E84 /* ReceivedWorkoutsView.swift */,
+				790FA252417E43B99A490A73 /* RecentCardioCompletionStore.swift */,
 				7C8CED132F9D1B6E007CD766 /* RecentSessionsTilesRow.swift */,
 				7C792AC72F2AB2390048A97E /* RecipeBrowserView.swift */,
 				7C792AC02F2AAE6E0048A97E /* RecipeDetailView.swift */,
@@ -1352,14 +1355,12 @@
 				7C81611B2EF86925007556A7 /* RunningWorkoutView.swift */,
 				7C3DF1C92F2CF7E700A9CDA7 /* SavedMealsService.swift */,
 				7CAFD5722EE233A000920F0D /* ScreenCodeMap.swift */,
+				7C8CF97D2FA1D10C007CD766 /* ScreenshotAnnotatorView.swift */,
 				7C1B0A382F4F74520094AF68 /* Secrets.swift */,
 				6E4042F3898D77AA0F43BE33 /* SelectAllTextField.swift */,
 				7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */,
 				7C6DE40E2F5DEAA700BCA276 /* ServiceProtocols.swift */,
 				7C98FAC32EEC7EA8001AE1F3 /* SessionLogManager.swift */,
-				7C0D05002F803F0000000001 /* MonetizationState.swift */,
-				7C0D05022F803F0000000002 /* MonetizationCheatCodeViews.swift */,
-				7C0D05062F803F0000000004 /* ProRecapView.swift */,
 				7C0D05042F803F0000000003 /* SettingsSubscriptionSection.swift */,
 				7C590B8F2ED2D1DB002BD2B0 /* SettingsView.swift */,
 				7C590B972ED2E2DB002BD2B0 /* SevenDayProgramDetailView.swift */,
@@ -1370,12 +1371,14 @@
 				7C792AF92F2B9F5A0048A97E /* ShoppingListView.swift */,
 				7C8CE7E42F968F46007CD766 /* SilentPushHandler.swift */,
 				C63A407AADBE0D7C19E3A51F /* SimpleMealPlanView.swift */,
+				8689D6E7E65D34B42C3F6179 /* SmackTalkWidgetBridge.swift */,
 				7C47F9DA2EE336E000BEC4D7 /* SmartDayGenerator.swift */,
 				7CAFD5672EE1FB9F00920F0D /* SmartExercisePairingEngine.swift */,
 				7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */,
 				7C8405DB2EE8B02F0009ED0F /* SmartExerciseSelectionEngine.swift */,
 				7C87B63A2EEA3F4D00AC01F3 /* SmartExerciseSwapView.swift */,
 				7CAA1FB02F428A75008200B9 /* SmartMealPlannerView.swift */,
+				7C8E800A2FB10006007CD766 /* SmartNotificationSettingsSection.swift */,
 				7CEAFD152EF9D38900874B57 /* SmartProgramEngine.swift */,
 				7C8405CF2EE7D2E50009ED0F /* SmartProgramEngine.swift */,
 				E748445FAA426582F14ACB75 /* SmartProgramMiniCard.swift */,
@@ -1410,6 +1413,7 @@
 				7CAA1FA02F4AAAA0008200B9 /* SystemMetrics.swift */,
 				7C3DF1FB2F2D772D00A9CDA7 /* TabPreloadingSystem.swift */,
 				7CEAFD112EF9CB2E00874B57 /* TermsConditionsView.swift */,
+				7C8CF9D02FA1EC6C007CD766 /* TierPromotionOverlay.swift */,
 				308E48E79BD7DC13649B4812 /* TrainingHubView.swift */,
 				7CEAFD0C2EF9C86C00874B57 /* UnitSettingsManager.swift */,
 				7CEAFD0D2EF9C86C00874B57 /* UnitSettingsView.swift */,
@@ -1420,6 +1424,7 @@
 				7C558B242ED63C5000A01E1F /* UserManager.swift */,
 				A12345678901234567890163 /* UserManager.swift */,
 				7C8CEA432F99C149007CD766 /* UserManager+ReadinessXP.swift */,
+				7C8CF4752F9FA463007CD766 /* V2Analyzer.swift */,
 				7C0C41E72F09A13500F02E84 /* VideoPlaybackEngine.swift */,
 				7CAFD55F2EE10EA700920F0D /* VideoPreloadManager.swift */,
 				7CAA1F1A2F3ACBB1008200B9 /* VideoStreamingService.swift */,
@@ -1429,6 +1434,7 @@
 				7CEA1ED42F54FB2D00CC468C /* WeeklyLeagueViews.swift */,
 				7C792ABB2F2A68480048A97E /* WeightTrackerWidget.swift */,
 				7C792ABC2F2A68480048A97E /* WeightTrackingService.swift */,
+				7C8CF4762F9FA463007CD766 /* WelcomeBriefRow.swift */,
 				7C8EB1C52F2913AB007BFA55 /* WelcomeTutorialView.swift */,
 				7CAAA0102F5BF00100AAA011 /* WhatToEatView.swift */,
 				7CEBB6A12F770114003415D0 /* WhoopService.swift */,
@@ -1450,6 +1456,7 @@
 				B1234567890123456789A002 /* WorkoutProgramEngine.swift */,
 				A12345678901234567890291 /* WorkoutProgressView.swift */,
 				7C8405E52EE8EDCA0009ED0F /* WorkoutQualityAudit.swift */,
+				7C8CFBBA2FA2B7AD007CD766 /* WorkoutQualityScorer.swift */,
 				7CAAA0002F5BF00100AAA001 /* WorkoutReplayEngine.swift */,
 				7CAAA0022F5BF00100AAA003 /* WorkoutReplayView.swift */,
 				8E38445FB13C53531EA4BEA3 /* WorkoutSettingsPanel.swift */,
@@ -1460,7 +1467,6 @@
 				A12345678901234567890251 /* WorkoutTabView.swift */,
 				67B94982A8B87143C4F2CB59 /* WorkoutUIHelpers.swift */,
 				B0B3B0B40000000000000002 /* WorkoutWearableMerger.swift */,
-				CAAA139ADB4065DDE6D7096C /* ReadinessDrillDownSheet.swift */,
 			);
 			path = Fit33;
 			sourceTree = "<group>";
@@ -1740,6 +1746,8 @@
 				7C6DE3F52F5CAD7400BCA276 /* CriticalPathTests.swift in Sources */,
 				7CACB57F2F5A000100AAAAAA /* ChallengeReactionsView.swift in Sources */,
 				7C8CEA762F9A75DC007CD766 /* PerformanceMetricsUploader.swift in Sources */,
+				7CDEAD022E5F0507007F1A60 /* PerfFlags.swift in Sources */,
+				7CDEAD042E5F0508007F1A60 /* DashboardSocialFanoutCache.swift in Sources */,
 				7CB08C9F2EDE246D00236ECB /* ProgramCustomizationService.swift in Sources */,
 				7C53E2202F33FD7500C2F7EC /* QRCodeService.swift in Sources */,
 				7C53E2212F33FD7500C2F7EC /* QRCodeScannerView.swift in Sources */,
@@ -2169,7 +2177,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RunningActivityWidget/RunningActivityWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Daily Goals";
@@ -2200,7 +2208,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = RunningActivityWidget/RunningActivityWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RunningActivityWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Daily Goals";
@@ -2231,7 +2239,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33Watch/Fit33Watch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fit33Watch/Info.plist;
@@ -2265,7 +2273,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33Watch/Fit33Watch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Fit33Watch/Info.plist;
@@ -2422,7 +2430,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -2460,7 +2468,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Fit33/GoFit.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;

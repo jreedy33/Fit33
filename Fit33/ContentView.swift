@@ -79,6 +79,18 @@ struct ContentView: View {
     }
 
     var body: some View {
+        // Phase 4 (Snappiness Overhaul, 2026-05-07): emit `app.first_frame`
+        // from the first body evaluation rather than `.onAppear`. SwiftUI
+        // commits pixels to the screen at the end of body diffing — the
+        // matching system signpost arrives a few hundred ms BEFORE
+        // `.onAppear` fires (which runs post-layout, after the first
+        // refresh callback). The function is idempotent (`firstFrameLanded`
+        // guards re-entry), so calling on every body re-eval is safe — only
+        // the first call closes the signpost. Gated on
+        // `PerfFlags.phase4Telemetry`; when off, the existing `.onAppear`
+        // call below remains the sole emit site (today's behavior).
+        let _ = recordFirstFramePixelLanded()
+
         ZStack {
             // ⚡️ Cold-start UX fix (2026-04-26):
             // Instant launch-color fallback BEFORE any subview renders. Without
@@ -105,6 +117,13 @@ struct ContentView: View {
         .onAppear {
             // ⚡️ Cold-start Phase 3.10 — close the user-visible first-frame
             // signpost the moment SwiftUI commits the root view.
+            //
+            // Phase 4 (Snappiness Overhaul, 2026-05-07): when
+            // `PerfFlags.phase4Telemetry` is ON, the body-level side-effect
+            // above already fired `markFirstFrameIfNeeded()` slightly earlier;
+            // this call becomes a no-op via the `firstFrameLanded` guard.
+            // When the flag is OFF, this remains the sole emit site (today's
+            // behavior preserved).
             Fit33App.markFirstFrameIfNeeded()
 
             // 2026-04-29 — League Redesign Plan §B1 ship gate.
@@ -309,6 +328,21 @@ struct ContentView: View {
                 evaluateProPreviewExpiry()
             }
         }
+    }
+
+    /// Phase 4 (Snappiness Overhaul, 2026-05-07): body-level side-effect that
+    /// closes the `app.first_frame` signpost the moment SwiftUI re-evaluates
+    /// `body`. SwiftUI commits pixels at the end of the diffing pass — the
+    /// body call is a few hundred ms earlier than `.onAppear` (which fires
+    /// post-layout, after the first refresh callback). The function is
+    /// idempotent (`firstFrameLanded` guards re-entry), so calling on every
+    /// body re-eval is safe — only the first call closes the signpost.
+    /// Gated on `PerfFlags.phase4Telemetry`; when off, the existing
+    /// `.onAppear` site remains the sole emit point (today's behavior).
+    @MainActor
+    private func recordFirstFramePixelLanded() {
+        guard PerfFlags.phase4Telemetry else { return }
+        Fit33App.markFirstFrameIfNeeded()
     }
 
     /// Decides whether to surface `PaywallFirstScreenView` automatically.

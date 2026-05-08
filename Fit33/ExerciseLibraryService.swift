@@ -83,7 +83,23 @@ class ExerciseLibraryService: ObservableObject {
             // we'd inline-seed the bundle a second time, and `isExercisesReady`
             // would briefly flip false even though cached data exists.
             await PersistenceController.waitUntilStoreLoaded()
-            await MainActor.run { StartupWaterfall.shared.mark("ExerciseLibrary.preWarmCache") }
+            // Phase 5.C (Snappiness Overhaul, 2026-05-07) — when
+            // `PerfFlags.phase5OffMain` is ON, mark from the detached task
+            // itself so `StartupWaterfall.threadTag` attributes this work
+            // to `bg-init` instead of `main`. The pre-flag path wrapped
+            // the mark in `await MainActor.run { ... }`, which (correctly)
+            // reported [main] because that's where `Thread.isMainThread`
+            // returned true even though the underlying Core Data fetch was
+            // already on bg. Pairs with the matching `end` gate below so
+            // the waterfall's `effectiveThread` resolves to a single
+            // [bg-init] tag (mark thread == end thread → no "mixed" label).
+            // See `AppPerformanceSystem.swift::StartupWaterfall.threadTag`
+            // and `PerfFlags.phase5OffMain`. QP invariant 35.
+            if PerfFlags.phase5OffMain {
+                StartupWaterfall.shared.mark("ExerciseLibrary.preWarmCache")
+            } else {
+                await MainActor.run { StartupWaterfall.shared.mark("ExerciseLibrary.preWarmCache") }
+            }
             let startTime = CFAbsoluteTimeGetCurrent()
             
             // Fetch exercise names on background context (avoids blocking main thread).
@@ -128,12 +144,23 @@ class ExerciseLibraryService: ObservableObject {
             }
             
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-            
-            // Lightweight main-thread work: mark ready + end waterfall (no heavy fetches)
+
+            // Phase 5.C — when the off-main flag is ON, end from the bg
+            // task BEFORE the @Published-publish hop so `effectiveThread`
+            // resolves to a single [bg-init] tag (matching the bg `mark`
+            // above). When OFF, the end stays inside the MainActor.run
+            // block below for byte-identical pre-flag behavior.
+            if PerfFlags.phase5OffMain {
+                StartupWaterfall.shared.end("ExerciseLibrary.preWarmCache")
+            }
+
+            // Lightweight main-thread work: mark ready + (when flag OFF) end waterfall (no heavy fetches)
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
                 AppLogger.debug("🔥 [ExerciseLibrary] Cache pre-warmed: \(elapsed)ms", category: .data)
-                StartupWaterfall.shared.end("ExerciseLibrary.preWarmCache")
+                if !PerfFlags.phase5OffMain {
+                    StartupWaterfall.shared.end("ExerciseLibrary.preWarmCache")
+                }
                 self.isPreWarming = false
 
                 if nameList.count > 100 {

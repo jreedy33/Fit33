@@ -22,7 +22,80 @@ class SmartProgramRecommender {
     static let shared = SmartProgramRecommender()
     
     private init() {}
-    
+
+    // MARK: - Phase 5.B Pre-warm Cache (`PerfFlags.phase5RecommenderPrewarm`)
+    //
+    // Snappiness Overhaul Phase 5.B (May 2026): a process-scoped, user-id-keyed
+    // memoization layer for `getSuggestedProgram(for:)`. Without this cache the
+    // first tap of the Workout tab fires `SmartProgramRecommender` 4 times in
+    // ~50ms — `WorkoutTabView`'s body re-evaluates 4× on initial layout and
+    // each pass falls through `cachedRecommendedProgram == nil` to the live
+    // recommender call (the `.task(id:)` cache writer hasn't landed yet).
+    //
+    // Cache key contract (CRITICAL — must match `WorkoutTabView`):
+    //   `WorkoutTabView` invalidates `cachedRecommendedProgram` on
+    //   `.task(id: userManager.currentUser?.id)` — i.e. the only invalidation
+    //   trigger is a user-identity change. We mirror that exactly: the cache
+    //   key is `User.id`. Equipment / goal / experience changes do NOT
+    //   invalidate either side; that parity is intentional. If the
+    //   `WorkoutTabView` side ever adds a finer key, this file MUST track that
+    //   change. (See `WorkoutTabView.cachedRecommendedProgram` and
+    //   `refreshCachedRecommendedProgram()` for the consumer side.)
+    //
+    // Pre-warm path (called from `Fit33App` scenePhase=.active once per session):
+    //   `Task(priority: .utility)` → hop to MainActor (Core Data `User` access
+    //   is bound to the main context) → call `getSuggestedProgram(for:)` once.
+    //   The first `WorkoutTabView` visit then hits this cache instead of
+    //   running the scorer. The pre-warm Task is single-shot per app process,
+    //   gated on `Self.didPrewarmRecommender`.
+    //
+    // Behavior preservation when flag OFF: every cache read AND write is gated
+    // on `PerfFlags.phase5RecommenderPrewarm`. With the flag OFF this whole
+    // block is byte-equivalent to "no cache exists" and `getSuggestedProgram`
+    // recomputes on every call exactly as it did pre-Phase-5.
+    private static let _suggestedProgramCacheLock = NSLock()
+    private static var _suggestedProgramCache: [UUID: SuggestedProgram] = [:]
+
+    /// Returns the memoized `SuggestedProgram` for `userId` if one was
+    /// previously computed/pre-warmed in this process AND the flag is ON.
+    /// Returns `nil` on flag-off, cache-miss, or unknown user.
+    func cachedSuggestedProgram(for userId: UUID) -> SuggestedProgram? {
+        guard PerfFlags.phase5RecommenderPrewarm else { return nil }
+        Self._suggestedProgramCacheLock.lock()
+        defer { Self._suggestedProgramCacheLock.unlock() }
+        return Self._suggestedProgramCache[userId]
+    }
+
+    /// Stores `program` keyed by `userId`. No-op when the flag is OFF.
+    /// Called both by the public `getSuggestedProgram(for:)` write-through and
+    /// by the pre-warm hook in `Fit33App`.
+    func setCachedSuggestedProgram(_ program: SuggestedProgram, for userId: UUID) {
+        guard PerfFlags.phase5RecommenderPrewarm else { return }
+        Self._suggestedProgramCacheLock.lock()
+        defer { Self._suggestedProgramCacheLock.unlock() }
+        Self._suggestedProgramCache[userId] = program
+    }
+
+    /// Drops every cached entry. Call from sign-out / account-switch paths so
+    /// a previously-signed-in user's recommendation cannot leak across
+    /// authentication boundaries. Always safe to call (no-op when empty).
+    func clearSuggestedProgramCache() {
+        Self._suggestedProgramCacheLock.lock()
+        defer { Self._suggestedProgramCacheLock.unlock() }
+        Self._suggestedProgramCache.removeAll()
+    }
+
+    #if DEBUG
+    /// Test seam — exposes the current cache size to
+    /// `Phase5DashboardAndRecommenderTests`. DEBUG-only so production binaries
+    /// don't carry the symbol.
+    func _testHook_cachedSuggestedProgramCount() -> Int {
+        Self._suggestedProgramCacheLock.lock()
+        defer { Self._suggestedProgramCacheLock.unlock() }
+        return Self._suggestedProgramCache.count
+    }
+    #endif
+
     // MARK: - Main Recommendation Method
     
     func getTopRecommendedPrograms(
@@ -615,12 +688,23 @@ extension SmartProgramRecommender {
     
     /// Get a suggested program in the format expected by ProgramSuggestionCard
     func getSuggestedProgram(for user: User) -> SuggestedProgram {
+        // Snappiness Overhaul Phase 5.B (`PerfFlags.phase5RecommenderPrewarm`):
+        // serve a previously-pre-warmed entry instead of re-running the
+        // recommender. Cache key is `User.id` — see the cache-key contract on
+        // the cache declaration above. When the flag is OFF, `cachedSuggestedProgram(for:)`
+        // returns nil and the body below is byte-identical to the pre-Phase-5
+        // implementation.
+        if let userId = user.id, let cached = cachedSuggestedProgram(for: userId) {
+            AppLogger.debug("perf.signpost.recommender.cache_hit_rate=1", category: .performance)
+            return cached
+        }
+
         let recommended = getBestProgram(for: user)
         let program = recommended.program
         let profile = SmartRecommendationEngine.shared.userProfileAnalyzer.analyzeUser(user)
         
         // Map program to suggested program format
-        return SuggestedProgram(
+        let result = SuggestedProgram(
             title: program.name,
             description: buildDescription(for: recommended, profile: profile),
             duration: "\(program.duration / 7) weeks",
@@ -632,6 +716,17 @@ extension SmartProgramRecommender {
             icon: iconForGoal(profile.fitnessGoal),
             callToAction: "Start \(program.duration)-Day Program"
         )
+
+        // Write-through: subsequent calls within the same user-id keying
+        // window hit the cache. Gated inside `setCachedSuggestedProgram`.
+        if let userId = user.id {
+            setCachedSuggestedProgram(result, for: userId)
+            if PerfFlags.phase5RecommenderPrewarm {
+                AppLogger.debug("perf.signpost.recommender.cache_hit_rate=0", category: .performance)
+            }
+        }
+
+        return result
     }
     
     private func buildDescription(for recommended: ProgramRecommendation, profile: UserProfileAnalysis) -> String {

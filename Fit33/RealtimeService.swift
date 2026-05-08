@@ -428,6 +428,20 @@ class RealtimeService: ObservableObject {
     private var lastConnectTime: Date?
     private static let connectThrottleInterval: TimeInterval = 10
 
+    /// Phase 2.1 Snappiness Overhaul (PerfFlags.phase2RealtimeGate).
+    ///
+    /// When `disconnect()` is invoked from a brief background trip, we no
+    /// longer tear down the WebSocket immediately. Instead we schedule a
+    /// 60s "grace" timer here; if the user foregrounds again within the
+    /// window the timer is cancelled and the live socket is reused —
+    /// realtime events that arrived during the background blip deliver
+    /// LIVE instead of being missed during the post-foreground reconnect
+    /// window.
+    ///
+    /// See `scheduleGraceDisconnect(after:)` / `cancelGraceDisconnect()` /
+    /// `actuallyDisconnectAll()` below.
+    private var graceDisconnectTask: Task<Void, Never>?
+
     /// Threshold past which we consider the realtime channel "stale" / probably
     /// dead — exceeded `Date().timeIntervalSince(lastEventReceivedAt)` means
     /// either no events ever arrived OR iOS killed the WebSocket while we
@@ -475,7 +489,12 @@ class RealtimeService: ObservableObject {
         
         if isConnected || friendshipsChannel != nil {
             AppLogger.debug("Cleaning up existing channels before reconnecting...", category: .network)
-            await disconnect()
+            // Internal teardown-and-rebuild path needs the immediate disconnect,
+            // never the Phase 2.1 grace timer — we're about to re-subscribe and
+            // a deferred disconnect would race the new channels to nil. The
+            // public `disconnect()` flag-gates the grace path; this internal
+            // path bypasses it.
+            await actuallyDisconnectAll()
         }
         
         AppLogger.debug("Connecting to realtime channels...", category: .network)
@@ -621,6 +640,23 @@ class RealtimeService: ObservableObject {
     /// throttle inside `connect()` itself short-circuits and this is a
     /// cheap no-op.
     func forceReconnectIfStale() async {
+        // Phase 2.1 Snappiness Overhaul (PerfFlags.phase2RealtimeGate) —
+        // foreground-within-grace fast path. If we're inside a pending
+        // 60s grace window AND the socket is still alive (it should be —
+        // the SDK's phx_ping heartbeat keeps it warm), cancel the grace
+        // timer, log the save, and skip the entire reconnect cycle (which
+        // today does a forceReconnect + 10-RPC post-connect resync).
+        // If `isConnected` flipped to false during the background trip
+        // (iOS suspended the network despite our intent), we fall through
+        // to the existing safety net below.
+        if PerfFlags.phase2RealtimeGate {
+            cancelGraceDisconnect()
+            if isConnected {
+                AppLogger.info("Realtime: foreground within grace window, socket alive, skipping reconnect", category: .network)
+                return
+            }
+        }
+
         guard SupabaseManager.shared.isAuthenticated else {
             AppLogger.debug("[REALTIME] forceReconnectIfStale: not authenticated, skipping", category: .network)
             return
@@ -675,7 +711,10 @@ class RealtimeService: ObservableObject {
             // `if isConnected || friendshipsChannel != nil { disconnect }`
             // happy-path inside `connect()` — we want a deterministic
             // teardown + fresh subscribe even if it ran <10s ago.
-            await disconnect()
+            // Use `actuallyDisconnectAll()` directly (NOT the public
+            // `disconnect()` wrapper) so the Phase 2.1 grace timer doesn't
+            // defer the teardown beneath the immediate `connect()` below.
+            await actuallyDisconnectAll()
             await connect()
         } else {
             AppLogger.debug(
@@ -685,8 +724,99 @@ class RealtimeService: ObservableObject {
         }
     }
     
-    /// Disconnect from all realtime channels
+    /// Disconnect from all realtime channels.
+    ///
+    /// Phase 2.1 Snappiness Overhaul (`PerfFlags.phase2RealtimeGate`):
+    /// when ON, this defers the actual teardown via `scheduleGraceDisconnect()`
+    /// — the WebSocket stays alive for 60s of background time so events
+    /// arriving during brief background trips deliver LIVE. If the user
+    /// foregrounds within the window, `forceReconnectIfStale()` calls
+    /// `cancelGraceDisconnect()` and the post-foreground reconnect cycle is
+    /// skipped entirely.
+    ///
+    /// When the flag is OFF the path is byte-identical to today's behavior
+    /// (immediate `actuallyDisconnectAll()`).
+    ///
+    /// Internal callers inside this service (`connect()`, `forceReconnectIfStale()`)
+    /// MUST call `actuallyDisconnectAll()` directly — they need a deterministic
+    /// teardown before the immediately-following `connect()`. External callers
+    /// (Fit33App scenePhase handler, SupabaseManager sign-out) continue to call
+    /// `disconnect()` and pick up the flag-gated behavior automatically.
     func disconnect() async {
+        if PerfFlags.phase2RealtimeGate {
+            scheduleGraceDisconnect()
+        } else {
+            await actuallyDisconnectAll()
+        }
+    }
+
+    /// Schedule the real disconnect to fire after a grace window (default 60s).
+    ///
+    /// Cancels any previously pending grace task so consecutive `disconnect()`
+    /// calls from rapid scenePhase storms don't stack. The timer fires on the
+    /// MainActor (this whole service is `@MainActor`) and the task self-nils
+    /// after `actuallyDisconnectAll()` returns so the property always reflects
+    /// "is a teardown pending".
+    ///
+    /// Public so Phase 2.2 (Fit33App scenePhase extension) and tests can drive it.
+    func scheduleGraceDisconnect(after seconds: TimeInterval = 60) {
+        graceDisconnectTask?.cancel()
+        let secondsInt = Int(seconds)
+        AppLogger.debug("⏳ [REALTIME] Scheduling grace disconnect in \(secondsInt)s — keeping socket alive across brief background trip", category: .network)
+        graceDisconnectTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(seconds))
+                try Task.checkCancellation()
+            } catch {
+                return
+            }
+            guard let self else { return }
+            AppLogger.info("⏰ [REALTIME] Grace window expired (\(secondsInt)s) — disconnecting", category: .network)
+            await self.actuallyDisconnectAll()
+            self.graceDisconnectTask = nil
+        }
+    }
+
+    /// Cancel a pending grace disconnect (foreground-within-grace fast path).
+    ///
+    /// Logs `realtime.grace_save` ONLY when there was actually a pending
+    /// grace task — that's the proof signal that today's "events during
+    /// brief background trips were missed by the post-foreground reconnect"
+    /// is now fixed.
+    ///
+    /// Design note: per the Phase 2.1 spec, this function does NOT itself
+    /// kick `forceReconnectIfStale()` if the socket happens to be dead.
+    /// Its sole caller is `forceReconnectIfStale()` itself (top of the
+    /// function); kicking from here would recurse. The fall-through into
+    /// `forceReconnectIfStale`'s existing body is the safety net for the
+    /// "iOS suspended the network despite our intent" case.
+    ///
+    /// Public so Phase 2.2 (Fit33App scenePhase extension) and tests can drive it.
+    func cancelGraceDisconnect() {
+        let hadPending = graceDisconnectTask != nil
+        graceDisconnectTask?.cancel()
+        graceDisconnectTask = nil
+        if hadPending {
+            AppLogger.info("realtime.grace_save: socket kept alive across background", category: .network)
+        }
+    }
+
+    /// Immediate teardown of all realtime channels — the original body of
+    /// `disconnect()`. Internal callers needing a deterministic synchronous
+    /// teardown (`connect()` cleanup, `forceReconnectIfStale()` rebuild)
+    /// MUST call this directly to bypass the Phase 2.1 grace timer.
+    ///
+    /// Cancels any pending grace task at the top so a stale grace timer
+    /// firing post-reconnect can't nil a freshly-rebuilt channel set.
+    private func actuallyDisconnectAll() async {
+        // Belt-and-suspenders: a pending grace task whose Task.sleep wakes
+        // up AFTER we've already torn down + reconnected would call
+        // `actuallyDisconnectAll()` again and silently kill the live socket.
+        // Cancel here (cheap, idempotent) so the timer is dead before the
+        // teardown body runs.
+        graceDisconnectTask?.cancel()
+        graceDisconnectTask = nil
+
         AppLogger.debug("Disconnecting from channels...", category: .network)
         
         if let channel = friendshipsChannel {

@@ -702,6 +702,34 @@ struct DashboardView: View {
                 let authMs = Int((CFAbsoluteTimeGetCurrent() - dashStart) * 1000)
                 AppLogger.info("[DASHBOARD] Auth ready (\(authMs)ms), starting all social fetches", category: .performance)
 
+                // Snappiness Overhaul Phase 5.A
+                // (`PerfFlags.phase5DashboardCache`): if a cache hit lands
+                // here for the current user (≤5min old, same process), skip
+                // the inline fanout entirely. Service singletons
+                // (`FriendService`, `ChallengeService`, etc.) still hold the
+                // in-memory data from the previous fanout — the same
+                // `@Published` arrays the dashboard already renders. A
+                // stale-while-revalidate refresh is kicked off so the cache
+                // and on-screen data refresh in the background. Process-
+                // pinned + user-scoped + notification-invalidated — see
+                // `DashboardSocialFanoutCache` for the contract.
+                //
+                // Behavior preservation when flag OFF: `read(forUser:)`
+                // short-circuits to nil, the `if`-branch never fires, and
+                // we fall through to the inline fanout below — byte-identical
+                // to pre-Phase-5.
+                let cacheHit = await Self.dashboardCacheHitIfFlagOn()
+                if cacheHit {
+                    AppLogger.info(
+                        "[DASHBOARD] social_fanout — cache HIT, skipping inline fanout",
+                        category: .performance
+                    )
+                    Task.detached(priority: .utility) {
+                        await Self.runDashboardSocialFanoutSWR()
+                    }
+                    return
+                }
+
                 // ⚡️ Cold-start sprint 2026-04-25 (Restore Cold-Start Performance plan, Change 1):
                 //
                 // PREVIOUSLY: 12-wide `async let` group awaited every social /
@@ -759,6 +787,16 @@ struct DashboardView: View {
                 async let quests: () = dailyQuestService.fetchDailyQuests()
                 _ = await (friends, activeCh, priv, photo, quests)
                 PerformanceSignposts.end(fanOutState, slowThresholdMs: 3_000)
+
+                // Snappiness Overhaul Phase 5.A — cache write on the
+                // miss-path completion. `write(...)` is a no-op when the
+                // flag is OFF, so no behavior change pre-rollout. Captures
+                // the snapshot from the freshly-published service state.
+                if PerfFlags.phase5DashboardCache,
+                   let userId = UserManager.shared.currentUser?.id {
+                    let snapshot = DashboardSocialFanoutCache.shared.snapshotFromCurrentServiceState()
+                    DashboardSocialFanoutCache.shared.write(forUser: userId, snapshot: snapshot)
+                }
             }
             
             // Wait for steps + quests to be loaded before computing the
@@ -842,6 +880,79 @@ struct DashboardView: View {
             // is detected and synced to Supabase via the HealthKit workout observer
             Task { await loadRecentCardioWorkouts() }
         }
+    }
+
+    // MARK: - Phase 5.A Dashboard Cache helpers
+    //
+    // Both helpers are `static` so they can be invoked from a
+    // `Task.detached` (no self capture, no MainActor crossing for unrelated
+    // view state). The cache + service singletons they touch are all
+    // `@MainActor`-isolated, so the helpers themselves are `@MainActor`.
+
+    /// Returns `true` only when the Phase 5.A flag is ON AND a fresh,
+    /// process-pinned cache entry exists for the current user. Always
+    /// returns `false` when the flag is OFF (preserves pre-Phase-5
+    /// behavior). Telemetry is emitted by `DashboardSocialFanoutCache.read`.
+    @MainActor
+    private static func dashboardCacheHitIfFlagOn() -> Bool {
+        guard PerfFlags.phase5DashboardCache,
+              let userId = UserManager.shared.currentUser?.id else {
+            return false
+        }
+        return DashboardSocialFanoutCache.shared.read(forUser: userId) != nil
+    }
+
+    /// Stale-while-revalidate background refresh. Runs the canonical
+    /// 9-fire-and-forget + 3-await singleton fanout off the dashboard-load
+    /// critical path, then writes the cache + posts
+    /// `dashboardWidgetsRefreshed` so observers can re-publish their UI.
+    /// `loadProfilePhoto` and `dailyQuestService.fetchDailyQuests` are
+    /// intentionally OMITTED from the SWR path — they're view-instance-bound
+    /// and the cache-hit visit already hydrated them. The `dailyQuestService`
+    /// `.onChange(completedCount)` handler at the bottom of `DashboardView`
+    /// continues to drive `loadPersonalizedRecommendation` if quest counts
+    /// shift between visits.
+    @MainActor
+    private static func runDashboardSocialFanoutSWR() async {
+        let authReady = await SupabaseManager.shared.waitForFreshSession(timeout: 10.0)
+        guard authReady else {
+            AppLogger.warning(
+                "[DASHBOARD CACHE] SWR — auth not ready, skipping",
+                category: .performance
+            )
+            return
+        }
+
+        let fanOutState = PerformanceSignposts.begin(.dashboardSocialFanOut)
+        defer { PerformanceSignposts.end(fanOutState, slowThresholdMs: 3_000) }
+
+        // Fire-and-forget — same set as the inline path.
+        Task { await PrivateChallengeService.shared.subscribeToRealtimeUpdates() }
+        Task { await ContactsService.shared.refreshSuggestions() }
+        Task { await FriendService.shared.loadPendingRequests() }
+        Task { await FriendService.shared.loadReceivedWorkouts() }
+        Task { await ActivityFeedService.shared.fetchFeed() }
+        Task { await FriendRankingService.shared.fetchRankedFriends() }
+        Task { await ChallengeService.shared.fetchActiveGroupChallenges() }
+        Task { await ChallengeService.shared.fetchPendingInvites() }
+        Task { await ChallengeService.shared.fetchPendingSentChallenges() }
+
+        // Awaited (singleton-only — no view-instance methods).
+        async let friends: () = FriendService.shared.fetchFriends()
+        async let activeCh: () = ChallengeService.shared.fetchActiveChallenges()
+        async let priv: () = PrivateChallengeService.shared.refreshAll()
+        _ = await (friends, activeCh, priv)
+
+        // Cache write + dashboardWidgetsRefreshed signal so observers can
+        // re-publish. Gated on the flag so a flag-flip mid-session is safe.
+        guard let userId = UserManager.shared.currentUser?.id else { return }
+        let snapshot = DashboardSocialFanoutCache.shared.snapshotFromCurrentServiceState()
+        DashboardSocialFanoutCache.shared.write(forUser: userId, snapshot: snapshot)
+        NotificationCenter.default.post(name: .dashboardWidgetsRefreshed, object: nil)
+        AppLogger.info(
+            "[DASHBOARD CACHE] SWR refresh complete + dashboardWidgetsRefreshed posted",
+            category: .performance
+        )
     }
 
     // MARK: - Deep Link Helper

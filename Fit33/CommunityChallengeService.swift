@@ -589,6 +589,22 @@ class CommunityChallengeService: ObservableObject {
             #endif
             return
         }
+
+        // Phase 4 (Snappiness Overhaul, 2026-05-07): emit freshness delta
+        // BEFORE firing the RPC. Parity-test parser greps for
+        // `perf.signpost.foreground.rpc_freshness_delta_ms.<rpc>` to
+        // validate that the 30s foreground gate threshold is appropriate
+        // (i.e. that we're not refetching data that's still warm). `-1`
+        // signals "no prior fetch in this process". Pure observability;
+        // gated so OFF path emits nothing.
+        if PerfFlags.phase4Telemetry {
+            let deltaMs: Int = lastRefreshTime.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
+            AppLogger.info(
+                "perf.signpost.foreground.rpc_freshness_delta_ms.community_refresh_all=\(deltaMs)",
+                category: .performance
+            )
+        }
+
         lastRefreshTime = now
         
         // Fetch in parallel for speed

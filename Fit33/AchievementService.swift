@@ -60,6 +60,48 @@ struct UnlockResult: Codable {
     }
 }
 
+/// Phase 5.D — one row of `batch_check_achievements` server output.
+/// `justUnlocked == true` is the trigger to fan out a celebration toast +
+/// XP credit (the per-key `unlock_achievement` shape lives in `UnlockResult`
+/// above; this one carries the extra columns the batch RPC returns so we
+/// don't lose progress / unlocked_at fidelity at the seam).
+struct BatchAchievementRow: Decodable {
+    let achievementKey: String
+    let progressValue: Int
+    let isUnlocked: Bool
+    let unlockedAt: String?
+    let justUnlocked: Bool
+    let achievementTitle: String?
+    let achievementIcon: String?
+    let achievementRarity: String?
+    let xpReward: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case achievementKey = "achievement_key"
+        case progressValue = "progress_value"
+        case isUnlocked = "is_unlocked"
+        case unlockedAt = "unlocked_at"
+        case justUnlocked = "just_unlocked"
+        case achievementTitle = "achievement_title"
+        case achievementIcon = "achievement_icon"
+        case achievementRarity = "achievement_rarity"
+        case xpReward = "xp_reward"
+    }
+
+    /// Project this batch row onto the canonical single-RPC `UnlockResult`
+    /// shape so the post-unlock fan-out (`handleUnlockResult`) can run
+    /// unchanged regardless of which RPC variant produced the row.
+    var asUnlockResult: UnlockResult {
+        UnlockResult(
+            unlocked: justUnlocked,
+            achievementTitle: achievementTitle,
+            achievementIcon: achievementIcon,
+            achievementRarity: achievementRarity,
+            xpReward: xpReward
+        )
+    }
+}
+
 // MARK: - Badge Service (Supabase-backed achievements)
 
 class BadgeService: ObservableObject {
@@ -82,7 +124,20 @@ class BadgeService: ObservableObject {
     
     // MARK: - Fetch
     
-    func fetchAchievements(forUserId userId: UUID? = nil) async {
+    /// Fetch the canonical achievements row set into `self.achievements`.
+    ///
+    /// `transientLevel` controls the log level for transient/cancellation
+    /// errors classified by `NetworkErrorClassifier` (default `.warning`,
+    /// matching today's QP invariant 25a behavior). Phase 6 OlympianPath
+    /// integration passes `.debug` on the first attempt (knows it will
+    /// retry, so a single transient cancellation isn't worth a warning)
+    /// and `.warning` for the retry attempt. All non-transient errors
+    /// (real network / RLS / decode failures) still log at their
+    /// classifier-determined level regardless of this parameter.
+    func fetchAchievements(
+        forUserId userId: UUID? = nil,
+        transientLevel: AppLogger.Level = .warning
+    ) async {
         let startedAt = Date()
         do {
             var params: [String: String] = [:]
@@ -104,10 +159,17 @@ class BadgeService: ObservableObject {
             // and transient 401s classify as `.transientNetwork` (warning,
             // no fingerprint) instead of manufacturing a bug-intel
             // fingerprint per occurrence. Closes `878468de` (28 occ × 3 users).
+            //
+            // Phase 6 OlympianPath: when `transientLevel` is `.debug`, the
+            // OlympianPath atomic gate has already committed to a retry
+            // pass — silencing the first-attempt cancellation to .debug
+            // matches the prompt's step-5 routing while keeping any
+            // retry-fail visible at .warning.
             NetworkErrorClassifier.log(
                 error,
                 context: "Failed to fetch achievements",
                 category: .general,
+                transientLevel: transientLevel,
                 op: PerformanceSignposts.Op.achievementFetch.rawValue,
                 endpoint: "rpc/get_user_achievements",
                 startedAt: startedAt,
@@ -247,6 +309,100 @@ class BadgeService: ObservableObject {
         return true
     }
     
+    // MARK: - Batch Coalescer (Phase 5.D)
+    //
+    // 2026-05-07 — `PerfFlags.phase5BatchAchievements` collapses N parallel
+    // `unlock_achievement` RPCs into a single `batch_check_achievements`
+    // round-trip. Every per-event helper below (`onWorkoutCompleted`,
+    // `onStreakUpdated`, etc.) routes through `batchCheckAndUnlock` so the
+    // flag flips the entire surface in one place. When the flag is OFF, we
+    // fall back to the existing per-key serial fan-out for behavioral
+    // parity (and as the rollback path).
+    //
+    // Side-effect parity is enforced server-side: see
+    // `supabase/20260507_batch_check_achievements.sql` — the per-key LOOP
+    // body replicates the GREATEST-upsert + unlocked_at stamp + xp_reward
+    // award + tail-call to `complete_olympian_season_if_done` exactly as
+    // `unlock_achievement` does today.
+
+    /// Issues a single `batch_check_achievements` RPC for the supplied
+    /// `(key, progress)` pairs. Falls back to the per-key serial fan-out
+    /// when `PerfFlags.phase5BatchAchievements` is OFF. Returns the count
+    /// of achievements that newly unlocked on this call (mirrors the
+    /// per-key path's `Bool` return summed across all keys).
+    @discardableResult
+    private func batchCheckAndUnlock(_ pairs: [(key: String, progress: Int)]) async -> Int {
+        guard !pairs.isEmpty else { return 0 }
+
+        if !PerfFlags.phase5BatchAchievements {
+            // Off-flag fallback: preserve today's serial fan-out exactly.
+            // `checkAndUnlock` itself triggers `fetchAchievements()` per call
+            // (when depth=0), so the off-flag path matches pre-Phase-5.D
+            // behavior bit-for-bit.
+            var unlocked = 0
+            for pair in pairs {
+                if await checkAndUnlock(key: pair.key, progress: pair.progress) {
+                    unlocked += 1
+                }
+            }
+            return unlocked
+        }
+
+        let startedAt = Date()
+        do {
+            struct BatchParams: Encodable {
+                let p_achievement_keys: [String]
+                let p_progress_values: [Int]
+            }
+
+            let rows: [BatchAchievementRow] = try await SupabaseManager.shared.supabaseClient
+                .rpc("batch_check_achievements", params: BatchParams(
+                    p_achievement_keys: pairs.map(\.key),
+                    p_progress_values: pairs.map(\.progress)
+                ))
+                .execute()
+                .value
+
+            var unlocked = 0
+            for row in rows where row.justUnlocked {
+                // Reuse the canonical post-unlock side-effect cascade
+                // (XP credit on the iOS side + toast cache + lastUnlocked
+                // observable). The server already wrote the XP delta; the
+                // local `UserManager.addXP` call is the iOS-side mirror
+                // that updates the in-memory profile + Core Data row.
+                if await handleUnlockResult(results: [row.asUnlockResult], key: row.achievementKey) {
+                    unlocked += 1
+                }
+            }
+
+            // Single end-of-batch refetch matches the per-key path's
+            // `await fetchAchievements()` post-condition (depth>0 callers
+            // suppress; depth=0 callers see the latest server state).
+            if achievementSyncBatchDepth == 0 {
+                await fetchAchievements()
+            }
+            return unlocked
+        } catch {
+            // QP invariant 25a: route batch failures through the same
+            // classifier as the per-key path so a tab-switch
+            // CancellationError or transient 401 stays at `.warning`
+            // (no fingerprint) instead of manufacturing one. The whole
+            // point of Phase 5.D is to STOP these warnings appearing
+            // 24× per cold start by collapsing the fan-out — this
+            // catch is the safety net for the single batch call.
+            NetworkErrorClassifier.log(
+                error,
+                context: "Failed to batch check \(pairs.count) achievements",
+                category: .general,
+                op: PerformanceSignposts.Op.achievementCheck.rawValue,
+                endpoint: "rpc/batch_check_achievements",
+                startedAt: startedAt,
+                userId: SupabaseManager.shared.currentUser?.id
+            )
+            return 0
+        }
+    }
+
     // MARK: - Convenience Checkers
     //
     // 2026-05-04 — Olympian Path: every convenience helper now fans out to
@@ -255,6 +411,11 @@ class BadgeService: ObservableObject {
     // user's personalized 33-goal path. Mirror keys are no-ops when the
     // user's archetype path doesn't include them; the server short-circuits
     // unknown keys.
+    //
+    // 2026-05-07 — Each helper builds a `[(key, progress)]` array and hands
+    // it to `batchCheckAndUnlock`. With `PerfFlags.phase5BatchAchievements`
+    // ON, the helper makes ONE round-trip per call; OFF, it falls back to
+    // the original per-key serial fan-out.
 
     /// Mirrors use `olympian_<poolYear>_…` keys seeded in Postgres. Pool year
     /// comes from `assign_olympian_path` (stored in UserDefaults by
@@ -268,84 +429,88 @@ class BadgeService: ObservableObject {
     }
 
     func onWorkoutCompleted(totalWorkouts: Int) async {
-        await checkAndUnlock(key: "first_workout", progress: totalWorkouts)
-        await checkAndUnlock(key: "workouts_10", progress: totalWorkouts)
-        await checkAndUnlock(key: "workouts_50", progress: totalWorkouts)
-        await checkAndUnlock(key: "workouts_100", progress: totalWorkouts)
-        await checkAndUnlock(key: "workouts_500", progress: totalWorkouts)
-
-        // Olympian Path mirrors (universal + per-archetype workout counters)
         let p = Self.olympianMirrorPrefix()
-        await checkAndUnlock(key: "\(p)_first_workout",   progress: totalWorkouts)
-        await checkAndUnlock(key: "\(p)_workouts_100",    progress: totalWorkouts)
-        // Strength path mirrors (silent no-op for non-strength users)
-        await checkAndUnlock(key: "\(p)_str_first_lift",  progress: totalWorkouts)
-        await checkAndUnlock(key: "\(p)_str_workouts_5",  progress: totalWorkouts)
-        await checkAndUnlock(key: "\(p)_str_workouts_25", progress: totalWorkouts)
-        await checkAndUnlock(key: "\(p)_str_workouts_50", progress: totalWorkouts)
-        await checkAndUnlock(key: "\(p)_str_workouts_75", progress: totalWorkouts)
-        await checkAndUnlock(key: "\(p)_str_workouts_150",progress: totalWorkouts)
+        var pairs: [(key: String, progress: Int)] = [
+            ("first_workout",          totalWorkouts),
+            ("workouts_10",            totalWorkouts),
+            ("workouts_50",            totalWorkouts),
+            ("workouts_100",           totalWorkouts),
+            ("workouts_500",           totalWorkouts),
+            // Olympian Path mirrors (universal + per-archetype workout counters)
+            ("\(p)_first_workout",     totalWorkouts),
+            ("\(p)_workouts_100",      totalWorkouts),
+            // Strength path mirrors (silent no-op for non-strength users)
+            ("\(p)_str_first_lift",    totalWorkouts),
+            ("\(p)_str_workouts_5",    totalWorkouts),
+            ("\(p)_str_workouts_25",   totalWorkouts),
+            ("\(p)_str_workouts_50",   totalWorkouts),
+            ("\(p)_str_workouts_75",   totalWorkouts),
+            ("\(p)_str_workouts_150",  totalWorkouts),
+        ]
 
         let hour = Calendar.current.component(.hour, from: Date())
-        if hour < 6 {
-            await checkAndUnlock(key: "early_bird")
-        }
-        if hour >= 22 {
-            await checkAndUnlock(key: "night_owl")
-        }
+        if hour < 6 { pairs.append(("early_bird", 1)) }
+        if hour >= 22 { pairs.append(("night_owl", 1)) }
+
+        await batchCheckAndUnlock(pairs)
     }
     
     func onStreakUpdated(streak: Int) async {
-        await checkAndUnlock(key: "streak_7", progress: streak)
-        await checkAndUnlock(key: "streak_14", progress: streak)
-        await checkAndUnlock(key: "streak_30", progress: streak)
-        await checkAndUnlock(key: "streak_60", progress: streak)
-        await checkAndUnlock(key: "streak_100", progress: streak)
-
         let p = Self.olympianMirrorPrefix()
-        await checkAndUnlock(key: "\(p)_streak_7",   progress: streak)
-        await checkAndUnlock(key: "\(p)_streak_14",  progress: streak)
-        await checkAndUnlock(key: "\(p)_streak_30",  progress: streak)
-        await checkAndUnlock(key: "\(p)_streak_60",  progress: streak)
-        await checkAndUnlock(key: "\(p)_streak_100", progress: streak)
+        await batchCheckAndUnlock([
+            ("streak_7",         streak),
+            ("streak_14",        streak),
+            ("streak_30",        streak),
+            ("streak_60",        streak),
+            ("streak_100",       streak),
+            ("\(p)_streak_7",    streak),
+            ("\(p)_streak_14",   streak),
+            ("\(p)_streak_30",   streak),
+            ("\(p)_streak_60",   streak),
+            ("\(p)_streak_100",  streak),
+        ])
     }
     
     func onFriendAdded(totalFriends: Int) async {
-        await checkAndUnlock(key: "first_friend", progress: totalFriends)
-        await checkAndUnlock(key: "friends_10", progress: totalFriends)
-
         let p = Self.olympianMirrorPrefix()
-        await checkAndUnlock(key: "\(p)_first_friend",  progress: totalFriends)
-        await checkAndUnlock(key: "\(p)_str_friends_10", progress: totalFriends)
-        await checkAndUnlock(key: "\(p)_end_friends_10", progress: totalFriends)
+        await batchCheckAndUnlock([
+            ("first_friend",         totalFriends),
+            ("friends_10",           totalFriends),
+            ("\(p)_first_friend",    totalFriends),
+            ("\(p)_str_friends_10",  totalFriends),
+            ("\(p)_end_friends_10",  totalFriends),
+        ])
     }
     
     func onChallengeWon(totalWins: Int) async {
-        await checkAndUnlock(key: "first_challenge_won", progress: totalWins)
-        await checkAndUnlock(key: "challenges_won_10", progress: totalWins)
-
         let p = Self.olympianMirrorPrefix()
-        await checkAndUnlock(key: "\(p)_won_challenge", progress: totalWins)
+        await batchCheckAndUnlock([
+            ("first_challenge_won",  totalWins),
+            ("challenges_won_10",    totalWins),
+            ("\(p)_won_challenge",   totalWins),
+        ])
     }
     
     func onMealLogged(totalMeals: Int) async {
-        await checkAndUnlock(key: "first_meal_logged", progress: totalMeals)
-        await checkAndUnlock(key: "meals_logged_100", progress: totalMeals)
-
         let p = Self.olympianMirrorPrefix()
-        await checkAndUnlock(key: "\(p)_first_meal", progress: totalMeals)
-        await checkAndUnlock(key: "\(p)_wl_meals_5",   progress: totalMeals)
-        await checkAndUnlock(key: "\(p)_wl_meals_30",  progress: totalMeals)
-        await checkAndUnlock(key: "\(p)_wl_meals_50",  progress: totalMeals)
-        await checkAndUnlock(key: "\(p)_wl_meals_100", progress: totalMeals)
-        await checkAndUnlock(key: "\(p)_wl_meals_200", progress: totalMeals)
+        await batchCheckAndUnlock([
+            ("first_meal_logged",   totalMeals),
+            ("meals_logged_100",    totalMeals),
+            ("\(p)_first_meal",     totalMeals),
+            ("\(p)_wl_meals_5",     totalMeals),
+            ("\(p)_wl_meals_30",    totalMeals),
+            ("\(p)_wl_meals_50",    totalMeals),
+            ("\(p)_wl_meals_100",   totalMeals),
+            ("\(p)_wl_meals_200",   totalMeals),
+        ])
     }
     
     func onWorkoutShared() async {
-        await checkAndUnlock(key: "first_workout_shared")
-
         let p = Self.olympianMirrorPrefix()
-        await checkAndUnlock(key: "\(p)_send_challenge")
+        await batchCheckAndUnlock([
+            ("first_workout_shared", 1),
+            ("\(p)_send_challenge",  1),
+        ])
     }
     
     /// Increment-style: server adds `delta` to lifetime reactions count.
@@ -362,13 +527,14 @@ class BadgeService: ObservableObject {
     }
     
     func onPersonalRecord(totalPRs: Int = 1) async {
-        await checkAndUnlock(key: "first_pr", progress: totalPRs)
-
         let p = Self.olympianMirrorPrefix()
-        await checkAndUnlock(key: "\(p)_first_pr",   progress: totalPRs)
-        await checkAndUnlock(key: "\(p)_str_pr_5",   progress: totalPRs)
-        await checkAndUnlock(key: "\(p)_str_pr_10",  progress: totalPRs)
-        await checkAndUnlock(key: "\(p)_str_pr_20",  progress: totalPRs)
+        await batchCheckAndUnlock([
+            ("first_pr",         totalPRs),
+            ("\(p)_first_pr",    totalPRs),
+            ("\(p)_str_pr_5",    totalPRs),
+            ("\(p)_str_pr_10",   totalPRs),
+            ("\(p)_str_pr_20",   totalPRs),
+        ])
     }
 
     // MARK: - Weekly League — Tier + Milestone unlock hooks
@@ -407,8 +573,14 @@ class BadgeService: ObservableObject {
     /// the user already accomplished before the feature shipped. Suppresses
     /// unlock toasts while batching; always ends with a single
     /// `fetchAchievements()`.
+    ///
+    /// `transientLevel` is forwarded to the tail `fetchAchievements()` call
+    /// only — Phase 6 OlympianPath passes `.debug` so a cancelled cold-start
+    /// fetch doesn't fingerprint a warning the gate is about to retry away.
+    /// Defaults to `.warning` to preserve QP-25a behavior for every
+    /// non-Phase-6 caller.
     @MainActor
-    func resyncOlympianProgressFromLocalTotals() async {
+    func resyncOlympianProgressFromLocalTotals(transientLevel: AppLogger.Level = .warning) async {
         achievementSyncBatchDepth += 1
         defer { achievementSyncBatchDepth -= 1 }
 
@@ -429,20 +601,30 @@ class BadgeService: ObservableObject {
         let leagueRank = WeeklyLeagueService.shared.standing?.tierRank ?? 0
         if leagueRank > 0 {
             let p = Self.olympianMirrorPrefix()
-            await checkAndUnlock(key: "\(p)_tier_gold", progress: leagueRank)
-            await checkAndUnlock(key: "\(p)_tier_diamond", progress: leagueRank)
-            await checkAndUnlock(key: "\(p)_str_tier_platinum", progress: leagueRank)
-            await checkAndUnlock(key: "\(p)_end_tier_platinum", progress: leagueRank)
-            for t in 1...leagueRank {
-                await onTierAchieved(tierRank: t)
+            var leaguePairs: [(key: String, progress: Int)] = [
+                ("\(p)_tier_gold",          leagueRank),
+                ("\(p)_tier_diamond",       leagueRank),
+                ("\(p)_str_tier_platinum",  leagueRank),
+                ("\(p)_end_tier_platinum",  leagueRank),
+            ]
+            // `tier_<n>` keys mirror `onTierAchieved(tierRank:)` exactly —
+            // server-side `unlock_achievement` short-circuits unknown keys
+            // and `tier_<n>` outside 1..7 is bounds-checked per
+            // `onTierAchieved` contract (range gate handled here too).
+            for t in 1...leagueRank where t <= 7 {
+                leaguePairs.append(("tier_\(t)", 1))
             }
+            await batchCheckAndUnlock(leaguePairs)
         }
 
         if StravaService.shared.isConnected {
             let p = Self.olympianMirrorPrefix()
-            await checkAndUnlock(key: "\(p)_end_connect", progress: 1)
+            await batchCheckAndUnlock([("\(p)_end_connect", 1)])
         }
 
-        await fetchAchievements()
+        // Phase 6 OlympianPath: tail fetch level overridable so a cancelled
+        // cold-start fetch (the gate is about to retry) doesn't fingerprint
+        // a warning. Default `.warning` preserves QP-25a for every other caller.
+        await fetchAchievements(transientLevel: transientLevel)
     }
 }

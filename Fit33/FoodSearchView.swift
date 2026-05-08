@@ -725,23 +725,18 @@ struct FoodSearchResultRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Food emoji with vibrant gradient background (matching exercise cards)
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: categoryGradient,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 40, height: 40)
-                    .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
-                
-                Text(getFoodEmoji(for: food))
-                    .font(.ds_heading3)
-            }
-            
+            // OFF rows (`food.imageUrl != nil`) render the real product photo on a
+            // white chip; USDA / local rows fall back to the original category
+            // gradient + emoji circle. Bumped from 40 → 52 so the photo is
+            // recognizable (and a Pringles can looks like a Pringles can) without
+            // dominating the row.
+            FoodThumbnailView(
+                imageUrl: food.imageUrl,
+                gradient: categoryGradient,
+                emoji: getFoodEmoji(for: food),
+                size: 52
+            )
+
             // Food details
             VStack(alignment: .leading, spacing: 2) {
                 // USDA-branded + Open Food Facts items frequently exceed one line
@@ -935,23 +930,17 @@ struct QuickAccessFoodRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Food emoji with vibrant gradient background (matching exercise cards)
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: categoryGradient,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 40, height: 40)
-                    .shadow(color: categoryGradient[0].opacity(0.25), radius: 4, x: 0, y: 2)
-                
-                Text(getFoodEmoji(for: food))
-                    .font(.ds_heading3)
-            }
-            
+            // OFF rows (`food.imageUrl != nil`) render the real product photo;
+            // USDA / local rows show the category-gradient + emoji fallback.
+            // Mirrors the canonical FoodSearchResultRow icon treatment so a row
+            // that appears in both Search and Quick Add looks identical.
+            FoodThumbnailView(
+                imageUrl: food.imageUrl,
+                gradient: categoryGradient,
+                emoji: getFoodEmoji(for: food),
+                size: 52
+            )
+
             // Food details
             VStack(alignment: .leading, spacing: 2) {
                 // Frequent / quick-access foods carry the same long-name risk as
@@ -1128,6 +1117,80 @@ struct QuickAccessFoodRow: View {
             return String(Int(size))
         } else {
             return String(format: "%.1f", size)
+        }
+    }
+}
+
+// MARK: - Food Thumbnail (OFF product photo with emoji fallback)
+
+/// Renders a leading thumbnail for a `ProcessedFoodItem`.
+///
+/// When the row originated from Open Food Facts (`food.imageUrl != nil`) we
+/// show the real product photo on a white rounded-square chip — OFF crops are
+/// rectangular product shots so a circle clips the label. While loading or on
+/// failure we fall back to the existing category-gradient + emoji circle so
+/// USDA / local rows look identical to before and OFF rows degrade cleanly
+/// when the CDN is unreachable.
+struct FoodThumbnailView: View {
+    let imageUrl: String?
+    let gradient: [Color]
+    let emoji: String
+    let size: CGFloat
+
+    var body: some View {
+        if let urlString = imageUrl,
+           !urlString.isEmpty,
+           let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .padding(size * 0.08)
+                        .frame(width: size, height: size)
+                        .background(
+                            RoundedRectangle(cornerRadius: size * 0.22)
+                                .fill(Color.white)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: size * 0.22)
+                                .stroke(
+                                    (gradient.first ?? Color.gray).opacity(0.25),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(
+                            color: (gradient.first ?? Color.black).opacity(0.18),
+                            radius: 4, x: 0, y: 2
+                        )
+                default:
+                    fallback
+                }
+            }
+        } else {
+            fallback
+        }
+    }
+
+    private var fallback: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: gradient,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: size, height: size)
+                .shadow(
+                    color: (gradient.first ?? Color.black).opacity(0.25),
+                    radius: 4, x: 0, y: 2
+                )
+
+            Text(emoji)
+                .font(.system(size: size * 0.5))
         }
     }
 }

@@ -288,12 +288,18 @@ struct USDAFoodResultRow: View {
     var body: some View {
         Button(action: { HapticManager.selectionChanged(); onTap() }) {
             HStack(spacing: 12) {
-                // Food Icon
-                Image(systemName: foodIcon)
-                    .font(.title2)
-                    .foregroundColor(.green)
-                    .frame(width: 32)
-                
+                // OFF rows render the real product photo; USDA / local rows fall
+                // back to a green-tint emoji circle. Reuses the canonical
+                // FoodThumbnailView from FoodSearchView so this legacy result row
+                // stays visually aligned with the modern search UI if it's ever
+                // re-enabled. Bumped from 32 → 48 so the photo is recognizable.
+                FoodThumbnailView(
+                    imageUrl: food.imageUrl,
+                    gradient: [Color.green, Color.mint],
+                    emoji: getFoodEmoji(for: food),
+                    size: 48
+                )
+
                 VStack(alignment: .leading, spacing: 4) {
                     // Food Name
                     Text(food.displayName)
@@ -342,28 +348,6 @@ struct USDAFoodResultRow: View {
             .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
         }
         .buttonStyle(PlainButtonStyle())
-    }
-    
-    private var foodIcon: String {
-        guard let category = food.category?.lowercased() else { return "leaf" }
-        
-        if category.contains("dairy") || category.contains("milk") {
-            return "drop"
-        } else if category.contains("meat") || category.contains("poultry") || category.contains("beef") || category.contains("chicken") {
-            return "flame"
-        } else if category.contains("fish") || category.contains("seafood") {
-            return "fish"
-        } else if category.contains("fruit") {
-            return "apple"
-        } else if category.contains("vegetable") {
-            return "carrot"
-        } else if category.contains("grain") || category.contains("cereal") || category.contains("bread") {
-            return "wheat"
-        } else if category.contains("nut") || category.contains("seed") {
-            return "circle.hexagongrid"
-        } else {
-            return "leaf"
-        }
     }
     
     private func formatServingSize(_ size: Double) -> String {

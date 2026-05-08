@@ -959,36 +959,42 @@ struct FoodDetailsView: View {
         VStack(spacing: 0) {
             // Food Header
             HStack(spacing: 14) {
-                // Food Icon
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: categoryGradient,
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 56, height: 56)
-                    
-                    Text(foodEmoji)
-                        .font(.ds_heading1)
-                }
-                
+                // OFF rows show the real product photo on a white chip; USDA /
+                // local rows show the original category-gradient + emoji circle.
+                // Bumped from 56 → 64 here vs. the 52pt row icon — this is the
+                // hero spot for the picked food and benefits from a slightly
+                // larger crop without throwing off the macros row beside it.
+                FoodThumbnailView(
+                    imageUrl: food.imageUrl,
+                    gradient: categoryGradient,
+                    emoji: foodEmoji,
+                    size: 64
+                )
+
                 // Food Info
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(food.displayName)
                         .font(.ds_labelLarge)
                         .lineLimit(2)
                         .foregroundColor(.primary)
-                    
+
                     if let category = food.category {
                         Text(category)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+
+                    // Always-visible source tag. Distinct from the OFF
+                    // attribution footer below — that footer is a *license
+                    // obligation* (ODbL requires visible attribution + a link
+                    // to the source DB at the point of use). This pill is the
+                    // user-facing "where did this data come from" signal so
+                    // people can tell lab-measured (USDA) from
+                    // community-contributed (OFF) at a glance, regardless of
+                    // whether the row was scanned or searched.
+                    sourceTag
                 }
-                
+
                 Spacer()
             }
             .padding(18)
@@ -1136,6 +1142,53 @@ struct FoodDetailsView: View {
         )
     }
     
+    // MARK: - Source Tag (header pill)
+    // Small always-visible pill that tells the user where the row's data
+    // came from: USDA (lab-measured) vs Open Food Facts (community / barcode
+    // scanned). Sized as a caption pill so it sits comfortably under the
+    // food name + category without competing with the photo. `food.source`
+    // values seen in the wild: "off" → OFF, "usda" or nil → USDA (older
+    // entries pre-2026-04-30 don't carry the field, default to USDA).
+    private var sourceTag: some View {
+        HStack(spacing: 4) {
+            Image(systemName: sourceIconName)
+                .font(.caption2)
+            Text(sourceDisplayName)
+                .font(.caption2)
+                .fontWeight(.semibold)
+        }
+        .foregroundColor(sourceTint)
+        .padding(.horizontal, Spacing.xs)
+        .padding(.vertical, 3)
+        .background(
+            Capsule()
+                .fill(sourceTint.opacity(0.12))
+        )
+        .overlay(
+            Capsule()
+                .stroke(sourceTint.opacity(0.3), lineWidth: 0.5)
+        )
+        .accessibilityLabel("Data source: \(sourceDisplayName)")
+    }
+
+    private var sourceDisplayName: String {
+        food.source == "off" ? "Open Food Facts" : "USDA"
+    }
+
+    private var sourceIconName: String {
+        // OFF rows are predominantly barcode-driven, USDA rows are
+        // lab-measured / curated — pick icons that signal that distinction.
+        food.source == "off" ? "barcode" : "checkmark.seal.fill"
+    }
+
+    private var sourceTint: Color {
+        // Indigo for OFF (avoids collision with the protein blue / carb
+        // orange / fat red used in the macros row directly below). Green
+        // for USDA — matches the existing "verified plain food" visual
+        // language used elsewhere in the meal flow.
+        food.source == "off" ? .indigo : .green
+    }
+
     // MARK: - ODbL Attribution Footer (Open Food Facts)
     // Rendered ONLY when `food.source == "off"`. Required by the Open
     // Database License — visible attribution at the point of use, with the

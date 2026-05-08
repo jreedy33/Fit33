@@ -20,6 +20,26 @@ const USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
 
 const CACHE_TTL_DAYS = 30;
 
+// Bump whenever the search merge / rank / shape changes in a way that would
+// make pre-existing cached `result_ids` produce a different set of items
+// than a fresh fan-out would. Increments are paired with a comment block
+// explaining the trigger so future deploys don't lose the audit trail.
+//
+// Read path adds `.eq("result_version", CACHE_VERSION)` to the cache lookup
+// → entries with a smaller version are treated as misses → next search
+// re-fans-out to USDA + OFF and the upsert (onConflict: normalized_query)
+// overwrites the stale row with the current version. Stale rows that are
+// never re-queried are evicted by the existing CACHE_TTL_DAYS sweep.
+//
+// History:
+//   1 → initial value (`food_search_cache` rows pre-`20260508_food_search_cache_version.sql`)
+//   2 → 2026-05-08: OFF photo rollout. Pre-OFF cached "pringles" / "doritos"
+//       /etc. entries contained only USDA Branded ids and never refreshed
+//       to include OFF ids → iOS thumbnail view never saw the OFF
+//       `image_url` for popular branded queries. Bumping forces a full
+//       refresh so OFF ids get into the cached `result_ids`.
+const CACHE_VERSION = 2;
+
 // Best-effort per-IP rate limiter (resets per edge function cold start)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_MAX = 30;
@@ -154,15 +174,20 @@ async function handleSearch(supabase: any, params: SearchRequest, corsHeaders: R
 
   console.log(`🔍 Searching USDA API for: "${query}"`);
 
-  // Step 1: Check local cache first (with TTL — ignore entries older than 30 days)
+  // Step 1: Check local cache first (with TTL — ignore entries older than 30 days).
+  // ALSO gate on `result_version = CACHE_VERSION` so a logic / source change
+  // (e.g. the 2026-05-08 OFF photo rollout) treats older cached rows as misses
+  // and forces a fresh fan-out. `.maybeSingle()` instead of `.single()` because
+  // version-mismatch is now an expected (silent) cache miss, not an error.
   const normalizedQuery = query.toLowerCase().trim();
   const cacheCutoff = new Date(Date.now() - CACHE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const { data: cachedSearch } = await supabase
     .from("food_search_cache")
     .select("result_ids, created_at")
     .eq("normalized_query", normalizedQuery)
+    .eq("result_version", CACHE_VERSION)
     .gte("created_at", cacheCutoff)
-    .single();
+    .maybeSingle();
 
   if (cachedSearch && cachedSearch.result_ids.length > 0) {
     console.log(`✅ Cache hit for "${query}" - ${cachedSearch.result_ids.length} results`);
@@ -339,7 +364,10 @@ async function handleSearch(supabase: any, params: SearchRequest, corsHeaders: R
     // Transform database rows to API format (camelCase with foodNutrients array)
     const transformedFoods = rankedFoods.map(transformToApiFormat);
     
-    // Cache the search query with ranked IDs (created_at resets TTL on re-fetch)
+    // Cache the search query with ranked IDs (created_at resets TTL on re-fetch).
+    // `result_version` stamps the row with the current CACHE_VERSION so future
+    // logic changes can invalidate it via the read-side `.eq("result_version", …)`
+    // filter without a manual TRUNCATE.
     const rankedIds = rankedFoods.map((f: any) => f.id);
     await supabase
       .from("food_search_cache")
@@ -350,7 +378,8 @@ async function handleSearch(supabase: any, params: SearchRequest, corsHeaders: R
         result_count: rankedIds.length,
         search_count: 1,
         last_searched_at: new Date().toISOString(),
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        result_version: CACHE_VERSION
       }, {
         onConflict: "normalized_query"
       });

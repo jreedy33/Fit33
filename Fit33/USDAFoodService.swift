@@ -204,7 +204,10 @@ struct ProcessedFoodItem: Identifiable {
     //   (license requirement) and slot the row into the "OFF" ranker tier.
     // - `barcode` = the scanned EAN/UPC; preserved so the meal entry can be
     //   re-resolved on a different device by barcode (cross-device cache hit).
-    // - `imageUrl` = OFF small product image, used by the scanner result card.
+    // - `imageUrl` = OFF small product image. Rendered by `FoodThumbnailView`
+    //   (FoodSearchView.swift) on every food row + the FoodDetailsView header
+    //   when non-nil; gradient + emoji fallback covers USDA / local rows and
+    //   network failure on the AsyncImage phase.
     var source: String? = nil
     var barcode: String? = nil
     var imageUrl: String? = nil

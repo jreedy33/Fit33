@@ -78,6 +78,55 @@ type StatsResponse = {
   total: number
 }
 
+// Existing-value suggestions for inline edit dropdowns. Pulled once on
+// page mount via the same `get_exercise_suggestions` action used by the
+// exercise detail editor — keeps the operator's choices consistent with
+// the canonical taxonomy already in the catalog.
+type Suggestions = {
+  muscles: string[]
+  equipment_categories: string[]
+  workout_types: string[]
+  genders: string[]
+}
+
+const EMPTY_SUGGESTIONS: Suggestions = {
+  muscles: [],
+  equipment_categories: [],
+  // Mirror the canonical list used by the per-exercise editor at
+  // /exercises/[id] so the dropdown surface here doesn't drift from there.
+  workout_types: ['Strength', 'Cardio', 'Stretch', 'Warmup', 'Plyometrics', 'Olympic Weightlifting', 'Strongman', 'Powerlifting'],
+  genders: ['Male', 'Female'],
+}
+
+// Fields the operator may edit inline before approving a proposal. We stash
+// them all on a single object so the approve handler can compute a single
+// update_exercise call.
+type EditableState = {
+  name: string
+  gender: string | null
+  primary_muscles: string[]
+  secondary_muscles: string[]
+  workout_type: string | null
+  equipment_category: string | null
+  is_compound: boolean | null
+  duration_based: boolean | null
+}
+
+const EDITABLE_FIELDS: ReadonlyArray<keyof EditableState> = [
+  'name', 'gender', 'primary_muscles', 'secondary_muscles',
+  'workout_type', 'equipment_category', 'is_compound', 'duration_based',
+] as const
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], b[i])) return false
+    return true
+  }
+  return false
+}
+
 // Slim exercise shape we need to render the per-proposal preview.
 // We pull `select(*)` via the existing `get_exercise` admin action and only
 // touch these fields, but we keep it `Record<string, unknown>` permissive so
@@ -85,6 +134,7 @@ type StatsResponse = {
 type ExerciseFull = {
   id: string
   name: string
+  gender: string | null
   primary_muscles: string[] | null
   secondary_muscles: string[] | null
   workout_type: string | null
@@ -94,6 +144,22 @@ type ExerciseFull = {
   duration_based: boolean | null
   video_filename: string | null
 } & Record<string, unknown>
+
+function exerciseToEditState(ex: ExerciseFull, after: ExerciseFull): EditableState {
+  // The "after" exercise has the proposal already applied; we want the editor
+  // to default to the post-approval state so the operator only has to touch
+  // values that need overriding. Other catalog fields fall back to current.
+  return {
+    name: String(after.name ?? ex.name ?? ''),
+    gender: (after.gender ?? ex.gender ?? null) as string | null,
+    primary_muscles: asMuscleList(after.primary_muscles ?? ex.primary_muscles),
+    secondary_muscles: asMuscleList(after.secondary_muscles ?? ex.secondary_muscles),
+    workout_type: (after.workout_type ?? ex.workout_type ?? null) as string | null,
+    equipment_category: (after.equipment_category ?? ex.equipment_category ?? null) as string | null,
+    is_compound: (after.is_compound ?? ex.is_compound ?? null) as boolean | null,
+    duration_based: (after.duration_based ?? ex.duration_based ?? null) as boolean | null,
+  }
+}
 
 // Apply a single proposal's diff to the current exercise state and return
 // what the exercise WOULD look like if the operator approves this proposal
@@ -131,17 +197,6 @@ function asMuscleList(val: unknown): string[] {
   return []
 }
 
-function fmtBool(v: unknown): string {
-  if (v === true) return 'Yes'
-  if (v === false) return 'No'
-  return '—'
-}
-
-function fmtScalar(v: unknown): string {
-  if (v === null || v === undefined || v === '') return '—'
-  return String(v)
-}
-
 // ─── page ────────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 50
@@ -160,6 +215,7 @@ export default function CatalogProposalsPage() {
   // catalog row, which affects future preview computations on sibling proposals
   // for the same exercise).
   const [exerciseMap, setExerciseMap] = useState<Record<string, ExerciseFull>>({})
+  const [suggestions, setSuggestions] = useState<Suggestions>(EMPTY_SUGGESTIONS)
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -209,6 +265,33 @@ export default function CatalogProposalsPage() {
   }, [statusFilter, page])
 
   useEffect(() => { void load() }, [load])
+
+  // One-shot suggestion fetch on mount. Reuses the same admin action as the
+  // exercise detail editor so muscle / equipment / etc. dropdowns stay in
+  // sync with whatever taxonomy already lives in the catalog.
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      try {
+        const data = await adminApi('get_exercise_suggestions') as Record<string, string[]>
+        if (cancelled) return
+        setSuggestions({
+          muscles: Array.isArray(data?.muscles) ? data.muscles : [],
+          equipment_categories: Array.isArray(data?.equipment_categories) ? data.equipment_categories : [],
+          // Workout-type & gender are tightly bounded enums; ship a stable default
+          // even if the admin endpoint comes back empty (cold catalog, network blip).
+          workout_types: Array.isArray(data?.workout_types) && data.workout_types.length > 0
+            ? data.workout_types : EMPTY_SUGGESTIONS.workout_types,
+          genders: Array.isArray(data?.genders) && data.genders.length > 0
+            ? data.genders : EMPTY_SUGGESTIONS.genders,
+        })
+      } catch {
+        // Non-fatal — editors will fall back to plain inputs without dropdowns.
+      }
+    }
+    void run()
+    return () => { cancelled = true }
+  }, [])
 
   const handleStatusChange = (s: string) => {
     setPage(0)
@@ -285,6 +368,7 @@ export default function CatalogProposalsPage() {
               key={p.id}
               p={p}
               exercise={exerciseMap[p.exercise_id] || null}
+              suggestions={suggestions}
               onChanged={() => void load()}
             />
           ))}
@@ -335,15 +419,33 @@ export default function CatalogProposalsPage() {
 function ProposalCard({
   p,
   exercise,
+  suggestions,
   onChanged,
 }: {
   p: ProposalRow
   exercise: ExerciseFull | null
+  suggestions: Suggestions
   onChanged: () => void
 }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [videoFailed, setVideoFailed] = useState(false)
+
+  // Inline-edit state for ALL editable fields. Initialized to the
+  // after-approval preview state so the operator only has to touch values
+  // that need overriding. Resets whenever the underlying exercise or proposal
+  // changes (e.g. after a sibling approval triggers a parent reload).
+  const buildInitialEdit = useCallback((): EditableState | null => {
+    if (!exercise) return null
+    const after = previewAfterProposal(exercise, p)
+    return exerciseToEditState(exercise, after)
+  }, [exercise, p])
+
+  const [edit, setEdit] = useState<EditableState | null>(buildInitialEdit)
+
+  useEffect(() => {
+    setEdit(buildInitialEdit())
+  }, [buildInitialEdit])
 
   const gates: string[] = []
   if (p.sister_corroborated) gates.push('SISTER')
@@ -352,6 +454,25 @@ function ProposalCard({
 
   const decidable = p.status === 'pending' || p.status === 'blocked_core_exercise'
   const isCoreOverride = p.status === 'blocked_core_exercise' && p.operation === 'remove'
+
+  // Compute the diff between the operator's chosen state and the current
+  // catalog row. The approve handler uses this to drive a single
+  // `update_exercise` call (or skip the call if nothing changed).
+  const computeUpdates = useCallback((): Record<string, unknown> => {
+    if (!exercise || !edit) return {}
+    const updates: Record<string, unknown> = {}
+    for (const f of EDITABLE_FIELDS) {
+      const current = (exercise as Record<string, unknown>)[f]
+      const next = (edit as Record<string, unknown>)[f]
+      // Treat null/empty-string equivalently for scalar fields.
+      const normCurrent = current === '' ? null : current
+      const normNext = next === '' ? null : next
+      if (!deepEqual(normCurrent, normNext)) {
+        updates[f] = normNext
+      }
+    }
+    return updates
+  }, [exercise, edit])
 
   const approve = async () => {
     if (!decidable) return
@@ -367,14 +488,67 @@ function ProposalCard({
     }
     setBusy(true); setErr(null)
     try {
-      const res = await adminApi('admin_apply_correction_proposal', { proposalId: p.id }) as {
-        result?: { success?: boolean; error?: string }
+      const updates = computeUpdates()
+      const proposalField = p.field_name as keyof EditableState
+
+      // Did the operator change the proposal's own field to something other
+      // than what Claude proposed? If so we apply the override via
+      // update_exercise and tag the proposal as manually overridden so the
+      // RPC's apply path doesn't overwrite the operator's value.
+      const claudeAppliedValue = exercise
+        ? (previewAfterProposal(exercise, p) as Record<string, unknown>)[p.field_name]
+        : null
+      const editedValue = edit
+        ? (edit as Record<string, unknown>)[p.field_name]
+        : null
+      const overrodeProposalField = !deepEqual(claudeAppliedValue, editedValue)
+
+      // Strip the proposal's own field from `updates` if the operator kept
+      // Claude's value — admin_apply_correction_proposal will write it. We
+      // still want to write OTHER edits (name / gender / unrelated muscles).
+      let updatesToSend: Record<string, unknown> = updates
+      if (!overrodeProposalField && proposalField in updates) {
+        const { [proposalField]: _droppedProposalField, ...rest } = updates as Record<string, unknown> & Record<typeof proposalField, unknown>
+        void _droppedProposalField
+        updatesToSend = rest
       }
-      if (!res?.result?.success) {
-        setErr(res?.result?.error || 'Apply failed')
+
+      // 1. Save inline edits (other fields, plus proposal field if overridden).
+      if (Object.keys(updatesToSend).length > 0) {
+        const res = await adminApi('update_exercise', {
+          exercise_id: p.exercise_id,
+          updates: updatesToSend,
+        }) as { error?: string; result?: { success?: boolean; error?: string } }
+        if (res?.error || res?.result?.error || res?.result?.success === false) {
+          setErr(res?.error || res?.result?.error || 'Save failed')
+          return
+        }
+      }
+
+      // 2. Resolve the proposal.
+      if (overrodeProposalField) {
+        // Operator overrode Claude — proposal value is no longer applicable.
+        // Mark as rejected with a clear, machine-readable reason so future
+        // audits know this wasn't a "Claude was wrong, discard" reject —
+        // it was "operator wrote a better value inline".
+        await adminApi('admin_reject_correction_proposal', {
+          proposalId: p.id,
+          reason: 'manual_override_via_inline_edit',
+        })
       } else {
-        onChanged()
+        // Operator accepted Claude's value (possibly with edits to other
+        // fields). Use the standard apply path so the proposal lands as
+        // 'applied' with the corroboration_kind = sister/name/multi noted.
+        const res = await adminApi('admin_apply_correction_proposal', {
+          proposalId: p.id,
+        }) as { result?: { success?: boolean; error?: string } }
+        if (!res?.result?.success) {
+          setErr(res?.result?.error || 'Apply failed')
+          return
+        }
       }
+
+      onChanged()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Apply failed')
     } finally {
@@ -403,9 +577,6 @@ function ProposalCard({
   const videoFilename = exercise?.video_filename || null
   const videoUrl = videoFilename && !videoFailed ? `${R2_BASE}/${videoFilename}` : null
 
-  // Compute post-state preview if we have the exercise; null otherwise.
-  const after = exercise ? previewAfterProposal(exercise, p) : null
-
   return (
     <div className="card p-0 overflow-hidden">
       <div className="flex flex-col md:flex-row gap-0">
@@ -420,7 +591,7 @@ function ProposalCard({
               loop
               playsInline
               onError={() => setVideoFailed(true)}
-              className="w-full md:h-full md:max-h-72 object-cover bg-black"
+              className="w-full md:h-full md:max-h-96 object-cover bg-black"
             />
           ) : (
             <div className="w-full aspect-square grid place-items-center text-neutral-600 text-xs">
@@ -429,17 +600,26 @@ function ProposalCard({
           )}
         </div>
 
-        {/* ─── Right: header + preview ────────────────────────────────── */}
+        {/* ─── Right: header + editor ─────────────────────────────────── */}
         <div className="flex-1 p-4 min-w-0">
-          {/* Header row — exercise name + Claude details + actions */}
+          {/* Header row — exercise name (editable) + Claude details + actions */}
           <div className="flex items-start justify-between gap-3 mb-3">
             <div className="min-w-0 flex-1">
-              <a
-                href={`/exercises/${p.exercise_id}`}
-                className="text-base font-medium hover:underline block truncate"
-              >
-                {p.exercise_name}
-              </a>
+              {edit ? (
+                <input
+                  value={edit.name}
+                  onChange={(e) => setEdit((s) => s ? { ...s, name: e.target.value } : s)}
+                  className="input input-sm w-full font-medium bg-neutral-900/60"
+                  spellCheck={false}
+                />
+              ) : (
+                <a
+                  href={`/exercises/${p.exercise_id}`}
+                  className="text-base font-medium hover:underline block truncate"
+                >
+                  {p.exercise_name}
+                </a>
+              )}
               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                 <span className={statusBadgeClass(p.status)}>{p.status}</span>
                 <span className={operationBadgeClass(p.operation)}>{p.operation}</span>
@@ -448,6 +628,13 @@ function ProposalCard({
                 <span className="text-xs text-neutral-500" title={p.proposed_at}>
                   · {timeAgo(p.proposed_at)}
                 </span>
+                <a
+                  href={`/exercises/${p.exercise_id}`}
+                  className="text-xs text-blue-400 hover:underline ml-1"
+                  title="Open full exercise editor"
+                >
+                  full editor →
+                </a>
               </div>
               {p.evidence && (
                 <div className="text-xs text-neutral-400 mt-2 italic leading-snug">
@@ -462,7 +649,7 @@ function ProposalCard({
                   onClick={approve}
                   disabled={busy}
                   className={`btn btn-sm ${isCoreOverride ? 'btn-warning' : 'btn-success'}`}
-                  title={isCoreOverride ? 'Override core-exercise lockout' : 'Approve and apply'}
+                  title={isCoreOverride ? 'Override core-exercise lockout + save edits' : 'Save edits and apply'}
                 >
                   {busy ? '…' : isCoreOverride ? 'Override' : 'Approve'}
                 </button>
@@ -500,9 +687,15 @@ function ProposalCard({
             )}
           </div>
 
-          {/* Preview state — what the exercise WOULD look like after this proposal */}
-          {after && exercise ? (
-            <PreviewState before={exercise} after={after} proposal={p} />
+          {/* Editor — what the exercise WILL look like after Approve */}
+          {edit && exercise ? (
+            <InlineExerciseEditor
+              edit={edit}
+              setEdit={setEdit}
+              proposal={p}
+              before={exercise}
+              suggestions={suggestions}
+            />
           ) : (
             <div className="font-mono text-xs bg-neutral-950 rounded px-2 py-1.5 break-words text-neutral-400">
               proposed: {JSON.stringify(p.proposed_value)}
@@ -516,118 +709,208 @@ function ProposalCard({
   )
 }
 
-// ─── PreviewState ────────────────────────────────────────────────────────────
+// ─── InlineExerciseEditor ────────────────────────────────────────────────────
 //
-// Renders the would-be-after state of the exercise as a compact key→value grid.
-// The field that this proposal mutates is highlighted: green for adds, red
-// strikethrough for removes, ring for sets. All other fields render plain.
+// Editable form for the operator to massage the exercise's final state before
+// approving the proposal. Initial values come from the after-approval preview
+// (so muscle adds appear pre-checked, equipment_category set values pre-filled,
+// etc.) but every field is overridable. Values from the canonical taxonomy are
+// surfaced via dropdowns for consistency — e.g. if Claude proposed
+// `equipment_category=Training Cored` the operator can pick `TRX` instead.
 
-function PreviewState({
-  before,
-  after,
+function InlineExerciseEditor({
+  edit,
+  setEdit,
   proposal,
+  before,
+  suggestions,
 }: {
-  before: ExerciseFull
-  after: ExerciseFull
+  edit: EditableState
+  setEdit: (updater: (s: EditableState | null) => EditableState | null) => void
   proposal: ProposalRow
+  before: ExerciseFull
+  suggestions: Suggestions
 }) {
-  const changing = proposal.field_name
+  const proposalField = proposal.field_name
   const op = proposal.operation
   const beforePM = asMuscleList(before.primary_muscles)
   const beforeSM = asMuscleList(before.secondary_muscles)
-  const afterPM = asMuscleList(after.primary_muscles)
-  const afterSM = asMuscleList(after.secondary_muscles)
 
-  // Compute per-row diff for muscle arrays so we can paint each chip.
-  const renderMuscleChips = (afterArr: string[], beforeArr: string[], thisField: string) => {
-    if (afterArr.length === 0 && beforeArr.length === 0) {
-      return <span className="text-neutral-600 text-xs">—</span>
-    }
-    const isThisField = thisField === changing
-    const removed = beforeArr.filter((m) => !afterArr.includes(m))
+  const fieldRing = (field: string): string =>
+    field === proposalField
+      ? 'ring-1 ring-emerald-500/40 bg-emerald-600/5 rounded'
+      : ''
+
+  const labelClass = 'text-[10px] uppercase tracking-wide text-neutral-500 mb-1'
+
+  const setMuscles = (which: 'primary_muscles' | 'secondary_muscles', next: string[]) => {
+    setEdit((s) => s ? { ...s, [which]: next } : s)
+  }
+
+  // Render an editable list of muscle chips. Each chip is a small select; the
+  // first dropdown option per chip is "(remove)" for one-click delete. An
+  // "+ Add" button appends a fresh empty select.
+  const renderMuscleEditor = (
+    field: 'primary_muscles' | 'secondary_muscles',
+    label: string,
+  ) => {
+    const arr = edit[field]
+    const before = field === 'primary_muscles' ? beforePM : beforeSM
     return (
-      <div className="flex flex-wrap gap-1">
-        {afterArr.map((m) => {
-          const wasPresent = beforeArr.includes(m)
-          const isAdded = isThisField && op === 'add' && !wasPresent
-          return (
-            <span
-              key={m}
-              className={
-                isAdded
-                  ? 'px-1.5 py-0.5 rounded text-xs bg-emerald-600/30 text-emerald-300 ring-1 ring-emerald-500/60'
-                  : 'px-1.5 py-0.5 rounded text-xs bg-neutral-800 text-neutral-200'
-              }
-            >
-              {m}{isAdded ? ' (+)' : ''}
-            </span>
-          )
-        })}
-        {/* If this is the field being mutated AND op is remove, show the removed
-            chip(s) struck through so the operator sees what's leaving. */}
-        {isThisField && op === 'remove' && removed.map((m) => (
-          <span
-            key={`rm-${m}`}
-            className="px-1.5 py-0.5 rounded text-xs bg-rose-600/20 text-rose-300 ring-1 ring-rose-500/50 line-through"
+      <div className={`p-2 ${fieldRing(field)}`}>
+        <div className={labelClass}>{label}</div>
+        <div className="flex flex-wrap gap-1.5 items-center">
+          {arr.map((m, idx) => {
+            const wasAdded = !before.includes(m)
+            return (
+              <div key={`${field}-${idx}`} className="flex items-center">
+                <select
+                  value={m}
+                  onChange={(e) => {
+                    const next = [...arr]
+                    if (e.target.value === '__remove__') {
+                      next.splice(idx, 1)
+                    } else {
+                      next[idx] = e.target.value
+                    }
+                    setMuscles(field, next)
+                  }}
+                  className={
+                    'text-xs rounded px-1.5 py-0.5 bg-neutral-900 border ' +
+                    (wasAdded
+                      ? 'border-emerald-500/60 text-emerald-200'
+                      : 'border-neutral-700 text-neutral-200')
+                  }
+                >
+                  <option value="__remove__">(remove)</option>
+                  {/* Always include the current value so it stays selected even
+                      if the suggestions list lags. */}
+                  {!suggestions.muscles.includes(m) && (
+                    <option value={m}>{m}</option>
+                  )}
+                  {suggestions.muscles.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              const candidate = suggestions.muscles[0] || 'Chest'
+              setMuscles(field, [...arr, candidate])
+            }}
+            className="text-xs px-1.5 py-0.5 rounded border border-dashed border-neutral-600 text-neutral-400 hover:border-neutral-400 hover:text-neutral-200"
           >
-            {m}
-          </span>
-        ))}
+            + Add muscle
+          </button>
+        </div>
+        {/* Show what was removed so the operator sees the diff. */}
+        {op === 'remove' && proposalField === field && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {before.filter((m) => !arr.includes(m)).map((m) => (
+              <span
+                key={`rm-${m}`}
+                className="px-1.5 py-0.5 rounded text-[10px] bg-rose-600/15 text-rose-300 ring-1 ring-rose-500/40 line-through"
+              >
+                {m}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
 
-  // Highlight ring class for the scalar field that's changing.
-  const ringIfChanging = (field: string) =>
-    field === changing && op === 'set'
-      ? 'ring-1 ring-emerald-500/50 bg-emerald-600/10 rounded px-1.5 py-0.5'
-      : ''
-
-  const cellLabel = 'text-[10px] uppercase tracking-wide text-neutral-500 mb-1'
-  const cellValue = 'text-sm text-neutral-200'
-
   return (
-    <div className="border border-neutral-800 rounded-md p-3 bg-neutral-900/50">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-2">
-        After approval
-      </div>
-      {/* Top row: muscles */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-        <div>
-          <div className={cellLabel}>Primary muscles</div>
-          {renderMuscleChips(afterPM, beforePM, 'primary_muscles')}
-        </div>
-        <div>
-          <div className={cellLabel}>Secondary muscles</div>
-          {renderMuscleChips(afterSM, beforeSM, 'secondary_muscles')}
-        </div>
+    <div className="border border-neutral-800 rounded-md p-3 bg-neutral-900/50 space-y-3">
+      <div className="text-[10px] uppercase tracking-wide text-neutral-500">
+        Edit fields then click Approve to save + apply
       </div>
 
-      {/* Bottom row: scalar fields */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div>
-          <div className={cellLabel}>Workout type</div>
-          <div className={`${cellValue} inline-block ${ringIfChanging('workout_type')}`}>
-            {fmtScalar(after.workout_type)}
-          </div>
+      {/* Muscle editors */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {renderMuscleEditor('primary_muscles', 'Primary muscles')}
+        {renderMuscleEditor('secondary_muscles', 'Secondary muscles')}
+      </div>
+
+      {/* Scalar dropdowns */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className={`p-2 ${fieldRing('gender')}`}>
+          <div className={labelClass}>Gender</div>
+          <select
+            value={edit.gender ?? ''}
+            onChange={(e) => setEdit((s) => s ? { ...s, gender: e.target.value || null } : s)}
+            className="input input-sm w-full bg-neutral-900"
+          >
+            <option value="">—</option>
+            {suggestions.genders.map((g) => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
         </div>
-        <div>
-          <div className={cellLabel}>Equipment</div>
-          <div className={`${cellValue} inline-block ${ringIfChanging('equipment_category')}`}>
-            {fmtScalar(after.equipment_category)}
-          </div>
+        <div className={`p-2 ${fieldRing('workout_type')}`}>
+          <div className={labelClass}>Workout type</div>
+          <select
+            value={edit.workout_type ?? ''}
+            onChange={(e) => setEdit((s) => s ? { ...s, workout_type: e.target.value || null } : s)}
+            className="input input-sm w-full bg-neutral-900"
+          >
+            <option value="">—</option>
+            {edit.workout_type && !suggestions.workout_types.includes(edit.workout_type) && (
+              <option value={edit.workout_type}>{edit.workout_type}</option>
+            )}
+            {suggestions.workout_types.map((w) => (
+              <option key={w} value={w}>{w}</option>
+            ))}
+          </select>
         </div>
-        <div>
-          <div className={cellLabel}>Compound</div>
-          <div className={`${cellValue} inline-block ${ringIfChanging('is_compound')}`}>
-            {fmtBool(after.is_compound)}
-          </div>
+        <div className={`p-2 ${fieldRing('equipment_category')}`}>
+          <div className={labelClass}>Equipment</div>
+          <select
+            value={edit.equipment_category ?? ''}
+            onChange={(e) => setEdit((s) => s ? { ...s, equipment_category: e.target.value || null } : s)}
+            className="input input-sm w-full bg-neutral-900"
+          >
+            <option value="">—</option>
+            {edit.equipment_category && !suggestions.equipment_categories.includes(edit.equipment_category) && (
+              <option value={edit.equipment_category}>{edit.equipment_category}</option>
+            )}
+            {suggestions.equipment_categories.map((eq) => (
+              <option key={eq} value={eq}>{eq}</option>
+            ))}
+          </select>
         </div>
-        <div>
-          <div className={cellLabel}>Duration-based</div>
-          <div className={`${cellValue} inline-block ${ringIfChanging('duration_based')}`}>
-            {fmtBool(after.duration_based)}
-          </div>
+        <div className={`p-2 ${fieldRing('is_compound')}`}>
+          <div className={labelClass}>Compound</div>
+          <select
+            value={edit.is_compound === null ? '' : edit.is_compound ? 'true' : 'false'}
+            onChange={(e) => {
+              const v = e.target.value
+              setEdit((s) => s ? { ...s, is_compound: v === '' ? null : v === 'true' } : s)
+            }}
+            className="input input-sm w-full bg-neutral-900"
+          >
+            <option value="">—</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+        <div className={`p-2 ${fieldRing('duration_based')}`}>
+          <div className={labelClass}>Duration-based</div>
+          <select
+            value={edit.duration_based === null ? '' : edit.duration_based ? 'true' : 'false'}
+            onChange={(e) => {
+              const v = e.target.value
+              setEdit((s) => s ? { ...s, duration_based: v === '' ? null : v === 'true' } : s)
+            }}
+            className="input input-sm w-full bg-neutral-900"
+          >
+            <option value="">—</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
         </div>
       </div>
     </div>

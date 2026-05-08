@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AdminShell from '@/components/AdminShell'
 import { adminApi } from '@/lib/api'
 
@@ -192,9 +192,28 @@ function previewAfterProposal(ex: ExerciseFull, p: ProposalRow): ExerciseFull {
   }
 }
 
+// Apply every proposal in `ps` sequentially to `ex`. Used to compute the
+// combined post-approval state when one card represents multiple proposals
+// for the same exercise (e.g. "add Hip Flexors" + "set workout_type=Strength"
+// landing at once). Order doesn't matter for disjoint fields; for proposals
+// on the same field, order matches the array order (which mirrors the queue).
+function previewAfterAllProposals(ex: ExerciseFull, ps: ProposalRow[]): ExerciseFull {
+  let state = ex
+  for (const p of ps) state = previewAfterProposal(state, p)
+  return state
+}
+
 function asMuscleList(val: unknown): string[] {
   if (Array.isArray(val)) return val.filter((x): x is string => typeof x === 'string')
   return []
+}
+
+// One card per exercise. The operator sees every Claude-proposed diff for
+// that exercise stacked in a single editor and approves them all in one go.
+type ProposalGroup = {
+  exerciseId: string
+  exerciseName: string
+  proposals: ProposalRow[]
 }
 
 // ─── page ────────────────────────────────────────────────────────────────────
@@ -298,55 +317,98 @@ export default function CatalogProposalsPage() {
     void load()
   }, [proposals.length, total, loading, load])
 
-  // ─── Optimistic helpers (passed down to ProposalCard) ────────────────────
-  const removeProposalOptimistic = useCallback((id: string) => {
-    setProposals((prev) => prev.filter((p) => p.id !== id))
-    setTotal((t) => Math.max(0, t - 1))
+  // ─── Optimistic helpers (passed down to ExerciseProposalCard) ────────────
+  // Cards now represent a GROUP of proposals (one per exercise), so the
+  // helpers operate on arrays of proposals to keep the bookkeeping atomic
+  // for an exercise — partial state is hard to reason about visually.
+  const removeProposalsOptimistic = useCallback((ids: string[]) => {
+    if (ids.length === 0) return
+    const idSet = new Set(ids)
+    setProposals((prev) => prev.filter((p) => !idSet.has(p.id)))
+    setTotal((t) => Math.max(0, t - ids.length))
   }, [])
 
   const noteSaveStart = useCallback(() => {
     setInFlightSaves((n) => n + 1)
   }, [])
 
-  const noteSaveSuccess = useCallback((p: ProposalRow, action: 'approve' | 'reject') => {
+  const noteSaveSuccess = useCallback((counts: { applied: number; rejected: number }) => {
     setInFlightSaves((n) => Math.max(0, n - 1))
-    // Optimistically nudge the matching stats counter so the strip stays
-    // honest without a full refetch. We only know the destination bucket
-    // approximately (approve → applied, reject → rejected; manual override
-    // also lands as rejected). The operator can hit Refresh if they care
-    // about exact counts.
+    // Optimistically nudge the matching stats counters so the strip stays
+    // honest without a full refetch. The operator can hit Refresh if they
+    // care about exact counts (e.g. blocked_core_exercise transitions).
     setStats((prev) => {
       if (!prev) return prev
-      const counts = { ...prev.counts }
-      counts.pending = Math.max(0, (counts.pending || 0) - 1)
-      const dest = action === 'approve' ? 'applied' : 'rejected'
-      counts[dest] = (counts[dest] || 0) + 1
-      return { ...prev, counts }
+      const c = { ...prev.counts }
+      c.pending = Math.max(0, (c.pending || 0) - counts.applied - counts.rejected)
+      c.applied = (c.applied || 0) + counts.applied
+      c.rejected = (c.rejected || 0) + counts.rejected
+      return { ...prev, counts: c }
     })
-    void p
   }, [])
 
-  const noteSaveFailure = useCallback((p: ProposalRow, action: 'approve' | 'reject', error: string) => {
+  const noteSaveFailure = useCallback((args: {
+    failedProposals: ProposalRow[]
+    exerciseName: string
+    action: 'approve' | 'reject'
+    error: string
+    successCounts?: { applied: number; rejected: number }
+  }) => {
     setInFlightSaves((n) => Math.max(0, n - 1))
     setFailedSaves((prev) => [
       ...prev,
       {
-        key: `${p.id}-${Date.now()}`,
-        proposalId: p.id,
-        exerciseName: p.exercise_name,
-        action,
-        error,
+        key: `${args.failedProposals[0]?.id ?? 'group'}-${Date.now()}`,
+        proposalId: args.failedProposals[0]?.id ?? 'group',
+        exerciseName: args.exerciseName,
+        action: args.action,
+        error: args.error,
       },
     ])
-    // Re-add the failed proposal to the top of the list so the operator can
-    // retry without paginating. Total goes back up too.
-    setProposals((prev) => (prev.some((x) => x.id === p.id) ? prev : [p, ...prev]))
-    setTotal((t) => t + 1)
+    // Re-inject failed proposals at the top of the list so the operator can
+    // retry without paginating. Some proposals in the same group may have
+    // succeeded — those stay removed and we credit them to the stats.
+    if (args.failedProposals.length > 0) {
+      setProposals((prev) => {
+        const have = new Set(prev.map((x) => x.id))
+        const toAdd = args.failedProposals.filter((p) => !have.has(p.id))
+        return toAdd.length > 0 ? [...toAdd, ...prev] : prev
+      })
+      setTotal((t) => t + args.failedProposals.length)
+    }
+    if (args.successCounts && (args.successCounts.applied > 0 || args.successCounts.rejected > 0)) {
+      setStats((prev) => {
+        if (!prev) return prev
+        const c = { ...prev.counts }
+        c.pending = Math.max(0, (c.pending || 0) - args.successCounts!.applied - args.successCounts!.rejected)
+        c.applied = (c.applied || 0) + args.successCounts!.applied
+        c.rejected = (c.rejected || 0) + args.successCounts!.rejected
+        return { ...prev, counts: c }
+      })
+    }
   }, [])
 
   const dismissFailure = useCallback((key: string) => {
     setFailedSaves((prev) => prev.filter((f) => f.key !== key))
   }, [])
+
+  // Group the flat `proposals` array by exercise so we render one card per
+  // exercise. Insertion order is preserved (first proposal's index defines
+  // the group's position), which matches the operator's queue intuition.
+  const groupedProposals: ProposalGroup[] = useMemo(() => {
+    const map = new Map<string, ProposalGroup>()
+    const order: string[] = []
+    for (const p of proposals) {
+      let g = map.get(p.exercise_id)
+      if (!g) {
+        g = { exerciseId: p.exercise_id, exerciseName: p.exercise_name, proposals: [] }
+        map.set(p.exercise_id, g)
+        order.push(p.exercise_id)
+      }
+      g.proposals.push(p)
+    }
+    return order.map((id) => map.get(id)!)
+  }, [proposals])
 
   // One-shot suggestion fetch on mount. Reuses the same admin action as the
   // exercise detail editor so muscle / equipment / etc. dropdowns stay in
@@ -430,7 +492,8 @@ export default function CatalogProposalsPage() {
           <option value="superseded">Superseded</option>
         </select>
         <div className="text-sm text-neutral-500">
-          {total} {total === 1 ? 'proposal' : 'proposals'} · page {page + 1} of {totalPages}
+          {total} {total === 1 ? 'proposal' : 'proposals'} across {groupedProposals.length}{' '}
+          {groupedProposals.length === 1 ? 'exercise' : 'exercises'} · page {page + 1} of {totalPages}
         </div>
         <button
           onClick={() => void load()}
@@ -482,19 +545,19 @@ export default function CatalogProposalsPage() {
       {/* ─── Proposals list ──────────────────────────────────────────────── */}
       {loading ? (
         <div className="text-neutral-500 py-8 text-center">Loading…</div>
-      ) : proposals.length === 0 ? (
+      ) : groupedProposals.length === 0 ? (
         <div className="text-neutral-500 py-12 text-center">
           No proposals match this filter.
         </div>
       ) : (
         <div className="space-y-3">
-          {proposals.map((p) => (
-            <ProposalCard
-              key={p.id}
-              p={p}
-              exercise={exerciseMap[p.exercise_id] || null}
+          {groupedProposals.map((g) => (
+            <ExerciseProposalCard
+              key={g.exerciseId}
+              group={g}
+              exercise={exerciseMap[g.exerciseId] || null}
               suggestions={suggestions}
-              onOptimisticRemove={removeProposalOptimistic}
+              onOptimisticRemove={removeProposalsOptimistic}
               onSaveStart={noteSaveStart}
               onSaveSuccess={noteSaveSuccess}
               onSaveFailure={noteSaveFailure}
@@ -525,27 +588,27 @@ export default function CatalogProposalsPage() {
   )
 }
 
-// ─── ProposalCard ─────────────────────────────────────────────────────────────
+// ─── ExerciseProposalCard ────────────────────────────────────────────────────
 //
-// Layout:
+// One card per exercise. Stacks every Claude-proposed diff for that exercise
+// into a single editor so the operator approves them all at once. Layout:
 //
 //   ┌─────────────┬────────────────────────────────────────────────────┐
-//   │             │ Bench Press (Cable)         [pending] [add] [...]  │
-//   │   [video]   │ "sister Bench Press (DB) lists Triceps as ..."     │
-//   │             │                              [Approve]  [Reject]   │
+//   │             │ Bench Press (Cable)            [Approve]  [Reject]  │
+//   │   [video]   │ [add primary_muscles] [set workout_type] [...]      │
+//   │             │ "sister Bench Press (DB) lists Triceps as ..."      │
 //   │             ├────────────────────────────────────────────────────┤
-//   │             │ Primary    Secondary       Workout type            │
-//   │             │ Chest      Triceps (added) Strength                │
-//   │             │ ...                                                │
+//   │             │ Primary    Secondary       Workout type             │
+//   │             │ Chest      Triceps (added) Strength                 │
+//   │             │ ...                                                 │
 //   └─────────────┴────────────────────────────────────────────────────┘
 //
-// `exercise` is the current catalog row (as live in `exercises` table). We
-// render the post-approval state by passing it through `previewAfterProposal`.
-// If `exercise` is null (admin-fetch failed for some reason), we fall back to
-// the pre-2026-05 terse JSON view so the operator can still decide.
+// `exercise` is the current catalog row. We render the combined post-approval
+// state by replaying every proposal in the group through `previewAfterProposal`.
+// If `exercise` is null (admin-fetch failed) we fall back to a terse JSON dump.
 
-function ProposalCard({
-  p,
+function ExerciseProposalCard({
+  group,
   exercise,
   suggestions,
   onOptimisticRemove,
@@ -553,30 +616,30 @@ function ProposalCard({
   onSaveSuccess,
   onSaveFailure,
 }: {
-  p: ProposalRow
+  group: ProposalGroup
   exercise: ExerciseFull | null
   suggestions: Suggestions
-  onOptimisticRemove: (id: string) => void
+  onOptimisticRemove: (ids: string[]) => void
   onSaveStart: () => void
-  onSaveSuccess: (p: ProposalRow, action: 'approve' | 'reject') => void
-  onSaveFailure: (p: ProposalRow, action: 'approve' | 'reject', error: string) => void
+  onSaveSuccess: (counts: { applied: number; rejected: number }) => void
+  onSaveFailure: (args: {
+    failedProposals: ProposalRow[]
+    exerciseName: string
+    action: 'approve' | 'reject'
+    error: string
+    successCounts?: { applied: number; rejected: number }
+  }) => void
 }) {
-  // Local `busy` is still useful for the brief moment between click and
-  // optimistic removal (so the operator can't double-click). Errors are now
-  // surfaced at the page level via onSaveFailure, not on the card itself
-  // (the card is gone by the time the error arrives).
   const [busy, setBusy] = useState(false)
   const [videoFailed, setVideoFailed] = useState(false)
 
-  // Inline-edit state for ALL editable fields. Initialized to the
-  // after-approval preview state so the operator only has to touch values
-  // that need overriding. Resets whenever the underlying exercise or proposal
-  // changes (e.g. after a sibling approval triggers a parent reload).
+  // Combined post-approval edit state. Walks every proposal in the group
+  // through `previewAfterProposal` so the editor lands on the final intent.
   const buildInitialEdit = useCallback((): EditableState | null => {
     if (!exercise) return null
-    const after = previewAfterProposal(exercise, p)
+    const after = previewAfterAllProposals(exercise, group.proposals)
     return exerciseToEditState(exercise, after)
-  }, [exercise, p])
+  }, [exercise, group])
 
   const [edit, setEdit] = useState<EditableState | null>(buildInitialEdit)
 
@@ -584,24 +647,37 @@ function ProposalCard({
     setEdit(buildInitialEdit())
   }, [buildInitialEdit])
 
-  const gates: string[] = []
-  if (p.sister_corroborated) gates.push('SISTER')
-  if (p.name_corroborated) gates.push('NAME')
-  if (p.multi_report_count >= 2) gates.push(`MULTI×${p.multi_report_count}`)
+  // All fields touched by AT LEAST ONE proposal in this group. Drives the
+  // emerald-ring highlight so the operator can spot Claude's affected fields
+  // when the group has many proposals on the same exercise.
+  const touchedFields = useMemo(() => {
+    const s = new Set<string>()
+    for (const p of group.proposals) s.add(p.field_name)
+    return s
+  }, [group.proposals])
 
-  const decidable = p.status === 'pending' || p.status === 'blocked_core_exercise'
-  const isCoreOverride = p.status === 'blocked_core_exercise' && p.operation === 'remove'
+  // Decidable iff every proposal in the group is in a decidable status.
+  // (In practice they're all 'pending' from the same audit, but be safe.)
+  const decidable = group.proposals.every((p) => p.status === 'pending' || p.status === 'blocked_core_exercise')
+  const blockedProposals = group.proposals.filter((p) => p.status === 'blocked_core_exercise')
+
+  // Aggregate gates across proposals — show union so the operator sees every
+  // corroboration signal at a glance.
+  const gates: string[] = []
+  if (group.proposals.some((p) => p.sister_corroborated)) gates.push('SISTER')
+  if (group.proposals.some((p) => p.name_corroborated)) gates.push('NAME')
+  const maxMulti = Math.max(...group.proposals.map((p) => p.multi_report_count))
+  if (maxMulti >= 2) gates.push(`MULTI×${maxMulti}`)
 
   // Compute the diff between the operator's chosen state and the current
-  // catalog row. The approve handler uses this to drive a single
-  // `update_exercise` call (or skip the call if nothing changed).
+  // catalog row. The approve handler consumes this to drive a single
+  // `update_exercise` call.
   const computeUpdates = useCallback((): Record<string, unknown> => {
     if (!exercise || !edit) return {}
     const updates: Record<string, unknown> = {}
     for (const f of EDITABLE_FIELDS) {
       const current = (exercise as Record<string, unknown>)[f]
       const next = (edit as Record<string, unknown>)[f]
-      // Treat null/empty-string equivalently for scalar fields.
       const normCurrent = current === '' ? null : current
       const normNext = next === '' ? null : next
       if (!deepEqual(normCurrent, normNext)) {
@@ -613,72 +689,122 @@ function ProposalCard({
 
   const approve = () => {
     if (!decidable || busy) return
-    if (isCoreOverride) {
+    if (blockedProposals.length > 0) {
+      const summary = blockedProposals
+        .map((bp) => `  • ${bp.operation} ${bp.field_name} = ${JSON.stringify(bp.proposed_value)}`)
+        .join('\n')
       const ok = window.confirm(
-        `OVERRIDE the core-exercise lockout for "${p.exercise_name}"?\n\n` +
-        `Field:     ${p.field_name}\n` +
-        `Operation: ${p.operation}\n` +
-        `Value:     ${JSON.stringify(p.proposed_value)}\n\n` +
+        `OVERRIDE the core-exercise lockout for "${group.exerciseName}"?\n\n` +
+        `${blockedProposals.length} blocked proposal${blockedProposals.length === 1 ? '' : 's'}:\n` +
+        `${summary}\n\n` +
         `This will permanently change a canonical exercise.`,
       )
       if (!ok) return
     }
-    // Snapshot edit state at click time. We capture into locals because the
-    // background task fires AFTER setEdit/etc. unmount on optimistic remove.
-    const updates = computeUpdates()
-    const proposalField = p.field_name as keyof EditableState
-    const claudeAppliedValue = exercise
-      ? (previewAfterProposal(exercise, p) as Record<string, unknown>)[p.field_name]
-      : null
-    const editedValue = edit
-      ? (edit as Record<string, unknown>)[p.field_name]
-      : null
-    const overrodeProposalField = !deepEqual(claudeAppliedValue, editedValue)
 
-    // Strip the proposal's own field from `updates` if the operator kept
-    // Claude's value — admin_apply_correction_proposal will write it. We
-    // still want to write OTHER edits (name / gender / unrelated muscles).
-    let updatesToSend: Record<string, unknown> = updates
-    if (!overrodeProposalField && proposalField in updates) {
-      const { [proposalField]: _droppedProposalField, ...rest } = updates as Record<string, unknown> & Record<typeof proposalField, unknown>
-      void _droppedProposalField
-      updatesToSend = rest
+    // Per-field disposition: did the operator KEEP Claude's combined intent
+    // for this field, or OVERRIDE it? Drives apply vs reject for each
+    // proposal touching that field.
+    const dispositionByField = new Map<string, 'kept' | 'overrode'>()
+    if (exercise && edit) {
+      // Group proposals by field so multi-proposal-on-same-field is handled.
+      const byField = new Map<string, ProposalRow[]>()
+      for (const p of group.proposals) {
+        const arr = byField.get(p.field_name) ?? []
+        arr.push(p)
+        byField.set(p.field_name, arr)
+      }
+      for (const [field, fieldProposals] of byField) {
+        const intent = previewAfterAllProposals(exercise, fieldProposals)
+        const claudeValue = (intent as Record<string, unknown>)[field]
+        const userValue = (edit as Record<string, unknown>)[field]
+        dispositionByField.set(field, deepEqual(claudeValue, userValue) ? 'kept' : 'overrode')
+      }
     }
 
-    // 1. Optimistic UI: remove the card immediately, register the save.
+    // Build the update_exercise payload. Drop any field whose disposition is
+    // 'kept' — admin_apply_correction_proposal will write it. Keep all
+    // 'overrode' fields and any inline-only edits (name, gender, etc.).
+    const allUpdates = computeUpdates()
+    const updatesToSend: Record<string, unknown> = { ...allUpdates }
+    for (const [field, disp] of dispositionByField) {
+      if (disp === 'kept' && field in updatesToSend) {
+        delete updatesToSend[field]
+      }
+    }
+
+    // 1. Optimistic UI: remove every card-proposal pair immediately.
     setBusy(true)
     onSaveStart()
-    onOptimisticRemove(p.id)
+    onOptimisticRemove(group.proposals.map((p) => p.id))
 
-    // 2. Run the actual save in the background. Don't await — the UI has
-    //    already advanced. Errors land in the page-level failure banner.
+    // 2. Background save. Errors per-proposal are collected; we report a
+    //    single failure banner with the count so the operator knows what
+    //    didn't land. update_exercise failure aborts the whole group
+    //    (we don't want to mark proposals applied if the catalog never
+    //    received the operator's overrides).
+    const exerciseId = group.exerciseId
+    const exerciseName = group.exerciseName
+    const proposalsCopy = [...group.proposals]
+
     void (async () => {
       try {
         if (Object.keys(updatesToSend).length > 0) {
           const res = await adminApi('update_exercise', {
-            exercise_id: p.exercise_id,
+            exercise_id: exerciseId,
             updates: updatesToSend,
           }) as { error?: string; result?: { success?: boolean; error?: string } }
           if (res?.error || res?.result?.error || res?.result?.success === false) {
             throw new Error(res?.error || res?.result?.error || 'update_exercise failed')
           }
         }
-        if (overrodeProposalField) {
-          await adminApi('admin_reject_correction_proposal', {
-            proposalId: p.id,
-            reason: 'manual_override_via_inline_edit',
-          })
-        } else {
-          const res = await adminApi('admin_apply_correction_proposal', {
-            proposalId: p.id,
-          }) as { result?: { success?: boolean; error?: string } }
-          if (!res?.result?.success) {
-            throw new Error(res?.result?.error || 'admin_apply_correction_proposal failed')
+
+        const failed: ProposalRow[] = []
+        let appliedCount = 0
+        let rejectedCount = 0
+        for (const p of proposalsCopy) {
+          const disp = dispositionByField.get(p.field_name) ?? 'kept'
+          try {
+            if (disp === 'overrode') {
+              await adminApi('admin_reject_correction_proposal', {
+                proposalId: p.id,
+                reason: 'manual_override_via_inline_edit',
+              })
+              rejectedCount++
+            } else {
+              const res = await adminApi('admin_apply_correction_proposal', {
+                proposalId: p.id,
+              }) as { result?: { success?: boolean; error?: string } }
+              if (!res?.result?.success) {
+                throw new Error(res?.result?.error || 'admin_apply_correction_proposal failed')
+              }
+              appliedCount++
+            }
+          } catch (e) {
+            failed.push(p)
+            void e
           }
         }
-        onSaveSuccess(p, 'approve')
+
+        if (failed.length === 0) {
+          onSaveSuccess({ applied: appliedCount, rejected: rejectedCount })
+        } else {
+          onSaveFailure({
+            failedProposals: failed,
+            exerciseName,
+            action: 'approve',
+            error: `${failed.length} of ${proposalsCopy.length} proposal updates failed`,
+            successCounts: { applied: appliedCount, rejected: rejectedCount },
+          })
+        }
       } catch (e) {
-        onSaveFailure(p, 'approve', e instanceof Error ? e.message : 'Apply failed')
+        // update_exercise failed — none of the proposals are resolved.
+        onSaveFailure({
+          failedProposals: proposalsCopy,
+          exerciseName,
+          action: 'approve',
+          error: e instanceof Error ? e.message : 'Apply failed',
+        })
       }
     })()
   }
@@ -686,27 +812,58 @@ function ProposalCard({
   const reject = () => {
     if (!decidable || busy) return
     const reason = window.prompt(
-      `Reject this proposal for "${p.exercise_name}"?\nOptional reason:`,
+      `Reject ALL ${group.proposals.length} proposal${group.proposals.length === 1 ? '' : 's'} for "${group.exerciseName}"?\nOptional reason:`,
       'manual_admin_reject',
     )
     if (reason === null) return
 
     setBusy(true)
     onSaveStart()
-    onOptimisticRemove(p.id)
+    onOptimisticRemove(group.proposals.map((p) => p.id))
 
+    const exerciseName = group.exerciseName
+    const proposalsCopy = [...group.proposals]
     void (async () => {
-      try {
-        await adminApi('admin_reject_correction_proposal', { proposalId: p.id, reason })
-        onSaveSuccess(p, 'reject')
-      } catch (e) {
-        onSaveFailure(p, 'reject', e instanceof Error ? e.message : 'Reject failed')
+      const failed: ProposalRow[] = []
+      let rejectedCount = 0
+      for (const p of proposalsCopy) {
+        try {
+          await adminApi('admin_reject_correction_proposal', { proposalId: p.id, reason })
+          rejectedCount++
+        } catch (e) {
+          failed.push(p)
+          void e
+        }
+      }
+      if (failed.length === 0) {
+        onSaveSuccess({ applied: 0, rejected: rejectedCount })
+      } else {
+        onSaveFailure({
+          failedProposals: failed,
+          exerciseName,
+          action: 'reject',
+          error: `${failed.length} of ${proposalsCopy.length} reject calls failed`,
+          successCounts: { applied: 0, rejected: rejectedCount },
+        })
       }
     })()
   }
 
   const videoFilename = exercise?.video_filename || null
   const videoUrl = videoFilename && !videoFailed ? `${R2_BASE}/${videoFilename}` : null
+
+  // Pull the highest confidence + earliest proposed-at across the group for
+  // the header summary. Each proposal still gets its own pill chip below.
+  const maxConfidence = Math.max(...group.proposals.map((p) => p.confidence))
+  const earliestProposedAt = group.proposals
+    .map((p) => p.proposed_at)
+    .sort()[0]
+
+  // Combined evidence — keep distinct, comma-joined, max ~3 to avoid a wall
+  // of text when an exercise has many proposals.
+  const evidenceItems = Array.from(
+    new Set(group.proposals.map((p) => p.evidence).filter((e) => !!e)),
+  ).slice(0, 3)
 
   return (
     <div className="card p-0 overflow-hidden">
@@ -722,7 +879,7 @@ function ProposalCard({
               loop
               playsInline
               onError={() => setVideoFailed(true)}
-              className="w-full md:h-full md:max-h-96 object-cover bg-black"
+              className="w-full md:h-full md:max-h-[28rem] object-cover bg-black"
             />
           ) : (
             <div className="w-full aspect-square grid place-items-center text-neutral-600 text-xs">
@@ -745,31 +902,45 @@ function ProposalCard({
                 />
               ) : (
                 <a
-                  href={`/exercises/${p.exercise_id}`}
+                  href={`/exercises/${group.exerciseId}`}
                   className="text-base font-medium hover:underline block truncate"
                 >
-                  {p.exercise_name}
+                  {group.exerciseName}
                 </a>
               )}
-              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                <span className={statusBadgeClass(p.status)}>{p.status}</span>
-                <span className={operationBadgeClass(p.operation)}>{p.operation}</span>
-                <span className="badge badge-neutral">{p.field_name}</span>
-                <span className="text-xs text-neutral-500">conf {p.confidence.toFixed(2)}</span>
-                <span className="text-xs text-neutral-500" title={p.proposed_at}>
-                  · {timeAgo(p.proposed_at)}
+              {/* Per-proposal pills — one chip per Claude diff */}
+              <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                {group.proposals.map((p) => (
+                  <span
+                    key={p.id}
+                    className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide bg-neutral-900 border border-neutral-700 rounded px-1.5 py-0.5"
+                    title={p.evidence || ''}
+                  >
+                    <span className={operationBadgeClass(p.operation).replace('badge', 'inline-block px-1 rounded')}>
+                      {p.operation}
+                    </span>
+                    <span className="text-neutral-300">{p.field_name}</span>
+                  </span>
+                ))}
+                <span className="text-xs text-neutral-500 ml-1">
+                  · {group.proposals.length} proposal{group.proposals.length === 1 ? '' : 's'} · max conf {maxConfidence.toFixed(2)}
+                </span>
+                <span className="text-xs text-neutral-500" title={earliestProposedAt}>
+                  · {timeAgo(earliestProposedAt)}
                 </span>
                 <a
-                  href={`/exercises/${p.exercise_id}`}
+                  href={`/exercises/${group.exerciseId}`}
                   className="text-xs text-blue-400 hover:underline ml-1"
                   title="Open full exercise editor"
                 >
                   full editor →
                 </a>
               </div>
-              {p.evidence && (
-                <div className="text-xs text-neutral-400 mt-2 italic leading-snug">
-                  &ldquo;{p.evidence}&rdquo;
+              {evidenceItems.length > 0 && (
+                <div className="text-xs text-neutral-400 mt-2 italic leading-snug space-y-1">
+                  {evidenceItems.map((ev, i) => (
+                    <div key={i}>&ldquo;{ev}&rdquo;</div>
+                  ))}
                 </div>
               )}
             </div>
@@ -779,23 +950,24 @@ function ProposalCard({
                 <button
                   onClick={approve}
                   disabled={busy}
-                  className={`btn btn-sm ${isCoreOverride ? 'btn-warning' : 'btn-success'}`}
-                  title={isCoreOverride ? 'Override core-exercise lockout + save edits' : 'Save edits and apply'}
+                  className={`btn btn-sm ${blockedProposals.length > 0 ? 'btn-warning' : 'btn-success'}`}
+                  title={blockedProposals.length > 0 ? 'Override core-exercise lockout + save edits' : 'Save edits and apply all proposals'}
                 >
-                  {busy ? '…' : isCoreOverride ? 'Override' : 'Approve'}
+                  {busy ? '…' : blockedProposals.length > 0 ? 'Override' : 'Approve'}
                 </button>
                 <button
                   onClick={reject}
                   disabled={busy}
                   className="btn btn-sm btn-danger"
+                  title="Reject ALL proposals for this exercise"
                 >
-                  Reject
+                  Reject all
                 </button>
               </div>
             )}
           </div>
 
-          {/* Gates + source report */}
+          {/* Gates + source report (union across proposals) */}
           <div className="flex flex-wrap items-center gap-1.5 text-xs mb-3">
             <span className="text-neutral-500">Gates:</span>
             {gates.length === 0 ? (
@@ -805,16 +977,10 @@ function ProposalCard({
                 <span key={g} className="badge badge-info">{g}</span>
               ))
             )}
-            {p.rejected_reason && (
-              <span className="text-amber-400 ml-2">⚠ {p.rejected_reason}</span>
-            )}
-            {p.source_report_id && (
-              <a
-                href={`/workout-intelligence/${p.source_report_id}`}
-                className="text-blue-400 hover:underline ml-2"
-              >
-                source report →
-              </a>
+            {group.proposals.some((p) => p.rejected_reason) && (
+              <span className="text-amber-400 ml-2">
+                ⚠ {group.proposals.find((p) => p.rejected_reason)?.rejected_reason}
+              </span>
             )}
           </div>
 
@@ -823,13 +989,14 @@ function ProposalCard({
             <InlineExerciseEditor
               edit={edit}
               setEdit={setEdit}
-              proposal={p}
+              touchedFields={touchedFields}
               before={exercise}
               suggestions={suggestions}
+              proposals={group.proposals}
             />
           ) : (
             <div className="font-mono text-xs bg-neutral-950 rounded px-2 py-1.5 break-words text-neutral-400">
-              proposed: {JSON.stringify(p.proposed_value)}
+              {group.proposals.length} proposal{group.proposals.length === 1 ? '' : 's'} pending — full exercise data unavailable. Open the full editor to review.
             </div>
           )}
 
@@ -851,25 +1018,39 @@ function ProposalCard({
 function InlineExerciseEditor({
   edit,
   setEdit,
-  proposal,
+  touchedFields,
   before,
   suggestions,
+  proposals,
 }: {
   edit: EditableState
   setEdit: (updater: (s: EditableState | null) => EditableState | null) => void
-  proposal: ProposalRow
+  touchedFields: Set<string>
   before: ExerciseFull
   suggestions: Suggestions
+  proposals: ProposalRow[]
 }) {
-  const proposalField = proposal.field_name
-  const op = proposal.operation
   const beforePM = asMuscleList(before.primary_muscles)
   const beforeSM = asMuscleList(before.secondary_muscles)
 
   const fieldRing = (field: string): string =>
-    field === proposalField
+    touchedFields.has(field)
       ? 'ring-1 ring-emerald-500/40 bg-emerald-600/5 rounded'
       : ''
+
+  // For muscle-array fields, find any 'remove' proposal targeting that field
+  // so we can render the struck-through removed chips below the editor.
+  const removedForField = (field: 'primary_muscles' | 'secondary_muscles'): string[] => {
+    const removed: string[] = []
+    for (const p of proposals) {
+      if (p.field_name === field && p.operation === 'remove' && Array.isArray(p.proposed_value)) {
+        for (const v of p.proposed_value as unknown[]) {
+          if (typeof v === 'string') removed.push(v)
+        }
+      }
+    }
+    return Array.from(new Set(removed))
+  }
 
   const labelClass = 'text-[10px] uppercase tracking-wide text-neutral-500 mb-1'
 
@@ -936,19 +1117,25 @@ function InlineExerciseEditor({
             + Add muscle
           </button>
         </div>
-        {/* Show what was removed so the operator sees the diff. */}
-        {op === 'remove' && proposalField === field && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {before.filter((m) => !arr.includes(m)).map((m) => (
-              <span
-                key={`rm-${m}`}
-                className="px-1.5 py-0.5 rounded text-[10px] bg-rose-600/15 text-rose-300 ring-1 ring-rose-500/40 line-through"
-              >
-                {m}
-              </span>
-            ))}
-          </div>
-        )}
+        {/* Show what was removed (by ANY remove proposal targeting this
+            field) so the operator sees the diff. */}
+        {(() => {
+          const removedHints = removedForField(field)
+          const stillRemoved = removedHints.filter((m) => !arr.includes(m))
+          if (stillRemoved.length === 0) return null
+          return (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {stillRemoved.map((m) => (
+                <span
+                  key={`rm-${m}`}
+                  className="px-1.5 py-0.5 rounded text-[10px] bg-rose-600/15 text-rose-300 ring-1 ring-rose-500/40 line-through"
+                >
+                  {m}
+                </span>
+              ))}
+            </div>
+          )
+        })()}
       </div>
     )
   }

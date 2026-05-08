@@ -1630,6 +1630,7 @@ struct TutorialActiveChallengePreview: View {
     let myProgress: Int
     let opponentName: String
     let opponentProgress: Int
+    let opponentIsVerified: Bool
     let weeklyTarget: Int
     let daysRemaining: Int
 
@@ -1639,13 +1640,41 @@ struct TutorialActiveChallengePreview: View {
     private var leadDelta: Int { abs(myProgress - opponentProgress) }
     private var unitLabel: String { weeklyTarget == 1 ? "lift" : "lifts" }
 
+    // Avatar / type sizing — matched to the dashboard's
+    // `activeChallengeDetailWidget` so the tutorial preview reads as
+    // the SAME widget the user will see on their home screen, not a
+    // chunkier onboarding-only variant.
+    private static let avatarSize: CGFloat = 36
+
     var body: some View {
+        // Mirrors `DashboardView+Challenges.swift::activeChallengeDetailWidget`
+        // structurally: header row + (accent bar + competition row)
+        // wrapped in a subtle inner card, both inside the same multi-
+        // layer adaptive card shell. Keeping the structure identical
+        // means the tutorial widget reads as the literal on-dashboard
+        // widget (just statically populated with our fixture).
         VStack(spacing: 0) {
             headerRow
-            progressRow
-                .padding(.vertical, Spacing.sm)
-                .padding(.horizontal, Spacing.sm)
-                .padding(.bottom, 4)
+
+            HStack(spacing: 0) {
+                // Type-colored left accent bar — same 4pt width and
+                // Spacing.xxs vertical inset as the dashboard widget.
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
+                    .frame(width: 4)
+                    .padding(.vertical, Spacing.xxs)
+
+                competitionRow
+            }
+            .padding(.vertical, Spacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: CornerRadius.md)
+                    .fill(colorScheme == .dark
+                          ? Color.white.opacity(0.04)
+                          : Color.black.opacity(0.03))
+            )
+            .padding(.horizontal, Spacing.sm)
+            .padding(.bottom, Spacing.sm)
         }
         .background(
             ZStack {
@@ -1699,9 +1728,9 @@ struct TutorialActiveChallengePreview: View {
                         LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
                         lineWidth: 2.5
                     )
-                    .frame(width: 36, height: 36)
+                    .frame(width: 32, height: 32)
                 Text(challengeType.emoji)
-                    .font(.ds_heading3)
+                    .font(.ds_bodyRegular)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -1732,83 +1761,83 @@ struct TutorialActiveChallengePreview: View {
                 .foregroundStyle(
                     LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
-                .padding(.trailing, 8)
+                .padding(.trailing, 6)
 
             Image(systemName: "chevron.right")
                 .font(.ds_labelMedium)
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
     }
 
-    // MARK: Head-to-head progress row (mirrors `competitionProgressSection`)
+    // MARK: Competition row (mirrors `competitionProgressSection`)
 
-    private var progressRow: some View {
-        HStack(spacing: 0) {
-            // Left accent bar — type-colored
-            RoundedRectangle(cornerRadius: 2)
-                .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
-                .frame(width: 4)
-                .padding(.vertical, Spacing.xxs)
+    private var competitionRow: some View {
+        HStack(spacing: 8) {
+            // You side
+            HStack(spacing: 8) {
+                avatarBubble(initial: String(myName.prefix(1)), isLeading: amWinning)
 
-            HStack(spacing: 10) {
-                // You side
-                HStack(spacing: 10) {
-                    avatarBubble(initial: String(myName.prefix(1)), isLeading: amWinning)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("You")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("You")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-
-                        Text("\(myProgress) \(unitLabel)")
-                            .font(.ds_heading2).fontDesign(.rounded)
-                            .foregroundColor(amWinning ? .green : .primary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                    }
-                    .frame(maxWidth: 100, alignment: .leading)
+                    Text("\(myProgress) \(unitLabel)")
+                        .font(.ds_heading3).fontDesign(.rounded)
+                        .foregroundColor(amWinning ? .green : .primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
+                .frame(maxWidth: 100, alignment: .leading)
+            }
 
-                Spacer(minLength: 4)
+            Spacer(minLength: 4)
 
-                VStack(spacing: 2) {
-                    Text("⚔️")
-                        .font(.ds_bodySmall)
-                    if leadDelta > 0 {
-                        Text(amWinning ? "+\(leadDelta)" : "-\(leadDelta)")
-                            .font(.system(size: 8, weight: .bold, design: .rounded))
-                            .foregroundColor(amWinning ? .green : .red)
-                    }
+            VStack(spacing: 2) {
+                Text("⚔️")
+                    .font(.ds_bodySmall)
+                if leadDelta > 0 {
+                    Text(amWinning ? "+\(leadDelta)" : "-\(leadDelta)")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(amWinning ? .green : .red)
                 }
-                .frame(minWidth: 30)
+            }
+            .frame(minWidth: 28)
 
-                Spacer(minLength: 4)
+            Spacer(minLength: 4)
 
-                // Opponent side
-                HStack(spacing: 10) {
-                    VStack(alignment: .trailing, spacing: 2) {
+            // Opponent side — verified badge sits next to the name
+            // exactly like `competitionProgressSection` renders it,
+            // matching the dashboard's "this is a verified account"
+            // affordance (blue checkmark seal).
+            HStack(spacing: 8) {
+                VStack(alignment: .trailing, spacing: 1) {
+                    HStack(spacing: 3) {
                         Text(opponentName)
                             .font(.caption)
                             .fontWeight(.semibold)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
-
-                        Text("\(opponentProgress) \(opponentProgress == 1 ? "lift" : "lifts")")
-                            .font(.ds_heading2).fontDesign(.rounded)
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                        if opponentIsVerified {
+                            VerifiedBadge(size: 10, isGold: false)
+                        }
                     }
-                    .frame(maxWidth: 100, alignment: .trailing)
 
-                    avatarBubble(initial: String(opponentName.prefix(1)), isLeading: !amWinning)
+                    Text("\(opponentProgress) \(opponentProgress == 1 ? "lift" : "lifts")")
+                        .font(.ds_heading3).fontDesign(.rounded)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
+                .frame(maxWidth: 100, alignment: .trailing)
+
+                avatarBubble(initial: String(opponentName.prefix(1)), isLeading: !amWinning)
             }
-            .padding(.horizontal, 10)
         }
+        .padding(.horizontal, 8)
     }
 
     @ViewBuilder
@@ -1816,10 +1845,10 @@ struct TutorialActiveChallengePreview: View {
         ZStack(alignment: .top) {
             Circle()
                 .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 44, height: 44)
+                .frame(width: Self.avatarSize, height: Self.avatarSize)
                 .overlay(
                     Text(initial.uppercased())
-                        .font(.ds_labelLarge)
+                        .font(.ds_labelMedium)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                 )
@@ -1829,9 +1858,9 @@ struct TutorialActiveChallengePreview: View {
 
             if isLeading {
                 Image(systemName: "crown.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 12))
                     .foregroundColor(.yellow)
-                    .offset(y: -12)
+                    .offset(y: -10)
             }
         }
     }

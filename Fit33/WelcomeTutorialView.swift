@@ -1799,24 +1799,18 @@ struct TutorialActiveChallengePreview: View {
     private var leadDelta: Int { abs(myProgress - opponentProgress) }
     private var unitLabel: String { weeklyTarget == 1 ? "lift" : "lifts" }
 
-    // Avatar size — matches `competitionProgressSection`'s 44pt
-    // `challengeAvatar(...size: 44)` exactly, so this widget reads as
-    // the same widget the user will see on the home screen.
-    private static let avatarSize: CGFloat = 44
+    // Compact tutorial-only sizing. The dashboard widget uses 44pt
+    // avatars + `.ds_heading2` (22pt) stat text + `Spacing.sm` (12pt)
+    // inner paddings, but in onboarding we have FOUR vertical bands
+    // competing for the screen (skip pill, hero card, this widget,
+    // copy block). Per design feedback the widget needed to feel half
+    // its dashboard footprint here — 32pt avatars + `.ds_statSmall`
+    // (18pt) numbers + 6pt inner paddings get the widget down to
+    // ~95pt total (down from ~150pt), close to a compact list-row
+    // height instead of a full home-screen tile.
+    private static let avatarSize: CGFloat = 32
 
     var body: some View {
-        // Identical to the dashboard's
-        // `activeChallengeDetailWidget`:
-        //   • header row (emoji avatar + title + smiley + chevron)
-        //   • inner subtle card: type-colored 4pt accent bar + H2H
-        //     competition row (44pt avatars + ds_heading2 stat text)
-        //   • multi-layer adaptive card shell (offset/blur shadow,
-        //     stroke pair, AdaptiveCardSurface body)
-        // Sizes + paddings are the same constants the dashboard uses
-        // (`Spacing.sm` inner padding, `.padding(.bottom, 12)`,
-        // `CornerRadius.xl` outer, `CornerRadius.md` inner) — copying
-        // them keeps the tutorial preview indistinguishable from the
-        // real on-dashboard widget.
         VStack(spacing: 0) {
             headerRow
 
@@ -1828,7 +1822,7 @@ struct TutorialActiveChallengePreview: View {
 
                 competitionRow
             }
-            .padding(.vertical, Spacing.sm)
+            .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark
@@ -1836,7 +1830,7 @@ struct TutorialActiveChallengePreview: View {
                           : Color.black.opacity(0.03))
             )
             .padding(.horizontal, Spacing.sm)
-            .padding(.bottom, 12)
+            .padding(.bottom, 8)
         }
         .background(
             ZStack {
@@ -1883,26 +1877,26 @@ struct TutorialActiveChallengePreview: View {
     // MARK: Header row (mirrors `ActiveChallengeHeaderRow` visuals)
 
     private var headerRow: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 8) {
             ZStack {
                 Circle()
                     .stroke(
                         LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 2.5
+                        lineWidth: 2
                     )
-                    .frame(width: 36, height: 36)
+                    .frame(width: 28, height: 28)
                 Text(challengeEmoji)
-                    .font(.ds_heading3)
+                    .font(.ds_bodySmall)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("3 Lifts a Week")
-                    .font(.subheadline)
+                    .font(.ds_labelMedium)
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
                     .lineLimit(1)
 
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     Text("vs \(opponentName)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -1919,33 +1913,32 @@ struct TutorialActiveChallengePreview: View {
             Spacer(minLength: 0)
 
             Image(systemName: "face.smiling")
-                .font(.ds_heading3)
+                .font(.ds_bodyRegular)
                 .foregroundStyle(
                     LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
-                .padding(.trailing, 8)
+                .padding(.trailing, 6)
 
             Image(systemName: "chevron.right")
                 .font(.ds_labelMedium)
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     // MARK: Competition row (mirrors `competitionProgressSection`)
 
     private var competitionRow: some View {
-        HStack(spacing: 10) {
-            // You side — real photo (when cached) + verified badge
-            HStack(spacing: 10) {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
                 avatarBubble(
                     initial: String(myName.prefix(1)),
                     image: myImage,
                     isLeading: amWinning
                 )
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 3) {
                         Text(myName)
                             .font(.caption)
@@ -1953,12 +1946,12 @@ struct TutorialActiveChallengePreview: View {
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                         if myIsVerified {
-                            VerifiedBadge(size: 10, isGold: false)
+                            VerifiedBadge(size: 9, isGold: false)
                         }
                     }
 
                     Text("\(myProgress) \(unitLabel)")
-                        .font(.ds_heading2).fontDesign(.rounded)
+                        .font(.ds_statSmall)
                         .foregroundColor(amWinning ? .green : .primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -1968,22 +1961,21 @@ struct TutorialActiveChallengePreview: View {
 
             Spacer(minLength: 4)
 
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 Text("⚔️")
-                    .font(.ds_bodySmall)
+                    .font(.ds_caption)
                 if leadDelta > 0 {
                     Text(amWinning ? "+\(leadDelta)" : "-\(leadDelta)")
                         .font(.system(size: 8, weight: .bold, design: .rounded))
                         .foregroundColor(amWinning ? .green : .red)
                 }
             }
-            .frame(minWidth: 30)
+            .frame(minWidth: 26)
 
             Spacer(minLength: 4)
 
-            // Opponent side — gradient initial (no photo, no badge)
-            HStack(spacing: 10) {
-                VStack(alignment: .trailing, spacing: 2) {
+            HStack(spacing: 8) {
+                VStack(alignment: .trailing, spacing: 1) {
                     Text(opponentName)
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -1991,7 +1983,7 @@ struct TutorialActiveChallengePreview: View {
                         .lineLimit(1)
 
                     Text("\(opponentProgress) \(opponentProgress == 1 ? "lift" : "lifts")")
-                        .font(.ds_heading2).fontDesign(.rounded)
+                        .font(.ds_statSmall)
                         .foregroundColor(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -2005,13 +1997,13 @@ struct TutorialActiveChallengePreview: View {
                 )
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
     }
 
     /// Renders a real `UIImage` when available (user side, with cached
     /// profile photo), falling back to a type-gradient circle with the
     /// initial overlaid (opponent side, no photo). Crown floats above
-    /// the leader — yellow + 14pt, matching the dashboard widget.
+    /// the leader.
     @ViewBuilder
     private func avatarBubble(initial: String, image: UIImage?, isLeading: Bool) -> some View {
         ZStack(alignment: .top) {
@@ -2024,7 +2016,7 @@ struct TutorialActiveChallengePreview: View {
                     .overlay(
                         Circle().stroke(
                             LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
-                            lineWidth: 2
+                            lineWidth: 1.5
                         )
                     )
             } else {
@@ -2033,7 +2025,7 @@ struct TutorialActiveChallengePreview: View {
                     .frame(width: Self.avatarSize, height: Self.avatarSize)
                     .overlay(
                         Text(initial.uppercased())
-                            .font(.ds_labelLarge)
+                            .font(.ds_labelMedium)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                     )
@@ -2044,9 +2036,9 @@ struct TutorialActiveChallengePreview: View {
 
             if isLeading {
                 Image(systemName: "crown.fill")
-                    .font(.system(size: 14))
+                    .font(.system(size: 11))
                     .foregroundColor(.yellow)
-                    .offset(y: -12)
+                    .offset(y: -8)
             }
         }
     }
@@ -2604,6 +2596,14 @@ struct TutorialCommunityHero: View {
                 return "\(formattedParticipants(c.participantCount)) athletes already pushing"
             }
             return "Featured challenges, real people"
+        case .demo:
+            // Demo source = canonical 10K Steps Daily baseline. Caption
+            // mirrors the participant scale signal shown on featured
+            // sources so the footer reads consistently regardless of
+            // whether the picker resolved a real community or fell
+            // through to the demo fallback.
+            let count = TutorialDemoData.demoTenKChallenge.participantCount
+            return "\(formattedParticipants(count)) athletes already pushing"
         }
     }
 

@@ -73,6 +73,147 @@ enum TutorialDemoData {
         )
     }
 
+    // MARK: - 10K Steps Daily — tutorial preview baseline
+    //
+    // The onboarding Community step ALWAYS visually defaults to the
+    // canonical 10K Steps Daily community (matches the seed-migration
+    // entry `joinCode = 'FIT10K'`, `inviteSlug = '10k-steps-daily'`).
+    // We pre-populate a static `CommunityChallenge` with a realistic
+    // leaderboard + friends row so brand-new accounts (no contacts in
+    // the community yet, server-side discovery RPCs still in flight)
+    // see the SAME big leaderboard widget the dashboard / Friends tab
+    // surfaces post-join, instead of an empty fallback. When a real
+    // 10K-steps community with synced contacts is found, the picker
+    // upgrades the displayed data to real contact rows + global top
+    // scorers; demo entries only fill the remaining slots when the
+    // real-data set is too sparse to communicate the feature.
+    //
+    // Stable UUIDs so SwiftUI's diffing / id-keyed ForEach doesn't
+    // churn between renders, and so realtime / cache layers can never
+    // mis-attribute a demo row to a real user.
+    static let demoTenKChallengeId   = UUID(uuidString: "DEADBEEF-1010-4D00-A000-100000000000")!
+    private static let demo10KParticipantCount = 8_472
+
+    /// Demo leaderboard rows for the 10K Steps Daily community.
+    /// Plausible names + photos-omitted (initials render). Used as
+    /// padding when the real leaderboard returns 0–4 rows so the
+    /// onboarding widget always reads as "active community" rather
+    /// than "empty placeholder". Stable UUIDs mean each demo row has
+    /// a fixed identity across launches.
+    static let demoTenKLeaderboard: [LeaderboardSnippetEntry] = [
+        LeaderboardSnippetEntry(
+            rank: 1,
+            userId: UUID(uuidString: "DEADBEEF-1010-4001-A000-000000000001")!,
+            name: "Sarah Chen", username: "sarahc",
+            profilePhotoUrl: nil,
+            todayProgress: 14_280,
+            daysCompleted: 42, currentStreak: 12, bestStreak: 18,
+            targetHitToday: true, isCurrentUser: false,
+            isVerified: true, isGoldVerified: false
+        ),
+        LeaderboardSnippetEntry(
+            rank: 2,
+            userId: UUID(uuidString: "DEADBEEF-1010-4001-A000-000000000002")!,
+            name: "Marcus Johnson", username: "marcusj",
+            profilePhotoUrl: nil,
+            todayProgress: 12_905,
+            daysCompleted: 28, currentStreak: 7, bestStreak: 14,
+            targetHitToday: true, isCurrentUser: false,
+            isVerified: false, isGoldVerified: false
+        ),
+        LeaderboardSnippetEntry(
+            rank: 3,
+            userId: UUID(uuidString: "DEADBEEF-1010-4001-A000-000000000003")!,
+            name: "Priya Patel", username: "priyap",
+            profilePhotoUrl: nil,
+            todayProgress: 11_540,
+            daysCompleted: 35, currentStreak: 9, bestStreak: 22,
+            targetHitToday: true, isCurrentUser: false,
+            isVerified: true, isGoldVerified: false
+        ),
+        LeaderboardSnippetEntry(
+            rank: 4,
+            userId: UUID(uuidString: "DEADBEEF-1010-4001-A000-000000000004")!,
+            name: "Alex Kim", username: "alexk",
+            profilePhotoUrl: nil,
+            todayProgress: 10_120,
+            daysCompleted: 21, currentStreak: 5, bestStreak: 11,
+            targetHitToday: true, isCurrentUser: false,
+            isVerified: false, isGoldVerified: false
+        ),
+        LeaderboardSnippetEntry(
+            rank: 5,
+            userId: UUID(uuidString: "DEADBEEF-1010-4001-A000-000000000005")!,
+            name: "Jamie Williams", username: "jamiew",
+            profilePhotoUrl: nil,
+            todayProgress: 8_640,
+            daysCompleted: 14, currentStreak: 3, bestStreak: 9,
+            targetHitToday: false, isCurrentUser: false,
+            isVerified: false, isGoldVerified: false
+        ),
+        LeaderboardSnippetEntry(
+            rank: 6,
+            userId: UUID(uuidString: "DEADBEEF-1010-4001-A000-000000000006")!,
+            name: "Dani Garcia", username: "danig",
+            profilePhotoUrl: nil,
+            todayProgress: 6_215,
+            daysCompleted: 18, currentStreak: 2, bestStreak: 7,
+            targetHitToday: false, isCurrentUser: false,
+            isVerified: false, isGoldVerified: false
+        )
+    ]
+
+    /// Demo "friends in community" row — derived from the top three
+    /// leaderboard rows so the avatars above the leaderboard match
+    /// the names the user sees in the rows immediately below.
+    static var demoTenKFriends: [CommunityFriendInfo] {
+        demoTenKLeaderboard.prefix(3).map { entry in
+            CommunityFriendInfo(
+                userId: entry.userId,
+                name: entry.name,
+                username: entry.username,
+                profilePhotoUrl: entry.profilePhotoUrl
+            )
+        }
+    }
+
+    /// Static "10K Steps Daily" `CommunityChallenge` used as the
+    /// onboarding Community step's baseline render. `joinCode` matches
+    /// the seed-migration entry so the Join button maps to the real
+    /// community on every deployed env (the seed has been live since
+    /// `community_challenges_migration.sql` shipped).
+    static var demoTenKChallenge: CommunityChallenge {
+        CommunityChallenge(
+            challengeId: demoTenKChallengeId,
+            title: "10K Steps Daily",
+            description: "The classic — hit 10,000 steps every single day. Join thousands of Fit33 users crushing this goal together.",
+            emoji: "👟",
+            challengeType: "steps",
+            dailyTarget: 10_000,
+            targetUnit: "steps",
+            participantCount: demo10KParticipantCount,
+            maxParticipants: nil,
+            joinCode: "FIT10K",
+            inviteSlug: "10k-steps-daily",
+            isRecurring: true,
+            isFeatured: true,
+            isOfficial: true,
+            myTodayProgress: nil,
+            myDaysCompleted: nil,
+            myCurrentStreak: nil,
+            myBestStreak: nil,
+            myRank: nil,
+            createdBy: nil,
+            creatorName: nil,
+            creatorUsername: nil,
+            topParticipants: demoTenKLeaderboard,
+            friendsIn: demoTenKFriends,
+            friendsCount: demoTenKFriends.count,
+            targetCadence: nil,
+            myPeriodProgress: nil
+        )
+    }
+
     static var demoBreakfastMeals: [MealEntryData] {
         [
             MealEntryData(
@@ -1949,20 +2090,39 @@ struct TutorialCommunityHero: View {
     @State private var previewSource: PreviewSource?
 
     /// Backing source of the preview challenge.
+    /// `.demo` is the guaranteed-render fallback: synthetic 10K-Steps
+    /// Daily challenge with a populated demo leaderboard so newcomers
+    /// (no contacts in any community + no real 10K row found in any
+    /// of the discovery / featured lists) always see the canonical
+    /// big leaderboard widget. Join routes through the canonical
+    /// `FIT10K` join code that ships with the seed migration.
     private enum PreviewSource {
         case discoverable(DiscoverableCommunityChallenge, isContactBased: Bool)
         case featured(FeaturedCommunityChallenge)
+        case demo
 
         var title: String {
             switch self {
             case .discoverable(let c, _): return c.title
             case .featured(let c):        return c.title
+            case .demo:                   return "10K Steps Daily"
             }
         }
         var challengeId: UUID {
             switch self {
             case .discoverable(let c, _): return c.challengeId
             case .featured(let c):        return c.challengeId
+            case .demo:                   return TutorialDemoData.demoTenKChallengeId
+            }
+        }
+        /// True when the source is a real server-side challenge that
+        /// supports live RPC fetches (contacts leaderboard / detail).
+        /// Demo challenges skip those calls — the widget renders from
+        /// the static fixture in `TutorialDemoData`.
+        var isReal: Bool {
+            switch self {
+            case .discoverable, .featured: return true
+            case .demo:                    return false
             }
         }
     }
@@ -2021,6 +2181,19 @@ struct TutorialCommunityHero: View {
     private func triggerInitialFetch() {
         guard !didTriggerRefresh else { return }
         didTriggerRefresh = true
+        // Set the demo 10K baseline SYNCHRONOUSLY so the populated
+        // widget paints on the very first frame the tutorial step
+        // appears — discoverable / PYMK refresh is async + network-
+        // gated and would otherwise leave the slot blank for ~1-2s.
+        // Skip if a real challenge is already known (joined / 10K-
+        // already-joined) so we don't briefly flicker the demo over
+        // a render that would resolve to a live widget anyway.
+        if previewChallenge == nil
+            && joinedChallenge == nil
+            && preExistingTenKChallenge == nil {
+            previewChallenge = TutorialDemoData.demoTenKChallenge
+            previewSource = .demo
+        }
         Task { @MainActor in
             // Force-refresh so brand-new accounts always pull fresh
             // discoverable + featured lists, even if the service
@@ -2058,9 +2231,14 @@ struct TutorialCommunityHero: View {
         }
     }
 
-    /// Pick the default preview community, fetch real leaderboard
-    /// data for it (contacts + global top-10 fallback), and synthesize
-    /// the live-shape `CommunityChallenge` the preview widget renders.
+    /// Try to upgrade the demo 10K baseline (already painted by
+    /// `triggerInitialFetch`) to a real 10K-steps community + real
+    /// leaderboard data. Two-pass network fetch:
+    ///   - contacts leaderboard (PYMK + contacts-on-Fit33)
+    ///   - global top-10 fallback (`get_community_challenge_detail`)
+    /// Both run in parallel and merge into a single re-ranked list,
+    /// padded with demo entries when too sparse to communicate the
+    /// "active leaderboard" feel.
     @MainActor
     private func buildPreviewChallenge() async {
         guard !didBuildPreview else { return }
@@ -2073,14 +2251,21 @@ struct TutorialCommunityHero: View {
         // pure waste.
         if preExistingTenKChallenge != nil { return }
 
-        guard let pickedSource = pickPreviewSource() else { return }
+        // Try to upgrade to a real 10K-steps community.
+        guard let realPick = pickRealPreviewSource() else {
+            AppLogger.info(
+                "[TUTORIAL] Community preview using demo 10K baseline (no real 10K-steps community surfaced in discovery / featured)",
+                category: .social
+            )
+            return
+        }
 
-        let challengeId = pickedSource.challengeId
+        let challengeId = realPick.challengeId
         let contactIds = currentContactCandidateIds()
 
         // Run the contacts-leaderboard fetch + the global detail fetch
         // in parallel — both are needed to populate the widget rows
-        // (contacts first, then global top to fill any remaining slots).
+        // (contacts first, then global top, then demo padding).
         async let contactsTask = communityService.fetchContactsLeaderboard(
             challengeId: challengeId,
             userIds: contactIds
@@ -2097,45 +2282,66 @@ struct TutorialCommunityHero: View {
         )
 
         // Friends row above the leaderboard surfaces the contacts in
-        // this challenge (= "people you know" already here). Built
-        // from the contacts-leaderboard response so the avatars match
-        // the highlighted leaderboard rows.
-        let friends: [CommunityFriendInfo] = contactRows.map { row in
-            CommunityFriendInfo(
-                userId: row.userId,
-                name: row.name,
-                username: row.username,
-                profilePhotoUrl: row.profilePhotoUrl
-            )
-        }
+        // this challenge (= "people you know" already here). Falls
+        // back to the demo friends fixture when 0 contacts so the
+        // avatar row is never empty for newcomers.
+        let friends: [CommunityFriendInfo] = !contactRows.isEmpty
+            ? contactRows.map { row in
+                CommunityFriendInfo(
+                    userId: row.userId,
+                    name: row.name,
+                    username: row.username,
+                    profilePhotoUrl: row.profilePhotoUrl
+                )
+            }
+            : TutorialDemoData.demoTenKFriends
+
+        // Use the real challenge's participant count if it's bigger
+        // than the demo baseline — picks the larger "social proof"
+        // signal so the header reads truthfully when the seed has
+        // accrued real members, but falls back to the demo number
+        // (~8.5K) when the real count is still small / zero.
+        let realParticipants = detailResp?.participantCount ?? sourceParticipantCount(realPick)
+        let displayedParticipants = max(realParticipants, TutorialDemoData.demoTenKChallenge.participantCount)
 
         let synthesized = synthesizeChallenge(
-            from: pickedSource,
-            participantCount: detailResp?.participantCount,
+            from: realPick,
+            participantCount: displayedParticipants,
             topParticipants: mergedRows,
             friendsIn: friends
         )
 
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
             previewChallenge = synthesized
-            previewSource = pickedSource
+            previewSource = realPick
         }
         AppLogger.info(
-            "[TUTORIAL] Built community preview '\(pickedSource.title)' (\(contactRows.count) contacts in leaderboard, \(mergedRows.count) total rows)",
+            "[TUTORIAL] Built community preview '\(realPick.title)' (\(contactRows.count) contacts in leaderboard, \(mergedRows.count) total rows after demo padding)",
             category: .social
         )
     }
 
-    /// Selection priority:
+    private func sourceParticipantCount(_ source: PreviewSource) -> Int {
+        switch source {
+        case .discoverable(let c, _): return c.participantCount
+        case .featured(let c):        return c.participantCount
+        case .demo:                   return TutorialDemoData.demoTenKChallenge.participantCount
+        }
+    }
+
+    /// Selection priority for the *real* upgrade pass. Returns nil
+    /// when no real 10K-steps community is found, in which case the
+    /// caller keeps the demo baseline rendering. Each tier is strictly
+    /// 10K-steps (the canonical onboarding community); we deliberately
+    /// do NOT fall back to non-10K communities here — the demo 10K
+    /// baseline reads better visually than a different community with
+    /// real-but-irrelevant data.
+    ///
     ///   1. PYMK 10K-steps community with the most synced contacts in it
     ///   2. Friend-discoverable 10K-steps community with the most friends
     ///   3. Official 10K-steps featured community (most participants)
     ///   4. Any 10K-steps featured community (most participants)
-    ///   5. Top contact-based community (any target) — keeps a contacts
-    ///      hook even if no 10K exists on the server
-    ///   6. Top direct-friend community (any target)
-    ///   7. Top featured community as last-resort filler
-    private func pickPreviewSource() -> PreviewSource? {
+    private func pickRealPreviewSource() -> PreviewSource? {
         let is10kSteps: (String, Int) -> Bool = { type, target in
             type == "steps" && target == 10_000
         }
@@ -2160,21 +2366,6 @@ struct TutorialCommunityHero: View {
             .max(by: { $0.participantCount < $1.participantCount }) {
             return .featured(c)
         }
-        if let c = pymkCommunities
-            .filter({ $0.friendsCount > 0 })
-            .max(by: { $0.friendsCount < $1.friendsCount }) {
-            return .discoverable(c, isContactBased: true)
-        }
-        if let c = communityService.discoverableChallenges
-            .filter({ $0.friendsCount > 0 })
-            .max(by: { $0.friendsCount < $1.friendsCount }) {
-            return .discoverable(c, isContactBased: false)
-        }
-        if let c = communityService.featuredChallenges
-            .filter({ !$0.alreadyJoined })
-            .max(by: { $0.participantCount < $1.participantCount }) {
-            return .featured(c)
-        }
         return nil
     }
 
@@ -2193,7 +2384,11 @@ struct TutorialCommunityHero: View {
 
     /// Merge contact rows + global-top rows into a single leaderboard,
     /// deduped by user_id, contacts first (so people the user knows
-    /// surface at the top), capped at 10. The merged list is re-ranked
+    /// surface at the top), capped at 10. Pads with demo entries when
+    /// the real-data set is too sparse (< 5 rows) to communicate the
+    /// "active leaderboard" feel — onboarding viewers get the same
+    /// visual scale they'll see post-join even when the real community
+    /// only has a couple participants. The merged list is re-ranked
     /// 1..N because the server returns two independently-ranked sets
     /// (contacts ranked among themselves, global ranked among everyone),
     /// and mixing them as-is would show duplicate "1" / "2" rank emojis.
@@ -2211,6 +2406,13 @@ struct TutorialCommunityHero: View {
         for entry in globalTop where out.count < 10 {
             if seen.insert(entry.userId).inserted {
                 out.append(entry)
+            }
+        }
+        if out.count < 5 {
+            for entry in TutorialDemoData.demoTenKLeaderboard where out.count < 7 {
+                if seen.insert(entry.userId).inserted {
+                    out.append(entry)
+                }
             }
         }
         return out.enumerated().map { index, entry in
@@ -2292,6 +2494,13 @@ struct TutorialCommunityHero: View {
                 targetCadence: nil,
                 myPeriodProgress: nil
             )
+        case .demo:
+            // Demo path bypasses synthesis entirely — `buildPreviewChallenge`
+            // sets `previewChallenge = TutorialDemoData.demoTenKChallenge`
+            // directly during stage 1. This branch only exists so the
+            // switch is exhaustive; if it ever runs, return the same
+            // static fixture for consistency.
+            return TutorialDemoData.demoTenKChallenge
         }
     }
 
@@ -2418,7 +2627,10 @@ struct TutorialCommunityHero: View {
     /// Routes the preview widget's Join tap to the correct join RPC
     /// based on the picked source: friend-gated for discoverable
     /// (PYMK / friend-discovery surfaces), code-based for featured
-    /// (no friend-chain requirement on official challenges).
+    /// (no friend-chain requirement on official challenges), and
+    /// `FIT10K` (the canonical seed-migration code) for the demo
+    /// fallback so the Join button works end-to-end on any deployed
+    /// env that ran the seed.
     private func handlePreviewJoin() {
         guard let src = previewSource, !isJoining else { return }
         switch src {
@@ -2426,6 +2638,39 @@ struct TutorialCommunityHero: View {
             joinDiscoverableCommunity(challenge)
         case .featured(let challenge):
             joinFeaturedCommunity(challenge)
+        case .demo:
+            joinDemo10K()
+        }
+    }
+
+    /// Demo-source Join: route through the canonical `FIT10K` join
+    /// code that ships with the seed-migration entry. On envs where
+    /// the seed is loaded (every prod / preview env), this lands the
+    /// user in the real 10K Steps Daily community and the live widget
+    /// swaps in. On envs missing the seed (local dev DBs), the join
+    /// surfaces a NetworkErrorClassifier error and the preview stays
+    /// on the demo render — acceptable since production has the seed.
+    private func joinDemo10K() {
+        guard !isJoining else { return }
+        isJoining = true
+        HapticManager.impact(.medium)
+        Task { @MainActor in
+            let joinedId = await communityService.joinChallenge(code: "FIT10K")
+            isJoining = false
+            guard let joinedId else {
+                AppLogger.warning(
+                    "[TUTORIAL] FIT10K join failed from demo preview — seed migration may not be present on this env",
+                    category: .social
+                )
+                return
+            }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                joinedChallengeId = joinedId
+            }
+            AppLogger.info(
+                "[TUTORIAL] Joined canonical 10K Steps Daily (FIT10K) from onboarding demo preview",
+                category: .social
+            )
         }
     }
 

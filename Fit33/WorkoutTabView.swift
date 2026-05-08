@@ -4235,7 +4235,7 @@ struct WorkoutTabProgramCard: View {
 // child `.task` — no `Task.sleep` lands on the parent's render
 // path. `.task` cancels automatically when the user leaves the tab,
 // so a fast tab away never strands the deferred mount.
-private struct Phase6DeferredWorkoutStatsSection: View {
+struct Phase6DeferredWorkoutStatsSection: View {
     @State private var isMounted = false
 
     var body: some View {

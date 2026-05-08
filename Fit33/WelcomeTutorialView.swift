@@ -1561,26 +1561,38 @@ struct TutorialChallengeHero: View {
     private static let myProgress = 2
     private static let opponentProgress = 1
     private static let daysRemaining = 3
-    /// Fake opponent. Verified badge demonstrates the platform's
-    /// verified-account treatment to brand-new users (the badge they
-    /// see here is the same one rendered next to a real verified
-    /// account's name in the live `competitionProgressSection`).
-    private static let opponentName = "Joe"
-    private static let opponentIsVerified = true
+    /// Sample opponent name on the right side of the head-to-head.
+    private static let opponentName = "Alex"
+    /// Hard-coded display name for the user side. We DON'T use the
+    /// actual `UserManager.currentUser?.name` here because the
+    /// verified-badge demo only makes sense next to a known-good
+    /// fixture name — and "Joe" lets new users immediately see what
+    /// the verified-account treatment looks like in the wild
+    /// (matches the blue checkmark seal `competitionProgressSection`
+    /// renders for real verified accounts).
+    private static let myDisplayName = "Joe"
 
-    private var myDisplayName: String {
-        UserManager.shared.currentUser?.name?
-            .components(separatedBy: " ")
-            .first ?? "You"
-    }
+    /// Per design feedback, the LIFT challenge tutorial uses a BLUE
+    /// palette here (not the canonical purple/pink `.lift` brand
+    /// colors) so the widget visually compliments the
+    /// `ds_logoBlueAccent` "Challenge a Friend" title gradient
+    /// directly below it. Same color story as the page-indicator dot
+    /// + Continue button on this step. This override is screen-local
+    /// and does NOT change the brand color anywhere else `.lift` is
+    /// rendered (real challenges, post-onboarding).
+    private static let bluePaletteColor = Color(red: 0.20, green: 0.55, blue: 0.95)
+    private static let bluePaletteGradient: [Color] = [
+        Color(red: 0.20, green: 0.55, blue: 0.95),
+        Color(red: 0.55, green: 0.80, blue: 0.98)
+    ]
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
             ChallengeHeroCard(
                 title: Self.challengeTitle,
                 emoji: Self.challengeType.emoji,
-                typeColor: Self.challengeType.color,
-                gradient: Self.challengeType.gradientColors,
+                typeColor: Self.bluePaletteColor,
+                gradient: Self.bluePaletteGradient,
                 typeLabel: Self.challengeType.displayName,
                 description: Self.challengeDescription,
                 // Day-progress pills suppressed per design feedback —
@@ -1596,18 +1608,20 @@ struct TutorialChallengeHero: View {
             )
 
             TutorialActiveChallengePreview(
-                challengeType: Self.challengeType,
-                myName: myDisplayName,
+                challengeEmoji: Self.challengeType.emoji,
+                typeColor: Self.bluePaletteColor,
+                typeGradient: Self.bluePaletteGradient,
+                myName: Self.myDisplayName,
+                myImage: ProfilePhotoCache.shared.cachedImage,
+                myIsVerified: true,
                 myProgress: Self.myProgress,
                 opponentName: Self.opponentName,
                 opponentProgress: Self.opponentProgress,
-                opponentIsVerified: Self.opponentIsVerified,
                 weeklyTarget: Self.weeklyTarget,
                 daysRemaining: Self.daysRemaining
             )
         }
         .padding(.horizontal, Spacing.md)
-        .scaleEffect(0.94)
         .offset(y: isAnimating ? -2 : 2)
     }
 }
@@ -1625,40 +1639,47 @@ struct TutorialChallengeHero: View {
 struct TutorialActiveChallengePreview: View {
     @Environment(\.colorScheme) private var colorScheme
 
-    let challengeType: ChallengeType
+    let challengeEmoji: String
+    let typeColor: Color
+    let typeGradient: [Color]
+
     let myName: String
+    let myImage: UIImage?
+    let myIsVerified: Bool
     let myProgress: Int
+
     let opponentName: String
     let opponentProgress: Int
-    let opponentIsVerified: Bool
+
     let weeklyTarget: Int
     let daysRemaining: Int
 
-    private var typeColor: Color { challengeType.color }
-    private var typeGradient: [Color] { challengeType.gradientColors }
     private var amWinning: Bool { myProgress > opponentProgress }
     private var leadDelta: Int { abs(myProgress - opponentProgress) }
     private var unitLabel: String { weeklyTarget == 1 ? "lift" : "lifts" }
 
-    // Avatar / type sizing — matched to the dashboard's
-    // `activeChallengeDetailWidget` so the tutorial preview reads as
-    // the SAME widget the user will see on their home screen, not a
-    // chunkier onboarding-only variant.
-    private static let avatarSize: CGFloat = 36
+    // Avatar size — matches `competitionProgressSection`'s 44pt
+    // `challengeAvatar(...size: 44)` exactly, so this widget reads as
+    // the same widget the user will see on the home screen.
+    private static let avatarSize: CGFloat = 44
 
     var body: some View {
-        // Mirrors `DashboardView+Challenges.swift::activeChallengeDetailWidget`
-        // structurally: header row + (accent bar + competition row)
-        // wrapped in a subtle inner card, both inside the same multi-
-        // layer adaptive card shell. Keeping the structure identical
-        // means the tutorial widget reads as the literal on-dashboard
-        // widget (just statically populated with our fixture).
+        // Identical to the dashboard's
+        // `activeChallengeDetailWidget`:
+        //   • header row (emoji avatar + title + smiley + chevron)
+        //   • inner subtle card: type-colored 4pt accent bar + H2H
+        //     competition row (44pt avatars + ds_heading2 stat text)
+        //   • multi-layer adaptive card shell (offset/blur shadow,
+        //     stroke pair, AdaptiveCardSurface body)
+        // Sizes + paddings are the same constants the dashboard uses
+        // (`Spacing.sm` inner padding, `.padding(.bottom, 12)`,
+        // `CornerRadius.xl` outer, `CornerRadius.md` inner) — copying
+        // them keeps the tutorial preview indistinguishable from the
+        // real on-dashboard widget.
         VStack(spacing: 0) {
             headerRow
 
             HStack(spacing: 0) {
-                // Type-colored left accent bar — same 4pt width and
-                // Spacing.xxs vertical inset as the dashboard widget.
                 RoundedRectangle(cornerRadius: 2)
                     .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
                     .frame(width: 4)
@@ -1666,7 +1687,7 @@ struct TutorialActiveChallengePreview: View {
 
                 competitionRow
             }
-            .padding(.vertical, Spacing.xs)
+            .padding(.vertical, Spacing.sm)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.md)
                     .fill(colorScheme == .dark
@@ -1674,7 +1695,7 @@ struct TutorialActiveChallengePreview: View {
                           : Color.black.opacity(0.03))
             )
             .padding(.horizontal, Spacing.sm)
-            .padding(.bottom, Spacing.sm)
+            .padding(.bottom, 12)
         }
         .background(
             ZStack {
@@ -1728,9 +1749,9 @@ struct TutorialActiveChallengePreview: View {
                         LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
                         lineWidth: 2.5
                     )
-                    .frame(width: 32, height: 32)
-                Text(challengeType.emoji)
-                    .font(.ds_bodyRegular)
+                    .frame(width: 36, height: 36)
+                Text(challengeEmoji)
+                    .font(.ds_heading3)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -1761,32 +1782,42 @@ struct TutorialActiveChallengePreview: View {
                 .foregroundStyle(
                     LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
-                .padding(.trailing, 6)
+                .padding(.trailing, 8)
 
             Image(systemName: "chevron.right")
                 .font(.ds_labelMedium)
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, Spacing.xs)
+        .padding(.vertical, Spacing.sm)
     }
 
     // MARK: Competition row (mirrors `competitionProgressSection`)
 
     private var competitionRow: some View {
-        HStack(spacing: 8) {
-            // You side
-            HStack(spacing: 8) {
-                avatarBubble(initial: String(myName.prefix(1)), isLeading: amWinning)
+        HStack(spacing: 10) {
+            // You side — real photo (when cached) + verified badge
+            HStack(spacing: 10) {
+                avatarBubble(
+                    initial: String(myName.prefix(1)),
+                    image: myImage,
+                    isLeading: amWinning
+                )
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("You")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 3) {
+                        Text(myName)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                        if myIsVerified {
+                            VerifiedBadge(size: 10, isGold: false)
+                        }
+                    }
 
                     Text("\(myProgress) \(unitLabel)")
-                        .font(.ds_heading3).fontDesign(.rounded)
+                        .font(.ds_heading2).fontDesign(.rounded)
                         .foregroundColor(amWinning ? .green : .primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -1805,62 +1836,76 @@ struct TutorialActiveChallengePreview: View {
                         .foregroundColor(amWinning ? .green : .red)
                 }
             }
-            .frame(minWidth: 28)
+            .frame(minWidth: 30)
 
             Spacer(minLength: 4)
 
-            // Opponent side — verified badge sits next to the name
-            // exactly like `competitionProgressSection` renders it,
-            // matching the dashboard's "this is a verified account"
-            // affordance (blue checkmark seal).
-            HStack(spacing: 8) {
-                VStack(alignment: .trailing, spacing: 1) {
-                    HStack(spacing: 3) {
-                        Text(opponentName)
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                        if opponentIsVerified {
-                            VerifiedBadge(size: 10, isGold: false)
-                        }
-                    }
+            // Opponent side — gradient initial (no photo, no badge)
+            HStack(spacing: 10) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(opponentName)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
 
                     Text("\(opponentProgress) \(opponentProgress == 1 ? "lift" : "lifts")")
-                        .font(.ds_heading3).fontDesign(.rounded)
+                        .font(.ds_heading2).fontDesign(.rounded)
                         .foregroundColor(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
                 .frame(maxWidth: 100, alignment: .trailing)
 
-                avatarBubble(initial: String(opponentName.prefix(1)), isLeading: !amWinning)
+                avatarBubble(
+                    initial: String(opponentName.prefix(1)),
+                    image: nil,
+                    isLeading: !amWinning
+                )
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
     }
 
+    /// Renders a real `UIImage` when available (user side, with cached
+    /// profile photo), falling back to a type-gradient circle with the
+    /// initial overlaid (opponent side, no photo). Crown floats above
+    /// the leader — yellow + 14pt, matching the dashboard widget.
     @ViewBuilder
-    private func avatarBubble(initial: String, isLeading: Bool) -> some View {
+    private func avatarBubble(initial: String, image: UIImage?, isLeading: Bool) -> some View {
         ZStack(alignment: .top) {
-            Circle()
-                .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: Self.avatarSize, height: Self.avatarSize)
-                .overlay(
-                    Text(initial.uppercased())
-                        .font(.ds_labelMedium)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                )
-                .overlay(
-                    Circle().stroke(Color.white.opacity(0.25), lineWidth: 1.5)
-                )
+            if let image = image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: Self.avatarSize, height: Self.avatarSize)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle().stroke(
+                            LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 2
+                        )
+                    )
+            } else {
+                Circle()
+                    .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: Self.avatarSize, height: Self.avatarSize)
+                    .overlay(
+                        Text(initial.uppercased())
+                            .font(.ds_labelLarge)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                    )
+                    .overlay(
+                        Circle().stroke(Color.white.opacity(0.25), lineWidth: 1.5)
+                    )
+            }
 
             if isLeading {
                 Image(systemName: "crown.fill")
-                    .font(.system(size: 12))
+                    .font(.system(size: 14))
                     .foregroundColor(.yellow)
-                    .offset(y: -10)
+                    .offset(y: -12)
             }
         }
     }
@@ -1930,6 +1975,22 @@ struct TutorialCommunityHero: View {
         return communityService.myChallenges.first(where: { $0.challengeId == id })
     }
 
+    /// 10K-steps community the user has ALREADY joined in a prior
+    /// session (re-installs / partial onboarding completions / users
+    /// who joined manually before reaching this step). Surfacing it
+    /// here lets the tutorial Community step render the LIVE widget
+    /// for the 10K community instead of falling through to a generic
+    /// featured filler — `featuredChallenges` returns the 10K entry
+    /// with `alreadyJoined = true` and the picker's `!alreadyJoined`
+    /// guard would otherwise exclude it. Prefer the steps/10000 row
+    /// over any other already-joined community so the step always
+    /// matches the user's "default = 10K daily" expectation.
+    private var preExistingTenKChallenge: CommunityChallenge? {
+        communityService.myChallenges.first(where: {
+            $0.challengeType == "steps" && $0.dailyTarget == 10_000
+        })
+    }
+
     var body: some View {
         VStack(spacing: Spacing.sm) {
             content
@@ -1946,9 +2007,13 @@ struct TutorialCommunityHero: View {
     /// The big leaderboard widget is taller than the old card stack,
     /// so we scale it down a touch more so the page copy + dots +
     /// Continue CTA below all fit comfortably on the iPhone SE-class
-    /// vertical budget without clipping.
+    /// vertical budget without clipping. Same scale whether we're
+    /// rendering the live or preview variant of the widget.
     private var stackScale: CGFloat {
-        (joinedChallenge != nil || previewChallenge != nil) ? 0.78 : 0.92
+        let isWidget = joinedChallenge != nil
+                    || preExistingTenKChallenge != nil
+                    || previewChallenge != nil
+        return isWidget ? 0.78 : 0.92
     }
 
     // MARK: - Initial fetch + preview build
@@ -2000,6 +2065,13 @@ struct TutorialCommunityHero: View {
     private func buildPreviewChallenge() async {
         guard !didBuildPreview else { return }
         didBuildPreview = true
+
+        // Skip the preview build entirely if the user has already
+        // joined a 10K-steps community — `content` renders the LIVE
+        // widget for `preExistingTenKChallenge` ahead of the preview
+        // branch, so spending RPCs on a preview that won't render is
+        // pure waste.
+        if preExistingTenKChallenge != nil { return }
 
         guard let pickedSource = pickPreviewSource() else { return }
 
@@ -2237,6 +2309,15 @@ struct TutorialCommunityHero: View {
                     removal: .opacity
                 ))
                 .accessibilityLabel("You joined the \(joined.title) community")
+        } else if let alreadyIn10K = preExistingTenKChallenge {
+            // User already joined the 10K-steps community in a prior
+            // session. Render the LIVE widget (real leaderboard + the
+            // user's own row) — defaulting to the same 10K community
+            // a brand-new user would see in the preview, just without
+            // the Join button (since they're already in).
+            CommunityLeaderboardWidget(challenge: alreadyIn10K)
+                .transition(.opacity)
+                .accessibilityLabel("\(alreadyIn10K.title) — you're in")
         } else if let preview = previewChallenge {
             CommunityLeaderboardWidget(
                 challenge: preview,
@@ -2268,6 +2349,18 @@ struct TutorialCommunityHero: View {
                     .font(.ds_caption)
                     .foregroundColor(.green)
                 Text("You're in! \(joined.formattedParticipantCount) members")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.adaptiveSecondaryText)
+            }
+            .accessibilityElement(children: .combine)
+        } else if let alreadyIn = preExistingTenKChallenge {
+            // Same caption shape as the just-joined branch — the user
+            // IS in this community, just from a prior session.
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.ds_caption)
+                    .foregroundColor(.green)
+                Text("You're in! \(alreadyIn.formattedParticipantCount) members")
                     .font(.ds_labelMedium)
                     .foregroundColor(.adaptiveSecondaryText)
             }

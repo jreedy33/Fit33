@@ -120,6 +120,72 @@ class FriendService: ObservableObject {
         }
     }
     
+    // MARK: - Realtime user-deletion purge (migration #201, 2026-05-08)
+
+    /// Drop every reference to `deletedUserId` from in-memory @Published
+    /// arrays and the on-disk friends cache. Called by
+    /// `RealtimeService.handleUserDeletionEvent` whenever a
+    /// `public.user_deletion_events` INSERT lands. The corresponding
+    /// server-side rows are already gone (FK CASCADE from auth.users +
+    /// the AFTER triggers from migration #200), so the entire job here
+    /// is local cache reconciliation — no network calls.
+    ///
+    /// Idempotent — calling with a UUID that's not in any list is a
+    /// no-op (and logs nothing, to avoid noise on the realtime fan-out
+    /// path where most events won't match THIS session's caches).
+    func purgeDeletedUser(_ deletedUserId: UUID) {
+        var changedFriends           = false
+        var changedPendingRequests   = false
+        var changedSentRequests      = false
+        var changedReceivedWorkouts  = false
+        var changedBlocked           = false
+
+        let beforeFriends = friends.count
+        friends.removeAll { $0.friendId == deletedUserId }
+        if friends.count != beforeFriends { changedFriends = true }
+
+        let beforePending = pendingRequests.count
+        pendingRequests.removeAll { $0.fromUserId == deletedUserId }
+        if pendingRequests.count != beforePending { changedPendingRequests = true }
+
+        let beforeSent = sentRequests.count
+        sentRequests.removeAll { $0.toUserId == deletedUserId }
+        if sentRequests.count != beforeSent { changedSentRequests = true }
+
+        let beforeReceived = receivedWorkouts.count
+        receivedWorkouts.removeAll { $0.senderId == deletedUserId }
+        if receivedWorkouts.count != beforeReceived { changedReceivedWorkouts = true }
+
+        if blockedUserIds.contains(deletedUserId) {
+            blockedUserIds.remove(deletedUserId)
+            persistBlockedUserIds()
+            changedBlocked = true
+        }
+
+        // Re-save the on-disk friends cache so the next cold launch
+        // doesn't re-hydrate the deleted user. Empty cache is fine —
+        // `cacheFriends()` no-ops on empty (preserves the pre-delete
+        // cache as a fallback) so we hand-write the empty case here.
+        if changedFriends {
+            do {
+                if friends.isEmpty {
+                    UserDefaults.standard.removeObject(forKey: friendsCacheKey)
+                } else {
+                    let data = try JSONEncoder().encode(friends)
+                    UserDefaults.standard.set(data, forKey: friendsCacheKey)
+                    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: friendsCacheDateKey)
+                }
+            } catch {
+                AppLogger.warning("[FRIENDS] Failed to re-cache after purge: \(error.localizedDescription)", category: .social)
+            }
+        }
+
+        let touched = changedFriends || changedPendingRequests || changedSentRequests || changedReceivedWorkouts || changedBlocked
+        if touched {
+            AppLogger.info("[FRIENDS] Purged deleted user \(deletedUserId.uuidString.prefix(8)) from local caches (friends=\(changedFriends) pending=\(changedPendingRequests) sent=\(changedSentRequests) workouts=\(changedReceivedWorkouts) blocked=\(changedBlocked))", category: .social)
+        }
+    }
+
     // MARK: - Refresh Friend Data (Event-Driven)
     
     /// Refresh workouts and friend requests

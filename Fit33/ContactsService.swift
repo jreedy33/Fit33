@@ -455,6 +455,46 @@ class ContactsService: ObservableObject {
         }
     }
     
+    // MARK: - Realtime user-deletion purge (migration #201, 2026-05-08)
+
+    /// Drop every reference to `deletedUserId` from `suggestedFriends`
+    /// (contact-match list) and `peopleYouMayKnow` (PYMK / friends-of-
+    /// friends), then re-save both UserDefaults caches so the next
+    /// cold launch doesn't re-hydrate the deleted user. Called by
+    /// `RealtimeService.handleUserDeletionEvent` whenever a
+    /// `public.user_deletion_events` INSERT lands.
+    ///
+    /// Idempotent — calling with a UUID that's not in either list is
+    /// a no-op (and logs nothing, to avoid spam on the realtime fan-out
+    /// path where most events won't match THIS session's caches).
+    func purgeDeletedUser(_ deletedUserId: UUID) {
+        var changedSuggested = false
+        var changedPYMK      = false
+
+        let beforeSuggested = suggestedFriends.count
+        suggestedFriends.removeAll { $0.userId == deletedUserId }
+        if suggestedFriends.count != beforeSuggested { changedSuggested = true }
+
+        let beforePYMK = peopleYouMayKnow.count
+        peopleYouMayKnow.removeAll { $0.userId == deletedUserId }
+        if peopleYouMayKnow.count != beforePYMK { changedPYMK = true }
+
+        if changedSuggested {
+            // Re-save (or remove if empty) so cold launch doesn't
+            // re-hydrate. `saveSuggestedFriendsToCache()` writes an
+            // empty array fine — the cold-start preloader treats an
+            // empty array the same as "no cache present".
+            saveSuggestedFriendsToCache()
+        }
+        if changedPYMK {
+            savePYMKToCache()
+        }
+
+        if changedSuggested || changedPYMK {
+            AppLogger.info("[CONTACTS] Purged deleted user \(deletedUserId.uuidString.prefix(8)) from suggestions (contacts=\(changedSuggested) pymk=\(changedPYMK))", category: .social)
+        }
+    }
+
     /// Refresh suggestions (call after adding a friend, or from dashboard)
     func refreshSuggestions(force: Bool = false) async {
         guard canAccessContacts && hasCheckedContacts else { return }

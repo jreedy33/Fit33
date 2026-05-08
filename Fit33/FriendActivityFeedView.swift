@@ -151,6 +151,24 @@ class ActivityFeedService: ObservableObject {
     func applyModerationHide(activityId: UUID) {
         activities.removeAll { $0.activityId == activityId }
     }
+
+    /// Migration #201 (2026-05-08) — called from
+    /// `RealtimeService.handleUserDeletionEvent` whenever a
+    /// `public.user_deletion_events` INSERT lands. Drops every activity
+    /// authored by the deleted user from the in-memory feed so their
+    /// posts vanish from friends-of-friends timelines within a few
+    /// hundred ms of the admin / self-delete. Idempotent; logs only when
+    /// at least one row was removed (to avoid spam on the realtime
+    /// fan-out path where most events won't match this session's feed).
+    @MainActor
+    func purgeDeletedUser(_ deletedUserId: UUID) {
+        let before = activities.count
+        activities.removeAll { $0.userId == deletedUserId }
+        let removed = before - activities.count
+        if removed > 0 {
+            AppLogger.info("[FEED] Purged \(removed) activit\(removed == 1 ? "y" : "ies") authored by deleted user \(deletedUserId.uuidString.prefix(8))", category: .social)
+        }
+    }
     
     func fetchFeed() async {
         guard SupabaseManager.shared.isAuthenticated else { return }

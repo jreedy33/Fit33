@@ -51,6 +51,18 @@ class RealtimeService: ObservableObject {
     private var privacyChangeChannel: RealtimeChannelV2?
     private var exercisesChannel: RealtimeChannelV2?
 
+    /// Server-driven user-deletion broadcasts. INSERT events on
+    /// `public.user_deletion_events` (migration #201, 2026-05-08) carry
+    /// a `deleted_user_id` UUID. The handler purges that user from every
+    /// social cache + UserDefaults blob so admin-deleted accounts vanish
+    /// from "Add Friends" carousels, friends lists, Inner Circle, and
+    /// activity feeds within a few hundred ms instead of waiting for the
+    /// next pull-to-refresh / foreground re-sync. See
+    /// `subscribeUserDeletions(userId:)` and the matching
+    /// `purgeDeletedUser(_:)` methods on `FriendService`,
+    /// `ContactsService`, `FriendRankingService`, `ActivityFeedService`.
+    private var userDeletionsChannel: RealtimeChannelV2?
+
     /// Per-challenge reactions channel. Owned + torn down by the
     /// challenge-detail view that's currently visible. Replaces the
     /// previous "fetch on view-appear" reaction list with a live
@@ -513,6 +525,7 @@ class RealtimeService: ObservableObject {
         await subscribeFriendActivityFeed(userId: userId)
         await subscribePrivacyChanges(userId: userId)
         await subscribeExercises(userId: userId)
+        await subscribeUserDeletions(userId: userId)
         await subscribeIncomingReactions(userId: userId)
         await subscribeOutgoingBattleCryAcks(userId: userId)
 
@@ -524,7 +537,7 @@ class RealtimeService: ObservableObject {
         lastConnectTime = Date()
         AppLogger.info("Connected to all channels", category: .network)
         logRealtimeEvent(type: "CONNECTED", source: "RealtimeService",
-                        details: "✅ All channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed, privacy_changes, exercises, incoming_reactions, outgoing_reaction_acks + auto-tracked refresh timer")
+                        details: "✅ All channels active: friendships, shared_workouts, challenges, daily_progress, private_challenges, community_challenges, community_participants, private_members, friend_activity_feed, privacy_changes, exercises, user_deletions, incoming_reactions, outgoing_reaction_acks + auto-tracked refresh timer")
 
         // ─── Sync-triage 2026-04-28 Layer B — post-connect canonical resync ───
         //
@@ -852,6 +865,9 @@ class RealtimeService: ObservableObject {
         if let channel = exercisesChannel {
             await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
         }
+        if let channel = userDeletionsChannel {
+            await SupabaseManager.shared.supabaseClient.realtimeV2.removeChannel(channel)
+        }
         incomingReactionsListenerTask?.cancel()
         incomingReactionsListenerTask = nil
         await unsubscribeOutgoingBattleCryAcks()
@@ -884,6 +900,7 @@ class RealtimeService: ObservableObject {
         friendActivityFeedChannel = nil
         privacyChangeChannel = nil
         exercisesChannel = nil
+        userDeletionsChannel = nil
         incomingReactionsChannel = nil
 
         // Sync-triage 2026-05-02 (Layer E) — clear the last-event-time
@@ -1045,7 +1062,99 @@ class RealtimeService: ObservableObject {
         
         await ExerciseLibraryService.shared.deleteExerciseById(uuid)
     }
-    
+
+    // MARK: - User Deletion Realtime Subscription (Admin CMS / iOS self-delete → all clients)
+
+    /// Subscribe to `public.user_deletion_events` so that ANY admin or
+    /// self-delete that fires `delete_user_account(uuid)` propagates to
+    /// every other authenticated session in <500ms instead of waiting
+    /// for the next pull-to-refresh / foreground re-sync.
+    ///
+    /// On each INSERT the handler:
+    ///   1. Decodes `deleted_user_id` from the payload.
+    ///   2. Skips the self-case (the deleted user IS this session — the
+    ///      app will log out via the auth flow anyway, no point purging
+    ///      caches we're about to nuke entirely).
+    ///   3. Fans out to four `purgeDeletedUser(_:)` methods:
+    ///        - `FriendService`           — friends, pendingRequests,
+    ///                                      sentRequests, receivedWorkouts;
+    ///                                      re-saves `fit33_cached_friends`.
+    ///        - `ContactsService`         — suggestedFriends, peopleYouMayKnow;
+    ///                                      re-saves `cached_suggested_friends_v1`
+    ///                                      and `cached_pymk_v1`.
+    ///        - `FriendRankingService`    — rankedFriends.
+    ///        - `ActivityFeedService`     — activities.
+    ///
+    /// Requires migration #201 (`20260508_user_deletion_realtime_events.sql`):
+    /// the `user_deletion_events` table with `REPLICA IDENTITY FULL` +
+    /// `supabase_realtime` publication entry + RLS allowing
+    /// `authenticated` SELECT.
+    ///
+    /// Channel naming uses the per-user suffix (consistent with the rest
+    /// of this file) even though the underlying Postgres-changes filter
+    /// is unfiltered — Realtime is happy to fan out to N independent
+    /// channels and the per-user suffix simplifies log diffing when
+    /// multiple sessions race the same event.
+    private func subscribeUserDeletions(userId: UUID) async {
+        let client = SupabaseManager.shared.supabaseClient
+        let channel = client.realtimeV2.channel("user_deletions-\(userId.uuidString)")
+
+        let inserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "user_deletion_events"
+        )
+
+        Task { [weak self] in
+            for await action in inserts {
+                guard let self else { break }
+                await self.handleUserDeletionEvent(record: action.record, sessionUserId: userId)
+            }
+        }
+
+        await channel.subscribe()
+        userDeletionsChannel = channel
+
+        AppLogger.debug("Subscribed to user_deletion_events (instant cross-device cache invalidation)", category: .network)
+        logRealtimeEvent(type: "SUBSCRIBED", source: "user_deletion_events",
+                        details: "✅ Listening for INSERT on public.user_deletion_events (admin CMS / self-delete → live cache purge)")
+    }
+
+    /// Handler for a single `user_deletion_events` INSERT. Pulled out of
+    /// `subscribeUserDeletions` so the per-event work is testable and
+    /// the for-await loop stays tight.
+    private func handleUserDeletionEvent(record: [String: AnyJSON], sessionUserId: UUID) async {
+        guard let deletedIdString = jsonString(record["deleted_user_id"]),
+              let deletedId       = UUID(uuidString: deletedIdString) else {
+            AppLogger.warning("Realtime user_deletion_events INSERT: missing/invalid deleted_user_id", category: .network)
+            return
+        }
+
+        // Self-delete short-circuit. The auth flow handles the local
+        // teardown when the session's own user is deleted (sign-out
+        // hooked into the missing-row error path); purging caches that
+        // are about to be wiped wholesale is wasted work.
+        guard deletedId != sessionUserId else {
+            AppLogger.debug("Realtime user_deletion_events: skipping self-delete event for \(deletedId.uuidString.prefix(8))", category: .network)
+            return
+        }
+
+        AppLogger.info("Realtime user_deletion_events: purging \(deletedId.uuidString.prefix(8)) from social caches", category: .network)
+        logRealtimeEvent(type: "USER_DELETED", source: "user_deletion_events",
+                        details: "🗑️ Purging user \(deletedId.uuidString.prefix(8)) from FriendService + ContactsService + FriendRankingService + ActivityFeedService caches")
+
+        // Each purge is cheap (in-memory array filter + UserDefaults
+        // re-encode) so we run them sequentially on the main actor.
+        // None can fail in a way that should abort the others. All four
+        // services + the four `purgeDeletedUser(_:)` methods are
+        // @MainActor; this caller is also @MainActor (RealtimeService),
+        // so these are direct same-actor sync calls — no await needed.
+        FriendService.shared.purgeDeletedUser(deletedId)
+        ContactsService.shared.purgeDeletedUser(deletedId)
+        FriendRankingService.shared.purgeDeletedUser(deletedId)
+        ActivityFeedService.shared.purgeDeletedUser(deletedId)
+    }
+
     // MARK: - Friend Activity Feed Subscription
     
     private func subscribeFriendActivityFeed(userId: UUID) async {

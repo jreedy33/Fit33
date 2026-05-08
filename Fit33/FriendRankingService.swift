@@ -71,6 +71,38 @@ class FriendRankingService: ObservableObject {
         }
     }
     
+    // MARK: - Realtime user-deletion purge (migration #201, 2026-05-08)
+
+    /// Drop every reference to `deletedUserId` from `rankedFriends` /
+    /// `topFriends` and re-save the on-disk cache so the next cold
+    /// launch doesn't re-hydrate the deleted user. Called by
+    /// `RealtimeService.handleUserDeletionEvent` whenever a
+    /// `public.user_deletion_events` INSERT lands. Idempotent.
+    func purgeDeletedUser(_ deletedUserId: UUID) {
+        let beforeRanked = rankedFriends.count
+        rankedFriends.removeAll { $0.friendId == deletedUserId }
+        let changedRanked = rankedFriends.count != beforeRanked
+
+        let beforeTop = topFriends.count
+        topFriends.removeAll { $0.friendId == deletedUserId }
+        let changedTop = topFriends.count != beforeTop
+
+        if changedRanked {
+            // Re-save (or remove if empty). `cacheRankedFriends()` no-ops
+            // on empty (preserves the prior cache), so we hand-write the
+            // empty case to avoid stale entries surviving cold launch.
+            if rankedFriends.isEmpty {
+                UserDefaults.standard.removeObject(forKey: rankedFriendsCacheKey)
+            } else {
+                cacheRankedFriends()
+            }
+        }
+
+        if changedRanked || changedTop {
+            AppLogger.info("[RANKING] Purged deleted user \(deletedUserId.uuidString.prefix(8)) from ranked/top friends", category: .social)
+        }
+    }
+
     // MARK: - Fetch Ranked Friends
     
     /// Fetches all friends sorted by relationship strength

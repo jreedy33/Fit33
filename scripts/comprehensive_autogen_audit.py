@@ -1676,30 +1676,49 @@ def get_equipment_patterns(user_equip: str) -> List[str]:
     User selects: "Machines", "Cables", "Barbell", "Dumbbells"
     Database has: "Lever Machine", "Cable Machine", "Chest Press Machine", etc.
     """
-    equip = user_equip.lower().strip()
-    
-    patterns = {
-        # Machines - comprehensive list of all machine types in database
-        "machines": ["machine", "lever", "lever machine", "chest press machine", 
-                    "leg press machine", "leg curl machine", "seated row machine",
-                    "press machine", "curl machine", "row machine", "extension machine", 
-                    "leg press", "hack squat", "pec deck", "pulldown", "lat machine",
-                    "smith machine"],  # Note: Smith machine is also included under "machines"
-        "machine": ["machine", "lever", "lever machine", "chest press machine",
-                   "press machine", "curl machine", "row machine", "extension machine", 
-                   "leg press", "hack squat", "pec deck"],
-        # Cables - separate from machines for more specific matching
-        "cables": ["cable", "cable machine", "pulley", "pulldown"],
+    return _normalize_equipment_for_matching(user_equip)
+
+
+# Audit 2026-05-08: tightened equipment matcher — empty-string + bare 'bar' patterns false-positived
+def _normalize_equipment_for_matching(name: str) -> List[str]:
+    """
+    Return the list of substring patterns that match a user-equipment SKU
+    against an exercise's `equipment` field. Mirrors Swift's
+    `normalizeEquipmentForMatching()`.
+
+    BUGFIX 2026-05-08: removed bare `""`, `"bar"`, `"olympic"`, and
+    `"dumbbells"` patterns that caused every exercise to false-positive as
+    bodyweight / barbell / dumbbell-compatible (substring-of-everything).
+    """
+    equip = name.lower().strip()
+
+    patterns: Dict[str, List[str]] = {
+        # Machines — note Smith Machine is intentionally included so the
+        # default gym SKU set ("Machines") covers Smith-only exercises.
+        "machines": ["machine", "lever", "press machine", "curl machine",
+                     "row machine", "extension machine", "pulldown",
+                     "leg press", "hack squat", "plate-loaded",
+                     "lever machine", "smith machine"],
+        "machine": ["machine", "lever", "press machine", "curl machine",
+                    "row machine", "extension machine", "pulldown",
+                    "leg press", "hack squat", "plate-loaded",
+                    "lever machine"],
+        # Cables
+        "cables": ["cable", "cable machine", "pulley"],
         "cable": ["cable", "cable machine", "pulley"],
-        # Barbell equipment
-        "barbell": ["barbell", "bar", "olympic", "ez bar", "trap bar"],
-        "barbells": ["barbell", "bar", "olympic", "ez bar", "trap bar"],
-        # Dumbbells
-        "dumbbells": ["dumbbell", "dumbbells", "db"],
-        "dumbbell": ["dumbbell", "dumbbells", "db"],
-        # Bodyweight
-        "bodyweight": ["bodyweight", "body weight", ""],
-        "body weight": ["bodyweight", "body weight", ""],
+        # Barbell — bare "bar" / "olympic" removed (matched "Pull-Up Bar",
+        # "Olympic <anything>", etc.). Only "olympic bar" and "barbell"
+        # are safe.
+        "barbell": ["barbell", "olympic bar"],
+        "barbells": ["barbell", "olympic bar"],
+        # Dumbbells — bare "dumbbells" was redundant ("dumbbell" already
+        # substring-matches "dumbbells"). "db" is loose but standard in
+        # exercise catalogs.
+        "dumbbells": ["dumbbell", "db"],
+        "dumbbell": ["dumbbell", "db"],
+        # Bodyweight — empty string "" was matching EVERY exercise.
+        "bodyweight": ["bodyweight", "body weight"],
+        "body weight": ["bodyweight", "body weight"],
         # Kettlebell
         "kettlebell": ["kettlebell", "kb"],
         "kettlebells": ["kettlebell", "kb"],
@@ -1707,75 +1726,204 @@ def get_equipment_patterns(user_equip: str) -> List[str]:
         "resistance bands": ["band", "resistance band", "resistance"],
         "resistance band": ["band", "resistance band", "resistance"],
         "bands": ["band", "resistance band", "resistance"],
-        # Specialty equipment
-        "trx": ["trx", "suspension"],
+        # Smith machine (when user explicitly selects it as a SKU)
+        "smith machine": ["smith", "smith machine"],
+        # Suspension trainers
+        "trx": ["trx", "suspension", "ring"],
+        "trx/rings": ["trx", "suspension", "ring"],
+        "suspension": ["trx", "suspension", "ring"],
+        # Bars
         "pull-up bar": ["pull-up bar", "pull up bar", "pullup bar"],
-        "smith machine": ["smith machine", "smith"]
+        "pull up bar": ["pull-up bar", "pull up bar", "pullup bar"],
+        "dip bars": ["dip bars", "parallel bars"],
+        "parallel bars": ["dip bars", "parallel bars"],
+        # Bench (any flavor maps to the same pattern)
+        "bench": ["bench"],
+        "flat bench": ["bench"],
+        "incline bench": ["bench"],
+        "decline bench": ["bench"],
+        # Plates (Olympic plates) — shows up in some cable/barbell-adjacent
+        # exercises in the catalog.
+        "plates": ["plate", "weight plate"],
+        # Medicine / stability balls
+        "medicine ball": ["medicine ball", "med ball"],
+        "stability ball": ["stability ball", "swiss ball", "exercise ball"],
+        # Foam roller / landmine / sled (rarely picked by users but kept
+        # for completeness and parity with the Swift normalizer).
+        "foam roller": ["foam roller"],
+        "landmine": ["landmine"],
+        "sled": ["sled"],
+        "jump rope": ["jump rope", "skipping rope"],
     }
-    
+
     return patterns.get(equip, [equip])
 
+# Audit 2026-05-08: tightened equipment matcher — empty-string + bare 'bar' patterns false-positived
 def check_equipment_match(exercise_equipment: str, user_equipment: List[str], 
                           is_gym_user: bool) -> Tuple[bool, str]:
-    """Check if exercise equipment matches user's available equipment"""
+    """Check if exercise equipment matches user's available equipment.
+
+    BUGFIX 2026-05-08:
+    - Removed empty-string bodyweight pattern (auto-passed every exercise).
+    - Removed bare "bar"/"olympic" barbell patterns (auto-passed every "Pull-Up Bar"
+      / "Olympic" exercise for non-barbell users).
+    - Bench is no longer a globally-common item; it now requires the user to have
+      explicitly selected a bench, or to have dumbbell/barbell/machine (gym implies
+      bench access). Outdoor + bodyweight users no longer false-pass bench work.
+    - Specialized equipment (cable, machine, smith, kettlebell, band, TRX, dip bars,
+      pull-up bar, stability ball, medicine ball, landmine, sled) now requires an
+      explicit user-equipment match. Bodyweight-only users fail by construction.
+    """
     equip_lower = exercise_equipment.lower().strip()
     user_equip_lower = [e.lower() for e in user_equipment]
-    
+
     # Parse exercise equipment (e.g., "Bench, Barbell" -> ["bench", "barbell"])
     exercise_equip_parts = [p.strip() for p in equip_lower.split(',') if p.strip()]
-    
+
     # Handle empty or bodyweight equipment
     is_bodyweight = not exercise_equip_parts or equip_lower == 'bodyweight' or equip_lower == ''
-    
+
     if is_bodyweight:
-        # Check if user has bodyweight in their equipment list
         if any('bodyweight' in eq or 'body weight' in eq for eq in user_equip_lower):
             return True, "Bodyweight exercise - user has bodyweight selected"
-        
         # GYM USERS: Always allow gym-appropriate bodyweight exercises
-        # (pull-ups, dips, core exercises are normal at gyms)
+        # (pull-ups, dips, core exercises are normal at gyms).
         if is_gym_user:
             return True, "Bodyweight exercise allowed for gym user (core/pull-ups/dips are standard)"
-        
-        return False, f"Bodyweight exercise but user doesn't have bodyweight selected"
-    
-    # Common items always available at gyms or home
-    # NOTE: "chair", "wall", "step" are NOT included - they are home/improvised equipment
-    # and should only be used when user explicitly selects them
-    common_items = ["floor", "mat", "bench", "flat bench", "incline bench", 
-                    "decline bench", "preacher bench", "box"]
-    
-    missing_equipment = []
+        return False, "Bodyweight exercise but user doesn't have bodyweight selected"
+
+    # Pre-compute a flat set of all substring patterns the user has access to.
+    user_pattern_set: List[str] = []
+    for user_eq in user_equip_lower:
+        user_pattern_set.extend(_normalize_equipment_for_matching(user_eq))
+
+    # Convenience flags for the bench-is-implied-by-gym rule and for the
+    # bodyweight-only fast fail.
+    #
+    # 2026-05-08 audit fix — bare dumbbells no longer imply bench access.
+    # Outdoor users with a dumbbell pair were getting "Glute Bridge Skull
+    # Crusher (Dumbbells, Flat Bench)" because we previously inferred bench
+    # from any of dumbbell/barbell/machine. That over-grants for outdoor.
+    # Real-world: a bench is implied only when the user explicitly selected
+    # "Bench" OR has heavy gym indicators (machine / cable / smith / rack)
+    # since those rarely exist without a bench. A barbell setup almost always
+    # lives in a rack-bench combo, so we keep that. Dumbbell-only is no
+    # longer sufficient to imply a bench.
+    has_bench = any('bench' in eq for eq in user_equip_lower)
+    has_barbell = any(p in ('barbell', 'olympic bar') for p in user_pattern_set)
+    has_machine = any(p in ('machine', 'lever', 'press machine', 'curl machine',
+                             'row machine', 'extension machine', 'pulldown',
+                             'leg press', 'hack squat', 'plate-loaded',
+                             'lever machine', 'smith machine') for p in user_pattern_set)
+    has_cable = any('cable' in p or 'pulley' in p for p in user_pattern_set)
+    has_rack = any('rack' in eq for eq in user_equip_lower)
+    bench_implied = has_bench or has_barbell or has_machine or has_cable or has_rack
+
+    only_bodyweight = (
+        len(user_equip_lower) > 0
+        and all(eq in ('bodyweight', 'body weight', '') for eq in user_equip_lower)
+    )
+
+    # Items that are universally available — a gym/home/outdoor user never
+    # needs to select these explicitly. Note: "bench" is NOT in this list
+    # (handled separately below). Note: "chair", "wall", "step" are also
+    # NOT here — those are home/improvised SKUs.
+    common_items = [
+        "floor", "mat", "body weight", "bodyweight", "box", "anchor point",
+        "door anchor", "rack", "support", "none",
+    ]
+
+    # Specialized equipment that MUST match a user-selected SKU. Each entry
+    # is (req-substring → required-pattern-list). If `req` contains the
+    # substring, the user must have at least one of the required patterns.
+    SPECIALIZED: List[Tuple[str, List[str]]] = [
+        ("smith machine",   ["smith", "smith machine"]),
+        ("cable",           ["cable", "cable machine", "pulley"]),
+        ("pulley",          ["cable", "cable machine", "pulley"]),
+        ("barbell",         ["barbell", "olympic bar"]),
+        ("dumbbell",        ["dumbbell", "db"]),
+        ("kettlebell",      ["kettlebell", "kb"]),
+        ("resistance band", ["band", "resistance band", "resistance"]),
+        ("band",            ["band", "resistance band", "resistance"]),
+        ("trx",             ["trx", "suspension", "ring"]),
+        ("suspension",      ["trx", "suspension", "ring"]),
+        ("ring",            ["trx", "suspension", "ring"]),
+        ("pull-up bar",     ["pull-up bar", "pull up bar", "pullup bar"]),
+        ("pull up bar",     ["pull-up bar", "pull up bar", "pullup bar"]),
+        ("dip bars",        ["dip bars", "parallel bars"]),
+        ("parallel bars",   ["dip bars", "parallel bars"]),
+        ("stability ball",  ["stability ball", "swiss ball", "exercise ball"]),
+        ("swiss ball",      ["stability ball", "swiss ball", "exercise ball"]),
+        ("medicine ball",   ["medicine ball", "med ball"]),
+        ("foam roller",     ["foam roller"]),
+        ("landmine",        ["landmine"]),
+        ("sled",            ["sled"]),
+        ("jump rope",       ["jump rope", "skipping rope"]),
+        # "machine" / "lever" go LAST so the more-specific "smith machine"
+        # / "cable machine" matchers above run first.
+        ("machine",         ["machine", "lever", "press machine", "curl machine",
+                             "row machine", "extension machine", "pulldown",
+                             "leg press", "hack squat", "plate-loaded",
+                             "lever machine"]),
+        ("lever",           ["machine", "lever", "lever machine"]),
+        ("plate-loaded",    ["machine", "lever", "plate-loaded"]),
+    ]
+
+    missing_equipment: List[str] = []
     for req in exercise_equip_parts:
-        # Skip common items
+        # Skip universally-common items.
         if any(common in req for common in common_items):
             continue
-        
+
+        # Bench: pass IF user explicitly selected bench, OR has gym-implied
+        # bench access (dumbbell/barbell/machine). A bodyweight-only outdoor
+        # user fails here, which is the exact bug the audit caught.
+        if 'bench' in req:
+            if bench_implied:
+                continue
+            missing_equipment.append(req)
+            continue
+
+        # Specialized equipment — require an explicit pattern match.
+        hit_specialized = False
+        matched = False
+        for needle, required_patterns in SPECIALIZED:
+            if needle in req:
+                hit_specialized = True
+                # Bodyweight-only user can never satisfy specialized gear.
+                if not only_bodyweight and any(
+                    p in user_pattern_set for p in required_patterns
+                ):
+                    matched = True
+                break
+
+        if hit_specialized:
+            if matched:
+                continue
+            missing_equipment.append(req)
+            continue
+
+        # Generic fallback: any user pattern that appears in the required
+        # token, OR any user-equipment string that is a substring of (or
+        # contains) the required token. Conservative — we only accept
+        # patterns we explicitly normalized, and we no longer accept
+        # `req in pattern` (that's how "bar" used to match "Pull-Up Bar").
         found = False
-        
-        # For each user equipment, get the patterns it matches
-        for user_eq in user_equip_lower:
-            patterns = get_equipment_patterns(user_eq)
-            
-            # Check if any pattern matches the required equipment
-            for pattern in patterns:
-                if pattern in req or req in pattern:
+        for pattern in user_pattern_set:
+            if pattern and pattern in req:
+                found = True
+                break
+        if not found:
+            for user_eq in user_equip_lower:
+                if user_eq and (user_eq in req or req in user_eq):
                     found = True
                     break
-            
-            # Also do direct string matching as fallback
-            if req in user_eq or user_eq in req:
-                found = True
-            
-            if found:
-                break
-        
         if not found:
             missing_equipment.append(req)
-    
+
     if missing_equipment:
         return False, f"Missing equipment: {', '.join(missing_equipment)} - user has {user_equipment}"
-    
+
     return True, f"Equipment match: {exercise_equipment}"
 
 def check_gym_appropriateness(exercise_name: str, exercise_equipment: str, 
@@ -1881,7 +2029,14 @@ def check_weight_appropriateness(exercise_name: str, user: UserProfile) -> Tuple
 def check_practicality(exercise_name: str, user: UserProfile) -> Tuple[bool, str]:
     """Check if exercise is practical (not obscure/weird)"""
     name_lower = exercise_name.lower()
-    
+
+    # 🚨 SAFETY (Audit 2026-05-08 Round 3 fix #3 — user-26, 68y, 4× decline chest)
+    # Decline angle places the head below the heart, elevating intracranial pressure
+    # and systolic BP to the head/eyes. For users 65+, the cardiovascular / stroke
+    # risk outweighs chest-development upside. Mirrors Swift assessExercisePracticality().
+    if user.age >= 65 and "decline" in name_lower:
+        return False, "Decline-angle exercise blocked for users 65+ — increases intracranial pressure / blood pressure to head"
+
     # Check for obscure patterns
     for pattern in OBSCURE_PATTERNS:
         if pattern in name_lower:
@@ -1907,6 +2062,36 @@ def check_practicality(exercise_name: str, user: UserProfile) -> Tuple[bool, str
         for pattern in beginner_blocked:
             if pattern in name_lower:
                 return False, f"Blocked for beginners: '{pattern}'"
+    
+    # SPECIALTY VARIANT FILTER (canonical patterns in
+    # `specialty_exercise_filter.py` — keep that module as the single
+    # source of truth; both this script and Swift's
+    # SmartExerciseSelectionEngine.assessExercisePracticality() mirror it).
+    # Catches "Feet On Bench Bench Press", "Pause Squat", "21s Curl",
+    # "Pendlay Row", etc. before they ever make it into the candidate pool.
+    try:
+        from specialty_exercise_filter import is_blocked_for_level, is_complex_hybrid_name
+        level_str = (
+            user.experience_level.value
+            if hasattr(user.experience_level, "value")
+            else str(user.experience_level)
+        )
+        sp_match = is_blocked_for_level(exercise_name, level_str)
+        if sp_match.matched:
+            return False, (
+                f"Specialty variant '{sp_match.pattern}' blocked at "
+                f"{level_str}: {sp_match.rationale}"
+            )
+        # COMPLEX-HYBRID NAME FILTER (Round 4 fix — 108 obscure_exercise hits).
+        # Catches catalog-corrupted multi-movement names like "Push Up - Tricep
+        # Extension" or "Romanian Deadlift Bicep Curl Kickback" at every level.
+        hybrid_reason = is_complex_hybrid_name(exercise_name)
+        if hybrid_reason:
+            return False, f"Complex hybrid name blocked: {hybrid_reason}"
+    except ImportError:
+        # Module not on the path — soft-fail so this script still runs
+        # standalone. The orchestrator's post-pass will catch the slips.
+        pass
     
     return True, "Practical exercise"
 
@@ -2068,6 +2253,55 @@ def calculate_exercise_score(exercise: Dict, user: UserProfile,
             score += 50  # Additional boost for essential movements
         else:
             score += 20
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # CANONICAL COMPOUND SUPER-BOOST (Audit Round 4 → Round 5 fix)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # The "perfect" autogen always favors the canonical version of a movement
+    # over any modifier variant — even when the variant survives the specialty
+    # filter. e.g. "Barbell Bench Press" should always outscore "Close-Grip
+    # Bench Press" (when both are eligible) because the canonical version is
+    # the lifelong staple. This boost is intentionally LARGE so it dominates
+    # other scoring contributions when a canonical match exists.
+    CANONICAL_COMPOUND_NAMES = (
+        # The shortest, most-common name for each foundational compound family.
+        # Substring match — names that contain these as substrings get the boost
+        # ONLY if they don't contain disqualifying modifiers.
+        "barbell bench press", "dumbbell bench press", "incline bench press",
+        "incline dumbbell press", "machine chest press", "lever chest press",
+        "back squat", "front squat", "goblet squat", "leg press", "hack squat",
+        "conventional deadlift", "romanian deadlift", "barbell deadlift",
+        "trap bar deadlift",  # Note: trap-bar is BLOCK_BEGINNER specialty,
+                              # so beginners won't reach this; intermediates+
+                              # get the boost (hex bar is a great compound).
+        "barbell row", "bent over row", "chest supported row", "seated cable row",
+        "dumbbell row", "machine row", "lat pulldown", "pull up", "chin up",
+        "overhead press", "shoulder press", "machine shoulder press",
+        "dip", "parallel bar dip", "machine dip",
+    )
+    DISQUALIFYING_MODIFIERS = (
+        # Modifiers that turn a canonical name into a variant — exclude them
+        # from the super-boost.
+        "feet on", "feet up", "feet elevated", "legs raised", "spoto",
+        "pin ", " pin", "paused", "pause", "tempo", "1 1/4", "1.5",
+        "deficit", "deep ", "sissy", "anderson", "zercher", "jefferson",
+        "box ", "heels elevated", "front foot elevated",
+        "deficit deadlift", "stiff leg", "rack pull", "block pull",
+        "snatch grip", "clean grip", "yates", "pendlay", "meadows",
+        "kroc", "z press", "savickas", "viking", "squeeze",
+        "isometric hold", " 21s", "21s ", "drag curl", "zottman",
+        "reverse grip", "close grip", "wide grip", "wide bench",
+        "guillotine", "eccentric only", "rest pause", "myo-rep", "myo rep",
+        "cluster set", "drop set", "with chains", "banded ", "slingshot",
+        "long pause", "board press", "jm press", "dead stop bench",
+        "swing to ", "swing clean grip", "reverse plank march",
+        "leg extension plank", "deep squat turn", "lunge with internal",
+        "reverse lunge forward lunge",
+    )
+    is_canonical_compound = any(c in name_lower for c in CANONICAL_COMPOUND_NAMES)
+    has_modifier = any(m in name_lower for m in DISQUALIFYING_MODIFIERS)
+    if is_canonical_compound and not has_modifier:
+        score += 200  # Large boost so canonical version reliably wins its slot
     
     # VARIETY PENALTY - avoid similar exercises
     for selected in already_selected:
@@ -2584,6 +2818,112 @@ def get_exercise_count_for_duration(duration_minutes: int) -> int:
         return 6  # Note: 7 only with fast equipment transitions (handled elsewhere)
     else:
         return 8  # Hard cap
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Angle stacking cap (Audit 2026-05-08 Round 3 fix #2)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors Fit33/WorkoutComboRules.swift `maxPerAngle` + `angleClassification` +
+# `wouldExceedAngleCap`. user-15 / user-26 of the 50-user audit got 4× decline
+# chest in a single workout. Same angle = same shoulder-girdle position =
+# same fiber recruitment bias. Cap at 2.
+MAX_PER_ANGLE = 2
+
+
+def angle_classification(exercise_name: str) -> Optional[str]:
+    """Classify by press/pull ANGLE: 'decline', 'incline', 'flat', 'vertical', or None.
+
+    None = "not an angled press/pull" → angle cap doesn't apply.
+    Order matters: decline before flat (so "decline bench press" ≠ flat).
+    """
+    n = exercise_name.lower()
+    if "decline" in n:
+        return "decline"
+    if "incline" in n:
+        return "incline"
+    if "overhead" in n or "shoulder press" in n or "military press" in n:
+        return "vertical"
+    if "flat bench" in n:
+        return "flat"
+    if "bench press" in n or "chest press" in n:
+        return "flat"
+    return None
+
+
+def would_exceed_angle_cap(adding_name: str, existing_names: List[str]) -> bool:
+    """True if adding this exercise would push same-angle count over MAX_PER_ANGLE."""
+    candidate_angle = angle_classification(adding_name)
+    if candidate_angle is None:
+        return False
+    same_angle_count = sum(1 for n in existing_names if angle_classification(n) == candidate_angle)
+    return same_angle_count >= MAX_PER_ANGLE
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Compound-first stable sort (Audit 2026-05-08 Round 3 fix #1)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors Fit33/SmartExerciseSelectionEngine.sortCompoundFirst(_:). Round 3
+# audit flagged `compound_after_isolation` 42 times. Stable partition keeps
+# original within-bucket order — no score-based re-shuffling.
+
+# Single-joint isolation keywords mirror FoundationalExerciseDatabase.isSingleJointIsolation
+_ISOLATION_KEYWORDS = (
+    # Triceps
+    "skull crusher", "skullcrusher", "tricep extension", "tricep kickback",
+    "tricep pushdown", "overhead tricep",
+    # Biceps
+    "bicep curl", "hammer curl", "preacher curl", "concentration curl",
+    "spider curl", "incline curl",
+    # Shoulders (face pull is borderline; ordered with isolation)
+    "lateral raise", "front raise", "rear delt fly", "rear delt raise",
+    "reverse fly", "face pull",
+    # Legs
+    "leg extension", "leg curl", "calf raise", "hip abduction",
+    "hip adduction", "glute kickback",
+    # Chest (single-joint chest)
+    "pec deck", "chest fly", "cable fly", "cable crossover",
+    # Core (most core work is isolation)
+    "crunch", "sit-up", "sit up", "plank", "russian twist", "oblique",
+)
+
+# Compound keywords (mirror Swift `is_compound` heuristic in audit + engine).
+_COMPOUND_KEYWORDS = (
+    "bench press", "chest press", "shoulder press", "overhead press",
+    "military press", "incline press", "decline press", "push press",
+    "squat", "deadlift", "rdl", "romanian", "lunge", "split squat",
+    "step up", "leg press", "hack squat", "good morning",
+    "row", "pulldown", "pull up", "pull-up", "chin up", "chin-up",
+    "dip", "hip thrust",
+)
+
+
+def _is_single_joint_isolation(name: str) -> bool:
+    n = name.lower()
+    return any(kw in n for kw in _ISOLATION_KEYWORDS)
+
+
+def _is_effective_compound(name: str) -> bool:
+    """Mirror of Swift `effectiveIsCompound`: name-pattern overrides catalog mis-labels.
+
+    A name that contains a compound keyword AND does NOT match the single-joint
+    isolation list is treated as compound for ordering purposes.
+    """
+    n = name.lower()
+    if _is_single_joint_isolation(n):
+        return False
+    return any(kw in n for kw in _COMPOUND_KEYWORDS)
+
+
+def sort_compound_first(selected: List[Dict]) -> List[Dict]:
+    """Stable partition: every compound first (in original order), then every isolation
+    (in original order). No within-bucket re-shuffle.
+
+    Example input order [squat, leg_curl, lunge, leg_extension] →
+            output order [squat, lunge, leg_curl, leg_extension].
+    """
+    compounds = [ex for ex in selected if _is_effective_compound(ex.get("name", ""))]
+    isolations = [ex for ex in selected if not _is_effective_compound(ex.get("name", ""))]
+    return compounds + isolations
+
 
 def select_exercises_for_workout(exercises: List[Dict], user: UserProfile, 
                                   target_muscles: List[str], count: int = None) -> List[Dict]:
@@ -3409,6 +3749,15 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
         if used_equipment[equip_category] >= max_per_equipment:
             continue
         
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # 🛡️ ANGLE-STACKING CAP (Audit 2026-05-08 Round 3 fix #2)
+        # Mirrors Swift WorkoutComboRules.wouldExceedAngleCap. Caps same-angle
+        # press/pull stacks at MAX_PER_ANGLE (= 2). user-15 / user-26 had 4×
+        # decline chest in Round 3 — this is the corrective hard ceiling.
+        # ═══════════════════════════════════════════════════════════════════════════════
+        if would_exceed_angle_cap(name, [s.get("name", "") for s in selected]):
+            continue
+
         # Generate selection reasoning BEFORE adding to selected
         reasoning = generate_selection_reasoning(ex, user, target_muscles, {"score": score})
         ex['selection_reasoning'] = reasoning
@@ -3627,6 +3976,15 @@ def select_exercises_for_workout(exercises: List[Dict], user: UserProfile,
         else:
             print(f"\n✅ [VALIDATION PASSED] All required patterns present")
     
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # FINAL PASS — Compound-first STABLE sort (Audit 2026-05-08 Round 3 fix #1)
+    # Mirrors Swift sortCompoundFirst(_:). Round 3 audit flagged
+    # `compound_after_isolation` 42 times. Stable partition preserves the
+    # original within-bucket pick order — no score-based re-shuffling.
+    # MUST be the LAST step before return.
+    # ═══════════════════════════════════════════════════════════════════════════════
+    selected = sort_compound_first(selected)
+
     print(f"\nSelected {len(selected)} exercises")
     for ex in selected:
         balance_tag = " [BALANCE]" if ex.get('is_balance_slot') else ""

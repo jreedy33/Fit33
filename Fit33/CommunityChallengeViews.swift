@@ -716,7 +716,18 @@ struct CommunityLeaderboardWidget: View {
     @ObservedObject private var communityService = CommunityChallengeService.shared
     @ObservedObject private var progressResolver = ChallengeProgressResolver.shared
     let challenge: CommunityChallenge
-    
+    /// Pre-join preview mode. When non-nil, the widget renders a static
+    /// "what this community looks like" snapshot:
+    ///  • rank badge → green Join button (calls the closure on tap)
+    ///  • my-stats banner hidden (no progress yet)
+    ///  • footer / "see full leaderboard" hidden (no nav surface)
+    /// The leaderboard rows themselves still render with real scores so
+    /// the user sees the activity scale + people they know in there.
+    /// Default `nil` preserves every existing call site (live mode).
+    var previewJoin: (() -> Void)? = nil
+
+    private var isPreview: Bool { previewJoin != nil }
+
     private var themeColor: Color { resolvedType.color }
     private var themeGradient: [Color] { resolvedType.gradientColors }
     
@@ -756,7 +767,7 @@ struct CommunityLeaderboardWidget: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // ── Header: Challenge identity + your rank ──
+            // ── Header: Challenge identity + your rank (or Join CTA in preview) ──
             challengeHeader
             
             // ── Compact rules summary ──
@@ -776,7 +787,11 @@ struct CommunityLeaderboardWidget: View {
             }
             
             // ── Your stats banner ──
-            myStatsBanner
+            // Skip in preview mode — the user hasn't joined, so there
+            // are no "my today / streak / best" numbers to surface yet.
+            if !isPreview {
+                myStatsBanner
+            }
             
             // ── Mini leaderboard rows ──
             if !topEntries.isEmpty {
@@ -786,7 +801,13 @@ struct CommunityLeaderboardWidget: View {
             }
             
             // ── Footer: See full leaderboard ──
-            footerBar
+            // Skip in preview mode — there's no live progress bar yet
+            // and tapping should join, not navigate to a detail page.
+            if !isPreview {
+                footerBar
+            } else {
+                previewFooterSpacer
+            }
         }
         .background(
             ZStack {
@@ -886,8 +907,25 @@ struct CommunityLeaderboardWidget: View {
             
             Spacer()
             
-            // Rank badge
-            if let rank = challenge.myRank, rank > 0 {
+            // Trailing slot: Join CTA in preview mode, otherwise the
+            // user's rank badge. Only one renders at a time so the
+            // header stays balanced regardless of mode.
+            if let onJoin = previewJoin {
+                Button(action: onJoin) {
+                    Text("Join")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, 8)
+                        .background(
+                            LinearGradient(colors: themeGradient, startPoint: .leading, endPoint: .trailing)
+                        )
+                        .clipShape(Capsule())
+                        .shadow(color: themeColor.opacity(0.35), radius: 6, x: 0, y: 3)
+                }
+                .accessibilityLabel("Join \(challenge.title)")
+            } else if let rank = challenge.myRank, rank > 0 {
                 VStack(spacing: 1) {
                     Text(rankEmoji(for: rank) ?? "#\(rank)")
                         .font(rankEmoji(for: rank) != nil ? .system(size: 20) : .system(size: 14, weight: .bold, design: .rounded))
@@ -906,6 +944,18 @@ struct CommunityLeaderboardWidget: View {
         .padding(.horizontal, Spacing.md)
         .padding(.top, 14)
         .padding(.bottom, 10)
+    }
+
+    // MARK: - Preview Footer Spacer
+    //
+    // In preview mode we drop the live `footerBar` (progress bar +
+    // chevron). The mini-leaderboard's bottom-padding alone leaves the
+    // bottom corners of the card looking too tight against the last
+    // row, so we add a small breathing-room spacer that matches the
+    // card's bottom corner radius.
+    private var previewFooterSpacer: some View {
+        Color.clear
+            .frame(height: 8)
     }
     
     // MARK: - Friends Row
@@ -2682,8 +2732,15 @@ struct PrivateChallengeJoinSheet: View {
 struct FriendDiscoveryCard: View {
     @Environment(\.colorScheme) private var colorScheme
     let challenge: DiscoverableCommunityChallenge
+    /// When true, surfaces "contact in this" / "contacts in this" copy
+    /// instead of the default "is in this" / "are in this" — used by
+    /// the onboarding Community step where the listed people are synced
+    /// phone contacts (PYMK / contacts-on-Fit33) and aren't friends of
+    /// the new user yet. Default `false` preserves existing call sites
+    /// in the regular Community Hub where these people ARE friends.
+    var usesContactsWording: Bool = false
     let onJoin: () -> Void
-    
+
     private var friends: [CommunityFriendInfo] {
         challenge.friendsInChallenge ?? []
     }
@@ -2756,16 +2813,25 @@ struct FriendDiscoveryCard: View {
                     }
                 }
                 
-                // Friend name text
+                // Friend name text — wording flips to "contact(s) in this"
+                // when the surfaced people are synced phone contacts
+                // (onboarding PYMK case) rather than already-friends.
                 if friends.count == 1 {
-                    Text("\(friends[0].displayName.components(separatedBy: " ").first ?? friends[0].displayName) is in this")
+                    let firstName = friends[0].displayName.components(separatedBy: " ").first ?? friends[0].displayName
+                    let line = usesContactsWording
+                        ? "\(firstName) is a contact in this"
+                        : "\(firstName) is in this"
+                    Text(line)
                         .font(.caption)
                         .foregroundColor(tc.opacity(0.7))
                         .lineLimit(1)
                 } else {
                     let firstNames = friends.prefix(2).map { $0.displayName.components(separatedBy: " ").first ?? $0.displayName }
                     let extra = friends.count > 2 ? " +\(friends.count - 2)" : ""
-                    Text("\(firstNames.joined(separator: ", "))\(extra) are in this")
+                    let line = usesContactsWording
+                        ? "\(firstNames.joined(separator: ", "))\(extra) are contacts in this"
+                        : "\(firstNames.joined(separator: ", "))\(extra) are in this"
+                    Text(line)
                         .font(.caption)
                         .foregroundColor(tc.opacity(0.7))
                         .lineLimit(1)

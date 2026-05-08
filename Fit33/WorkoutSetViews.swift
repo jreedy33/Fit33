@@ -102,6 +102,11 @@ struct SetRowView: View {
     var useKg: Bool = false
     @ObservedObject var restTimer: RestTimer
     var autoStartTimer: Bool = true
+    // True when the parent exercise's equipment is dumbbell-based.
+    // Renders an "each" clarifier under the weight field so users know to
+    // enter the weight of ONE dumbbell — bug 996ca300. Storage stays
+    // per-dumbbell; this is purely a labeling affordance.
+    var isDumbbell: Bool = false
     
     @State private var weightText: String = ""
     @State private var repsText: String = ""
@@ -206,14 +211,24 @@ struct SetRowView: View {
                         .stroke(Color.blue, lineWidth: isWeightFocused ? 2 : 0)
                 )
                 .shadow(color: isWeightFocused ? Color.blue.opacity(0.4) : Color.clear, radius: 4)
-                .accessibilityLabel("Weight in \(useKg ? "kilograms" : "pounds")")
+                .accessibilityLabel(weightAccessibilityLabel)
                 .accessibilityHint("Enter weight for set \(setNumber)")
                 .onLongPressGesture(minimumDuration: 0.5) {
                     HapticManager.impact(.medium)
                     onOpenPlateCalculator?()
                 }
-                
-                
+
+                // Dumbbell clarifier — bug 996ca300. Sits directly below the
+                // weight field so it reads as a unit on the field, matching
+                // the "LB"/"KG" column header rhythm above. `isPerSideMode`
+                // wins if both happen to be true (per-side is barbell-only,
+                // but defensive: never show two conflicting clarifiers).
+                if isDumbbell && !isPerSideMode {
+                    Text("each")
+                        .font(.ds_caption)
+                        .foregroundColor(.secondary)
+                        .accessibilityHidden(true)
+                }
             }
             .onChange(of: weightText) { _, newValue in
                 weightDebounceTask?.cancel()
@@ -497,5 +512,20 @@ struct SetRowView: View {
     private func parseWeight(_ text: String) -> Double? {
         let normalized = text.replacingOccurrences(of: ",", with: ".")
         return Double(normalized)
+    }
+
+    /// VoiceOver-friendly weight-field label.
+    ///
+    /// The visible "each" caption under the field is decorative-hidden
+    /// (`accessibilityHidden(true)`) so it doesn't double-read; the
+    /// disambiguation lives here as part of the field's primary label.
+    /// Bug 996ca300 — VoiceOver users must hear the per-dumbbell convention
+    /// the same way sighted users see it.
+    private var weightAccessibilityLabel: String {
+        let unit = useKg ? "kilograms" : "pounds"
+        if isDumbbell && !isPerSideMode {
+            return "Weight per dumbbell in \(unit)"
+        }
+        return "Weight in \(unit)"
     }
 }

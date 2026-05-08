@@ -94,6 +94,10 @@ struct PrivateChallengeCreationFlow: View {
         return Array(sorted.filter { !engagedIds.contains($0.friendId) }.prefix(3))
     }
     
+    private var combinedHighlightFriends: [Friend] {
+        highlightMostEngaged + highlightNewestAdded
+    }
+    
     /// Whether to show the 3×2 highlight at all — match FriendsListView's
     /// "only when at least 3 friends" gate.
     private var showFloatingHeads: Bool {
@@ -852,33 +856,18 @@ struct PrivateChallengeCreationFlow: View {
         }
     }
     
-    /// 3×2 grid of top friends. Tapping a bubble toggles invite selection.
+    /// Horizontal strip of highlighted friends (most engaged + newest). Tapping a bubble toggles invite selection.
     private var topFriendsInviteHighlight: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                ForEach(highlightMostEngaged) { friend in
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Spacing.md) {
+                ForEach(combinedHighlightFriends) { friend in
                     inviteFriendBubble(friend: friend)
-                }
-                if highlightMostEngaged.count < 3 {
-                    ForEach(0..<(3 - highlightMostEngaged.count), id: \.self) { _ in
-                        Color.clear.frame(maxWidth: .infinity)
-                    }
+                        .frame(width: 88)
                 }
             }
-            
-            if !highlightNewestAdded.isEmpty {
-                HStack(spacing: 12) {
-                    ForEach(highlightNewestAdded) { friend in
-                        inviteFriendBubble(friend: friend)
-                    }
-                    if highlightNewestAdded.count < 3 {
-                        ForEach(0..<(3 - highlightNewestAdded.count), id: \.self) { _ in
-                            Color.clear.frame(maxWidth: .infinity)
-                        }
-                    }
-                }
-            }
+            .padding(.horizontal, 22)
         }
+        .scrollClipDisabled()
     }
     
     /// Single bubble used in the 3×2 highlight. Mirrors FriendsListView's

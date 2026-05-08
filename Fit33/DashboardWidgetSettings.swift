@@ -12,6 +12,7 @@ struct WidgetSettingsSheet: View {
     @Binding var showStrava: Bool
     @Binding var showCardio: Bool
     @Binding var showOlympian: Bool
+    @Binding var showRecentActivity: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var premiumManager = PremiumManager.shared
@@ -113,6 +114,18 @@ struct WidgetSettingsSheet: View {
                             subtitle: "Streak status & one-tap walk start",
                             gradientColors: [Color.green, Color.orange],
                             isSelected: $showCardio
+                        )
+
+                        // Recent Activity — premium-gated, OFF by default
+                        // (Sprint 2026-05-08). Surfaced here so power users
+                        // can opt back into the bottom-of-dashboard recent
+                        // workouts list. Always renders last when enabled.
+                        widgetOptionRow(
+                            icon: "clock.fill",
+                            title: "Recent Activity",
+                            subtitle: "Latest workouts at the bottom of Home",
+                            gradientColors: [Color.blue, Color.cyan],
+                            isSelected: $showRecentActivity
                         )
 
                         // 2026-05-04 — Path to 33 (annual Olympian track).

@@ -433,10 +433,22 @@ final class ExerciseSwapService: ObservableObject {
         }
         
         if !userEquipment.isEmpty {
-            let userEquipLower = Set(userEquipment.map { $0.lowercased() })
+            // Bug-intel `bb7d7da0` (FE invariant 25 — equipment must match user
+            // inventory). The previous filter compared the snake_case
+            // `equipmentCategory` field against the user's display-name
+            // selection list ("Dumbbells", "Cables") and silently bypassed
+            // missing-category rows by defaulting to "bodyweight" — which
+            // let Barbell-only exercises with a NULL `equipmentCategory`
+            // leak through as if they were bodyweight. Route through the
+            // canonical `userHasRequiredEquipment` filter (same one the
+            // auto-gen path uses) so plural/singular, snake_case → display,
+            // and "bench-implied-by-machines" cases resolve identically.
             variants = variants.filter { candidate in
-                let equipCat = (candidate.value(forKey: "equipmentCategory") as? String ?? "bodyweight").lowercased()
-                return userEquipLower.contains(equipCat) || equipCat == "bodyweight"
+                ExerciseFilterService.userHasRequiredEquipment(
+                    exerciseEquipment: candidate.equipment,
+                    exerciseName: candidate.name,
+                    userEquipment: userEquipment
+                )
             }
         }
         
@@ -500,12 +512,19 @@ final class ExerciseSwapService: ObservableObject {
             return families.contains(candidateFamily)
         }
         
-        // Filter by user equipment
+        // Filter by user equipment via the canonical
+        // `userHasRequiredEquipment` filter (bug-intel `bb7d7da0`, see note
+        // in `getEquipmentVariants`). Reads the actual `equipment` field
+        // (which carries the full requirement string, e.g.
+        // "Barbell, Bench") — unlike `equipmentCategory` which can be NULL
+        // for legacy rows and was silently treated as "bodyweight".
         if !userEquipment.isEmpty {
-            let userEquipLower = Set(userEquipment.map { $0.lowercased() })
             complementary = complementary.filter { candidate in
-                let equipCat = (candidate.value(forKey: "equipmentCategory") as? String ?? "bodyweight").lowercased()
-                return userEquipLower.contains(equipCat) || equipCat == "bodyweight"
+                ExerciseFilterService.userHasRequiredEquipment(
+                    exerciseEquipment: candidate.equipment,
+                    exerciseName: candidate.name,
+                    userEquipment: userEquipment
+                )
             }
         }
         
@@ -626,10 +645,14 @@ final class ExerciseSwapService: ObservableObject {
         }
 
         if !userEquipment.isEmpty {
-            let userEquipLower = Set(userEquipment.map { $0.lowercased() })
+            // Bug-intel `bb7d7da0` — same canonical `userHasRequiredEquipment`
+            // gate as `getEquipmentVariants` / `getComplementaryExercises`.
             candidates = candidates.filter { candidate in
-                let equipCat = (candidate.value(forKey: "equipmentCategory") as? String ?? "bodyweight").lowercased()
-                return userEquipLower.contains(equipCat) || equipCat == "bodyweight"
+                ExerciseFilterService.userHasRequiredEquipment(
+                    exerciseEquipment: candidate.equipment,
+                    exerciseName: candidate.name,
+                    userEquipment: userEquipment
+                )
             }
         }
 

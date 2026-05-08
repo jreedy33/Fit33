@@ -234,6 +234,37 @@ enum NetworkErrorClassifier {
             return .transientNetwork
         }
 
+        // PostgREST schema-cache misses (PGRST202 / PGRST204) — fired in the
+        // 5-12min window between a migration committing a new function /
+        // column and PostgREST's API-node cache rebuilding from `pg_catalog`
+        // (Supabase invariant 19b). The migration's trailing `NOTIFY pgrst,
+        // 'reload schema'` normally collapses this window to <1s, but a
+        // user who opens the app DURING propagation hits PGRST202 once,
+        // then never again. Bucket as transient so a one-shot deploy
+        // race doesn't manufacture a per-build fingerprint. Mirrors the
+        // server-side `bug_intel_noise_filter` row `pgrst_schema_cache_miss`.
+        // (Bug-intel `840673f1` — batch_check_achievements PGRST202, single
+        // occurrence on 2026-05-08 deploy.)
+        if lower.contains("could not find the function")
+            || lower.contains("could not find the '") // PGRST204 column form
+            || lower.contains("pgrst202")
+            || lower.contains("pgrst204")
+            || lower.contains("schema cache") {
+            return .transientNetwork
+        }
+
+        // Friend request server-side idempotency — when `accept_friend_request`
+        // RPC raises P0001 ("Friend request not found or already processed")
+        // it means a previous accept call already won (network flap, double-tap,
+        // multi-device race). The local `pendingRequests.removeAll` already
+        // dropped the row from the UI, so the user's intent is satisfied.
+        // Mirrors the server-side `bug_intel_noise_filter` row
+        // `friend_request_already_processed`. (Bug-intel `d1d2767a`.)
+        if lower.contains("friend request not found or already processed")
+            || lower.contains("friend request already processed") {
+            return .expectedUserState
+        }
+
         return .realError
     }
 

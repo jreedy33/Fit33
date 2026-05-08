@@ -1,0 +1,1071 @@
+{
+  "started_at": "2026-05-08T10:54:44",
+  "args": {
+    "users": 5,
+    "workouts_per_user": 2,
+    "seed": 42,
+    "no_claude": true,
+    "max_reviews": null,
+    "output_dir": "/Users/josephreed/Desktop/Workout App/scripts/output"
+  },
+  "drift_notes": [
+    {
+      "area": "fitness_goals",
+      "status": "synced",
+      "note": "6 goals (Build Muscle / Lose Weight / Get Stronger / Stay Active / Build Endurance / Improve Health) match Fit33/NewOnboardingView+Steps.swift line ~525."
+    },
+    {
+      "area": "experience_levels",
+      "status": "synced",
+      "note": "3 levels (Beginner / Intermediate / Advanced) match Fit33/NewOnboardingView+Steps.swift line ~557."
+    },
+    {
+      "area": "locations",
+      "status": "synced",
+      "note": "4 locations (gym/home/outdoor/hybrid) match Fit33/WorkoutGeneratorSelectionView.swift `EquipmentLocation`."
+    },
+    {
+      "area": "gym_equipment",
+      "status": "synced",
+      "note": "9 SKUs match Fit33/WorkoutGeneratorSelectionView.swift `equipmentOptions` for gym."
+    },
+    {
+      "area": "specialty_filter",
+      "status": "ENFORCED-IN-AUDIT",
+      "note": "Specialty variant pattern filter is applied in this script (`specialty_exercise_filter.py`). The Swift app's filter is being updated to mirror this list."
+    },
+    {
+      "area": "python_selection_logic",
+      "status": "STALE",
+      "note": "comprehensive_autogen_audit.select_exercises_for_workout() was last updated Mar 2026; the live Swift selector has had ~2 months of changes (cardio Phase 1, readiness adaptive autogen, etc.). The simulator's exercise selection is APPROXIMATE; trust the Claude review for workout-level correctness."
+    },
+    {
+      "area": "readiness_override",
+      "status": "NOT-MODELED",
+      "note": "Wearable readiness band (red/yellow/green) recovery override is NOT simulated. Live red-recovery would replace the workout with a mobility session; this audit always generates a strength workout."
+    },
+    {
+      "area": "cardio_phase_1",
+      "status": "NOT-MODELED",
+      "note": "Cardio gamification (Sprint 2 Q2-5) is out of scope for this simulator \u2014 strength workouts only."
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "name": "Tobias Miller",
+      "age": 64,
+      "gender": "Male",
+      "weight_lbs": 140,
+      "height_inches": 71,
+      "experience_level": "Intermediate",
+      "fitness_goal": "Improve Health",
+      "workout_location": "outdoor",
+      "available_equipment": [
+        "Bands",
+        "Dip Bars",
+        "Dumbbells",
+        "TRX/Rings",
+        "Medicine Ball",
+        "Jump Rope",
+        "Bodyweight"
+      ],
+      "injuries": [],
+      "workouts_completed": 46,
+      "preferred_workout_duration": 60,
+      "available_days_per_week": 3,
+      "notes": "Synth profile #1 \u2014 stratified across gender/level/location/goal"
+    },
+    {
+      "id": 2,
+      "name": "Nicole Silva",
+      "age": 18,
+      "gender": "Female",
+      "weight_lbs": 172,
+      "height_inches": 70,
+      "experience_level": "Advanced",
+      "fitness_goal": "Build Muscle",
+      "workout_location": "outdoor",
+      "available_equipment": [
+        "Bands",
+        "TRX/Rings",
+        "Dumbbells"
+      ],
+      "injuries": [],
+      "workouts_completed": 381,
+      "preferred_workout_duration": 40,
+      "available_days_per_week": 5,
+      "notes": "Synth profile #2 \u2014 stratified across gender/level/location/goal"
+    },
+    {
+      "id": 3,
+      "name": "Megan Williams",
+      "age": 23,
+      "gender": "Female",
+      "weight_lbs": 177,
+      "height_inches": 61,
+      "experience_level": "Beginner",
+      "fitness_goal": "Get Stronger",
+      "workout_location": "hybrid",
+      "available_equipment": [
+        "Bodyweight",
+        "Dumbbells",
+        "Kettlebell"
+      ],
+      "injuries": [],
+      "workouts_completed": 1,
+      "preferred_workout_duration": 50,
+      "available_days_per_week": 2,
+      "notes": "Synth profile #3 \u2014 stratified across gender/level/location/goal"
+    },
+    {
+      "id": 4,
+      "name": "Alex Taylor",
+      "age": 56,
+      "gender": "Male",
+      "weight_lbs": 251,
+      "height_inches": 72,
+      "experience_level": "Advanced",
+      "fitness_goal": "Stay Active",
+      "workout_location": "gym",
+      "available_equipment": [
+        "Smith Machine",
+        "Bodyweight",
+        "Plates",
+        "TRX/Rings",
+        "Cables",
+        "Machines",
+        "Kettlebell"
+      ],
+      "injuries": [],
+      "workouts_completed": 291,
+      "preferred_workout_duration": 30,
+      "available_days_per_week": 6,
+      "notes": "Synth profile #4 \u2014 stratified across gender/level/location/goal"
+    },
+    {
+      "id": 5,
+      "name": "Jake Anderson",
+      "age": 19,
+      "gender": "Male",
+      "weight_lbs": 183,
+      "height_inches": 65,
+      "experience_level": "Advanced",
+      "fitness_goal": "Build Muscle",
+      "workout_location": "outdoor",
+      "available_equipment": [
+        "Pull-Up Bar",
+        "Bodyweight",
+        "Medicine Ball",
+        "TRX/Rings",
+        "Dumbbells",
+        "Bands",
+        "Dip Bars"
+      ],
+      "injuries": [],
+      "workouts_completed": 376,
+      "preferred_workout_duration": 60,
+      "available_days_per_week": 3,
+      "notes": "Synth profile #5 \u2014 stratified across gender/level/location/goal"
+    }
+  ],
+  "workouts": [
+    {
+      "user_id": 1,
+      "user_label": "Male/64y/140lb \u00b7 Intermediate \u00b7 Improve Health \u00b7 outdoor \u00b7 60min",
+      "split_name": "Back & Biceps",
+      "target_muscles": [
+        "Back",
+        "Biceps"
+      ],
+      "exercises": [
+        {
+          "name": "Hammer Grip Pull Up On Dip Cage (Pull-Up Bar)",
+          "equipment": "Pull-Up Bar, Dip Bars",
+          "primary_muscles": [
+            "Lats",
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Front Delts",
+            "Triceps"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "T-Bar Row (Plate Loaded Machine)",
+          "equipment": "Machine",
+          "primary_muscles": [
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Lats",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Preacher Curl - Rope (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Biceps"
+          ],
+          "secondary_muscles": [
+            "Forearms"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "Lying Upper Body Superman Row",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Lower Back"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Standing Lat Pulldown (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Pull Up On Dip Cage - Wide Grip (Pull-Up Bar)",
+          "equipment": "Pull-Up Bar, Dip Bars",
+          "primary_muscles": [
+            "Lats",
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Rear Delts",
+            "Front Delts",
+            "Triceps",
+            "Biceps"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Rack Pull (Smith Machine)",
+          "equipment": "Smith Machine",
+          "primary_muscles": [
+            "Traps",
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Glutes",
+            "Hamstrings",
+            "Lats"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Assisted Chin Up (Band)",
+          "equipment": "Resistance Band, Pull-Up Bar",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 1,
+      "user_label": "Male/64y/140lb \u00b7 Intermediate \u00b7 Improve Health \u00b7 outdoor \u00b7 60min",
+      "split_name": "Lower Body",
+      "target_muscles": [
+        "Quads",
+        "Hamstrings",
+        "Glutes"
+      ],
+      "exercises": [
+        {
+          "name": "Deep Squat Turn",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Glutes",
+            "Hamstrings",
+            "Quads"
+          ],
+          "secondary_muscles": [],
+          "is_compound": true
+        },
+        {
+          "name": "Reverse Lunge - Clean Grip (Kettlebell)",
+          "equipment": "Kettlebell",
+          "primary_muscles": [
+            "Quads",
+            "Glutes",
+            "Hamstrings"
+          ],
+          "secondary_muscles": [],
+          "is_compound": true
+        },
+        {
+          "name": "Reverse Plank March",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Abs",
+            "Glutes",
+            "Hamstrings"
+          ],
+          "secondary_muscles": [
+            "Shoulders",
+            "Lower Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Reverse Plank",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "secondary_muscles": [
+            "Shoulders",
+            "Lower Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Lunge With Internal Rotation",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Quads",
+            "Glutes",
+            "Hamstrings"
+          ],
+          "secondary_muscles": [],
+          "is_compound": true
+        },
+        {
+          "name": "Leg Extension Plank",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [],
+          "is_compound": false
+        },
+        {
+          "name": "Front Squat - Clean Grip (Barbell)",
+          "equipment": "Barbell",
+          "primary_muscles": [
+            "Quads",
+            "Glutes"
+          ],
+          "secondary_muscles": [
+            "Core"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Romanian Deadlift (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Hamstrings"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Lower Back"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 2,
+      "user_label": "Female/18y/172lb \u00b7 Advanced \u00b7 Build Muscle \u00b7 outdoor \u00b7 40min",
+      "split_name": "Arms Focus",
+      "target_muscles": [
+        "Biceps",
+        "Triceps"
+      ],
+      "exercises": [
+        {
+          "name": "Curl Press Extension (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Biceps"
+          ],
+          "secondary_muscles": [
+            "Forearms"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "Lying Pressdown - Skull Crusher - Reverse Grip (Band)",
+          "equipment": "Resistance Band",
+          "primary_muscles": [
+            "Triceps"
+          ],
+          "secondary_muscles": [
+            "Chest",
+            "Shoulders"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Glute Bridge Skull Crusher (Dumbbell)",
+          "equipment": "Dumbbells, Flat Bench",
+          "primary_muscles": [
+            "Triceps"
+          ],
+          "secondary_muscles": [
+            "Chest",
+            "Shoulders"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "3 Point Bench Press - Single Weight (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Triceps"
+          ],
+          "secondary_muscles": [
+            "Chest",
+            "Shoulders",
+            "Triceps"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Bench Press - Single Weight (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Triceps"
+          ],
+          "secondary_muscles": [
+            "Chest",
+            "Shoulders",
+            "Triceps"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Incline Hammer Curl (Band)",
+          "equipment": "Resistance Band, Incline Bench",
+          "primary_muscles": [
+            "Biceps"
+          ],
+          "secondary_muscles": [
+            "Forearms"
+          ],
+          "is_compound": false
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 2,
+      "user_label": "Female/18y/172lb \u00b7 Advanced \u00b7 Build Muscle \u00b7 outdoor \u00b7 40min",
+      "split_name": "Back Focus",
+      "target_muscles": [
+        "Back"
+      ],
+      "exercises": [
+        {
+          "name": "Lying Row On Rack - Neutral Grip (Dumbbell)",
+          "equipment": "Dumbbells, Flat Bench",
+          "primary_muscles": [
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Lats",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Pull Up (TRX)",
+          "equipment": "TRX",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Power Pull (TRX)",
+          "equipment": "TRX",
+          "primary_muscles": [
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Lats",
+            "Rear Delts"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Decline Shrug (Dumbbell)",
+          "equipment": "Dumbbells, Decline Bench",
+          "primary_muscles": [
+            "Traps",
+            "Upper Back"
+          ],
+          "secondary_muscles": [],
+          "is_compound": false
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 3,
+      "user_label": "Female/23y/177lb \u00b7 Beginner \u00b7 Get Stronger \u00b7 hybrid \u00b7 50min",
+      "split_name": "Lower Body",
+      "target_muscles": [
+        "Quads",
+        "Hamstrings",
+        "Glutes"
+      ],
+      "exercises": [
+        {
+          "name": "Wide Leg Press (Plate Loaded)",
+          "equipment": "Leg Press Machine",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Walking Lunge (Barbell)",
+          "equipment": "Barbell",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Single Leg Press (Plate Loaded Machine)",
+          "equipment": "Leg Press Machine",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Goblet Squat (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Romanian Deadlift (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Hamstrings"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Lower Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Goblet Squat (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 3,
+      "user_label": "Female/23y/177lb \u00b7 Beginner \u00b7 Get Stronger \u00b7 hybrid \u00b7 50min",
+      "split_name": "Back Focus",
+      "target_muscles": [
+        "Back"
+      ],
+      "exercises": [
+        {
+          "name": "T-Bar Row (Plate Loaded Machine)",
+          "equipment": "Machine",
+          "primary_muscles": [
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Lats",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Standing Lat Pulldown (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Assisted Chin Up (Machine)",
+          "equipment": "Lever Machine",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Assisted Pull Up (Machine)",
+          "equipment": "Lever Machine",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Lying Seal Row On Rack (Barbell)",
+          "equipment": "Barbell, Flat Bench",
+          "primary_muscles": [
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Lats",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Rack Pull (Smith Machine)",
+          "equipment": "Smith Machine",
+          "primary_muscles": [
+            "Traps",
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Glutes",
+            "Hamstrings",
+            "Lats"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 4,
+      "user_label": "Male/56y/251lb \u00b7 Advanced \u00b7 Stay Active \u00b7 gym \u00b7 30min",
+      "split_name": "Pull Day",
+      "target_muscles": [
+        "Back",
+        "Biceps"
+      ],
+      "exercises": [
+        {
+          "name": "Standing Lat Pulldown (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "T-Bar Row (Plate Loaded Machine)",
+          "equipment": "Machine",
+          "primary_muscles": [
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Lats",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Preacher Curl (Machine)",
+          "equipment": "Machine",
+          "primary_muscles": [
+            "Biceps"
+          ],
+          "secondary_muscles": [
+            "Forearms"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "Pendlay Row (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Lats",
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Lats",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Lat Pulldown - Neutral Grip (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 4,
+      "user_label": "Male/56y/251lb \u00b7 Advanced \u00b7 Stay Active \u00b7 gym \u00b7 30min",
+      "split_name": "Lower Body",
+      "target_muscles": [
+        "Quads",
+        "Hamstrings",
+        "Glutes"
+      ],
+      "exercises": [
+        {
+          "name": "Front Squat - Clean Grip (Smith Machine)",
+          "equipment": "Smith Machine",
+          "primary_muscles": [
+            "Quads",
+            "Glutes",
+            "Core"
+          ],
+          "secondary_muscles": [],
+          "is_compound": true
+        },
+        {
+          "name": "Reverse Lunge - Clean Grip (Kettlebell)",
+          "equipment": "Kettlebell",
+          "primary_muscles": [
+            "Quads",
+            "Glutes",
+            "Hamstrings"
+          ],
+          "secondary_muscles": [],
+          "is_compound": true
+        },
+        {
+          "name": "Front Squat - Clean Grip (Barbell)",
+          "equipment": "Barbell",
+          "primary_muscles": [
+            "Quads",
+            "Glutes"
+          ],
+          "secondary_muscles": [
+            "Core"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Wide Leg Press (Plate Loaded)",
+          "equipment": "Leg Press Machine",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Romanian Deadlift (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Hamstrings"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Lower Back"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 5,
+      "user_label": "Male/19y/183lb \u00b7 Advanced \u00b7 Build Muscle \u00b7 outdoor \u00b7 60min",
+      "split_name": "Core Focus",
+      "target_muscles": [
+        "Core",
+        "Abs"
+      ],
+      "exercises": [
+        {
+          "name": "Horizontal Pallof Press Twist (Band)",
+          "equipment": "Resistance Band, Anchor Point",
+          "primary_muscles": [
+            "Abs"
+          ],
+          "secondary_muscles": [
+            "Abs",
+            "Hip Flexors"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "Side Bend Plank",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Abs",
+            "Core",
+            "Obliques"
+          ],
+          "secondary_muscles": [],
+          "is_compound": true
+        },
+        {
+          "name": "Bicycle Crunch",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Obliques",
+            "Abs"
+          ],
+          "secondary_muscles": [
+            "Hip Flexors"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "Vertical Leg Raise On Parallel Bars (Dip Bars)",
+          "equipment": "Dip Bars",
+          "primary_muscles": [
+            "Abs",
+            "Lower Abs"
+          ],
+          "secondary_muscles": [
+            "Hip Flexors"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "T-Bar Row - Reverse Grip (Machine)",
+          "equipment": "Machine",
+          "primary_muscles": [
+            "Obliques"
+          ],
+          "secondary_muscles": [
+            "Hip Flexors",
+            "Abs"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Elbow To Knee Side Plank Crunch",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Abs",
+            "Core"
+          ],
+          "secondary_muscles": [
+            "Shoulders"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "Side Hip - On Parallel Bars (Dip Bars)",
+          "equipment": "Dip Bars",
+          "primary_muscles": [
+            "Abs"
+          ],
+          "secondary_muscles": [
+            "Hip Flexors"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Lying Leg Crossover",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Abs",
+            "Obliques"
+          ],
+          "secondary_muscles": [
+            "Front Delts"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 5,
+      "user_label": "Male/19y/183lb \u00b7 Advanced \u00b7 Build Muscle \u00b7 outdoor \u00b7 60min",
+      "split_name": "Lower Body",
+      "target_muscles": [
+        "Quads",
+        "Hamstrings",
+        "Glutes"
+      ],
+      "exercises": [
+        {
+          "name": "Deep Squat Turn",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Glutes",
+            "Hamstrings",
+            "Quads"
+          ],
+          "secondary_muscles": [],
+          "is_compound": true
+        },
+        {
+          "name": "Reverse Lunge - Clean Grip (Kettlebell)",
+          "equipment": "Kettlebell",
+          "primary_muscles": [
+            "Quads",
+            "Glutes",
+            "Hamstrings"
+          ],
+          "secondary_muscles": [],
+          "is_compound": true
+        },
+        {
+          "name": "Reverse Plank March",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Abs",
+            "Glutes",
+            "Hamstrings"
+          ],
+          "secondary_muscles": [
+            "Shoulders",
+            "Lower Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Reverse Plank",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "secondary_muscles": [
+            "Shoulders",
+            "Lower Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Lunge With Internal Rotation",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Quads",
+            "Glutes",
+            "Hamstrings"
+          ],
+          "secondary_muscles": [],
+          "is_compound": true
+        },
+        {
+          "name": "Leg Extension Plank",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [],
+          "is_compound": false
+        },
+        {
+          "name": "Front Squat - Clean Grip (Barbell)",
+          "equipment": "Barbell",
+          "primary_muscles": [
+            "Quads",
+            "Glutes"
+          ],
+          "secondary_muscles": [
+            "Core"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Romanian Deadlift (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Hamstrings"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Lower Back"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    }
+  ],
+  "reviews": [],
+  "review_errors": []
+}

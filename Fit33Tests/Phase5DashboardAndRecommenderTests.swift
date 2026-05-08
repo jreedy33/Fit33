@@ -29,6 +29,7 @@
 //
 
 import XCTest
+import SwiftUI
 @testable import Fit33
 
 @MainActor

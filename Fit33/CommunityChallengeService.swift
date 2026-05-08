@@ -876,6 +876,59 @@ class CommunityChallengeService: ObservableObject {
         }
     }
 
+    // MARK: - Fetch Contacts Leaderboard
+    //
+    // Returns the leaderboard rows for `challengeId` filtered to the
+    // supplied `userIds` (PYMK / contacts) with their real today-progress
+    // / streak / target-hit data. Powers the onboarding tutorial's
+    // preview Community widget — the user sees a real leaderboard
+    // populated by people they know BEFORE joining (and BEFORE the
+    // friend graph exists, since contacts aren't friends yet).
+    //
+    // The companion RPC `get_community_challenge_user_leaderboard` is
+    // SECURITY DEFINER, caps `userIds` at 100, and filters out the
+    // caller's own UUID. Privacy posture mirrors `fetchPYMKCommunityChallenges`
+    // — caller pre-filters the IDs from `peopleYouMayKnow` /
+    // `suggestedFriends`, both privacy-cleared upstream.
+    func fetchContactsLeaderboard(
+        challengeId: UUID,
+        userIds: [UUID],
+        limit: Int = 10
+    ) async -> [LeaderboardSnippetEntry] {
+        guard SupabaseManager.shared.isAuthenticated else { return [] }
+        guard !userIds.isEmpty else { return [] }
+        do {
+            struct ContactsLBParams: Encodable {
+                let p_challenge_id: String
+                let p_user_ids: [String]
+                let p_timezone: String
+                let p_limit: Int
+            }
+            let result: [LeaderboardSnippetEntry] = try await SupabaseManager.shared.supabaseClient
+                .rpc("get_community_challenge_user_leaderboard", params: ContactsLBParams(
+                    p_challenge_id: challengeId.uuidString,
+                    p_user_ids: userIds.map { $0.uuidString },
+                    p_timezone: TimeZone.current.identifier,
+                    p_limit: limit
+                ))
+                .execute()
+                .value
+            return result
+        } catch {
+            if !Task.isCancelled {
+                _ = NetworkErrorClassifier.log(
+                    error,
+                    context: "Error fetching contacts leaderboard for tutorial preview",
+                    category: .social,
+                    transientLevel: .warning,
+                    op: "challenges.fetch",
+                    endpoint: "rpc/get_community_challenge_user_leaderboard"
+                )
+            }
+            return []
+        }
+    }
+
     // MARK: - Fetch Featured / Discover
     
     func fetchFeaturedChallenges(category: String? = nil) async {

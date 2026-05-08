@@ -175,32 +175,44 @@ struct ChallengeFlowStartView: View {
                         .padding(.horizontal, 20)
                 }
                 
-                // Main content (card rotates through)
-                ScrollView {
-                    VStack(spacing: 24) {
-                        switch currentStep {
-                        case .contactSync:
-                            contactSyncCard
-                        case .friendSelection:
-                            friendSelectionCard
-                        case .groupOrSeparate:
-                            groupOrSeparateCard
-                        case .modeSelection:
-                            modeSelectionCard
-                        case .activityType:
-                            activityTypeCard
-                        case .challengeOptions:
-                            challengeOptionsCard
-                        case .duration:
-                            durationCard
-                        case .review:
-                            reviewCard
+                // Main content (card rotates through).
+                // Friend selection (with friends, NOT invite mode) gets its own
+                // pinned-header + scrollable-frosted-list container so the 3
+                // bubbles + search bar stay fixed at the top while the friend
+                // cards scroll like the exercise-card list inside the workout
+                // flows. Every other step keeps the legacy outer ScrollView so
+                // the existing card-rotation animation and bottom padding work.
+                if currentStep == .friendSelection
+                    && !isInviteMode
+                    && !friendService.friends.isEmpty {
+                    friendSelectionContainer
+                } else {
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            switch currentStep {
+                            case .contactSync:
+                                contactSyncCard
+                            case .friendSelection:
+                                friendSelectionCard
+                            case .groupOrSeparate:
+                                groupOrSeparateCard
+                            case .modeSelection:
+                                modeSelectionCard
+                            case .activityType:
+                                activityTypeCard
+                            case .challengeOptions:
+                                challengeOptionsCard
+                            case .duration:
+                                durationCard
+                            case .review:
+                                reviewCard
+                            }
                         }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 120)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 120)
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
                 
                 Spacer(minLength: 0)
                 
@@ -742,6 +754,115 @@ struct ChallengeFlowStartView: View {
         .padding(.vertical, Spacing.xs)
     }
     
+    /// "Who do you want to challenge?" — container layout used when the user
+    /// already has friends (i.e. NOT invite mode). Fixed header on top
+    /// (title + subtitle + 3 most-engaged friend bubbles + search bar),
+    /// then a hard divider, then a scrollable list of frosted friend cards
+    /// that scrolls like the exercise-card list inside the workout flows.
+    ///
+    /// Falls back to the legacy `friendSelectionCard` for invite mode and the
+    /// no-friends/no-contacts edge case (those paths render inside the parent
+    /// ScrollView in `mainContent`).
+    private var friendSelectionContainer: some View {
+        // Top 3 most engaged friends — same source as FriendsListView's
+        // `topFriendsHighlight` so the bubbles match the Friends tab. Falls
+        // back to the first 3 friends in the user's list when ranking data
+        // hasn't loaded yet (cold start) so we always show 3 icons.
+        let rankedTop = Array(rankingService.rankedFriends.prefix(3))
+        let mostEngaged: [Friend] = rankedTop.compactMap { ranked in
+            friendService.friends.first { $0.friendId == ranked.friendId }
+        }
+        let topThree: [Friend] = mostEngaged.isEmpty
+            ? Array(friendService.friends.prefix(3))
+            : mostEngaged
+        let topIds = Set(topThree.map(\.friendId))
+        // Scrollable list = filtered friends MINUS the 3 already shown as bubbles
+        // (avoids dupes and matches the previous floating-heads behavior).
+        let listFriends = filteredFriends.filter { !topIds.contains($0.friendId) }
+        
+        return VStack(spacing: 0) {
+            // ── Pinned top section ──────────────────────────────────────────
+            VStack(spacing: 16) {
+                Text("Who do you want to challenge?")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                
+                Text(selectedFriends.isEmpty
+                     ? "Pick up to 3 buddies"
+                     : selectedFriends.count < 3
+                        ? "\(selectedFriends.count) selected — add more?"
+                        : "3 buddies selected")
+                    .font(.caption)
+                    .foregroundColor(selectedFriends.isEmpty ? .white.opacity(0.6) : .cyan)
+                
+                // Row of 3 friend bubbles (top of container).
+                HStack(spacing: 12) {
+                    ForEach(topThree) { friend in
+                        TopFriendBubble(friend: friend, isSelected: isFriendSelected(friend)) {
+                            toggleFriendSelection(friend)
+                        }
+                    }
+                    if topThree.count < 3 {
+                        ForEach(0..<(3 - topThree.count), id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+                
+                inlineFriendSearchBar
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
+            
+            // ── Container hard divider ─────────────────────────────────────
+            Rectangle()
+                .fill(Color.white.opacity(0.18))
+                .frame(height: 1)
+                .padding(.horizontal, 20)
+            
+            // ── Scrollable frosted friend cards ────────────────────────────
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if listFriends.isEmpty && !searchText.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.ds_heading2)
+                                .foregroundColor(.white.opacity(0.4))
+                            Text("No friends matching \"\(searchText)\"")
+                                .font(.subheadline)
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.lg)
+                    } else {
+                        ForEach(listFriends) { friend in
+                            ChallengeFlowFriendCard(
+                                friend: friend,
+                                isSelected: isFriendSelected(friend),
+                                onSelect: { selected in
+                                    toggleFriendSelection(selected)
+                                }
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 120)
+            }
+            .scrollIndicators(.hidden)
+        }
+        // The container is sandwiched between the pinned header above and
+        // the navigationBar/Spacer below. Without an explicit
+        // `maxHeight: .infinity`, the outer VStack would size to its
+        // intrinsic content (pinned header + divider) and the inner
+        // ScrollView would collapse to zero height — no friend list visible.
+        .frame(maxHeight: .infinity)
+    }
+    
     private var friendSelectionCard: some View {
         // Mirror the Friends tab "top friends" highlight (FriendsListView.topFriendsHighlight):
         // Row 1 = 3 most engaged via FriendRankingService, Row 2 = 3 newest added (excluding overlap).
@@ -1201,30 +1322,78 @@ struct ChallengeFlowStartView: View {
                 }
                 
                 // Private Challenge option
+                // 2026-05-08 — Per Joe Reed shake bugs `46df4e5c` (build 1.38)
+                // and `88e1979c` (build 1.39). Mirrors the new How-It-Works +
+                // LP cap explainer added to `ModeSelectionCard` so the three
+                // mode choices on this screen all communicate scoring contract
+                // at the same level of detail. Cap math sourced from
+                // `compute_challenge_daily_awards` in
+                // `supabase/20260430c_challenge_league_scoring_rpcs.sql`.
                 Button(action: {
                     HapticManager.impact(.medium)
                     showPrivateChallengeFlow = true
                 }) {
-                    HStack(spacing: 14) {
-                        Text("🔒")
-                            .font(.ds_heading1)
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Private Challenge")
-                                .font(.headline)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                            
-                            Text("Invite 3+ friends to a private challenge community")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.7))
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 14) {
+                            Text("🔒")
+                                .font(.ds_heading1)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Private Challenge")
+                                    .font(.headline)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+
+                                Text("Invite 3+ friends to a private challenge community")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "lock.shield.fill")
+                                .font(.ds_heading3)
+                                .foregroundColor(.purple)
                         }
-                        
-                        Spacer()
-                        
-                        Image(systemName: "lock.shield.fill")
-                            .font(.ds_heading3)
-                            .foregroundColor(.purple)
+
+                        Rectangle()
+                            .fill(Color.white.opacity(0.08))
+                            .frame(height: 1)
+                            .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "lightbulb.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .accessibilityHidden(true)
+                                Text("How it works")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white.opacity(0.85))
+                            }
+
+                            Text("Pick a daily target → invite-only group leaderboard. Hit target each day = base LP. Lead the day = 1.5× bonus. Final Bell pot at the end pays out by rank (1st = full pot, 2nd = 60%, 3rd = 40%).")
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.7))
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "trophy.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .padding(.top, 1)
+                                    .accessibilityHidden(true)
+                                Text("Up to 100 LP/day from this challenge. Same scoring as Group challenges (1.5× daily-winner bonus). Stack with up to 500 LP/day across all your active challenges.")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(LinearGradient(colors: [.purple, .pink], startPoint: .leading, endPoint: .trailing))
+                                    .multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
                     }
                     .padding(Spacing.md)
                     .background(
@@ -1241,6 +1410,10 @@ struct ChallengeFlowStartView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Private Challenge mode")
+                .accessibilityHint("Invite-only group leaderboard for 3 or more friends. Hit your daily target to earn League Points; daily leader gets a 1.5x bonus. Up to 100 LP per day from this challenge, capped at 500 LP per day across all active challenges. Final Bell pot pays out at the end.")
+                .accessibilityAddTraits(.isButton)
                 .sheet(isPresented: $showPrivateChallengeFlow) {
                     // Forward the currently-selected cohort so a quick-add chain
                     // (mutual friends → group challenge → "Private Challenge")
@@ -2030,12 +2203,12 @@ struct ChallengeFlowFriendCard: View {
                     Text(friend.friendName ?? friend.friendUsername ?? "Friend")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                     
                     if let username = friend.friendUsername, !username.isEmpty {
                         Text("@\(username)")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.white.opacity(0.6))
                     }
                 }
                 
@@ -2049,32 +2222,27 @@ struct ChallengeFlowFriendCard: View {
                 } else {
                     Image(systemName: "chevron.right")
                         .font(.ds_labelMedium)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.4))
                 }
             }
             .padding(Spacing.md)
             .background(
+                // Frosted glass — mirrors the exercise-card surface treatment so
+                // the friend list visually reads as the same component family
+                // as the exercise scroll inside the create-challenge flow.
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color(white: 0.16), Color(white: 0.10)]
-                                : [Color.white, Color(white: 0.96)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .fill(.ultraThinMaterial)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(
                         isSelected
                             ? AnyShapeStyle(LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            : AnyShapeStyle(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.0)),
+                            : AnyShapeStyle(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.04)),
                         lineWidth: isSelected ? 2 : 1
                     )
             )
-            .shadow(color: isSelected ? Color.blue.opacity(0.25) : Color.black.opacity(colorScheme == .dark ? 0.15 : 0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
+            .shadow(color: isSelected ? Color.blue.opacity(0.25) : Color.black.opacity(colorScheme == .dark ? 0.20 : 0.06), radius: isSelected ? 12 : 6, x: 0, y: isSelected ? 6 : 3)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
             .contentShape(Rectangle())
         }

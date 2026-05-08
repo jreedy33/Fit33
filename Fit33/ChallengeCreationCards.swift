@@ -32,7 +32,16 @@ struct ModeSelectionCard: View {
     let mode: ChallengeMode
     let isSelected: Bool
     let onSelect: () -> Void
-    
+
+    // 2026-05-08 — Per Joe Reed shake bugs `46df4e5c` (build 1.38, "this
+    // doesn't really explain how to do it") and `88e1979c` (build 1.39,
+    // "these cards need to showcase how the cap points work for
+    // accountability vs 1v1 vs private"). The mode picker showed bullet
+    // points but no scoring contract or step-by-step. Cap math sourced
+    // from `compute_challenge_daily_awards` in
+    // `supabase/20260430c_challenge_league_scoring_rpcs.sql` (per-challenge
+    // 100 LP/day, day_winner 2x for 1v1 / 1.5x for group, early_bird +10 LP
+    // 1v1-only) and tier seeds in `20260430_challenge_league_awards_schema.sql`.
     private var bulletPoints: [String] {
         switch mode {
         case .accountability:
@@ -51,7 +60,37 @@ struct ModeSelectionCard: View {
             ]
         }
     }
-    
+
+    /// Plain-language step list answering "ok, but how do I actually do it?"
+    /// — addresses bug `46df4e5c`.
+    private var howItWorksLine: String {
+        switch mode {
+        case .accountability:
+            return "Pick a daily target → both commit. Each day you hit it, you both earn League Points. Final Bell pot at the end scales with how many days you kept the chain together."
+        case .competition:
+            return "Pick a daily target → race the scoreboard every day. Hit target = base LP. Lead the day = bonus multiplier. Final Bell pot pays out when the challenge ends."
+        }
+    }
+
+    /// LP cap one-liner — addresses bug `88e1979c`. Per-challenge cap is
+    /// constant (100 LP/day); what differs is the daily-winner multiplier
+    /// and the 1v1-only Early Bird +10 LP bonus.
+    private var lpCapLine: String {
+        switch mode {
+        case .accountability:
+            return "Up to 100 LP/day from this challenge. Both buddies score — no zero-sum. Stack with up to 500 LP/day across all your active challenges."
+        case .competition:
+            return "Up to 100 LP/day from this challenge. Daily leader earns 2× bonus (1v1) or 1.5× (group), plus +10 LP Early Bird in 1v1. Stack with up to 500 LP/day."
+        }
+    }
+
+    /// Concatenated explainer for VoiceOver users.
+    private var accessibilityCardDescription: String {
+        "\(mode.title). \(mode.subtitle). " +
+        bulletPoints.joined(separator: ". ") + ". " +
+        "How it works: \(howItWorksLine) League Points: \(lpCapLine)"
+    }
+
     var body: some View {
         Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 14) {
@@ -91,6 +130,48 @@ struct ModeSelectionCard: View {
                                 .font(.caption)
                                 .foregroundColor(.white.opacity(0.75))
                         }
+                    }
+                }
+
+                // 2026-05-08 — How-It-Works + LP cap explainer (Joe Reed shakes
+                // 46df4e5c + 88e1979c). Sits below the bullet list, separated
+                // by a hairline so it reads as a footnote — the bullets are
+                // "vibe", this section is the "contract".
+                Rectangle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.caption2)
+                            .foregroundStyle(LinearGradient(colors: mode.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .accessibilityHidden(true)
+                        Text("How it works")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white.opacity(0.85))
+                    }
+
+                    Text(howItWorksLine)
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.7))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "trophy.fill")
+                            .font(.caption2)
+                            .foregroundStyle(LinearGradient(colors: mode.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .padding(.top, 1)
+                            .accessibilityHidden(true)
+                        Text(lpCapLine)
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundStyle(LinearGradient(colors: mode.gradientColors, startPoint: .leading, endPoint: .trailing))
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -147,6 +228,10 @@ struct ModeSelectionCard: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
         }
         .buttonStyle(PlainButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(mode.title) challenge mode\(isSelected ? ", selected" : "")")
+        .accessibilityHint(accessibilityCardDescription)
+        .accessibilityAddTraits(.isButton)
     }
 }
 

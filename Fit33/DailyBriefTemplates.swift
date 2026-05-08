@@ -7,11 +7,16 @@
 //  helper. Fitness Expert / Design can edit copy here without
 //  touching the engine logic.
 //
-//  North-Star example (the canonical green + muscleGroup + buildMuscle
-//  template):
+//  North-Star example (the user-endorsed Phase 11 cadence —
+//  `{Action}. {Gap}.` headline + supporting insight body):
 //
-//      "Fresh — chest & triceps are 5d overdue."
-//      "Push day in ~23 min wins today's quest{booster}."
+//      "Take a walk. 4.5k steps left in your day."
+//      "Z2 walk burns clean fat — easiest deficit win{booster}."
+//
+//  And for the canonical green + muscleGroup + buildMuscle template:
+//
+//      "Push day. Chest & triceps 5d due."
+//      "Long rest = your biggest growth window{booster}."
 //
 //  Tokens supported in templates (interpolated by `render`):
 //    -- Debt-driven (from `debtFields`):
@@ -162,46 +167,46 @@ enum DailyBriefTemplates {
             switch goal {
             case .buildMuscle:
                 return RawTemplate(
-                    headline: "Workout's in. Now refuel.",
-                    body: "Protein within an hour locks in tonight's recovery{ifOverdue}."
+                    headline: "Refuel. Workout's already in.",
+                    body: "Protein within the hour locks tonight's recovery."
                 )
             case .loseFat:
                 return RawTemplate(
-                    headline: "Workout done — feed the burn.",
-                    body: "Protein-forward meal keeps the deficit honest{ifBehindRival}."
+                    headline: "Refuel. Feed the burn.",
+                    body: "Protein-forward meal keeps the deficit honest."
                 )
             case .endurance:
                 return RawTemplate(
-                    headline: "Session in — restock the tank.",
-                    body: "Carbs + protein now to load up for tomorrow{ifRecentRun}."
+                    headline: "Restock. Session's already done.",
+                    body: "Carbs + protein now to load up for tomorrow."
                 )
             case .generalFitness:
                 return RawTemplate(
-                    headline: "Workout's in — eat something.",
-                    body: "First meal closes today's loop{ifBehindRival}."
+                    headline: "Eat something. Workout's in.",
+                    body: "First meal closes today's loop."
                 )
             }
         }
         switch goal {
         case .buildMuscle:
             return RawTemplate(
-                headline: "Refuel — the day's just getting started.",
-                body: "Quick high-protein breakfast banks today's gains{ifOverdue}."
+                headline: "Refuel. Day's just getting started.",
+                body: "Quick high-protein breakfast banks today's gains."
             )
         case .loseFat:
             return RawTemplate(
-                headline: "Fuel up — protein keeps cravings down.",
-                body: "Eat now, train later, win the deficit{ifBehindRival}."
+                headline: "Fuel up. Protein keeps cravings down.",
+                body: "Eat now, train later, win the deficit."
             )
         case .endurance:
             return RawTemplate(
-                headline: "Fuel the engine.",
-                body: "Carbs + protein before your session keeps pace strong{ifRecentRun}."
+                headline: "Fuel up. Engine needs carbs + protein.",
+                body: "Eating before training keeps pace strong."
             )
         case .generalFitness:
             return RawTemplate(
-                headline: "Quick breakfast keeps the engine going.",
-                body: "Something small now sets up the rest of the day{ifBehindRival}."
+                headline: "Eat something. Engine needs fuel.",
+                body: "Something small now sets up the rest of the day."
             )
         }
     }
@@ -243,6 +248,21 @@ enum DailyBriefTemplates {
         // Field substitutions.
         for (k, v) in fields {
             out = out.replacingOccurrences(of: "{\(k)}", with: v)
+        }
+
+        // Phase 11 (2026-05-08 — "actionable headlines, insight bodies"):
+        // `{Muscles}` is the first-letter-capitalized variant of
+        // `{muscles}` ("chest & triceps" → "Chest & triceps"). Lets
+        // headlines lead with a clean noun-phrase capitalization
+        // ("Chest & triceps are 5d overdue.") instead of the
+        // lowercase grammar fragment the raw `{muscles}` field
+        // produces ("chest & triceps are 5d overdue."). The raw
+        // lowercase form stays available in mid-sentence body copy.
+        if let muscles = fields["muscles"], !muscles.isEmpty {
+            let capitalized = muscles.prefix(1).uppercased() + muscles.dropFirst()
+            out = out.replacingOccurrences(of: "{Muscles}", with: capitalized)
+        } else {
+            out = out.replacingOccurrences(of: "{Muscles}", with: "")
         }
 
         // Phase 2 (2026-04-27): {linkedQuestTitle} token — gets the
@@ -541,197 +561,244 @@ enum DailyBriefTemplates {
     /// Every entry; goals fall back to `.generalFitness` if the more
     /// specific (buildMuscle / loseFat / endurance) entry is absent.
     ///
-    /// Body copy contract (Phase 7 — 2026-04-27): every body is a
-    /// 1-2 line cross-domain insight that names a specific number,
-    /// references at least one other facet (rival / sleep / strain
-    /// / overdue muscles / Strava run / recovery), and ends with an
-    /// optional `{booster}` clause. Conditional `{if...}` tokens
-    /// degrade gracefully when their facet isn't connected — same
-    /// template covers WHOOP / Oura / no-wearable users.
+    /// Body copy contract (Phase 11 — 2026-05-08, "actionable
+    /// headlines, insight bodies"):
+    ///   • HEADLINE = `{Action}. {Gap}.` — TWO sentences. First
+    ///     sentence is an imperative action verb ("Take a walk.",
+    ///     "Refuel.", "Rest today.", "Push day."). Second sentence
+    ///     is the concrete gap / state ("4.5k steps left in your
+    ///     day.", "100g of protein left today."). Mirrors the
+    ///     "Take a walk. 4.5k steps left in your day." cadence
+    ///     the user explicitly endorsed. NEVER prescribes a time
+    ///     budget like `"~35 min"` — that read as a deadline
+    ///     ("if you don't do legs in 35 min you fail today's
+    ///     quest", which is false). The `{eta}` token is
+    ///     RETIRED from action bodies as of Phase 11.
+    ///   • BODY = one supporting INSIGHT — recovery science,
+    ///     longest-gap framing, "compound lifts burn the most
+    ///     cal/min", or a small contextual fact — that supports
+    ///     the gap WITHOUT locking to a specific quest. Phrases
+    ///     like `"wins today's quest"` are banned because they
+    ///     imply the daily-goals card and this brief are a single
+    ///     unit (they're not — the brief should support quests,
+    ///     not depend on them).
+    ///   • EM-DASH RULE — at most ONE em-dash per card across
+    ///     headline + body combined. Two em-dash chains in one
+    ///     card was the canonical "clunky" complaint
+    ///     (Phase 10 incident). Default convention: headline is
+    ///     em-dash-free, body MAY use one em-dash for an
+    ///     "X — Y" insight clause.
+    ///   • The only optional tail token bodies may carry is
+    ///     `{booster}` (" + your 1v1 with Paul") — " + " prefix,
+    ///     not " — " dash, so it doesn't chain visually with any
+    ///     em-dash in the body itself.
     ///
-    /// Length contract (Phase 9 — 2026-05-02): the welcome card uses
-    /// `lineLimit(2)` for both headline (`.ds_heading2`, 22pt bold)
-    /// and body (`.ds_bodySmall`, 13pt) with `.minimumScaleFactor(0.9)`.
-    /// On iPhone SE the medallion + spacing leaves ~245pt of text
+    /// Cross-facet color (rivals, recovery, Strava) lives in (a)
+    /// the dedicated dashboard widgets, and (b) the engine's
+    /// `buildInsightBody` rotating insight pool — which fully
+    /// REPLACES the action body on low-urgency / `.allClear` days.
+    /// The conditional-clause machinery (`{ifBehindRival}` etc.)
+    /// in `applyContextTokens` is preserved for the streak
+    /// template (`.allClear`-only, replaced by `buildInsightBody`
+    /// in production — effectively a test-only path that
+    /// exercises the helper) and `buildInsightBody`'s pool.
+    ///
+    /// Length contract (Phase 9 — 2026-05-02, tightened by Phase 10
+    /// + Phase 11): the welcome card uses `lineLimit(2)` for both
+    /// headline (`.ds_heading2`, 22pt bold) and body
+    /// (`.ds_bodySmall`, 13pt) with `.minimumScaleFactor(0.9)`. On
+    /// iPhone SE the medallion + spacing leaves ~245pt of text
     /// width, which fits ~21 chars/line at the min-scale → 42-char
     /// hard cap on the headline post-interpolation. Bodies cap at
-    /// ~72 chars for the typical case (base + booster); when a
-    /// conditional clause AND booster both fire the body may run
-    /// ~95 chars — that's accepted graceful-degrade since both
-    /// firing at once is statistically rare. Worst-case token sizes
-    /// to plan against: `{muscles}` = "chest & triceps" (15 chars),
-    /// `{days}` = "10" (2), `{splitTitle}` = "Full body" (9),
-    /// `{eta}` = "35" (2), `{deficitG}` = "100" (3), `{streak}` =
-    /// "100" (3), `{booster}` = " + your 1v1 with Manuel" (~22).
+    /// ~72 chars (base + booster). Worst-case token sizes to plan
+    /// against: `{muscles}` = "chest & triceps" (15 chars),
+    /// `{Muscles}` = "Chest & triceps" (15), `{days}` = "10" (2),
+    /// `{splitTitle}` = "Full body" (9), `{deficitG}` = "100" (3),
+    /// `{deficitL}` = "1.5" (3), `{gap}` = "10.0k" (5), `{streak}`
+    /// = "100" (3), `{booster}` = " + your 1v1 with Manuel" (~22).
     /// Use `{days}d` shorthand instead of `{days} days` everywhere
     /// — the "d" suffix is universally readable and saves 4 chars
-    /// per occurrence.
+    /// per occurrence. `{eta}` is RETIRED from action bodies as
+    /// of Phase 11 (read as a deadline); the helper is preserved
+    /// for any future surface that wants a pure "estimated
+    /// duration" data point but no template should reintroduce
+    /// it into welcome-card copy.
     private static let catalog: [Key: RawTemplate] = [
 
         // ─── GREEN × MUSCLE GROUP ─────────────────────────────────
+        // Phase 11 (2026-05-08) — `{Action}. {Gap}.` headline pattern.
+        // {splitTitle} doubles as the action lead ("Push day.")
+        // because it's already the most concrete action verb the
+        // template knows. Bodies are static insights — recovery
+        // science / longest-gap framing — that support the gap
+        // without locking to a specific quest.
         Key(.green, .muscleGroup, .buildMuscle): RawTemplate(
-            headline: "Fresh — {muscles} are {days}d overdue.",
-            body: "{splitTitle} day in ~{eta} min wins today's quest{ifBehindRival}{booster}."
+            headline: "{splitTitle} day. {Muscles} {days}d due.",
+            body: "Long rest = your biggest growth window{booster}."
         ),
         Key(.green, .muscleGroup, .loseFat): RawTemplate(
-            headline: "Green day — {muscles} {days}d overdue.",
-            body: "{splitTitle} (~{eta} min) burns the deficit{ifRecentRun}{booster}."
+            headline: "{splitTitle} day. {Muscles} {days}d due.",
+            body: "Compound lifts torch the most cal/min{booster}."
         ),
         Key(.green, .muscleGroup, .endurance): RawTemplate(
-            headline: "You're primed — hit {muscles}.",
-            body: "{splitTitle} (~{eta} min) doubles as cardio{ifRecentRun}{booster}."
+            headline: "{splitTitle} day. {Muscles} {days}d due.",
+            body: "Strength carry-over lifts pace 48h later{booster}."
         ),
         Key(.green, .muscleGroup, .generalFitness): RawTemplate(
-            headline: "Recovered — {muscles} {days}d overdue.",
-            body: "{splitTitle} day in ~{eta} min keeps you balanced{ifBehindRival}{booster}."
+            headline: "{splitTitle} day. {Muscles} {days}d due.",
+            body: "Longest gap in your rotation — balance day{booster}."
         ),
 
         // ─── GREEN × NO WORKOUT YET ──────────────────────────────
         Key(.green, .noWorkoutYet, .buildMuscle): RawTemplate(
-            headline: "Green light — {days}d off the lifts.",
-            body: "{eta}-min auto session locks today's quest{ifOverdue}{booster}."
+            headline: "Train today. {days}d off the lifts.",
+            body: "Recovered + rested = your best growth window{booster}."
         ),
         Key(.green, .noWorkoutYet, .generalFitness): RawTemplate(
-            headline: "You're rested — {days}d off, time to move.",
-            body: "Auto workout in ~{eta} min{ifOverdue}{booster}."
+            headline: "Train today. {days}d off the lifts.",
+            body: "Body's primed — first set's the hardest{booster}."
         ),
 
         // ─── GREEN × PROTEIN ─────────────────────────────────────
         Key(.green, .proteinDeficit, .buildMuscle): RawTemplate(
-            headline: "Green day — {deficitG}g protein short.",
-            body: "Eat now to bank tonight's gains{ifOverdue}{booster}."
+            headline: "Refuel. {deficitG}g of protein left today.",
+            body: "MPS window's wide open — bank tonight's gains{booster}."
         ),
         Key(.green, .proteinDeficit, .generalFitness): RawTemplate(
-            headline: "{deficitG}g of protein left to hit goal.",
-            body: "A meal closes the gap and locks today's recovery{booster}."
+            headline: "Refuel. {deficitG}g of protein left today.",
+            body: "Recovery starts at the table{booster}."
         ),
 
         // ─── GREEN × HYDRATION ───────────────────────────────────
         Key(.green, .hydrationDeficit, .generalFitness): RawTemplate(
-            headline: "You're {deficitL}L behind on water.",
-            body: "Knock it back — drops tomorrow's HRV{ifOverdue}{booster}."
+            headline: "Top off. {deficitL}L behind on water today.",
+            body: "Cheapest readiness boost in your toolkit{booster}."
         ),
 
         // ─── GREEN × STEPS ───────────────────────────────────────
+        // Canonical Phase 11 example endorsed by the user:
+        // "Take a walk. 4.5k steps left in your day."
         Key(.green, .stepsBehindGoal, .loseFat): RawTemplate(
-            headline: "{gap} steps left — you're fresh for it.",
-            body: "20-min Z2 walk closes the deficit{ifBehindRival}{booster}."
+            headline: "Take a walk. {gap} steps left in your day.",
+            body: "Z2 walk burns clean fat — easiest deficit win{booster}."
         ),
         Key(.green, .stepsBehindGoal, .generalFitness): RawTemplate(
-            headline: "{gap} steps left in your day.",
-            body: "Quick walk wraps it{ifBehindRival}{booster}."
+            headline: "Take a walk. {gap} steps left in your day.",
+            body: "Easiest goal on the card. Worth a podcast{booster}."
         ),
 
         // ─── GREEN × STREAK RISK ─────────────────────────────────
         Key(.green, .streakRisk, .generalFitness): RawTemplate(
-            headline: "{streak}-day streak — clock's ticking.",
-            body: "{eta}-min full-body protects the chain{ifOverdue}{booster}."
+            headline: "Lock it in. {streak}-day streak on the line.",
+            body: "Streaks are habit anchors — one set locks it{booster}."
         ),
 
         // ─── YELLOW × MUSCLE GROUP ───────────────────────────────
         Key(.yellow, .muscleGroup, .buildMuscle): RawTemplate(
-            headline: "Mid recovery — hit {muscles}.",
-            body: "{splitTitle} day in ~{eta} min, leave one in the tank{ifHighStrain}{booster}."
+            headline: "Go moderate. {Muscles} {days}d overdue.",
+            body: "Recovery's mid — leave one rep in the tank{booster}."
         ),
         Key(.yellow, .muscleGroup, .loseFat): RawTemplate(
-            headline: "Yellow day — {muscles} {days}d overdue.",
-            body: "Moderate {splitTitle} (~{eta} min){ifSleepLow}{booster}."
+            headline: "Go moderate. {Muscles} {days}d overdue.",
+            body: "Trim intensity, hold volume — burn smart{booster}."
         ),
         Key(.yellow, .muscleGroup, .generalFitness): RawTemplate(
-            headline: "Steady day — {muscles} are due.",
-            body: "Smart {splitTitle} session in ~{eta} min{ifHighStrain}{booster}."
+            headline: "Go moderate. {Muscles} {days}d overdue.",
+            body: "Yellow band = maintain, don't max{booster}."
         ),
 
         // ─── YELLOW × NO WORKOUT YET ─────────────────────────────
         Key(.yellow, .noWorkoutYet, .generalFitness): RawTemplate(
-            headline: "Steady day — {days}d since last session.",
-            body: "Easy {eta}-min routine fits the band{ifSleepLow}{booster}."
+            headline: "Easy session. {days}d since your last.",
+            body: "Easy fits the band — momentum > intensity{booster}."
         ),
 
         // ─── YELLOW × PROTEIN ────────────────────────────────────
         Key(.yellow, .proteinDeficit, .buildMuscle): RawTemplate(
-            headline: "Mid recovery + {deficitG}g protein short.",
-            body: "Eat now to bank tomorrow's strain budget{ifOverdue}{booster}."
+            headline: "Refuel. {deficitG}g of protein left today.",
+            body: "Eat now to bank tomorrow's strain budget{booster}."
         ),
         Key(.yellow, .proteinDeficit, .generalFitness): RawTemplate(
-            headline: "{deficitG}g of protein left.",
-            body: "Refuel — recovery starts at the table{booster}."
+            headline: "Refuel. {deficitG}g of protein left today.",
+            body: "Recovery starts at the table{booster}."
         ),
 
         // ─── YELLOW × HYDRATION ──────────────────────────────────
         Key(.yellow, .hydrationDeficit, .generalFitness): RawTemplate(
-            headline: "Yellow + {deficitL}L behind on water.",
-            body: "Hydration's the cheapest readiness boost{booster}."
+            headline: "Top off. {deficitL}L behind on water today.",
+            body: "Cheapest readiness boost in your toolkit{booster}."
         ),
 
         // ─── YELLOW × STEPS ──────────────────────────────────────
         Key(.yellow, .stepsBehindGoal, .loseFat): RawTemplate(
-            headline: "{gap} steps to go — Z2 fits your band.",
-            body: "Easy walk burns the deficit{ifBehindRival}{booster}."
+            headline: "Easy walk. {gap} steps left in your day.",
+            body: "Easy walk burns clean fat — no recovery cost{booster}."
         ),
 
         // ─── RED × RECOVERY NEEDED ───────────────────────────────
+        // Red days: action verb is "Rest" / "Recover" — body
+        // explains why bypassing today protects tomorrow.
         Key(.red, .recoveryNeeded, .buildMuscle): RawTemplate(
-            headline: "Red day — body needs the rest.",
-            body: "Mobility + bed by {bedtime} preps tomorrow{ifOverdue}{booster}."
+            headline: "Rest day. Body needs the reset.",
+            body: "Hard sessions cost tomorrow. Bank the rest{booster}."
         ),
         Key(.red, .recoveryNeeded, .loseFat): RawTemplate(
-            headline: "Red recovery — burn tomorrow.",
-            body: "Walk + hydration + early sleep clears it{ifBehindRival}{booster}."
+            headline: "Recovery day. Burn tomorrow.",
+            body: "Walk + hydration + early sleep clears it{booster}."
         ),
         Key(.red, .recoveryNeeded, .endurance): RawTemplate(
-            headline: "Red day — capacity is low.",
-            body: "Easy spin or recovery walk; don't bank fatigue{ifSleepLow}{booster}."
+            headline: "Easy spin only. Capacity's low.",
+            body: "Don't bank fatigue. Load up tomorrow{booster}."
         ),
         Key(.red, .recoveryNeeded, .generalFitness): RawTemplate(
-            headline: "Red recovery — body's tapped.",
-            body: "Stretch, hydrate, bed by {bedtime}{ifSleepLow}{booster}."
+            headline: "Rest day. Body's tapped.",
+            body: "Sleep + hydration earn compound interest{booster}."
         ),
 
         // ─── RED × PROTEIN (still actionable) ────────────────────
         Key(.red, .proteinDeficit, .buildMuscle): RawTemplate(
-            headline: "Red day — {deficitG}g protein short.",
+            headline: "Refuel. {deficitG}g of protein left today.",
             body: "Skip the lift, hit the protein{booster}."
         ),
 
         // ─── RED × HYDRATION ─────────────────────────────────────
         Key(.red, .hydrationDeficit, .generalFitness): RawTemplate(
-            headline: "Red day — {deficitL}L water deficit.",
+            headline: "Hydrate. {deficitL}L water deficit today.",
             body: "Rehydrate first, sleep early{booster}."
         ),
 
         // ─── UNKNOWN (no wearable) — never cite recovery ─────────
         Key(.unknown, .muscleGroup, .buildMuscle): RawTemplate(
-            headline: "{muscles} are {days}d overdue.",
-            body: "{splitTitle} day in ~{eta} min wins today's quest{ifBehindRival}{booster}."
+            headline: "{splitTitle} day. {Muscles} {days}d due.",
+            body: "Long rest = your biggest growth window{booster}."
         ),
         Key(.unknown, .muscleGroup, .loseFat): RawTemplate(
-            headline: "{muscles} are {days}d overdue.",
-            body: "Hit {splitTitle} hard (~{eta} min){ifBehindRival}{booster}."
+            headline: "{splitTitle} day. {Muscles} {days}d due.",
+            body: "Compound lifts torch the most cal/min{booster}."
         ),
         Key(.unknown, .muscleGroup, .generalFitness): RawTemplate(
-            headline: "{muscles} are {days}d overdue.",
-            body: "{splitTitle} day in ~{eta} min keeps you honest{ifBehindRival}{booster}."
+            headline: "{splitTitle} day. {Muscles} {days}d due.",
+            body: "Longest gap in your rotation{booster}."
         ),
         Key(.unknown, .noWorkoutYet, .generalFitness): RawTemplate(
-            headline: "{days}d since your last workout.",
-            body: "Auto session in ~{eta} min{ifOverdue}{booster}."
+            headline: "Train today. {days}d off the lifts.",
+            body: "First set's the hardest. Auto-gen has the plan{booster}."
         ),
         Key(.unknown, .proteinDeficit, .generalFitness): RawTemplate(
-            headline: "{deficitG}g of protein left.",
-            body: "A meal closes the gap{ifOverdue}{booster}."
+            headline: "Refuel. {deficitG}g of protein left today.",
+            body: "Recovery starts at the table{booster}."
         ),
         Key(.unknown, .hydrationDeficit, .generalFitness): RawTemplate(
-            headline: "{deficitL}L water behind pace.",
-            body: "Knock it back — recovery starts here{booster}."
+            headline: "Top off. {deficitL}L behind on water.",
+            body: "Cheapest readiness boost in your toolkit{booster}."
         ),
         Key(.unknown, .stepsBehindGoal, .generalFitness): RawTemplate(
-            headline: "{gap} steps left today.",
-            body: "20-min walk closes it{ifBehindRival}{booster}."
+            headline: "Take a walk. {gap} steps left in your day.",
+            body: "Easiest goal on the card. Worth a podcast{booster}."
         ),
         Key(.unknown, .streakRisk, .generalFitness): RawTemplate(
-            headline: "{streak}-day streak — clock's ticking.",
-            body: "{eta}-min session protects the chain{ifOverdue}{booster}."
+            headline: "Lock it in. {streak}-day streak on the line.",
+            body: "Streaks are habit anchors — one set locks it{booster}."
         ),
     ]
 }

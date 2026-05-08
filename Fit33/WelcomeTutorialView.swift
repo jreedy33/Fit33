@@ -178,7 +178,7 @@ enum TutorialPageKind: CaseIterable, Identifiable {
 
     var accent: LinearGradient {
         switch self {
-        case .welcome:        return .ds_primaryAccent
+        case .welcome:        return .ds_logoBlueAccent
         case .findFriends:    return .ds_socialAccent
         case .autoWorkout:    return .ds_primaryAccent
         case .programs:       return .ds_successAccent
@@ -199,6 +199,19 @@ enum TutorialPageKind: CaseIterable, Identifiable {
         case .programs, .wearables: return Color(red: 0.2, green: 0.7, blue: 0.3)
         case .league, .fuel: return .orange
         }
+    }
+
+    /// 0...1 phase used by the rotating logo-blue gradient that paints the
+    /// onboarding navigation chrome (page indicator, Continue / Get Started
+    /// buttons) AND every page's H1 title. Page 0 (welcome) is phase 0 —
+    /// vertical top→bottom — so the welcome step's title + CTA match the
+    /// "33" of the Fit33 logo exactly. Each subsequent page rotates the
+    /// gradient by `1 / (pages - 1)` of a full revolution so the gradient
+    /// appears to "scroll" as the user swipes step-by-step.
+    var gradientPhase: Double {
+        let all = TutorialPageKind.allCases
+        guard all.count > 1, let idx = all.firstIndex(of: self) else { return 0 }
+        return Double(idx) / Double(all.count - 1)
     }
 }
 
@@ -292,7 +305,7 @@ struct WelcomeTutorialView: View {
                 Capsule()
                     .fill(
                         index == currentPage
-                            ? AnyShapeStyle(pages[currentPage].accent)
+                            ? AnyShapeStyle(LinearGradient.ds_logoBlueAccent(phase: pages[currentPage].gradientPhase))
                             : AnyShapeStyle(Color.gray.opacity(0.25))
                     )
                     .frame(width: index == currentPage ? 28 : 8, height: 8)
@@ -312,8 +325,8 @@ struct WelcomeTutorialView: View {
             .frame(height: 58)
             .background(
                 Capsule()
-                    .fill(pages[currentPage].accent)
-                    .shadow(color: pages[currentPage].accentColor.opacity(0.5), radius: 16, x: 0, y: 8)
+                    .fill(LinearGradient.ds_logoBlueAccent(phase: pages[currentPage].gradientPhase))
+                    .shadow(color: Self.logoBlueShadowColor.opacity(0.5), radius: 16, x: 0, y: 8)
             )
         }
         .scaleButtonStyle(.standard, withHaptic: true)
@@ -327,7 +340,7 @@ struct WelcomeTutorialView: View {
                 Text(title).font(.ds_labelLarge)
                 Image(systemName: icon).font(.ds_bodySmall.weight(.bold))
             }
-            .foregroundStyle(pages[currentPage].accent)
+            .foregroundStyle(LinearGradient.ds_logoBlueAccent(phase: pages[currentPage].gradientPhase))
             .frame(maxWidth: .infinity)
             .frame(height: 58)
             .background(
@@ -335,13 +348,22 @@ struct WelcomeTutorialView: View {
                     .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
             )
             .overlay(
-                Capsule().stroke(pages[currentPage].accent, lineWidth: 2)
+                Capsule().stroke(
+                    LinearGradient.ds_logoBlueAccent(phase: pages[currentPage].gradientPhase),
+                    lineWidth: 2
+                )
             )
         }
         .scaleButtonStyle(.standard, withHaptic: true)
         .padding(.horizontal, Spacing.xl)
         .accessibilityLabel(title)
     }
+
+    /// Static brand-blue color used for the primary CTA's drop shadow. We
+    /// intentionally pin this to a single color (the mid-point of the logo
+    /// blue gradient) rather than rotating it with the page — the shadow is
+    /// always "down/back" and reads as a constant brand glow under the CTA.
+    private static let logoBlueShadowColor = Color(red: 0.20, green: 0.55, blue: 0.95)
 
     // MARK: - Actions
 
@@ -384,27 +406,23 @@ struct TutorialPageView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing: 0) {
-                Spacer(minLength: Spacing.md)
-
-                Group {
-                    if hasBeenActive {
-                        heroView
-                            .scaleEffect(animateContent ? 1 : 0.85)
-                            .opacity(animateContent ? 1 : 0)
-                    } else {
-                        Color.clear
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(maxHeight: heroMaxHeight(geometry))
-
-                Spacer(minLength: Spacing.md)
-
-                copyBlock
-                    .padding(.horizontal, Spacing.md)
-
-                Spacer(minLength: Spacing.lg)
+            // Two steps own bespoke layouts that anchor their hero
+            // content directly below the parent's Skip-pill chrome
+            // (matching button position) instead of using the generic
+            // hero-band sizing path:
+            //   • Auto-Workout — Custom/Auto buttons + scrollable card
+            //     list + title block (`autoWorkoutLayout`).
+            //   • Challenges 1v1 — slim hero card + dashboard-style
+            //     active challenge widget + title block
+            //     (`challengesLayout`).
+            // Branching here keeps the standard path untouched.
+            switch kind {
+            case .autoWorkout:
+                self.autoWorkoutLayout(geometry)
+            case .challenges1v1:
+                self.challengesLayout(geometry)
+            default:
+                self.standardLayout(geometry)
             }
         }
         .onAppear {
@@ -419,6 +437,278 @@ struct TutorialPageView: View {
         }
     }
 
+    // MARK: - Standard layout (every step except Auto-Workout)
+
+    @ViewBuilder
+    private func standardLayout(_ geometry: GeometryProxy) -> some View {
+        VStack(spacing: 0) {
+                if kind == .welcome {
+                    // Anchor the "Welcome to" headline ABOVE the hero band so
+                    // it stays in a fixed position regardless of how the
+                    // logo+glow inside the hero scales or animates. (Embedding
+                    // it inside the hero VStack caused it to get pushed up
+                    // off-screen when the glow circle exceeded `heroMaxHeight`.)
+                    Text(kind.title)
+                        .font(.ds_displayMedium)
+                        .foregroundStyle(LinearGradient.ds_logoBlueAccent(phase: kind.gradientPhase))
+                        .tracking(-0.5)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, Spacing.lg)
+                        .padding(.bottom, Spacing.sm)
+                        .opacity(animateContent ? 1 : 0)
+                        .offset(y: animateContent ? 0 : -10)
+                        .animation(.easeOut(duration: 0.5).delay(0.10), value: animateContent)
+                } else {
+                    Spacer(minLength: Spacing.md)
+                }
+
+            Group {
+                if hasBeenActive {
+                    heroView
+                        .scaleEffect(animateContent ? 1 : 0.85)
+                        .opacity(animateContent ? 1 : 0)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(maxHeight: heroMaxHeight(geometry))
+
+            Spacer(minLength: Spacing.md)
+
+            copyBlock
+                .padding(.horizontal, Spacing.md)
+
+            Spacer(minLength: Spacing.lg)
+        }
+    }
+
+    // MARK: - Auto-Workout layout (custom)
+    //
+    // Three vertical bands stacked top→bottom in a `VStack`:
+    //
+    //   1. BUTTONS — the two full-size home-tab quick actions (Custom +
+    //      Auto). Anchored just below the parent's Skip pill so they sit
+    //      cleanly below the header edge.
+    //   2. HARD EDGE — a hairline divider with a soft drop shadow. The
+    //      `ScrollView` sits flush below this edge, so when the user
+    //      scrolls cards UP they get hard-clipped at this line — the
+    //      visual "the card slides behind the buttons" effect the design
+    //      brief asks for.
+    //   3. SCROLLABLE CARDS — bounded `ScrollView` of mock exercise rows.
+    //      A bottom-only fade mask dissolves the last visible card into
+    //      the title block underneath. Because the `ScrollView` is
+    //      bounded by the layout, cards can never physically extend into
+    //      the title area, so the title text never has cards bleeding
+    //      through it.
+    //   4. COPY BLOCK — same `copyBlock` every other step uses (title +
+    //      subtitle + description). Sits flush below the scroll view's
+    //      faded bottom edge.
+    @ViewBuilder
+    private func autoWorkoutLayout(_ geometry: GeometryProxy) -> some View {
+        VStack(spacing: 0) {
+            // Tiny breathing gap below the parent's Skip pill row so the
+            // buttons aren't kissing the header edge.
+            Spacer().frame(height: Spacing.xs)
+
+            // BUTTONS — full home-tab size, no `compact` flag.
+            HStack(spacing: Spacing.sm) {
+                DepthQuickActionCard(
+                    title: "Custom Workout",
+                    subtitle: "Build your own",
+                    icon: "plus.circle.fill",
+                    gradient: [Color.blue, Color.cyan],
+                    action: {}
+                )
+
+                DepthQuickActionCard(
+                    title: "Auto Workout",
+                    subtitle: "Auto-generated routine",
+                    icon: "dumbbell.fill",
+                    gradient: [Color.purple, Color.pink],
+                    action: {}
+                )
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.bottom, Spacing.md)
+            .opacity(animateContent ? 1 : 0)
+            .offset(y: animateContent ? 0 : 12)
+            .animation(.easeOut(duration: 0.5).delay(0.10), value: animateContent)
+
+            // HARD EDGE — hairline + downward shadow that the cards
+            // appear to scroll up behind. Shadow gives the line depth so
+            // the user reads it as "this is a clipping edge", not a
+            // separator.
+            Rectangle()
+                .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.10))
+                .frame(height: 1)
+                .padding(.horizontal, Spacing.md)
+                .shadow(
+                    color: Color.black.opacity(colorScheme == .dark ? 0.55 : 0.18),
+                    radius: 5,
+                    x: 0,
+                    y: 4
+                )
+
+            // SCROLLABLE CARDS — flexible-height region between the hard
+            // edge and the title block. The `ScrollView` itself owns its
+            // top-edge clipping; the bottom edge gets a gradient mask so
+            // the bottom-most visible card dissolves cleanly into the
+            // title block beneath. `.scrollIndicators(.visible)` keeps
+            // the scroll bar persistently visible so the user knows the
+            // list is scrollable on first appearance (default
+            // `.automatic` only flashes during active scrolling, which
+            // most users miss in onboarding).
+            ScrollView(.vertical) {
+                VStack(spacing: Spacing.xs) {
+                    ForEach(
+                        Array(Self.autoWorkoutSampleExercises.enumerated()),
+                        id: \.offset
+                    ) { _, exercise in
+                        TutorialMockExerciseRow(exercise: exercise)
+                    }
+
+                    // Overscroll padding so the user can pull the bottom
+                    // rows fully into view before the fade hides them.
+                    Color.clear.frame(height: 60)
+                }
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.sm)
+            }
+            .scrollIndicators(.visible)
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0.0),
+                        .init(color: .black, location: 0.62),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .opacity(animateContent ? 1 : 0)
+            .animation(.easeOut(duration: 0.5).delay(0.20), value: animateContent)
+
+            // TITLE BLOCK — same `copyBlock` every other step uses. No
+            // explicit solid background needed because the `ScrollView`
+            // above is bounded and its bottom mask already fades cards
+            // to fully transparent before they could reach this band, so
+            // nothing physically overlaps the title text.
+            copyBlock
+                .padding(.horizontal, Spacing.md)
+                .padding(.top, Spacing.sm)
+
+            Spacer(minLength: Spacing.lg)
+        }
+    }
+
+    // MARK: - Challenges 1v1 layout (custom)
+    //
+    // Anchors a slim hero card + a dashboard-style active-challenge
+    // widget directly below the parent's Skip-pill chrome — same
+    // `Spacing.xs` breathing gap the Auto-Workout step uses so the top
+    // card sits at the SAME y-position as the Custom/Auto buttons on
+    // the Auto-Workout page. No `Spacer(minLength: Spacing.md)` above
+    // the hero (the standard layout's "extra background" the user
+    // asked us to trim out), and a tight `Spacing.xs` gap between the
+    // last card and the title block keeps everything visually compact.
+    @ViewBuilder
+    private func challengesLayout(_ geometry: GeometryProxy) -> some View {
+        VStack(spacing: 0) {
+            Spacer().frame(height: Spacing.xs)
+
+            Group {
+                if hasBeenActive {
+                    TutorialChallengeHero(kind: kind, isAnimating: heroAnimation)
+                        .scaleEffect(animateContent ? 1 : 0.85)
+                        .opacity(animateContent ? 1 : 0)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            Spacer(minLength: Spacing.xs)
+
+            copyBlock
+                .padding(.horizontal, Spacing.md)
+
+            Spacer(minLength: Spacing.md)
+        }
+    }
+
+    // MARK: - Auto-Workout sample data
+    //
+    // Names match the canonical exercise names in
+    // `Fit33/Resources/exercises.json` (and the Supabase
+    // `video_mappings` table) EXACTLY. That's the lookup key
+    // `VideoStreamingService.getVideoURL(for:)` uses (case-insensitive
+    // match against `genderVideoCache`) — and the cache that
+    // `ExercisePosterRingIcon` consults is gender-aware
+    // (`GenderFilterService.shared.preferredGender`), so male users see
+    // the male glyphs and female users see the female glyphs, exactly
+    // like the Exercises tab.
+    //
+    // Each name was verified against `exercises.json` before being added
+    // here — using a name that doesn't exist as a canonical key (e.g.
+    // "Leg Press" instead of "Lever Seated Leg Press") makes the cache
+    // lookup miss silently and the card falls back to the SF Symbol
+    // forever, which is the bug the user just reported.
+    //
+    // 8 rows is enough that even on iPhone 16 Pro Max at least one row
+    // sits below the fold, so scrollability is discoverable.
+    private static let autoWorkoutSampleExercises: [TutorialMockExerciseRow.SampleExercise] = [
+        .init(
+            name: "Barbell Full Squat",
+            category: "Legs",
+            equipment: "Barbell",
+            fallbackSymbol: "figure.strengthtraining.traditional"
+        ),
+        .init(
+            name: "Barbell Romanian Deadlift",
+            category: "Legs",
+            equipment: "Barbell",
+            fallbackSymbol: "figure.strengthtraining.functional"
+        ),
+        .init(
+            name: "Barbell Lunge",
+            category: "Legs",
+            equipment: "Barbell",
+            fallbackSymbol: "figure.walk"
+        ),
+        .init(
+            name: "Barbell Hip Thrust",
+            category: "Legs",
+            equipment: "Barbell",
+            fallbackSymbol: "figure.strengthtraining.functional"
+        ),
+        .init(
+            name: "Barbell Front Squat",
+            category: "Legs",
+            equipment: "Barbell",
+            fallbackSymbol: "figure.strengthtraining.traditional"
+        ),
+        .init(
+            name: "Dumbbell Goblet Squat",
+            category: "Legs",
+            equipment: "Dumbbell",
+            fallbackSymbol: "figure.strengthtraining.traditional"
+        ),
+        .init(
+            name: "Lever Seated Leg Press",
+            category: "Legs",
+            equipment: "Machine",
+            fallbackSymbol: "figure.strengthtraining.traditional"
+        ),
+        .init(
+            name: "Lever Lying Leg Curl",
+            category: "Legs",
+            equipment: "Machine",
+            fallbackSymbol: "figure.strengthtraining.traditional"
+        )
+    ]
+
     // MARK: - Hero
 
     @ViewBuilder
@@ -429,11 +719,19 @@ struct TutorialPageView: View {
         case .findFriends:
             TutorialFindFriendsHero(kind: kind, isAnimating: heroAnimation)
         case .autoWorkout:
-            TutorialAutoWorkoutHero(kind: kind, isAnimating: heroAnimation)
+            // The Auto-Workout step short-circuits the hero / copy layout
+            // entirely (see `autoWorkoutLayout`), so this branch is never
+            // reached at runtime. Kept as `EmptyView` only to satisfy the
+            // exhaustive switch.
+            EmptyView()
         case .programs:
             TutorialProgramHero(kind: kind, isAnimating: heroAnimation)
         case .challenges1v1:
-            TutorialChallengeHero(kind: kind, isAnimating: heroAnimation)
+            // Like Auto-Workout, the 1v1 Challenges step uses its own
+            // bespoke layout (`challengesLayout`) that anchors the hero
+            // directly below the Skip-pill chrome and never goes through
+            // the generic hero-band sizing path.
+            EmptyView()
         case .community:
             TutorialCommunityHero(kind: kind, isAnimating: heroAnimation)
         case .league:
@@ -451,10 +749,16 @@ struct TutorialPageView: View {
 
     private var copyBlock: some View {
         VStack(spacing: 0) {
-            if kind != .welcome { // Welcome shows logo + own title
+            if kind != .welcome { // Welcome shows logo + anchored title above hero
+                // Every step's H1 title shares the same logo-blue gradient as
+                // the navigation chrome (page indicator + CTAs), with the
+                // gradient angle phase-shifted per step so the gradient
+                // appears to scroll as the user swipes through onboarding.
+                // (Each page's `kind.accent` is still used by its hero
+                // illustration to keep the per-step identity color.)
                 Text(kind.title)
                     .font(.ds_displayMedium)
-                    .foregroundStyle(kind.accent)
+                    .foregroundStyle(LinearGradient.ds_logoBlueAccent(phase: kind.gradientPhase))
                     .tracking(-0.5)
                     .multilineTextAlignment(.center)
                     .opacity(animateContent ? 1 : 0)
@@ -489,7 +793,12 @@ struct TutorialPageView: View {
 
     private func heroMaxHeight(_ geometry: GeometryProxy) -> CGFloat {
         switch kind {
-        case .welcome, .trial:                    return geometry.size.height * 0.46
+        // Welcome step's title is rendered as a separate element ABOVE the
+        // hero band (see `body`), so the hero band itself only needs to fit
+        // the logo + radial glow — slightly smaller share of the screen than
+        // the trial step which still hosts its own internal title + CTA.
+        case .welcome:                            return geometry.size.height * 0.40
+        case .trial:                              return geometry.size.height * 0.46
         case .wearables:                          return geometry.size.height * 0.50
         // Community step renders the live `CommunityLeaderboardWidget` once
         // the user joins from this screen — needs more vertical room than the
@@ -499,9 +808,18 @@ struct TutorialPageView: View {
         // so the user can quick-add inline — needs more height than the old
         // 5-circle decorative cluster.
         case .findFriends:                        return geometry.size.height * 0.48
-        case .challenges1v1:                      return geometry.size.height * 0.42
+        // Challenges 1v1 step uses its own bespoke layout
+        // (`challengesLayout`) — anchors the hero directly below the
+        // Skip-pill chrome rather than centering inside a hero band —
+        // so this value is unused for that case. Kept as a placeholder
+        // so the switch is exhaustive.
+        case .challenges1v1:                      return geometry.size.height * 0.58
         case .programs, .fuel, .league:           return geometry.size.height * 0.38
-        case .autoWorkout:                        return geometry.size.height * 0.36
+        // Auto-Workout step uses its own bespoke layout (`autoWorkoutLayout`)
+        // and never goes through the hero-band sizing path, so this value
+        // is unused for that case. Kept as a placeholder so the switch is
+        // exhaustive.
+        case .autoWorkout:                        return geometry.size.height * 0.50
         }
     }
 
@@ -520,33 +838,36 @@ struct TutorialWelcomeHero: View {
     let isAnimating: Bool
 
     var body: some View {
-        VStack(spacing: Spacing.md) {
-            Text(kind.title)
-                .font(.ds_displayMedium)
-                .foregroundStyle(kind.accent)
-                .tracking(-0.5)
-                .multilineTextAlignment(.center)
-
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [kind.accentColor.opacity(0.35), Color.clear],
-                            center: .center, startRadius: 40, endRadius: 220
-                        )
+        // Hero is JUST the logo + glow. The "Welcome to" title is rendered
+        // separately above the hero band by `TutorialPageView` so it stays
+        // anchored regardless of how this ZStack scales/animates. Sizing
+        // here is tuned to fit cleanly inside the welcome band's
+        // `heroMaxHeight = 0.40 * geometry.height` on every iPhone class
+        // (SE → Pro Max) without overflowing into the title or copy slots.
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [kind.accentColor.opacity(0.35), Color.clear],
+                        center: .center, startRadius: 30, endRadius: 140
                     )
-                    .frame(width: 360, height: 360)
-                    .blur(radius: 30)
-                    .scaleEffect(isAnimating ? 1.06 : 1.0)
+                )
+                .frame(width: 260, height: 260)
+                .blur(radius: 30)
+                .scaleEffect(isAnimating ? 1.06 : 1.0)
 
-                Image("fit33-logo")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: 320, maxHeight: 160)
-                    .shadow(color: kind.accentColor.opacity(0.5), radius: 30, x: 0, y: 12)
-                    .scaleEffect(isAnimating ? 1.02 : 0.98)
-                    .offset(y: isAnimating ? -4 : 4)
-            }
+            // Use the hero-only `fit33-logo-hero` asset (the same wordmark
+            // cropped tight to the visible glyphs, ~3.35:1). Other surfaces
+            // (Auth, Dashboard header) keep using `fit33-logo` (1024×1024
+            // with built-in transparent padding) — those layouts depend on
+            // that intrinsic padding to look right.
+            Image("fit33-logo-hero")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 280, maxHeight: 100)
+                .shadow(color: kind.accentColor.opacity(0.5), radius: 30, x: 0, y: 12)
+                .scaleEffect(isAnimating ? 1.02 : 0.98)
+                .offset(y: isAnimating ? -4 : 4)
         }
     }
 }
@@ -998,36 +1319,118 @@ private struct TutorialFriendQuickAddCircle: View {
     }
 }
 
-// MARK: - Auto Workout Hero
+// MARK: - Tutorial Mock Exercise Row
+//
+// Visual twin of `AutoExerciseCard` for the welcome tutorial. Uses the
+// SAME `ExercisePosterRingIcon` the Exercises tab + Auto Workout
+// preview use, so the cards show real cached video stills of the
+// exercise (gender-aware — the icon's cache key reads
+// `GenderFilterService.shared.preferredGender`, so male videos show
+// for users who picked male, female videos show for female). The
+// rendered card matches the live preview screen pixel-for-pixel
+// (sleek card, gradient-ring icon, name + colored category +
+// equipment, info glyph, swap glyph) so the user recognizes the
+// layout when they reach the real auto-generated workout flow.
 
-struct TutorialAutoWorkoutHero: View {
-    let kind: TutorialPageKind
-    let isAnimating: Bool
+struct TutorialMockExerciseRow: View {
+    struct SampleExercise {
+        let name: String
+        let category: String
+        let equipment: String
+        /// SF Symbol shown until the smart-cropped video still finishes
+        /// baking on disk. After the first appearance the cache is warm
+        /// and the real glyph renders synchronously.
+        let fallbackSymbol: String
+    }
+
+    let exercise: SampleExercise
+
+    private var categoryColor: Color {
+        switch exercise.category.lowercased() {
+        case "chest": return .purple
+        case "back": return .blue
+        case "legs": return .green
+        case "shoulders": return .orange
+        case "arms": return .purple
+        case "core": return .yellow
+        case "full body": return .pink
+        default: return .gray
+        }
+    }
+
+    private var categoryGradient: [Color] {
+        switch exercise.category.lowercased() {
+        case "chest": return [Color.purple, Color.pink]
+        case "back": return [Color.blue, Color.cyan]
+        case "legs": return [Color.green, Color.teal]
+        case "shoulders": return [Color.orange, Color.yellow]
+        case "arms": return [Color.purple, Color.indigo]
+        case "core": return [Color.yellow, Color.orange]
+        case "full body": return [Color.pink, Color.red]
+        default: return [Color.gray, Color.gray.opacity(0.7)]
+        }
+    }
 
     var body: some View {
-        // Mirror the home-page Workout tab quick actions exactly:
-        // Custom Workout (blue→cyan, plus.circle.fill, "Build your own"), then
-        // Auto Workout (purple→pink, dumbbell.fill, "Auto-generated routine").
         HStack(spacing: Spacing.sm) {
-            DepthQuickActionCard(
-                title: "Custom Workout",
-                subtitle: "Build your own",
-                icon: "plus.circle.fill",
-                gradient: [Color.blue, Color.cyan],
-                action: {}
+            // Same component the Exercises tab uses. Loads the cached
+            // smart-cropped video still synchronously when warm, falls
+            // back to the gradient ring + SF Symbol on cold cache, and
+            // updates itself via `.exercisePosterSmartCropReady` once
+            // the bake finishes — so the tutorial cards "fill in" with
+            // real glyphs the first time the user sees them.
+            ExercisePosterRingIcon(
+                exerciseName: exercise.name,
+                gradientColors: categoryGradient,
+                fallbackSymbol: exercise.fallbackSymbol,
+                isCoreCategory: exercise.category.lowercased() == "core",
+                size: 56,
+                ringWidth: 2.5
             )
 
-            DepthQuickActionCard(
-                title: "Auto Workout",
-                subtitle: "Auto-generated routine",
-                icon: "dumbbell.fill",
-                gradient: [Color.purple, Color.pink],
-                action: {}
-            )
+            VStack(alignment: .leading, spacing: Spacing.xxxs) {
+                Text(exercise.name)
+                    .font(.ds_bodyLarge)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                HStack(spacing: Spacing.xs) {
+                    Text(exercise.category)
+                        .font(.ds_bodySmall)
+                        .foregroundColor(categoryColor)
+                        .fontWeight(.medium)
+
+                    Text("•")
+                        .font(.ds_labelSmall)
+                        .foregroundColor(.secondary)
+
+                    Text(exercise.equipment)
+                        .font(.ds_bodySmall)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+
+            Spacer(minLength: Spacing.xxs)
+
+            Image(systemName: "info.circle")
+                .font(.ds_bodyRegular)
+                .fontWeight(.medium)
+                .foregroundColor(.blue)
+
+            Image(systemName: "arrow.triangle.swap")
+                .font(.ds_bodyRegular)
+                .fontWeight(.medium)
+                .foregroundColor(categoryColor)
+                .padding(Spacing.xs)
+                .background(Circle().fill(categoryColor.opacity(0.15)))
         }
         .padding(.horizontal, Spacing.md)
-        .scaleEffect(0.94)
-        .offset(y: isAnimating ? -3 : 3)
+        .padding(.vertical, Spacing.sm)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
     }
 }
 
@@ -1122,178 +1525,313 @@ struct TutorialProgramHero: View {
 // MARK: - 1v1 Challenge Hero
 
 struct TutorialChallengeHero: View {
-    @ObservedObject private var rankingService = FriendRankingService.shared
-    @ObservedObject private var friendService = FriendService.shared
+    @Environment(\.colorScheme) private var colorScheme
     let kind: TutorialPageKind
     let isAnimating: Bool
 
-    @State private var didTriggerRanking = false
-    @State private var sendState: SendState = .ready
+    // MARK: Sample challenge fixture
+    //
+    // The 1v1 challenge tutorial is a STATIC PREVIEW of what an active
+    // 1v1 challenge looks like in the app. The screen renders TWO
+    // pieces, top → bottom:
+    //   1. A slim `ChallengeHeroCard` (the same component the live
+    //      `ChallengeDetailView` uses) with the day-progress pills
+    //      suppressed (passing `durationDays: 0` skips them) — gives
+    //      the user the title + brand color + one-line description
+    //      without the chronology pills the user said cluttered the
+    //      preview.
+    //   2. A `TutorialActiveChallengePreview` that mirrors the
+    //      dashboard's active-challenge widget (header row + accent bar
+    //      + head-to-head competition row) so onboarding users
+    //      recognize the exact UI they'll see on their dashboard once
+    //      they've started a real challenge.
+    //
+    // No real challenge is created from this screen; the post-
+    // onboarding Friends tab is where users send real challenges.
+    //
+    // Fixture is a 7-day Lift Challenge ("3 Lifts a Week") with the
+    // current user beating a fake opponent ("Alex") 2-to-1 with 3 days
+    // remaining. Mirrors the `.lift` ChallengeType (purple/pink
+    // gradient, dumbbell icon, 🏋️ emoji) so the brand color story
+    // matches what users see post-onboarding.
+    private static let challengeType: ChallengeType = .lift
+    private static let challengeTitle = "3 Lifts a Week"
+    private static let challengeDescription = "Race your friend to 3 strength workouts this week. First one to hit the target wins more XP points toward your next league."
+    private static let weeklyTarget = 3
+    private static let myProgress = 2
+    private static let opponentProgress = 1
+    private static let daysRemaining = 3
+    /// Fake opponent. Verified badge demonstrates the platform's
+    /// verified-account treatment to brand-new users (the badge they
+    /// see here is the same one rendered next to a real verified
+    /// account's name in the live `competitionProgressSection`).
+    private static let opponentName = "Joe"
+    private static let opponentIsVerified = true
 
-    private enum SendState {
-        case ready
-        case sending
-        case sent
-    }
-
-    /// Top-interaction friend the tutorial targets for the quick-start
-    /// challenge. Prefers `FriendRankingService.rankedFriends` (sorted by
-    /// `relationship_score` — interactions, shared workouts, prior
-    /// challenges), falling back to the raw friend list when ranking
-    /// hasn't loaded yet.
-    private var topFriend: TopFriend? {
-        if let ranked = rankingService.rankedFriends.first {
-            return TopFriend(
-                friendId: ranked.friendId,
-                displayName: ranked.friendName?.components(separatedBy: " ").first
-                    ?? ranked.friendUsername
-                    ?? "your friend",
-                handle: ranked.friendUsername,
-                avatarURL: ranked.profilePhotoUrl
-            )
-        }
-        if let fallback = friendService.friends.first {
-            return TopFriend(
-                friendId: fallback.friendId,
-                displayName: fallback.friendName?.components(separatedBy: " ").first
-                    ?? fallback.friendUsername
-                    ?? "your friend",
-                handle: fallback.friendUsername,
-                avatarURL: fallback.profilePhotoUrl
-            )
-        }
-        return nil
-    }
-
-    private struct TopFriend {
-        let friendId: UUID
-        let displayName: String
-        let handle: String?
-        let avatarURL: String?
-    }
-
-    /// 1v1 Steps + 7-day window is the canonical "first challenge" in the
-    /// app — universal HealthKit support, doesn't require wearable
-    /// pairing, and 10k matches the project's default daily Steps target.
-    private static let tutorialChallengeType: ChallengeType = .steps
-    private static let tutorialDurationDays: Int = 7
-    private static let tutorialDailyTarget: Int = 10_000
-
-    private var personalization: ChallengeAFriendEntryWidget.Personalization? {
-        guard let friend = topFriend else { return nil }
-        let widgetState: ChallengeAFriendEntryWidget.Personalization.LiveState
-        switch sendState {
-        case .ready:   widgetState = .ready
-        case .sending: widgetState = .sending
-        case .sent:    widgetState = .sent
-        }
-        return .init(
-            friendId: friend.friendId,
-            displayName: friend.displayName,
-            handle: friend.handle,
-            avatarURL: friend.avatarURL,
-            challengeType: Self.tutorialChallengeType,
-            state: widgetState
-        )
+    private var myDisplayName: String {
+        UserManager.shared.currentUser?.name?
+            .components(separatedBy: " ")
+            .first ?? "You"
     }
 
     var body: some View {
         VStack(spacing: Spacing.sm) {
-            ChallengeAFriendEntryWidget(
-                onTap: handleTap,
-                personalization: personalization
+            ChallengeHeroCard(
+                title: Self.challengeTitle,
+                emoji: Self.challengeType.emoji,
+                typeColor: Self.challengeType.color,
+                gradient: Self.challengeType.gradientColors,
+                typeLabel: Self.challengeType.displayName,
+                description: Self.challengeDescription,
+                // Day-progress pills suppressed per design feedback —
+                // passing `durationDays: 0` short-circuits the
+                // calendar/clock pill row inside `ChallengeHeroCard`
+                // so the hero is visually slimmer and the focus stays
+                // on the title + description.
+                daysElapsed: 0,
+                durationDays: 0,
+                daysRemaining: 0,
+                endDate: nil,
+                memberCountSuffix: nil
             )
-            .frame(maxWidth: 360)
 
-            HStack(spacing: Spacing.xs) {
-                badge(icon: "person.2.fill", label: "1v1")
-                badge(icon: "person.3.fill", label: "Group")
-                badge(icon: "lock.fill", label: "Private")
-            }
+            TutorialActiveChallengePreview(
+                challengeType: Self.challengeType,
+                myName: myDisplayName,
+                myProgress: Self.myProgress,
+                opponentName: Self.opponentName,
+                opponentProgress: Self.opponentProgress,
+                opponentIsVerified: Self.opponentIsVerified,
+                weeklyTarget: Self.weeklyTarget,
+                daysRemaining: Self.daysRemaining
+            )
         }
-        .scaleEffect(0.9)
-        .offset(y: isAnimating ? -2 : 2)
         .padding(.horizontal, Spacing.md)
-        .onAppear { triggerRankingRefreshIfNeeded() }
+        .scaleEffect(0.94)
+        .offset(y: isAnimating ? -2 : 2)
     }
+}
 
-    private func badge(icon: String, label: String) -> some View {
-        HStack(spacing: Spacing.xxs) {
-            Image(systemName: icon).font(.ds_caption)
-            Text(label).font(.ds_labelMedium)
+// MARK: - Tutorial Active Challenge Preview
+//
+// Static, non-interactive mirror of the dashboard's active-challenge
+// widget (`DashboardView+Challenges.swift::activeChallengeDetailWidget`).
+// Reuses the same visual shell — emoji avatar + title + "vs Friend ·
+// 3d left" subtitle + accent-bar separator + head-to-head row — but
+// with no NavigationLinks (would attempt to push out of the
+// onboarding fullScreenCover), no battle-cry sheet plumbing, and no
+// service dependencies (`ChallengeProgressResolver`,
+// `RealtimeService`, etc.). Pure preview.
+struct TutorialActiveChallengePreview: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let challengeType: ChallengeType
+    let myName: String
+    let myProgress: Int
+    let opponentName: String
+    let opponentProgress: Int
+    let weeklyTarget: Int
+    let daysRemaining: Int
+
+    private var typeColor: Color { challengeType.color }
+    private var typeGradient: [Color] { challengeType.gradientColors }
+    private var amWinning: Bool { myProgress > opponentProgress }
+    private var leadDelta: Int { abs(myProgress - opponentProgress) }
+    private var unitLabel: String { weeklyTarget == 1 ? "lift" : "lifts" }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            headerRow
+            progressRow
+                .padding(.vertical, Spacing.sm)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.bottom, 4)
         }
-        .foregroundStyle(kind.accent)
-        .padding(.horizontal, Spacing.sm)
-        .padding(.vertical, Spacing.xxs)
         .background(
-            Capsule().fill(kind.accentColor.opacity(0.12))
+            ZStack {
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 4, style: .continuous)
+                    .fill(typeColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                    .offset(y: 6)
+                    .blur(radius: 3)
+
+                RoundedRectangle(cornerRadius: CornerRadius.xl + 2, style: .continuous)
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                    .offset(y: 4)
+
+                AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
+
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: colorScheme == .dark
+                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                : [Color.white, Color.white.opacity(0.5), Color.clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1.5
+                    )
+
+                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                typeColor.opacity(colorScheme == .dark ? 0.35 : 0.25),
+                                typeColor.opacity(colorScheme == .dark ? 0.25 : 0.15)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
         )
-        .overlay(Capsule().stroke(kind.accentColor.opacity(0.3), lineWidth: 1))
+        .shadow(color: typeColor.opacity(colorScheme == .dark ? 0.1 : 0.06), radius: 12, x: 0, y: 3)
     }
 
-    // MARK: - Actions
+    // MARK: Header row (mirrors `ActiveChallengeHeaderRow` visuals)
 
-    /// Pull ranked friends so we can target the user's top-interaction friend
-    /// (instead of just `friends.first`). Cheap RPC, gated by 5-min cache
-    /// inside the service so back-to-back tutorial appearances don't refetch.
-    private func triggerRankingRefreshIfNeeded() {
-        guard !didTriggerRanking,
-              SupabaseManager.shared.isAuthenticated else { return }
-        didTriggerRanking = true
-        Task { @MainActor in
-            await rankingService.fetchRankedFriends(forceRefresh: false)
-        }
-    }
+    private var headerRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            ZStack {
+                Circle()
+                    .stroke(
+                        LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 2.5
+                    )
+                    .frame(width: 36, height: 36)
+                Text(challengeType.emoji)
+                    .font(.ds_heading3)
+            }
 
-    private func handleTap() {
-        switch sendState {
-        case .sending, .sent:
-            return
-        case .ready:
-            break
-        }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("3 Lifts a Week")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
 
-        // No friend yet — onboarding hasn't surfaced one. Fall back to the
-        // generic "open the challenge creation flow" affordance: a no-op
-        // here keeps the tutorial moving without sending a phantom
-        // challenge to nobody. (The page subtitle already explains the
-        // feature.)
-        guard let friend = topFriend else { return }
-
-        sendState = .sending
-        HapticManager.impact(.medium)
-
-        Task { @MainActor in
-            let title = "Steps Showdown"
-            let challengeId = await ChallengeService.shared.createChallenge(
-                opponentId: friend.friendId,
-                type: Self.tutorialChallengeType,
-                title: title,
-                description: "Quick-start challenge from your Fit33 welcome tour.",
-                dailyTarget: Self.tutorialDailyTarget,
-                totalTarget: Self.tutorialDailyTarget * Self.tutorialDurationDays,
-                targetUnit: "steps",
-                durationDays: Self.tutorialDurationDays
-            )
-
-            if challengeId != nil {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                    sendState = .sent
+                HStack(spacing: 6) {
+                    Text("vs \(opponentName)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("•")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("\(daysRemaining)d left")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(typeColor)
                 }
-                HapticManager.notification(.success)
-                AppLogger.info(
-                    "[TUTORIAL] Sent 1v1 Steps challenge to \(friend.displayName)",
-                    category: .social
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "face.smiling")
+                .font(.ds_heading3)
+                .foregroundStyle(
+                    LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
-            } else {
-                // Failure — drop back to ready so the user can retry. Service
-                // already classified + logged via NetworkErrorClassifier.
-                sendState = .ready
-                HapticManager.notification(.error)
-                AppLogger.warning(
-                    "[TUTORIAL] Quick-start challenge failed: \(ChallengeService.shared.lastCreateChallengeError ?? "unknown")",
-                    category: .social
+                .padding(.trailing, 8)
+
+            Image(systemName: "chevron.right")
+                .font(.ds_labelMedium)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, Spacing.sm)
+    }
+
+    // MARK: Head-to-head progress row (mirrors `competitionProgressSection`)
+
+    private var progressRow: some View {
+        HStack(spacing: 0) {
+            // Left accent bar — type-colored
+            RoundedRectangle(cornerRadius: 2)
+                .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
+                .frame(width: 4)
+                .padding(.vertical, Spacing.xxs)
+
+            HStack(spacing: 10) {
+                // You side
+                HStack(spacing: 10) {
+                    avatarBubble(initial: String(myName.prefix(1)), isLeading: amWinning)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("You")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+
+                        Text("\(myProgress) \(unitLabel)")
+                            .font(.ds_heading2).fontDesign(.rounded)
+                            .foregroundColor(amWinning ? .green : .primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: 100, alignment: .leading)
+                }
+
+                Spacer(minLength: 4)
+
+                VStack(spacing: 2) {
+                    Text("⚔️")
+                        .font(.ds_bodySmall)
+                    if leadDelta > 0 {
+                        Text(amWinning ? "+\(leadDelta)" : "-\(leadDelta)")
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .foregroundColor(amWinning ? .green : .red)
+                    }
+                }
+                .frame(minWidth: 30)
+
+                Spacer(minLength: 4)
+
+                // Opponent side
+                HStack(spacing: 10) {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(opponentName)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+
+                        Text("\(opponentProgress) \(opponentProgress == 1 ? "lift" : "lifts")")
+                            .font(.ds_heading2).fontDesign(.rounded)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: 100, alignment: .trailing)
+
+                    avatarBubble(initial: String(opponentName.prefix(1)), isLeading: !amWinning)
+                }
+            }
+            .padding(.horizontal, 10)
+        }
+    }
+
+    @ViewBuilder
+    private func avatarBubble(initial: String, isLeading: Bool) -> some View {
+        ZStack(alignment: .top) {
+            Circle()
+                .fill(LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 44, height: 44)
+                .overlay(
+                    Text(initial.uppercased())
+                        .font(.ds_labelLarge)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
                 )
+                .overlay(
+                    Circle().stroke(Color.white.opacity(0.25), lineWidth: 1.5)
+                )
+
+            if isLeading {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(.yellow)
+                    .offset(y: -12)
             }
         }
     }
@@ -1312,12 +1850,12 @@ struct TutorialChallengeHero: View {
 struct TutorialCommunityHero: View {
     @ObservedObject private var communityService = CommunityChallengeService.shared
     @ObservedObject private var contactsService = ContactsService.shared
-    @ObservedObject private var orientation = OrientationManager.shared
     let kind: TutorialPageKind
     let isAnimating: Bool
 
     @State private var didTriggerRefresh = false
     @State private var didLoadPYMKCommunities = false
+    @State private var didBuildPreview = false
     @State private var isJoining = false
     @State private var joinedChallengeId: UUID?
     /// Communities surfaced via friends-of-friends / "people you may know".
@@ -1325,85 +1863,39 @@ struct TutorialCommunityHero: View {
     /// other surfaces (Friends tab, Community Hub) keep using the
     /// friend-only `discoverableChallenges`.
     @State private var pymkCommunities: [DiscoverableCommunityChallenge] = []
+    /// Synthesized live-shape `CommunityChallenge` rendered in the
+    /// preview `CommunityLeaderboardWidget`. Built from the picked
+    /// source (default: 10K-steps community) + a real leaderboard
+    /// fetched via `getChallengeDetail` and `fetchContactsLeaderboard`
+    /// so the user sees actual member scores BEFORE joining.
+    @State private var previewChallenge: CommunityChallenge?
+    /// The picked source backing `previewChallenge`. Retained so the
+    /// Join tap can route to the correct join RPC: friend-gated for
+    /// `.discoverable`, code-based for `.featured`.
+    @State private var previewSource: PreviewSource?
 
-    /// One row in the community card stack. Either a friend / PYMK
-    /// community (renders as `FriendDiscoveryCard`, joins via the
-    /// friend-chain RPC) or a generic featured community (renders as
-    /// `FeaturedChallengeCard`, joins via `joinChallenge(code:)`).
-    private enum CommunityRecommendation: Identifiable {
-        case discoverable(DiscoverableCommunityChallenge)
+    /// Backing source of the preview challenge.
+    private enum PreviewSource {
+        case discoverable(DiscoverableCommunityChallenge, isContactBased: Bool)
         case featured(FeaturedCommunityChallenge)
 
-        var id: UUID {
+        var title: String {
             switch self {
-            case .discoverable(let c): return c.challengeId
-            case .featured(let c):     return c.challengeId
+            case .discoverable(let c, _): return c.title
+            case .featured(let c):        return c.title
             }
         }
-    }
-
-    /// 3 cards on standard / large devices, 2 on the iPhone SE-class
-    /// compact width tier (vertical room is tight there — fitting 3
-    /// cards plus the page subtitle/description copy block clips).
-    private var maxRecommendations: Int {
-        orientation.deviceTier == .compact ? 2 : 3
-    }
-
-    /// Build the deduped, prioritized recommendation list. Direct-friend
-    /// communities first, then PYMK / FoF, then top-active featured
-    /// fillers — capped at `maxRecommendations`. The Community Step
-    /// always shows SOMETHING joinable as long as the server has any
-    /// active community at all.
-    private var recommendations: [CommunityRecommendation] {
-        var seen = Set<UUID>()
-        var out: [CommunityRecommendation] = []
-
-        let friendCommunities = communityService.discoverableChallenges
-        let pymk = pymkCommunities
-        // "Most active" filler = top participant_count featured. The
-        // discover RPC already returns featured ordered by recency /
-        // creation; we sort client-side so the pool is participant-count
-        // descending (= "most active").
-        let featuredByActivity = communityService.featuredChallenges
-            .filter { !$0.alreadyJoined }
-            .sorted { $0.participantCount > $1.participantCount }
-
-        for challenge in friendCommunities {
-            guard out.count < maxRecommendations else { break }
-            if seen.insert(challenge.challengeId).inserted {
-                out.append(.discoverable(challenge))
-            }
-        }
-        for challenge in pymk {
-            guard out.count < maxRecommendations else { break }
-            if seen.insert(challenge.challengeId).inserted {
-                out.append(.discoverable(challenge))
-            }
-        }
-        for challenge in featuredByActivity {
-            guard out.count < maxRecommendations else { break }
-            if seen.insert(challenge.challengeId).inserted {
-                out.append(.featured(challenge))
-            }
-        }
-        return out
-    }
-
-    /// Total connection count surfaced across the recommendation stack —
-    /// used for the footer caption when the rendered cards span both
-    /// friend + PYMK sources.
-    private var totalConnectionsAcrossRecommendations: Int {
-        recommendations.reduce(0) { acc, item in
-            switch item {
-            case .discoverable(let c): return acc + c.friendsCount
-            case .featured: return acc
+        var challengeId: UUID {
+            switch self {
+            case .discoverable(let c, _): return c.challengeId
+            case .featured(let c):        return c.challengeId
             }
         }
     }
 
     /// The just-joined challenge (live `CommunityChallenge` from
     /// `myChallenges`), resolved by id so the leaderboard widget
-    /// renders with real top-5 data.
+    /// renders with real top-N data + the user's row.
     private var joinedChallenge: CommunityChallenge? {
         guard let id = joinedChallengeId else { return nil }
         return communityService.myChallenges.first(where: { $0.challengeId == id })
@@ -1422,39 +1914,30 @@ struct TutorialCommunityHero: View {
         .onAppear { triggerInitialFetch() }
     }
 
-    /// Aggressive scale-down once we're stacking 2-3 cards so the whole
-    /// stack fits the hero's vertical budget alongside the page copy
-    /// block, without clipping the page-dots / Continue CTA below.
+    /// The big leaderboard widget is taller than the old card stack,
+    /// so we scale it down a touch more so the page copy + dots +
+    /// Continue CTA below all fit comfortably on the iPhone SE-class
+    /// vertical budget without clipping.
     private var stackScale: CGFloat {
-        if joinedChallenge != nil { return 0.82 }
-        switch recommendations.count {
-        case 3:  return 0.78
-        case 2:  return 0.84
-        default: return 0.88
-        }
+        (joinedChallenge != nil || previewChallenge != nil) ? 0.78 : 0.92
     }
 
-    // MARK: - Initial fetch + PYMK fallback
+    // MARK: - Initial fetch + preview build
 
     private func triggerInitialFetch() {
         guard !didTriggerRefresh else { return }
         didTriggerRefresh = true
         Task { @MainActor in
-            // Force-refresh so the brand-new account always pulls fresh
+            // Force-refresh so brand-new accounts always pull fresh
             // discoverable + featured lists, even if the service
             // already ran its 5s-throttled refresh during sign-in.
             await communityService.refreshAll(force: true)
-            // Always broaden to friends-of-friends / contact suggestions
-            // when DIRECT friend matches don't fill the recommendation
-            // stack. Only skip when we already have enough friend
-            // communities to satisfy the slot count (typical established
-            // user); for everyone else (especially brand-new accounts
-            // that just synced contacts and haven't friended anyone) the
-            // PYMK pass is what makes the stack feel populated by people
-            // they actually know rather than random featured fillers.
-            if communityService.discoverableChallenges.count < maxRecommendations {
-                await loadPYMKCommunities()
-            }
+            // PYMK pool feeds both the contact-density picker AND the
+            // contacts-leaderboard population in the preview widget,
+            // so we always load it (not gated on direct-friend count
+            // like the prior single-card flow).
+            await loadPYMKCommunities()
+            await buildPreviewChallenge()
         }
     }
 
@@ -1463,32 +1946,251 @@ struct TutorialCommunityHero: View {
         guard !didLoadPYMKCommunities else { return }
         didLoadPYMKCommunities = true
 
-        var candidateIds = Set(contactsService.peopleYouMayKnow.map { $0.userId })
-        // Also fold in raw contacts-on-Fit33 (matched suggested friends) —
-        // these are people the user literally has in their phone but
-        // hasn't friended yet. They're not in the friend graph and may
-        // not be in PYMK either if they share zero mutual friends.
-        for suggestion in contactsService.suggestedFriends where !suggestion.isFriend {
-            candidateIds.insert(suggestion.userId)
-        }
-
+        var candidateIds = currentContactCandidateIds()
         // PYMK list might not have been fetched yet (cold launch). Trigger
         // a server fetch and re-collect.
         if candidateIds.isEmpty, SupabaseManager.shared.isAuthenticated {
             await contactsService.fetchPeopleYouMayKnow()
-            candidateIds = Set(contactsService.peopleYouMayKnow.map { $0.userId })
-            for suggestion in contactsService.suggestedFriends where !suggestion.isFriend {
-                candidateIds.insert(suggestion.userId)
-            }
+            candidateIds = currentContactCandidateIds()
         }
 
         guard !candidateIds.isEmpty else { return }
 
         let result = await communityService.fetchPYMKCommunityChallenges(
-            userIds: Array(candidateIds)
+            userIds: candidateIds
         )
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
             pymkCommunities = result
+        }
+    }
+
+    /// Pick the default preview community, fetch real leaderboard
+    /// data for it (contacts + global top-10 fallback), and synthesize
+    /// the live-shape `CommunityChallenge` the preview widget renders.
+    @MainActor
+    private func buildPreviewChallenge() async {
+        guard !didBuildPreview else { return }
+        didBuildPreview = true
+
+        guard let pickedSource = pickPreviewSource() else { return }
+
+        let challengeId = pickedSource.challengeId
+        let contactIds = currentContactCandidateIds()
+
+        // Run the contacts-leaderboard fetch + the global detail fetch
+        // in parallel — both are needed to populate the widget rows
+        // (contacts first, then global top to fill any remaining slots).
+        async let contactsTask = communityService.fetchContactsLeaderboard(
+            challengeId: challengeId,
+            userIds: contactIds
+        )
+        async let detailTask = communityService.getChallengeDetail(
+            challengeId: challengeId
+        )
+        let contactRows = await contactsTask
+        let detailResp  = await detailTask
+
+        let mergedRows = mergeLeaderboardRows(
+            contacts: contactRows,
+            globalTop: detailResp?.topLeaderboard ?? []
+        )
+
+        // Friends row above the leaderboard surfaces the contacts in
+        // this challenge (= "people you know" already here). Built
+        // from the contacts-leaderboard response so the avatars match
+        // the highlighted leaderboard rows.
+        let friends: [CommunityFriendInfo] = contactRows.map { row in
+            CommunityFriendInfo(
+                userId: row.userId,
+                name: row.name,
+                username: row.username,
+                profilePhotoUrl: row.profilePhotoUrl
+            )
+        }
+
+        let synthesized = synthesizeChallenge(
+            from: pickedSource,
+            participantCount: detailResp?.participantCount,
+            topParticipants: mergedRows,
+            friendsIn: friends
+        )
+
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+            previewChallenge = synthesized
+            previewSource = pickedSource
+        }
+        AppLogger.info(
+            "[TUTORIAL] Built community preview '\(pickedSource.title)' (\(contactRows.count) contacts in leaderboard, \(mergedRows.count) total rows)",
+            category: .social
+        )
+    }
+
+    /// Selection priority:
+    ///   1. PYMK 10K-steps community with the most synced contacts in it
+    ///   2. Friend-discoverable 10K-steps community with the most friends
+    ///   3. Official 10K-steps featured community (most participants)
+    ///   4. Any 10K-steps featured community (most participants)
+    ///   5. Top contact-based community (any target) — keeps a contacts
+    ///      hook even if no 10K exists on the server
+    ///   6. Top direct-friend community (any target)
+    ///   7. Top featured community as last-resort filler
+    private func pickPreviewSource() -> PreviewSource? {
+        let is10kSteps: (String, Int) -> Bool = { type, target in
+            type == "steps" && target == 10_000
+        }
+
+        if let c = pymkCommunities
+            .filter({ is10kSteps($0.challengeType, $0.dailyTarget) && $0.friendsCount > 0 })
+            .max(by: { $0.friendsCount < $1.friendsCount }) {
+            return .discoverable(c, isContactBased: true)
+        }
+        if let c = communityService.discoverableChallenges
+            .filter({ is10kSteps($0.challengeType, $0.dailyTarget) && $0.friendsCount > 0 })
+            .max(by: { $0.friendsCount < $1.friendsCount }) {
+            return .discoverable(c, isContactBased: false)
+        }
+        if let c = communityService.featuredChallenges
+            .filter({ is10kSteps($0.challengeType, $0.dailyTarget) && $0.isOfficial && !$0.alreadyJoined })
+            .max(by: { $0.participantCount < $1.participantCount }) {
+            return .featured(c)
+        }
+        if let c = communityService.featuredChallenges
+            .filter({ is10kSteps($0.challengeType, $0.dailyTarget) && !$0.alreadyJoined })
+            .max(by: { $0.participantCount < $1.participantCount }) {
+            return .featured(c)
+        }
+        if let c = pymkCommunities
+            .filter({ $0.friendsCount > 0 })
+            .max(by: { $0.friendsCount < $1.friendsCount }) {
+            return .discoverable(c, isContactBased: true)
+        }
+        if let c = communityService.discoverableChallenges
+            .filter({ $0.friendsCount > 0 })
+            .max(by: { $0.friendsCount < $1.friendsCount }) {
+            return .discoverable(c, isContactBased: false)
+        }
+        if let c = communityService.featuredChallenges
+            .filter({ !$0.alreadyJoined })
+            .max(by: { $0.participantCount < $1.participantCount }) {
+            return .featured(c)
+        }
+        return nil
+    }
+
+    /// PYMK candidate user-id list = `peopleYouMayKnow` ∪ unfriended
+    /// contacts-on-Fit33 from `suggestedFriends`. Same set we feed the
+    /// PYMK community-discovery RPC, reused here as the input to the
+    /// contacts-leaderboard RPC so the highlighted rows match the
+    /// communities surfaced in the picker.
+    private func currentContactCandidateIds() -> [UUID] {
+        var ids = Set(contactsService.peopleYouMayKnow.map { $0.userId })
+        for suggestion in contactsService.suggestedFriends where !suggestion.isFriend {
+            ids.insert(suggestion.userId)
+        }
+        return Array(ids)
+    }
+
+    /// Merge contact rows + global-top rows into a single leaderboard,
+    /// deduped by user_id, contacts first (so people the user knows
+    /// surface at the top), capped at 10. The merged list is re-ranked
+    /// 1..N because the server returns two independently-ranked sets
+    /// (contacts ranked among themselves, global ranked among everyone),
+    /// and mixing them as-is would show duplicate "1" / "2" rank emojis.
+    private func mergeLeaderboardRows(
+        contacts: [LeaderboardSnippetEntry],
+        globalTop: [LeaderboardSnippetEntry]
+    ) -> [LeaderboardSnippetEntry] {
+        var seen = Set<UUID>()
+        var out: [LeaderboardSnippetEntry] = []
+        for entry in contacts where out.count < 10 {
+            if seen.insert(entry.userId).inserted {
+                out.append(entry)
+            }
+        }
+        for entry in globalTop where out.count < 10 {
+            if seen.insert(entry.userId).inserted {
+                out.append(entry)
+            }
+        }
+        return out.enumerated().map { index, entry in
+            var copy = entry
+            copy.rank = index + 1
+            return copy
+        }
+    }
+
+    /// Build a `CommunityChallenge` (the live-state shape used by
+    /// `CommunityLeaderboardWidget`) from a preview source. The
+    /// `my_*` fields are nil because the user hasn't joined yet — the
+    /// widget's preview mode hides the my-stats banner so these
+    /// values are never surfaced to the user.
+    private func synthesizeChallenge(
+        from source: PreviewSource,
+        participantCount: Int?,
+        topParticipants: [LeaderboardSnippetEntry],
+        friendsIn: [CommunityFriendInfo]
+    ) -> CommunityChallenge {
+        switch source {
+        case .discoverable(let c, _):
+            return CommunityChallenge(
+                challengeId: c.challengeId,
+                title: c.title,
+                description: c.description,
+                emoji: c.emoji,
+                challengeType: c.challengeType,
+                dailyTarget: c.dailyTarget,
+                targetUnit: c.targetUnit,
+                participantCount: participantCount ?? c.participantCount,
+                maxParticipants: c.maxParticipants,
+                joinCode: c.joinCode,
+                inviteSlug: c.inviteSlug,
+                isRecurring: c.isRecurring,
+                isFeatured: c.isFeatured,
+                isOfficial: c.isOfficial,
+                myTodayProgress: nil,
+                myDaysCompleted: nil,
+                myCurrentStreak: nil,
+                myBestStreak: nil,
+                myRank: nil,
+                createdBy: c.createdBy,
+                creatorName: nil,
+                creatorUsername: nil,
+                topParticipants: topParticipants,
+                friendsIn: friendsIn,
+                friendsCount: friendsIn.count,
+                targetCadence: nil,
+                myPeriodProgress: nil
+            )
+        case .featured(let c):
+            return CommunityChallenge(
+                challengeId: c.challengeId,
+                title: c.title,
+                description: c.description,
+                emoji: c.emoji,
+                challengeType: c.challengeType,
+                dailyTarget: c.dailyTarget,
+                targetUnit: c.targetUnit,
+                participantCount: participantCount ?? c.participantCount,
+                maxParticipants: nil,
+                joinCode: c.joinCode,
+                inviteSlug: c.inviteSlug,
+                isRecurring: c.isRecurring,
+                isFeatured: c.isFeatured,
+                isOfficial: c.isOfficial,
+                myTodayProgress: nil,
+                myDaysCompleted: nil,
+                myCurrentStreak: nil,
+                myBestStreak: nil,
+                myRank: nil,
+                createdBy: c.createdBy,
+                creatorName: c.creatorName,
+                creatorUsername: c.creatorUsername,
+                topParticipants: topParticipants,
+                friendsIn: friendsIn,
+                friendsCount: friendsIn.count,
+                targetCadence: nil,
+                myPeriodProgress: nil
+            )
         }
     }
 
@@ -1497,48 +2199,33 @@ struct TutorialCommunityHero: View {
     @ViewBuilder
     private var content: some View {
         if let joined = joinedChallenge {
-            // Real-time win moment: user just joined, so flip to the
-            // live leaderboard widget that shows them alongside their
-            // friends / people-you-may-know. Other recommendations
-            // collapse out so the leaderboard takes the full space.
+            // Real-time win moment: user just joined, so flip from the
+            // preview to the live widget that shows them on the
+            // leaderboard alongside their contacts.
             CommunityLeaderboardWidget(challenge: joined)
                 .transition(.asymmetric(
                     insertion: .scale(scale: 0.94).combined(with: .opacity),
                     removal: .opacity
                 ))
                 .accessibilityLabel("You joined the \(joined.title) community")
-        } else if recommendations.isEmpty {
-            // Loading / empty fallback — keeps layout stable on cold
-            // launch before the discoverable + featured RPCs return.
+        } else if let preview = previewChallenge {
+            CommunityLeaderboardWidget(
+                challenge: preview,
+                previewJoin: { handlePreviewJoin() }
+            )
+            .opacity(isJoining ? 0.6 : 1.0)
+            .disabled(isJoining)
+            .transition(.opacity)
+            .accessibilityLabel("\(preview.title) preview — \(preview.formattedParticipantCount) members. Tap Join to enter.")
+        } else {
+            // Loading placeholder — preserves layout while the
+            // discovery + detail RPCs are in flight.
             FeaturedChallengeCard(
                 challenge: TutorialDemoData.demoCommunityChallenge,
                 onJoin: {}
             )
             .allowsHitTesting(false)
-            .redacted(reason: communityService.isLoading ? .placeholder : [])
-        } else {
-            VStack(spacing: Spacing.sm) {
-                ForEach(recommendations) { item in
-                    recommendationCard(item)
-                }
-            }
-            .opacity(isJoining ? 0.6 : 1.0)
-            .disabled(isJoining)
-            .transition(.opacity)
-        }
-    }
-
-    @ViewBuilder
-    private func recommendationCard(_ item: CommunityRecommendation) -> some View {
-        switch item {
-        case .discoverable(let challenge):
-            FriendDiscoveryCard(challenge: challenge) {
-                joinDiscoverableCommunity(challenge)
-            }
-        case .featured(let challenge):
-            FeaturedChallengeCard(challenge: challenge) {
-                joinFeaturedCommunity(challenge)
-            }
+            .redacted(reason: .placeholder)
         }
     }
 
@@ -1561,7 +2248,7 @@ struct TutorialCommunityHero: View {
                 Image(systemName: "person.3.fill")
                     .font(.ds_caption)
                     .foregroundStyle(kind.accent)
-                Text(stackCaption)
+                Text(previewCaption)
                     .font(.ds_labelMedium)
                     .foregroundColor(.adaptiveSecondaryText)
             }
@@ -1569,36 +2256,24 @@ struct TutorialCommunityHero: View {
         }
     }
 
-    /// Caption for the recommendation-stack state. Surfaces the strongest
-    /// signal available: friend-density first, then PYMK, then a generic
-    /// "most active" line for featured-only fallback.
-    private var stackCaption: String {
-        let connections = totalConnectionsAcrossRecommendations
-        let hasFriendCommunities = !communityService.discoverableChallenges.isEmpty
-        let hasPYMKCommunities = !pymkCommunities.isEmpty
-
-        if hasFriendCommunities && connections > 0 {
-            return connectionsCaption(connections, label: "your contacts")
-        }
-        if hasPYMKCommunities && connections > 0 {
-            return connectionsCaption(connections, label: "people you may know")
-        }
-        if recommendations.isEmpty {
+    /// Caption for the preview state. Mirrors the picked source so the
+    /// footer matches the card: contacts-first signal when contacts are
+    /// in the community, friends-fallback when only direct friends are,
+    /// participant scale for the featured fallback.
+    private var previewCaption: String {
+        guard let src = previewSource else {
             return "Featured challenges, real people"
         }
-        // Pure featured-fallback (no friend/PYMK overlap) — show
-        // aggregate participant count across the rendered cards so the
-        // user sees the activity scale.
-        let participants = recommendations.reduce(0) { acc, item in
-            switch item {
-            case .discoverable(let c): return acc + c.participantCount
-            case .featured(let c):     return acc + c.participantCount
+        switch src {
+        case .discoverable(let c, let isContactBased):
+            let label = isContactBased ? "your contacts" : "your friends"
+            return connectionsCaption(c.friendsCount, label: label)
+        case .featured(let c):
+            if c.participantCount > 0 {
+                return "\(formattedParticipants(c.participantCount)) athletes already pushing"
             }
+            return "Featured challenges, real people"
         }
-        if participants > 0 {
-            return "\(formattedParticipants(participants)) athletes already pushing"
-        }
-        return "Featured challenges, real people"
     }
 
     private func connectionsCaption(_ count: Int, label: String) -> String {
@@ -1617,6 +2292,20 @@ struct TutorialCommunityHero: View {
     }
 
     // MARK: - Real-time Join
+
+    /// Routes the preview widget's Join tap to the correct join RPC
+    /// based on the picked source: friend-gated for discoverable
+    /// (PYMK / friend-discovery surfaces), code-based for featured
+    /// (no friend-chain requirement on official challenges).
+    private func handlePreviewJoin() {
+        guard let src = previewSource, !isJoining else { return }
+        switch src {
+        case .discoverable(let challenge, _):
+            joinDiscoverableCommunity(challenge)
+        case .featured(let challenge):
+            joinFeaturedCommunity(challenge)
+        }
+    }
 
     /// Used for both direct-friend AND PYMK communities — they share the
     /// `DiscoverableCommunityChallenge` shape, and the server-side join

@@ -10,19 +10,19 @@ final class DTODecodingTests: XCTestCase {
     func testFlexibleIntDecodesFromInt() throws {
         let json = Data(#"{"value": 42}"#.utf8)
         let result = try decoder.decode(FlexibleIntWrapper.self, from: json)
-        XCTAssertEqual(result.value.intValue, 42)
+        XCTAssertEqual(result.value.value, 42)
     }
     
     func testFlexibleIntDecodesFromString() throws {
         let json = Data(#"{"value": "42"}"#.utf8)
         let result = try decoder.decode(FlexibleIntWrapper.self, from: json)
-        XCTAssertEqual(result.value.intValue, 42)
+        XCTAssertEqual(result.value.value, 42)
     }
     
     func testFlexibleIntDecodesFromInvalidString() throws {
         let json = Data(#"{"value": "not_a_number"}"#.utf8)
         let result = try decoder.decode(FlexibleIntWrapper.self, from: json)
-        XCTAssertEqual(result.value.intValue, 0)
+        XCTAssertEqual(result.value.value, 0)
     }
     
     // MARK: - Null handling
@@ -56,7 +56,7 @@ final class DTODecodingTests: XCTestCase {
 }
 
 private struct FlexibleIntWrapper: Codable {
-    let value: FlexibleInt
+    let value: ExerciseDTO.FlexibleInt
 }
 
 private struct ActiveChallengeDTO: Codable {

@@ -83,27 +83,71 @@ struct ScoringHints {
     static let foundationalMachineBonus = 40
     static let supportedRowBonusWhenBackCaution = 60
     static let equipmentSwitchPenalty = -15
-    static let redundancyPenaltyPerExtraVariant = -50
+    /// Audit 2026-05-08 hardening: was -50, but the 20-user audit still showed
+    /// "two plank variations" / "three pull-up variations" reaching the user.
+    /// Bumped to -120 so that adding a 3rd same-pattern variant is effectively
+    /// disqualifying. The diversity cap in `SmartExercisePairingEngine` provides
+    /// the hard ceiling; this is the soft tiebreaker.
+    static let redundancyPenaltyPerExtraVariant = -120
+
+    /// Audit 2026-05-08 Round 3 hardening (50 users / 100 workouts —
+    /// `scripts/output/autogen_audit_20260508_124852.md`):
+    /// `redundant_movement_pattern` was the #1 issue category (100 hits) with
+    /// multiple workouts shipping 4 decline-chest moves stacked together.
+    /// Bigger than `redundancyPenaltyPerExtraVariant` because angle stacking
+    /// (4 declines, 4 inclines, 3 horizontal pulls) is a worse defect than
+    /// generic same-pattern repeats — it concentrates load on one shoulder-
+    /// girdle position and skips the rest of the muscle. The hard ceiling is
+    /// `WorkoutComboRules.maxPerAngle = 2`; this score penalty is the
+    /// tiebreaker for cases where a higher-priority candidate sneaks past
+    /// the cap (e.g. a focus-area pin overrides the filter).
+    static let angleStackingPenalty = -300
 }
 
 // MARK: - Global Rules
 
 /// Exercise count by duration - GLOBAL RULE #1
-func getExerciseCountForDuration(_ durationMinutes: Int, equipmentIsMostlyMachines: Bool = false) -> Int {
+///
+/// Audit 2026-05-08 (fix #14 — Increase exercise count for advanced muscle building):
+/// Optional `experienceLevel` and `goal` parameters allow the autogen to bump the count
+/// by 1 for Advanced + Build Muscle when duration >= 50 min — advanced lifters need
+/// more total volume than 6 exercises to adequately stimulate hypertrophy. Defaults are
+/// backwards-compatible: existing callers see identical behavior.
+func getExerciseCountForDuration(
+    _ durationMinutes: Int,
+    equipmentIsMostlyMachines: Bool = false,
+    experienceLevel: String = "",
+    goal: String = ""
+) -> Int {
     // - 20 min: 4 moves
     // - 30 min: 5 moves
     // - 40-50 min: 6 moves (7 max only if mostly machines/cables)
-    
+
+    let baseCount: Int
     if durationMinutes <= 20 {
-        return 4
+        baseCount = 4
     } else if durationMinutes <= 30 {
-        return 5
+        baseCount = 5
     } else if durationMinutes <= 50 {
         // 7 only if mostly machines/cables (faster transitions)
-        return equipmentIsMostlyMachines ? 7 : 6
+        baseCount = equipmentIsMostlyMachines ? 7 : 6
     } else {
-        return 8  // Hard cap for 60+ min
+        baseCount = 8  // Hard cap for 60+ min
     }
+
+    // Advanced + Build Muscle bump (audit 2026-05-08).
+    // Only trigger for sessions of 50+ min — shorter sessions don't have time
+    // for an extra exercise without compromising rest periods.
+    let levelLower = experienceLevel.lowercased()
+    let goalLower = goal.lowercased()
+    let isAdvanced = levelLower.contains("advanced")
+    let isBuildMuscle = goalLower.contains("muscle") || goalLower.contains("hypertrophy")
+    if durationMinutes >= 50 && isAdvanced && isBuildMuscle {
+        // Add 1 but never exceed 9 total — past 9, programming becomes counterproductive.
+        return min(baseCount + 1, 9)
+    }
+
+    return baseCount
 }
 
 /// Global redundancy caps
@@ -116,6 +160,18 @@ struct GlobalCaps {
     static let shrug = 1           // Max 1 shrug variation
     static let backExtension = 1   // Only 1 back extension
 }
+
+// MARK: - Angle Stacking Cap (Audit 2026-05-08 fix #2 — angle stacking)
+//
+// Round 3 50-user/100-workout audit (`scripts/output/autogen_audit_20260508_124852.md`)
+// flagged `redundant_movement_pattern` as the #1-frequency residual issue (100 hits).
+// Multiple workouts had 4 decline-chest exercises stacked together (user-15, user-26).
+// Same angle = same shoulder-girdle position = same fiber recruitment bias; stacking
+// 4 of them is a programming defect — the angle cap (= 2) is the corrective hard
+// ceiling. The granular `SmartExercisePairingEngine.movementPatternRepeatCap`
+// catches generic same-pattern stacks; this catches angled-press/pull stacks where
+// the underlying movement pattern differs but the angle (and BP/postural load) is
+// identical.
 
 // MARK: - Combo Rule Definition
 
@@ -756,6 +812,69 @@ enum WorkoutComboRules {
         
         return missingPatterns
     }
+
+    // MARK: - Angle Stacking Cap (Audit 2026-05-08 fix #2)
+
+    /// Maximum number of exercises sharing the same press/pull ANGLE that may
+    /// appear in a single workout. Two is intentionally low — three+ same-angle
+    /// movements on one day is almost always a programming defect (saw 4×
+    /// decline chest in user-15 / user-26 of the Round 3 audit).
+    ///
+    /// Authority: this is the canonical cap. The angle classification + wouldExceedAngleCap
+    /// helpers below are consulted by SmartExerciseSelectionEngine in its
+    /// scoring loop. Mirror in scripts/comprehensive_autogen_audit.py.
+    static let maxPerAngle: Int = 2
+
+    /// Classify an exercise by its dominant press/pull ANGLE for stacking-cap
+    /// enforcement. Returns "decline" / "flat" / "incline" / "vertical" / nil.
+    /// nil = "not an angled press/pull" → angle cap doesn't apply.
+    ///
+    /// Keep classification deliberately keyword-driven and case-insensitive so
+    /// it stays in lockstep with the Python mirror.
+    static func angleClassification(for exerciseName: String) -> String? {
+        let n = exerciseName.lowercased()
+
+        // Decline takes priority — "decline bench press" must NOT classify as flat.
+        if n.contains("decline") {
+            return "decline"
+        }
+        // Incline next — "incline dumbbell press" must NOT classify as flat.
+        if n.contains("incline") {
+            return "incline"
+        }
+        // Vertical (overhead/military/shoulder press) — head-up, totally different
+        // shoulder position. Must check BEFORE the "flat" press fallback so that
+        // "shoulder press" doesn't get caught by the bare-"bench press" branch
+        // (it won't — but explicit ordering matches the Python mirror).
+        if n.contains("overhead") || n.contains("shoulder press") || n.contains("military press") {
+            return "vertical"
+        }
+        // Flat: "flat bench" or generic "bench press" / "chest press" without an
+        // incline/decline modifier (those were already returned above).
+        if n.contains("flat bench") {
+            return "flat"
+        }
+        if n.contains("bench press") || n.contains("chest press") {
+            return "flat"
+        }
+
+        return nil
+    }
+
+    /// Returns true if adding `exerciseName` to a workout that already contains
+    /// `existing` exercise names would push the same-angle count over `maxPerAngle`.
+    /// Callers should treat this as a hard reject in the selection loop.
+    ///
+    /// Both arguments are matched case-insensitively via `angleClassification`.
+    static func wouldExceedAngleCap(adding exerciseName: String, to existing: [String]) -> Bool {
+        guard let candidateAngle = angleClassification(for: exerciseName) else {
+            return false
+        }
+        let sameAngleCount = existing.reduce(into: 0) { acc, name in
+            if angleClassification(for: name) == candidateAngle { acc += 1 }
+        }
+        return sameAngleCount >= maxPerAngle
+    }
 }
 
 // MARK: - Focus Area Overrides
@@ -852,6 +971,179 @@ enum FocusAreaOverrides {
         }
         
         return nil
+    }
+}
+
+// MARK: - Audit 2026-05-08 Round 3 Hardening
+//
+// Two reusable hardening helpers added in response to the 100-workout audit
+// (`scripts/output/autogen_audit_20260508_124852.md`). Both target the two
+// dominant residual issues:
+//
+//   1. `compound_after_isolation` — 42 instances. Isolation movements (curls,
+//      kickbacks, lateral raises, leg extensions, leg curls) appearing BEFORE
+//      compound movements in the final sequence. Critical training principle:
+//      compounds first when the lifter is fresh.
+//   2. `redundant_movement_pattern` — 100 instances. Workouts with 4 decline
+//      chest moves in a row, or 3+ incline movements stacked. Per-angle cap
+//      of 2 enforced via `wouldExceedAngleStackingCap` + score-side penalty
+//      via `ScoringHints.angleStackingPenalty`.
+//
+// Authority: Fitness Expert + Product Engineer agents (PE invariant — workout
+// quality enforcement). Public API only — never remove.
+
+extension WorkoutComboRules {
+
+    /// Final-pass compound-before-isolation sort. Apply this AFTER the
+    /// selection engine has chosen exercises but BEFORE returning the final
+    /// array to the caller. Compounds come first (when the lifter is fresh),
+    /// isolation last.
+    ///
+    /// Stability: relative order of two compounds (or two isolations) is
+    /// preserved — only the compound/isolation grouping is enforced.
+    ///
+    /// Authority: Fitness Expert + Product Engineer agents. Audit 2026-05-08
+    /// flagged 42 instances of compound-after-isolation across the Round 3
+    /// report. Classification source of truth is
+    /// `FoundationalExerciseDatabase.isSingleJointIsolation(name:)`.
+    static func compoundFirstSort<T>(
+        _ exercises: [T],
+        nameOf: (T) -> String
+    ) -> [T] {
+        var compounds: [T] = []
+        var isolations: [T] = []
+        for ex in exercises {
+            if FoundationalExerciseDatabase.isSingleJointIsolation(name: nameOf(ex)) {
+                isolations.append(ex)
+            } else {
+                compounds.append(ex)
+            }
+        }
+        return compounds + isolations
+    }
+
+    // MARK: - Angle Stacking Cap
+    //
+    // `maxPerAngle` is declared on the main type (around line 826) — the
+    // canonical source. The Round 3 audit fix added these helpers in this
+    // extension and (incorrectly) re-declared the constant; removed to
+    // resolve "Invalid redeclaration of 'maxPerAngle'". Reference the
+    // canonical `WorkoutComboRules.maxPerAngle` (= 2) directly.
+
+    /// Returns true if adding `candidateName` to `selectedNames` would push
+    /// any detected angle bucket past `maxPerAngle`. Caller should skip the
+    /// candidate when true. Buckets:
+    ///
+    /// • Chest angles — `decline`, `incline`, `flat` (substring match in
+    ///   the exercise name; "Decline Push Up" + "Decline Bench Press DB" +
+    ///   "Decline Chest Fly" together would all bucket as `decline`).
+    /// • Back vertical pulls — `pulldown`, `pull up`, `pull-up`, `pullup`,
+    ///   `chin up`, `chin-up`.
+    /// • Back horizontal pulls — `row`, `bent over`, `bent-over`,
+    ///   `seated row`.
+    ///
+    /// The candidate is bucketed by which keyword set it matches; counts
+    /// against `selectedNames` use the same keyword set so the comparison
+    /// is symmetric.
+    ///
+    /// Audit 2026-05-08 (Round 3, 100 workouts): user-15 + user-26 each
+    /// shipped 4 decline-chest moves stacked. Same shoulder-girdle position
+    /// = same fiber recruitment bias; stacking 4 of them is a programming
+    /// defect — `maxPerAngle = 2` is the corrective hard ceiling.
+    static func wouldExceedAngleStackingCap(
+        candidateName: String,
+        selectedNames: [String]
+    ) -> Bool {
+        let lc = candidateName.lowercased()
+        let selectedLower = selectedNames.map { $0.lowercased() }
+
+        // Chest angles — independent buckets per angle keyword.
+        let chestAngles = ["decline", "incline", "flat"]
+        for angle in chestAngles where lc.contains(angle) {
+            // Don't bucket "flat" inside "platform"/"flatten"; require word boundary.
+            // Lightweight heuristic: require the keyword to appear next to a space
+            // OR at the start. Good-enough for the exercise catalog vocabulary.
+            let candidateMatches = matchesAngleKeyword(angle, in: lc)
+            if !candidateMatches { continue }
+            let count = selectedLower.filter { matchesAngleKeyword(angle, in: $0) }.count
+            if count >= Self.maxPerAngle { return true }
+        }
+
+        // Back vertical pulls — bucket the candidate, then count vertical pulls
+        // already selected.
+        let verticalPullKeys = ["pulldown", "pull up", "pull-up", "pullup", "chin up", "chin-up"]
+        let horizontalPullKeys = ["row", "bent over", "bent-over", "seated row"]
+
+        let candidateIsVertical = verticalPullKeys.contains(where: { lc.contains($0) })
+        let candidateIsHorizontal = horizontalPullKeys.contains(where: { lc.contains($0) })
+            // Disambiguate "seated row" / "bent-over row" — they're horizontal
+            // even though `row` is the canonical key.
+            && !candidateIsVertical
+
+        if candidateIsVertical {
+            let n = selectedLower.filter { name in
+                verticalPullKeys.contains(where: { name.contains($0) })
+            }.count
+            if n >= Self.maxPerAngle { return true }
+        }
+        if candidateIsHorizontal {
+            let n = selectedLower.filter { name in
+                let nameIsVertical = verticalPullKeys.contains(where: { name.contains($0) })
+                let nameIsHorizontal = horizontalPullKeys.contains(where: { name.contains($0) })
+                return nameIsHorizontal && !nameIsVertical
+            }.count
+            if n >= Self.maxPerAngle { return true }
+        }
+
+        return false
+    }
+
+    /// Counts the per-angle stacking burden of an already-selected exercise
+    /// list. Returns the largest bucket size found across chest angles +
+    /// vertical/horizontal pulls. Caller can use this to apply the
+    /// `ScoringHints.angleStackingPenalty` when the bucket is `>= 3` (the
+    /// soft penalty fires even when the hard cap was bypassed by a
+    /// higher-priority candidate).
+    static func maxAngleStackingDepth(in selectedNames: [String]) -> Int {
+        let lc = selectedNames.map { $0.lowercased() }
+
+        var depths: [Int] = []
+        for angle in ["decline", "incline", "flat"] {
+            depths.append(lc.filter { matchesAngleKeyword(angle, in: $0) }.count)
+        }
+
+        let verticalPullKeys = ["pulldown", "pull up", "pull-up", "pullup", "chin up", "chin-up"]
+        let horizontalPullKeys = ["row", "bent over", "bent-over", "seated row"]
+        depths.append(lc.filter { name in
+            verticalPullKeys.contains(where: { name.contains($0) })
+        }.count)
+        depths.append(lc.filter { name in
+            let nameIsVertical = verticalPullKeys.contains(where: { name.contains($0) })
+            let nameIsHorizontal = horizontalPullKeys.contains(where: { name.contains($0) })
+            return nameIsHorizontal && !nameIsVertical
+        }.count)
+
+        return depths.max() ?? 0
+    }
+
+    /// Word-boundary-aware substring match for angle keywords. Prevents
+    /// "flat" from matching "platform" / "flatten". The exercise catalog is
+    /// lowercase + space-separated so a quick boundary check is sufficient.
+    private static func matchesAngleKeyword(_ keyword: String, in name: String) -> Bool {
+        // Whole-word match: keyword must be preceded by start-of-string or
+        // whitespace AND followed by end-of-string, whitespace, or hyphen.
+        guard let range = name.range(of: keyword) else { return false }
+        let beforeOK: Bool = {
+            if range.lowerBound == name.startIndex { return true }
+            let prev = name[name.index(before: range.lowerBound)]
+            return prev == " " || prev == "-"
+        }()
+        let afterOK: Bool = {
+            if range.upperBound == name.endIndex { return true }
+            let next = name[range.upperBound]
+            return next == " " || next == "-"
+        }()
+        return beforeOK && afterOK
     }
 }
 

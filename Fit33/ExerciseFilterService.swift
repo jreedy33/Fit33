@@ -825,25 +825,33 @@ final class ExerciseFilterService {
     /// Maps user-friendly equipment names to database substring patterns for matching.
     /// Use this when you have USER selections and need to match against database equipment strings.
     /// Shared by both auto-gen (WorkoutGeneratorService) and program generation (SmartExerciseSelectionEngine).
+    ///
+    /// Audit 2026-05-08 hardening: removed `""` (empty string) from bodyweight patterns
+    /// (`"" in anyString` is always true → every exercise matched bodyweight). Replaced
+    /// bare `"bar"` and `"olympic"` from the barbell list with `"barbell"` + `"olympic bar"`
+    /// (bare `"bar"` false-positived on "Pull-Up Bar"). Added `"plate-loaded"` /
+    /// `"lever machine"` aliases for clarity. Tightened dip-bar pattern from `"dip"` to
+    /// `"dip bars"` (the bare `"dip"` matched every "Tricep Dip" exercise).
     static func normalizeEquipmentForMatching(_ equipment: String) -> [String] {
         let equip = equipment.lowercased().trimmingCharacters(in: .whitespaces)
         
         switch equip {
         case "machines", "machine":
             return ["machine", "lever", "press machine", "curl machine", "row machine",
-                    "extension machine", "pulldown", "leg press", "hack squat"]
+                    "extension machine", "pulldown", "leg press", "hack squat",
+                    "plate-loaded", "plate loaded", "lever machine"]
         case "cables", "cable":
             return ["cable", "cable machine", "pulley"]
         case "barbell", "barbells":
-            return ["barbell", "bar", "olympic"]
+            return ["barbell", "olympic bar"]
         case "dumbbells", "dumbbell":
-            return ["dumbbell", "dumbbells", "db"]
+            return ["dumbbell"]
         case "bodyweight", "body weight":
-            return ["bodyweight", "body weight", ""]
+            return ["bodyweight", "body weight"]
         case "kettlebell", "kettlebells":
-            return ["kettlebell", "kb"]
+            return ["kettlebell"]
         case "resistance bands", "resistance band", "bands":
-            return ["band", "resistance band", "resistance"]
+            return ["band", "resistance band"]
         case "smith machine":
             return ["smith", "smith machine"]
         case "trx", "trx/rings", "suspension":
@@ -853,7 +861,7 @@ final class ExerciseFilterService {
         case "bench", "flat bench", "incline bench", "decline bench":
             return ["bench"]
         case "dip bars", "parallel bars":
-            return ["dip", "parallel bars"]
+            return ["dip bars", "parallel bars"]
         default:
             return [equip]
         }
@@ -875,9 +883,13 @@ final class ExerciseFilterService {
         
         // 🛡️ SAFETY CHECK: Check exercise NAME for equipment keywords that might be missing from the equipment field
         // This catches exercises like "Banded Bench Press" where the name indicates bands but equipment field doesn't
+        // Audit 2026-05-08 hardening: extended absence checks beyond bands/kettlebell/TRX to cover
+        // barbell/dumbbell/cable/machine/smith/pull-up bar/dip bars — equipment_mismatch was the
+        // #1 audit issue (79 occurrences in 20-user run) because exercises with explicit equipment
+        // in the NAME slipped through the equipment-field-only matcher.
         if let name = exerciseName?.lowercased() {
             // Check for band-related keywords in name
-            let bandKeywords = ["banded", "band", "resistance band", "(band)"]
+            let bandKeywords = ["banded", "(band)", "resistance band"]
             let nameIndicatesBands = bandKeywords.contains { name.contains($0) }
             let userHasBands = userEquipLower.contains { $0.contains("band") || $0.contains("resistance") }
             
@@ -900,6 +912,101 @@ final class ExerciseFilterService {
             if nameIndicatesSuspension && !userHasSuspension {
                 return false
             }
+
+            // Barbell absence — block "Barbell X", "Olympic Bar X", "Trap Bar Deadlift" etc.
+            // when user has no barbell. We DO NOT match the bare token "bar" — it false-positives
+            // on "Pull-Up Bar" and "Dip Bars".
+            let barbellKeywords = ["barbell", "olympic bar", "trap bar", "(barbell)"]
+            let nameIndicatesBarbell = barbellKeywords.contains { name.contains($0) }
+            let userHasBarbell = userEquipLower.contains { $0.contains("barbell") || $0.contains("olympic bar") }
+            if nameIndicatesBarbell && !userHasBarbell {
+                return false
+            }
+
+            // Dumbbell absence
+            let dumbbellKeywords = ["dumbbell", "(dumbbell)"]
+            let nameIndicatesDumbbell = dumbbellKeywords.contains { name.contains($0) }
+            let userHasDumbbell = userEquipLower.contains { $0.contains("dumbbell") }
+            if nameIndicatesDumbbell && !userHasDumbbell {
+                return false
+            }
+
+            // Cable absence — must come BEFORE the machine check (cables are a separate SKU).
+            let cableKeywords = ["cable", "(cable)"]
+            let nameIndicatesCable = cableKeywords.contains { name.contains($0) }
+            let userHasCable = userEquipLower.contains { $0.contains("cable") }
+            if nameIndicatesCable && !userHasCable {
+                return false
+            }
+
+            // Smith machine absence — exclusively "Smith Machine" / "Smith X", BEFORE the
+            // generic machine check so that it doesn't piggyback on regular machine selection.
+            let smithKeywords = ["smith machine", "smith bench", "smith squat", "smith press"]
+            let nameIndicatesSmith = smithKeywords.contains { name.contains($0) }
+            let userHasSmith = userEquipLower.contains { $0.contains("smith") }
+            if nameIndicatesSmith && !userHasSmith {
+                return false
+            }
+
+            // Generic machine absence — only triggers when the EQUIPMENT FIELD didn't already
+            // route this through the per-part check below. Catches "Lever Chest Press" whose
+            // name implies machine but whose equipment field may be "Chest Press Machine".
+            // We require the name to explicitly say "machine" or known machine families
+            // (lever, leg press, hack squat) AND not be a cable/smith.
+            let machineKeywords = ["machine", "leg press", "hack squat", "lever ", "(machine)"]
+            let isCable = name.contains("cable")
+            let isSmith = name.contains("smith")
+            let nameIndicatesMachine = !isCable && !isSmith && machineKeywords.contains { name.contains($0) }
+            let userHasMachine = userEquipLower.contains { $0.contains("machine") || $0.contains("lever") }
+            if nameIndicatesMachine && !userHasMachine {
+                return false
+            }
+
+            // Pull-up bar absence
+            let pullupKeywords = ["pull-up", "pullup", "pull up", "chin-up", "chin up", "chinup"]
+            let nameIndicatesPullup = pullupKeywords.contains { name.contains($0) }
+            let userHasPullupBar = userEquipLower.contains { equip in
+                equip.contains("pull-up bar") || equip.contains("pull up bar") || equip.contains("pullup bar") ||
+                equip.contains("trx") || equip.contains("rings") || equip.contains("suspension")
+            }
+            // Pull-ups also work via TRX/Rings → only fail when neither is present.
+            // We DO NOT block "Pulldown" (lat pulldown) — that's not a pull-up.
+            if nameIndicatesPullup && !userHasPullupBar {
+                return false
+            }
+
+            // Dip bars absence — "Tricep Dip", "Bench Dip", "Parallel Bar Dip"
+            // We allow bench dips when the user has bench; we allow regular dips when the user
+            // has dip bars OR parallel bars OR pull-up bar (most pull-up stations have dip handles).
+            let dipKeywords = ["dip"]
+            let nameIndicatesDip = dipKeywords.contains { name.contains($0) } && !name.contains("hip")
+            // "Bench Dip" passes with bench; otherwise need dip/parallel bars.
+            let isBenchDip = name.contains("bench dip")
+            let userHasDipBars = userEquipLower.contains { equip in
+                equip.contains("dip bar") || equip.contains("parallel bar") ||
+                equip.contains("pull-up bar") || equip.contains("pull up bar") || equip.contains("pullup bar")
+            }
+            let userHasBenchForDip = userEquipLower.contains { equip in
+                equip.contains("bench") || equip.contains("dumbbell") || equip.contains("barbell") || equip.contains("machine")
+            }
+            if nameIndicatesDip && !isBenchDip && !userHasDipBars && !userHasBenchForDip {
+                // Note: regular dips require a dip station (parallel bars, pull-up tower, rings/TRX).
+                // Pure outdoor-bodyweight users with no pull-up access can't do them.
+                return false
+            }
+
+            // Bench-name absence — explicit "Incline Bench Press", "Decline Bench Press",
+            // "Bench Press", etc. Requires bench access (per existing helper below) — we
+            // re-check here on the NAME to catch exercises whose equipment field omits "bench".
+            let benchNameKeywords = ["bench press", "incline bench", "decline bench", "flat bench"]
+            let nameIndicatesBench = benchNameKeywords.contains { name.contains($0) }
+            // Bench access = explicit Bench OR gym SKUs (dumbbell/barbell/machine all imply bench at a gym).
+            let userHasBenchFromName = userEquipLower.contains { equip in
+                equip.contains("bench") || equip.contains("dumbbell") || equip.contains("barbell") || equip.contains("machine")
+            }
+            if nameIndicatesBench && !userHasBenchFromName {
+                return false
+            }
         }
         
         // Parse combined equipment (e.g., "Dumbbells, Incline Bench")
@@ -913,8 +1020,21 @@ final class ExerciseFilterService {
         let commonItems: Set<String> = ["floor", "mat", "body weight", "box",
                                         "anchor point", "door anchor", "rack", "support"]
         
+        // 2026-05-08 audit fix — bare dumbbells no longer imply bench access.
+        // Outdoor users with a dumbbell pair were getting "Glute Bridge Skull Crusher
+        // (Dumbbells, Flat Bench)" because we previously inferred bench from any of
+        // dumbbell/barbell/machine. That over-grants for the outdoor location.
+        // Real-world: a bench is implied only when the user has explicitly selected
+        // "Bench" OR has heavy gym indicators (machine / cable / smith / rack), since
+        // those rarely exist without a bench. A barbell setup almost always lives in
+        // a rack-bench combo, so we keep that. Dumbbell-only is no longer sufficient.
         let userHasBenchAccess = userEquipLower.contains { equip in
-            equip.contains("bench") || equip.contains("dumbbell") || equip.contains("barbell") || equip.contains("machine")
+            equip.contains("bench") ||
+            equip.contains("barbell") ||
+            equip.contains("machine") ||
+            equip.contains("cable") ||
+            equip.contains("smith") ||
+            equip.contains("rack")
         }
         
         // Equipment that requires SPECIFIC selection (not just bodyweight)

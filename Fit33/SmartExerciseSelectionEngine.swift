@@ -143,55 +143,14 @@ class SmartExerciseSelectionEngine {
         return ExerciseFilterService.normalizeEquipmentForMatching(equipment)
     }
     
-    /// Check if exercise equipment matches any of the user's available equipment
-    private func doesEquipmentMatch(exerciseEquipment: String, userEquipment: [String]) -> Bool {
-        let exerciseEquipLower = exerciseEquipment.lowercased()
-        
-        // Handle empty/bodyweight
-        if exerciseEquipLower.isEmpty || exerciseEquipLower == "bodyweight" {
-            return userEquipment.contains { $0.lowercased().contains("bodyweight") || $0.lowercased().contains("body weight") }
-        }
-        
-        // Parse exercise equipment parts (e.g., "Cable Machine, Flat Bench")
-        let exerciseParts = exerciseEquipLower
-            .components(separatedBy: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        
-        // Common gym items that are always available
-        let commonItems = ["floor", "mat", "wall", "flat bench", "bench", "incline bench", "decline bench", "preacher bench"]
-        
-        // For each user equipment, get normalized patterns
-        for userEquip in userEquipment {
-            let patterns = normalizeEquipmentForMatching(userEquip)
-            
-            // Check if any pattern matches any part of exercise equipment
-            for pattern in patterns {
-                // Direct match
-                if exerciseEquipLower.contains(pattern) {
-                    return true
-                }
-                
-                // Check each exercise equipment part (only forward match to avoid false positives)
-                for part in exerciseParts {
-                    if part.contains(pattern) {
-                        return true
-                    }
-                }
-            }
-        }
-        
-        // Check if exercise only requires common items (benches, floor, wall)
-        let nonCommonParts = exerciseParts.filter { part in
-            !commonItems.contains(where: { part.contains($0) })
-        }
-        
-        // If all parts are common items, check if user has the base equipment
-        if nonCommonParts.isEmpty {
-            return true
-        }
-        
-        return false
-    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // `doesEquipmentMatch()` (local, buggy substring-match version) was removed
+    // 2026-05-08 after the autogen audit identified `equipment_mismatch` as
+    // the #1 issue class (79 occurrences in 20-user run). All callers now route
+    // through `ExerciseFilterService.userHasRequiredEquipment(...)` — the
+    // single canonical equipment matcher. See the call site below for context.
+    // ─────────────────────────────────────────────────────────────────────────
+
     
     // MARK: - Main Selection Function
     
@@ -343,27 +302,29 @@ class SmartExerciseSelectionEngine {
                     AppLogger.debug("Excluding '\(exerciseName)': bodyweight not in user equipment", category: .workout)
                 }
             } else {
-                // 🛡️ SAFETY CHECK: Check exercise NAME for equipment keywords
-                // This catches exercises like "Banded Bench Press" where name indicates bands but equipment field doesn't
-                
-                // Check for band-related keywords in name
-                let bandKeywords = ["banded", "band", "resistance band", "(band)"]
-                let nameIndicatesBands = bandKeywords.contains { nameLower.contains($0) }
-                let userHasBands = userEquipmentNormalized.contains { $0.contains("band") || $0.contains("resistance") }
-                
-                if nameIndicatesBands && !userHasBands {
-                    AppLogger.debug("Excluding '\(exerciseName)': name indicates bands but user doesn't have bands", category: .workout)
-                    equipmentMatch = false
-                } else {
-                    // 🔧 Use smart equipment matching that handles database format
-                    // Database uses: "Lever Machine", "Cable Machine", "Chest Press Machine"
-                    // User selects: "Machines", "Cables", "Barbell"
-                    equipmentMatch = doesEquipmentMatch(exerciseEquipment: equipment, userEquipment: userEquipment)
-                    
-                    // Log equipment exclusions for debugging
-                    if !equipmentMatch {
-                        AppLogger.debug("Excluding '\(exerciseName)': requires '\(equipment)' but user has \(userEquipment)", category: .workout)
-                    }
+                // 🛡️ Audit 2026-05-08: Single canonical equipment matcher.
+                //
+                // Previously we had a local `doesEquipmentMatch()` that did substring matching with
+                // a buggy whitelist (empty-string bodyweight, bare "bar" → false-positive on Pull-Up
+                // Bar). The 20-user audit found `equipment_mismatch` to be the #1 problem class
+                // (79 occurrences) — almost all coming from this duplicated path.
+                //
+                // We now ALWAYS go through `ExerciseFilterService.userHasRequiredEquipment` which:
+                //   1. Parses comma-separated exercise equipment (e.g. "Dumbbells, Incline Bench")
+                //      and verifies each part.
+                //   2. Performs name-based absence checks for barbell / dumbbell / cable / machine /
+                //      smith / pull-up bar / dip bars / bench-name (catches exercises where the
+                //      equipment field omits a piece of equipment that's clearly in the NAME).
+                //   3. Honors the bench-access rule (gym SKUs imply bench access; outdoor users do
+                //      not get bench-dependent exercises).
+                equipmentMatch = ExerciseFilterService.userHasRequiredEquipment(
+                    exerciseEquipment: equipment,
+                    exerciseName: exerciseName,
+                    userEquipment: userEquipment
+                )
+
+                if !equipmentMatch {
+                    AppLogger.debug("Excluding '\(exerciseName)': requires '\(equipment)' but user has \(userEquipment)", category: .workout)
                 }
             }
             guard equipmentMatch else { continue }
@@ -399,6 +360,86 @@ class SmartExerciseSelectionEngine {
             }
             
             // ═══════════════════════════════════════════════════════════════
+            // 🚨 FILTER 3.7: AGE-GATED DECLINE BLOCK (Audit 2026-05-08 fix #3)
+            // Mirrors the assessExercisePracticality() check, but applied EARLIER
+            // so the database-score path (below) cannot bypass it. user-26 (68y)
+            // was served 4× decline chest in Round 3 — the DB practicality score
+            // for "Decline Bench Press" is high (it IS a foundational exercise),
+            // so the assess fallback never fires for that user. We need the hard
+            // block at the filter layer.
+            // ═══════════════════════════════════════════════════════════════
+            let userAgeForFilter = Int(UserManager.shared.currentUser?.age ?? 0)
+            if userAgeForFilter >= 65 && nameLower.contains("decline") {
+                AppLogger.debug("Excluding '\(exerciseName)': decline-angle blocked for users 65+ (cardiovascular / intracranial-pressure risk)", category: .workout)
+                continue
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // 🚨 FILTER 3.8: SPECIALTY VARIANT PRE-CHECK (Audit 2026-05-08 fix)
+            // Apply the SpecialtyVariantFilter BEFORE the DB practicality
+            // score check below. Otherwise grip variants with high DB scores
+            // (e.g. Pendlay Row, Wide Bench Press) bypass the filter entirely
+            // and slip through to autogen output. The Round 3 audit saw 43
+            // specialty variants slip past — the filter was running only on
+            // the fallback `assessExercisePracticality()` path.
+            //
+            // `.blockUntilEstablished` patterns gate on workout count, so
+            // grip / unilateral / stability progression variants stay blocked
+            // until the user crosses the per-level threshold (audit users
+            // are always at 0 → all blocked).
+            // ═══════════════════════════════════════════════════════════════
+            let isBeginnerForSpec = experienceLevel.lowercased() == "beginner"
+            let isIntermediateForSpec = experienceLevel.lowercased() == "intermediate"
+            if let specialtyBlock = SpecialtyVariantFilter.evaluate(
+                name: nameLower,
+                isBeginner: isBeginnerForSpec,
+                isIntermediate: isIntermediateForSpec,
+                completedWorkoutCount: userWorkoutCount
+            ), specialtyBlock.shouldExclude {
+                AppLogger.debug("Excluding '\(exerciseName)': \(specialtyBlock.reason)", category: .workout)
+                continue
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // 🚨 FILTER 3.9: TECHNIQUE-EQUIPMENT MISMATCH PRE-CHECK
+            // (Audit 2026-05-08 Round 3 fix #6 — early-hard-block mirror)
+            //
+            // Some training techniques are inherently barbell/dumbbell-only and
+            // make no biomechanical sense on cable / smith / band / KB / TRX.
+            // The Round 3 audit caught "Pendlay Row (Cable)" — Pendlay is a
+            // dead-stop powerlifting variant; cable has no floor reset / no
+            // horizontal pull plane. Same for Jefferson, Zercher, Clean Grip,
+            // Snatch Grip on non-free-weight equipment.
+            //
+            // This check lives in assessExercisePracticality() too, but that
+            // path is bypassed when the catalog has a practicality_score > 0
+            // (most exercises). Mirror here so the block fires unconditionally.
+            // ═══════════════════════════════════════════════════════════════
+            let barbellTechniques = ["pendlay", "jefferson", "zercher", "clean grip", "snatch grip"]
+            if let technique = barbellTechniques.first(where: { nameLower.contains($0) }) {
+                let suffixEquip: String? = {
+                    guard let openParen = nameLower.lastIndex(of: "("),
+                          let closeParen = nameLower.lastIndex(of: ")"),
+                          openParen < closeParen else { return nil }
+                    let afterOpen = nameLower.index(after: openParen)
+                    return String(nameLower[afterOpen..<closeParen]).trimmingCharacters(in: .whitespaces)
+                }()
+                let allowedEquipment: Set<String> = ["barbell", "dumbbell"]
+                let detectedEquipment: String = suffixEquip ?? ""
+                let isOnAllowedEquipment: Bool = {
+                    if !detectedEquipment.isEmpty {
+                        return allowedEquipment.contains(where: { detectedEquipment.contains($0) })
+                    }
+                    return allowedEquipment.contains(where: { nameLower.contains($0) })
+                }()
+                if !isOnAllowedEquipment {
+                    let equipDescriptor = detectedEquipment.isEmpty ? "non-barbell equipment" : detectedEquipment
+                    AppLogger.debug("Excluding '\(exerciseName)': technique-equipment mismatch — '\(technique)' is a barbell technique, not appropriate for \(equipDescriptor)", category: .workout)
+                    continue
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════════
             // FILTER 4: PRACTICALITY FILTER - Use database score if available
             // ═══════════════════════════════════════════════════════════════
             let dbPracticalityScore = Int(exercise.practicalityScore)  // From database (0-100)
@@ -420,7 +461,9 @@ class SmartExerciseSelectionEngine {
                 practicalityResult = assessExercisePracticality(
                     exerciseName: nameLower,
                     experienceLevel: experienceLevel,
-                    isGymUser: isGymUser
+                    isGymUser: isGymUser,
+                    userAge: userAgeForFilter,
+                    completedWorkoutCount: userWorkoutCount
                 )
             }
             
@@ -428,7 +471,34 @@ class SmartExerciseSelectionEngine {
                 AppLogger.debug("Excluding '\(exerciseName)': \(practicalityResult.reason)", category: .workout)
                 continue
             }
-            
+
+            // ═══════════════════════════════════════════════════════════════
+            // 👤 GENDER STRICT FILTER — Audit 2026-05-08 user request
+            // ═══════════════════════════════════════════════════════════════
+            // For STRENGTH exercises: never serve an opposite-gender-only video.
+            // Catalog has both-gender clips for the top ~200 common strength
+            // movements; if THIS exercise is gender-tagged but missing the
+            // user's gender, an equivalent same-gender alternative exists.
+            // For stretch / cardio / plyo / specialty (smaller catalog), keep
+            // the soft fallback so the user always sees SOMETHING.
+            let genderClassification = ExerciseFilterService.classifyExerciseType(
+                name: exercise.name,
+                category: exercise.category,
+                equipment: exercise.equipment
+            )
+            if genderClassification == .strength {
+                let genderCache = VideoStreamingService.shared.genderVideoCache
+                if let info = genderCache[exerciseName] ?? genderCache[nameLower] {
+                    let userGenderRaw = UserManager.shared.currentUser?.gender?.lowercased() ?? "male"
+                    let preferredGender: VideoStreamingService.VideoGender = userGenderRaw.contains("female") ? .female : .male
+                    if info.filename(for: preferredGender) == nil {
+                        AppLogger.debug("Excluding '\(exerciseName)': no \(preferredGender.rawValue.lowercased()) video for strength workout", category: .workout)
+                        continue
+                    }
+                }
+                // No gender info → gender-neutral / legacy single-video → keep.
+            }
+
             // ═══════════════════════════════════════════════════════════════
             // Classify exercise
             // ═══════════════════════════════════════════════════════════════
@@ -768,7 +838,26 @@ class SmartExerciseSelectionEngine {
                nameLower.contains("split stance") || nameLower.contains("staggered") {
                 score -= 20
             }
-            
+
+            // ┌─────────────────────────────────────────────────────────────┐
+            // │ GOAL-AWARE MULTIPLIER (Audit 2026-05-08 fix #2)              │
+            // │ For "Build Endurance" goal: boost circuit-friendly +         │
+            // │ light-load + bodyweight basics; penalize heavy 1RM-style     │
+            // │ compound lifts. Other goals → multiplier = 1.0 (no-op).      │
+            // │ Authority: FoundationalExerciseDatabase.goalMultiplier (FE). │
+            // └─────────────────────────────────────────────────────────────┘
+            let goalMult = FoundationalExerciseDatabase.goalMultiplier(
+                exerciseName: exerciseName,
+                equipment: exercise.equipment,
+                category: exercise.category,
+                goal: userGoal
+            )
+            if abs(goalMult - 1.0) > 0.001 {
+                let preMult = score
+                score *= goalMult
+                AppLogger.debug("Goal-mult \(String(format: "%.2f", goalMult)) for '\(exerciseName)' [\(userGoal)]: \(Int(preMult)) → \(Int(score))", category: .workout)
+            }
+
             scoredExercises.append((exercise, score, pattern, exerciseType))
         }
         
@@ -854,7 +943,43 @@ class SmartExerciseSelectionEngine {
                 AppLogger.debug("Skipping \(exercise.name ?? "") - already have \(currentPatternCount) \(pattern.rawValue) exercises", category: .workout)
                 continue
             }
-            
+
+            // ═══════════════════════════════════════════════════════════════
+            // 🛡️ DIVERSITY CAP CROSS-CHECK (Audit 2026-05-08 fix #5)
+            // ═══════════════════════════════════════════════════════════════
+            // The 20-user audit caught workouts with 3 pull-up variations
+            // slipping past the SelectionMovementPattern check (likely because
+            // the granular variants mapped to different coarse patterns). The
+            // SmartExercisePairingEngine has a finer-grained MovementPattern
+            // classifier; we use it as a backstop. Cap is `movementPatternRepeatCap`.
+            let alreadySelected = selectedExercises.map { $0.exercise }
+            if SmartExercisePairingEngine.shared.wouldExceedDiversityCap(
+                adding: exercise,
+                to: alreadySelected
+            ) {
+                let pp = SmartExercisePairingEngine.shared.movementPattern(for: exercise).rawValue
+                AppLogger.debug("Skipping \(exercise.name ?? "") - already at diversity cap (\(SmartExercisePairingEngine.movementPatternRepeatCap)) for granular pattern '\(pp)'", category: .workout)
+                continue
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // 🛡️ ANGLE-STACKING CAP (Audit 2026-05-08 fix #2 — Round 3)
+            // ═══════════════════════════════════════════════════════════════
+            // user-15 / user-26 of the 50-user audit got 4× decline chest in
+            // a single workout. Same angle = same shoulder-girdle position =
+            // same fiber recruitment bias; stacking 4 of them is a programming
+            // defect. Cap = WorkoutComboRules.maxPerAngle (= 2). nil-classified
+            // exercises (non-angled press/pull) are unaffected.
+            let alreadySelectedNames = selectedExercises.map { $0.name }
+            if WorkoutComboRules.wouldExceedAngleCap(
+                adding: exercise.name ?? "",
+                to: alreadySelectedNames
+            ) {
+                let angle = WorkoutComboRules.angleClassification(for: exercise.name ?? "") ?? "unknown"
+                AppLogger.debug("Skipping \(exercise.name ?? "") - already at angle cap (\(WorkoutComboRules.maxPerAngle)) for angle '\(angle)'", category: .workout)
+                continue
+            }
+
             // ═══════════════════════════════════════════════════════════════
             // COMPOUND/ISOLATION BALANCE CHECK
             // ═══════════════════════════════════════════════════════════════
@@ -895,28 +1020,338 @@ class SmartExerciseSelectionEngine {
         }
         
         // ═══════════════════════════════════════════════════════════════════
-        // REORDER: Compounds first, then isolations
+        // TARGET-MUSCLE COVERAGE PASS (Audit 2026-05-08 Round 3 fix #3, #10)
+        //
+        // The Round 3 50-user audit flagged 4 workouts where `target_muscles`
+        // included e.g. "calves" but NO selected exercise actually targeted
+        // calves — the workout "promised" the user training for that group
+        // and silently dropped it. `validateTargetMuscleCoverage` returns
+        // every target muscle that no selected exercise covers (primary OR
+        // secondary). We then attempt a foundational fallback swap before
+        // the final compound-first sort so the swap-in still gets ordered
+        // correctly. If no foundational candidate is available given the
+        // user's equipment, we log an `AppLogger.warning` so production
+        // monitoring can see the gap (Bug-Intel pickup) instead of silently
+        // shipping a workout that violates user expectations.
         // ═══════════════════════════════════════════════════════════════════
-        selectedExercises.sort { exercise1, exercise2 in
-            // Compounds before isolations
-            if exercise1.exerciseType == .compound && exercise2.exerciseType != .compound {
-                return true
-            }
-            if exercise1.exerciseType != .compound && exercise2.exerciseType == .compound {
-                return false
-            }
-            // Within same type, keep score order
-            return exercise1.score > exercise2.score
+        let uncoveredMuscles = validateTargetMuscleCoverage(
+            selected: selectedExercises,
+            targetMuscles: targetMuscles
+        )
+        if !uncoveredMuscles.isEmpty {
+            selectedExercises = attemptCoverageSwap(
+                selected: selectedExercises,
+                uncoveredMuscles: uncoveredMuscles,
+                userEquipment: userEquipment,
+                allExercises: safeExercises
+            )
         }
-        
+
+        // ═══════════════════════════════════════════════════════════════════
+        // FINAL PASS — Compound-first STABLE sort (Audit 2026-05-08 fix #1)
+        //
+        // Round 3 50-user audit flagged `compound_after_isolation` 42 times
+        // (top-fix #1, #4, #5, #9, #12). The previous reorder used
+        // `Array.sort` with a score tiebreaker — not guaranteed stable, and
+        // re-shuffled within-bucket order. The new helper is an explicit
+        // stable partition: compounds in their original picked order, then
+        // isolations in their original picked order. No within-bucket churn.
+        //
+        // Catalog mis-labeling override (fix #11) is preserved in
+        // `effectiveIsCompound` inside `sortCompoundFirst`.
+        // ═══════════════════════════════════════════════════════════════════
+        selectedExercises = sortCompoundFirst(selectedExercises)
+
         AppLogger.debug("FINAL RESULTS — Compounds: \(compoundCount), Isolations: \(isolationCount), Patterns: \(patternCounts.map { "\($0.key.rawValue): \($0.value)" }.joined(separator: ", "))", category: .workout)
         for (index, ex) in selectedExercises.enumerated() {
             AppLogger.debug("  \(index + 1). \(ex.name) [\(ex.equipment)] - \(ex.exerciseType.rawValue)", category: .workout)
         }
-        
+
         return selectedExercises
     }
-    
+
+    // MARK: - Compound-First Stable Sort (Audit 2026-05-08 fix #1)
+
+    /// Stable-partition `selected` so every effective-compound exercise comes
+    /// before every effective-isolation exercise, while preserving each
+    /// bucket's original relative order. This is the LAST step before
+    /// `selectExercisesForWorkout` returns its workout array.
+    ///
+    /// "Effective compound" = `ex.exerciseType == .compound` AND the name does
+    /// NOT match `FoundationalExerciseDatabase.isSingleJointIsolation` — the
+    /// override (fix #11) catches catalog mis-labels (skull crushers,
+    /// kickbacks, lateral raises sometimes ship as `compound` from the DB).
+    ///
+    /// Example: input `[squat, leg_curl, lunge, leg_extension]` →
+    /// output `[squat, lunge, leg_curl, leg_extension]`.
+    func sortCompoundFirst(_ selected: [SmartSelectedExercise]) -> [SmartSelectedExercise] {
+        func effectiveIsCompound(_ ex: SmartSelectedExercise) -> Bool {
+            if ex.exerciseType != .compound { return false }
+            // Catalog said compound — verify with the name-pattern isolation hint.
+            return !FoundationalExerciseDatabase.isSingleJointIsolation(name: ex.name)
+        }
+        // Two-pass partition preserves original order within each bucket.
+        // Swift's Array.sort is NOT stable; we cannot use it for this.
+        let compounds = selected.filter { effectiveIsCompound($0) }
+        let isolations = selected.filter { !effectiveIsCompound($0) }
+        return compounds + isolations
+    }
+
+    // MARK: - Target-Muscle Coverage (Audit 2026-05-08 Round 3 fix #3, #10)
+
+    /// Returns the list of target muscles that NO selected exercise covers as
+    /// either a primary or secondary muscle. The Round 3 50-user audit caught
+    /// 4 workouts that promised calves but delivered no calf exercises —
+    /// this validation function is the choke point that catches the gap
+    /// before the workout is returned to the user.
+    ///
+    /// Matching is case-insensitive substring, expanded via the synonym list
+    /// in `FoundationalMuscleGroup.relatedMuscles` (so "calves" also accepts
+    /// "lower legs"; "back" also accepts "lats", "upper back", "traps", etc.).
+    /// Category and primary/secondary muscle arrays are all consulted.
+    ///
+    /// - Parameters:
+    ///   - selected: The workout exercises produced by the main selection loop.
+    ///   - targetMuscles: The muscle groups the workout was supposed to hit.
+    /// - Returns: Subset of `targetMuscles` not covered by any selected
+    ///   exercise's primary or secondary muscles. Empty array = full coverage.
+    func validateTargetMuscleCoverage(
+        selected: [SmartSelectedExercise],
+        targetMuscles: [String]
+    ) -> [String] {
+        guard !targetMuscles.isEmpty, !selected.isEmpty else { return [] }
+
+        var uncovered: [String] = []
+        for target in targetMuscles {
+            let targetLower = target.lowercased()
+            // Skip "full body" / "upper body" / "lower body" — these are split
+            // descriptors, not concrete muscles. Coverage is implicit.
+            if targetLower.contains("full body") || targetLower.contains("upper body") || targetLower.contains("lower body") {
+                continue
+            }
+            // Build the synonym set for this target muscle.
+            let synonyms = synonymsForMuscle(targetLower)
+
+            let isCovered = selected.contains { ex in
+                let primary = (ex.exercise.getMuscleGroups() ?? []).joined(separator: ",").lowercased()
+                let secondary = ((ex.exercise.secondaryMuscles as? [String]) ?? []).joined(separator: ",").lowercased()
+                let category = (ex.exercise.category ?? "").lowercased()
+                let combined = "\(primary),\(secondary),\(category)"
+                return synonyms.contains { combined.contains($0) }
+            }
+            if !isCovered {
+                uncovered.append(target)
+            }
+        }
+        return uncovered
+    }
+
+    /// Returns the canonical synonym set for a target muscle, mirroring
+    /// `FoundationalMuscleGroup.relatedMuscles` plus a few catalog spellings
+    /// the live `exercises` table uses (e.g. "gastrocnemius").
+    private func synonymsForMuscle(_ targetLower: String) -> Set<String> {
+        // Pre-canonicalize: collapse "calves" / "calf", "abs" / "abdominals", etc.
+        switch targetLower {
+        case let s where s.contains("calf") || s.contains("calves") || s.contains("lower leg"):
+            return ["calf", "calves", "lower leg", "gastrocnemius", "soleus"]
+        case let s where s.contains("quad") || s.contains("thigh"):
+            return ["quad", "quads", "quadriceps", "thigh"]
+        case let s where s.contains("hamstring"):
+            return ["hamstring", "hamstrings"]
+        case let s where s.contains("glute") || s.contains("hip"):
+            return ["glute", "glutes", "gluteus", "hip"]
+        case let s where s.contains("chest") || s.contains("pec"):
+            return ["chest", "pectorals", "pecs", "upper chest", "lower chest"]
+        case let s where s.contains("back") || s.contains("lat") || s.contains("rhomboid") || s.contains("trap"):
+            return ["back", "lat", "lats", "upper back", "lower back", "rhomboid", "rhomboids", "traps", "middle back"]
+        case let s where s.contains("shoulder") || s.contains("delt"):
+            return ["shoulder", "shoulders", "delt", "delts", "deltoid", "front delt", "rear delt", "side delt", "lateral delt"]
+        case let s where s.contains("bicep"):
+            return ["bicep", "biceps"]
+        case let s where s.contains("tricep"):
+            return ["tricep", "triceps"]
+        case let s where s.contains("forearm"):
+            return ["forearm", "forearms"]
+        case let s where s.contains("core") || s.contains("ab") || s.contains("oblique"):
+            return ["core", "abs", "abdominals", "obliques", "abdominal"]
+        default:
+            return [targetLower]
+        }
+    }
+
+    /// Attempts to swap in a foundational fallback exercise for each
+    /// uncovered target muscle. For each gap:
+    ///   1. Walk the foundational exercises for that muscle group (sorted
+    ///      essential → variety) looking for a name match in the live catalog.
+    ///   2. Filter foundational candidates by user equipment (don't suggest
+    ///      a barbell calf raise to a home user with no barbell).
+    ///   3. Find the lowest-scored slot in the existing workout that does NOT
+    ///      already cover one of the original target muscles uniquely (so
+    ///      we don't strip the only chest exercise to add a calf raise on
+    ///      a chest day) and swap it.
+    ///   4. If no foundational fallback is found, emit `AppLogger.warning`
+    ///      so the production gap is observable instead of silent.
+    ///
+    /// Returns the (possibly-mutated) selected list. Compound-first ordering
+    /// is re-applied by the caller AFTER this swap pass.
+    private func attemptCoverageSwap(
+        selected: [SmartSelectedExercise],
+        uncoveredMuscles: [String],
+        userEquipment: [String],
+        allExercises: [Exercise]
+    ) -> [SmartSelectedExercise] {
+        var working = selected
+        let userEquipNorm = Set(userEquipment.map { $0.lowercased() })
+        let foundationalDB = FoundationalExerciseDatabase.shared
+
+        for target in uncoveredMuscles {
+            guard let muscleGroup = mapTargetToFoundationalMuscleGroup(target) else {
+                AppLogger.warning(
+                    "[COVERAGE] Target muscle '\(target)' has no foundational mapping — cannot swap in fallback. Workout shipped without coverage.",
+                    category: .workout
+                )
+                continue
+            }
+
+            // Pull foundational exercises for this muscle group, sorted by
+            // tier (essential first — most universally recognized).
+            let foundationalCandidates = foundationalDB.getFoundationalExercises(for: muscleGroup)
+                .sorted { $0.tier.rawValue < $1.tier.rawValue }
+
+            // Find the first foundational exercise that exists in the live
+            // catalog AND matches the user's equipment.
+            var swapInExercise: Exercise?
+            for candidate in foundationalCandidates {
+                // Equipment gate: only suggest a foundational that the user
+                // can actually perform. Bodyweight is always allowed.
+                let candidateEquip = candidate.equipment.rawValue.lowercased()
+                let userHasEquipment = candidateEquip == "bodyweight"
+                    || userEquipNorm.contains(candidateEquip)
+                    || userEquipNorm.contains(where: { $0.contains(candidateEquip) || candidateEquip.contains($0) })
+                guard userHasEquipment else { continue }
+
+                // Try the canonical name first, then alternate names.
+                let candidateNames = [candidate.name] + candidate.alternateNames
+                for nameToTry in candidateNames {
+                    if let live = ExerciseLibraryService.shared.getExercise(byName: nameToTry) {
+                        swapInExercise = live
+                        break
+                    }
+                }
+                if swapInExercise != nil { break }
+
+                // Last-ditch: substring scan of `allExercises` for the
+                // canonical name (handles "Standing Calf Raise" → "Calf Raise
+                // (Machine)" mismatch in the live catalog).
+                let needle = candidate.name.lowercased()
+                if let match = allExercises.first(where: {
+                    let nameLower = ($0.name ?? "").lowercased()
+                    return nameLower.contains(needle) || needle.contains(nameLower)
+                }) {
+                    swapInExercise = match
+                    break
+                }
+            }
+
+            guard let swapIn = swapInExercise else {
+                AppLogger.warning(
+                    "[COVERAGE] No foundational fallback found for uncovered target muscle '\(target)' (group: \(muscleGroup.rawValue)) given user equipment \(userEquipment). Workout shipped without coverage — extend FoundationalExerciseDatabase.\(muscleGroup.rawValue)Exercises or audit the catalog.",
+                    category: .workout
+                )
+                continue
+            }
+
+            // Find the lowest-scored slot to evict. Skip slots whose primary
+            // muscle uniquely covers another target — we don't want to drop
+            // the only chest exercise on a chest+calves day.
+            let evictIndex = lowestScoredEvictableIndex(in: working, protecting: uncoveredMuscles)
+            guard let idx = evictIndex else {
+                AppLogger.warning(
+                    "[COVERAGE] All slots are protected primary-muscle covers — cannot evict to add '\(swapIn.name ?? "?")' for '\(target)'. Workout will ship under-covered.",
+                    category: .workout
+                )
+                continue
+            }
+
+            let evicted = working[idx]
+            let pattern = classifyMovementPattern(
+                exerciseName: swapIn.name ?? "",
+                muscles: (swapIn.getMuscleGroups() ?? []).joined(separator: ",").lowercased()
+            )
+            let exerciseType: ExerciseType = swapIn.isCompound ? .compound : .isolation
+            let replacement = SmartSelectedExercise(
+                exercise: swapIn,
+                score: max(0, evicted.score - 1),  // Below evicted so subsequent sorts don't re-ordering it ahead of higher-merit picks.
+                movementPattern: pattern,
+                exerciseType: exerciseType
+            )
+            working[idx] = replacement
+            AppLogger.info(
+                "[COVERAGE] Swapped '\(evicted.name)' (score \(Int(evicted.score))) → '\(swapIn.name ?? "?")' to cover target muscle '\(target)' (group: \(muscleGroup.rawValue))",
+                category: .workout
+            )
+        }
+        return working
+    }
+
+    /// Maps a target-muscle string from the workout slot to a foundational
+    /// muscle group enum. Returns nil for unmapped strings — caller logs.
+    private func mapTargetToFoundationalMuscleGroup(_ target: String) -> FoundationalMuscleGroup? {
+        let t = target.lowercased()
+        if t.contains("calf") || t.contains("calves") || t.contains("lower leg") { return .calves }
+        if t.contains("quad") || t.contains("thigh") { return .quads }
+        if t.contains("hamstring") { return .hamstrings }
+        if t.contains("glute") || t.contains("hip") { return .glutes }
+        if t.contains("chest") || t.contains("pec") { return .chest }
+        if t.contains("back") || t.contains("lat") || t.contains("rhomboid") { return .back }
+        if t.contains("shoulder") || t.contains("delt") { return .shoulders }
+        if t.contains("bicep") { return .biceps }
+        if t.contains("tricep") { return .triceps }
+        if t.contains("core") || t.contains("ab") || t.contains("oblique") { return .core }
+        return nil
+    }
+
+    /// Finds the index of the lowest-scored exercise eligible for eviction.
+    /// "Eligible" = the exercise's primary muscle is already double-covered
+    /// or is not a uniquely-covered target. Returns nil if every slot is the
+    /// sole cover for some target muscle.
+    private func lowestScoredEvictableIndex(
+        in selected: [SmartSelectedExercise],
+        protecting uncoveredMuscles: [String]
+    ) -> Int? {
+        // Build the cover histogram: for each target muscle in the existing
+        // selection, count how many slots cover it.
+        var coverCounts: [String: Int] = [:]
+        for ex in selected {
+            for muscle in (ex.exercise.getMuscleGroups() ?? []) {
+                let key = muscle.lowercased()
+                coverCounts[key, default: 0] += 1
+            }
+        }
+        // Identify "protected" indices (slots that are the SOLE cover of some
+        // muscle). We never evict these.
+        var protectedIndices = Set<Int>()
+        for (i, ex) in selected.enumerated() {
+            for muscle in (ex.exercise.getMuscleGroups() ?? []) {
+                let key = muscle.lowercased()
+                if (coverCounts[key] ?? 0) == 1 {
+                    protectedIndices.insert(i)
+                    break
+                }
+            }
+        }
+
+        // Among non-protected slots, return the index of the lowest-scored.
+        let evictable = selected.enumerated().filter { !protectedIndices.contains($0.offset) }
+        guard let target = evictable.min(by: { $0.element.score < $1.element.score }) else {
+            // All slots protected — fall back to the absolute lowest-scored
+            // (better to under-cover one muscle than ship a workout missing
+            // a promised target). Safer than returning nil.
+            return selected.indices.min(by: { selected[$0].score < selected[$1].score })
+        }
+        return target.offset
+    }
+
     // MARK: - Practicality Assessment
     
     struct PracticalityResult {
@@ -927,14 +1362,42 @@ class SmartExerciseSelectionEngine {
     
     /// Assesses how "realistic" and practical an exercise is for most users
     /// Filters out exotic, dangerous, or impractical exercises while boosting common ones
+    ///
+    /// `userAge` was added in the 2026-05-08 Round 3 audit pass to support the
+    /// 65+ decline-angle block (user-26, 68y, was served 4× decline chest).
+    /// Default `0` keeps legacy callers compatible — the age check no-ops at 0.
+    ///
+    /// `completedWorkoutCount` (default 0) is consumed by the
+    /// `SpecialtyVariantFilter` for `.blockUntilEstablished` patterns —
+    /// grip / unilateral / stability progression variants unlock once the
+    /// user has crossed the per-level threshold. Audit synthetic users
+    /// keep the default of 0 (always blocked); live-app callers pass the
+    /// real count from `ProgressiveUnlockCache.shared.workoutCount`.
     private func assessExercisePracticality(
         exerciseName: String,
         experienceLevel: String,
-        isGymUser: Bool
+        isGymUser: Bool,
+        userAge: Int = 0,
+        completedWorkoutCount: Int = 0
     ) -> PracticalityResult {
         let name = exerciseName.lowercased()
         let isBeginnerOrIntermediate = experienceLevel.lowercased() != "advanced"
-        
+
+        // ════════════════════════════════════════════════════════════════════════════
+        // 🚨 SAFETY (Audit 2026-05-08 fix #3 — user-26 incident, 68y + 4× decline chest)
+        // Decline angle places the head below the heart, which elevates intracranial
+        // pressure and systolic blood pressure to the head/eyes. For users 65+, the
+        // cardiovascular / stroke risk outweighs the chest-development upside —
+        // canonical replacement is a flat or low-incline press at the same loading.
+        // ════════════════════════════════════════════════════════════════════════════
+        if userAge >= 65 && name.contains("decline") {
+            return PracticalityResult(
+                shouldExclude: true,
+                scoreModifier: 0,
+                reason: "Decline-angle exercise blocked for users 65+ — increases intracranial pressure / blood pressure to head"
+            )
+        }
+
         // ════════════════════════════════════════════════════════════════════════════
         // HARD EXCLUDES - These exercises are unrealistic for most users
         // ════════════════════════════════════════════════════════════════════════════
@@ -959,14 +1422,138 @@ class SmartExerciseSelectionEngine {
             return PracticalityResult(shouldExclude: true, scoreModifier: 0, reason: "Improvised equipment")
         }
         
-        // Obscure/rare exercises most people don't know
+        // Obscure/rare exercises most people don't know.
+        // Audit 2026-05-08 expansion: added TRX power-pull, kneeling/single-arm cable variants,
+        // hybrid plank+leg-extension/march variants, deep-squat-rotation, pallof-twist, lunge-with-
+        // internal-rotation, and other "ribbon-cutting / mobility-flow" hybrids that Claude flagged
+        // as unsuitable for beginners/intermediates in the 20-user audit.
         let obscureExercises = [
+            // Existing
             "zottman", "svend", "jefferson", "zercher", "steinborn",
             "turkish get", "windmill", "sots press", "bradford press",
-            "cuban press", "waiter curl", "guillotine press"
+            "cuban press", "waiter curl", "guillotine press",
+            // 2026-05-08 additions — TRX / suspension obscure variants
+            "trx power pull", "power pull",
+            "trx atomic", "atomic push",
+            "trx clock press", "clock press",
+            "trx hip press", "trx hip drop",
+            // 2026-05-08 additions — hybrid plank / mobility-flow obscure variants
+            "leg extension plank", "plank with leg extension",
+            "reverse plank march", "reverse plank with march",
+            "deep squat turn", "squat with rotation and",  // multi-step flow
+            "lunge with internal rotation",
+            "pallof twist", "pallof press twist",
+            // 2026-05-08 additions — uncommon cable/kneeling variants
+            "kneeling pallof", "tall kneeling cable",  // tall-kneeling stability work is specialty
+            "high low cable chop", "low to high chop",  // unless explicitly requested
+            // 2026-05-08 additions — eccentric-only / partial / overcoming-isometric variants
+            "overcoming isometric", "yielding isometric",
+            "anti rotation", "anti-rotation hold",  // pallof-equivalent hold
+            // Specialty hybrid lower-body
+            "cossack squat", "shrimp squat", "skater squat",
+            "single leg deadlift to row", "deadlift to row",  // overly complex hybrid
+            // Niche shoulder
+            "scaption", "scaption raise",  // sub-specialty front/lateral combo
+            "klokov press", "rdl to press"  // hybrid lift
         ]
         if isBeginnerOrIntermediate && obscureExercises.contains(where: { name.contains($0) }) {
             return PracticalityResult(shouldExclude: true, scoreModifier: 0, reason: "Obscure exercise")
+        }
+
+        // ════════════════════════════════════════════════════════════════════════════
+        // COMPLEX-HYBRID NAME DETECTION (Audit 2026-05-08 fix #10)
+        // ════════════════════════════════════════════════════════════════════════════
+        // Block multi-action exercise names like "Squat to Press to Curl" or "Lunge and
+        // Twist and Reach" for non-Advanced users. These are flow / mobility-circuit
+        // exercises that don't belong in a strength autogen — they overload the lifter
+        // with cues and are usually a worse expression of each component movement.
+        //
+        // Heuristic:
+        //   1. Names containing TWO OR MORE " to " connectors → multi-stage hybrid
+        //      (e.g. "Squat to Press to Curl"). One " to " is fine ("Single-Leg
+        //      Deadlift to Row" is borderline; we already block the latter via the
+        //      obscure list).
+        //   2. Names containing " and " followed later by another " and "
+        //      (e.g. "Lunge and Twist and Reach").
+        //   3. Names with FOUR OR MORE hyphens (e.g. "Side-Lying-Hip-Drop-with-Leg-Lift")
+        //      — usually indicates an over-described mobility variant.
+        //
+        // 2026-05-08 audit fix — Advanced users were also getting catalog-corrupted
+        // hybrid entries like "Romanian Deadlift Bicep Curl Kickback" and "Curl Press
+        // Extension". These are not legitimate Advanced flow work; they're database
+        // junk. Apply the filter to ALL levels, with a stricter movement-noun count
+        // check to catch the no-separator hybrids that slipped past the original heuristic.
+        let toCount = name.components(separatedBy: " to ").count - 1
+        let andCount = name.components(separatedBy: " and ").count - 1
+        let hyphenCount = name.filter { $0 == "-" }.count
+
+        let movementNouns: Set<String> = [
+            "deadlift", "squat", "lunge", "press", "curl", "row", "fly", "flye",
+            "raise", "kickback", "extension", "crunch", "twist", "swing",
+            "snatch", "clean", "jerk", "pulldown", "pressdown", "thrust",
+            "pushdown", "shrug", "tuck", "march", "carry", "fold", "reach",
+            // Bigram movements collapsed to single tokens via _BIGRAM_REWRITES
+            "pushup", "pullup", "chinup", "situp", "stepup", "kneeup",
+            "thruster", "burpee"
+        ]
+
+        // Audit Round 4 fix — collapse bigram movements ("Push Up" → "pushup")
+        // BEFORE token analysis so names like "Push Up - Tricep Extension"
+        // register movement noun on both sides of the separator.
+        var normalized = name
+        let bigramRewrites: [(String, String)] = [
+            (" push up", " pushup"), (" push-up", " pushup"),
+            (" pull up", " pullup"), (" pull-up", " pullup"),
+            (" chin up", " chinup"), (" chin-up", " chinup"),
+            (" sit up", " situp"),  (" sit-up", " situp"),
+            (" step up", " stepup"), (" step-up", " stepup"),
+            (" knee up", " kneeup"),
+            (" knee tuck", " tuck")
+        ]
+        let padded = " " + name + " "
+        normalized = padded
+        for (src, dst) in bigramRewrites {
+            normalized = normalized.replacingOccurrences(of: src, with: dst)
+        }
+        normalized = normalized.trimmingCharacters(in: .whitespaces)
+
+        let nameTokens = normalized.split(separator: " ").map { String($0) }
+        let movementNounHits: Set<String> = Set(nameTokens.filter { movementNouns.contains($0) })
+
+        let advancedHyphenCap = 4
+        let nonAdvancedHyphenCap = 3
+        let hyphenCap = isBeginnerOrIntermediate ? nonAdvancedHyphenCap : advancedHyphenCap
+
+        // " - " separator with a movement noun on BOTH sides — catalog-corrupted
+        // hybrid (e.g. "Push Up - Tricep Extension" → pushup | extension).
+        // Audit Round 4: this caught hybrid names that have only 2 movement
+        // nouns (so the >=3 token rule misses them) but ARE clearly two
+        // exercises mashed together.
+        var isHyphenSeparatorHybrid = false
+        for sep in [" - ", " – ", " — "] {
+            if normalized.contains(sep) {
+                let parts = normalized.components(separatedBy: sep)
+                if parts.count >= 2 {
+                    let leftTokens = parts[0].split(separator: " ").map { String($0) }
+                    let rightTokens = parts[1].split(separator: " ").map { String($0) }
+                    let leftHasMove = leftTokens.contains(where: { movementNouns.contains($0) })
+                    let rightHasMove = rightTokens.contains(where: { movementNouns.contains($0) })
+                    if leftHasMove && rightHasMove {
+                        isHyphenSeparatorHybrid = true
+                        break
+                    }
+                }
+            }
+        }
+
+        let isMultiStageHybrid =
+            toCount >= 2 ||
+            andCount >= 2 ||
+            hyphenCount >= hyphenCap ||
+            movementNounHits.count >= 3 ||  // "Deadlift Curl Kickback" → 3 distinct movement nouns
+            isHyphenSeparatorHybrid          // "Push Up - Tricep Extension"
+        if isMultiStageHybrid {
+            return PracticalityResult(shouldExclude: true, scoreModifier: 0, reason: "Complex multi-stage hybrid name")
         }
         
         // "Cat cow", "child pose", "downward dog" etc are yoga/stretching - exclude from strength
@@ -1020,6 +1607,93 @@ class SmartExerciseSelectionEngine {
             }
         }
         
+        // ════════════════════════════════════════════════════════════════════════════
+        // SPECIALTY VARIANT FILTER
+        // ════════════════════════════════════════════════════════════════════════════
+        // A SPECIALTY VARIANT is a base exercise + programming modifier that
+        // requires the lifter to already own the canonical version. Common
+        // examples slipping through before this filter existed:
+        //   - "Feet On Bench Bench Press"  (specialty stability variant of bench)
+        //   - "Pause Squat" / "Tempo Squat" (specialty cadence variants)
+        //   - "Pendlay Row" / "Yates Row"   (specialty bent-over row variants)
+        //   - "Bicep Curl 21s"              (specialty rep-scheme variant)
+        //
+        // Authority + canonical pattern list: `scripts/specialty_exercise_filter.py`
+        // — when adding/removing a pattern, MIRROR the change in BOTH places. The
+        // Python audit simulator (`scripts/autogen_audit_simulator.py`) reads from
+        // that module and surfaces residual slips in its .md report.
+        //
+        // Severity bands:
+        //   - .blockBeginner     → never recommend to a Beginner
+        //   - .blockIntermediate → block Beginner AND Intermediate
+        //   - .blockAll          → block every level (auto-recommend only — still
+        //                          available via search/manual add)
+        let isIntermediate = experienceLevel.lowercased() == "intermediate"
+        if let specialtyResult = SpecialtyVariantFilter.evaluate(
+            name: name,
+            isBeginner: isBeginner,
+            isIntermediate: isIntermediate,
+            completedWorkoutCount: completedWorkoutCount
+        ) {
+            return specialtyResult
+        }
+
+        // ════════════════════════════════════════════════════════════════════════════
+        // TECHNIQUE-EQUIPMENT MISMATCH (Audit 2026-05-08 Round 3 fix #6)
+        // ════════════════════════════════════════════════════════════════════════════
+        // Some training techniques are inherently barbell- (or dumbbell-) only and
+        // make no biomechanical sense paired with cable / machine / band / smith /
+        // kettlebell / TRX equipment. The Round 3 50-user audit caught two
+        // "Pendlay Row (Cable)" workouts (user-19, user-41) — Pendlay Row is a
+        // dead-stop powerlifting variant where the bar resets on the floor every
+        // rep; a cable column has no floor reset, no horizontal pull plane, no
+        // explosive concentric. Same logic for Jefferson curl (loaded spinal
+        // flexion over the bar), Zercher squat (bar held in elbow crooks), Clean
+        // Grip front squat / lunge (Olympic-lifting grip on a bar), and Snatch
+        // Grip pulls.
+        //
+        // Pattern: technique keyword is present AND equipment is NOT barbell or
+        // dumbbell → the exercise is a catalog-corruption artifact (someone
+        // copy-pasted the technique name to a cable/machine variant). Hard
+        // exclude.
+        //
+        // Equipment is detected from the canonical "(Equipment)" suffix the live
+        // catalog uses (e.g. "Pendlay Row (Cable)") — assessExercisePracticality
+        // doesn't currently take an equipment param, and we don't want to widen
+        // the signature for a single check. Falls back to substring scan if the
+        // suffix is missing.
+        let barbellTechniques = ["pendlay", "jefferson", "zercher", "clean grip", "snatch grip"]
+        if let technique = barbellTechniques.first(where: { name.contains($0) }) {
+            // Pull the parenthesized equipment suffix if present. Catalog
+            // convention: "<Name> (<Equipment>)" for variant rows.
+            let suffixEquip: String? = {
+                guard let openParen = name.lastIndex(of: "("),
+                      let closeParen = name.lastIndex(of: ")"),
+                      openParen < closeParen else { return nil }
+                let afterOpen = name.index(after: openParen)
+                return String(name[afterOpen..<closeParen]).trimmingCharacters(in: .whitespaces)
+            }()
+            // Allowed equipment for these techniques: free weights only.
+            let allowedEquipment: Set<String> = ["barbell", "dumbbell"]
+            let detectedEquipment: String = suffixEquip ?? ""
+            // If we have an explicit suffix, trust it. Otherwise scan the full
+            // name for the allowed-equipment tokens.
+            let isOnAllowedEquipment: Bool = {
+                if !detectedEquipment.isEmpty {
+                    return allowedEquipment.contains(where: { detectedEquipment.contains($0) })
+                }
+                return allowedEquipment.contains(where: { name.contains($0) })
+            }()
+            if !isOnAllowedEquipment {
+                let equipDescriptor = detectedEquipment.isEmpty ? "non-barbell equipment" : detectedEquipment
+                return PracticalityResult(
+                    shouldExclude: true,
+                    scoreModifier: 0,
+                    reason: "Technique-equipment mismatch — '\(technique)' is a barbell technique, not appropriate for \(equipDescriptor)"
+                )
+            }
+        }
+
         // ════════════════════════════════════════════════════════════════════════════
         // SCORING MODIFIERS - Boost practical exercises, penalize unusual ones
         // ════════════════════════════════════════════════════════════════════════════
@@ -1639,6 +2313,401 @@ class SmartExerciseSelectionEngine {
         default:
             return availableStyles.randomElement() ?? .straight
         }
+    }
+}
+
+// MARK: - Specialty Variant Filter
+// ═══════════════════════════════════════════════════════════════════════════
+// SPECIALTY / VARIANT EXERCISE FILTER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The user-visible bug this fixes: an unmodified beginner sees "Feet On
+// Bench Bench Press" or "Pause Squat" recommended before the regular Bench
+// Press / Squat. Those are SPECIALTY VARIANTS — exercises that combine a
+// base movement with a modifier (tempo / pause / deficit / feet up / 21s /
+// etc.). Valid for intermediate/advanced lifters who already own the base
+// movement; never auto-recommend them to a beginner ahead of the canonical
+// version.
+//
+// CANONICAL SOURCE: `scripts/specialty_exercise_filter.py` is the single
+// source of truth. When you add/remove a pattern:
+//   1. Update SPECIALTY_PATTERNS in scripts/specialty_exercise_filter.py
+//      (and add a fixture to its self-test).
+//   2. Update SpecialtyVariantFilter.patterns below with the same lowercased
+//      substring + base movement + severity.
+//   3. Re-run `python3 scripts/specialty_exercise_filter.py`.
+//   4. Re-run `python3 scripts/autogen_audit_simulator.py --users 100` to
+//      confirm the live app and the audit agree.
+//
+// Authority: Fitness Expert + Product Engineer agents (see
+// FITNESS_EXPERT_AGENT.md invariant on specialty variants).
+
+enum SpecialtyVariantFilter {
+
+    enum Severity {
+        case blockBeginner             // never recommend to a Beginner
+        case blockIntermediate         // block Beginner AND Intermediate
+        case blockUntilEstablished     // block at every level UNTIL the user
+                                        // has completed `workoutCountThresholds[level]`
+                                        // workouts (audit users are always at 0)
+        case blockAll                  // block every level (auto-recommend only)
+    }
+
+    /// Workout-count threshold by experience level. The
+    /// `.blockUntilEstablished` severity unlocks once the user crosses
+    /// the threshold for their level. Audit users are always at count=0
+    /// → grip / unilateral / stability progression variants are always
+    /// blocked in the audit. Live-app users earn the unlock with
+    /// completed workouts (sourced from `ProgressiveUnlockCache`).
+    static let workoutCountThresholds: [String: Int] = [
+        "beginner":     12,    // ~4 weeks @ 3x/week
+        "intermediate":  8,    // ~3 weeks
+        "advanced":      4,    // ~1.5 weeks (still earn it)
+    ]
+
+    struct Pattern {
+        let substring: String
+        let baseMovement: String
+        let severity: Severity
+        let rationale: String
+    }
+
+    /// Pattern registry — first-match wins. Keep specific (longer) patterns
+    /// BEFORE generic modifiers. We test against ` exercise.name.lowercased() `
+    /// padded with a leading + trailing space so single-word patterns match
+    /// at word boundaries.
+    static let patterns: [Pattern] = [
+        // ── Kettlebell combo family (.blockAll — must come FIRST) ──
+        // Multi-movement KB hybrids ("Swing To Goblet Squat", "Swing Clean
+        // Grip Front Squat") combine swing + landed exercise + grip-modifier.
+        // These are catalog-corruption combos — never autogen. Listed BEFORE
+        // bench/squat so "Swing Clean Grip Front Squat" matches "swing clean
+        // grip" (BLOCK_ALL) instead of fragments like "clean grip".
+        Pattern(substring: "swing clean grip", baseMovement: "kb_combo", severity: .blockAll,
+                rationale: "Swing-clean-grip-X is a multi-movement KB hybrid — catalog corruption"),
+        Pattern(substring: "swing to ", baseMovement: "kb_combo", severity: .blockAll,
+                rationale: "KB swing-to-X is a mobility-flow combo — base swing and target movement should be separate"),
+
+        // ── Bench Press family ──
+        Pattern(substring: "feet on bench", baseMovement: "bench_press", severity: .blockBeginner,
+                rationale: "Feet-elevated bench is a specialty stability variant — never the first bench press shown to a beginner"),
+        Pattern(substring: "feet up", baseMovement: "bench_press", severity: .blockBeginner,
+                rationale: "Feet-up bench removes leg drive — specialty variant"),
+        Pattern(substring: "feet elevated", baseMovement: "bench_press", severity: .blockBeginner,
+                rationale: "Feet-elevated bench — specialty stability variant"),
+        Pattern(substring: "legs raised", baseMovement: "bench_press", severity: .blockBeginner,
+                rationale: "Legs-raised bench — specialty stability variant"),
+        Pattern(substring: "spoto press", baseMovement: "bench_press", severity: .blockIntermediate,
+                rationale: "Spoto press = pause 1-2\" off chest — competition powerlifting specialty"),
+        Pattern(substring: "pin press", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Pin press = bottom-position deadstop — show regular bench first regardless of level (audit Round 4: Intermediate user got 'Pin Bench Press Conventional Grip')"),
+        Pattern(substring: "pin bench press", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Pin bench press is a specialty deadstop variant — show regular bench first regardless of level"),
+        Pattern(substring: "squeeze press", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Squeeze press = chest-squeeze isometric DB press — specialty technique requiring mind-muscle mastery (audit Round 4: 3 instances flagged)"),
+        Pattern(substring: "squeeze bench", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Squeeze bench press — specialty technique variant"),
+        Pattern(substring: "dead stop bench", baseMovement: "bench_press", severity: .blockIntermediate,
+                rationale: "Dead-stop bench — specialty pause variant"),
+        Pattern(substring: "paused bench", baseMovement: "bench_press", severity: .blockBeginner,
+                rationale: "Paused bench is a powerlifting specialty"),
+        Pattern(substring: "long pause", baseMovement: "bench_press", severity: .blockIntermediate,
+                rationale: "Long-pause bench — specialty"),
+        Pattern(substring: "board press", baseMovement: "bench_press", severity: .blockIntermediate,
+                rationale: "Board press = partial range, requires equipment — specialty"),
+        Pattern(substring: "slingshot", baseMovement: "bench_press", severity: .blockIntermediate,
+                rationale: "Slingshot bench requires the slingshot tool — specialty"),
+        Pattern(substring: "guillotine", baseMovement: "bench_press", severity: .blockAll,
+                rationale: "Guillotine press = bar to neck — high shoulder injury risk, never auto-recommend"),
+        Pattern(substring: "jm press", baseMovement: "bench_press", severity: .blockIntermediate,
+                rationale: "JM press is a specialty triceps-bench hybrid"),
+        // ── Grip-progression bench variants (.blockUntilEstablished) ──
+        // Audit Round 3 (2026-05-08): grip-emphasis variants must NEVER be
+        // the first bench press an autogen recommends, regardless of level.
+        // Unlocks once the user crosses the per-level workout-count threshold.
+        Pattern(substring: "close grip incline", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Close-grip incline — grip-progression variant; show regular incline first"),
+        Pattern(substring: "reverse grip", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Reverse-grip bench requires wrist mobility — grip-progression variant"),
+        Pattern(substring: "wide grip bench", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Wide-grip bench — grip-progression variant; show regular grip first"),
+        Pattern(substring: "wide bench press", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Wide bench press (no 'grip' in name) — grip-progression variant"),
+        Pattern(substring: "close grip bench press", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Close-grip bench shifts emphasis to triceps — grip-progression variant"),
+        Pattern(substring: "bench press - close grip", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Close-grip bench (DB/SM/BB variant) — grip-progression variant"),
+        Pattern(substring: "decline bench press - wide grip", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Wide-grip decline — multi-modifier specialty"),
+        Pattern(substring: "3 point bench", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "3-Point bench is an unstable specialty variant — show regular bench first"),
+        Pattern(substring: "reverse close grip", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Reverse close-grip bench is a multi-modifier specialty — show regular bench first"),
+
+        // ── Squat family ──
+        Pattern(substring: "deficit squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Deficit squat = standing on a plate — specialty range-extension variant"),
+        Pattern(substring: "paused squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Paused squat = bottom-position pause — specialty"),
+        Pattern(substring: "pause squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Pause squat — specialty"),
+        Pattern(substring: "anderson squat", baseMovement: "squat", severity: .blockIntermediate,
+                rationale: "Anderson squat = bottom-up from pins — specialty"),
+        Pattern(substring: "1 1/4 squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "1 1/4 rep squat — specialty tempo variant"),
+        Pattern(substring: "1.5 squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "1.5-rep squat — specialty"),
+        Pattern(substring: "tempo squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Tempo-prescribed squat — specialty"),
+        Pattern(substring: "pin squat", baseMovement: "squat", severity: .blockIntermediate,
+                rationale: "Pin squat — specialty"),
+        Pattern(substring: "box squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Box squat is a specialty depth-controlled variant — show regular squat first"),
+        Pattern(substring: "zercher", baseMovement: "squat", severity: .blockIntermediate,
+                rationale: "Zercher squat — specialty / advanced"),
+        Pattern(substring: "jefferson", baseMovement: "squat", severity: .blockIntermediate,
+                rationale: "Jefferson squat / deadlift — specialty / unusual"),
+        Pattern(substring: "sissy squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Sissy squat = knee-extension under load — specialty / knee stress"),
+        Pattern(substring: "heels elevated", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Heels-elevated squat — specialty quad emphasis variant"),
+        // 2026-05-08 audit additions
+        Pattern(substring: "deep squat turn", baseMovement: "squat", severity: .blockAll,
+                rationale: "Deep squat with rotation = mobility-flow hybrid; never an autogen strength pick at any level"),
+        Pattern(substring: "lunge with internal rotation", baseMovement: "squat", severity: .blockAll,
+                rationale: "Lunge + internal hip rotation = mobility-flow specialty; never appropriate for autogen strength workouts"),
+        // ── Round 3 audit additions: Olympic / grip / stability progression variants ──
+        // (.blockUntilEstablished — unlocks once the user has completed N workouts)
+        Pattern(substring: "clean grip", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Clean-grip front squat is an Olympic-lifting technique variant — grip progression"),
+        // 2026-05-08 audit Round 4 — Olympic-derivative WITHOUT the word "Grip"
+        // (catalog name "Front Squat - Clean (Barbell)" doesn't contain "Grip"
+        // and was bypassing the `clean grip` pattern).
+        Pattern(substring: "squat - clean", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Olympic-derivative '<Squat> - Clean' is a technique variant requiring Olympic coaching; show regular squat first"),
+        Pattern(substring: "front squat clean", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Front-squat-clean (no separator) — Olympic-derivative technique variant"),
+        Pattern(substring: "elevated goblet", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Elevated goblet squat is a stability/depth specialty"),
+        Pattern(substring: "front foot elevated", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Front-foot-elevated split squat is a deficit specialty"),
+        Pattern(substring: "single leg press", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Single-leg press is a unilateral stability specialty — show bilateral leg press first"),
+        Pattern(substring: "split squat front foot elevated", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Front-foot-elevated split squat is a stability/deficit specialty"),
+        // ── Round 3 audit additions: catalog-corrupted combo movements (.blockAll) ──
+        // Listed BEFORE other squat patterns so multi-keyword names match the
+        // BLOCK_ALL combo first instead of fragments like "clean grip".
+        // Note: KB combos (swing to/swing clean grip) are handled by the
+        // separate KETTLEBELL_COMBO block placed at the top of `patterns`.
+        Pattern(substring: "reverse lunge forward lunge", baseMovement: "lunge", severity: .blockAll,
+                rationale: "Reverse-lunge-forward-lunge is a catalog-corrupted combo movement — never autogen at any level"),
+
+        // ── Deadlift family ──
+        Pattern(substring: "deficit deadlift", baseMovement: "deadlift", severity: .blockIntermediate,
+                rationale: "Deficit deadlift — specialty range-extension"),
+        Pattern(substring: "snatch grip deadlift", baseMovement: "deadlift", severity: .blockIntermediate,
+                rationale: "Snatch-grip deadlift — specialty grip variant"),
+        Pattern(substring: "block pull", baseMovement: "deadlift", severity: .blockIntermediate,
+                rationale: "Block pulls = elevated deadlift from blocks — specialty"),
+        Pattern(substring: "paused deadlift", baseMovement: "deadlift", severity: .blockIntermediate,
+                rationale: "Paused deadlift — specialty"),
+        Pattern(substring: "tempo deadlift", baseMovement: "deadlift", severity: .blockIntermediate,
+                rationale: "Tempo deadlift — specialty"),
+        Pattern(substring: "reset deadlift", baseMovement: "deadlift", severity: .blockIntermediate,
+                rationale: "Reset every rep — specialty"),
+        Pattern(substring: "touch and go", baseMovement: "deadlift", severity: .blockIntermediate,
+                rationale: "Touch-and-go deadlift — specialty cadence"),
+        Pattern(substring: "stiff leg", baseMovement: "deadlift", severity: .blockBeginner,
+                rationale: "Stiff-leg deadlift — high low-back stress, specialty for beginners"),
+        Pattern(substring: "trap bar", baseMovement: "deadlift", severity: .blockBeginner,
+                rationale: "Trap-bar deadlift is great but show regular deadlift FIRST when introducing the pattern"),
+        // 2026-05-08 audit additions
+        Pattern(substring: "rack pull", baseMovement: "deadlift", severity: .blockUntilEstablished,
+                rationale: "Rack pull = elevated partial deadlift — show full deadlift first regardless of level (audit Round 4: Intermediate user got 'Rack Pull (Smith Machine)')"),
+
+        // ── Row family ──
+        // Technique-progression variants (.blockUntilEstablished) — unlock once
+        // the user has completed N workouts at their level. Even Advanced lifters
+        // shouldn't see Pendlay Row in their first autogen workout — they earn it.
+        Pattern(substring: "yates row", baseMovement: "row", severity: .blockUntilEstablished,
+                rationale: "Yates row = supinated bent row — technique-progression variant"),
+        Pattern(substring: "pendlay row", baseMovement: "row", severity: .blockUntilEstablished,
+                rationale: "Pendlay row = strict dead-stop row — technique-progression variant"),
+        Pattern(substring: "meadows row", baseMovement: "row", severity: .blockUntilEstablished,
+                rationale: "Meadows row = unilateral landmine variant — technique-progression variant"),
+        Pattern(substring: "kroc row", baseMovement: "row", severity: .blockUntilEstablished,
+                rationale: "Kroc row = ultra-high-rep heavy DB row — technique-progression variant"),
+        // Tempo / pause prescription variants (.blockBeginner — keeps standard cadence default)
+        Pattern(substring: "paused row", baseMovement: "row", severity: .blockBeginner,
+                rationale: "Paused row — specialty tempo"),
+        Pattern(substring: "tempo row", baseMovement: "row", severity: .blockBeginner,
+                rationale: "Tempo row — specialty"),
+
+        // ── Curl family ──
+        Pattern(substring: " 21s", baseMovement: "curl", severity: .blockBeginner,
+                rationale: "21s = partial-rep set scheme — specialty programming"),
+        Pattern(substring: "21s curl", baseMovement: "curl", severity: .blockBeginner,
+                rationale: "21s curl — specialty"),
+        Pattern(substring: "drag curl", baseMovement: "curl", severity: .blockBeginner,
+                rationale: "Drag curl — specialty (elbow path is unintuitive for beginners)"),
+        Pattern(substring: "zottman", baseMovement: "curl", severity: .blockBeginner,
+                rationale: "Zottman curl = curl + reverse-curl combo — specialty"),
+        Pattern(substring: "waiter curl", baseMovement: "curl", severity: .blockIntermediate,
+                rationale: "Waiter curl — specialty"),
+        Pattern(substring: "bayesian curl", baseMovement: "curl", severity: .blockIntermediate,
+                rationale: "Bayesian curl = behind-body cable curl — specialty"),
+
+        // ── OHP family ──
+        Pattern(substring: "z press", baseMovement: "ohp", severity: .blockIntermediate,
+                rationale: "Z-press = floor-seated press — specialty"),
+        Pattern(substring: "savickas press", baseMovement: "ohp", severity: .blockIntermediate,
+                rationale: "Savickas press — specialty"),
+        Pattern(substring: "bradford press", baseMovement: "ohp", severity: .blockIntermediate,
+                rationale: "Bradford press = front-to-back press — specialty"),
+        Pattern(substring: "cuban press", baseMovement: "ohp", severity: .blockIntermediate,
+                rationale: "Cuban press — specialty rotator cuff sequence"),
+        Pattern(substring: "sots press", baseMovement: "ohp", severity: .blockIntermediate,
+                rationale: "Sots press = press from bottom of squat — specialty"),
+        Pattern(substring: "viking press", baseMovement: "ohp", severity: .blockIntermediate,
+                rationale: "Viking press requires landmine attachment — specialty"),
+        Pattern(substring: "landmine press", baseMovement: "ohp", severity: .blockBeginner,
+                rationale: "Landmine press is fine but show regular OHP variants first"),
+
+        // ── Core / oblique family (2026-05-08 audit additions) ──
+        // Pallof-press WITH rotation defeats the anti-rotation cue. Listed before
+        // the shorter "pallof twist" so the longer/more-specific pattern wins.
+        Pattern(substring: "pallof press twist", baseMovement: "pallof", severity: .blockAll,
+                rationale: "Pallof press WITH rotation contradicts the anti-rotation cue that defines the pallof — never autogen at any level"),
+        Pattern(substring: "pallof twist", baseMovement: "pallof", severity: .blockAll,
+                rationale: "Pallof press WITH rotation contradicts the anti-rotation cue that defines the pallof — never autogen at any level"),
+        // 2026-05-08 audit Round 3 — half-kneeling stance is an anti-rotation progression
+        Pattern(substring: "half kneeling pallof", baseMovement: "pallof", severity: .blockBeginner,
+                rationale: "Half-kneeling pallof press requires anti-rotation core stability — show standing pallof first for beginners"),
+
+        // ── Plank family (2026-05-08 audit additions) ──
+        Pattern(substring: "reverse plank march", baseMovement: "plank", severity: .blockAll,
+                rationale: "Reverse-plank-with-marching is an obscure mobility-flow hybrid; never autogen at any level"),
+        Pattern(substring: "leg extension plank", baseMovement: "plank", severity: .blockAll,
+                rationale: "Leg-extension-plank is a mobility-flow hybrid, not strength; never autogen at any level"),
+        // 2026-05-08 audit Round 3 — complex plank progressions
+        Pattern(substring: "side bend plank", baseMovement: "plank", severity: .blockBeginner,
+                rationale: "Side-bend plank is a complex plank progression — beginners should master standard plank first"),
+        Pattern(substring: "elbow to knee side plank", baseMovement: "plank", severity: .blockBeginner,
+                rationale: "Elbow-to-knee side plank is an advanced plank progression — beginners should master standard side plank first"),
+        // 2026-05-08 audit Round 4 additions — elbow/depth/decline modifier variants.
+        // BLOCK_UNTIL_ESTABLISHED so Advanced users at count=0 don't get them
+        // either (user feedback: "advanced types come later when progression
+        // feels correct, not premature").
+        Pattern(substring: "reverse plank on elbows", baseMovement: "plank", severity: .blockUntilEstablished,
+                rationale: "Reverse-plank-on-elbows is a forearm-supported variant — show standard reverse plank first regardless of level"),
+        Pattern(substring: "plank on elbows", baseMovement: "plank", severity: .blockUntilEstablished,
+                rationale: "Plank-on-elbows variants are scapular/forearm progressions — show standard plank first regardless of level"),
+
+        // ── Dip / Shrug families (2026-05-08 audit Round 4) ──
+        Pattern(substring: "deep dip", baseMovement: "dip", severity: .blockUntilEstablished,
+                rationale: "Deep dip = below-parallel range — show standard dip first regardless of level"),
+        Pattern(substring: "decline shrug", baseMovement: "shrug", severity: .blockUntilEstablished,
+                rationale: "Decline shrug = lying decline trap shrug — show standard barbell/DB shrug first regardless of level"),
+
+        // ── Pull-up family (2026-05-08 audit Round 3 additions) ──
+        // Grip / equipment-context variants of the pull-up. Hammer-grip is a
+        // grip-progression variant; dip-cage is a specialty equipment context.
+        Pattern(substring: "hammer grip pull up", baseMovement: "pullup", severity: .blockUntilEstablished,
+                rationale: "Hammer-grip pull-up — grip-progression variant; show standard pull-up/chin-up first"),
+        Pattern(substring: "dip cage", baseMovement: "pullup", severity: .blockBeginner,
+                rationale: "Dip-cage exercises are a specialty equipment context — beginners should master standard pull-up first"),
+
+        // ── Generic prescription modifiers ──
+        Pattern(substring: " tempo ", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Tempo-prescribed exercise — specialty rep cadence"),
+        Pattern(substring: " paused ", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Paused variant — specialty"),
+        Pattern(substring: "1 1/4 ", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "1 1/4 rep — specialty rep scheme"),
+        Pattern(substring: "1.25 ", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "1.25 rep — specialty rep scheme"),
+        Pattern(substring: "1.5 ", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "1.5 rep — specialty rep scheme"),
+        Pattern(substring: "rest pause", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Rest-pause set — specialty intensity technique"),
+        Pattern(substring: "myo-rep", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Myo-rep set — specialty intensity technique"),
+        Pattern(substring: "myo rep", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Myo-rep set — specialty intensity technique"),
+        Pattern(substring: "cluster set", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Cluster set — specialty intensity technique"),
+        Pattern(substring: "drop set", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Drop-set prescribed in name — specialty technique"),
+        Pattern(substring: "with chains", baseMovement: "generic", severity: .blockIntermediate,
+                rationale: "Chain-loaded — specialty equipment"),
+        Pattern(substring: "eccentric only", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Eccentric-only — specialty programming"),
+        Pattern(substring: "isometric hold", baseMovement: "generic", severity: .blockUntilEstablished,
+                rationale: "Isometric-hold prescribed — specialty technique requiring mind-muscle mastery; never the first autogen variant of a movement (audit Round 4: Advanced user got 'Isometric Hold Push Up')"),
+    ]
+
+    /// Returns a `PracticalityResult` to short-circuit selection if the
+    /// exercise is a specialty variant blocked at the caller's experience
+    /// level (and progression for `.blockUntilEstablished`). Returns nil
+    /// when no block applies.
+    ///
+    /// `name` MUST already be lowercased (matches the convention of
+    /// `assessExercisePracticality()`).
+    ///
+    /// `completedWorkoutCount` is used by `.blockUntilEstablished`: the
+    /// pattern blocks at all levels until the user crosses the per-level
+    /// threshold (`workoutCountThresholds`). Audit synthetic users always
+    /// pass count=0 → grip / unilateral / stability progression variants
+    /// are blocked across the board.
+    static func evaluate(
+        name: String,
+        isBeginner: Bool,
+        isIntermediate: Bool,
+        completedWorkoutCount: Int = 0
+    ) -> SmartExerciseSelectionEngine.PracticalityResult? {
+        let haystack = " \(name) "
+        for pattern in patterns {
+            guard haystack.contains(pattern.substring) else { continue }
+            let trimmed = pattern.substring.trimmingCharacters(in: .whitespaces)
+            switch pattern.severity {
+            case .blockAll:
+                return SmartExerciseSelectionEngine.PracticalityResult(
+                    shouldExclude: true,
+                    scoreModifier: 0,
+                    reason: "Specialty variant '\(trimmed)' — \(pattern.rationale)"
+                )
+            case .blockIntermediate:
+                if isBeginner || isIntermediate {
+                    return SmartExerciseSelectionEngine.PracticalityResult(
+                        shouldExclude: true,
+                        scoreModifier: 0,
+                        reason: "Specialty variant '\(trimmed)' blocked at this level — \(pattern.rationale)"
+                    )
+                }
+            case .blockBeginner:
+                if isBeginner {
+                    return SmartExerciseSelectionEngine.PracticalityResult(
+                        shouldExclude: true,
+                        scoreModifier: 0,
+                        reason: "Specialty variant '\(trimmed)' blocked for beginner — \(pattern.rationale)"
+                    )
+                }
+            case .blockUntilEstablished:
+                // Use level to look up threshold. Default to beginner threshold
+                // (most conservative) when level is unrecognized.
+                let levelKey: String = isBeginner ? "beginner" : (isIntermediate ? "intermediate" : "advanced")
+                let threshold = workoutCountThresholds[levelKey] ?? workoutCountThresholds["beginner"]!
+                if completedWorkoutCount < threshold {
+                    return SmartExerciseSelectionEngine.PracticalityResult(
+                        shouldExclude: true,
+                        scoreModifier: 0,
+                        reason: "Specialty variant '\(trimmed)' blocked until \(threshold) workouts (currently \(completedWorkoutCount)) — \(pattern.rationale)"
+                    )
+                }
+            }
+        }
+        return nil
     }
 }
 

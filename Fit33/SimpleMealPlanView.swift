@@ -735,11 +735,17 @@ struct SimpleMealPlanView: View {
             } else {
                 VStack(spacing: 4) {
                     ForEach(meals, id: \.id) { meal in
-                        HStack {
+                        HStack(alignment: .top) {
+                            // Long branded/restaurant items (e.g. "Kellogg's Frosted
+                            // Mini-Wheats Touch of Brown Sugar Bite-Size Cereal") were
+                            // clipped to "…" by lineLimit(1). Allow up to 2 lines + a
+                            // gentle scale-down so the trailing cal/× column stays put.
                             Text(meal.foodName)
                                 .font(.caption)
                                 .foregroundColor(.primary)
-                                .lineLimit(1)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.85)
+                                .fixedSize(horizontal: false, vertical: true)
                             
                             Spacer()
                             
@@ -1043,15 +1049,37 @@ struct SimpleMealPlanView: View {
         .frame(maxHeight: .infinity)
     }
     
-    // Generate smart text insights (detailed style matching SmartDailySummaryWidget)
+    // Generate smart text insights — friendly, conversational copy that
+    // greets by name when available and varies phrasing per call so the
+    // carousel doesn't feel templated. Bug 4f057f71 (2026-05-08) — the
+    // prior copy ("Need 70g protein still! Quick fix: …") read like a
+    // fitness app talking AT the user; rewrite makes it read like a
+    // friend talking WITH them.
     private func generateTextInsights() -> [InsightItem] {
         var insights: [InsightItem] = []
         let hour = Calendar.current.component(.hour, from: Date())
-        
-        // 🧠 PERSONALIZED INSIGHTS: Add database-driven insights first (highest priority)
-        for personalInsight in insightsService.activeInsights.prefix(1) {
-            // Only show nutrition-related insights here
-            if personalInsight.insightCategory == .nutrition || 
+
+        // First-name extraction mirrors `DailyBriefEngine.compose()` (line 576):
+        // Core Data `User` exposes `name` (full name) — split on whitespace, trim,
+        // fall through to `nil` for empty/whitespace so `hasName` paths stay clean.
+        let firstName: String? = {
+            let raw = (userManager.currentUser?.name
+                       ?? UserManager.shared.currentUser?.name)?
+                       .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !raw.isEmpty else { return nil }
+            let first = raw.components(separatedBy: " ").first ?? raw
+            let trimmed = first.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }()
+        let hasName = firstName != nil
+        let name = firstName ?? ""
+
+        // 🧠 PERSONALIZED INSIGHTS: Add database-driven insights first (highest priority).
+        // Bumped from `prefix(1)` → `prefix(2)` per bug 4f057f71 so up to 2
+        // server-crafted nutrition / goal / streak insights bubble up before
+        // the generic templates below take over.
+        for personalInsight in insightsService.activeInsights.prefix(2) {
+            if personalInsight.insightCategory == .nutrition ||
                personalInsight.insightCategory == .goal ||
                personalInsight.insightCategory == .streak {
                 insights.append(InsightItem(
@@ -1061,76 +1089,277 @@ struct SimpleMealPlanView: View {
                 ))
             }
         }
-        
-        // 🔥 STREAK-BASED INSIGHTS: Show relevant streaks
+
+        // 📈 TREND BULLET — placeholder.
+        // TODO(4f057f71): `PersonalizedInsightsService` writes 7/14/30-day
+        // averages to `user_performance_windows` server-side (avg_daily_protein,
+        // avg_daily_calories, weight_change_lbs) but does NOT yet surface a
+        // `@Published` week-over-week delta. To wire a "your protein is up 15%
+        // this week vs last" bullet, add a `trendDeltas` (or similar) property
+        // + fetcher to PersonalizedInsightsService that diffs the most-recent
+        // 7-day window against the prior. That's a Data Backend change —
+        // adding a UI-only synthetic trend here would be fake-data territory
+        // (PE codingrules: "Mocking/stubbing/fake data is ONLY for tests").
+
+        // 🔥 STREAK-BASED INSIGHTS: Show relevant streaks (these are personal).
         if let proteinStreak = insightsService.streaks.first(where: { $0.streakType == "protein_goal" }),
            proteinStreak.currentStreak >= 3 {
+            let n = proteinStreak.currentStreak
+            let options: [String] = hasName ? [
+                "\(n)-day protein streak, \(name) — you're rolling.",
+                "\(n) days straight on protein. Keep it up, \(name).",
+                "Protein streak at \(n) days, \(name). Habits are sticking."
+            ] : [
+                "\(n)-day protein streak — keep it rolling.",
+                "\(n) days straight on protein. Habit's locked in.",
+                "Protein streak at \(n) days. Nice work."
+            ]
             insights.append(InsightItem(
                 icon: "flame.fill",
-                text: "\(proteinStreak.currentStreak)-day protein streak! Keep it going! 🔥",
+                text: options.randomElement() ?? options[0],
                 color: .orange
             ))
         }
-        
+
         if let hydrationStreak = insightsService.streaks.first(where: { $0.streakType == "hydration" }),
            hydrationStreak.currentStreak >= 3 {
+            let n = hydrationStreak.currentStreak
+            let options: [String] = hasName ? [
+                "\(n) days of hydration goals in a row, \(name).",
+                "Water streak at \(n) days. You're crushing it, \(name).",
+                "\(n) clean hydration days, \(name) — body's thanking you."
+            ] : [
+                "\(n) days of hitting hydration. Habit's forming.",
+                "Water streak at \(n) days. Keep it going.",
+                "\(n) days of hydration goals — that's the routine."
+            ]
             insights.append(InsightItem(
                 icon: "drop.fill",
-                text: "\(hydrationStreak.currentStreak) days hitting hydration! 💧",
+                text: options.randomElement() ?? options[0],
                 color: .cyan
             ))
         }
-        
-        // Protein insight with quick fix suggestions
+
+        // PROTEIN
         let proteinRemaining = max(0, proteinGoal - consumedProtein)
         let proteinProgress = proteinGoal > 0 ? Double(consumedProtein) / Double(proteinGoal) : 0
         if proteinProgress < 0.6 && hour >= 14 {
-            let quickFixes = ["Greek yogurt (20g)", "chicken breast (30g)", "protein shake (25g)", "3 eggs (18g)", "cottage cheese (14g)"]
-            insights.append(InsightItem(icon: "arrow.up.circle.fill", text: "Need \(proteinRemaining)g protein still! Quick fix: \(quickFixes.randomElement() ?? "Greek yogurt (20g)")", color: .blue))
+            let quickFixes = ["a Greek yogurt (20g)", "some chicken breast (30g)", "a protein shake (25g)", "3 eggs (18g)", "cottage cheese (14g)"]
+            let fix = quickFixes.randomElement() ?? "a Greek yogurt (20g)"
+            let options: [String] = hasName ? [
+                "Hey \(name) — \(proteinRemaining)g of protein from a complete day. \(fix.capitalizedFirst) closes the gap.",
+                "\(name), still \(proteinRemaining)g shy on protein. \(fix.capitalizedFirst) would do it.",
+                "Quick one, \(name): \(proteinRemaining)g of protein left. Try \(fix)."
+            ] : [
+                "You're \(proteinRemaining)g of protein from a complete day. Try \(fix).",
+                "Still \(proteinRemaining)g shy on protein — \(fix) would do it.",
+                "\(proteinRemaining)g of protein left for the day. \(fix.capitalizedFirst) closes it out."
+            ]
+            insights.append(InsightItem(
+                icon: "arrow.up.circle.fill",
+                text: options.randomElement() ?? options[0],
+                color: .blue
+            ))
         } else if proteinRemaining > 0 {
-            insights.append(InsightItem(icon: "arrow.up.circle", text: "Add \(proteinRemaining)g more protein – your muscles are waiting! 💪", color: .blue))
+            let options: [String] = hasName ? [
+                "Almost there, \(name) — \(proteinRemaining)g of protein to wrap the day.",
+                "\(proteinRemaining)g more protein and you're set, \(name).",
+                "\(name), \(proteinRemaining)g of protein away from your goal. Easy finish."
+            ] : [
+                "\(proteinRemaining)g more protein and you're at goal.",
+                "Almost there — \(proteinRemaining)g of protein away.",
+                "\(proteinRemaining)g of protein left in the tank."
+            ]
+            insights.append(InsightItem(
+                icon: "arrow.up.circle",
+                text: options.randomElement() ?? options[0],
+                color: .blue
+            ))
         } else {
-            insights.append(InsightItem(icon: "checkmark.seal.fill", text: "Protein goal crushed! Your body has the building blocks it needs. 🏗️", color: .green))
+            let options: [String] = hasName ? [
+                "Protein goal — done, \(name). Body has what it needs.",
+                "\(name), you crushed protein today. Dialed in.",
+                "Protein dialed in for the day, \(name). 💪"
+            ] : [
+                "Protein goal — done. Body has what it needs.",
+                "Protein dialed in for the day.",
+                "Protein goal locked in. 💪"
+            ]
+            insights.append(InsightItem(
+                icon: "checkmark.seal.fill",
+                text: options.randomElement() ?? options[0],
+                color: .green
+            ))
         }
-        
-        // Calorie insight with context
+
+        // CALORIE
         let caloriesRemaining = calorieGoal - consumedCalories
         let calorieProgress = calorieGoal > 0 ? Double(consumedCalories) / Double(calorieGoal) : 0
         if calorieProgress < 0.5 && hour >= 14 {
-            insights.append(InsightItem(icon: "exclamationmark.triangle.fill", text: "Only \(consumedCalories) cal by afternoon! Under-eating slows metabolism. 🍽️", color: .red))
+            let options: [String] = hasName ? [
+                "Only \(consumedCalories) cal in by afternoon, \(name) — don't skip dinner.",
+                "\(name), light eating today. \(consumedCalories) cal so far — fuel up tonight.",
+                "Heads up \(name): \(consumedCalories) cal so far. Skipping meals can backfire."
+            ] : [
+                "Only \(consumedCalories) cal in by afternoon — don't skip dinner.",
+                "Light eating day so far at \(consumedCalories) cal. A real meal will help.",
+                "Heading into evening at \(consumedCalories) cal. Fuel up properly."
+            ]
+            insights.append(InsightItem(
+                icon: "exclamationmark.triangle.fill",
+                text: options.randomElement() ?? options[0],
+                color: .red
+            ))
         } else if calorieProgress > 1.2 {
             let over = consumedCalories - calorieGoal
-            insights.append(InsightItem(icon: "chart.bar.xaxis.ascending", text: "\(over) cal over budget. Consider a lighter dinner or evening walk! 🚶", color: .orange))
+            let options: [String] = hasName ? [
+                "\(over) cal over today, \(name) — no big deal. A walk could rebalance it.",
+                "Slight overshoot, \(name): \(over) cal past goal. Tomorrow's fresh.",
+                "\(name), you're \(over) cal over budget. A walk after dinner helps."
+            ] : [
+                "\(over) cal over today — no big deal. A walk could rebalance.",
+                "Slight overshoot at \(over) cal past goal. Tomorrow's fresh.",
+                "\(over) cal over budget. An evening walk would help."
+            ]
+            insights.append(InsightItem(
+                icon: "chart.bar.xaxis.ascending",
+                text: options.randomElement() ?? options[0],
+                color: .orange
+            ))
         } else if caloriesRemaining > 200 {
-            insights.append(InsightItem(icon: "flame.fill", text: "\(caloriesRemaining) calories remaining – keep fueling your day! ⚡", color: .orange))
+            let options: [String] = hasName ? [
+                "\(caloriesRemaining) cal of room left, \(name) — plenty of fuel.",
+                "\(name), \(caloriesRemaining) cal still on the table for today.",
+                "Lots of headroom, \(name): \(caloriesRemaining) cal to go."
+            ] : [
+                "\(caloriesRemaining) cal of room left — plenty of fuel.",
+                "\(caloriesRemaining) cal still on the table for today.",
+                "Lots of headroom — \(caloriesRemaining) cal to go."
+            ]
+            insights.append(InsightItem(
+                icon: "flame.fill",
+                text: options.randomElement() ?? options[0],
+                color: .orange
+            ))
         } else if caloriesRemaining > 0 {
-            insights.append(InsightItem(icon: "target", text: "Almost at calorie goal! Just \(caloriesRemaining) cal to go. 🎯", color: .green))
+            let options: [String] = hasName ? [
+                "So close, \(name) — \(caloriesRemaining) cal to lock in your goal.",
+                "\(caloriesRemaining) cal between you and a clean day, \(name).",
+                "Almost there \(name): just \(caloriesRemaining) cal to go."
+            ] : [
+                "So close — just \(caloriesRemaining) cal to lock in your goal.",
+                "\(caloriesRemaining) cal between you and a clean day.",
+                "Almost there — \(caloriesRemaining) cal to go."
+            ]
+            insights.append(InsightItem(
+                icon: "target",
+                text: options.randomElement() ?? options[0],
+                color: .green
+            ))
         } else {
-            insights.append(InsightItem(icon: "checkmark.circle.fill", text: "Calorie goal reached! Perfect balance today. 🎯", color: .green))
+            let options: [String] = hasName ? [
+                "Calorie goal — nailed it, \(name).",
+                "Right on target today, \(name). 🎯",
+                "\(name), calorie goal complete. Clean balance."
+            ] : [
+                "Calorie goal — nailed it for the day.",
+                "Right on target today. 🎯",
+                "Calorie goal complete. Clean balance."
+            ]
+            insights.append(InsightItem(
+                icon: "checkmark.circle.fill",
+                text: options.randomElement() ?? options[0],
+                color: .green
+            ))
         }
-        
-        // Hydration insight with urgency
+
+        // HYDRATION
         let hydrationProgress = HydrationService.shared.todayProgress
         let waterGoal = HydrationService.shared.settings.dailyGoalMl
         let waterIntake = HydrationService.shared.todayTotal
         if hydrationProgress < 0.3 && hour >= 14 {
             let remainingMl = waterGoal - waterIntake
-            insights.append(InsightItem(icon: "drop.triangle.fill", text: "Dehydration alert! ⚠️ Drink \(remainingMl)ml to catch up – your brain needs it!", color: .red))
+            let options: [String] = hasName ? [
+                "Hydration's running thin, \(name) — \(remainingMl)ml to catch up.",
+                "Heads up \(name): water's been light today. \(remainingMl)ml to go.",
+                "\(name), grab a glass — \(remainingMl)ml of water left to hit goal."
+            ] : [
+                "Hydration's running thin — \(remainingMl)ml to catch up.",
+                "Water's been light today. \(remainingMl)ml to go.",
+                "Grab a glass — \(remainingMl)ml of water left for the day."
+            ]
+            insights.append(InsightItem(
+                icon: "drop.triangle.fill",
+                text: options.randomElement() ?? options[0],
+                color: .red
+            ))
         } else if hydrationProgress < 0.5 {
             let remainingMl = waterGoal - waterIntake
-            insights.append(InsightItem(icon: "drop", text: "\(remainingMl)ml to go! Keep a water bottle nearby. 💧", color: .cyan))
+            let options: [String] = hasName ? [
+                "\(remainingMl)ml of water left, \(name) — keep a bottle close.",
+                "Halfway on water, \(name): \(remainingMl)ml to finish.",
+                "\(name), \(remainingMl)ml of water to go. Easy fix."
+            ] : [
+                "\(remainingMl)ml of water left — keep a bottle close.",
+                "Halfway on water — \(remainingMl)ml to finish.",
+                "\(remainingMl)ml of water to go. Easy fix."
+            ]
+            insights.append(InsightItem(
+                icon: "drop",
+                text: options.randomElement() ?? options[0],
+                color: .cyan
+            ))
         } else if hydrationProgress >= 1.0 {
-            insights.append(InsightItem(icon: "drop.fill", text: "Hydration on point! Your body is thanking you. 💧", color: .cyan))
+            let options: [String] = hasName ? [
+                "Hydration goal — done, \(name). Body's happy.",
+                "\(name), fully hydrated today. Nice work.",
+                "Water dialed in for the day, \(name). 💧"
+            ] : [
+                "Hydration goal — done. Body's happy.",
+                "Fully hydrated today. Nice work.",
+                "Water dialed in for the day. 💧"
+            ]
+            insights.append(InsightItem(
+                icon: "drop.fill",
+                text: options.randomElement() ?? options[0],
+                color: .cyan
+            ))
         }
-        
-        // Meals insight
+
+        // MEALS (logging nudge)
         let mealsLogged = mealService.getMealsForDate(Date()).count
         if mealsLogged == 0 && hour >= 11 {
-            insights.append(InsightItem(icon: "pencil.and.list.clipboard", text: "No meals logged yet! Even a quick entry helps you stay aware. 📝", color: .gray))
+            let options: [String] = hasName ? [
+                "No meals logged yet, \(name) — even a quick entry helps.",
+                "\(name), nothing logged today. Tracking keeps you aware.",
+                "Quick one, \(name): log a meal to stay on track."
+            ] : [
+                "No meals logged yet — even a quick entry helps.",
+                "Nothing logged today. Tracking keeps you aware.",
+                "Log a meal to stay on track."
+            ]
+            insights.append(InsightItem(
+                icon: "pencil.and.list.clipboard",
+                text: options.randomElement() ?? options[0],
+                color: .gray
+            ))
         } else if mealsLogged == 1 && hour >= 15 {
-            insights.append(InsightItem(icon: "clock.fill", text: "Only 1 meal tracked. Logging helps identify patterns! 📊", color: .gray))
+            let options: [String] = hasName ? [
+                "Only 1 meal tracked so far, \(name). Patterns show up in the data.",
+                "\(name), one meal logged today. Tracking helps spot trends.",
+                "1 meal in, \(name) — keep logging to see the patterns."
+            ] : [
+                "Only 1 meal tracked so far. Patterns show up in the data.",
+                "One meal logged today. Tracking helps spot trends.",
+                "1 meal in — keep logging to see the patterns."
+            ]
+            insights.append(InsightItem(
+                icon: "clock.fill",
+                text: options.randomElement() ?? options[0],
+                color: .gray
+            ))
         }
-        
+
         return insights
     }
     

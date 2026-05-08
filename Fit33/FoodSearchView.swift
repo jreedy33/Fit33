@@ -744,11 +744,16 @@ struct FoodSearchResultRow: View {
             
             // Food details
             VStack(alignment: .leading, spacing: 2) {
+                // USDA-branded + Open Food Facts items frequently exceed one line
+                // (e.g. "Kellogg's Frosted Mini-Wheats Touch of Brown Sugar Bite-Size
+                // Cereal"). Match the canonical USDAFoodResultRow pattern so picks
+                // aren't clipped to "…" before the user can tell them apart.
                 Text(food.displayName)
                     .font(.body)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
                 
                 HStack(spacing: 8) {
                     if let category = food.category {
@@ -949,11 +954,15 @@ struct QuickAccessFoodRow: View {
             
             // Food details
             VStack(alignment: .leading, spacing: 2) {
+                // Frequent / quick-access foods carry the same long-name risk as
+                // search results — match the lineLimit(2) canonical pattern so
+                // long restaurant + branded items are legible at a glance.
                 Text(food.displayName)
                     .font(.body)
                     .fontWeight(.medium)
                     .foregroundColor(.primary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
                 
                 HStack(spacing: 8) {
                     if let category = food.category {

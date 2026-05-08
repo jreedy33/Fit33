@@ -73,6 +73,16 @@ struct ExerciseCard: View {
         // This ensures only the exercise with a live timer has scrolling text
         return activeTimerSetNumber != nil
     }
+
+    // True when this exercise is dumbbell-based (case-insensitive substring
+    // match on `Exercise.equipment`). Drives the "each" clarifier under the
+    // weight field in `SetRowView` so users know to enter ONE dumbbell's
+    // weight — bug 996ca300 (Joe Reed feedback, build 1.38). Catches both
+    // canonical "Dumbbell" and combined strings like "Dumbbells / Bench".
+    private var isDumbbellExercise: Bool {
+        guard let equipment = exercise.equipment?.lowercased() else { return false }
+        return equipment.contains("dumbbell")
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -697,7 +707,8 @@ struct ExerciseCard: View {
                         },
                         useKg: useKg,
                         restTimer: cardRestTimer,
-                        autoStartTimer: autoStartTimer
+                        autoStartTimer: autoStartTimer,
+                        isDumbbell: isDumbbellExercise
                     )
                 }
                 

@@ -116,6 +116,42 @@ extension LinearGradient {
         startPoint: .topLeading,
         endPoint: .bottomTrailing
     )
+
+    /// Logo blue accent — matches the vertical blue gradient on the "33" in
+    /// the Fit33 wordmark. Use this when UI on a page needs to visually pair
+    /// with the logo itself (e.g. the Welcome onboarding page CTA + border).
+    static let ds_logoBlueAccent = LinearGradient(
+        colors: [
+            Color(red: 0.20, green: 0.55, blue: 0.95),
+            Color(red: 0.55, green: 0.80, blue: 0.98)
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    /// Phase-shifted logo blue gradient. Same color palette as
+    /// `ds_logoBlueAccent` but rotates the gradient angle as `phase` advances
+    /// from 0...1 (full 360° sweep). Used by the onboarding tutorial's
+    /// navigation chrome (page indicator + Continue / Get Started buttons)
+    /// so as the user swipes step-by-step the gradient appears to "move".
+    /// At `phase = 0` the gradient is vertical (top→bottom) and matches the
+    /// static `ds_logoBlueAccent` exactly, so the welcome page's CTA looks
+    /// identical to the page-0 hero gradient.
+    static func ds_logoBlueAccent(phase: Double) -> LinearGradient {
+        // 0 phase = .top→.bottom (90° on the unit circle).
+        // Sweep a full revolution across phase 0...1.
+        let angle = .pi / 2 + phase * 2 * .pi
+        let dx = 0.5 * cos(angle)
+        let dy = 0.5 * sin(angle)
+        return LinearGradient(
+            colors: [
+                Color(red: 0.20, green: 0.55, blue: 0.95),
+                Color(red: 0.55, green: 0.80, blue: 0.98)
+            ],
+            startPoint: UnitPoint(x: 0.5 - dx, y: 0.5 - dy),
+            endPoint:   UnitPoint(x: 0.5 + dx, y: 0.5 + dy)
+        )
+    }
 }
 
 // MARK: - Reusable Section Header

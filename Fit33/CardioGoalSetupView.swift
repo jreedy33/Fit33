@@ -205,12 +205,26 @@ struct CardioGoalSetupView: View {
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 24) {
+                    // 2026-05-08 (per-user request — bug-intel shake
+                    // `9a4c1b38` follow-up): "Record with Strava" now
+                    // sits at the TOP of the screen above GOAL TYPE,
+                    // followed by the "or" divider, then native goal
+                    // controls. Reads top-to-bottom as the explicit
+                    // fork between handing the run off to Strava and
+                    // configuring a native Fit33 session. Outdoor run
+                    // + walk only — every other activity skips the
+                    // entire Strava block. (Earlier 2026-05-02 layout
+                    // had the button below the goal input; replaced
+                    // per user screenshot annotation.)
+                    if activityType == .outdoorRun || activityType == .walk {
+                        runWithStravaButton
+                        orDivider
+                    }
+
                     // 2026-05-02 (per-user request): the heavy
                     // "SET UP / Pick a goal — and run. / GPS · Pace
-                    // · Route" eyebrow block was removed. The screen
-                    // now starts directly at the Goal Type selector
-                    // for a cleaner, denser layout. The nav title
-                    // ("Outdoor Run" / "Walk" / etc.) already
+                    // · Route" eyebrow block was removed. The nav
+                    // title ("Outdoor Run" / "Walk" / etc.) already
                     // identifies the activity, so the duplicate
                     // headline read as filler.
                     goalTypeSelector
@@ -218,21 +232,6 @@ struct CardioGoalSetupView: View {
                     smartSuggestHint
                     if activityType.supportsBluetooth {
                         bluetoothSection
-                    }
-
-                    // 2026-05-02 (per-user request, follow-up): the
-                    // "Run with Strava" handoff used to live in the
-                    // sticky bottom CTA stack. Per the latest layout
-                    // spec, it now sits IN the scrolling content area
-                    // with an "or" divider above it — between the
-                    // goal input and the floating GO! — so the user
-                    // sees: "Set your goal" → "or" → "Run with
-                    // Strava" → tab-bar GO!. Outdoor run only; walks
-                    // / outdoor cycle can ship their own variants
-                    // later.
-                    if activityType == .outdoorRun {
-                        orDivider
-                        runWithStravaButton
                     }
 
                     // Pad enough that the floating GO! button (which

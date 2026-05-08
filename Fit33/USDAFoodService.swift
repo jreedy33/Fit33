@@ -297,7 +297,20 @@ class USDAFoodService: ObservableObject {
     
     // Local common foods for instant search
     private var localFoods: [ProcessedFoodItem] = []
-    
+
+    // 2026-05-08 (Bug-intel `5afbb790` — Pringles search lag): in-flight
+    // cloud-search task. Each new `searchFoods(query:)` call cancels the
+    // previous task before spawning its own. Without this, fast typing
+    // ("p" → "pr" → "pri" → "prin" → "pring") fires 5 parallel
+    // cloudService.searchFoods Tasks and whichever returns LAST wins
+    // — visibly the older "p" results overwrite the newer "pring" results
+    // because USDA's autocomplete latency is non-monotonic. Cancellation
+    // collapses the race so only the most recent query's response can
+    // assign to `searchResults`. Pairs with FoodSearchView's existing
+    // 300ms debounce — the debounce filters keystroke bursts, this gate
+    // protects against in-flight latency reordering AFTER the debounce.
+    private var currentSearchTask: Task<Void, Never>?
+
     private init() {
         AppLogger.debug("Initializing USDAFoodService", category: .nutrition)
         
@@ -1082,10 +1095,19 @@ class USDAFoodService: ObservableObject {
     
     func searchFoods(query: String, pageNumber: Int = 1, pageSize: Int = 25) {
         AppLogger.debug("searchFoods() called with query: '\(query)'", category: .nutrition)
-        
+
+        // 2026-05-08 (Bug-intel `5afbb790`): cancel any in-flight cloud
+        // search before spawning a new one. Without this, fast typing
+        // produces parallel Tasks that finish out-of-order and an older
+        // query's response overwrites the newer one. The cancellation
+        // hits the `Task.checkCancellation()` gates added below and the
+        // catch path treats CancellationError as expected (no fingerprint).
+        currentSearchTask?.cancel()
+
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             AppLogger.warning("Search query is empty, returning", category: .nutrition)
             searchResults = []
+            currentSearchTask = nil
             return
         }
         
@@ -1107,9 +1129,15 @@ class USDAFoodService: ObservableObject {
         // STEP 2: Fetch from cloud in parallel (always - to get non-hardcoded foods)
         let startedAt = Date()
         let userId = SupabaseManager.shared.currentUser?.id
-        Task { @MainActor in
+        currentSearchTask = Task { @MainActor in
             do {
                 let cloudResults = try await cloudService.searchFoods(query: query)
+
+                // Bug-intel `5afbb790`: drop stale results if a newer search
+                // raced past us. `Task.checkCancellation` throws
+                // `CancellationError` which is classified as transientNetwork
+                // (no fingerprint) by the catch block below.
+                try Task.checkCancellation()
                 
                 // Convert cloud foods to processed foods
                 let processedFoods = cloudResults.map { $0.toProcessedFoodItem() }
@@ -1180,11 +1208,24 @@ class USDAFoodService: ObservableObject {
                 
                 // Combine in priority order
                 let mergedResults = frequentResults + hardcodedResults + favoriteResults + cloudOnlyResults
-                
+
+                // Bug-intel `5afbb790`: final cancellation check right before
+                // we mutate the @Published `searchResults` — if a newer query
+                // cancelled us during the merge, do NOT overwrite the newer
+                // task's already-published results.
+                try Task.checkCancellation()
+
                 self.searchResults = mergedResults
                 AppLogger.info("Successfully merged \(mergedResults.count) results (frequent: \(frequentResults.count), hardcoded: \(hardcodedResults.count), favorites: \(favoriteResults.count), cloud: \(cloudOnlyResults.count))", category: .nutrition)
                 
                 self.isSearching = false
+            } catch is CancellationError {
+                // Bug-intel `5afbb790`: a newer searchFoods(query:) call
+                // cancelled this in-flight task. The newer task is now
+                // responsible for `searchResults` + `isSearching`; we MUST
+                // NOT touch either or we'd visibly clobber it. Silent return
+                // is the contract.
+                AppLogger.debug("[Nutrition] Cloud search cancelled (newer query in flight)", category: .nutrition)
             } catch {
                 // QP invariant 25a: route through NetworkErrorClassifier so
                 // transient 401s (token-refresh-in-flight on app foreground)

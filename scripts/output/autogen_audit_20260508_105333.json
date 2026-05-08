@@ -1,0 +1,470 @@
+{
+  "started_at": "2026-05-08T10:53:33",
+  "args": {
+    "users": 3,
+    "workouts_per_user": 1,
+    "seed": 42,
+    "no_claude": true,
+    "max_reviews": null,
+    "output_dir": "/Users/josephreed/Desktop/Workout App/scripts/output"
+  },
+  "drift_notes": [
+    {
+      "area": "fitness_goals",
+      "status": "synced",
+      "note": "6 goals (Build Muscle / Lose Weight / Get Stronger / Stay Active / Build Endurance / Improve Health) match Fit33/NewOnboardingView+Steps.swift line ~525."
+    },
+    {
+      "area": "experience_levels",
+      "status": "synced",
+      "note": "3 levels (Beginner / Intermediate / Advanced) match Fit33/NewOnboardingView+Steps.swift line ~557."
+    },
+    {
+      "area": "locations",
+      "status": "synced",
+      "note": "4 locations (gym/home/outdoor/hybrid) match Fit33/WorkoutGeneratorSelectionView.swift `EquipmentLocation`."
+    },
+    {
+      "area": "gym_equipment",
+      "status": "synced",
+      "note": "9 SKUs match Fit33/WorkoutGeneratorSelectionView.swift `equipmentOptions` for gym."
+    },
+    {
+      "area": "specialty_filter",
+      "status": "ENFORCED-IN-AUDIT",
+      "note": "Specialty variant pattern filter is applied in this script (`specialty_exercise_filter.py`). The Swift app's filter is being updated to mirror this list."
+    },
+    {
+      "area": "python_selection_logic",
+      "status": "STALE",
+      "note": "comprehensive_autogen_audit.select_exercises_for_workout() was last updated Mar 2026; the live Swift selector has had ~2 months of changes (cardio Phase 1, readiness adaptive autogen, etc.). The simulator's exercise selection is APPROXIMATE; trust the Claude review for workout-level correctness."
+    },
+    {
+      "area": "readiness_override",
+      "status": "NOT-MODELED",
+      "note": "Wearable readiness band (red/yellow/green) recovery override is NOT simulated. Live red-recovery would replace the workout with a mobility session; this audit always generates a strength workout."
+    },
+    {
+      "area": "cardio_phase_1",
+      "status": "NOT-MODELED",
+      "note": "Cardio gamification (Sprint 2 Q2-5) is out of scope for this simulator \u2014 strength workouts only."
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "name": "Tobias Miller",
+      "age": 64,
+      "gender": "Male",
+      "weight_lbs": 140,
+      "height_inches": 71,
+      "experience_level": "Intermediate",
+      "fitness_goal": "Improve Health",
+      "workout_location": "outdoor",
+      "available_equipment": [
+        "Bands",
+        "Dip Bars",
+        "Dumbbells",
+        "TRX/Rings",
+        "Medicine Ball",
+        "Jump Rope",
+        "Bodyweight"
+      ],
+      "injuries": [],
+      "workouts_completed": 46,
+      "preferred_workout_duration": 60,
+      "available_days_per_week": 3,
+      "notes": "Synth profile #1 \u2014 stratified across gender/level/location/goal"
+    },
+    {
+      "id": 2,
+      "name": "Nicole Silva",
+      "age": 18,
+      "gender": "Female",
+      "weight_lbs": 172,
+      "height_inches": 70,
+      "experience_level": "Advanced",
+      "fitness_goal": "Build Muscle",
+      "workout_location": "outdoor",
+      "available_equipment": [
+        "Bands",
+        "TRX/Rings",
+        "Dumbbells"
+      ],
+      "injuries": [],
+      "workouts_completed": 381,
+      "preferred_workout_duration": 40,
+      "available_days_per_week": 5,
+      "notes": "Synth profile #2 \u2014 stratified across gender/level/location/goal"
+    },
+    {
+      "id": 3,
+      "name": "Megan Williams",
+      "age": 23,
+      "gender": "Female",
+      "weight_lbs": 177,
+      "height_inches": 61,
+      "experience_level": "Beginner",
+      "fitness_goal": "Get Stronger",
+      "workout_location": "hybrid",
+      "available_equipment": [
+        "Bodyweight",
+        "Dumbbells",
+        "Kettlebell"
+      ],
+      "injuries": [],
+      "workouts_completed": 1,
+      "preferred_workout_duration": 50,
+      "available_days_per_week": 2,
+      "notes": "Synth profile #3 \u2014 stratified across gender/level/location/goal"
+    }
+  ],
+  "workouts": [
+    {
+      "user_id": 1,
+      "user_label": "Male/64y/140lb \u00b7 Intermediate \u00b7 Improve Health \u00b7 outdoor \u00b7 60min",
+      "split_name": "Back & Biceps",
+      "target_muscles": [
+        "Back",
+        "Biceps"
+      ],
+      "exercises": [
+        {
+          "name": "Hammer Grip Pull Up On Dip Cage (Pull-Up Bar)",
+          "equipment": "Pull-Up Bar, Dip Bars",
+          "primary_muscles": [
+            "Lats",
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Front Delts",
+            "Triceps"
+          ],
+          "is_compound": true
+        },
+        {
+          "id": "20fac688-b445-4c87-8812-f79c3b8d15d4",
+          "name": "Single Arm Bent Over Row (Dumbbell)",
+          "category": "Back",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Back",
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Rear Delts"
+          ],
+          "description": "Target your delts with the Dumbbell One Arm Bent Over Row, an effective shoulder rowing exercise. The biceps, lats assist throughout the movement, making this a well-rounded exercise. The bent over position requires core engagement to maintain a neutral spine. Using dumbbells requires more stabilization than barbell variations. Shoulder development enhances both performance and upper body aesthetics.",
+          "video_code": "23931201",
+          "video_filename": "23931201-Dumbbell-One-Arm-Bent-over-Row-(female)_Shoulders.mp4",
+          "gender": "female",
+          "is_custom": false,
+          "created_at": "2025-12-03T23:26:32.914483+00:00",
+          "steps_to_perform": "1. Select an appropriate weight dumbbell and hold it in one hand. 2. Hinge at your hips, pushing them back while keeping your back flat. 3. Pull the weight toward your torso, leading with your elbow(s). 4. Squeeze your shoulder blades together at the peak contraction. 5. Extend back out with control, feeling the stretch in your back. 6. Complete all reps on one side, then switch to the other side. 7. Complete all reps with control before resting.",
+          "movement_pattern": null,
+          "force_type": null,
+          "movement_type": null,
+          "laterality": null,
+          "plane_of_motion": null,
+          "difficulty_level": 3,
+          "complexity_score": null,
+          "strength_rating": 10,
+          "hypertrophy_rating": 10,
+          "power_rating": null,
+          "endurance_rating": 4,
+          "body_position": null,
+          "bench_angle": null,
+          "grip_type": null,
+          "grip_width": null,
+          "optimal_rep_range_min": 5,
+          "optimal_rep_range_max": 8,
+          "placement_in_workout": null,
+          "fatigability": "8",
+          "popularity_score": null,
+          "home_gym_friendly": true,
+          "instructions": null,
+          "workout_type": "Strength",
+          "practicality_score": 77,
+          "fat_loss_rating": 7,
+          "general_fitness_rating": 9,
+          "is_compound": true,
+          "supersetable": false,
+          "exercise_family": "bent_over_row",
+          "base_exercise_name": "Single Arm Bent Over Row",
+          "complementary_families": "cable_row, dumbbell_row, t_bar_row, lat_pulldown",
+          "is_equipment_primary": true,
+          "equipment_category": "Dumbbell",
+          "duration_based": false,
+          "recommended_sets": 4,
+          "rest_seconds": 120,
+          "muscles_worked_count": 4,
+          "priority_build_muscle": 92,
+          "priority_get_lean": 90,
+          "priority_home": 92,
+          "priority_gym": 90,
+          "manually_updated": false,
+          "manually_updated_at": null
+        },
+        {
+          "name": "Preacher Curl - Rope (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Biceps"
+          ],
+          "secondary_muscles": [
+            "Forearms"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "T-Bar Row (Plate Loaded Machine)",
+          "equipment": "Machine",
+          "primary_muscles": [
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Lats",
+            "Biceps",
+            "Rear Delts"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Standing Lat Pulldown (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Pull Up On Dip Cage - Wide Grip (Pull-Up Bar)",
+          "equipment": "Pull-Up Bar, Dip Bars",
+          "primary_muscles": [
+            "Lats",
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Rear Delts",
+            "Front Delts",
+            "Triceps",
+            "Biceps"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Rack Pull (Smith Machine)",
+          "equipment": "Smith Machine",
+          "primary_muscles": [
+            "Traps",
+            "Upper Back"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Glutes",
+            "Hamstrings",
+            "Lats"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Assisted Chin Up (Band)",
+          "equipment": "Resistance Band, Pull-Up Bar",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [
+            "Biceps",
+            "Upper Back"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": [
+        {
+          "blocked_exercise_name": "Pendlay Row (Cable)",
+          "specialty_pattern": "pendlay row",
+          "base_movement": "row",
+          "severity": "block_intermediate",
+          "rationale": "Pendlay row = strict dead-stop row \u2014 specialty",
+          "replacement_exercise_name": "Single Arm Bent Over Row (Dumbbell)"
+        }
+      ]
+    },
+    {
+      "user_id": 2,
+      "user_label": "Female/18y/172lb \u00b7 Advanced \u00b7 Build Muscle \u00b7 outdoor \u00b7 40min",
+      "split_name": "Lower Body",
+      "target_muscles": [
+        "Quads",
+        "Hamstrings",
+        "Glutes"
+      ],
+      "exercises": [
+        {
+          "name": "Goblet Squat (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Goblet Walking Lunge (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Quads"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Hamstrings"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Romanian Deadlift (Resistance Band)",
+          "equipment": "Resistance Band",
+          "primary_muscles": [
+            "Hamstrings"
+          ],
+          "secondary_muscles": [
+            "Glutes",
+            "Lower Back"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Sumo Squat - Bar Grip (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Quads",
+            "Glutes"
+          ],
+          "secondary_muscles": [
+            "Hamstrings"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Single Leg Hip Thrust (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Glutes"
+          ],
+          "secondary_muscles": [
+            "Hamstrings",
+            "Core"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Banded Single Leg Hip Thrust (Dumbbell)",
+          "equipment": "Dumbbells, Resistance Band, Flat Bench",
+          "primary_muscles": [
+            "Glutes"
+          ],
+          "secondary_muscles": [
+            "Hamstrings",
+            "Core"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 3,
+      "user_label": "Female/23y/177lb \u00b7 Beginner \u00b7 Get Stronger \u00b7 hybrid \u00b7 50min",
+      "split_name": "Arms Focus",
+      "target_muscles": [
+        "Biceps",
+        "Triceps"
+      ],
+      "exercises": [
+        {
+          "name": "Curl Press Extension (Barbell)",
+          "equipment": "Barbell",
+          "primary_muscles": [
+            "Biceps",
+            "Triceps"
+          ],
+          "secondary_muscles": [
+            "Forearms"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "Assisted Tricep Pushdown (Machine)",
+          "equipment": "Lever Machine",
+          "primary_muscles": [
+            "Triceps"
+          ],
+          "secondary_muscles": [],
+          "is_compound": false
+        },
+        {
+          "name": "Overhead Tricep Extension (Machine)",
+          "equipment": "Machine",
+          "primary_muscles": [
+            "Triceps"
+          ],
+          "secondary_muscles": [
+            "Shoulders"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "Lying Extension Pullover - Rope Attachment (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Triceps"
+          ],
+          "secondary_muscles": [
+            "Chest",
+            "Lats",
+            "Shoulders"
+          ],
+          "is_compound": false
+        },
+        {
+          "name": "Bench Press - Close Grip (Smith Machine)",
+          "equipment": "Smith Machine, Flat Bench",
+          "primary_muscles": [
+            "Triceps"
+          ],
+          "secondary_muscles": [
+            "Front Delts",
+            "Triceps"
+          ],
+          "is_compound": true
+        },
+        {
+          "name": "Bench Press - Single Weight (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Triceps"
+          ],
+          "secondary_muscles": [
+            "Chest",
+            "Shoulders",
+            "Triceps"
+          ],
+          "is_compound": true
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    }
+  ],
+  "reviews": [],
+  "review_errors": []
+}

@@ -150,6 +150,12 @@ struct DashboardView: View {
     @AppStorage("showStravaWidget") var showStravaWidget = true  // Strava latest-activity widget (only renders when connected + fresh activity)
     @AppStorage("showCardioWidget") var showCardioWidget = true  // Dashboard cardio streak / "Just one block" walk CTA
     @AppStorage("showOlympianWidget") var showOlympianWidget = true  // Path to 33 — annual Olympian track widget
+    // Recent Activity is OFF by default (Sprint 2026-05-08): the section was
+    // taking up valuable real estate at the bottom of the dashboard for users
+    // who already see "View All" inside the Workouts tab. Premium users can
+    // re-enable it via the "..." widget settings menu; it always renders at
+    // the bottom of the dashboard (after Olympian) when toggled on.
+    @AppStorage("showRecentActivityWidget") var showRecentActivityWidget = false
     
     // Nutrition data for macros widget (plain let — macros widget wraps its own @ObservedObject)
     let mealService = MealService.shared
@@ -293,6 +299,20 @@ struct DashboardView: View {
                         .id("stepTracker")
                         .padding(.bottom, 16)
 
+                    // 2026-05-08 (Bug-intel shake `9a4c1b38` — "swap strava
+                    // and native fit33. put strava at the top and fit33 at
+                    // the bottom"): Strava widget now renders ABOVE the
+                    // native cardio widget so connected-Strava users see
+                    // their latest synced run first. Native cardio
+                    // (Fit33-tracked) sits beneath as the "did you also
+                    // walk today?" supplemental nudge.
+                    //
+                    // Strava Latest Activity Widget (isolated — only renders when Strava connected + an activity from the last 36h)
+                    if showStravaWidget {
+                        DashboardStravaWrapper(navigationPath: $dashboardNavPath)
+                            .padding(.bottom, 16)
+                    }
+
                     // Cardio Redesign Phase 1 — Wave 3c + 6b. Compact
                     // cardio surface that combines the cardio streak
                     // banner with the "Just one block" 5-min walk
@@ -314,7 +334,7 @@ struct DashboardView: View {
                     // WHOOP Recovery Widget (isolated — only renders when WHOOP connected + widget enabled)
                     if showWhoopWidget {
                         DashboardWhoopWrapper(navigationPath: $dashboardNavPath)
-                            .padding(.bottom, 16)
+                            .padding(.bottom, 20)
                     }
 
                     // Oura Readiness Widget — temporarily hidden (Sprint 2026-05-02).
@@ -325,12 +345,6 @@ struct DashboardView: View {
                     //     DashboardOuraWrapper()
                     //         .padding(.bottom, 16)
                     // }
-
-                    // Strava Latest Activity Widget (isolated — only renders when Strava connected + an activity from the last 36h)
-                    if showStravaWidget {
-                        DashboardStravaWrapper(navigationPath: $dashboardNavPath)
-                            .padding(.bottom, 20)
-                    }
 
                     // 2026-05-04 — Path to 33 (annual Olympian track).
                     // Wrapper owns its own @StateObject OlympianPathService
@@ -344,8 +358,12 @@ struct DashboardView: View {
                             .padding(.bottom, 20)
                     }
 
-                    // Recent workouts section (in-app + synced HealthKit/Strava/Fitbit)
-                    if !recentWorkouts.isEmpty || !recentCardioWorkouts.isEmpty {
+                    // Recent workouts section (in-app + synced HealthKit/Strava/Fitbit).
+                    // Off by default — premium-gated, opt-in via the "..." widget
+                    // settings menu (Sprint 2026-05-08). Always rendered last so it
+                    // remains the bottom-most widget when enabled.
+                    if showRecentActivityWidget,
+                       !recentWorkouts.isEmpty || !recentCardioWorkouts.isEmpty {
                         recentWorkoutsSection
                             .id("workoutHistory")
                             .padding(.bottom, 20)
@@ -491,7 +509,8 @@ struct DashboardView: View {
                     showOura: $showOuraWidget,
                     showStrava: $showStravaWidget,
                     showCardio: $showCardioWidget,
-                    showOlympian: $showOlympianWidget
+                    showOlympian: $showOlympianWidget,
+                    showRecentActivity: $showRecentActivityWidget
                 )
                 .presentationDragIndicator(.visible)
             }

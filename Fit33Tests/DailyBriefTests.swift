@@ -111,10 +111,15 @@ final class DailyBriefTests: XCTestCase {
     /// Canonical compose: green WHOOP + chest/tris 5d overdue + Build
     /// Muscle goal + 1v1 booster. This is the example the user
     /// described and the test that proves the fusion works.
-    /// Phase 7 (2026-04-27): body copy refresh to "wins today's
-    /// quest" + cross-facet `{ifBehindRival}` clause that collapses
-    /// to empty when no `BriefContext` is supplied (this test
-    /// fixture). Headline shape unchanged.
+    /// Phase 11 (2026-05-08 — "actionable headlines, insight
+    /// bodies"): headline = `{Action}. {Gap}.` two-sentence
+    /// pattern (action verb / split + the concrete debt). Body
+    /// is a supporting insight — recovery science / longest-gap
+    /// framing / cross-domain fact — that supports the gap
+    /// without locking to a specific quest. `~min` ETA + "wins
+    /// today's quest" framing are RETIRED (read as a deadline /
+    /// quest dependency the user doesn't have). Booster (`+ ...`)
+    /// is the only optional tail token retained.
     func test_template_northStar_greenMuscleBuildMuscleWithBooster() {
         let r = DailyBriefTemplates.compose(
             band: .green,
@@ -124,8 +129,8 @@ final class DailyBriefTests: XCTestCase {
             booster: "your 1v1 with Paul",
             streak: 7
         )
-        XCTAssertEqual(r.headline, "Fresh — chest & triceps are 5d overdue.")
-        XCTAssertEqual(r.body, "Push day in ~28 min wins today's quest + your 1v1 with Paul.")
+        XCTAssertEqual(r.headline, "Push day. Chest & triceps 5d due.")
+        XCTAssertEqual(r.body, "Long rest = your biggest growth window + your 1v1 with Paul.")
     }
 
     func test_template_greenMuscleBuildMuscle_noBooster() {
@@ -137,7 +142,11 @@ final class DailyBriefTests: XCTestCase {
             booster: nil,
             streak: 3
         )
-        XCTAssertTrue(r.headline.contains("back & biceps"))
+        // Phase 11 — `{Muscles}` token capitalizes the lead so the
+        // headline reads as a clean noun phrase ("Back & biceps"
+        // not "back & biceps"). Use case-insensitive contains so
+        // the test doesn't pin a specific casing.
+        XCTAssertTrue(r.headline.localizedCaseInsensitiveContains("back & biceps"))
         XCTAssertTrue(r.headline.contains("4d"))
         // No booster → "{booster}" collapses to empty, so no trailing " + ...".
         XCTAssertFalse(r.body.contains(" + "))
@@ -156,7 +165,18 @@ final class DailyBriefTests: XCTestCase {
         )
         // Red day must NEVER suggest a heavy lift.
         XCTAssertFalse(r.body.lowercased().contains("push"))
-        XCTAssertTrue(r.headline.lowercased().contains("red") || r.body.lowercased().contains("mobility") || r.body.lowercased().contains("yoga") || r.body.lowercased().contains("walk"))
+        // Phase 11 — red-day headlines lead with the rest action
+        // ("Rest day.", "Recovery day.", "Easy spin only.").
+        // Body explains why ("Bank the rest", "Walk + hydration",
+        // "Sleep + hydration earn compound interest").
+        let combined = (r.headline + " " + r.body).lowercased()
+        XCTAssertTrue(
+            combined.contains("rest")
+                || combined.contains("recovery")
+                || combined.contains("walk")
+                || combined.contains("sleep"),
+            "Red-day brief must signal rest/recovery, got: \(r.headline) / \(r.body)"
+        )
     }
 
     func test_cta_redDayAlwaysRecovery() {
@@ -215,7 +235,10 @@ final class DailyBriefTests: XCTestCase {
         )
         XCTAssertFalse(r.headline.lowercased().contains("strain"))
         XCTAssertFalse(r.headline.lowercased().contains("recovery"))
-        XCTAssertTrue(r.headline.contains("chest & triceps"))
+        // Phase 11 — `{Muscles}` capitalizes the lead. Use
+        // case-insensitive contains so the test doesn't pin a
+        // specific casing.
+        XCTAssertTrue(r.headline.localizedCaseInsensitiveContains("chest & triceps"))
     }
 
     func test_template_streakFallbackForAllClear() {
@@ -421,6 +444,14 @@ final class DailyBriefTests: XCTestCase {
         )
     }
 
+    /// Phase 10 (2026-05-08): rival tail-clause rendering is no
+    /// longer a feature of action-body templates — the catalog
+    /// keeps its bodies single-purpose. The `{ifBehindRival}`
+    /// machinery still backs the streak template (which is
+    /// `.allClear`-only and gets fully replaced by
+    /// `buildInsightBody` in production, so it's effectively a
+    /// test-only path that preserves coverage of the helper).
+    /// Re-point this test there.
     func test_context_behindRivalClause_rendersWhenBehind() {
         let ctx = makeContext(
             rivalFirstName: "Manuel",
@@ -428,8 +459,8 @@ final class DailyBriefTests: XCTestCase {
             rivalChallengeType: "steps"
         )
         let r = DailyBriefTemplates.compose(
-            band: .unknown, debt: .stepsBehindGoal, goal: .generalFitness,
-            debtFields: ["gap": "3.0k"], booster: nil, streak: 0,
+            band: .green, debt: .allClear, goal: .generalFitness,
+            debtFields: [:], booster: nil, streak: 14,
             context: ctx
         )
         XCTAssertTrue(r.body.contains("Manuel"), "Expected rival name in body, got: \(r.body)")
@@ -444,11 +475,34 @@ final class DailyBriefTests: XCTestCase {
             rivalChallengeType: "steps"
         )
         let r = DailyBriefTemplates.compose(
+            band: .green, debt: .allClear, goal: .generalFitness,
+            debtFields: [:], booster: nil, streak: 14,
+            context: ctx
+        )
+        XCTAssertFalse(r.body.contains("Manuel"), "Noise-level gap must not surface rival, got: \(r.body)")
+    }
+
+    /// Phase 10 (2026-05-08): the welcome card no longer tail-tags
+    /// rival / sleep / strain / overdue clauses onto an
+    /// already-complete action body — that em-dash chain is what
+    /// the user flagged as clunky. Action-body templates now stop
+    /// at the action; cross-facet color lives in dedicated widgets
+    /// + `buildInsightBody`. This test pins that contract: a
+    /// stepsBehindGoal body must NOT contain the rival callout
+    /// even when the rival context is supplied.
+    func test_actionBody_doesNotTailTagRival_phase10() {
+        let ctx = makeContext(
+            rivalFirstName: "Manuel",
+            rivalSignedGap: -1200,
+            rivalChallengeType: "steps"
+        )
+        let r = DailyBriefTemplates.compose(
             band: .unknown, debt: .stepsBehindGoal, goal: .generalFitness,
             debtFields: ["gap": "3.0k"], booster: nil, streak: 0,
             context: ctx
         )
-        XCTAssertFalse(r.body.contains("Manuel"), "Noise-level gap must not surface rival, got: \(r.body)")
+        XCTAssertFalse(r.body.contains("Manuel"), "Action body must stay single-purpose, got: \(r.body)")
+        XCTAssertFalse(r.body.contains(" — "), "Action body should not chain em-dash tail clauses, got: \(r.body)")
     }
 
     func test_context_aheadRivalClause_rendersWhenAhead() {
@@ -466,16 +520,19 @@ final class DailyBriefTests: XCTestCase {
         XCTAssertTrue(r.body.contains("up 320 cal"), "Expected formatted gap, got: \(r.body)")
     }
 
-    func test_context_overdueClauseFires_whenNotTheFiringDebt() {
-        // Steps debt firing, but chest is overdue — body should
-        // mention both.
+    /// Phase 10 (2026-05-08): see `test_actionBody_doesNotTailTagRival_phase10`
+    /// for the rationale. The `{ifOverdue}` machinery is preserved
+    /// for the streak template (test-only path that still exercises
+    /// the helper). Re-pointed to streak template — `streak: 5`
+    /// hits the 1...6 case which still uses `{ifOverdue}`.
+    func test_context_overdueClauseFires_inStreakTemplate() {
         let ctx = makeContext(
             topOverdueMuscle: "chest & triceps",
             topOverdueDays: 5
         )
         let r = DailyBriefTemplates.compose(
-            band: .unknown, debt: .stepsBehindGoal, goal: .generalFitness,
-            debtFields: ["gap": "3.0k"], booster: nil, streak: 0,
+            band: .green, debt: .allClear, goal: .generalFitness,
+            debtFields: [:], booster: nil, streak: 5,
             context: ctx
         )
         XCTAssertTrue(r.body.contains("chest & triceps"), "Expected overdue tail in body, got: \(r.body)")
@@ -495,14 +552,28 @@ final class DailyBriefTests: XCTestCase {
         XCTAssertFalse(r.body.contains("ifBehindRival"))
     }
 
-    func test_context_redDayBedtimeRenders() {
+    /// Phase 11 (2026-05-08): `{bedtime}` token RETIRED from the
+    /// red-recovery action templates — those bodies now read
+    /// "Hard sessions cost tomorrow. Bank the rest." (insight,
+    /// not interpolated time prescription). The bedtime helper
+    /// in `applyContextTokens` is preserved for any future
+    /// surface that wants it. Test pins the new contract: red
+    /// recovery body signals rest/sleep/hydration without
+    /// shipping a hardcoded "10:30 PM" string.
+    func test_context_redDayRecoveryBodyDoesNotShipHardcodedBedtime() {
         let r = DailyBriefTemplates.compose(
             band: .red, debt: .recoveryNeeded, goal: .buildMuscle,
             debtFields: ["score": "22"], booster: nil, streak: 7,
             context: makeContext(hasWearableSignal: true)
         )
-        XCTAssertTrue(r.body.contains("PM") || r.body.contains("AM"),
-                      "Expected suggested bedtime in red-recovery body, got: \(r.body)")
+        XCTAssertFalse(r.body.contains("10:30"),
+                       "Hardcoded '10:30 PM' bedtime should no longer ship; got: \(r.body)")
+        let combined = (r.headline + " " + r.body).lowercased()
+        XCTAssertTrue(
+            combined.contains("rest") || combined.contains("sleep")
+                || combined.contains("recovery") || combined.contains("hydration"),
+            "Red-recovery brief must still signal rest/sleep/recovery, got: \(r.headline) / \(r.body)"
+        )
     }
 
     // MARK: - Phase 7b: insight-body gap formatting publicized

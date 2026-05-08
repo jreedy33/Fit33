@@ -57,6 +57,8 @@ struct MealsQuickActionsView: View {
 struct MealQuickActionTile: View {
     let icon: String
     let title: String
+    /// Optional second line — same 140pt card height as title-only tiles.
+    var subtitle: String? = nil
     let gradient: [Color]
     let action: () -> Void
     
@@ -68,7 +70,7 @@ struct MealQuickActionTile: View {
             HapticManager.impact(.medium)
             action()
         }) {
-            VStack(spacing: 16) {
+            VStack(spacing: subtitle == nil ? 16 : 10) {
                 ZStack {
                     Circle()
                         .fill(
@@ -86,13 +88,32 @@ struct MealQuickActionTile: View {
                         .foregroundColor(.white)
                 }
                 
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+                if let subtitle = subtitle {
+                    VStack(spacing: 4) {
+                        Text(title)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                        
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                    }
+                } else {
+                    Text(title)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 140)

@@ -18,11 +18,64 @@ final class WorkoutSuggestionEngine: ObservableObject {
         return ctx
     }()
 
+    init() {
+        // Bug-intel `d83663e8` — register the workout-completion observer
+        // ONCE at singleton construction. The notification fires from the
+        // MainActor (`WorkoutManager.finishWorkout`'s `Task { @MainActor in
+        // ... post(name: .workoutCompleted) }` block) so a synchronous
+        // closure that touches our caches is thread-safe to register on
+        // the main queue.
+        workoutCompletionObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("Fit33.workoutCompleted"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.invalidateRecoveryCache()
+        }
+    }
+
+    deinit {
+        if let token = workoutCompletionObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
+
+    /// Bug-intel `d83663e8`: drops the cached muscle-recovery snapshot
+    /// and split-family snapshot so the NEXT `getMuscleRecoveryStatesAsync`
+    /// call reads fresh Workout rows from Core Data. The split-family
+    /// cache is also dropped because the same Workout-fetch underpins it
+    /// (`getRecentSplitFamiliesAsync`) and a freshly-completed workout
+    /// changes the recent-split picture too. Called from the
+    /// `.workoutCompleted` notification observer registered in `init()`;
+    /// also exposed for explicit "I just wrote a workout, refresh now"
+    /// callers (e.g. CMS-side test harnesses).
+    func invalidateRecoveryCache() {
+        cachedRecoveryStates = nil
+        cachedSplitFamilies = nil
+        cacheTimestamp = nil
+        AppLogger.debug("WorkoutSuggestionEngine: caches invalidated post-workout-completion", category: .workout)
+    }
+
     // Cached recovery data — populated by async methods, read by sync callers (view bodies)
     private var cachedRecoveryStates: [MuscleRecoveryState]?
     private var cachedSplitFamilies: [SplitFamily]?
     private var cacheTimestamp: Date?
     private let cacheTTL: TimeInterval = 30
+
+    // 2026-05-08 (Bug-intel shake `d83663e8` — Paul Reed: "Banner claiming
+    // chest and triceps are overdue even though I completed a chest/triceps
+    // workout today"; also indirectly addresses `c496e4ef` and `3cdbab39`
+    // workout-recommendation conflicts which read the same stale cache):
+    // observe `Notification.Name.workoutCompleted` (posted by
+    // `WorkoutManager.finishWorkout` and the active-workout completion
+    // path) and force-invalidate the recovery + split caches so the next
+    // call to `getMuscleRecoveryStatesAsync()` reads fresh data from
+    // Core Data instead of returning a 30-second stale snapshot that still
+    // shows chest/triceps as untrained. Without this, DailyBriefEngine's
+    // `topOverdueMuscle` selector and the welcome-card's "today's
+    // suggestion" both surface the just-trained muscle as overdue for up
+    // to 30s after `finishWorkout` writes the Workout entity.
+    private var workoutCompletionObserver: NSObjectProtocol?
 
     // MARK: - Muscle Group Taxonomy
 

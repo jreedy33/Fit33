@@ -384,184 +384,35 @@ extension DashboardView {
     var startWorkoutButton: some View {
         VStack(spacing: 12) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
-                // Custom Workout Button
-                Button(action: {
-                    HapticManager.impact(.medium)
-                    handleWorkoutSelection(type: .custom)
-                }) {
-                    VStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [Color.blue, Color.cyan]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 50, height: 50)
-                                .shadow(color: .blue.opacity(0.4), radius: 8, x: 0, y: 4)
-                            
-                            Image(systemName: "plus.circle.fill")
-                                .font(.title2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                        }
-                        
-                        VStack(spacing: 4) {
-                        Text("Custom Workout")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.8)
-                        
-                        Text("Build your own")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 140)
-                .background(
-                    ZStack {
-                        // Bottom shadow layer (deepest) - color glow
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(Color.blue.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                            .offset(y: 8)
-                            .blur(radius: 4)
-                        
-                        // Middle shadow layer
-                        RoundedRectangle(cornerRadius: 26, style: .continuous)
-                            .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                            .offset(y: 4)
-                        
-                        // Main card background — adaptive (frosted ↔ solid via setting)
-                        AdaptiveCardSurface(cornerRadius: 24)
-                        
-                        // Inner highlight (top edge glow)
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: colorScheme == .dark
-                                        ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                        : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                ),
-                                lineWidth: 1.5
-                            )
-                        
-                        // Colored accent border
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [Color.blue.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.cyan.opacity(colorScheme == .dark ? 0.3 : 0.2)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    }
+                DashboardStyleWorkoutQuickStartTile(
+                    title: "Custom Workout",
+                    subtitle: "Build your own",
+                    icon: "plus.circle.fill",
+                    circleGradient: [Color.blue, Color.cyan],
+                    cardGlowBase: .blue,
+                    borderGradient: [Color.blue, Color.cyan],
+                    outerGlowColor: .blue,
+                    outerGlowOpacityDark: 0.2,
+                    outerGlowOpacityLight: 0.12,
+                    accessibilityLabelText: "Start custom workout",
+                    accessibilityHintText: "Build your own workout from scratch",
+                    action: { handleWorkoutSelection(type: .custom) }
                 )
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-                .shadow(color: .blue.opacity(colorScheme == .dark ? 0.2 : 0.12), radius: 20, x: 0, y: 10)
-                }
-                .accessibilityLabel("Start custom workout")
-                .accessibilityHint("Build your own workout from scratch")
-                .buttonStyle(PlainButtonStyle())
-                
-            // Auto Workout Button
-            Button(action: {
-                HapticManager.impact(.medium)
-                handleWorkoutSelection(type: .auto)
-            }) {
-                    VStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [Color.purple, Color.pink]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 50, height: 50)
-                                .shadow(color: .purple.opacity(0.4), radius: 8, x: 0, y: 4)
-                            
-                            Image(systemName: "dumbbell.fill")
-                                .font(.title2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                        }
-                        
-                        VStack(spacing: 4) {
-                        Text("Auto Workout")
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.8)
-                        
-                        Text("Auto-generated routine")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 140)
-                .background(
-                    ZStack {
-                        // Bottom shadow layer (deepest) - color glow
-                        RoundedRectangle(cornerRadius: 28, style: .continuous)
-                            .fill(Color.purple.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                            .offset(y: 8)
-                            .blur(radius: 4)
-                        
-                        // Middle shadow layer
-                        RoundedRectangle(cornerRadius: 26, style: .continuous)
-                            .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                            .offset(y: 4)
-                        
-                        // Main card background — adaptive (frosted ↔ solid via setting)
-                        AdaptiveCardSurface(cornerRadius: 24)
-                        
-                        // Inner highlight (top edge glow)
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: colorScheme == .dark
-                                        ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                        : [Color.white, Color.white.opacity(0.5), Color.clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                ),
-                                lineWidth: 1.5
-                            )
-                        
-                        // Colored accent border
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [Color.purple.opacity(colorScheme == .dark ? 0.4 : 0.3), Color.pink.opacity(colorScheme == .dark ? 0.3 : 0.2)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    }
+
+                DashboardStyleWorkoutQuickStartTile(
+                    title: "Auto Workout",
+                    subtitle: "Auto-generated routine",
+                    icon: "dumbbell.fill",
+                    circleGradient: [Color.purple, Color.pink],
+                    cardGlowBase: .purple,
+                    borderGradient: [Color.purple, Color.pink],
+                    outerGlowColor: .purple,
+                    outerGlowOpacityDark: 0.12,
+                    outerGlowOpacityLight: 0.12,
+                    accessibilityLabelText: "Start auto workout",
+                    accessibilityHintText: "Generate a workout based on your history",
+                    action: { handleWorkoutSelection(type: .auto) }
                 )
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
-                .shadow(color: .purple.opacity(0.12), radius: 20, x: 0, y: 10)
-                }
-                .accessibilityLabel("Start auto workout")
-                .accessibilityHint("Generate a workout based on your history")
-                .buttonStyle(PlainButtonStyle())
-            
             }
         }
     }
@@ -792,5 +643,119 @@ struct DashboardLeagueBadge: View {
             return "Not yet placed in a league. Placement runs on Monday."
         }
         return "League standing loading"
+    }
+}
+
+// MARK: - Dashboard / Workout tab — Custom + Auto entry tiles (shared)
+//
+// Pixel-parity with `DashboardView.startWorkoutButton` (home tab).
+// `WorkoutTabView` uses the same component for the first quick-action row.
+struct DashboardStyleWorkoutQuickStartTile: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let circleGradient: [Color]
+    let cardGlowBase: Color
+    let borderGradient: [Color]
+    let outerGlowColor: Color
+    let outerGlowOpacityDark: Double
+    let outerGlowOpacityLight: Double
+    let accessibilityLabelText: String
+    let accessibilityHintText: String
+    let action: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: {
+            HapticManager.impact(.medium)
+            action()
+        }) {
+            VStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: circleGradient),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+                        .shadow(color: circleGradient[0].opacity(0.4), radius: 8, x: 0, y: 4)
+
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                }
+
+                VStack(spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 140)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(cardGlowBase.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        .offset(y: 8)
+                        .blur(radius: 4)
+
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
+                        .offset(y: 4)
+
+                    AdaptiveCardSurface(cornerRadius: 24)
+
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: colorScheme == .dark
+                                    ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
+                                    : [Color.white, Color.white.opacity(0.5), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1.5
+                        )
+
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    borderGradient[0].opacity(colorScheme == .dark ? 0.4 : 0.3),
+                                    borderGradient[1].opacity(colorScheme == .dark ? 0.3 : 0.2)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+            )
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.08), radius: 12, x: 0, y: 6)
+            .shadow(
+                color: outerGlowColor.opacity(colorScheme == .dark ? outerGlowOpacityDark : outerGlowOpacityLight),
+                radius: 20,
+                x: 0,
+                y: 10
+            )
+        }
+        .accessibilityLabel(accessibilityLabelText)
+        .accessibilityHint(accessibilityHintText)
+        .buttonStyle(PlainButtonStyle())
     }
 }

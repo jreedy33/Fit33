@@ -23,32 +23,32 @@ final class WorkoutCalorieTests: XCTestCase {
     
     func testZeroDurationReturnsZeroCalories() {
         let result = WorkoutCalorieCalculator.calculateCalories(
-            durationSeconds: 0,
             exercises: [],
-            biometrics: maleBiometrics
+            totalDurationSeconds: 0,
+            user: maleBiometrics
         )
         XCTAssertEqual(result.totalCalories, 0)
     }
     
     func testPositiveDurationReturnsPositiveCalories() {
         let result = WorkoutCalorieCalculator.calculateCalories(
-            durationSeconds: 3600,
             exercises: [],
-            biometrics: maleBiometrics
+            totalDurationSeconds: 3600,
+            user: maleBiometrics
         )
         XCTAssertGreaterThan(result.totalCalories, 0)
     }
     
     func testLongerWorkoutBurnsMoreCalories() {
         let short = WorkoutCalorieCalculator.calculateCalories(
-            durationSeconds: 1800,
             exercises: [],
-            biometrics: maleBiometrics
+            totalDurationSeconds: 1800,
+            user: maleBiometrics
         )
         let long = WorkoutCalorieCalculator.calculateCalories(
-            durationSeconds: 3600,
             exercises: [],
-            biometrics: maleBiometrics
+            totalDurationSeconds: 3600,
+            user: maleBiometrics
         )
         XCTAssertGreaterThan(long.totalCalories, short.totalCalories)
     }
@@ -59,8 +59,8 @@ final class WorkoutCalorieTests: XCTestCase {
         let light = UserBiometrics(weightKg: 55, heightCm: 165, ageYears: 30, biologicalSex: .male, fitnessLevel: .intermediate)
         let heavy = UserBiometrics(weightKg: 100, heightCm: 185, ageYears: 30, biologicalSex: .male, fitnessLevel: .intermediate)
         
-        let lightResult = WorkoutCalorieCalculator.calculateCalories(durationSeconds: 3600, exercises: [], biometrics: light)
-        let heavyResult = WorkoutCalorieCalculator.calculateCalories(durationSeconds: 3600, exercises: [], biometrics: heavy)
+        let lightResult = WorkoutCalorieCalculator.calculateCalories(exercises: [], totalDurationSeconds: 3600, user: light)
+        let heavyResult = WorkoutCalorieCalculator.calculateCalories(exercises: [], totalDurationSeconds: 3600, user: heavy)
         
         XCTAssertGreaterThan(heavyResult.totalCalories, lightResult.totalCalories)
     }
@@ -69,9 +69,9 @@ final class WorkoutCalorieTests: XCTestCase {
     
     func testOneHourWorkoutInReasonableRange() {
         let result = WorkoutCalorieCalculator.calculateCalories(
-            durationSeconds: 3600,
             exercises: [],
-            biometrics: maleBiometrics
+            totalDurationSeconds: 3600,
+            user: maleBiometrics
         )
         XCTAssertGreaterThan(result.totalCalories, 100, "1-hour workout should burn at least 100 cal")
         XCTAssertLessThan(result.totalCalories, 1500, "1-hour workout should burn less than 1500 cal")

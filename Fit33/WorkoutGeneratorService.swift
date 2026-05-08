@@ -126,8 +126,20 @@ class WorkoutGeneratorService: ObservableObject {
     
     /// Get recommended exercise count based on workout duration.
     /// Delegates to the canonical implementation in WorkoutComboRules.
-    static func exerciseCountForDuration(_ durationMinutes: Int, equipmentIsMostlyMachines: Bool = false) -> Int {
-        return getExerciseCountForDuration(durationMinutes, equipmentIsMostlyMachines: equipmentIsMostlyMachines)
+    /// Audit 2026-05-08: forwards optional `experienceLevel` + `goal` so callers can
+    /// trigger the Advanced + Build Muscle + ≥50min bump when context is available.
+    static func exerciseCountForDuration(
+        _ durationMinutes: Int,
+        equipmentIsMostlyMachines: Bool = false,
+        experienceLevel: String = "",
+        goal: String = ""
+    ) -> Int {
+        return getExerciseCountForDuration(
+            durationMinutes,
+            equipmentIsMostlyMachines: equipmentIsMostlyMachines,
+            experienceLevel: experienceLevel,
+            goal: goal
+        )
     }
     
     // ⚡️ Use the shared Supabase client instead of duplicating credentials
@@ -1211,7 +1223,36 @@ class WorkoutGeneratorService: ObservableObject {
                     return false
                 }
             }
-            
+
+            // 👤 GENDER STRICT FILTER (strength only) — Audit 2026-05-08 user request:
+            // "Very rarely should a male see female and vice versa in strength workouts."
+            // The catalog has both-gender videos for the top ~200 common strength exercises,
+            // so when an exercise IS gender-tagged but has no video for the user's gender,
+            // we EXCLUDE it from strength workouts (a same-gender alternative exists). For
+            // stretch / cardio / plyometrics / specialty (smaller catalog, fewer dual-gender
+            // clips), we keep the existing soft fallback so the user always has SOMETHING.
+            // Untagged exercises are gender-neutral — always shown.
+            let exerciseTypeForGender = ExerciseFilterService.classifyExerciseType(
+                name: exercise.name,
+                category: exercise.category,
+                equipment: exercise.equipment
+            )
+            if exerciseTypeForGender == .strength {
+                let exKey = (exercise.name ?? "").lowercased()
+                if let info = genderVideoCache[exKey] {
+                    // Exercise IS gender-tagged. Require user's gender video to exist.
+                    if info.filename(for: preferredVideoGender) == nil {
+                        #if DEBUG
+                        if !Self.suppressPerExerciseLogs {
+                            AppLogger.debug("[GENDER STRICT] Excluding '\(exercise.name ?? "")': no \(preferredVideoGender.rawValue.lowercased()) video for strength workout", category: .workout)
+                        }
+                        #endif
+                        return false
+                    }
+                }
+                // No gender info → legacy single-video / gender-neutral exercise → keep.
+            }
+
             #if DEBUG
             matchCount += 1
             #endif

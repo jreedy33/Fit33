@@ -695,10 +695,21 @@ final class SmartExercisePairingEngine {
         // Check cache first
         if let cached = pairingCache[exerciseName] {
             if let equipment = userEquipment {
+                // Bug-intel `bb7d7da0` (FE invariant 25 — equipment hard
+                // gate). The previous filter compared the raw
+                // `pairing.exercise.equipment` (which can be a CSV like
+                // "Dumbbells, Incline Bench") against user-display
+                // selections in a `Set.contains` equality check, so
+                // legitimate matches failed AND any "bodyweight" row
+                // bypassed the filter even when the user hadn't selected
+                // bodyweight. Route through `userHasRequiredEquipment` so
+                // every recommendation surface enforces the same gate.
                 return cached.filter { pairing in
-                    let pairingEquip = (pairing.exercise.equipment ?? "Bodyweight").lowercased()
-                    return equipment.map { $0.lowercased() }.contains(pairingEquip) ||
-                           pairingEquip == "bodyweight"
+                    ExerciseFilterService.userHasRequiredEquipment(
+                        exerciseEquipment: pairing.exercise.equipment,
+                        exerciseName: pairing.exercise.name,
+                        userEquipment: equipment
+                    )
                 }.prefix(limit).map { $0 }
             }
             return Array(cached.prefix(limit))
@@ -736,13 +747,31 @@ final class SmartExercisePairingEngine {
         
         scoredCandidates.sort { $0.score > $1.score }
         
-        // Pre-filter by equipment using cached analysis data (before resolving Core Data objects)
+        // Pre-filter by equipment using cached analysis data (before resolving Core Data objects).
+        //
+        // Bug-intel `bb7d7da0` (FE invariant 25 — equipment hard gate). The
+        // previous filter unconditionally passed any candidate whose
+        // normalized analysis.equipment was "bodyweight" — even when the
+        // user had NOT selected Bodyweight. The bypass let pull-up /
+        // hanging / dip rows surface for users who only checked Dumbbells,
+        // and let any compound row whose first equipment part normalized
+        // to Bodyweight (`"Bodyweight, Pull-Up Bar"` → "Bodyweight") slip
+        // through. Now: pass ONLY when the user's selection list contains
+        // the candidate's normalized category. If the user has Bodyweight
+        // checked, "bodyweight" is in `equipmentLower` and the contains()
+        // succeeds — the OR clause was always redundant for that case and
+        // wrong for every other case.
+        //
+        // The cache filter above (cache-hit path) uses the more thorough
+        // `userHasRequiredEquipment` check on raw equipment + name; this
+        // pre-resolve filter trades thoroughness for speed (no Core Data
+        // object lookup) but must not be looser than the post-resolve
+        // gate.
         let equipmentLower = userEquipment?.map { $0.lowercased() }
         if let equipmentLower = equipmentLower {
             scoredCandidates = scoredCandidates.filter { candidate in
                 guard let analysis = exerciseAnalysisCache[candidate.name] else { return false }
-                let equip = analysis.equipment.lowercased()
-                return equipmentLower.contains(equip) || equip == "bodyweight"
+                return equipmentLower.contains(analysis.equipment.lowercased())
             }
         }
         
@@ -971,6 +1000,60 @@ final class SmartExercisePairingEngine {
         ├── Plane of Motion: \(analysis.planeOfMotion ?? "N/A")
         └── Force Vector: \(analysis.forceVector ?? "N/A")
         """, category: .workout)
+    }
+}
+
+// MARK: - Movement Pattern Diversity (Audit 2026-05-08)
+//
+// Autogen used to ship workouts with three pull-up variations or two plank
+// variations because no per-pattern cap existed at selection time. The 20-user
+// audit (`scripts/output/autogen_audit_20260508_*.md`) flagged this as fix #5
+// "Add movement pattern diversity scoring".
+//
+// This extension exposes a movement-pattern detection helper for an Exercise
+// PLUS a static cap that the SmartExerciseSelectionEngine consults during its
+// scoring loop. The cap is INTENTIONALLY low (2) — three of the same pattern
+// in a 4-6 exercise workout is almost always a programming error.
+//
+// Authority: SmartExercisePairingEngine.movementPatternRepeatCap is the
+// canonical value. Do not duplicate.
+extension SmartExercisePairingEngine {
+
+    /// Maximum number of exercises with the same movement pattern allowed in
+    /// a single workout. Beyond this, the next candidate of the same pattern
+    /// is hard-penalized in scoring (effectively excluded).
+    public static let movementPatternRepeatCap: Int = 2
+
+    /// Returns the dominant movement pattern for an Exercise. Public wrapper
+    /// over the internal `detectMovementPattern` so the autogen engine can
+    /// classify already-selected exercises and apply the diversity cap.
+    public func movementPattern(for exercise: Exercise) -> MovementPattern {
+        let name = (exercise.name ?? "").lowercased()
+        let muscles = (exercise.muscleGroups as? [String]) ?? []
+        let equipment = exercise.equipment ?? "Bodyweight"
+        return detectMovementPattern(name: name, muscles: muscles, equipment: equipment)
+    }
+
+    /// Convenience: count how many of `selected` share `pattern`.
+    public func count(of pattern: MovementPattern, in selected: [Exercise]) -> Int {
+        return selected.reduce(into: 0) { acc, ex in
+            if movementPattern(for: ex) == pattern { acc += 1 }
+        }
+    }
+
+    /// Returns true when adding `candidate` to `selected` would exceed the
+    /// per-workout same-pattern cap. The autogen engine should treat this as
+    /// a hard reject (or apply a heavy score penalty for tie-breaking).
+    public func wouldExceedDiversityCap(
+        adding candidate: Exercise,
+        to selected: [Exercise]
+    ) -> Bool {
+        let pattern = movementPattern(for: candidate)
+        // .other / .unknown patterns shouldn't trigger the cap — they're a catch-all.
+        if pattern.rawValue.lowercased() == "other" || pattern.rawValue.lowercased() == "unknown" {
+            return false
+        }
+        return count(of: pattern, in: selected) >= Self.movementPatternRepeatCap
     }
 }
 

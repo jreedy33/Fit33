@@ -45,6 +45,21 @@ struct HydrationWidget: View {
     @State private var showCelebration = false
     @State private var showingInfoPopup = false
     @State private var selectedCard: Int = 0
+
+    // 2026-05-08 (Bug-intel shake `6d2dd20f` + `5faa0cc4` — Joe Reed:
+    // "on the hydration toggle, in the top right there should be a oz/ml
+    // toggle that the user can switch between depending on their preferred
+    // units"): unit preference shared with `AddWaterSheet` (line ~423)
+    // and `DashboardHydrationWidget` via the canonical AppStorage key
+    // `hydrationUnitPreference` so toggling here flips both surfaces in
+    // lockstep. The widget body uses `formatVolume(...)` everywhere
+    // ml/oz display matters; storage stays canonical ml.
+    @AppStorage("hydrationUnitPreference") private var usesOz: Bool = true
+
+    private static let mlPerOz = 29.5735
+
+    /// Quick-add chip amounts in oz when `usesOz == true`; tap converts to ml via `Self.mlPerOz`.
+    private let widgetOzQuickPresets: [Int] = [8, 12, 16, 24]
     
     private var progress: Double {
         hydrationService.todayProgress
@@ -80,9 +95,9 @@ struct HydrationWidget: View {
                 Text("Hydration")
                     .font(.title3)
                     .fontWeight(.bold)
-                
+
                 Spacer()
-                
+
                 Button(action: { HapticManager.selectionChanged(); showingDetailView = true }) {
                     HStack(spacing: Spacing.xxs) {
                         Text("Details")
@@ -121,6 +136,8 @@ struct HydrationWidget: View {
                             .foregroundColor(.secondary)
                     }
                     Spacer()
+                    // Oz/ml toggle lives on the card surface (shared AppStorage with AddWaterSheet + dashboard).
+                    unitToggle
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
@@ -163,26 +180,49 @@ struct HydrationWidget: View {
                                 .foregroundColor(.secondary)
                         }
                         
-                        // Quick add presets
+                        // Quick add presets — labels + tap amounts follow `usesOz` (storage stays canonical ml).
                         HStack(spacing: Spacing.xxs) {
-                            ForEach(WaterPreset.presets.prefix(4)) { preset in
-                                Button {
-                                    HapticManager.impact(.light)
-                                    Task {
-                                        let success = await hydrationService.logWater(amountMl: preset.amountMl)
-                                        if success && hydrationService.todayGoalMet {
-                                            showCelebration = true
+                            if usesOz {
+                                ForEach(widgetOzQuickPresets, id: \.self) { oz in
+                                    let amountMl = Int(Double(oz) * Self.mlPerOz)
+                                    Button {
+                                        HapticManager.impact(.light)
+                                        Task {
+                                            let success = await hydrationService.logWater(amountMl: amountMl)
+                                            if success && hydrationService.todayGoalMet {
+                                                showCelebration = true
+                                            }
                                         }
+                                    } label: {
+                                        Text("\(oz) oz")
+                                            .font(.ds_caption)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, Spacing.xxs)
+                                            .background(Color.blue.opacity(0.08))
+                                            .cornerRadius(CornerRadius.sm)
                                     }
-                                } label: {
-                                    Text("\(preset.amountMl)ml")
-                                        .font(.ds_caption)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, Spacing.xxs)
-                                        .background(Color.blue.opacity(0.08))
-                                        .cornerRadius(CornerRadius.sm)
+                                    .buttonStyle(PlainButtonStyle())
                                 }
-                                .buttonStyle(PlainButtonStyle())
+                            } else {
+                                ForEach(Array(WaterPreset.presets.prefix(4))) { preset in
+                                    Button {
+                                        HapticManager.impact(.light)
+                                        Task {
+                                            let success = await hydrationService.logWater(amountMl: preset.amountMl)
+                                            if success && hydrationService.todayGoalMet {
+                                                showCelebration = true
+                                            }
+                                        }
+                                    } label: {
+                                        Text("\(preset.amountMl) ml")
+                                            .font(.ds_caption)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, Spacing.xxs)
+                                            .background(Color.blue.opacity(0.08))
+                                            .cornerRadius(CornerRadius.sm)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
                             }
                         }
                         
@@ -341,10 +381,81 @@ struct HydrationWidget: View {
     }
     
     private func formatMl(_ ml: Int) -> String {
+        // 2026-05-08 (Bug-intel `6d2dd20f` + `5faa0cc4`): unit-aware
+        // formatter. When `usesOz == true`, convert ml → oz (1 oz =
+        // ~29.5735 ml) and render in fl oz with 1-decimal precision so
+        // small amounts stay legible (e.g. 250 ml → "8.5 oz"). When
+        // false, retain the prior ml/L behavior (≥1000 ml → liters).
+        if usesOz {
+            let oz = Double(ml) / Self.mlPerOz
+            // Whole-number oz when within ±0.05 of a round value, else
+            // 1-decimal — keeps "8 oz" tidy without losing precision on
+            // odd custom amounts.
+            if abs(oz - oz.rounded()) < 0.05 {
+                return "\(Int(oz.rounded())) oz"
+            }
+            return String(format: "%.1f oz", oz)
+        }
         if ml >= 1000 {
             return String(format: "%.1fL", Double(ml) / 1000.0)
         }
-        return "\(ml)ml"
+        return "\(ml) ml"
+    }
+
+    /// 2026-05-08 (Bug-intel `6d2dd20f` + `5faa0cc4`): card-header oz/ml
+    /// segmented toggle. Stays compact (28pt height) so it reads as a
+    /// chip rather than a primary action. Tapping a side flips the
+    /// shared `hydrationUnitPreference` AppStorage value, which propagates
+    /// to AddWaterSheet + DashboardHydrationWidget on the next render.
+    @ViewBuilder
+    private var unitToggle: some View {
+        HStack(spacing: 0) {
+            unitToggleButton(label: "oz", active: usesOz) { usesOz = true }
+            unitToggleButton(label: "ml", active: !usesOz) { usesOz = false }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.systemGray6))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Hydration units")
+        .accessibilityValue(usesOz ? "Ounces" : "Milliliters")
+        .accessibilityHint("Double tap to switch units")
+    }
+
+    private func unitToggleButton(
+        label: String,
+        active: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            HapticManager.selectionChanged()
+            withAnimation(.easeInOut(duration: 0.15)) {
+                action()
+            }
+        } label: {
+            Text(label)
+                .font(.ds_caption)
+                .fontWeight(active ? .bold : .regular)
+                .foregroundColor(active ? .white : .secondary)
+                .frame(width: 28, height: 22)
+                .background(
+                    Group {
+                        if active {
+                            LinearGradient(
+                                colors: gradientColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        } else {
+                            Color.clear
+                        }
+                    }
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 

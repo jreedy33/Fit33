@@ -1623,3 +1623,123 @@ class FoundationalExerciseDatabase {
         }
     }
 }
+
+// MARK: - Goal-Based Scoring & Isolation Classification (Audit 2026-05-08)
+
+extension FoundationalExerciseDatabase {
+
+    // MARK: - Goal-based scoring (Audit fix #2)
+
+    /// Returns a multiplier (typically 0.7–1.4) applied to an exercise's selection score
+    /// based on the user's stated fitness goal. Fitness Expert authority — see
+    /// FITNESS_EXPERT_AGENT.md.
+    ///
+    /// - For "Build Endurance": boost circuit-friendly + light-load + low-rest exercises
+    ///   (kettlebell swings, jump rope, mountain climbers, burpees, push-ups, lunges,
+    ///   high-rep dumbbell movements, bodyweight squats); penalize maximal-strength
+    ///   compound lifts (1RM-style barbell singles, sled pushes, max-effort deadlifts).
+    /// - For other goals: return 1.0 (existing scoring is correct).
+    public static func goalMultiplier(
+        exerciseName: String,
+        equipment: String?,
+        category: String?,
+        goal: String
+    ) -> Double {
+        let n = exerciseName.lowercased()
+        let eq = (equipment ?? "").lowercased()
+        let cat = (category ?? "").lowercased()
+        let g = goal.lowercased()
+
+        // Only Build Endurance modifies scores — other goals fall through to 1.0
+        // (we explicitly avoid fighting the existing scoring for other goals).
+        guard g == "build endurance" || g == "build_endurance" else {
+            return 1.0
+        }
+
+        // BOOST 1.30 — explicit cardio / metabolic conditioning movements
+        let highBoostKeywords: [String] = [
+            "jump rope", "mountain climber", "burpee",
+            "kettlebell swing", "kb swing",
+            "high knees", "jumping jack", "step-up", "step up",
+            "battle rope", "rowing"
+        ]
+        if highBoostKeywords.contains(where: { n.contains($0) }) {
+            return 1.30
+        }
+
+        // BOOST 1.20 — high-rep-friendly bodyweight basics
+        let bodyweightBasicKeywords: [String] = [
+            "push-up", "push up", "squat", "lunge", "plank", "sit-up"
+        ]
+        let isBodyweight = eq.contains("bodyweight") || cat.contains("bodyweight")
+        if isBodyweight && bodyweightBasicKeywords.contains(where: { n.contains($0) }) {
+            return 1.20
+        }
+
+        // BOOST 1.15 — circuit-friendly equipment categories
+        let isCircuitEquipment =
+            eq.contains("kettlebell") || cat.contains("kettlebell") ||
+            eq.contains("resistance band") || cat.contains("resistance band") ||
+            eq.contains("medicine ball") || cat.contains("medicine ball")
+        if isCircuitEquipment {
+            return 1.15
+        }
+
+        // PENALTY 0.75 — heavy max-strength markers
+        let maxStrengthKeywords: [String] = ["1rm", "max effort", "max-effort", "powerlifting"]
+        if maxStrengthKeywords.contains(where: { n.contains($0) }) {
+            return 0.75
+        }
+        // Heavy barbell deadlifts (excluding Romanian / trap-bar variants which are fine
+        // for general posterior-chain work in endurance circuits).
+        if n.contains("deadlift") && eq.contains("barbell")
+            && !n.contains("romanian") && !n.contains("trap") {
+            return 0.75
+        }
+
+        // PENALTY 0.85 — barbell heavy compounds (still appropriate but should rank
+        // lower than circuit options for an endurance goal).
+        let heavyCompoundKeywords: [String] = [
+            "bench press", "back squat", "front squat",
+            "deadlift", "overhead press"
+        ]
+        let isBarbell = eq.contains("barbell") || cat.contains("barbell")
+        if isBarbell
+            && heavyCompoundKeywords.contains(where: { n.contains($0) })
+            && !n.contains("high rep") {
+            return 0.85
+        }
+
+        return 1.0
+    }
+
+    // MARK: - Isolation classification (Audit fix #11)
+
+    /// Single-joint isolation movement detection. The catalog sometimes mis-labels
+    /// these as compound; this helper is the source of truth for autogen ordering
+    /// (compound → isolation final sort).
+    public static func isSingleJointIsolation(name: String) -> Bool {
+        let n = name.lowercased()
+
+        let isolationKeywords: [String] = [
+            // Triceps
+            "skull crusher", "skullcrusher", "tricep extension", "tricep kickback",
+            "tricep pushdown", "overhead tricep",
+            // Biceps
+            "bicep curl", "hammer curl", "preacher curl", "concentration curl",
+            "spider curl", "incline curl",
+            // Shoulders (face pull is borderline but ordered with isolation)
+            "lateral raise", "front raise", "rear delt fly", "rear delt raise",
+            "reverse fly", "face pull",
+            // Legs
+            "leg extension", "leg curl", "calf raise", "hip abduction",
+            "hip adduction", "glute kickback",
+            // Chest (single-joint chest)
+            "pec deck", "chest fly", "cable fly", "cable crossover",
+            // Core (most core work is isolation)
+            "crunch", "sit-up", "sit up", "plank", "russian twist", "oblique"
+        ]
+
+        return isolationKeywords.contains(where: { n.contains($0) })
+    }
+}

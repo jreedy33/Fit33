@@ -1198,13 +1198,20 @@ class WorkoutManager: ObservableObject {
             // disk cache can drop its 5-min snapshot. Without this, a user
             // who finishes a workout and immediately taps the Home tab
             // would see stale streak/XP/feed state for up to 5 min.
-            // Gated behind the flag so behavior is byte-equivalent when OFF
-            // (no observer, no post — the call site itself is conditional).
-            // See `DashboardSocialFanoutCache` and
-            // `Notification.Name.workoutCompleted` for the contract.
-            if PerfFlags.phase5DashboardCache {
-                NotificationCenter.default.post(name: .workoutCompleted, object: nil)
-            }
+            //
+            // 2026-05-08 (Bug-intel shake `d83663e8`): now posted
+            // UNCONDITIONALLY (was gated on `PerfFlags.phase5DashboardCache`).
+            // `WorkoutSuggestionEngine` listens to the same notification
+            // to drop its 30-second muscle-recovery cache, which fixes the
+            // "chest and triceps are overdue" banner that surfaced for up to
+            // 30s after a chest/triceps workout completed. The dashboard
+            // social-fanout observer ITSELF still gates on the perf flag
+            // (cheap no-op on an unobserved notification) so byte-
+            // equivalence on the dashboard side is preserved when the flag
+            // is OFF; only the posting side is now unconditional.
+            // See `DashboardSocialFanoutCache` and `WorkoutSuggestionEngine`
+            // for the two consumers.
+            NotificationCenter.default.post(name: .workoutCompleted, object: nil)
 
             // Sync workout completion to active challenges (lift/workout_streak)
             await ChallengeService.shared.syncFit33WorkoutToChallenge(workoutType: "strength")

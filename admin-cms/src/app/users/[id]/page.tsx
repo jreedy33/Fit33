@@ -39,6 +39,15 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
   // Editable profile fields
   const [edits, setEdits] = useState<AnyRecord>({})
 
+  // Hard-destructive delete (cascades through every user-owned table +
+  // auth.users). Type-to-confirm matches /users page pattern; the token
+  // to type is the user's email when present, falling back to username
+  // then the UUID. Comparison is case-insensitive.
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteText, setDeleteText] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
   useEffect(() => {
     loadUser()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -155,6 +164,44 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
 
   function getVal(field: string) {
     return field in edits ? edits[field] : profile?.[field]
+  }
+
+  function deleteConfirmToken(): string {
+    return profile?.email || profile?.username || userId
+  }
+
+  function openDeleteDialog() {
+    setDeleteText('')
+    setDeleteError(null)
+    setDeleteOpen(true)
+  }
+
+  function closeDeleteDialog() {
+    if (deleting) return
+    setDeleteOpen(false)
+    setDeleteText('')
+    setDeleteError(null)
+  }
+
+  async function executeDelete() {
+    if (!profile) return
+    const token = deleteConfirmToken()
+    if (deleteText.trim().toLowerCase() !== token.toLowerCase()) {
+      setDeleteError('Confirmation text does not match.')
+      return
+    }
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await adminApi('delete_user', { user_id: userId })
+      // Send the admin back to the list — the row they just deleted
+      // disappears as part of the next /users hydrate, no stale state.
+      router.replace('/users')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Delete failed'
+      setDeleteError(msg)
+      setDeleting(false)
+    }
   }
 
   function formatDate(iso: string | null) {
@@ -404,6 +451,38 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
                     <ReadonlyField label="Profile Photo URL" value={profile.profile_photo_url || 'None'} />
                   </div>
                 </Section>
+
+                {/* Danger Zone — hard-destructive account deletion */}
+                <div
+                  className="card"
+                  style={{ borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                >
+                  <h2
+                    className="text-sm font-semibold uppercase tracking-wide mb-2"
+                    style={{ color: 'var(--danger)' }}
+                  >
+                    Danger Zone
+                  </h2>
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="min-w-[260px] flex-1">
+                      <div className="font-medium text-sm">Delete this user</div>
+                      <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        Cascades through friendships, workouts, meals, streaks, push tokens, notifications, daily quests, and the underlying <code>auth.users</code> record. This cannot be undone.
+                      </div>
+                    </div>
+                    <button
+                      onClick={openDeleteDialog}
+                      className="btn text-sm"
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        color: 'var(--danger)',
+                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                      }}
+                    >
+                      🗑️ Delete user
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -911,8 +990,164 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
             )}
           </>
         )}
+
+        {/* Delete-user confirm modal — type-to-confirm gated. */}
+        {deleteOpen && profile && (
+          <DeleteUserModal
+            email={profile.email}
+            name={profile.name}
+            username={profile.username}
+            avatarUrl={profile.profile_photo_url}
+            confirmToken={deleteConfirmToken()}
+            confirmText={deleteText}
+            onChangeText={setDeleteText}
+            onCancel={closeDeleteDialog}
+            onConfirm={executeDelete}
+            deleting={deleting}
+            error={deleteError}
+          />
+        )}
       </div>
     </AdminShell>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DeleteUserModal — kept inline here (separate copy from /users/page.tsx) to
+// avoid creating a new shared component file for two callers. Both copies
+// follow the same type-to-confirm pattern (GitHub / Stripe / Supabase Studio
+// standard) so the UX is consistent across the list-row and the per-user
+// detail page entry points.
+// ═══════════════════════════════════════════════════════════════════════════
+function DeleteUserModal({
+  email, name, username, avatarUrl,
+  confirmText, confirmToken,
+  onChangeText, onCancel, onConfirm,
+  deleting, error,
+}: {
+  email: string | null
+  name: string | null
+  username: string | null
+  avatarUrl: string | null
+  confirmText: string
+  confirmToken: string
+  onChangeText: (s: string) => void
+  onCancel: () => void
+  onConfirm: () => void
+  deleting: boolean
+  error: string | null
+}) {
+  const matches = confirmText.trim().toLowerCase() === confirmToken.toLowerCase()
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Enter' && matches && !deleting) onConfirm()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [matches, deleting, onCancel, onConfirm])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0, 0, 0, 0.6)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="card max-w-md w-full"
+        style={{ borderColor: 'rgba(239, 68, 68, 0.4)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3 mb-4">
+          <div
+            className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-lg"
+            style={{ background: 'rgba(239, 68, 68, 0.12)' }}
+          >
+            ⚠️
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-bold" style={{ color: 'var(--danger)' }}>Permanently delete user?</h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+              This deletes the account, all friendships, workouts, meals, streaks, push tokens, notifications, daily quests, and the underlying auth.users record. <strong>This cannot be undone.</strong>
+            </p>
+          </div>
+        </div>
+
+        <div
+          className="p-3 rounded-lg mb-4"
+          style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+              style={{
+                background: avatarUrl ? 'transparent' : 'var(--bg-primary)',
+                color: 'var(--text-secondary)',
+                backgroundImage: avatarUrl ? `url(${avatarUrl})` : undefined,
+                backgroundSize: 'cover',
+              }}
+            >
+              {!avatarUrl && (name?.[0] || '?')}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-sm truncate">{name || 'Unnamed'}</div>
+              <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                {email || `@${username || '—'}`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+          To confirm, type <code style={{ color: 'var(--danger)', fontFamily: 'monospace' }}>{confirmToken}</code>
+        </label>
+        <input
+          type="text"
+          value={confirmText}
+          onChange={(e) => onChangeText(e.target.value)}
+          placeholder={confirmToken}
+          autoFocus
+          disabled={deleting}
+          className="w-full text-sm"
+          style={{
+            fontFamily: 'monospace',
+            borderColor: matches ? 'var(--success)' : undefined,
+          }}
+        />
+
+        {error && (
+          <div
+            className="mt-3 p-2 rounded text-xs"
+            style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              color: 'var(--danger)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onCancel} disabled={deleting} className="btn btn-ghost text-sm">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!matches || deleting}
+            className="btn text-sm"
+            style={{
+              background: matches && !deleting ? 'var(--danger)' : 'var(--bg-tertiary)',
+              color: matches && !deleting ? '#fff' : 'var(--text-muted)',
+              cursor: matches && !deleting ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {deleting ? <><span className="spinner" /> Deleting...</> : '🗑️ Delete user'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

@@ -20,8 +20,15 @@ const RATE_LIMITS: Record<string, { max: number; windowMs: number }> = {
 //   (2) `logAdminAction()` runs for it (tier !== 'read' in POST handler).
 // Missing actions get classified as `read` and silently skip the audit log —
 // a compliance + forensics gap. Per INFRA_SECURITY invariant #5 + auditor
-// findings (2026-04-22). `delete_user` has no handler and was removed.
+// findings (2026-04-22).
 const WRITE_ACTIONS = new Set([
+  // `delete_user` (2026-05-08) — admin Users tab per-row Delete button.
+  // Calls `delete_user_account(uuid)` RPC via service-role client. Hard
+  // destructive: cascades through friendships, friend_requests, contacts,
+  // workouts, push_tokens, push_notification_queue, user_profiles, and
+  // auth.users. Audit-log captures admin_email + target user_id so the
+  // delete is forensically traceable.
+  'delete_user',
   'update_user', 'update_bug_report', 'delete_bug_report',
   'update_crash_report', 'delete_crash_report',
   'create_faq_entry', 'update_faq_entry', 'delete_faq_entry', 'publish_faq_entry',
@@ -213,7 +220,10 @@ export async function POST(req: NextRequest) {
     // Audit write/bulk actions
     const tier = getActionTier(action)
     if (tier !== 'read') {
-      const targetId = params.userId || params.id || params.reportId || params.campaign_id || params.flag_id || null
+      // user_id is included so destructive admin actions like `delete_user`
+      // are forensically traceable to the target account (the row itself
+      // disappears post-delete).
+      const targetId = params.user_id || params.userId || params.id || params.reportId || params.campaign_id || params.flag_id || null
       await logAdminAction(adminAuth.userId!, action, targetId, ip, adminAuth.email, params.details)
     }
 
@@ -324,6 +334,74 @@ export async function POST(req: NextRequest) {
         }
 
         return NextResponse.json({ profile: data })
+      }
+
+      // ═══════════════════════════════════════════════════
+      // DELETE USER (HARD DESTRUCTIVE)
+      // Cascades through:
+      //   friendships, friend_requests, user_contacts, workouts,
+      //   user_push_tokens, push_notification_queue, user_profiles
+      //   (which AFTER-trigger-cascades to auth.users + auth.identities
+      //    via 20260508_user_profiles_after_delete_triggers.sql), and
+      //   user_quest_personalization / user_quest_key_stats /
+      //   user_activity_mix.
+      // Backed by the canonical `delete_user_account(uuid)` RPC
+      // (`complete_account_deletion.sql`). Idempotent — deleting an
+      // already-gone user returns success: false in `result.success`
+      // because the RPC's snapshot counts will all be zero, but no
+      // exception is raised.
+      // Audit-logged (action='delete_user') + rate-limited as `write`.
+      // ═══════════════════════════════════════════════════
+      case 'delete_user': {
+        const { user_id } = params as { user_id?: unknown }
+        if (typeof user_id !== 'string' || user_id.length < 8) {
+          return NextResponse.json({ error: 'user_id required' }, { status: 400 })
+        }
+
+        // Snapshot the email/name BEFORE delete so the audit log + UI
+        // toast can reference what was deleted (the row is gone after).
+        const { data: profileSnapshot } = await admin.from('user_profiles')
+          .select('email, name, username')
+          .eq('id', user_id)
+          .maybeSingle()
+
+        // Single canonical deletion path. RPC handles child-table cleanup
+        // explicitly (defense-in-depth) before the user_profiles row drops;
+        // the now-AFTER trigger then cascades to auth.users + identities.
+        const { data: rpcResult, error: rpcError } = await admin.rpc(
+          'delete_user_account',
+          { user_id_to_delete: user_id },
+        )
+
+        if (rpcError) {
+          // Fallback: if the RPC isn't deployed for some reason (legacy
+          // env), do the bare-minimum delete via auth.users which the FK
+          // cascades will fan out from. The post-2026-05-08 AFTER triggers
+          // make this path safe (no SQLSTATE 27000).
+          const { error: fallbackError } = await admin.auth.admin.deleteUser(user_id)
+          if (fallbackError) {
+            return NextResponse.json(
+              { error: `RPC failed: ${rpcError.message}; fallback failed: ${fallbackError.message}` },
+              { status: 500 },
+            )
+          }
+          return NextResponse.json({
+            success: true,
+            user_id,
+            deleted_via: 'auth_admin_fallback',
+            email: profileSnapshot?.email ?? null,
+            name: profileSnapshot?.name ?? null,
+          })
+        }
+
+        return NextResponse.json({
+          success: true,
+          user_id,
+          deleted_via: 'delete_user_account_rpc',
+          email: profileSnapshot?.email ?? null,
+          name: profileSnapshot?.name ?? null,
+          rpc_result: rpcResult,
+        })
       }
 
       // ═══════════════════════════════════════════════════

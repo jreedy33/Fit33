@@ -31,6 +31,11 @@ export default function UsersPage() {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
   const router = useRouter()
 
   const loadUsers = useCallback(async (searchQuery: string, pageNum: number) => {
@@ -63,6 +68,56 @@ export default function UsersPage() {
     return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
+  // Typed-confirmation gate. We require the admin to type the user's email
+  // (or username if email is missing, or ID if both are missing) before the
+  // delete is enabled — same paranoia GitHub / Stripe use for destructive
+  // ops. Prevents fat-finger deletes when scanning a long user list.
+  function confirmTokenFor(u: UserRow): string {
+    return u.email || u.username || u.id
+  }
+
+  function openDeleteDialog(user: UserRow, e: React.MouseEvent) {
+    e.stopPropagation()
+    setDeleteTarget(user)
+    setDeleteConfirmText('')
+    setDeleteError(null)
+  }
+
+  function closeDeleteDialog() {
+    if (deleting) return
+    setDeleteTarget(null)
+    setDeleteConfirmText('')
+    setDeleteError(null)
+  }
+
+  async function executeDelete() {
+    if (!deleteTarget) return
+    if (deleteConfirmText.trim().toLowerCase() !== confirmTokenFor(deleteTarget).toLowerCase()) {
+      setDeleteError('Confirmation text does not match.')
+      return
+    }
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await adminApi('delete_user', { user_id: deleteTarget.id })
+      const label = deleteTarget.name || deleteTarget.email || deleteTarget.username || deleteTarget.id.slice(0, 8)
+      setToast(`Deleted ${label}`)
+      setDeleteTarget(null)
+      setDeleteConfirmText('')
+      // Optimistic remove from current list so the row disappears
+      // immediately even before the server-side reload completes.
+      setUsers(prev => prev.filter(u => u.id !== deleteTarget.id))
+      // Then reload from server to pick up the canonical post-delete state.
+      loadUsers(query, page)
+      setTimeout(() => setToast(null), 4000)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Delete failed'
+      setDeleteError(msg)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <AdminShell>
       <div className="p-6 max-w-7xl mx-auto">
@@ -72,6 +127,20 @@ export default function UsersPage() {
             <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>Search by email, username, name, or phone number</p>
           </div>
         </div>
+
+        {/* Toast */}
+        {toast && (
+          <div
+            className="mb-4 px-4 py-3 rounded-lg text-sm font-medium"
+            style={{
+              background: 'rgba(34, 197, 94, 0.12)',
+              color: 'var(--success)',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+            }}
+          >
+            ✓ {toast}
+          </div>
+        )}
 
         {/* Search Bar */}
         <div className="mb-6">
@@ -113,6 +182,7 @@ export default function UsersPage() {
                       <th>Status</th>
                       <th>Last Active</th>
                       <th>Joined</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -169,6 +239,26 @@ export default function UsersPage() {
                         <td className="text-xs" style={{ color: 'var(--text-muted)' }}>
                           {formatDate(user.created_at)}
                         </td>
+                        <td>
+                          <button
+                            onClick={(e) => openDeleteDialog(user, e)}
+                            className="px-2 py-1 rounded text-xs font-medium transition-colors"
+                            style={{
+                              background: 'rgba(239, 68, 68, 0.08)',
+                              color: 'var(--danger)',
+                              border: '1px solid rgba(239, 68, 68, 0.25)',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.18)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'
+                            }}
+                            title="Delete user (permanent)"
+                          >
+                            🗑️ Delete
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -201,7 +291,172 @@ export default function UsersPage() {
             </>
           )}
         </div>
+
+        {/* ═══════════════════════════════════════════════════
+            DELETE CONFIRM MODAL
+            Backdrop click + Esc both call closeDeleteDialog().
+            Type-to-confirm matches the user's email (or fallback
+            identifier) — disabled CTA until the typed text matches.
+            ═══════════════════════════════════════════════════ */}
+        {deleteTarget && (
+          <DeleteUserModal
+            user={deleteTarget}
+            confirmText={deleteConfirmText}
+            confirmToken={confirmTokenFor(deleteTarget)}
+            onChangeText={setDeleteConfirmText}
+            onCancel={closeDeleteDialog}
+            onConfirm={executeDelete}
+            deleting={deleting}
+            error={deleteError}
+          />
+        )}
       </div>
     </AdminShell>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DeleteUserModal
+//
+// Type-to-confirm pattern (GitHub / Stripe / Supabase Studio standard).
+// Avoids the "muscle-memory click-through" failure mode of a plain confirm
+// dialog. The token to type is the user's email when present, falling back
+// to username, then UUID. All comparisons are case-insensitive.
+// ═══════════════════════════════════════════════════════════════════════════
+function DeleteUserModal({
+  user,
+  confirmText,
+  confirmToken,
+  onChangeText,
+  onCancel,
+  onConfirm,
+  deleting,
+  error,
+}: {
+  user: UserRow
+  confirmText: string
+  confirmToken: string
+  onChangeText: (s: string) => void
+  onCancel: () => void
+  onConfirm: () => void
+  deleting: boolean
+  error: string | null
+}) {
+  const matches = confirmText.trim().toLowerCase() === confirmToken.toLowerCase()
+
+  // Esc-to-cancel + click-outside-to-cancel.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Enter' && matches && !deleting) onConfirm()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [matches, deleting, onCancel, onConfirm])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0, 0, 0, 0.6)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="card max-w-md w-full"
+        style={{ borderColor: 'rgba(239, 68, 68, 0.4)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3 mb-4">
+          <div
+            className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-lg"
+            style={{ background: 'rgba(239, 68, 68, 0.12)' }}
+          >
+            ⚠️
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-bold" style={{ color: 'var(--danger)' }}>Permanently delete user?</h2>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+              This deletes the account, all friendships, workouts, meals, streaks, push tokens, notifications, daily quests, and the underlying auth.users record. <strong>This cannot be undone.</strong>
+            </p>
+          </div>
+        </div>
+
+        <div
+          className="p-3 rounded-lg mb-4"
+          style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+              style={{
+                background: user.profile_photo_url ? 'transparent' : 'var(--bg-primary)',
+                color: 'var(--text-secondary)',
+                backgroundImage: user.profile_photo_url ? `url(${user.profile_photo_url})` : undefined,
+                backgroundSize: 'cover',
+              }}
+            >
+              {!user.profile_photo_url && (user.name?.[0] || '?')}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-sm truncate">{user.name || 'Unnamed'}</div>
+              <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                {user.email || `@${user.username || user.id.slice(0, 8)}`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+          To confirm, type <code style={{ color: 'var(--danger)', fontFamily: 'monospace' }}>{confirmToken}</code>
+        </label>
+        <input
+          type="text"
+          value={confirmText}
+          onChange={(e) => onChangeText(e.target.value)}
+          placeholder={confirmToken}
+          autoFocus
+          disabled={deleting}
+          className="w-full text-sm"
+          style={{
+            fontFamily: 'monospace',
+            borderColor: matches ? 'var(--success)' : undefined,
+          }}
+        />
+
+        {error && (
+          <div
+            className="mt-3 p-2 rounded text-xs"
+            style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              color: 'var(--danger)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button
+            onClick={onCancel}
+            disabled={deleting}
+            className="btn btn-ghost text-sm"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!matches || deleting}
+            className="btn text-sm"
+            style={{
+              background: matches && !deleting ? 'var(--danger)' : 'var(--bg-tertiary)',
+              color: matches && !deleting ? '#fff' : 'var(--text-muted)',
+              cursor: matches && !deleting ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {deleting ? <><span className="spinner" /> Deleting...</> : '🗑️ Delete user'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

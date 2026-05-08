@@ -13,6 +13,210 @@ import { adminApi } from '@/lib/api'
 // (admin-cms-rules.mdc invariant 24).
 const R2_BASE = 'https://pub-7838a3e2cbc24d59a6c4d2b2d6239bea.r2.dev'
 
+// Canonical `exercises.equipment_category` values — aligned with
+// `ExerciseFilterService.equipmentCohortMap` (snake_case in Postgres).
+// One dropdown option each; no duplicate Title Case vs lowercase rows.
+const EQUIPMENT_CATEGORY_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'band', label: 'Resistance band' },
+  { value: 'barbell', label: 'Barbell' },
+  { value: 'bodyweight', label: 'Bodyweight' },
+  { value: 'cable', label: 'Cable' },
+  { value: 'dumbbell', label: 'Dumbbell' },
+  { value: 'ez_bar', label: 'EZ bar' },
+  { value: 'foam_roller', label: 'Foam roller' },
+  { value: 'gymnastic_rings', label: 'Gymnastic rings' },
+  { value: 'kettlebell', label: 'Kettlebell' },
+  { value: 'machine', label: 'Machine' },
+  { value: 'medicine_ball', label: 'Medicine ball' },
+  { value: 'plate', label: 'Plate' },
+  { value: 'pull_up_bar', label: 'Pull-up bar' },
+  { value: 'smith_machine', label: 'Smith machine' },
+  { value: 'stability_ball', label: 'Stability ball' },
+  { value: 'trx', label: 'TRX' },
+].sort((a, b) => a.label.localeCompare(b.label))
+
+const EQUIPMENT_CATEGORY_VALUE_SET = new Set(EQUIPMENT_CATEGORY_OPTIONS.map((o) => o.value))
+
+/** Map common raw DB / Claude / human spellings → canonical snake_case category. */
+function normalizeEquipmentCategoryToSnake(raw: string | null | undefined): string | null {
+  if (raw == null) return null
+  const t = String(raw).trim()
+  if (t === '') return null
+  const compact = t.toLowerCase().replace(/[\s-]+/g, '_')
+  if (EQUIPMENT_CATEGORY_VALUE_SET.has(compact)) return compact
+
+  const aliases: Record<string, string> = {
+    bodyweight: 'bodyweight',
+    bw: 'bodyweight',
+    cable: 'cable',
+    cables: 'cable',
+    dumbbell: 'dumbbell',
+    dumbbells: 'dumbbell',
+    db: 'dumbbell',
+    barbell: 'barbell',
+    bb: 'barbell',
+    kettlebell: 'kettlebell',
+    kb: 'kettlebell',
+    machine: 'machine',
+    machines: 'machine',
+    smith_machine: 'smith_machine',
+    smith: 'smith_machine',
+    trx: 'trx',
+    gymnastic_rings: 'gymnastic_rings',
+    gymnasticrings: 'gymnastic_rings',
+    pull_up_bar: 'pull_up_bar',
+    pullupbar: 'pull_up_bar',
+    stability_ball: 'stability_ball',
+    swiss_ball: 'stability_ball',
+    medicine_ball: 'medicine_ball',
+    med_ball: 'medicine_ball',
+    foam_roller: 'foam_roller',
+    ez_bar: 'ez_bar',
+    ezbar: 'ez_bar',
+    plate: 'plate',
+    plates: 'plate',
+    band: 'band',
+    bands: 'band',
+    resistance_band: 'band',
+    resistance_bands: 'band',
+  }
+  if (aliases[compact] != null) return aliases[compact]
+
+  // Title Case e.g. "Dumbbell"
+  const underscored = t.toLowerCase().replace(/[^\da-z]+/gi, '_').replace(/^_+|_+$/g, '')
+  if (EQUIPMENT_CATEGORY_VALUE_SET.has(underscored)) return underscored
+
+  return underscored || null
+}
+
+// ─── `exercises.equipment` (TEXT) — multi-value, comma-separated in DB ────────
+// Canonical display tokens the app shows in ExerciseDetailView-ish copy.
+const EQUIPMENT_DISPLAY_OPTIONS: readonly string[] = [
+  'Ab roller',
+  'Balance board',
+  'Barbell',
+  'Battle ropes',
+  'Bench',
+  'Bodyweight',
+  'Box',
+  'Cable',
+  'Chair',
+  'Dumbbell',
+  'EZ bar',
+  'Foam roller',
+  'Gymnastic rings',
+  'Kettlebell',
+  'Landmine',
+  'Machine',
+  'Medicine ball',
+  'Plate',
+  'Platform',
+  'Plyo box',
+  'Pull-up bar',
+  'Rack',
+  'Resistance band',
+  'Sled',
+  'Smith machine',
+  'Stability ball',
+  'Step platform',
+  'TRX',
+  'Other',
+].sort((a, b) => a.localeCompare(b))
+
+/** Normalize one comma/semicolon-separated token → canonical display label. */
+function normalizeEquipmentDisplayToken(raw: string): string | null {
+  const s = raw.trim()
+  if (s === '') return null
+  const key = s.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+
+  const map: Record<string, string> = {
+    abroller: 'Ab roller',
+    'ab roller': 'Ab roller',
+    'balance board': 'Balance board',
+    balanceboard: 'Balance board',
+    barbell: 'Barbell',
+    bb: 'Barbell',
+    battleropes: 'Battle ropes',
+    'battle ropes': 'Battle ropes',
+    bench: 'Bench',
+    'flat bench': 'Bench',
+    'incline bench': 'Bench',
+    bodyweight: 'Bodyweight',
+    bw: 'Bodyweight',
+    box: 'Box',
+    'plyo box': 'Plyo box',
+    cable: 'Cable',
+    cables: 'Cable',
+    chair: 'Chair',
+    dumbbell: 'Dumbbell',
+    dumbbells: 'Dumbbell',
+    db: 'Dumbbell',
+    'ez bar': 'EZ bar',
+    ezbar: 'EZ bar',
+    ez_bar: 'EZ bar',
+    'foam roller': 'Foam roller',
+    foamroller: 'Foam roller',
+    'gymnastic rings': 'Gymnastic rings',
+    gymnasticrings: 'Gymnastic rings',
+    rings: 'Gymnastic rings',
+    kettlebell: 'Kettlebell',
+    kb: 'Kettlebell',
+    landmine: 'Landmine',
+    machine: 'Machine',
+    machines: 'Machine',
+    'medicine ball': 'Medicine ball',
+    medicineball: 'Medicine ball',
+    plate: 'Plate',
+    plates: 'Plate',
+    platform: 'Platform',
+    'step platform': 'Step platform',
+    rack: 'Rack',
+    'power rack': 'Rack',
+    'pull up bar': 'Pull-up bar',
+    'pull-up bar': 'Pull-up bar',
+    pullupbar: 'Pull-up bar',
+    pull_up_bar: 'Pull-up bar',
+    'resistance band': 'Resistance band',
+    band: 'Resistance band',
+    bands: 'Resistance band',
+    trx: 'TRX',
+    sled: 'Sled',
+    'smith machine': 'Smith machine',
+    smithmachine: 'Smith machine',
+    smith_machine: 'Smith machine',
+    'stability ball': 'Stability ball',
+    stabilityball: 'Stability ball',
+    swissball: 'Stability ball',
+    cablemachine: 'Cable',
+    other: 'Other',
+  }
+
+  const mapped = map[key]
+  if (mapped != null) return mapped
+
+  const opt = EQUIPMENT_DISPLAY_OPTIONS.find(
+    (o) => o.toLowerCase() === key,
+  )
+  if (opt != null) return opt
+
+  // Title Case fallback
+  return key.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
+function parseEquipmentLine(line: string | null | undefined): string[] {
+  if (line == null || String(line).trim() === '') return []
+  const parts = String(line).split(/[,;]+/).map((x) => normalizeEquipmentDisplayToken(x)).filter(
+    (x): x is string => x != null && x !== '',
+  )
+  return Array.from(new Set(parts))
+}
+
+/** Join chips into `exercises.equipment` (consistent ", " separator). */
+function formatEquipmentLine(pieces: string[]): string | null {
+  if (pieces.length === 0) return null
+  return pieces.join(', ')
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string | null | undefined): string {
@@ -107,14 +311,17 @@ type EditableState = {
   primary_muscles: string[]
   secondary_muscles: string[]
   workout_type: string | null
+  /** Canonical snake_case — matches iOS `equipmentCohortMap` keys. */
   equipment_category: string | null
+  /** Comma-separated display labels (`Bench, Dumbbell`) stored in `exercises.equipment`. */
+  equipment: string | null
   is_compound: boolean | null
   duration_based: boolean | null
 }
 
 const EDITABLE_FIELDS: ReadonlyArray<keyof EditableState> = [
   'name', 'gender', 'primary_muscles', 'secondary_muscles',
-  'workout_type', 'equipment_category', 'is_compound', 'duration_based',
+  'workout_type', 'equipment_category', 'equipment', 'is_compound', 'duration_based',
 ] as const
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -146,16 +353,16 @@ type ExerciseFull = {
 } & Record<string, unknown>
 
 function exerciseToEditState(ex: ExerciseFull, after: ExerciseFull): EditableState {
-  // The "after" exercise has the proposal already applied; we want the editor
-  // to default to the post-approval state so the operator only has to touch
-  // values that need overriding. Other catalog fields fall back to current.
+  const equipLine = after.equipment ?? ex.equipment
+  const equipPieces = parseEquipmentLine(equipLine)
   return {
     name: String(after.name ?? ex.name ?? ''),
     gender: (after.gender ?? ex.gender ?? null) as string | null,
     primary_muscles: asMuscleList(after.primary_muscles ?? ex.primary_muscles),
     secondary_muscles: asMuscleList(after.secondary_muscles ?? ex.secondary_muscles),
     workout_type: (after.workout_type ?? ex.workout_type ?? null) as string | null,
-    equipment_category: (after.equipment_category ?? ex.equipment_category ?? null) as string | null,
+    equipment_category: normalizeEquipmentCategoryToSnake(after.equipment_category ?? ex.equipment_category),
+    equipment: formatEquipmentLine(equipPieces),
     is_compound: (after.is_compound ?? ex.is_compound ?? null) as boolean | null,
     duration_based: (after.duration_based ?? ex.duration_based ?? null) as boolean | null,
   }
@@ -184,7 +391,14 @@ function previewAfterProposal(ex: ExerciseFull, p: ProposalRow): ExerciseFull {
       return next
     }
     case 'set': {
-      ;(next as Record<string, unknown>)[p.field_name] = val
+      let out = val
+      if (p.field_name === 'equipment_category' && val != null && typeof val !== 'object') {
+        out = normalizeEquipmentCategoryToSnake(String(val)) ?? val
+      }
+      if (p.field_name === 'equipment' && val != null && typeof val === 'string') {
+        out = formatEquipmentLine(parseEquipmentLine(val)) ?? val
+      }
+      ;(next as Record<string, unknown>)[p.field_name] = out
       return next
     }
     default:
@@ -1152,6 +1366,69 @@ function InlineExerciseEditor({
         {renderMuscleEditor('secondary_muscles', 'Secondary muscles')}
       </div>
 
+      {/* Equipment display line (multi-chip) — `exercises.equipment` TEXT */}
+      {(() => {
+        const field = 'equipment' as const
+        const arr = parseEquipmentLine(edit.equipment)
+        const beforeEq = parseEquipmentLine(before.equipment)
+        const setPieces = (next: string[]) => {
+          setEdit((s) => s ? { ...s, equipment: formatEquipmentLine(next) } : s)
+        }
+        return (
+          <div className={`p-2 ${fieldRing(field)}`}>
+            <div className={labelClass}>Equipment (what the user sees — can pick several)</div>
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {arr.map((m, idx) => {
+                const wasAdded = !beforeEq.includes(m)
+                return (
+                  <div key={`${field}-${idx}`} className="flex items-center">
+                    <select
+                      value={m}
+                      onChange={(e) => {
+                        const next = [...arr]
+                        if (e.target.value === '__remove__') {
+                          next.splice(idx, 1)
+                        } else {
+                          next[idx] = e.target.value
+                        }
+                        setPieces(next)
+                      }}
+                      className={
+                        'text-xs rounded px-1.5 py-0.5 bg-neutral-900 border ' +
+                        (wasAdded
+                          ? 'border-emerald-500/60 text-emerald-200'
+                          : 'border-neutral-700 text-neutral-200')
+                      }
+                    >
+                      <option value="__remove__">(remove)</option>
+                      {!EQUIPMENT_DISPLAY_OPTIONS.includes(m) && (
+                        <option value={m}>{m}</option>
+                      )}
+                      {EQUIPMENT_DISPLAY_OPTIONS.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                )
+              })}
+              <button
+                type="button"
+                onClick={() => {
+                  const candidate = 'Bodyweight'
+                  setPieces([...arr, candidate])
+                }}
+                className="text-xs px-1.5 py-0.5 rounded border border-dashed border-neutral-600 text-neutral-400 hover:border-neutral-400 hover:text-neutral-200"
+              >
+                + Add equipment
+              </button>
+            </div>
+            <div className="text-[10px] text-neutral-600 mt-1">
+              Stored as comma-separated text in the catalog. Pick the “primary” resistance type in <strong>Equipment category</strong> below.
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Scalar dropdowns */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className={`p-2 ${fieldRing('gender')}`}>
@@ -1184,18 +1461,19 @@ function InlineExerciseEditor({
           </select>
         </div>
         <div className={`p-2 ${fieldRing('equipment_category')}`}>
-          <div className={labelClass}>Equipment</div>
+          <div className={labelClass}>Equipment category (DB)</div>
           <select
             value={edit.equipment_category ?? ''}
-            onChange={(e) => setEdit((s) => s ? { ...s, equipment_category: e.target.value || null } : s)}
+            onChange={(e) =>
+              setEdit((s) => s ? { ...s, equipment_category: normalizeEquipmentCategoryToSnake(e.target.value || null) } : s)}
             className="input input-sm w-full bg-neutral-900"
           >
             <option value="">—</option>
-            {edit.equipment_category && !suggestions.equipment_categories.includes(edit.equipment_category) && (
-              <option value={edit.equipment_category}>{edit.equipment_category}</option>
+            {edit.equipment_category && !EQUIPMENT_CATEGORY_VALUE_SET.has(edit.equipment_category) && (
+              <option value={edit.equipment_category}>{edit.equipment_category} (legacy)</option>
             )}
-            {suggestions.equipment_categories.map((eq) => (
-              <option key={eq} value={eq}>{eq}</option>
+            {EQUIPMENT_CATEGORY_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
             ))}
           </select>
         </div>

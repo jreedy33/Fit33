@@ -694,191 +694,98 @@ extension DashboardView {
     
     func recommendedSmartProgramWidget(program: PersonalizedProgram) -> some View {
         let template = program.template
-        let programColor = Color.green
-        let totalWeeks = (template.totalDays + 6) / 7
-        
-        return VStack(spacing: 0) {
-            // Header - Tap to view all programs (matching active program header style)
-            Button {
-                workoutManager.shouldNavigateToPrograms = true
-            } label: {
-                HStack(alignment: .center, spacing: 10) {
-                    // Match percentage ring (like progress ring)
+        let accent = template.category.color
+        let secondaryAccent = accent.opacity(0.7)
+        let totalWeeks = max(1, (template.totalDays + 6) / 7)
+
+        return Button {
+            workoutManager.shouldNavigateToPrograms = true
+        } label: {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack(alignment: .center, spacing: Spacing.sm) {
                     ZStack {
                         Circle()
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 4)
-                            .frame(width: 44, height: 44)
-                        
-                        Circle()
-                            .trim(from: 0, to: Double(program.matchPercentage) / 100)
-                            .stroke(
+                            .fill(
                                 LinearGradient(
-                                    colors: [programColor, programColor.opacity(0.7)],
+                                    colors: [accent, secondaryAccent],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
-                                ),
-                                style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                                )
                             )
-                            .frame(width: 44, height: 44)
-                            .rotationEffect(.degrees(-90))
-                        
-                        Text("\(program.matchPercentage)%")
-                            .font(.ds_caption)
-                            .foregroundColor(programColor)
+                            .frame(width: 48, height: 48)
+                            .shadow(color: accent.opacity(0.35), radius: 8, x: 0, y: 4)
+
+                        Image(systemName: template.category.icon)
+                            .font(.ds_heading3)
+                            .foregroundColor(.white)
                     }
-                    
-                    // Program info
+
                     VStack(alignment: .leading, spacing: 2) {
+                        Text("Recommended for you")
+                            .font(.ds_labelSmall)
+                            .foregroundColor(.adaptiveSecondaryText)
+                            .tracking(1)
+
                         Text(template.baseName)
-                            .font(.subheadline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
+                            .font(.ds_heading3)
+                            .foregroundColor(.adaptiveText)
                             .lineLimit(1)
-                        
-                        HStack(spacing: 6) {
-                            Text("\(totalWeeks) weeks")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            
-                            Text("•")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            
-                            Text("\(template.daysPerWeek) days/wk")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .foregroundColor(programColor)
-                        }
+                            .minimumScaleFactor(0.85)
                     }
-                    
-                    Spacer()
-                    
+
+                    Spacer(minLength: 0)
+
                     Image(systemName: "chevron.right")
                         .font(.ds_labelMedium)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.adaptiveSecondaryText)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, Spacing.sm)
+
+                Text(program.personalizedDescription.isEmpty ? template.description : program.personalizedDescription)
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.adaptiveSecondaryText)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: Spacing.xs) {
+                    recommendedProgramFloatingChip(
+                        icon: "calendar",
+                        label: "\(template.daysPerWeek) days/week",
+                        color: accent
+                    )
+                    .frame(maxWidth: .infinity)
+                    recommendedProgramFloatingChip(
+                        icon: "clock.fill",
+                        label: totalWeeks == 1 ? "1 week" : "\(totalWeeks) weeks",
+                        color: accent
+                    )
+                    .frame(maxWidth: .infinity)
+                    recommendedProgramFloatingChip(
+                        icon: "chart.line.uptrend.xyaxis",
+                        label: template.difficulty.displayName,
+                        color: accent
+                    )
+                    .frame(maxWidth: .infinity)
+                }
             }
-            .buttonStyle(PlainButtonStyle())
-            
-            // Inner card - Program preview with Start button (matching workout card style)
-            Button {
-                if let user = userManager.currentUser {
-                    if let startedProgram = SmartProgramEngine.shared.startProgram(templateId: template.id, for: user) {
-                        if let firstDay = startedProgram.generatedDays.first {
-                            workoutManager.navigateProgramData = startedProgram
-                            workoutManager.navigateProgramDay = firstDay
-                            workoutManager.shouldNavigateToProgramDay = true
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 0) {
-                    // Left accent bar
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(programColor)
-                        .frame(width: 4)
-                        .padding(.vertical, Spacing.xxs)
-                    
-                    HStack(spacing: 12) {
-                        // Program details
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 6) {
-                                Text("Recommended")
-                                    .font(.subheadline)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.primary)
-                                
-                                Image(systemName: template.category.icon)
-                                    .font(.ds_caption)
-                                    .foregroundColor(.white)
-                                    .padding(Spacing.xxs)
-                                    .background(
-                                        Circle()
-                                            .fill(programColor)
-                                    )
-                            }
-                            
-                            HStack(spacing: 4) {
-                                Text("\(template.estimatedMinutesPerDay) min")
-                                Text("•")
-                                    .font(.caption2)
-                                Text(template.category.rawValue)
-                                    .lineLimit(1)
-                            }
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        }
-                        .padding(.leading, 10)
-                        
-                        Spacer()
-                        
-                        // Start button
-                        HStack(spacing: 4) {
-                            Image(systemName: "play.fill")
-                                .font(.ds_caption)
-                            Text("Start")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, Spacing.md)
-                        .padding(.vertical, 10)
-                        .background(
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [programColor, programColor.opacity(0.8)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                        )
-                    }
-                }
-                .padding(Spacing.sm)
-                .background(
-                    AdaptiveCardSurface(cornerRadius: 14)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(programColor.opacity(0.2), lineWidth: 1)
-                        )
-                )
-                .padding(.horizontal, Spacing.sm)
-                .padding(.bottom, 12)
-            }
-            .buttonStyle(PlainButtonStyle())
+            .padding(Spacing.md)
         }
-        .background(
-            ZStack {
-                // Main card background
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
-                    .fill(
-                        LinearGradient(
-                            colors: colorScheme == .dark 
-                                ? [Color(white: 0.16), Color(white: 0.10)]
-                                : [Color.white, Color(white: 0.98)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                
-                // Subtle accent border
-                RoundedRectangle(cornerRadius: CornerRadius.xl)
-                    .stroke(
-                        LinearGradient(
-                            colors: [programColor.opacity(0.25), programColor.opacity(0.1), Color.clear],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            }
-        )
-        // Subtle shadows matching active program widget
-        .shadow(color: programColor.opacity(colorScheme == .dark ? 0.15 : 0.1), radius: 12, x: 0, y: 6)
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.2 : 0.06), radius: 8, x: 0, y: 3)
+        .buttonStyle(PlainButtonStyle())
+        .adaptiveSleekCard(cornerRadius: CornerRadius.xl, accentColor: accent)
+    }
+
+    private func recommendedProgramFloatingChip(icon: String, label: String, color: Color) -> some View {
+        HStack(spacing: Spacing.xxs) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(label)
+                .font(.ds_labelSmall)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(minWidth: 0)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .foregroundColor(color)
+        .padding(.vertical, 4)
     }
     
     // MARK: - Active Smart Program Widget (With Today/Tomorrow Preview)

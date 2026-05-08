@@ -253,11 +253,9 @@ enum TutorialPageKind: CaseIterable, Identifiable {
     case findFriends
     case autoWorkout
     case programs
-    case challenges1v1
     case community
     case league
     case wearables
-    case fuel
     case trial
 
     var id: Self { self }
@@ -268,11 +266,9 @@ enum TutorialPageKind: CaseIterable, Identifiable {
         case .findFriends:    return "Find Your Friends"
         case .autoWorkout:    return "Smart Workouts"
         case .programs:       return "Multi-Week Programs"
-        case .challenges1v1:  return "Challenge a Friend"
         case .community:      return "Join the Community"
         case .league:         return "Climb the League"
         case .wearables:      return "Sync Your Wearables"
-        case .fuel:           return "Fuel & Hydrate"
         case .trial:          return "Unlock Everything"
         }
     }
@@ -283,11 +279,9 @@ enum TutorialPageKind: CaseIterable, Identifiable {
         case .findFriends:    return "Sync contacts, train together"
         case .autoWorkout:    return "Smart-built or fully custom"
         case .programs:       return "30-day transformations"
-        case .challenges1v1:  return "Compete head-to-head"
         case .community:      return "Featured challenges, real people"
         case .league:         return "Duolingo-style weekly leagues"
         case .wearables:      return "WHOOP, Fitbit, Strava, Apple Health"
-        case .fuel:           return "Macros, meals, hydration"
         case .trial:          return "Start your free trial"
         }
     }
@@ -302,16 +296,12 @@ enum TutorialPageKind: CaseIterable, Identifiable {
             return "Pick your time, muscles, and equipment\nfor a Smart Workout — or build from 6,000+ exercises."
         case .programs:
             return "Progressive 7, 14, 21, or 30-day programs\nbuilt around your goals and schedule."
-        case .challenges1v1:
-            return "Challenge friends 1v1 or in groups.\nLive scoreboards, daily stakes, real accountability."
         case .community:
             return "Join featured community challenges.\nThousands of athletes pushing the same goal."
         case .league:
             return "Train every week, climb the ranks.\nTop finishers get promoted. Bottom drops down."
         case .wearables:
             return "Connect your favorite apps for a more\npersonalized Fit33 experience."
-        case .fuel:
-            return "Log meals with USDA + label OCR.\nStay hydrated with one-tap water tracking."
         case .trial:
             return "Unlimited Smart Workouts, advanced analytics,\ncustom meal plans, and more."
         }
@@ -323,11 +313,9 @@ enum TutorialPageKind: CaseIterable, Identifiable {
         case .findFriends:    return .ds_socialAccent
         case .autoWorkout:    return .ds_primaryAccent
         case .programs:       return .ds_successAccent
-        case .challenges1v1:  return .ds_socialAccent
         case .community:      return .ds_socialAccent
         case .league:         return .ds_energyAccent
         case .wearables:      return .ds_successAccent
-        case .fuel:           return .ds_energyAccent
         case .trial:          return .ds_primaryAccent
         }
     }
@@ -336,9 +324,9 @@ enum TutorialPageKind: CaseIterable, Identifiable {
     var accentColor: Color {
         switch self {
         case .welcome, .autoWorkout, .trial: return .blue
-        case .findFriends, .challenges1v1, .community: return .cyan
+        case .findFriends, .community: return .cyan
         case .programs, .wearables: return Color(red: 0.2, green: 0.7, blue: 0.3)
-        case .league, .fuel: return .orange
+        case .league: return .orange
         }
     }
 
@@ -547,21 +535,18 @@ struct TutorialPageView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            // Two steps own bespoke layouts that anchor their hero
-            // content directly below the parent's Skip-pill chrome
-            // (matching button position) instead of using the generic
-            // hero-band sizing path:
-            //   • Auto-Workout — Custom/Auto buttons + scrollable card
-            //     list + title block (`autoWorkoutLayout`).
-            //   • Challenges 1v1 — slim hero card + dashboard-style
-            //     active challenge widget + title block
-            //     (`challengesLayout`).
-            // Branching here keeps the standard path untouched.
+            // The Auto-Workout step owns a bespoke layout that anchors its
+            // hero content directly below the parent's Skip-pill chrome
+            // (Custom/Auto buttons + scrollable card list + title block,
+            // see `autoWorkoutLayout`) instead of using the generic
+            // hero-band sizing path. Branching here keeps the standard path
+            // untouched. (The 1v1 Challenges step also previously used a
+            // bespoke `challengesLayout`; that step is no longer in the
+            // onboarding flow but the helper + hero struct are kept for
+            // potential re-enable.)
             switch kind {
             case .autoWorkout:
                 self.autoWorkoutLayout(geometry)
-            case .challenges1v1:
-                self.challengesLayout(geometry)
             default:
                 self.standardLayout(geometry)
             }
@@ -742,6 +727,17 @@ struct TutorialPageView: View {
 
             Spacer(minLength: Spacing.lg)
         }
+        // Aggressive pre-warm so the 8 sample cards aren't all racing the
+        // SAME serial cold-path queue (`ExercisePosterSmartCrop`'s
+        // generationQueue + 3.2s polling timeout per exercise = ~25s
+        // worst-case before any glyph appears). `preGeneratePosterFrames`
+        // uses a semaphore with maxConcurrent=3, so all 8 frames start
+        // downloading in parallel batches. The smart-crop layer then
+        // catches the cached posters via its own bake notification.
+        .onAppear {
+            let names = Self.autoWorkoutSampleExercises.map { $0.name }
+            VideoThumbnailService.shared.preGeneratePosterFrames(for: names)
+        }
     }
 
     // MARK: - Challenges 1v1 layout (custom)
@@ -867,20 +863,12 @@ struct TutorialPageView: View {
             EmptyView()
         case .programs:
             TutorialProgramHero(kind: kind, isAnimating: heroAnimation)
-        case .challenges1v1:
-            // Like Auto-Workout, the 1v1 Challenges step uses its own
-            // bespoke layout (`challengesLayout`) that anchors the hero
-            // directly below the Skip-pill chrome and never goes through
-            // the generic hero-band sizing path.
-            EmptyView()
         case .community:
             TutorialCommunityHero(kind: kind, isAnimating: heroAnimation)
         case .league:
             TutorialLeagueHero(kind: kind, isAnimating: heroAnimation)
         case .wearables:
             TutorialConnectIntegrationsView(kind: kind)
-        case .fuel:
-            TutorialFuelCard(kind: kind, isAnimating: heroAnimation)
         case .trial:
             TutorialTrialCTA(kind: kind, isAnimating: heroAnimation, isPresented: $isPresented)
         }
@@ -949,13 +937,7 @@ struct TutorialPageView: View {
         // so the user can quick-add inline — needs more height than the old
         // 5-circle decorative cluster.
         case .findFriends:                        return geometry.size.height * 0.48
-        // Challenges 1v1 step uses its own bespoke layout
-        // (`challengesLayout`) — anchors the hero directly below the
-        // Skip-pill chrome rather than centering inside a hero band —
-        // so this value is unused for that case. Kept as a placeholder
-        // so the switch is exhaustive.
-        case .challenges1v1:                      return geometry.size.height * 0.58
-        case .programs, .fuel, .league:           return geometry.size.height * 0.38
+        case .programs, .league:                  return geometry.size.height * 0.38
         // Auto-Workout step uses its own bespoke layout (`autoWorkoutLayout`)
         // and never goes through the hero-band sizing path, so this value
         // is unused for that case. Kept as a placeholder so the switch is
@@ -1486,6 +1468,17 @@ struct TutorialMockExerciseRow: View {
 
     let exercise: SampleExercise
 
+    /// Observed so we can retrigger the icon's `loadPoster()` once the
+    /// `genderVideoCache` has actually been hydrated from Supabase.
+    /// Without this the cell only runs `loadPoster` once on `.onAppear`,
+    /// and if the video-mappings cache hasn't loaded yet (common during
+    /// onboarding cold start) `getVideoURL` returns nil → bake never
+    /// starts → SF Symbol fallback shows forever. Toggling the icon's
+    /// `.id()` when `videosLoaded` flips forces SwiftUI to re-create the
+    /// `ExercisePosterRingIcon`, which re-runs `loadPoster` with a
+    /// (now-populated) cache.
+    @ObservedObject private var videoService = VideoStreamingService.shared
+
     private var categoryColor: Color {
         switch exercise.category.lowercased() {
         case "chest": return .purple
@@ -1528,6 +1521,7 @@ struct TutorialMockExerciseRow: View {
                 size: 56,
                 ringWidth: 2.5
             )
+            .id("\(exercise.name)_\(videoService.videosLoaded)")
 
             VStack(alignment: .leading, spacing: Spacing.xxxs) {
                 Text(exercise.name)
@@ -1799,70 +1793,45 @@ struct TutorialActiveChallengePreview: View {
     private var leadDelta: Int { abs(myProgress - opponentProgress) }
     private var unitLabel: String { weeklyTarget == 1 ? "lift" : "lifts" }
 
-    // Compact tutorial-only sizing. The dashboard widget uses 44pt
-    // avatars + `.ds_heading2` (22pt) stat text + `Spacing.sm` (12pt)
-    // inner paddings, but in onboarding we have FOUR vertical bands
-    // competing for the screen (skip pill, hero card, this widget,
-    // copy block). Per design feedback the widget needed to feel half
-    // its dashboard footprint here — 32pt avatars + `.ds_statSmall`
-    // (18pt) numbers + 6pt inner paddings get the widget down to
-    // ~95pt total (down from ~150pt), close to a compact list-row
-    // height instead of a full home-screen tile.
-    private static let avatarSize: CGFloat = 32
+    // Tight tutorial-only sizing. Earlier revisions tried to mimic the
+    // dashboard's `activeChallengeDetailWidget` layout (header row +
+    // inner subtle card with accent bar + H2H), but that pattern
+    // bottomed out at ~150pt tall — way too tall for the onboarding
+    // page where it competes for vertical room with the hero card +
+    // copy block + page dots + Continue CTA. This rewrite collapses
+    // the structure: single card, accent bar runs the full card
+    // height on the left, header + H2H stacked tight in a single
+    // VStack with `.fixedSize(horizontal: false, vertical: true)` to
+    // force the card to its content height. Lands at ~80pt.
+    private static let avatarSize: CGFloat = 28
 
     var body: some View {
-        VStack(spacing: 0) {
-            headerRow
+        HStack(spacing: 0) {
+            // Accent bar — runs FULL card height (no inner inset). This
+            // is the visual identity strip that brand-matches the
+            // tutorial widget to a Lift / Steps / Run / etc. type.
+            Rectangle()
+                .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
+                .frame(width: 4)
 
-            HStack(spacing: 0) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(LinearGradient(colors: typeGradient, startPoint: .top, endPoint: .bottom))
-                    .frame(width: 4)
-                    .padding(.vertical, Spacing.xxs)
-
+            VStack(alignment: .leading, spacing: 8) {
+                headerRow
                 competitionRow
             }
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: CornerRadius.md)
-                    .fill(colorScheme == .dark
-                          ? Color.white.opacity(0.04)
-                          : Color.black.opacity(0.03))
-            )
-            .padding(.horizontal, Spacing.sm)
-            .padding(.bottom, 8)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: CornerRadius.xl + 4, style: .continuous)
-                    .fill(typeColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
-                    .offset(y: 6)
-                    .blur(radius: 3)
+                AdaptiveCardSurface(cornerRadius: CornerRadius.lg)
 
-                RoundedRectangle(cornerRadius: CornerRadius.xl + 2, style: .continuous)
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.2 : 0.04))
-                    .offset(y: 4)
-
-                AdaptiveCardSurface(cornerRadius: CornerRadius.xl)
-
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            colors: colorScheme == .dark
-                                ? [Color.white.opacity(0.1), Color.white.opacity(0.02), Color.clear]
-                                : [Color.white, Color.white.opacity(0.5), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1.5
-                    )
-
-                RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
+                RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous)
                     .stroke(
                         LinearGradient(
                             colors: [
                                 typeColor.opacity(colorScheme == .dark ? 0.35 : 0.25),
-                                typeColor.opacity(colorScheme == .dark ? 0.25 : 0.15)
+                                typeColor.opacity(colorScheme == .dark ? 0.20 : 0.10)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -1871,25 +1840,18 @@ struct TutorialActiveChallengePreview: View {
                     )
             }
         )
-        .shadow(color: typeColor.opacity(colorScheme == .dark ? 0.1 : 0.06), radius: 12, x: 0, y: 3)
+        .shadow(color: typeColor.opacity(colorScheme == .dark ? 0.10 : 0.05), radius: 8, x: 0, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg, style: .continuous))
     }
 
-    // MARK: Header row (mirrors `ActiveChallengeHeaderRow` visuals)
+    // MARK: Header row (compact — emoji + title + subtitle + smiley + chevron)
 
     private var headerRow: some View {
         HStack(alignment: .center, spacing: 8) {
-            ZStack {
-                Circle()
-                    .stroke(
-                        LinearGradient(colors: typeGradient, startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 2
-                    )
-                    .frame(width: 28, height: 28)
-                Text(challengeEmoji)
-                    .font(.ds_bodySmall)
-            }
+            Text(challengeEmoji)
+                .font(.ds_bodyRegular)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text("3 Lifts a Week")
                     .font(.ds_labelMedium)
                     .fontWeight(.bold)
@@ -1917,31 +1879,29 @@ struct TutorialActiveChallengePreview: View {
                 .foregroundStyle(
                     LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
-                .padding(.trailing, 6)
+                .padding(.trailing, 4)
 
             Image(systemName: "chevron.right")
                 .font(.ds_labelMedium)
                 .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
-    // MARK: Competition row (mirrors `competitionProgressSection`)
+    // MARK: Head-to-head row (compact — avatars 28pt, ds_labelLarge stat font)
 
     private var competitionRow: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 avatarBubble(
                     initial: String(myName.prefix(1)),
                     image: myImage,
                     isLeading: amWinning
                 )
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 3) {
                         Text(myName)
-                            .font(.caption)
+                            .font(.caption2)
                             .fontWeight(.semibold)
                             .foregroundColor(.secondary)
                             .lineLimit(1)
@@ -1951,44 +1911,42 @@ struct TutorialActiveChallengePreview: View {
                     }
 
                     Text("\(myProgress) \(unitLabel)")
-                        .font(.ds_statSmall)
+                        .font(.ds_labelLarge)
+                        .fontDesign(.rounded)
                         .foregroundColor(amWinning ? .green : .primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                .frame(maxWidth: 100, alignment: .leading)
             }
 
             Spacer(minLength: 4)
 
-            VStack(spacing: 1) {
-                Text("⚔️")
-                    .font(.ds_caption)
+            HStack(spacing: 4) {
+                Text("⚔️").font(.ds_caption)
                 if leadDelta > 0 {
                     Text(amWinning ? "+\(leadDelta)" : "-\(leadDelta)")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
                         .foregroundColor(amWinning ? .green : .red)
                 }
             }
-            .frame(minWidth: 26)
 
             Spacer(minLength: 4)
 
-            HStack(spacing: 8) {
-                VStack(alignment: .trailing, spacing: 1) {
+            HStack(spacing: 6) {
+                VStack(alignment: .trailing, spacing: 0) {
                     Text(opponentName)
-                        .font(.caption)
+                        .font(.caption2)
                         .fontWeight(.semibold)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
 
                     Text("\(opponentProgress) \(opponentProgress == 1 ? "lift" : "lifts")")
-                        .font(.ds_statSmall)
+                        .font(.ds_labelLarge)
+                        .fontDesign(.rounded)
                         .foregroundColor(.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                .frame(maxWidth: 100, alignment: .trailing)
 
                 avatarBubble(
                     initial: String(opponentName.prefix(1)),
@@ -1997,16 +1955,20 @@ struct TutorialActiveChallengePreview: View {
                 )
             }
         }
-        .padding(.horizontal, 8)
     }
 
     /// Renders a real `UIImage` when available (user side, with cached
     /// profile photo), falling back to a type-gradient circle with the
-    /// initial overlaid (opponent side, no photo). Crown floats above
-    /// the leader.
+    /// initial overlaid (opponent side, no photo). Crown overlaid in
+    /// the top-trailing corner of the avatar (instead of floating
+    /// ABOVE the avatar as the dashboard does) — keeps the crown
+    /// inside the card bounds so the widget's `clipShape` doesn't
+    /// snip its tip off, and avoids inflating the row's vertical
+    /// layout slot. Tradeoff vs the dashboard: smaller, snappier,
+    /// fits the compact tutorial card.
     @ViewBuilder
     private func avatarBubble(initial: String, image: UIImage?, isLeading: Bool) -> some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topTrailing) {
             if let image = image {
                 Image(uiImage: image)
                     .resizable()
@@ -2036,9 +1998,9 @@ struct TutorialActiveChallengePreview: View {
 
             if isLeading {
                 Image(systemName: "crown.fill")
-                    .font(.system(size: 11))
+                    .font(.system(size: 10))
                     .foregroundColor(.yellow)
-                    .offset(y: -8)
+                    .offset(x: 2, y: -2)
             }
         }
     }

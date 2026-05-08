@@ -21,8 +21,35 @@ extension DashboardView {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 customHeaderView
                 pinnedWelcomeRow
+                pinnedShareBetaRow
             }
         }
+    }
+
+    // MARK: - Share Beta Link Row
+    //
+    // TestFlight invite affordance shown directly under the "Welcome
+    // back, NAME" line so power users / Joe can hand the beta link to
+    // a friend with two taps. Tapping opens `ShareBetaLinkSheet` which
+    // exposes the canonical TestFlight URL + a copy button.
+    var pinnedShareBetaRow: some View {
+        Button(action: {
+            HapticManager.tap()
+            showShareBetaLink = true
+        }) {
+            HStack(spacing: 6) {
+                Text("Share Beta Link")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.blue)
+                Image(systemName: "doc.on.doc")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.blue)
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel("Share beta link")
+        .accessibilityHint("Opens a dialog to copy the Fit33 TestFlight invite link")
+        .padding(.leading, 8)
     }
 
     // MARK: - Pinned Welcome Row
@@ -336,10 +363,13 @@ extension DashboardView {
 
     /// Streak flame badge — the whole 58pt medallion is the tap
     /// target for `showStreakInfo`. Internal sizes (58pt frame, 56pt
-    /// SF Symbol, 32pt hole-filler) are component-internal canonical
+    /// SF Symbol, 42pt hole-filler) are component-internal canonical
     /// constants matching the original welcome-card flame size;
     /// they are NOT `Spacing.*` tokens because they describe a
     /// component's intrinsic size, not layout padding.
+    /// Hole-filler bumped 32→42pt on 2026-05-08 so the streak number
+    /// always sits on solid orange/red — at 32pt the SF Symbol's
+    /// inner bulb showed dark gaps around the digits.
     private var streakFlameMedallion: some View {
         Button(action: {
             HapticManager.impact(.light)
@@ -354,7 +384,7 @@ extension DashboardView {
                             endPoint: .bottom
                         )
                     )
-                    .frame(width: 32, height: 32)
+                    .frame(width: 42, height: 42)
                     .offset(y: 6)
 
                 Image(systemName: "flame.fill")
@@ -538,10 +568,10 @@ struct DashboardLeagueBadge: View {
     private var badgeContent: some View {
         if let standing = league.standing {
             HStack(spacing: 4) {
-                Text(standing.tierEmoji)
-                    .font(.ds_caption)
-                // 2026-04-27 — dropped the trailing " League" word; the
-                // tier name + emoji read as a league badge on their own.
+                // 2026-05-08 — Stripped tier emoji + Crown-of-the-Week flair
+                // per design call. The gradient-tinted tier name carries
+                // the visual identity on its own; the trend chip remains
+                // as the only adjacent affordance.
                 Text(standing.tierName)
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -552,24 +582,6 @@ struct DashboardLeagueBadge: View {
                             endPoint: .trailing
                         )
                     )
-                // 2026-04-29 — League Redesign Plan §A2.
-                // Crown of the Week cosmetic. When the user finished rank 1
-                // last rollup, the server sets `crown_until = now() + 7d`.
-                // We render a small `crown.fill` flair next to the tier
-                // name for the duration; iOS computes the active state
-                // from the timestamp so the cue auto-expires without a
-                // server push.
-                if standing.hasActiveCrown {
-                    Image(systemName: "crown.fill")
-                        .font(.ds_caption)
-                        .foregroundColor(.yellow)
-                        .accessibilityLabel("Crown of the week")
-                }
-                // Trend indicator — green up if on track to advance, red
-                // down if on track to drop, otherwise a flat dash for
-                // "holding". Source-of-truth: `LeagueStanding`'s
-                // promotion/relegation zone helpers (rank vs.
-                // promotion/relegation count for this group).
                 trendIndicator(for: standing)
             }
         } else if league.notPlaced {

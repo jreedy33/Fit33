@@ -140,6 +140,9 @@ struct DashboardView: View {
     
     // Widget settings
     @State var showingWidgetSettings = false
+
+    // Share Beta Link sheet (TestFlight invite for friends/family).
+    @State var showShareBetaLink = false
     @AppStorage("showWeightTrackerWidget") var showWeightTrackerWidget = true  // Default ON
     @AppStorage("showHydrationWidget") var showHydrationWidget = false
     @AppStorage("showMacrosWidget") var showMacrosWidget = false  // Nutrition macros quick-access
@@ -516,6 +519,11 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showPhoneVerificationPrompt) {
                 phoneVerificationPromptSheet
+            }
+            .sheet(isPresented: $showShareBetaLink) {
+                ShareBetaLinkSheet()
+                    .presentationDetents([.fraction(0.6), .large])
+                    .presentationDragIndicator(.visible)
             }
             .navigationDestination(isPresented: $navigateToCustomWorkout) {
                 CustomWorkoutBuilderView()

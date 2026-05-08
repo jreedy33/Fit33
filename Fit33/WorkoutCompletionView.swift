@@ -424,8 +424,16 @@ struct WorkoutCompletionView: View {
             .adaptiveToolbarBackground()
         }
         .sheet(isPresented: $showingFriendSearch) {
-            NavigationStack {
-                FriendsListView()
+            // Use the selection-mode picker (NOT FriendsListView, which is the
+            // friends-management hub — taps there route to FriendProfileView and
+            // break the share-to-friend flow). FriendSelectionSheet returns the
+            // chosen friend via `onSelect` so we can drop straight into the
+            // inline compose composer below.
+            FriendSelectionSheet { friend in
+                showingFriendSearch = false
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    selectedFriendForSend = friend
+                }
             }
         }
         .alert("Error", isPresented: .init(

@@ -2916,14 +2916,39 @@ struct FriendsHeaderActionsView: View {
 
 struct FriendsHeaderWrapper: View {
     @Binding var navigationPath: NavigationPath
+    // Subscribe so the sub-brief stays in sync as friends / requests /
+    // activity feed change. Same singletons the rest of the tab uses —
+    // no extra fetches.
+    @StateObject private var friendService = FriendService.shared
+    @StateObject private var activityFeedService = ActivityFeedService.shared
     
     var body: some View {
-        HStack(alignment: .center) {
-            FriendsHeaderTitleView()
-            Spacer()
-            FriendsHeaderActionsView(navigationPath: $navigationPath)
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            HStack(alignment: .center) {
+                FriendsHeaderTitleView()
+                Spacer()
+                FriendsHeaderActionsView(navigationPath: $navigationPath)
+            }
+
+            Text(headerSubBriefCopy)
+                .font(.ds_bodyMedium)
+                .foregroundColor(.adaptiveSecondaryText)
+                .padding(.leading, Spacing.xxs)
         }
         .padding(.horizontal, Spacing.xxs)
+    }
+
+    /// Personalized one-line nudge under the "Friends" title.
+    /// Mirrors the Workout / Home / Exercises / Nutrition header rhythm.
+    /// See `TabHeaderInsightProvider.friendsSubBrief` — it prioritizes
+    /// pending requests, then surfaces a friend's recent workout / PR /
+    /// challenge as a "send a challenge" nudge.
+    private var headerSubBriefCopy: String {
+        TabHeaderInsightProvider.friendsSubBrief(
+            friendsCount: friendService.friends.count,
+            pendingRequestCount: friendService.pendingRequests.count,
+            recentActivities: activityFeedService.activities
+        )
     }
 }
 

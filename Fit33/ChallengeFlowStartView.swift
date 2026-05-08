@@ -764,18 +764,47 @@ struct ChallengeFlowStartView: View {
     /// no-friends/no-contacts edge case (those paths render inside the parent
     /// ScrollView in `mainContent`).
     private var friendSelectionContainer: some View {
-        // Top 3 most engaged friends — same source as FriendsListView's
-        // `topFriendsHighlight` so the bubbles match the Friends tab. Falls
-        // back to the first 3 friends in the user's list when ranking data
-        // hasn't loaded yet (cold start) so we always show 3 icons.
-        let rankedTop = Array(rankingService.rankedFriends.prefix(3))
-        let mostEngaged: [Friend] = rankedTop.compactMap { ranked in
+        // Top 3 friend bubbles. Selected friends ALWAYS occupy the leftmost
+        // slots (so the moment the user taps Andre in the scroll list, Andre
+        // jumps into the bubble row and pushes the lowest-priority suggestion
+        // out). Remaining slots fill with the most-engaged friends (same
+        // source as FriendsListView's `topFriendsHighlight`), excluding
+        // anyone already selected so we never show a duplicate. Falls back
+        // to the first friends in the user's list when ranking data hasn't
+        // loaded yet (cold start) so we always render 3 icons.
+        //
+        // Ranking pool is intentionally larger than 3 — when a most-engaged
+        // friend gets selected we still need un-selected fallbacks to fill
+        // the row. `withAnimation` in `toggleFriendSelection` handles the
+        // bubble cross-fade automatically since `Friend` is `Identifiable`.
+        let rankedPool = Array(rankingService.rankedFriends.prefix(8))
+        let mostEngaged: [Friend] = rankedPool.compactMap { ranked in
             friendService.friends.first { $0.friendId == ranked.friendId }
         }
-        let topThree: [Friend] = mostEngaged.isEmpty
-            ? Array(friendService.friends.prefix(3))
+        let engagedFallback: [Friend] = mostEngaged.isEmpty
+            ? friendService.friends
             : mostEngaged
+        let topThree: [Friend] = {
+            var result: [Friend] = Array(selectedFriends.prefix(3))
+            var seen = Set(result.map(\.friendId))
+            for friend in engagedFallback where result.count < 3 {
+                if !seen.contains(friend.friendId) {
+                    result.append(friend)
+                    seen.insert(friend.friendId)
+                }
+            }
+            // Final pad — covers tiny friend counts where engagement list
+            // is shorter than the slots we still need to fill.
+            for friend in friendService.friends where result.count < 3 {
+                if !seen.contains(friend.friendId) {
+                    result.append(friend)
+                    seen.insert(friend.friendId)
+                }
+            }
+            return result
+        }()
         let topIds = Set(topThree.map(\.friendId))
+
         // Scrollable list = filtered friends MINUS the 3 already shown as bubbles
         // (avoids dupes and matches the previous floating-heads behavior).
         let listFriends = filteredFriends.filter { !topIds.contains($0.friendId) }

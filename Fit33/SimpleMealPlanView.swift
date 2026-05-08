@@ -239,41 +239,68 @@ struct SimpleMealPlanView: View {
     }
     
     // MARK: - Custom Header View
+    //
+    // Title row + 1-line sub-brief, mirrors the Workout / Home / Friends /
+    // Exercises headers so every main tab shares the same alive-feeling
+    // rhythm. Copy is computed by `TabHeaderInsightProvider` — it adapts
+    // to today's protein gap, calorie pacing, meals logged, and time of
+    // day so the user gets a personalized nudge instead of static text.
     private var customNutritionHeaderView: some View {
-        HStack(alignment: .center) {
-            Text("Nutrition")
-                .font(.ds_displayLarge)
-                .italic()
-                .foregroundStyle(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .white, location: 0.0),
-                            .init(color: .white, location: 0.72),
-                            .init(color: Color.teal, location: 0.85),
-                            .init(color: Color.mint, location: 1.0)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            HStack(alignment: .center) {
+                Text("Nutrition")
+                    .font(.ds_displayLarge)
+                    .italic()
+                    .foregroundStyle(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .white, location: 0.0),
+                                .init(color: .white, location: 0.72),
+                                .init(color: Color.teal, location: 0.85),
+                                .init(color: Color.mint, location: 1.0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
                     )
-                )
-                .shadow(color: Color.teal.opacity(0.2), radius: 4, x: 0, y: 1)
-                .frame(height: 55)
-            
-            Spacer()
-            
-            if WorkoutManager.shared.isWorkoutActive {
-                Text(WorkoutManager.shared.formattedDuration)
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.sm)
-                            .fill(.ultraThinMaterial)
-                    )
+                    .shadow(color: Color.teal.opacity(0.2), radius: 4, x: 0, y: 1)
+                    .frame(height: 55)
+                
+                Spacer()
+                
+                if WorkoutManager.shared.isWorkoutActive {
+                    Text(WorkoutManager.shared.formattedDuration)
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
+                                .fill(.ultraThinMaterial)
+                        )
+                }
             }
+
+            Text(headerSubBriefCopy)
+                .font(.ds_bodyMedium)
+                .foregroundColor(.adaptiveSecondaryText)
+                .padding(.leading, Spacing.xxs)
         }
         .padding(.horizontal, Spacing.xxs)
+    }
+
+    /// Personalized one-line nudge under the "Nutrition" title.
+    /// Driven by today's logged macros (`MealService.shared.todaysMeals`
+    /// → already observed by this view) and the user's calorie/protein
+    /// goals. See `TabHeaderInsightProvider.nutritionSubBrief`.
+    private var headerSubBriefCopy: String {
+        TabHeaderInsightProvider.nutritionSubBrief(
+            consumedProtein: consumedProtein,
+            proteinGoal: proteinGoal,
+            consumedCalories: consumedCalories,
+            calorieGoal: calorieGoal,
+            mealCount: mealService.todaysMeals.count
+        )
     }
     
     private var needsProfileSetup: Bool {

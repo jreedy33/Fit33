@@ -107,6 +107,7 @@
 		7C53E1E62F327B4A00C2F7EC /* FriendRankingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1E52F327B4A00C2F7EC /* FriendRankingService.swift */; };
 		7C53E1E82F328FF800C2F7EC /* DailyResetService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1E72F328FF800C2F7EC /* DailyResetService.swift */; };
 		7C53E1EC2F3294A200C2F7EC /* PersonalizedInsightsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E1EB2F3294A200C2F7EC /* PersonalizedInsightsService.swift */; };
+		7CFAB1A12026050800000001 /* TabHeaderInsightProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CFAB1A22026050800000002 /* TabHeaderInsightProvider.swift */; };
 		7C53E2202F33FD7500C2F7EC /* QRCodeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21F2F33FD7500C2F7EC /* QRCodeService.swift */; };
 		7C53E2212F33FD7500C2F7EC /* QRCodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */; };
 		7C53E2222F33FD7500C2F7EC /* MyQRCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C53E21D2F33FD7500C2F7EC /* MyQRCodeView.swift */; };
@@ -236,6 +237,7 @@
 		7C8E80012FB10001007CD766 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80002FB10001007CD766 /* PushPayload.swift */; };
 		7C8E80032FB10002007CD766 /* PushPermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */; };
 		7C8E80052FB10003007CD766 /* NotificationPrimerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */; };
+		5BE7A1B100070008090A0B0C /* ShareBetaLinkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE7A1B200070008090A0B0C /* ShareBetaLinkSheet.swift */; };
 		7C8E80092FB10005007CD766 /* PushEventReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80082FB10005007CD766 /* PushEventReporter.swift */; };
 		7C8E800B2FB10006007CD766 /* SmartNotificationSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E800A2FB10006007CD766 /* SmartNotificationSettingsSection.swift */; };
 		7C8EB1C02F26ABD4007BFA55 /* PerformanceOptimizations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */; };
@@ -590,6 +592,7 @@
 		7C53E1E52F327B4A00C2F7EC /* FriendRankingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendRankingService.swift; sourceTree = "<group>"; };
 		7C53E1E72F328FF800C2F7EC /* DailyResetService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyResetService.swift; sourceTree = "<group>"; };
 		7C53E1EB2F3294A200C2F7EC /* PersonalizedInsightsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalizedInsightsService.swift; sourceTree = "<group>"; };
+		7CFAB1A22026050800000002 /* TabHeaderInsightProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabHeaderInsightProvider.swift; sourceTree = "<group>"; };
 		7C53E21D2F33FD7500C2F7EC /* MyQRCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyQRCodeView.swift; sourceTree = "<group>"; };
 		7C53E21E2F33FD7500C2F7EC /* QRCodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeScannerView.swift; sourceTree = "<group>"; };
 		7C53E21F2F33FD7500C2F7EC /* QRCodeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodeService.swift; sourceTree = "<group>"; };
@@ -722,6 +725,7 @@
 		7C8E80002FB10001007CD766 /* PushPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayload.swift; sourceTree = "<group>"; };
 		7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPermissionCoordinator.swift; sourceTree = "<group>"; };
 		7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPrimerSheet.swift; sourceTree = "<group>"; };
+		5BE7A1B200070008090A0B0C /* ShareBetaLinkSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareBetaLinkSheet.swift; sourceTree = "<group>"; };
 		7C8E80082FB10005007CD766 /* PushEventReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushEventReporter.swift; sourceTree = "<group>"; };
 		7C8E800A2FB10006007CD766 /* SmartNotificationSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartNotificationSettingsSection.swift; sourceTree = "<group>"; };
 		7C8EB1BF2F26ABD4007BFA55 /* PerformanceOptimizations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizations.swift; sourceTree = "<group>"; };
@@ -1371,6 +1375,7 @@
 				7C0D05042F803F0000000003 /* SettingsSubscriptionSection.swift */,
 				7C590B8F2ED2D1DB002BD2B0 /* SettingsView.swift */,
 				7C590B972ED2E2DB002BD2B0 /* SevenDayProgramDetailView.swift */,
+				5BE7A1B200070008090A0B0C /* ShareBetaLinkSheet.swift */,
 				7C8405DD2EE8B78E0009ED0F /* SharedUtilities.swift */,
 				7C0C42812F18340100F02E84 /* SharedWorkoutPreviewView.swift */,
 				7C0C41E32F09796D00F02E84 /* SharedWorkoutView.swift */,
@@ -1419,6 +1424,7 @@
 				7C8CEA392F99C116007CD766 /* SupabaseManager+Readiness.swift */,
 				7CAA1FA02F4AAAA0008200B9 /* SystemMetrics.swift */,
 				7C3DF1FB2F2D772D00A9CDA7 /* TabPreloadingSystem.swift */,
+				7CFAB1A22026050800000002 /* TabHeaderInsightProvider.swift */,
 				7CEAFD112EF9CB2E00874B57 /* TermsConditionsView.swift */,
 				7C8CF9D02FA1EC6C007CD766 /* TierPromotionOverlay.swift */,
 				308E48E79BD7DC13649B4812 /* TrainingHubView.swift */,
@@ -1868,6 +1874,7 @@
 				7C8E80092FB10005007CD766 /* PushEventReporter.swift in Sources */,
 				7C8E80032FB10002007CD766 /* PushPermissionCoordinator.swift in Sources */,
 				7C8E80052FB10003007CD766 /* NotificationPrimerSheet.swift in Sources */,
+				5BE7A1B100070008090A0B0C /* ShareBetaLinkSheet.swift in Sources */,
 				7C8E800B2FB10006007CD766 /* SmartNotificationSettingsSection.swift in Sources */,
 				7CAFD55C2EDF780B00920F0D /* HydrationWidget.swift in Sources */,
 				7C3DF1CF2F2D262D00A9CDA7 /* InBodySettingsView.swift in Sources */,
@@ -1965,6 +1972,7 @@
 				7CACB56D2F2E7D91003A7C91 /* HealthDataService.swift in Sources */,
 				7C47F9DF2EE336FB00BEC4D7 /* GeneratedProgramService.swift in Sources */,
 				7C3DF1FC2F2D772D00A9CDA7 /* TabPreloadingSystem.swift in Sources */,
+				7CFAB1A12026050800000001 /* TabHeaderInsightProvider.swift in Sources */,
 				7C1B0B112F5212BB0094AF68 /* PrivateChallengeDetailView.swift in Sources */,
 				7CAFD5682EE1FB9F00920F0D /* SmartExercisePairingEngine.swift in Sources */,
 				7C47F9D92EE336D500BEC4D7 /* DynamicProgramGenerator.swift in Sources */,

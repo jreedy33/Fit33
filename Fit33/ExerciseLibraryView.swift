@@ -6,6 +6,16 @@ struct ExerciseLibraryView: View {
     @Environment(\.scrollToTopTrigger) private var scrollToTopTrigger
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var exerciseLibrary = ExerciseLibraryService.shared
+    // Recent completed workouts power the header sub-brief (muscle-group
+    // rotation hint). 20 is more than enough — the helper only reads
+    // `.first(where: isCompleted)` and the date.
+    @FetchRequest(fetchRequest: {
+        let request: NSFetchRequest<Workout> = Workout.fetchRequest()
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+        request.predicate = NSPredicate(format: "isCompleted == YES")
+        request.fetchLimit = 20
+        return request
+    }()) private var recentWorkouts: FetchedResults<Workout>
     @State private var exercises: [Exercise] = []
     @State private var searchText = ""
     
@@ -659,41 +669,63 @@ struct ExerciseLibraryView: View {
     }
     
     // MARK: - Custom Header View
+    //
+    // Title row + 1-line sub-brief, mirrors the Workout / Home / Friends /
+    // Nutrition headers so every main tab shares the same alive-feeling
+    // rhythm. Copy is computed by `TabHeaderInsightProvider` — it adapts
+    // to days-since-last-workout and the most recent muscle group so the
+    // user feels guided through a balanced rotation.
     private var customHeaderView: some View {
-        HStack(alignment: .center) {
-            Text("Exercises")
-                .font(.ds_displayLarge)
-                .italic()
-                .foregroundStyle(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .white, location: 0.0),
-                            .init(color: .white, location: 0.72),
-                            .init(color: Color.blue, location: 0.85),
-                            .init(color: Color.cyan, location: 1.0)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            HStack(alignment: .center) {
+                Text("Exercises")
+                    .font(.ds_displayLarge)
+                    .italic()
+                    .foregroundStyle(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .white, location: 0.0),
+                                .init(color: .white, location: 0.72),
+                                .init(color: Color.blue, location: 0.85),
+                                .init(color: Color.cyan, location: 1.0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
                     )
-                )
-                .shadow(color: Color.blue.opacity(0.2), radius: 4, x: 0, y: 1)
-                .frame(height: 55)
-            
-            Spacer()
-            
-            if WorkoutManager.shared.isWorkoutActive {
-                Text(WorkoutManager.shared.formattedDuration)
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.sm)
-                            .fill(.ultraThinMaterial)
-                    )
+                    .shadow(color: Color.blue.opacity(0.2), radius: 4, x: 0, y: 1)
+                    .frame(height: 55)
+                
+                Spacer()
+                
+                if WorkoutManager.shared.isWorkoutActive {
+                    Text(WorkoutManager.shared.formattedDuration)
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: CornerRadius.sm)
+                                .fill(.ultraThinMaterial)
+                        )
+                }
             }
+
+            Text(headerSubBriefCopy)
+                .font(.ds_bodyMedium)
+                .foregroundColor(.adaptiveSecondaryText)
+                .padding(.leading, Spacing.xxs)
         }
         .padding(.horizontal, Spacing.xxs)
+    }
+
+    /// Personalized one-line nudge under the "Exercises" title.
+    /// See `TabHeaderInsightProvider.exercisesSubBrief` for the rotation
+    /// rules (days-since-last-workout, muscle-group balance).
+    private var headerSubBriefCopy: String {
+        TabHeaderInsightProvider.exercisesSubBrief(
+            recentWorkouts: Array(recentWorkouts)
+        )
     }
     
     private var compactFiltersView: some View {

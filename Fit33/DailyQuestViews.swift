@@ -162,14 +162,15 @@ struct DailyQuestsWidget: View {
                     .font(.title3)
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
-                Image(systemName: "chevron.right")
-                    .font(.callout)
-                    .fontWeight(.bold)
-                    .foregroundColor(.primary)
 
                 Spacer()
 
                 bonusIndicator
+
+                Image(systemName: "chevron.right")
+                    .font(.footnote)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
             }
             .contentShape(Rectangle())
         }
@@ -182,19 +183,19 @@ struct DailyQuestsWidget: View {
         .accessibilityHint("Why these goals?")
     }
     
-    // MARK: - Bonus Indicator (3 dots in header)
-    
+    // MARK: - Bonus Indicator (X/3 counter in header)
+
     private var bonusIndicator: some View {
         let quests = questService.quests
         let allDone = questService.allComplete
-        // Count a quest as "done" for the header dots/count the moment its
-        // live progress hits 100% — don't wait for the server to flip
-        // `is_completed`. Without this, the visible cards show 2 green
-        // "Complete" states while the header still reads 1/3, which the user
-        // called out as inconsistent.
+        // Count a quest as "done" the moment its live progress hits 100%
+        // — don't wait for the server to flip `is_completed`. Without
+        // this, the visible cards show 2 green "Complete" states while
+        // the header still reads 1/3, which the user called out as
+        // inconsistent.
         let doneCount = quests.reduce(0) { $0 + (isEffectivelyDone(quest: $1) ? 1 : 0) }
 
-        return HStack(spacing: 5) {
+        return Group {
             if allDone {
                 HStack(spacing: 4) {
                     Image(systemName: "star.fill")
@@ -215,26 +216,9 @@ struct DailyQuestsWidget: View {
                         .fill(Color.yellow.opacity(0.15))
                 )
             } else {
-                ForEach(0..<3, id: \.self) { index in
-                    let isComplete = index < quests.count && isEffectivelyDone(quest: quests[index])
-
-                    Circle()
-                        .fill(isComplete ? Color.blue : Color.clear)
-                        .frame(width: 10, height: 10)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    isComplete ? Color.blue : Color.blue.opacity(0.3),
-                                    lineWidth: 1.5
-                                )
-                        )
-                        .animation(.spring(response: 0.4), value: isComplete)
-                }
-
                 Text("\(doneCount)/3")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(doneCount > 0 ? .primary : .secondary)
-                    .padding(.leading, 2)
             }
         }
     }

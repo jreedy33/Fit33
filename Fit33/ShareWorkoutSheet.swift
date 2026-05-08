@@ -134,8 +134,13 @@ struct ShareWorkoutSheet: View {
             }
         }
         .sheet(isPresented: $showingFriendSearch) {
-            NavigationStack {
-                FriendsListView()
+            // Use the selection-mode picker (NOT FriendsListView, which is the
+            // friends-management hub — taps there route to FriendProfileView and
+            // break the share-to-friend flow). FriendSelectionSheet returns the
+            // chosen friend via `onSelect` so we drop straight into compose.
+            FriendSelectionSheet { friend in
+                showingFriendSearch = false
+                selectedFriend = friend
             }
         }
         .task {

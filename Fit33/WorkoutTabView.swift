@@ -843,11 +843,7 @@ struct WorkoutHomeView: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .foregroundColor(color)
-        .padding(.horizontal, Spacing.xs)
         .padding(.vertical, 4)
-        .background(
-            Capsule().fill(color.opacity(0.15))
-        )
     }
     
     private func activeSmartProgramDetailWidget(program: SmartActiveProgram) -> some View {

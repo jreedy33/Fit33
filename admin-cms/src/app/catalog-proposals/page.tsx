@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import AdminShell from '@/components/AdminShell'
 import { adminApi } from '@/lib/api'
 
@@ -217,6 +217,18 @@ export default function CatalogProposalsPage() {
   const [exerciseMap, setExerciseMap] = useState<Record<string, ExerciseFull>>({})
   const [suggestions, setSuggestions] = useState<Suggestions>(EMPTY_SUGGESTIONS)
 
+  // Optimistic-update bookkeeping. When the operator clicks Approve/Reject we
+  // remove the card from `proposals` immediately and fire the actual save in
+  // the background; `inFlightSaves` powers the "saving N…" ribbon and
+  // `failedSaves` surfaces any background errors so the operator can retry.
+  const [inFlightSaves, setInFlightSaves] = useState(0)
+  const [failedSaves, setFailedSaves] = useState<
+    Array<{ key: string; proposalId: string; exerciseName: string; action: 'approve' | 'reject'; error: string }>
+  >([])
+  // Guards against repeated auto-loads when a load returns no new rows. Reset
+  // any time `total` changes (i.e. server has fresher data to pull).
+  const autoLoadAttemptedRef = useRef(false)
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const load = useCallback(async () => {
@@ -265,6 +277,76 @@ export default function CatalogProposalsPage() {
   }, [statusFilter, page])
 
   useEffect(() => { void load() }, [load])
+
+  // Reset the auto-load guard whenever a load updates `total` so a follow-up
+  // empty page can trigger one fetch. Without this the operator gets stuck on
+  // "No proposals match this filter" after exhausting a page even though more
+  // exist on the server.
+  useEffect(() => {
+    autoLoadAttemptedRef.current = false
+  }, [total])
+
+  // When a page is fully approved/rejected away (proposals.length === 0) but
+  // the server still has more pending, auto-pull the next batch so the
+  // operator never hits a manual "Refresh" wall mid-flow.
+  useEffect(() => {
+    if (loading) return
+    if (proposals.length > 0) return
+    if (total <= 0) return
+    if (autoLoadAttemptedRef.current) return
+    autoLoadAttemptedRef.current = true
+    void load()
+  }, [proposals.length, total, loading, load])
+
+  // ─── Optimistic helpers (passed down to ProposalCard) ────────────────────
+  const removeProposalOptimistic = useCallback((id: string) => {
+    setProposals((prev) => prev.filter((p) => p.id !== id))
+    setTotal((t) => Math.max(0, t - 1))
+  }, [])
+
+  const noteSaveStart = useCallback(() => {
+    setInFlightSaves((n) => n + 1)
+  }, [])
+
+  const noteSaveSuccess = useCallback((p: ProposalRow, action: 'approve' | 'reject') => {
+    setInFlightSaves((n) => Math.max(0, n - 1))
+    // Optimistically nudge the matching stats counter so the strip stays
+    // honest without a full refetch. We only know the destination bucket
+    // approximately (approve → applied, reject → rejected; manual override
+    // also lands as rejected). The operator can hit Refresh if they care
+    // about exact counts.
+    setStats((prev) => {
+      if (!prev) return prev
+      const counts = { ...prev.counts }
+      counts.pending = Math.max(0, (counts.pending || 0) - 1)
+      const dest = action === 'approve' ? 'applied' : 'rejected'
+      counts[dest] = (counts[dest] || 0) + 1
+      return { ...prev, counts }
+    })
+    void p
+  }, [])
+
+  const noteSaveFailure = useCallback((p: ProposalRow, action: 'approve' | 'reject', error: string) => {
+    setInFlightSaves((n) => Math.max(0, n - 1))
+    setFailedSaves((prev) => [
+      ...prev,
+      {
+        key: `${p.id}-${Date.now()}`,
+        proposalId: p.id,
+        exerciseName: p.exercise_name,
+        action,
+        error,
+      },
+    ])
+    // Re-add the failed proposal to the top of the list so the operator can
+    // retry without paginating. Total goes back up too.
+    setProposals((prev) => (prev.some((x) => x.id === p.id) ? prev : [p, ...prev]))
+    setTotal((t) => t + 1)
+  }, [])
+
+  const dismissFailure = useCallback((key: string) => {
+    setFailedSaves((prev) => prev.filter((f) => f.key !== key))
+  }, [])
 
   // One-shot suggestion fetch on mount. Reuses the same admin action as the
   // exercise detail editor so muscle / equipment / etc. dropdowns stay in
@@ -350,9 +432,52 @@ export default function CatalogProposalsPage() {
         <div className="text-sm text-neutral-500">
           {total} {total === 1 ? 'proposal' : 'proposals'} · page {page + 1} of {totalPages}
         </div>
+        <button
+          onClick={() => void load()}
+          disabled={loading}
+          className="btn btn-sm btn-ghost ml-auto"
+          title="Reload proposals + stats from the server"
+        >
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
       </div>
 
       {error && <div className="alert alert-error mb-4">{error}</div>}
+
+      {/* ─── Background-save status ──────────────────────────────────────── */}
+      {(inFlightSaves > 0 || failedSaves.length > 0) && (
+        <div className="mb-4 space-y-2">
+          {inFlightSaves > 0 && (
+            <div className="flex items-center gap-2 text-xs text-neutral-400 bg-neutral-900/60 border border-neutral-800 rounded px-3 py-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+              Saving {inFlightSaves} {inFlightSaves === 1 ? 'change' : 'changes'} in the background…
+            </div>
+          )}
+          {failedSaves.map((f) => (
+            <div
+              key={f.key}
+              className="flex items-start justify-between gap-3 text-xs bg-rose-950/50 border border-rose-800 rounded px-3 py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-rose-300 font-medium">
+                  Failed to {f.action === 'approve' ? 'approve' : 'reject'}: {f.exerciseName}
+                </div>
+                <div className="text-rose-400 mt-0.5 break-words">{f.error}</div>
+                <div className="text-rose-500 mt-0.5">
+                  Proposal restored to the top of the list — review and retry, or click Refresh to reload from server.
+                </div>
+              </div>
+              <button
+                onClick={() => dismissFailure(f.key)}
+                className="text-rose-300 hover:text-rose-100 flex-shrink-0"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ─── Proposals list ──────────────────────────────────────────────── */}
       {loading ? (
@@ -369,7 +494,10 @@ export default function CatalogProposalsPage() {
               p={p}
               exercise={exerciseMap[p.exercise_id] || null}
               suggestions={suggestions}
-              onChanged={() => void load()}
+              onOptimisticRemove={removeProposalOptimistic}
+              onSaveStart={noteSaveStart}
+              onSaveSuccess={noteSaveSuccess}
+              onSaveFailure={noteSaveFailure}
             />
           ))}
         </div>
@@ -420,15 +548,24 @@ function ProposalCard({
   p,
   exercise,
   suggestions,
-  onChanged,
+  onOptimisticRemove,
+  onSaveStart,
+  onSaveSuccess,
+  onSaveFailure,
 }: {
   p: ProposalRow
   exercise: ExerciseFull | null
   suggestions: Suggestions
-  onChanged: () => void
+  onOptimisticRemove: (id: string) => void
+  onSaveStart: () => void
+  onSaveSuccess: (p: ProposalRow, action: 'approve' | 'reject') => void
+  onSaveFailure: (p: ProposalRow, action: 'approve' | 'reject', error: string) => void
 }) {
+  // Local `busy` is still useful for the brief moment between click and
+  // optimistic removal (so the operator can't double-click). Errors are now
+  // surfaced at the page level via onSaveFailure, not on the card itself
+  // (the card is gone by the time the error arrives).
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
   const [videoFailed, setVideoFailed] = useState(false)
 
   // Inline-edit state for ALL editable fields. Initialized to the
@@ -474,8 +611,8 @@ function ProposalCard({
     return updates
   }, [exercise, edit])
 
-  const approve = async () => {
-    if (!decidable) return
+  const approve = () => {
+    if (!decidable || busy) return
     if (isCoreOverride) {
       const ok = window.confirm(
         `OVERRIDE the core-exercise lockout for "${p.exercise_name}"?\n\n` +
@@ -486,92 +623,86 @@ function ProposalCard({
       )
       if (!ok) return
     }
-    setBusy(true); setErr(null)
-    try {
-      const updates = computeUpdates()
-      const proposalField = p.field_name as keyof EditableState
+    // Snapshot edit state at click time. We capture into locals because the
+    // background task fires AFTER setEdit/etc. unmount on optimistic remove.
+    const updates = computeUpdates()
+    const proposalField = p.field_name as keyof EditableState
+    const claudeAppliedValue = exercise
+      ? (previewAfterProposal(exercise, p) as Record<string, unknown>)[p.field_name]
+      : null
+    const editedValue = edit
+      ? (edit as Record<string, unknown>)[p.field_name]
+      : null
+    const overrodeProposalField = !deepEqual(claudeAppliedValue, editedValue)
 
-      // Did the operator change the proposal's own field to something other
-      // than what Claude proposed? If so we apply the override via
-      // update_exercise and tag the proposal as manually overridden so the
-      // RPC's apply path doesn't overwrite the operator's value.
-      const claudeAppliedValue = exercise
-        ? (previewAfterProposal(exercise, p) as Record<string, unknown>)[p.field_name]
-        : null
-      const editedValue = edit
-        ? (edit as Record<string, unknown>)[p.field_name]
-        : null
-      const overrodeProposalField = !deepEqual(claudeAppliedValue, editedValue)
-
-      // Strip the proposal's own field from `updates` if the operator kept
-      // Claude's value — admin_apply_correction_proposal will write it. We
-      // still want to write OTHER edits (name / gender / unrelated muscles).
-      let updatesToSend: Record<string, unknown> = updates
-      if (!overrodeProposalField && proposalField in updates) {
-        const { [proposalField]: _droppedProposalField, ...rest } = updates as Record<string, unknown> & Record<typeof proposalField, unknown>
-        void _droppedProposalField
-        updatesToSend = rest
-      }
-
-      // 1. Save inline edits (other fields, plus proposal field if overridden).
-      if (Object.keys(updatesToSend).length > 0) {
-        const res = await adminApi('update_exercise', {
-          exercise_id: p.exercise_id,
-          updates: updatesToSend,
-        }) as { error?: string; result?: { success?: boolean; error?: string } }
-        if (res?.error || res?.result?.error || res?.result?.success === false) {
-          setErr(res?.error || res?.result?.error || 'Save failed')
-          return
-        }
-      }
-
-      // 2. Resolve the proposal.
-      if (overrodeProposalField) {
-        // Operator overrode Claude — proposal value is no longer applicable.
-        // Mark as rejected with a clear, machine-readable reason so future
-        // audits know this wasn't a "Claude was wrong, discard" reject —
-        // it was "operator wrote a better value inline".
-        await adminApi('admin_reject_correction_proposal', {
-          proposalId: p.id,
-          reason: 'manual_override_via_inline_edit',
-        })
-      } else {
-        // Operator accepted Claude's value (possibly with edits to other
-        // fields). Use the standard apply path so the proposal lands as
-        // 'applied' with the corroboration_kind = sister/name/multi noted.
-        const res = await adminApi('admin_apply_correction_proposal', {
-          proposalId: p.id,
-        }) as { result?: { success?: boolean; error?: string } }
-        if (!res?.result?.success) {
-          setErr(res?.result?.error || 'Apply failed')
-          return
-        }
-      }
-
-      onChanged()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Apply failed')
-    } finally {
-      setBusy(false)
+    // Strip the proposal's own field from `updates` if the operator kept
+    // Claude's value — admin_apply_correction_proposal will write it. We
+    // still want to write OTHER edits (name / gender / unrelated muscles).
+    let updatesToSend: Record<string, unknown> = updates
+    if (!overrodeProposalField && proposalField in updates) {
+      const { [proposalField]: _droppedProposalField, ...rest } = updates as Record<string, unknown> & Record<typeof proposalField, unknown>
+      void _droppedProposalField
+      updatesToSend = rest
     }
+
+    // 1. Optimistic UI: remove the card immediately, register the save.
+    setBusy(true)
+    onSaveStart()
+    onOptimisticRemove(p.id)
+
+    // 2. Run the actual save in the background. Don't await — the UI has
+    //    already advanced. Errors land in the page-level failure banner.
+    void (async () => {
+      try {
+        if (Object.keys(updatesToSend).length > 0) {
+          const res = await adminApi('update_exercise', {
+            exercise_id: p.exercise_id,
+            updates: updatesToSend,
+          }) as { error?: string; result?: { success?: boolean; error?: string } }
+          if (res?.error || res?.result?.error || res?.result?.success === false) {
+            throw new Error(res?.error || res?.result?.error || 'update_exercise failed')
+          }
+        }
+        if (overrodeProposalField) {
+          await adminApi('admin_reject_correction_proposal', {
+            proposalId: p.id,
+            reason: 'manual_override_via_inline_edit',
+          })
+        } else {
+          const res = await adminApi('admin_apply_correction_proposal', {
+            proposalId: p.id,
+          }) as { result?: { success?: boolean; error?: string } }
+          if (!res?.result?.success) {
+            throw new Error(res?.result?.error || 'admin_apply_correction_proposal failed')
+          }
+        }
+        onSaveSuccess(p, 'approve')
+      } catch (e) {
+        onSaveFailure(p, 'approve', e instanceof Error ? e.message : 'Apply failed')
+      }
+    })()
   }
 
-  const reject = async () => {
-    if (!decidable) return
+  const reject = () => {
+    if (!decidable || busy) return
     const reason = window.prompt(
       `Reject this proposal for "${p.exercise_name}"?\nOptional reason:`,
       'manual_admin_reject',
     )
     if (reason === null) return
-    setBusy(true); setErr(null)
-    try {
-      await adminApi('admin_reject_correction_proposal', { proposalId: p.id, reason })
-      onChanged()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Reject failed')
-    } finally {
-      setBusy(false)
-    }
+
+    setBusy(true)
+    onSaveStart()
+    onOptimisticRemove(p.id)
+
+    void (async () => {
+      try {
+        await adminApi('admin_reject_correction_proposal', { proposalId: p.id, reason })
+        onSaveSuccess(p, 'reject')
+      } catch (e) {
+        onSaveFailure(p, 'reject', e instanceof Error ? e.message : 'Reject failed')
+      }
+    })()
   }
 
   const videoFilename = exercise?.video_filename || null
@@ -702,7 +833,6 @@ function ProposalCard({
             </div>
           )}
 
-          {err && <div className="alert alert-error mt-2 text-xs">{err}</div>}
         </div>
       </div>
     </div>

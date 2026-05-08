@@ -1,0 +1,234 @@
+{
+  "started_at": "2026-05-08T15:50:26",
+  "args": {
+    "users": 2,
+    "workouts_per_user": 1,
+    "seed": 99,
+    "no_claude": true,
+    "max_reviews": null,
+    "output_dir": "/Users/josephreed/Desktop/Workout App/scripts/output",
+    "use_python_mirror": false,
+    "skip_build": true
+  },
+  "drift_notes": [
+    {
+      "area": "fitness_goals",
+      "status": "synced",
+      "note": "6 goals (Build Muscle / Lose Weight / Get Stronger / Stay Active / Build Endurance / Improve Health) match Fit33/NewOnboardingView+Steps.swift line ~525."
+    },
+    {
+      "area": "experience_levels",
+      "status": "synced",
+      "note": "3 levels (Beginner / Intermediate / Advanced) match Fit33/NewOnboardingView+Steps.swift line ~557."
+    },
+    {
+      "area": "locations",
+      "status": "synced",
+      "note": "4 locations (gym/home/outdoor/hybrid) match Fit33/WorkoutGeneratorSelectionView.swift `EquipmentLocation`."
+    },
+    {
+      "area": "gym_equipment",
+      "status": "synced",
+      "note": "9 SKUs match Fit33/WorkoutGeneratorSelectionView.swift `equipmentOptions` for gym."
+    },
+    {
+      "area": "specialty_filter",
+      "status": "ENFORCED-IN-AUDIT",
+      "note": "Specialty variant pattern filter is applied in this script (`specialty_exercise_filter.py`). The Swift app's filter is being updated to mirror this list."
+    },
+    {
+      "area": "selection_logic",
+      "status": "synced",
+      "note": "Default audit path drives the REAL Swift WorkoutGeneratorService.generateWorkout(...) end-to-end via the Fit33Tests XCTest harness (AutogenAuditHarnessTests.swift). This eliminates the ~2 months of drift from the previous Python mirror. Pass --use-python-mirror to fall back to the (stale) Python mirror."
+    },
+    {
+      "area": "readiness_override",
+      "status": "NOT-MODELED",
+      "note": "Wearable readiness band (red/yellow/green) recovery override is NOT simulated. Live red-recovery would replace the workout with a mobility session; this audit always generates a strength workout."
+    },
+    {
+      "area": "cardio_phase_1",
+      "status": "NOT-MODELED",
+      "note": "Cardio gamification (Sprint 2 Q2-5) is out of scope for this simulator \u2014 strength workouts only."
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "name": "Brittany Anderson",
+      "age": 37,
+      "gender": "Female",
+      "weight_lbs": 197,
+      "height_inches": 68,
+      "experience_level": "Beginner",
+      "fitness_goal": "Build Endurance",
+      "workout_location": "home",
+      "available_equipment": [
+        "Dumbbells",
+        "Bodyweight",
+        "Kettlebell",
+        "Bands",
+        "Dip Bars"
+      ],
+      "injuries": [],
+      "workouts_completed": 1,
+      "preferred_workout_duration": 40,
+      "available_days_per_week": 3,
+      "notes": "Synth profile #1 \u2014 stratified across gender/level/location/goal"
+    },
+    {
+      "id": 2,
+      "name": "Wesley Johnson",
+      "age": 34,
+      "gender": "Male",
+      "weight_lbs": 193,
+      "height_inches": 71,
+      "experience_level": "Intermediate",
+      "fitness_goal": "Improve Health",
+      "workout_location": "gym",
+      "available_equipment": [
+        "Plates",
+        "TRX/Rings",
+        "Smith Machine",
+        "Barbell",
+        "Cables",
+        "Machines",
+        "Kettlebell",
+        "Bodyweight"
+      ],
+      "injuries": [],
+      "workouts_completed": 21,
+      "preferred_workout_duration": 60,
+      "available_days_per_week": 4,
+      "notes": "Synth profile #2 \u2014 stratified across gender/level/location/goal"
+    }
+  ],
+  "workouts": [
+    {
+      "user_id": 1,
+      "user_label": "Female/37y/197lb \u00b7 Beginner \u00b7 Build Endurance \u00b7 home \u00b7 40min",
+      "split_name": "Back & Biceps",
+      "target_muscles": [
+        "Back",
+        "Biceps"
+      ],
+      "exercises": [
+        {
+          "name": "Seated Row (Resistance Band)",
+          "equipment": "Resistance Band, Anchor Point",
+          "primary_muscles": [
+            "Upper Back"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        },
+        {
+          "name": "Push Up Row",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Back"
+          ],
+          "secondary_muscles": [
+            "Lats"
+          ],
+          "is_compound": null
+        },
+        {
+          "name": "Standing Lat Pulldown (Resistance Band)",
+          "equipment": "Resistance Band, Anchor Point",
+          "primary_muscles": [
+            "Lats"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        },
+        {
+          "name": "Bicep Curl - Alternating (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Biceps"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        },
+        {
+          "name": "Incline Shrug (Dumbbell)",
+          "equipment": "Dumbbells",
+          "primary_muscles": [
+            "Traps"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        },
+        {
+          "name": "Bicep Curl (Band)",
+          "equipment": "Resistance Band",
+          "primary_muscles": [
+            "Biceps"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    },
+    {
+      "user_id": 2,
+      "user_label": "Male/34y/193lb \u00b7 Intermediate \u00b7 Improve Health \u00b7 gym \u00b7 60min",
+      "split_name": "Chest Focus",
+      "target_muscles": [
+        "Chest"
+      ],
+      "exercises": [
+        {
+          "name": "Incline Bench Press (Smith Machine)",
+          "equipment": "Smith Machine, Flat Bench",
+          "primary_muscles": [
+            "Chest"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        },
+        {
+          "name": "Single Arm Floor Press (Kettlebell)",
+          "equipment": "Kettlebell",
+          "primary_muscles": [
+            "Chest"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        },
+        {
+          "name": "Chest Fly & Press Up",
+          "equipment": "Bodyweight",
+          "primary_muscles": [
+            "Chest"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        },
+        {
+          "name": "Lying Bent Arm Pullover (Barbell)",
+          "equipment": "Barbell, Flat Bench",
+          "primary_muscles": [
+            "Chest"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        },
+        {
+          "name": "Half Kneeling Lift (Cable)",
+          "equipment": "Cables",
+          "primary_muscles": [
+            "Chest"
+          ],
+          "secondary_muscles": [],
+          "is_compound": null
+        }
+      ],
+      "specialty_blocked_in_audit": []
+    }
+  ],
+  "reviews": [],
+  "review_errors": []
+}

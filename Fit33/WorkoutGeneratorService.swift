@@ -746,6 +746,50 @@ class WorkoutGeneratorService: ObservableObject {
         // Use pre-snapshotted progressive unlock data
         let userWorkoutCount = context.userWorkoutCount
         let restrictToFoundational = context.restrictToFoundational
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🛡️ SPECIALTY VARIANT PRE-FILTER (Audit 2026-05-08 Round 7 fix)
+        //
+        // Round 6 audit (3.95/10) and Round 7 audit (4.20/10) revealed that the
+        // single-workout autogen path through `WorkoutGeneratorService` was NOT
+        // calling `SpecialtyVariantFilter.evaluate(...)` at all. The only callers
+        // were `SmartExerciseSelectionEngine` (used by `SmartProgramEngine` for
+        // multi-week programs) and the catalog-side practicality assessor — but
+        // single-workout autogen runs through `generateFromCoreData()` which
+        // never delegates to either. Result: every safety / specialty pattern
+        // we added in `SpecialtyVariantFilter` was DEAD CODE for the live
+        // autogen, and `Standing Behind Head Military Press` / `Pistol Squat`
+        // / `Supported Squat` (for beginners) all slipped through.
+        //
+        // Wiring it in here closes the loop. `SAFETY_VARIANTS` (`behind head`,
+        // `behind neck`, etc., `.blockAll`) ALWAYS fire regardless of level or
+        // workout count. Specialty / grip / unilateral variants gate on the
+        // user's level and `userWorkoutCount` (`.blockUntilEstablished`).
+        // ═══════════════════════════════════════════════════════════════════════════
+        let userLevelLower = context.userLevel.lowercased()
+        let isBeginnerForSpecialty = userLevelLower == "beginner"
+        let isIntermediateForSpecialty = userLevelLower == "intermediate"
+        let beforeSpecialtyCount = allExercises.count
+        allExercises = allExercises.filter { exercise in
+            guard let rawName = exercise.name else { return true }
+            let result = SpecialtyVariantFilter.evaluate(
+                name: rawName.lowercased(),
+                isBeginner: isBeginnerForSpecialty,
+                isIntermediate: isIntermediateForSpecialty,
+                completedWorkoutCount: userWorkoutCount
+            )
+            if let result = result, result.shouldExclude {
+                #if DEBUG
+                AppLogger.debug("[SPECIALTY] Pre-filtering '\(rawName)' — \(result.reason)", category: .workout)
+                #endif
+                return false
+            }
+            return true
+        }
+        let filteredSpecialty = beforeSpecialtyCount - allExercises.count
+        if filteredSpecialty > 0 {
+            AppLogger.debug("[SPECIALTY] Pre-filtered \(filteredSpecialty) specialty variants (level=\(userLevelLower), count=\(userWorkoutCount))", category: .workout)
+        }
         
         let foundationalDB = FoundationalExerciseDatabase.shared
         let hasLowerBackIssue = context.hasLowerBackIssue
@@ -2207,8 +2251,14 @@ class WorkoutGeneratorService: ObservableObject {
             // ═══════════════════════════════════════════════════════════════════════════
             // 🚫 RISKY PATTERN BLOCKING - Upright row, high pull, behind neck are risky
             // ═══════════════════════════════════════════════════════════════════════════
+            // 🚨 Audit 2026-05-08 Round 7: added `behind head` (the actual offender
+            // that slipped through Round 6/7 — `Standing Behind Head Clasp And Pushdown`
+            // recommended to a 64yo female with hip cautions, rated 2/10). The
+            // SpecialtyVariantFilter pre-filter at the top of `generateFromCoreData`
+            // is now the canonical safety gate; this inline list is the second net.
             let isRiskyPattern = n.contains("upright row") || n.contains("high pull") || 
                                 n.contains("behind neck") || n.contains("behind the neck") ||
+                                n.contains("behind head") ||
                                 n.contains("guillotine") || n.contains("smith high pull")
             if isRiskyPattern {
                 #if DEBUG
@@ -3892,9 +3942,18 @@ class WorkoutGeneratorService: ObservableObject {
         // Helper to determine if exercise is compound (multi-joint) or isolation
         func isCompound(_ exercise: GeneratedExercise) -> Bool {
             let name = exercise.name.lowercased()
+            // 🛡️ Audit 2026-05-08 Round 8: added `pulldown` / `pull-down` / `pull-up` /
+            // `chin-up` (hyphenated) / `hip thrust` / `good morning`. Round 8 found
+            // 64 `compound_after_isolation` flags — the smoking gun was Lat Pulldown
+            // being misclassified as isolation because `pulldown` was missing here,
+            // pushing it AFTER curls/shrugs in workout ordering. Hyphenated forms
+            // (`pull-up`, `chin-up`) were also missing despite the catalog using
+            // hyphens for some exercises. RDL falls under `deadlift` already.
             let compoundKeywords = [
-                "press", "row", "pull up", "pullup", "chin up", "chinup",
-                "squat", "deadlift", "lunge", "dip", "push up", "pushup",
+                "press", "row", "pulldown", "pull down", "pull-down",
+                "pull up", "pullup", "pull-up", "chin up", "chinup", "chin-up",
+                "squat", "deadlift", "lunge", "dip", "push up", "pushup", "push-up",
+                "hip thrust", "good morning",
                 "clean", "snatch", "thruster", "burpee"
             ]
             let isolationKeywords = [
@@ -4043,8 +4102,18 @@ class WorkoutGeneratorService: ObservableObject {
     }
     
     nonisolated private func isCompoundExercise(name: String) -> Bool {
-        let compoundKeywords = ["squat", "deadlift", "press", "bench", "row", "pull-up", "pullup", 
-                                "chin-up", "chinup", "lunge", "dip", "clean", "snatch", "thruster"]
+        // 🛡️ Audit 2026-05-08 Round 8: added `pulldown` / `pull down` / `push up` /
+        // `pushup` / `pull up` (no hyphen) / `chin up` (no hyphen) / `hip thrust` /
+        // `good morning` to match `sortExercisesStrategically.isCompound` keyword set.
+        // Lat Pulldown was previously not classified as compound — caused
+        // ordering bugs (Round 8 audit: 64 `compound_after_isolation` flags).
+        let compoundKeywords = ["squat", "deadlift", "press", "bench", "row",
+                                "pulldown", "pull down", "pull-down",
+                                "pull-up", "pullup", "pull up",
+                                "chin-up", "chinup", "chin up",
+                                "lunge", "dip", "push up", "pushup", "push-up",
+                                "hip thrust", "good morning",
+                                "clean", "snatch", "thruster"]
         return compoundKeywords.contains { name.contains($0) }
     }
     

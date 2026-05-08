@@ -2359,10 +2359,20 @@ enum SpecialtyVariantFilter {
     /// → grip / unilateral / stability progression variants are always
     /// blocked in the audit. Live-app users earn the unlock with
     /// completed workouts (sourced from `ProgressiveUnlockCache`).
+    /// Audit 2026-05-08 (Round 6): Round 5/6 audits showed thresholds were
+    /// too low — synthetic Advanced users at workouts_completed=5+ were
+    /// already unlocking grip/unilateral specialties (Pin Press, Rack Pull,
+    /// Wide Grip, Front Rack, Pistol, etc.) on their FIRST autogen workout
+    /// of the audit. User feedback: "advanced types come later when
+    /// progression feels correct, not premature." Bumped 3× across the
+    /// board so even Advanced users build a base BEFORE specialties unlock.
+    /// Beginners essentially never unlock these via autogen alone (~8
+    /// weeks of consistent training); they must EARN them through a
+    /// foundational base.
     static let workoutCountThresholds: [String: Int] = [
-        "beginner":     12,    // ~4 weeks @ 3x/week
-        "intermediate":  8,    // ~3 weeks
-        "advanced":      4,    // ~1.5 weeks (still earn it)
+        "beginner":     25,    // ~8 weeks @ 3x/week (was 12)
+        "intermediate": 18,    // ~6 weeks (was 8)
+        "advanced":     12,    // ~4 weeks (was 4 — too easy to bypass in audit)
     ]
 
     struct Pattern {
@@ -2377,6 +2387,20 @@ enum SpecialtyVariantFilter {
     /// padded with a leading + trailing space so single-word patterns match
     /// at word boundaries.
     static let patterns: [Pattern] = [
+        // ── 🚨 CRITICAL SAFETY (.blockAll — must come FIRST) ──
+        // Audit 2026-05-08 Round 6: 6 `injury_unsafe` flags, including a
+        // 32-year-old female user with NECK INJURIES being recommended
+        // "Standing Behind Head Military Press (Smith Machine)" as exercise
+        // #1 (rated 2/10, verdict: REJECT). Behind-the-neck pressing is
+        // contraindicated for ALL users due to shoulder impingement risk;
+        // the exercise's database score should never override this.
+        Pattern(substring: "behind head", baseMovement: "safety", severity: .blockAll,
+                rationale: "🚨 SAFETY: Behind-the-head pressing creates shoulder impingement risk and rotator cuff stress; never auto-recommend regardless of level (audit Round 6: appeared for users with neck injuries)"),
+        Pattern(substring: "behind neck", baseMovement: "safety", severity: .blockAll,
+                rationale: "🚨 SAFETY: Behind-the-neck pressing is contraindicated for all users — shoulder impingement risk"),
+        Pattern(substring: "behind the neck", baseMovement: "safety", severity: .blockAll,
+                rationale: "🚨 SAFETY: Behind-the-neck pressing is contraindicated for all users — shoulder impingement risk"),
+
         // ── Kettlebell combo family (.blockAll — must come FIRST) ──
         // Multi-movement KB hybrids ("Swing To Goblet Squat", "Swing Clean
         // Grip Front Squat") combine swing + landed exercise + grip-modifier.
@@ -2387,6 +2411,19 @@ enum SpecialtyVariantFilter {
                 rationale: "Swing-clean-grip-X is a multi-movement KB hybrid — catalog corruption"),
         Pattern(substring: "swing to ", baseMovement: "kb_combo", severity: .blockAll,
                 rationale: "KB swing-to-X is a mobility-flow combo — base swing and target movement should be separate"),
+
+        // ── Catalog-hybrid combos containing 'with' / multi-movement chains ──
+        // Audit 2026-05-08 Round 6: 'Sumo Deadlift With High Pull' and
+        // 'Goblet Squat With Calf Raise' appeared as primary lifts. These
+        // combine two distinct movement patterns; never an autogen pick.
+        Pattern(substring: " with high pull", baseMovement: "combo", severity: .blockAll,
+                rationale: "X-with-high-pull is a catalog-hybrid combining a base lift with an Olympic-derivative — never autogen"),
+        Pattern(substring: " with calf raise", baseMovement: "combo", severity: .blockAll,
+                rationale: "X-with-calf-raise is a catalog-hybrid combining a primary lift with calf isolation — never autogen the combo"),
+        Pattern(substring: "russian twist with", baseMovement: "combo", severity: .blockAll,
+                rationale: "X-with-russian-twist is a catalog-hybrid combining a primary lift with a core/rotation movement — never autogen the combo"),
+        Pattern(substring: "press russian twist", baseMovement: "combo", severity: .blockAll,
+                rationale: "Military-Press-Russian-Twist is a catalog-corruption hybrid (audit Round 6: served to a 64yo Beginner) — never autogen"),
 
         // ── Bench Press family ──
         Pattern(substring: "feet on bench", baseMovement: "bench_press", severity: .blockBeginner,
@@ -2495,6 +2532,27 @@ enum SpecialtyVariantFilter {
                 rationale: "Single-leg press is a unilateral stability specialty — show bilateral leg press first"),
         Pattern(substring: "split squat front foot elevated", baseMovement: "squat", severity: .blockUntilEstablished,
                 rationale: "Front-foot-elevated split squat is a stability/deficit specialty"),
+        // ── Round 6 audit additions: unilateral squat / lunge progressions ──
+        // (.blockUntilEstablished — even Advanced users earn these via base reps)
+        Pattern(substring: "pistol squat", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Pistol squat = full single-leg-only squat — advanced unilateral specialty (audit Round 6: appeared as exercise #1 for multiple users at all levels)"),
+        Pattern(substring: "single leg squat", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Single-leg squat / pistol is an advanced unilateral specialty — show bilateral squat first regardless of level"),
+        Pattern(substring: "bulgarian split squat", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Bulgarian split squat = rear-foot-elevated single-leg specialty — show standard split squat / lunge first regardless of level"),
+        Pattern(substring: "supported squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Supported squat (with band/TRX/wall) is a regression/rehab variant — not a strength autogen pick for beginners' standard catalog"),
+        Pattern(substring: "front rack lunge", baseMovement: "lunge", severity: .blockUntilEstablished,
+                rationale: "Front-rack lunge = barbell-front-rack hold position — advanced loading specialty; show standard lunge first regardless of level"),
+        Pattern(substring: "front rack squat", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Front-rack squat hold position requires Olympic-level wrist mobility — advanced loading specialty"),
+        Pattern(substring: "split stance rdl", baseMovement: "deadlift", severity: .blockUntilEstablished,
+                rationale: "Split-stance RDL = single-leg-biased Romanian deadlift — unilateral specialty; show bilateral RDL first"),
+        Pattern(substring: "from deficit", baseMovement: "lunge", severity: .blockBeginner,
+                rationale: "Lunge / step-up from a deficit (standing on a plate) is a range-extension specialty — not for beginners"),
+        // 'half kneeling' broadened beyond pallof — many catalog hybrids use it
+        Pattern(substring: "half kneeling", baseMovement: "core_stability", severity: .blockBeginner,
+                rationale: "Half-kneeling stance is a core-stability progression — show bilateral standing variants first for beginners (audit Round 6: 'Half Kneeling Side Lunge' served to a 41yo Beginner)"),
         // ── Round 3 audit additions: catalog-corrupted combo movements (.blockAll) ──
         // Listed BEFORE other squat patterns so multi-keyword names match the
         // BLOCK_ALL combo first instead of fragments like "clean grip".
@@ -2543,6 +2601,26 @@ enum SpecialtyVariantFilter {
                 rationale: "Paused row — specialty tempo"),
         Pattern(substring: "tempo row", baseMovement: "row", severity: .blockBeginner,
                 rationale: "Tempo row — specialty"),
+        // 2026-05-08 audit Round 6 — broadened grip-progression variants beyond bench.
+        // Catalog names like 'Bent Over Row - Underhand Grip (Barbell)' and
+        // 'Lat Pulldown - Reverse Grip' were slipping through because the
+        // existing 'reverse grip' pattern only mapped to bench_press.
+        Pattern(substring: "row - underhand grip", baseMovement: "row", severity: .blockUntilEstablished,
+                rationale: "Underhand-grip row is a grip-progression variant; show standard pronated row first regardless of level"),
+        Pattern(substring: "row - reverse grip", baseMovement: "row", severity: .blockUntilEstablished,
+                rationale: "Reverse-grip row is a grip-progression variant; show standard row first regardless of level"),
+        Pattern(substring: "row - close grip", baseMovement: "row", severity: .blockUntilEstablished,
+                rationale: "Close-grip row is a grip-progression variant; show standard row first regardless of level"),
+        Pattern(substring: "row - wide grip", baseMovement: "row", severity: .blockUntilEstablished,
+                rationale: "Wide-grip row is a grip-progression variant; show standard row first regardless of level"),
+        Pattern(substring: "pulldown - reverse grip", baseMovement: "pulldown", severity: .blockUntilEstablished,
+                rationale: "Reverse-grip lat pulldown is a grip-progression variant; show standard pulldown first regardless of level"),
+        Pattern(substring: "pulldown - close grip", baseMovement: "pulldown", severity: .blockUntilEstablished,
+                rationale: "Close-grip lat pulldown is a grip-progression variant; show standard pulldown first regardless of level"),
+        Pattern(substring: "pulldown - wide grip", baseMovement: "pulldown", severity: .blockUntilEstablished,
+                rationale: "Wide-grip lat pulldown is a grip-progression variant; show standard pulldown first regardless of level"),
+        Pattern(substring: "pulldown - underhand grip", baseMovement: "pulldown", severity: .blockUntilEstablished,
+                rationale: "Underhand-grip lat pulldown is a grip-progression variant; show standard pulldown first regardless of level"),
 
         // ── Curl family ──
         Pattern(substring: " 21s", baseMovement: "curl", severity: .blockBeginner,
@@ -2557,6 +2635,22 @@ enum SpecialtyVariantFilter {
                 rationale: "Waiter curl — specialty"),
         Pattern(substring: "bayesian curl", baseMovement: "curl", severity: .blockIntermediate,
                 rationale: "Bayesian curl = behind-body cable curl — specialty"),
+        // 2026-05-08 audit Round 6 — Olympic / concentration / grip-progression curl variants
+        Pattern(substring: "olympic", baseMovement: "curl", severity: .blockUntilEstablished,
+                rationale: "'Olympic' bar/grip curls (e.g. 'Olympic (Barbell) Hammer Curl') are loading-progression variants; show standard curl first regardless of level"),
+        Pattern(substring: "concentration curl - close grip", baseMovement: "curl", severity: .blockBeginner,
+                rationale: "Close-grip concentration curl combines two specialty modifiers — show standard curl first"),
+        Pattern(substring: "concentration curl - wide grip", baseMovement: "curl", severity: .blockBeginner,
+                rationale: "Wide-grip concentration curl combines two specialty modifiers — show standard curl first"),
+        // ── Skull crusher / triceps extension specialties (Round 6) ──
+        Pattern(substring: "skull crusher - reverse grip", baseMovement: "triceps", severity: .blockUntilEstablished,
+                rationale: "Reverse-grip skull crusher is a grip-progression variant — show standard skull crusher first"),
+        Pattern(substring: "skull crusher - wide grip", baseMovement: "triceps", severity: .blockUntilEstablished,
+                rationale: "Wide-grip skull crusher is a grip-progression variant — show standard skull crusher first"),
+        Pattern(substring: "skull crusher - close grip", baseMovement: "triceps", severity: .blockUntilEstablished,
+                rationale: "Close-grip skull crusher is a grip-progression variant — show standard skull crusher first"),
+        Pattern(substring: "pressdown - skull crusher", baseMovement: "triceps", severity: .blockAll,
+                rationale: "Pressdown-skull-crusher is a catalog-hybrid combining two distinct triceps movements — never autogen"),
 
         // ── OHP family ──
         Pattern(substring: "z press", baseMovement: "ohp", severity: .blockIntermediate,
@@ -2609,6 +2703,23 @@ enum SpecialtyVariantFilter {
                 rationale: "Deep dip = below-parallel range — show standard dip first regardless of level"),
         Pattern(substring: "decline shrug", baseMovement: "shrug", severity: .blockUntilEstablished,
                 rationale: "Decline shrug = lying decline trap shrug — show standard barbell/DB shrug first regardless of level"),
+
+        // ── Round 6 audit additions: head-support / stability accessory variants ──
+        Pattern(substring: "support head", baseMovement: "stability", severity: .blockBeginner,
+                rationale: "Head-supported variants (e.g. 'Rear Lateral Raise Support Head') are stability-regression specialties — not standard autogen picks"),
+        Pattern(substring: "head supported", baseMovement: "stability", severity: .blockBeginner,
+                rationale: "Head-supported lateral raise / row is a stability-regression specialty"),
+        Pattern(substring: "feet flat bench press", baseMovement: "bench_press", severity: .blockUntilEstablished,
+                rationale: "Feet-flat bench press is a leg-drive technique modifier — show standard bench first regardless of level"),
+        Pattern(substring: "twisting crunch", baseMovement: "core", severity: .blockBeginner,
+                rationale: "Twisting/rotational crunch combines flexion + rotation under load — not a standard autogen pick for beginners"),
+        Pattern(substring: "weighted twisting", baseMovement: "core", severity: .blockBeginner,
+                rationale: "Weighted twisting core movement places shear load on lumbar spine — specialty"),
+        // ── TRX / suspension-trainer alternating specialty ──
+        Pattern(substring: "(trx) - alternating", baseMovement: "trx_combo", severity: .blockBeginner,
+                rationale: "TRX alternating-limb variants (e.g. 'Superman TRX - Alternating') are stability-progression specialties — show standard variant first"),
+        Pattern(substring: "trx alternating", baseMovement: "trx_combo", severity: .blockBeginner,
+                rationale: "TRX alternating-limb variants are stability-progression specialties"),
 
         // ── Pull-up family (2026-05-08 audit Round 3 additions) ──
         // Grip / equipment-context variants of the pull-up. Hammer-grip is a

@@ -102,9 +102,16 @@ SEVERITY_BLOCK_ALL = "block_all"
 # press / row / squat first before grip variants slip in.
 
 WORKOUT_COUNT_THRESHOLDS = {
-    "beginner": 12,
-    "intermediate": 8,
-    "advanced": 4,
+    # Audit 2026-05-08 (Round 6): bumped 3× across the board.
+    # Round 6 showed Advanced synthetic users at workouts_completed=5+
+    # already unlocked grip / unilateral specialties on their FIRST
+    # autogen workout (Pin Press, Rack Pull, Wide Grip, Pistol, etc.).
+    # User feedback: "advanced types come later when progression feels
+    # correct, not premature." MUST stay in lock-step with
+    # `Fit33/SmartExerciseSelectionEngine.swift` `workoutCountThresholds`.
+    "beginner":     25,    # ~8 weeks @ 3x/week (was 12)
+    "intermediate": 18,    # ~6 weeks (was 8)
+    "advanced":     12,    # ~4 weeks (was 4 — too easy to bypass in audit)
 }
 
 
@@ -241,6 +248,25 @@ SQUAT_VARIANTS: List[SpecialtyPattern] = [
         "Single-leg press is a unilateral stability specialty — show bilateral leg press first"),
     SpecialtyPattern("split squat front foot elevated", "squat", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
         "Front-foot-elevated split squat is a stability/deficit specialty — show regular split squat first"),
+    # ── Round 6 audit additions: unilateral squat / lunge specialties ──
+    SpecialtyPattern("pistol squat", "squat", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Pistol squat = full single-leg-only squat — advanced unilateral specialty (audit Round 6: appeared as exercise #1 for multiple users)"),
+    SpecialtyPattern("single leg squat", "squat", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Single-leg squat / pistol is an advanced unilateral specialty — show bilateral squat first regardless of level"),
+    SpecialtyPattern("bulgarian split squat", "squat", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Bulgarian split squat = rear-foot-elevated single-leg specialty — show standard split squat / lunge first regardless of level"),
+    SpecialtyPattern("supported squat", "squat", SEVERITY_BLOCK_BEGINNER,
+        "Supported squat (with band/TRX/wall) is a regression/rehab variant — not a strength autogen pick"),
+    SpecialtyPattern("front rack lunge", "lunge", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Front-rack lunge requires Olympic-level wrist mobility — advanced loading specialty; show standard lunge first regardless of level"),
+    SpecialtyPattern("front rack squat", "squat", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Front-rack squat hold position requires Olympic-level wrist mobility — advanced loading specialty"),
+    SpecialtyPattern("split stance rdl", "deadlift", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Split-stance RDL = single-leg-biased Romanian deadlift — unilateral specialty"),
+    SpecialtyPattern("from deficit", "lunge", SEVERITY_BLOCK_BEGINNER,
+        "Lunge / step-up from a deficit (standing on a plate) is a range-extension specialty — not for beginners"),
+    SpecialtyPattern("half kneeling", "core_stability", SEVERITY_BLOCK_BEGINNER,
+        "Half-kneeling stance is a core-stability progression — show bilateral standing variants first for beginners (audit Round 6: 'Half Kneeling Side Lunge' served to a 41yo Beginner)"),
     # ── Catalog-corrupted combo movements (BLOCK_ALL — never autogen) ──
     SpecialtyPattern("reverse lunge forward lunge", "lunge", SEVERITY_BLOCK_ALL,
         "Reverse-lunge-forward-lunge is a catalog-corrupted combo movement — never autogen at any level"),
@@ -294,6 +320,23 @@ ROW_VARIANTS: List[SpecialtyPattern] = [
         "Paused row — specialty tempo"),
     SpecialtyPattern("tempo row", "row", SEVERITY_BLOCK_BEGINNER,
         "Tempo row — specialty"),
+    # ── Round 6 audit additions: row / pulldown grip-progression variants ──
+    SpecialtyPattern("row - underhand grip", "row", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Underhand-grip row is a grip-progression variant; show standard pronated row first"),
+    SpecialtyPattern("row - reverse grip", "row", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Reverse-grip row is a grip-progression variant; show standard row first"),
+    SpecialtyPattern("row - close grip", "row", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Close-grip row is a grip-progression variant; show standard row first"),
+    SpecialtyPattern("row - wide grip", "row", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Wide-grip row is a grip-progression variant; show standard row first"),
+    SpecialtyPattern("pulldown - reverse grip", "pulldown", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Reverse-grip lat pulldown is a grip-progression variant; show standard pulldown first"),
+    SpecialtyPattern("pulldown - close grip", "pulldown", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Close-grip lat pulldown is a grip-progression variant; show standard pulldown first"),
+    SpecialtyPattern("pulldown - wide grip", "pulldown", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Wide-grip lat pulldown is a grip-progression variant; show standard pulldown first"),
+    SpecialtyPattern("pulldown - underhand grip", "pulldown", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Underhand-grip lat pulldown is a grip-progression variant; show standard pulldown first"),
 ]
 
 # ─── Curl family ─────────────────────────────────────────────────────────────
@@ -309,6 +352,19 @@ CURL_VARIANTS: List[SpecialtyPattern] = [
         "Zottman curl = curl + reverse-curl combo — specialty"),
     SpecialtyPattern("waiter curl", "curl", SEVERITY_BLOCK_INTERMEDIATE,
         "Waiter curl — specialty"),
+    # ── Round 6 audit additions ──
+    SpecialtyPattern("olympic", "curl", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Olympic-bar/grip curls (e.g. 'Olympic (Barbell) Hammer Curl') are loading-progression variants; show standard curl first regardless of level"),
+    SpecialtyPattern("concentration curl - close grip", "curl", SEVERITY_BLOCK_BEGINNER,
+        "Close-grip concentration curl combines two specialty modifiers — show standard curl first"),
+    SpecialtyPattern("concentration curl - wide grip", "curl", SEVERITY_BLOCK_BEGINNER,
+        "Wide-grip concentration curl combines two specialty modifiers — show standard curl first"),
+    SpecialtyPattern("skull crusher - reverse grip", "triceps", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Reverse-grip skull crusher is a grip-progression variant — show standard skull crusher first"),
+    SpecialtyPattern("skull crusher - wide grip", "triceps", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Wide-grip skull crusher is a grip-progression variant — show standard skull crusher first"),
+    SpecialtyPattern("skull crusher - close grip", "triceps", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Close-grip skull crusher is a grip-progression variant — show standard skull crusher first"),
     SpecialtyPattern("bayesian curl", "curl", SEVERITY_BLOCK_INTERMEDIATE,
         "Bayesian curl = behind-body cable curl — specialty"),
 ]
@@ -382,6 +438,24 @@ DIP_VARIANTS: List[SpecialtyPattern] = [
         "Deep dip = below-parallel range — specialty depth variant; show standard dip first regardless of level"),
 ]
 
+STABILITY_VARIANTS: List[SpecialtyPattern] = [
+    # Round 6 audit additions: head-support / stability accessory variants
+    SpecialtyPattern("support head", "stability", SEVERITY_BLOCK_BEGINNER,
+        "Head-supported variants (e.g. 'Rear Lateral Raise Support Head') are stability-regression specialties — not standard autogen picks"),
+    SpecialtyPattern("head supported", "stability", SEVERITY_BLOCK_BEGINNER,
+        "Head-supported lateral raise / row is a stability-regression specialty"),
+    SpecialtyPattern("feet flat bench press", "bench_press", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Feet-flat bench press is a leg-drive technique modifier — show standard bench first regardless of level"),
+    SpecialtyPattern("twisting crunch", "core", SEVERITY_BLOCK_BEGINNER,
+        "Twisting/rotational crunch combines flexion + rotation under load — not a standard autogen pick for beginners"),
+    SpecialtyPattern("weighted twisting", "core", SEVERITY_BLOCK_BEGINNER,
+        "Weighted twisting core movement places shear load on lumbar spine — specialty"),
+    SpecialtyPattern("(trx) - alternating", "trx_combo", SEVERITY_BLOCK_BEGINNER,
+        "TRX alternating-limb variants (e.g. 'Superman TRX - Alternating') are stability-progression specialties — show standard variant first"),
+    SpecialtyPattern("trx alternating", "trx_combo", SEVERITY_BLOCK_BEGINNER,
+        "TRX alternating-limb variants are stability-progression specialties"),
+]
+
 SHRUG_VARIANTS: List[SpecialtyPattern] = [
     SpecialtyPattern("decline shrug", "shrug", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
         "Decline shrug = lying decline trap shrug — specialty variant; show standard barbell/DB shrug first regardless of level"),
@@ -402,6 +476,39 @@ KETTLEBELL_COMBO_VARIANTS: List[SpecialtyPattern] = [
         "Swing-clean-grip-X (e.g. Swing Clean Grip Front Squat) is a multi-movement KB hybrid — never autogen at any level"),
     SpecialtyPattern("swing to ", "kb_combo", SEVERITY_BLOCK_ALL,
         "KB swing-to-X (e.g. Swing To Goblet Squat) is a mobility-flow combo — base swing and target movement should be separate"),
+]
+
+
+# ─── 🚨 CRITICAL SAFETY (.block_all) ─────────────────────────────────────────
+# Audit 2026-05-08 Round 6: 6 `injury_unsafe` flags including a 32yo female
+# user with NECK INJURIES being recommended "Standing Behind Head Military
+# Press" as exercise #1 (verdict: REJECT). These patterns block at every
+# level — the database practicality score must NEVER override safety.
+
+SAFETY_VARIANTS: List[SpecialtyPattern] = [
+    SpecialtyPattern("behind head", "safety", SEVERITY_BLOCK_ALL,
+        "🚨 SAFETY: Behind-the-head pressing creates shoulder impingement risk and rotator cuff stress; never auto-recommend regardless of level"),
+    SpecialtyPattern("behind neck", "safety", SEVERITY_BLOCK_ALL,
+        "🚨 SAFETY: Behind-the-neck pressing is contraindicated for all users — shoulder impingement risk"),
+    SpecialtyPattern("behind the neck", "safety", SEVERITY_BLOCK_ALL,
+        "🚨 SAFETY: Behind-the-neck pressing is contraindicated for all users — shoulder impingement risk"),
+]
+
+
+# ─── Catalog-hybrid combos (.block_all) ──────────────────────────────────────
+# Multi-movement chains that combine a base lift with another exercise.
+# These are catalog-corruption hybrids — never the right autogen pick.
+HYBRID_COMBO_VARIANTS: List[SpecialtyPattern] = [
+    SpecialtyPattern(" with high pull", "combo", SEVERITY_BLOCK_ALL,
+        "X-with-high-pull combines a base lift with an Olympic-derivative — never autogen"),
+    SpecialtyPattern(" with calf raise", "combo", SEVERITY_BLOCK_ALL,
+        "X-with-calf-raise combines a primary lift with calf isolation — never autogen the combo"),
+    SpecialtyPattern("russian twist with", "combo", SEVERITY_BLOCK_ALL,
+        "X-with-russian-twist combines a primary lift with a core/rotation movement — never autogen"),
+    SpecialtyPattern("press russian twist", "combo", SEVERITY_BLOCK_ALL,
+        "Military-Press-Russian-Twist is a catalog-corruption hybrid (audit Round 6: served to a 64yo Beginner) — never autogen"),
+    SpecialtyPattern("pressdown - skull crusher", "triceps", SEVERITY_BLOCK_ALL,
+        "Pressdown-skull-crusher is a catalog-hybrid combining two distinct triceps movements — never autogen"),
 ]
 
 # ─── Pull-up family (2026-05-08 audit Round 3 additions) ────────────────────
@@ -458,10 +565,15 @@ GENERIC_MODIFIERS: List[SpecialtyPattern] = [
 # `paused squat` (specific) before ` paused ` (generic).
 
 SPECIALTY_PATTERNS: List[SpecialtyPattern] = (
-    # KB combo MUST come first: "swing clean grip" / "swing to " (BLOCK_ALL)
-    # must pre-empt any fragment match (e.g. squat-family "clean grip"
-    # BLOCK_UNTIL_ESTABLISHED) on names like "Swing Clean Grip Front Squat".
-    KETTLEBELL_COMBO_VARIANTS
+    # 🚨 SAFETY MUST come absolutely first — behind-head/neck pressing must
+    # never be auto-recommended even if the database score is high.
+    SAFETY_VARIANTS
+    # Hybrid catalog-corruption combos next (before family fragments can match)
+    + HYBRID_COMBO_VARIANTS
+    # KB combo: "swing clean grip" / "swing to " (BLOCK_ALL) must pre-empt
+    # any fragment match (e.g. squat-family "clean grip" BLOCK_UNTIL_ESTABLISHED)
+    # on names like "Swing Clean Grip Front Squat".
+    + KETTLEBELL_COMBO_VARIANTS
     + BENCH_PRESS_VARIANTS
     + SQUAT_VARIANTS
     + DEADLIFT_VARIANTS
@@ -472,6 +584,7 @@ SPECIALTY_PATTERNS: List[SpecialtyPattern] = (
     + PLANK_VARIANTS
     + DIP_VARIANTS
     + SHRUG_VARIANTS
+    + STABILITY_VARIANTS
     + PULLUP_VARIANTS
     + GENERIC_MODIFIERS
 )

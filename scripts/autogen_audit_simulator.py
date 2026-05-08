@@ -121,6 +121,11 @@ from specialty_exercise_filter import (  # noqa: E402
     is_specialty_variant,
 )
 
+# Swift autogen harness bridge — calls the REAL iOS WorkoutGeneratorService
+# via XCTest. Replaces the stale Python mirror in
+# `comprehensive_autogen_audit.select_exercises_for_workout()`.
+import swift_autogen_harness as harness  # noqa: E402
+
 # Reuse heavy lifters from the existing audit module. We import lazily inside
 # `main()` so a `--help` invocation doesn't load 6,800 lines of selection
 # logic.
@@ -402,8 +407,8 @@ DRIFT_NOTES = [
      "9 SKUs match Fit33/WorkoutGeneratorSelectionView.swift `equipmentOptions` for gym."),
     ("specialty_filter", "ENFORCED-IN-AUDIT",
      "Specialty variant pattern filter is applied in this script (`specialty_exercise_filter.py`). The Swift app's filter is being updated to mirror this list."),
-    ("python_selection_logic", "STALE",
-     "comprehensive_autogen_audit.select_exercises_for_workout() was last updated Mar 2026; the live Swift selector has had ~2 months of changes (cardio Phase 1, readiness adaptive autogen, etc.). The simulator's exercise selection is APPROXIMATE; trust the Claude review for workout-level correctness."),
+    ("selection_logic", "synced",
+     "Default audit path drives the REAL Swift WorkoutGeneratorService.generateWorkout(...) end-to-end via the Fit33Tests XCTest harness (AutogenAuditHarnessTests.swift). This eliminates the ~2 months of drift from the previous Python mirror. Pass --use-python-mirror to fall back to the (stale) Python mirror."),
     ("readiness_override", "NOT-MODELED",
      "Wearable readiness band (red/yellow/green) recovery override is NOT simulated. Live red-recovery would replace the workout with a mobility session; this audit always generates a strength workout."),
     ("cardio_phase_1", "NOT-MODELED",
@@ -411,7 +416,14 @@ DRIFT_NOTES = [
 ]
 
 
-def render_drift_banner_md() -> str:
+def render_drift_banner_md(used_swift_harness: bool = True) -> str:
+    """
+    `used_swift_harness=True` (default) means this run drove the real Swift
+    autogen via the XCTest harness — the `selection_logic` row stays
+    'synced'. When False (i.e. `--use-python-mirror` was set or the Swift
+    harness fell back), the row downgrades to STALE so the report's reader
+    knows numerical results need to be discounted.
+    """
     lines = [
         "## Drift Banner — what this simulator can and cannot validate",
         "",
@@ -419,6 +431,16 @@ def render_drift_banner_md() -> str:
         "|------|--------|------|",
     ]
     for area, status, note in DRIFT_NOTES:
+        if area == "selection_logic" and not used_swift_harness:
+            status = "STALE"
+            note = (
+                "FALLBACK PATH active — audited the Python mirror "
+                "(comprehensive_autogen_audit.select_exercises_for_workout, last "
+                "updated Mar 2026). Live Swift has had ~2 months of changes "
+                "since (cardio Phase 1, readiness adaptive autogen, etc.). "
+                "Discount per-exercise scores accordingly. To audit the real "
+                "Swift autogen, drop --use-python-mirror or fix the harness."
+            )
         emoji = {"synced": "✅", "STALE": "⚠️", "NOT-MODELED": "⚪",
                  "ENFORCED-IN-AUDIT": "🛡️"}.get(status, "❓")
         lines.append(f"| `{area}` | {emoji} {status} | {note} |")
@@ -546,6 +568,10 @@ def generate_workout(
     specialty-variant filter as a POST-SELECTION pass. Anything blocked
     by the specialty filter is recorded for the report and replaced if
     possible from the remaining pool.
+
+    DEPRECATED for default audit runs — kept for `--use-python-mirror`
+    fallback only. Use `generate_workouts_via_swift()` instead, which
+    drives the actual iOS auto-gen end-to-end via XCTest.
     """
     legacy_profile = _user_to_legacy_profile(user, legacy_module)
     raw_selected = legacy_module.select_exercises_for_workout(
@@ -555,6 +581,115 @@ def generate_workout(
         count=target_count,
     )
     return raw_selected or []
+
+
+def _user_to_harness_input(
+    user: SimulatedUser,
+    splits_with_counts: List[Tuple[str, List[str], int]],
+) -> harness.HarnessInputUser:
+    """
+    Convert a `SimulatedUser` + the (split_name, target_muscles, count)
+    triples to the XCTest harness wire-shape. The harness encodes the
+    user as a Core Data `User` entity and calls the live
+    `WorkoutGeneratorService.shared.generateWorkout(...)`.
+
+    `workout_environment` maps the audit's lowercase location ('gym',
+    'home', etc.) to the title-case strings the iOS `User.workoutEnvironment`
+    column stores ('Gym', 'Home', 'Outdoor', 'Hybrid').
+    """
+    env_map = {
+        "gym": "Gym",
+        "home": "Home",
+        "outdoor": "Outdoor",
+        "hybrid": "Hybrid",
+    }
+    return harness.HarnessInputUser(
+        name=f"user-{user.id}",
+        age=user.age,
+        gender=user.gender,
+        weight_lbs=float(user.weight_lbs),
+        experience_level=user.experience_level,
+        fitness_goal=user.fitness_goal,
+        workout_environment=env_map.get(user.workout_location, "Gym"),
+        equipment=list(user.available_equipment),
+        completed_workout_count=user.workouts_completed,
+        workouts=[
+            harness.HarnessInputWorkout(
+                primary_muscles=list(muscles),
+                secondary_muscles=[],
+                count=count,
+            )
+            for (_split, muscles, count) in splits_with_counts
+        ],
+    )
+
+
+def generate_workouts_via_swift(
+    plan: List[Tuple[SimulatedUser, List[Tuple[str, List[str], int]]]],
+    derived_data: Optional[Path] = None,
+    skip_build: bool = False,
+) -> Dict[int, List[Tuple[str, List[Dict[str, Any]]]]]:
+    """
+    Run the entire batch through the real iOS auto-gen via the
+    Fit33Tests XCTest harness. Returns a dict keyed by user_id, value =
+    list of (split_name, [generated_exercise_dict]).
+
+    `plan`: ordered (user, [(split_name, target_muscles, target_count)]).
+    The harness emits workouts in the same order the user supplies them,
+    so we re-zip on the way back out.
+
+    Time budget:
+      - First call (cold build): ~3 min build + ~1 min boot + ~5s/user.
+      - Warm calls (cached `.xctestrun`): just boot + per-user.
+    """
+    derived_data = derived_data or harness.DEFAULT_DERIVED_DATA
+
+    # 1. Find or build the xctestrun.
+    xctestrun = harness.find_xctestrun(derived_data)
+    if xctestrun is None or not skip_build:
+        if xctestrun is None:
+            print("  · no .xctestrun found — running build-for-testing (cold ~3 min)…")
+        else:
+            print("  · refreshing .xctestrun (use --skip-build to reuse)…")
+        xctestrun = harness.build_for_testing(derived_data)
+    else:
+        print(f"  · reusing existing .xctestrun: {xctestrun}")
+
+    # 2. Convert SimulatedUsers → HarnessInputUsers (preserving order).
+    harness_users = [
+        _user_to_harness_input(user, splits)
+        for user, splits in plan
+    ]
+
+    # 3. One call → all users. The XCTest harness loops internally.
+    output = harness.run_harness(harness_users, xctestrun)
+
+    # 4. Re-zip results back to the (user_id, split_name) tuples the
+    #    rest of the audit pipeline keys off.
+    by_user: Dict[int, List[Tuple[str, List[Dict[str, Any]]]]] = {}
+    for plan_entry, result in zip(plan, output["results"]):
+        user, splits = plan_entry
+        result_workouts = result["workouts"]
+        if len(result_workouts) != len(splits):
+            print(
+                f"  ⚠ user-{user.id}: harness returned {len(result_workouts)} "
+                f"workouts for {len(splits)} requested splits"
+            )
+        out_for_user: List[Tuple[str, List[Dict[str, Any]]]] = []
+        for split_entry, result_workout in zip(splits, result_workouts):
+            split_name, _muscles, _count = split_entry
+            slim_exercises = [
+                harness.slim_exercise_from_harness_row(ex)
+                for ex in result_workout.get("exercises", [])
+            ]
+            if result_workout.get("error"):
+                print(
+                    f"  ⚠ user-{user.id} · {split_name}: harness error: "
+                    f"{result_workout['error']}"
+                )
+            out_for_user.append((split_name, slim_exercises))
+        by_user[user.id] = out_for_user
+    return by_user
 
 
 def apply_specialty_filter(
@@ -815,6 +950,7 @@ def _render_report_md(
     review_errors: List[Dict[str, Any]],
     elapsed_s: float,
     started_at: str,
+    used_swift_harness: bool = True,
 ) -> str:
     agg = _aggregate_issues(reviews)
     total_workouts = len(workouts)
@@ -869,7 +1005,7 @@ def _render_report_md(
     )
     sections.append("")
 
-    sections.append(render_drift_banner_md())
+    sections.append(render_drift_banner_md(used_swift_harness=used_swift_harness))
     sections.append("")
 
     sections.append("## Headline Numbers")
@@ -1079,6 +1215,15 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--output-dir", type=str,
                    default=str(THIS_DIR / "output"),
                    help="where to write the .md and .json reports")
+    p.add_argument("--use-python-mirror", action="store_true",
+                   help="audit against the stale Python mirror instead of the "
+                        "real Swift autogen (XCTest harness). Default: use "
+                        "real Swift, which is the only valid source of truth.")
+    p.add_argument("--skip-build", action="store_true",
+                   help="reuse the existing .xctestrun in /tmp/fit33-audit-DD "
+                        "instead of running build-for-testing. Speeds up "
+                        "warm runs from ~3 min to ~10s. Use after a clean "
+                        "build has already produced the bundle.")
     return p.parse_args(argv)
 
 
@@ -1116,20 +1261,49 @@ def main(argv: Optional[List[str]] = None) -> int:
               "must be set (.env at repo root).", file=sys.stderr)
         return 2
 
-    print("[2/5] Pulling exercise catalog from Supabase…")
-    t0 = time.monotonic()
+    # Catalog is only needed by the Python mirror fallback (replacement
+    # pool for `apply_specialty_filter` and `_user_to_legacy_profile`).
+    # The Swift harness fetches its own catalog inside the simulator
+    # via `ExerciseLibraryService.shared.forceSyncExercises()`. Skip the
+    # Python-side fetch when we're going to use the Swift harness.
     catalog: List[Dict[str, Any]] = []
-    offset = 0
-    batch = 1000
-    while True:
-        rows = legacy.fetch_exercises_from_supabase(batch, offset)
-        if not rows:
-            break
-        catalog.extend(rows)
-        offset += batch
-        if len(rows) < batch:
-            break
-    print(f"  ✓ {len(catalog)} exercises loaded ({time.monotonic() - t0:.1f}s)")
+    if args.use_python_mirror:
+        print("[2/5] Pulling exercise catalog from Supabase (for Python mirror)…")
+        t0 = time.monotonic()
+        offset = 0
+        batch = 1000
+        max_retries = 3
+        while True:
+            last_err: Optional[Exception] = None
+            for attempt in range(max_retries):
+                try:
+                    rows = legacy.fetch_exercises_from_supabase(batch, offset)
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = e
+                    if attempt < max_retries - 1:
+                        backoff = 2 ** attempt
+                        print(
+                            f"  ⚠ supabase fetch attempt {attempt + 1}/{max_retries} "
+                            f"failed ({type(e).__name__}); retrying in {backoff}s"
+                        )
+                        time.sleep(backoff)
+            if last_err is not None:
+                raise last_err
+            if not rows:
+                break
+            catalog.extend(rows)
+            offset += batch
+            if len(rows) < batch:
+                break
+        print(f"  ✓ {len(catalog)} exercises loaded ({time.monotonic() - t0:.1f}s)")
+    else:
+        print(
+            "[2/5] Skipping Python-side catalog fetch — Swift harness pulls "
+            "its own catalog from Supabase inside the simulator. (Pass "
+            "--use-python-mirror to fetch here.)"
+        )
 
     # ─── Profile gen ───
     print(f"[3/5] Synthesizing {args.users} user profiles…")
@@ -1142,14 +1316,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"      {lev:13s} {loc:8s}: {c}")
 
     # ─── Auto-gen + audit specialty filter ───
-    print(f"[4/5] Generating {args.users * args.workouts_per_user} workouts "
-          f"and applying specialty-variant filter…")
+    use_swift = not args.use_python_mirror
     rng = random.Random(args.seed * 7919)
     workouts: List[GeneratedWorkout] = []
     workouts_started = time.monotonic()
 
+    # Build the per-user (split, target_muscles, target_count) plan
+    # ONCE — both the Swift harness and the Python fallback consume it.
+    plan: List[Tuple[SimulatedUser, List[Tuple[str, List[str], int]]]] = []
+    target_to_muscles: Dict[Tuple[int, str], List[str]] = {}
     for user in users:
-        # Sample N distinct splits per user.
         if args.workouts_per_user > len(WORKOUT_SPLITS_FOR_AUDIT):
             sampled_splits = [
                 rng.choice(WORKOUT_SPLITS_FOR_AUDIT)
@@ -1159,37 +1335,90 @@ def main(argv: Optional[List[str]] = None) -> int:
             sampled_splits = rng.sample(
                 WORKOUT_SPLITS_FOR_AUDIT, args.workouts_per_user
             )
-
+        target_count = legacy.get_exercise_count_for_duration(
+            user.preferred_workout_duration
+        )
+        triples: List[Tuple[str, List[str], int]] = []
         for split_name, target_muscles in sampled_splits:
-            target_count = legacy.get_exercise_count_for_duration(
-                user.preferred_workout_duration
+            triples.append((split_name, list(target_muscles), target_count))
+            target_to_muscles[(user.id, split_name)] = list(target_muscles)
+        plan.append((user, triples))
+
+    if use_swift:
+        print(
+            f"[4/5] Generating {args.users * args.workouts_per_user} workouts "
+            f"via REAL Swift autogen (XCTest harness)…"
+        )
+        try:
+            results_by_user = generate_workouts_via_swift(
+                plan,
+                skip_build=args.skip_build,
             )
-            try:
-                raw = generate_workout(
-                    user=user,
-                    target_muscles=target_muscles,
-                    exercises_catalog=catalog,
-                    legacy_module=legacy,
-                    target_count=target_count,
+        except Exception as e:
+            print(
+                f"\n  ✗ Swift harness failed: {e}\n"
+                f"  Falling back to Python mirror — pass --use-python-mirror "
+                f"to skip the harness entirely.",
+                file=sys.stderr,
+            )
+            results_by_user = None
+            use_swift = False
+        if use_swift and results_by_user is not None:
+            for user, _triples in plan:
+                for split_name, slim_exercises in results_by_user.get(
+                    user.id, []
+                ):
+                    target_muscles = target_to_muscles.get(
+                        (user.id, split_name), []
+                    )
+                    # The Swift autogen already applies the specialty
+                    # filter internally — running it again here would
+                    # double-block valid exercises. Pass through cleanly.
+                    workouts.append(GeneratedWorkout(
+                        user_id=user.id,
+                        user_label=user.short_label(),
+                        split_name=split_name,
+                        target_muscles=target_muscles,
+                        exercises=slim_exercises,
+                        specialty_blocked_in_audit=[],
+                    ))
+
+    if not use_swift:
+        # Fallback path — Python mirror with audit-side specialty filter.
+        # Used only when --use-python-mirror is set OR Swift harness fails.
+        print(
+            f"[4/5] Generating {args.users * args.workouts_per_user} workouts "
+            f"via Python mirror (⚠ STALE — see drift banner in report)…"
+        )
+        for user, triples in plan:
+            for split_name, target_muscles, target_count in triples:
+                try:
+                    raw = generate_workout(
+                        user=user,
+                        target_muscles=target_muscles,
+                        exercises_catalog=catalog,
+                        legacy_module=legacy,
+                        target_count=target_count,
+                    )
+                except Exception as e:
+                    print(
+                        f"  ⚠ user {user.id} · {split_name}: selection failed: {e}",
+                        file=sys.stderr,
+                    )
+                    continue
+
+                slim = [_slim_exercise(ex) for ex in raw if ex]
+                filtered, blocked = apply_specialty_filter(
+                    slim, user, catalog, target_muscles
                 )
-            except Exception as e:
-                print(f"  ⚠ user {user.id} · {split_name}: selection failed: {e}",
-                      file=sys.stderr)
-                continue
-
-            slim = [_slim_exercise(ex) for ex in raw if ex]
-            filtered, blocked = apply_specialty_filter(
-                slim, user, catalog, target_muscles
-            )
-
-            workouts.append(GeneratedWorkout(
-                user_id=user.id,
-                user_label=user.short_label(),
-                split_name=split_name,
-                target_muscles=target_muscles,
-                exercises=filtered,
-                specialty_blocked_in_audit=blocked,
-            ))
+                workouts.append(GeneratedWorkout(
+                    user_id=user.id,
+                    user_label=user.short_label(),
+                    split_name=split_name,
+                    target_muscles=target_muscles,
+                    exercises=filtered,
+                    specialty_blocked_in_audit=blocked,
+                ))
 
     print(f"  ✓ {len(workouts)} workouts ready ({time.monotonic() - workouts_started:.1f}s)")
     blocked_total = sum(len(w.specialty_blocked_in_audit) for w in workouts)
@@ -1257,6 +1486,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         review_errors=review_errors,
         elapsed_s=elapsed_s,
         started_at=started_iso,
+        used_swift_harness=use_swift,
     )
     md_path.write_text(md, encoding="utf-8")
 

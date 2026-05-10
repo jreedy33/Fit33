@@ -141,6 +141,47 @@ Severity bands:
 
 The autogen MUST NEVER show a specialty variant to a level where it's blocked, AND MUST NEVER show a specialty variant ahead of the canonical base movement (e.g. "Spoto Press" before regular Bench Press is wrong even for an advanced lifter on a hypertrophy day).
 
+# THE RUBRIC — DETERMINISTIC RATING
+
+The \`overall_rating\` is NOT vibes. It is derived from a **mechanical formula** plus a small **subjective adjustment**. Your job is to (1) accurately classify each issue, (2) compute the mechanical_rating using the formula, and (3) apply a subjective_adjustment ∈ [-1, +1] only when the rubric genuinely missed something.
+
+Each issue category has a weight. Each severity has a multiplier. The penalty for an issue is \`weight × multiplier\`. Sum all penalties, subtract from 10, clamp to [1, 10].
+
+| Category | Weight | Notes |
+|---|---:|---|
+| \`injury_unsafe\` | 4.0 | Universal-block list (good morning, upright row, behind-neck press/pulldown, guillotine, age≥60 plyo) or user injury constraint |
+| \`equipment_mismatch\` | 3.0 | Exercise requires equipment user doesn't have |
+| \`risky_for_level\` | 3.0 | Olympic lifts for Beginner, max-effort singles for Beginner, etc. |
+| \`specialty_variant_for_level\` | 2.0 | Specialty variant present where blocked for user level |
+| \`beginner_complexity\` | 2.0 | Beginner gets a complexity≥4 exercise (handstand, muscle-up, pistol, single-arm DL, etc.) |
+| \`missing_balance_slot\` | 2.0 | Push day no rear-delt/upper-back; Leg day no core/unilateral; Full-body misses < 4 patterns |
+| \`wrong_split_for_days\` | 2.0 | PPL on 3 days, or full-body on 6 days, etc. |
+| \`compound_after_isolation\` | 1.5 | Any isolation at position i with a compound at position j > i |
+| \`obscure_exercise\` | 1.0 | Same-muscle canonical alternative exists; obscure pick has popularity_score < 0.25 |
+| \`redundant_movement_pattern\` | 1.0 | bench>2, hinge>1, squat>2, row>2, curl>2 in one workout |
+| \`volume_imbalance\` | 1.0 | Most-trained muscle > 2× sets of least-trained muscle |
+| \`wrong_rep_range_for_goal\` | 1.0 | Reps don't match goal (Build Muscle=6-12, Strength=3-6, Lose Weight=8-15, Endurance=12-20) |
+| \`other\` | 1.0 | Catch-all; should be < 5% of issues. If you reach for this, you're hinting we need a new rule. |
+
+Severity multipliers: \`critical = 1.0\`, \`major = 0.6\`, \`minor = 0.3\`.
+
+**MECHANICAL FORMULA**:
+\`\`\`
+mechanical_rating = clamp(10 - Σ(weight × multiplier for each issue), 1, 10)
+overall_rating    = clamp(mechanical_rating + subjective_adjustment, 1, 10)
+\`\`\`
+
+**Subjective adjustment rules**:
+- Default: \`0.0\`. The rubric should capture > 95% of quality signal.
+- Positive (+0.5 to +1.0): workout is exceptionally well-paired, novel within constraints, or perfectly motivating. Cite the *qualitative* reason in \`subjective_reason\`.
+- Negative (-0.5 to -1.0): workout passes every rule but *something* feels wrong (e.g. ordering is technically valid but bizarre). MUST cite the reason.
+- If \`|subjective_adjustment| > 0.5\` you MUST populate \`subjective_reason\`. This becomes our signal for adding a 14th rule.
+
+**Severity calibration** (when you classify an issue):
+- \`critical\` — workout is unusable as-prescribed. Equipment they don't have. Olympic lift for a beginner. Injury risk.
+- \`major\` — workout is usable but the prescription is materially worse than what a coach would write. Wrong ordering, redundant patterns, missing balance slot.
+- \`minor\` — defensible but suboptimal. An "obscure" pick when a canonical exists. Slight volume imbalance.
+
 # WHAT YOU OUTPUT
 
 You return ONE JSON object. Be specific — every "issue" must reference an exercise by index (0-based), and every "improvement_suggestion" must point at a concrete code/data location (e.g. "extend obscureExercises array in SmartExerciseSelectionEngine.swift line ~963", "add 'feet on bench' to specialty filter").
@@ -148,7 +189,10 @@ You return ONE JSON object. Be specific — every "issue" must reference an exer
 OUTPUT — RETURN ONLY THIS JSON, no prose, no code fences, no preamble:
 
 {
-  "overall_rating": <integer 1-10, where 10 = canonical perfect workout for this user>,
+  "mechanical_rating": <float 1.0-10.0, computed by formula above. Edge fn will RE-COMPUTE this from your issues array; if you fudge it the server overwrites you.>,
+  "subjective_adjustment": <float in [-1.0, +1.0], default 0.0>,
+  "subjective_reason": "<one sentence, REQUIRED only if |subjective_adjustment| > 0.5, else empty string>",
+  "overall_rating": <integer 1-10. Equals round(mechanical_rating + subjective_adjustment). Edge fn re-derives this; you compute it for sanity.>,
   "fitness_expert_summary": "<2-3 sentences: would a coach prescribe this workout for this user? What's strongest, what's weakest?>",
   "product_engineer_summary": "<2-3 sentences: where in code should we LOOK to improve this output for users like this one?>",
   "issues": [
@@ -315,8 +359,23 @@ serve(async (req) => {
             }, 500, corsHeaders);
         }
 
+        // ── Server-side mechanical rating (deterministic, overwrites Claude) ──
+        // Per WORKOUT_QUALITY_RUBRIC.md: rating is derived from issues array
+        // using fixed category weights + severity multipliers. Claude's
+        // arithmetic is untrusted; we re-compute server-side so identical
+        // issue arrays produce identical ratings round-over-round.
+        const rubricResult = computeRubricRating(parsed);
+        const enriched = {
+            ...parsed,
+            mechanical_rating: rubricResult.mechanical,
+            subjective_adjustment: rubricResult.adjustment,
+            overall_rating: rubricResult.overall,
+            rubric_breakdown: rubricResult.breakdown,
+            rubric_version: RUBRIC_VERSION,
+        };
+
         return json({
-            review: parsed,
+            review: enriched,
             usage: claudeUsage,
         }, 200, corsHeaders);
     } catch (error) {
@@ -511,4 +570,92 @@ function json(body: unknown, status: number, corsHeaders: Record<string, string>
         status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Rubric — server-side mechanical rating computation
+// Source of truth: WORKOUT_QUALITY_RUBRIC.md at repo root.
+// When updating weights here, mirror to that file AND to
+// Fit33Tests/WorkoutQualityTests.swift.
+// ───────────────────────────────────────────────────────────────────────────
+
+const RUBRIC_VERSION = "1.0.0";
+
+const RULE_WEIGHTS: Record<string, number> = {
+    injury_unsafe: 4.0,
+    equipment_mismatch: 3.0,
+    risky_for_level: 3.0,
+    specialty_variant_for_level: 2.0,
+    beginner_complexity: 2.0,
+    missing_balance_slot: 2.0,
+    wrong_split_for_days: 2.0,
+    compound_after_isolation: 1.5,
+    obscure_exercise: 1.0,
+    redundant_movement_pattern: 1.0,
+    volume_imbalance: 1.0,
+    wrong_rep_range_for_goal: 1.0,
+    other: 1.0,
+};
+
+const SEVERITY_MULTIPLIERS: Record<string, number> = {
+    critical: 1.0,
+    major: 0.6,
+    minor: 0.3,
+};
+
+interface RubricResult {
+    mechanical: number;
+    adjustment: number;
+    overall: number;
+    breakdown: {
+        total_penalty: number;
+        per_rule: Record<string, { count: number; penalty: number }>;
+        clamped: boolean;
+        adjustment_was_capped: boolean;
+    };
+}
+
+function computeRubricRating(parsed: Record<string, unknown>): RubricResult {
+    const issues = Array.isArray(parsed.issues) ? parsed.issues as Array<Record<string, unknown>> : [];
+    const perRule: Record<string, { count: number; penalty: number }> = {};
+    let totalPenalty = 0;
+
+    for (const iss of issues) {
+        const cat = typeof iss.category === "string" ? iss.category : "other";
+        const sev = typeof iss.severity === "string" ? iss.severity : "minor";
+        const weight = RULE_WEIGHTS[cat] ?? RULE_WEIGHTS.other;
+        const mult = SEVERITY_MULTIPLIERS[sev] ?? SEVERITY_MULTIPLIERS.minor;
+        const penalty = weight * mult;
+        totalPenalty += penalty;
+
+        if (!perRule[cat]) perRule[cat] = { count: 0, penalty: 0 };
+        perRule[cat].count += 1;
+        perRule[cat].penalty += penalty;
+    }
+
+    const rawMechanical = 10 - totalPenalty;
+    const clamped = rawMechanical < 1 || rawMechanical > 10;
+    const mechanical = Math.max(1, Math.min(10, rawMechanical));
+
+    // Subjective adjustment — Claude-supplied; clamped to [-1, +1].
+    let rawAdj = 0;
+    if (typeof parsed.subjective_adjustment === "number") {
+        rawAdj = parsed.subjective_adjustment;
+    }
+    const adjustment_was_capped = rawAdj < -1 || rawAdj > 1;
+    const adjustment = Math.max(-1, Math.min(1, rawAdj));
+
+    const overall = Math.max(1, Math.min(10, Math.round(mechanical + adjustment)));
+
+    return {
+        mechanical: Math.round(mechanical * 100) / 100, // 2-decimal precision
+        adjustment: Math.round(adjustment * 100) / 100,
+        overall,
+        breakdown: {
+            total_penalty: Math.round(totalPenalty * 100) / 100,
+            per_rule: perRule,
+            clamped,
+            adjustment_was_capped,
+        },
+    };
 }

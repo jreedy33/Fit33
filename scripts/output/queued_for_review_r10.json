@@ -1,0 +1,166 @@
+[
+  {
+    "name": "Bridge Leg Lift",
+    "family": "leg_exercise",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should be capitalized 'Bodyweight' not lowercase 'bodyweight'",
+    "proposal_id": "48294202-f54e-4403-9d4a-6fbdd59d1212"
+  },
+  {
+    "name": "Bridge Leg Lift",
+    "family": "marching",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should be capitalized 'Bodyweight' not lowercase 'bodyweight'",
+    "proposal_id": "d294fcec-c166-4f66-8402-c2801163d9b5"
+  },
+  {
+    "name": "Glute Bridge Hip Abduction",
+    "family": "glute_bridge",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should be capitalized to match standard format",
+    "proposal_id": "f7bd287b-ca2b-478a-8cef-a4a7a3139c26"
+  },
+  {
+    "name": "Glute Bridge Hip Abduction",
+    "family": "glute_bridge",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should match capitalization pattern of sisters and equipment field",
+    "proposal_id": "c1a9116f-1af3-44cf-80d8-ee452c0f73c6"
+  },
+  {
+    "name": "Push up - Tricep Extension",
+    "family": "tricep_extension",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should be capitalized to match standard format",
+    "proposal_id": "f7d48d8b-714e-4018-903f-c70d9f3590cf"
+  },
+  {
+    "name": "Russian Twist",
+    "family": "russian_twist",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should be capitalized 'Bodyweight' not lowercase 'bodyweight'",
+    "proposal_id": "23744269-7dd3-4734-b52b-ed0979ac74c5"
+  },
+  {
+    "name": "Russian Twist",
+    "family": "russian_twist",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should be capitalized 'Bodyweight' not lowercase 'bodyweight'",
+    "proposal_id": "79ed9961-7919-4aef-ab15-2c6b74bb05c2"
+  },
+  {
+    "name": "Single Arm Lateral Raise",
+    "family": "lateral_raise",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should match equipment field capitalization - equipment is 'Bodyweight' but category is 'bodyweight'",
+    "proposal_id": "51477239-cb76-410d-ac2a-013fc9b5630c"
+  },
+  {
+    "name": "Sumo Squat",
+    "family": "squat",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should match equipment field capitalization - 'Bodyweight' not 'bodyweight'",
+    "proposal_id": "8280e536-b8cf-4aa3-8245-4a95902435db"
+  },
+  {
+    "name": "Sumo Squat",
+    "family": "squat",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should be capitalized 'Bodyweight' not lowercase 'bodyweight'",
+    "proposal_id": "e2882fe0-f4dc-47c8-bc61-6c2b6cf91ac5"
+  },
+  {
+    "name": "Superman",
+    "family": "back_extension",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "Superman uses no equipment, should be capitalized Bodyweight not lowercase bodyweight",
+    "proposal_id": "d85b7744-5ce0-4dcc-851a-1c3e34085d60"
+  },
+  {
+    "name": "Table Top Bridge",
+    "family": "glute_bridge",
+    "field": "equipment_category",
+    "op": "set",
+    "value": "Bodyweight",
+    "reason": "no_gate_passed",
+    "evidence": "equipment_category should be capitalized 'Bodyweight' not lowercase 'bodyweight'",
+    "proposal_id": "3cb090b1-4612-4fd3-a27c-1f9547aa6c5f"
+  },
+  {
+    "name": "3 Point Bench Press (Dumbbell)",
+    "family": "bench_press",
+    "field": "primary_muscles",
+    "op": "remove",
+    "value": [
+      "Chest"
+    ],
+    "reason": "core_exercise_removal_blocked",
+    "evidence": "3-point stance requires full-body stabilization making it a full-body movement like sister 2 Point Bench Press",
+    "proposal_id": "ec2ac5e4-8240-4ad8-bfa4-e5b36ea9069d"
+  },
+  {
+    "name": "Glute Ham Developer Hip Extension (Machine)",
+    "family": "glute_kickback",
+    "field": "is_compound",
+    "op": "set",
+    "value": false,
+    "reason": "no_gate_passed",
+    "evidence": "hip extension is single-joint movement at hip only, all sisters show is_compound=false",
+    "proposal_id": "cf8935de-5c64-440a-aad5-f2e3eda6aaf5"
+  },
+  {
+    "name": "Inner Thigh Tap",
+    "family": "hip_adduction",
+    "field": "is_compound",
+    "op": "set",
+    "value": false,
+    "reason": "no_gate_passed",
+    "evidence": "inner thigh tap is isolated hip adduction movement - sister stretches in same family are all simple, non-compound",
+    "proposal_id": "9d42f687-09dc-4137-bc8e-b92fc29d8602"
+  },
+  {
+    "name": "Push Up Row",
+    "family": "push_up",
+    "field": "secondary_muscles",
+    "op": "remove",
+    "value": [
+      "Front Delts"
+    ],
+    "reason": "remove_needs_3_reports_or_sister_disagreement",
+    "evidence": "front delts are primary movers in push ups, not secondary - all sister exercises correctly list front delts as secondary",
+    "proposal_id": "130b040f-b975-45d8-a5e9-9c9875c20b85"
+  }
+]

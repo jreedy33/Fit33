@@ -954,6 +954,7 @@ def _render_report_md(
     elapsed_s: float,
     started_at: str,
     used_swift_harness: bool = True,
+    rubric_report: Optional[Dict[str, Any]] = None,
 ) -> str:
     agg = _aggregate_issues(reviews)
     total_workouts = len(workouts)
@@ -1010,6 +1011,19 @@ def _render_report_md(
 
     sections.append(render_drift_banner_md(used_swift_harness=used_swift_harness))
     sections.append("")
+
+    # Insert mechanical rubric block (deterministic, LLM-free) right under
+    # the drift banner — gives the reader the convergence picture BEFORE
+    # the noisy Claude headline numbers. Source of truth:
+    # WORKOUT_QUALITY_RUBRIC.md.
+    if rubric_report:
+        try:
+            from swift_rubric_grader import render_rubric_md
+            sections.append(render_rubric_md(rubric_report))
+            sections.append("")
+        except Exception as e:
+            sections.append(f"_(rubric grader present but render failed: {e})_")
+            sections.append("")
 
     sections.append("## Headline Numbers")
     sections.append("")
@@ -1227,6 +1241,12 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
                         "instead of running build-for-testing. Speeds up "
                         "warm runs from ~3 min to ~10s. Use after a clean "
                         "build has already produced the bundle.")
+    p.add_argument("--rubric-grader", action="store_true",
+                   help="run Fit33Tests/WorkoutQualityTests AFTER the harness "
+                        "to produce a deterministic per-rule violation report. "
+                        "Adds ~30s to the run. Source of truth: "
+                        "WORKOUT_QUALITY_RUBRIC.md. Use this for R12+ to track "
+                        "mechanical convergence without LLM noise.")
     return p.parse_args(argv)
 
 
@@ -1386,6 +1406,27 @@ def main(argv: Optional[List[str]] = None) -> int:
                         specialty_blocked_in_audit=[],
                     ))
 
+    # ── Mechanical rubric grader (opt-in, post-harness, pre-Claude) ──
+    # Drives Fit33Tests/WorkoutQualityTests against the OutputBatch the
+    # harness just wrote. Produces deterministic per-rule violation
+    # stats — the convergence signal we tune against. Doesn't replace
+    # the Claude review; complements it. ~30s runtime.
+    rubric_report: Optional[Dict[str, Any]] = None
+    if args.rubric_grader and use_swift and results_by_user is not None:
+        try:
+            from swift_rubric_grader import run_rubric_grader
+            xctestrun = harness.find_xctestrun(harness.DEFAULT_DERIVED_DATA)
+            if xctestrun is None:
+                print("  ⚠ rubric grader skipped: no cached .xctestrun")
+            else:
+                print("[4b/5] Mechanical rubric grader (deterministic, no Claude)…")
+                rubric_report = run_rubric_grader(
+                    xctestrun=xctestrun,
+                    input_path=Path("/tmp/fit33_audit_output.json"),
+                )
+        except Exception as e:
+            print(f"  ⚠ rubric grader failed (continuing without it): {e}")
+
     if not use_swift:
         # Fallback path — Python mirror with audit-side specialty filter.
         # Used only when --use-python-mirror is set OR Swift harness fails.
@@ -1490,6 +1531,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         elapsed_s=elapsed_s,
         started_at=started_iso,
         used_swift_harness=use_swift,
+        rubric_report=rubric_report,
     )
     md_path.write_text(md, encoding="utf-8")
 
@@ -1503,6 +1545,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "workouts": [asdict(w) for w in workouts],
         "reviews": reviews,
         "review_errors": review_errors,
+        "rubric_report": rubric_report,
     }
     json_path.write_text(json.dumps(raw_dump, indent=2, default=str), encoding="utf-8")
 

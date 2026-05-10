@@ -63,6 +63,23 @@ class ExerciseLibraryService: ObservableObject {
     private let syncLock = NSLock()
     private let cacheValidityDuration: TimeInterval = 300 // 5 minutes
     private var isPreWarming = false
+
+    // MARK: - Orphan-Repair Memo
+    //
+    // Dev-log trend (2026-05-10, user `a94823b5`): a CMS realtime burst of 68
+    // `exercises` UPDATE events fired 68 successive `invalidateCache()` calls
+    // in ~5s. Each call invoked `repairNilExerciseRelationships()`, which
+    // scanned the same 83 nil-relationship `WorkoutExercise` rows every time —
+    // and 0 of those names ever matched the current catalog (catalog rename
+    // drift, e.g. "21s (Dumbbell)" → "21s Bicep Curl (Dumbbell)"). 68 × 83 =
+    // 5,644 wasted name lookups + 68 Core Data fetches per session, with a
+    // measurable correlation to `app.foreground 7029ms` and
+    // `dashboard.hydrate 5275ms` slow ops on that user.
+    //
+    // The memo skips orphan rows we've already failed to repair — they only
+    // become repairable when the catalog grows (full sync brings new rows in),
+    // which is exactly when `performSync` clears the memo.
+    private var failedOrphanRepairIds = Set<NSManagedObjectID>()
     
     private init() {
         preWarmCache()
@@ -480,8 +497,22 @@ class ExerciseLibraryService: ObservableObject {
         })
     }
     
-    /// Invalidate the exercise cache (call after sync or modifications)
-    func invalidateCache() {
+    /// Invalidate the exercise cache (call after sync or modifications).
+    ///
+    /// `triggerOrphanRepair` controls whether `repairNilExerciseRelationships()`
+    /// runs after the rebuild. Default `true` preserves behavior for full-sync
+    /// callers (`performSync`, `forceSyncExercises`, `seedFromBundle`,
+    /// `initializeDefaultExercises`) where new exercises may have arrived that
+    /// can repair previously-orphaned `WorkoutExercise` rows.
+    ///
+    /// Realtime delta callers (`upsertExerciseFromCloud`, `deleteExerciseById`)
+    /// pass `false`:
+    ///   • UPDATE — the row was already in the catalog, so any orphan that
+    ///     could repair to it would have been repaired by a prior pass.
+    ///   • DELETE — can only orphan more rows, never repair.
+    /// Skipping the repair sweep on bulk realtime bursts (60+ events in <5s)
+    /// avoids re-scanning the same nil-relationship rows on every tick.
+    func invalidateCache(triggerOrphanRepair: Bool = true) {
         cachedExercises = nil
         cachedExercisesByName = nil
         cachedExercisesById = nil
@@ -504,12 +535,20 @@ class ExerciseLibraryService: ObservableObject {
         AppLogger.debug("🔥 [ExerciseLibrary] Cache rebuilt synchronously: \(elapsed)ms, \(cachedExercises?.count ?? 0) exercises", category: .data)
         #endif
         
-        // ⚡️ Repair nil exercise relationships in workouts
-        repairNilExerciseRelationships()
+        // ⚡️ Repair nil exercise relationships in workouts (gated for realtime deltas)
+        if triggerOrphanRepair {
+            repairNilExerciseRelationships()
+        }
     }
     
     /// Repairs WorkoutExercise objects that have nil exercise relationships
     /// This happens when workouts sync before exercises are available
+    ///
+    /// Skips orphans whose cached name has already failed to resolve in the
+    /// current catalog (`failedOrphanRepairIds`) — the memo is cleared by
+    /// `performSync(...)` whenever a full sync brings new exercises in,
+    /// because that's the only event that can make a previously-unresolvable
+    /// name repairable.
     private func repairNilExerciseRelationships() {
         guard isExercisesReady else { return }
         
@@ -526,17 +565,29 @@ class ExerciseLibraryService: ObservableObject {
                 let orphanedExercises = try context.fetch(fetchRequest)
                 
                 if orphanedExercises.isEmpty { return }
+
+                // Skip orphans whose cached name has already failed to resolve.
+                // Without this gate, a 60-event realtime burst would rescan the
+                // same dead orphans 60× for zero new repairs.
+                let candidates = orphanedExercises.filter {
+                    !self.failedOrphanRepairIds.contains($0.objectID)
+                }
+
+                if candidates.isEmpty { return }
                 
                 #if DEBUG
-                AppLogger.warning("🔧 [ExerciseLibrary] Found \(orphanedExercises.count) WorkoutExercises with nil relationships", category: .data)
+                AppLogger.warning("🔧 [ExerciseLibrary] Found \(orphanedExercises.count) WorkoutExercises with nil relationships (\(candidates.count) eligible for repair, \(orphanedExercises.count - candidates.count) memoized failed)", category: .data)
                 #endif
                 
                 var repaired = 0
                 
-                for workoutExercise in orphanedExercises {
+                for workoutExercise in candidates {
                     // Try to get the cached name
                     guard let id = workoutExercise.id?.uuidString,
                           let cachedName = ExerciseNameCache.shared.getName(forWorkoutExerciseId: id) else {
+                        // No cached name → can't ever repair until ExerciseNameCache
+                        // is repopulated. Memoize so we don't refetch this row.
+                        self.failedOrphanRepairIds.insert(workoutExercise.objectID)
                         continue
                     }
                     
@@ -544,6 +595,13 @@ class ExerciseLibraryService: ObservableObject {
                     if let exercise = self.getExercise(byName: cachedName) {
                         workoutExercise.exercise = exercise
                         repaired += 1
+                    } else {
+                        // Catalog rename drift (e.g. "21s (Dumbbell)" →
+                        // "21s Bicep Curl (Dumbbell)") — the current fuzzy
+                        // matcher can't bridge this. Memoize so subsequent
+                        // realtime/cache invalidations don't re-attempt the
+                        // same lookup. Cleared on next full `performSync`.
+                        self.failedOrphanRepairIds.insert(workoutExercise.objectID)
                     }
                 }
                 
@@ -641,7 +699,12 @@ class ExerciseLibraryService: ObservableObject {
             do {
                 try viewContext.execute(deleteRequest)
                 try viewContext.save()
-                invalidateCache()
+                // Pre-clear pass — catalog is empty, so any orphan-repair
+                // sweep here would mark every WorkoutExercise as "failed"
+                // against a 0-row catalog. `performSync` is about to
+                // re-invalidate against the fresh download (and reset the
+                // memo) so this rebuild only needs to clear the cache.
+                invalidateCache(triggerOrphanRepair: false)
                 AppLogger.debug("✅ Cleared existing exercises from Core Data", category: .data)
             } catch {
                 AppLogger.error("❌ Error clearing exercises: \(error)", category: .data)
@@ -972,6 +1035,11 @@ class ExerciseLibraryService: ObservableObject {
         // reads through the viewContext, which now sees the bg-saved rows via
         // automatic merging on the container.
         await MainActor.run {
+            // Full sync brought a fresh catalog snapshot — clear the
+            // memoized failed-repair set so previously-unresolvable orphans
+            // get one more chance against the new exercise rows. (See
+            // `failedOrphanRepairIds` doc + `repairNilExerciseRelationships`.)
+            self.failedOrphanRepairIds.removeAll()
             invalidateCache()
             // Bug `3037a6f4` (2026-04-27 shake report): the batch delete above
             // permanently invalidates every NSManagedObjectID held by
@@ -1126,7 +1194,13 @@ class ExerciseLibraryService: ObservableObject {
         
         do {
             try ctx.save()
-            invalidateCache()
+            // Realtime delta — skip the orphan-repair sweep. A single-row
+            // UPDATE can't repair orphans (the prior full sync would have)
+            // and an INSERT only repairs orphans whose cachedName already
+            // matches the new row, which the next full sync handles. This
+            // avoids 60+ wasted Core Data scans during a CMS bulk-publish
+            // burst (see `failedOrphanRepairIds` + `invalidateCache(...)` doc).
+            invalidateCache(triggerOrphanRepair: false)
             libraryRevision = UUID()
             AppLogger.info("✅ [ExerciseLibrary] Upserted '\(dto.name)' from realtime (\(existing == nil ? "INSERT" : "UPDATE"))", category: .data)
         } catch {
@@ -1154,7 +1228,10 @@ class ExerciseLibraryService: ObservableObject {
         
         do {
             try ctx.save()
-            invalidateCache()
+            // Realtime delete: same rationale as upsert. A delete can only
+            // create orphans, never repair them, so the repair sweep is
+            // strictly wasted work here.
+            invalidateCache(triggerOrphanRepair: false)
             libraryRevision = UUID()
             AppLogger.info("🗑️ [ExerciseLibrary] Deleted '\(name)' from realtime", category: .data)
         } catch {

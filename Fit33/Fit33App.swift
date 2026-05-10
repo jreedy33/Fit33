@@ -891,7 +891,15 @@ struct Fit33App: App {
                             do {
                                 let (isNewUser, socialUsername) = try await supabaseManager.handleOAuthCallback(url: url)
                                 AppLogger.info("OAuth callback handled successfully (new user: \(isNewUser), email: \(supabaseManager.currentUser?.email ?? "nil"))", category: .auth)
-                                
+
+                                // NUJ channel attribution (#162) — read the
+                                // provider from the freshly-issued session's
+                                // app_metadata. Stored in UserDefaults so the
+                                // enrollment RPC fired below picks it up.
+                                if let provider = supabaseManager.currentUser?.appMetadata["provider"] as? String, !provider.isEmpty {
+                                    NewUserJourneyTracker.recordAuthProvider(provider)
+                                }
+
                                 // Force UI update and store data on main thread
                                 await MainActor.run {
                                     // Store social username for onboarding pre-fill (Facebook/Instagram)

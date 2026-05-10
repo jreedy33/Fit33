@@ -131,6 +131,11 @@ final class NewUserJourneyTracker: ObservableObject {
     /// enrollment activation doesn't lose the channel attribution.
     private static let authProviderKey = "fit33.nuj.last_auth_provider"
     private static let referralKey = "fit33.nuj.install_referral"
+    /// Manual override toggled by the dev menu (DEBUG-only). When TRUE the
+    /// `enroll_new_user_journey` RPC stamps `is_test_account = TRUE` even if
+    /// the email pattern would otherwise miss (e.g. App Store test reviewer
+    /// accounts the team wants excluded ad-hoc).
+    private static let manualTestAccountKey = "fit33.nuj.manual_test_account"
 
     /// Set by callers (`OnboardingView`, `SocialAuthService`) on the moment
     /// of successful auth so enrollment captures channel attribution.
@@ -142,18 +147,65 @@ final class NewUserJourneyTracker: ObservableObject {
         UserDefaults.standard.set(source, forKey: referralKey)
     }
 
-    private func enrollmentParams() -> [String: String?] {
+    /// Dev menu toggle. UserDefaults-persisted so it survives reinstalls of
+    /// the same simulator image. Only consulted in DEBUG/TestFlight builds —
+    /// the RELEASE auto-detect heuristic ignores this value to prevent any
+    /// jailbroken release from forcing test mode against production data.
+    static func setManualTestAccountOverride(_ flag: Bool) {
+        UserDefaults.standard.set(flag, forKey: manualTestAccountKey)
+    }
+
+    static var manualTestAccountOverride: Bool {
+        UserDefaults.standard.bool(forKey: manualTestAccountKey)
+    }
+
+    /// Heuristic combination — TRUE if any of:
+    ///   - Running in the iOS simulator (TARGET_OS_SIMULATOR)
+    ///   - Built in DEBUG configuration (Xcode local build, not App Store)
+    ///   - Dev-menu toggle was flipped on (manualTestAccountOverride)
+    /// In RELEASE builds the simulator + DEBUG checks compile out, so only
+    /// the email-pattern server-side check (in `enroll_new_user_journey`)
+    /// can flag a real-prod user as a test account.
+    static var isLikelyTestEnvironment: Bool {
+        var hit = false
+        #if targetEnvironment(simulator)
+        hit = true
+        #endif
+        #if DEBUG
+        hit = true
+        #endif
+        if manualTestAccountOverride { hit = true }
+        return hit
+    }
+
+    /// Heterogeneous-value enrollment payload — has both `String?` and
+    /// `Bool` fields, so we ship a typed struct (Codable). Mixed-type
+    /// dictionaries don't survive Encodable through `rpc(_:params:)`.
+    private struct EnrollmentParams: Encodable {
+        let p_auth_provider: String?
+        let p_install_app_version: String?
+        let p_install_build_number: String?
+        let p_install_device_model: String?
+        let p_install_ios_version: String?
+        let p_install_locale: String?
+        let p_install_timezone: String?
+        let p_referral_source: String?
+        let p_is_test_account: Bool
+    }
+
+    private func enrollmentParams() -> EnrollmentParams {
         let bundle = Bundle.main.infoDictionary
-        return [
-            "p_auth_provider":        UserDefaults.standard.string(forKey: Self.authProviderKey),
-            "p_install_app_version":  bundle?["CFBundleShortVersionString"] as? String,
-            "p_install_build_number": bundle?["CFBundleVersion"] as? String,
-            "p_install_device_model": Self.deviceModelIdentifier,
-            "p_install_ios_version":  UIDevice.current.systemVersion,
-            "p_install_locale":       Locale.current.identifier,
-            "p_install_timezone":     TimeZone.current.identifier,
-            "p_referral_source":      UserDefaults.standard.string(forKey: Self.referralKey)
-        ]
+        return EnrollmentParams(
+            p_auth_provider:        UserDefaults.standard.string(forKey: Self.authProviderKey),
+            p_install_app_version:  bundle?["CFBundleShortVersionString"] as? String,
+            p_install_build_number: bundle?["CFBundleVersion"] as? String,
+            p_install_device_model: Self.deviceModelIdentifier,
+            p_install_ios_version:  UIDevice.current.systemVersion,
+            p_install_locale:       Locale.current.identifier,
+            p_install_timezone:     TimeZone.current.identifier,
+            p_referral_source:      UserDefaults.standard.string(forKey: Self.referralKey),
+            p_is_test_account:      Self.isLikelyTestEnvironment
+        )
     }
 
     private func activate(newlyEnrolled: Bool) {
@@ -180,8 +232,24 @@ final class NewUserJourneyTracker: ObservableObject {
         AppLogger.info("[NUJ] tracker active (session=\(sessionId))", category: .general)
     }
 
+    /// Background-task assertion held while we drain the buffer + close the
+    /// session row during `deactivate()`. Stored as a property (not a
+    /// local) so the expiration handler and the trailing Task both have a
+    /// stable @MainActor-isolated reference — Swift Concurrency disallows
+    /// mutating captured locals across non-Sendable closures.
+    private var deactivateBgTaskId: UIBackgroundTaskIdentifier = .invalid
+
     /// Call from scenePhase .background. Stops batched ingestion, flushes,
     /// closes the session row.
+    ///
+    /// Audit `2026-05-10`: 51% of all sessions in the NUJ pipeline had
+    /// `ended_at = NULL` because iOS suspends the app within ~5 seconds of
+    /// scenePhase=.background, killing the fire-and-forget Task before
+    /// `flush()` + `closeSession()` complete. Fix: wrap the suspend-critical
+    /// work in a `UIApplication.beginBackgroundTask` assertion so the OS
+    /// gives us up to ~30 seconds (the default extension window) to finish.
+    /// The assertion is ended in a `defer` block so iOS reclaims the time
+    /// as soon as both awaits resolve.
     func deactivate() {
         guard Self.isActive else { return }
         Self.isActive = false
@@ -189,10 +257,33 @@ final class NewUserJourneyTracker: ObservableObject {
                     screen: lastScreen,
                     detail: "session_ended",
                     payload: ["session_id": sessionId])
-        Task {
-            await flush()
-            await closeSession()
+
+        let app = UIApplication.shared
+        deactivateBgTaskId = app.beginBackgroundTask(withName: "NUJ.flushAndCloseSession") { [weak self] in
+            // Expiration handler — iOS is about to reclaim the assertion.
+            // Best-effort end the task to avoid the watchdog killing the
+            // process. The handler is invoked on the main thread per
+            // UIApplication contract; hop to MainActor for the property
+            // mutation to satisfy Swift Concurrency.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.deactivateBgTaskId != .invalid {
+                    app.endBackgroundTask(self.deactivateBgTaskId)
+                    self.deactivateBgTaskId = .invalid
+                }
+            }
         }
+
+        Task { @MainActor [weak self] in
+            await self?.flush()
+            await self?.closeSession()
+            guard let self else { return }
+            if self.deactivateBgTaskId != .invalid {
+                app.endBackgroundTask(self.deactivateBgTaskId)
+                self.deactivateBgTaskId = .invalid
+            }
+        }
+
         flushTimer?.invalidate()
         flushTimer = nil
     }
@@ -402,13 +493,20 @@ final class NewUserJourneyTracker: ObservableObject {
         // violation, re-queueing the entire batch indefinitely. We now stamp
         // the flag client-side so the value is always a concrete bool by the
         // time the row reaches PostgreSQL — see migration
-        // `20260823_nuj_is_error_default.sql`. Only the canonical error /
-        // crash event types and explicitly-severe entries flag TRUE; every
-        // other event (`screen`, `tap`, `funnel`, `state`, `api`, `workout`,
-        // `meal`, `social`, `paywall`, `integration`, `permission`,
-        // `notification`, `background`, `performance`) is FALSE.
-        let isError = (eventType == "error" || eventType == "crash")
-            || (severity == "error" || severity == "critical")
+        // `20260823_nuj_is_error_default.sql`.
+        //
+        // Severity-driven (NOT eventType-driven). `AppLogger.warning`
+        // forwards through `Logger.swift` into `logError(...)` which sets
+        // `eventType = "error"` regardless of the underlying severity —
+        // so a transient `CancellationError` classified as `.transientNetwork`
+        // by `NetworkErrorClassifier` (logged at `.warning`) was previously
+        // landing as `is_error = TRUE` and inflating the per-user error rate.
+        // Now: only `crash` events and explicitly-severe `.error` / `.critical`
+        // entries flag TRUE. The 161-occurrence "Failed to check achievement"
+        // warning cluster from the 2026-05-10 audit becomes is_error=FALSE.
+        let isError = eventType == "crash"
+            || severity == "error"
+            || severity == "critical"
 
         var entry: [String: Any] = [
             "event_type": eventType,

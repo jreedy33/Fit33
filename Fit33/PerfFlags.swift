@@ -188,8 +188,19 @@ enum PerfFlags {
     ///
     /// When OFF: byte-identical to pre-Phase-6 behavior (the buggy
     /// original path stays — race can blank goals UI on cold start).
+    ///
+    /// Production rollout (2026-05-10): default flipped from `defaultEnabled`
+    /// (DEBUG/TestFlight only) to `true` for ALL builds after the
+    /// 2026-05-10 NUJ audit surfaced `knovak98@hotmail.com` hitting the
+    /// legacy buggy path on 1.39+ App Store: `assignments=33 but cache lacks
+    /// all keys`, blank Olympian goals UI on cold start. Phase 6 has been
+    /// in TestFlight since 1.39 (70) without regressions; promoting to
+    /// production-default is the right call. UserDefaults override is still
+    /// honored, so a remote kill-switch via `UserDefaults.standard.set(false,
+    /// forKey: "perf_phase6_olympian_goals_atomic")` (e.g. via a future
+    /// remote config rollout) can roll back without a release.
     static var phase6OlympianGoalsAtomic: Bool {
-        flag("perf_phase6_olympian_goals_atomic", default: defaultEnabled)
+        flag("perf_phase6_olympian_goals_atomic", default: true)
     }
 
     /// Phase 6 (Workout-tab render) — `WorkoutTabView` first-render

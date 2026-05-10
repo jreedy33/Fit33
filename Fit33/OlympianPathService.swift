@@ -836,7 +836,23 @@ final class OlympianPathService: ObservableObject {
                 )
                 return
             }
-            AppLogger.error("fetchSeasonBadges failed: \(error.localizedDescription)", category: .general)
+            // Wrapped CancellationError (Supabase / PostgREST bridge produces
+            // an NSError whose localizedDescription contains
+            // "Swift.CancellationError error 1" but whose Swift type is NOT
+            // `CancellationError`, so the `catch is CancellationError` arm
+            // above misses it). Route through `NetworkErrorClassifier` which
+            // pattern-matches on "cancelled" and demotes to .warning →
+            // NUJ severity = "warning" → is_error = FALSE. Drains the
+            // 91-error / 75%-rate cluster on knovak98@hotmail.com from the
+            // 2026-05-10 NUJ audit (see Bug Intel `23-nuj-iserror`).
+            NetworkErrorClassifier.log(
+                error,
+                context: "fetchSeasonBadges failed",
+                category: .general,
+                op: PerformanceSignposts.Op.olympianFetchBadges.rawValue,
+                endpoint: "rest/user_olympian_seasons",
+                userId: SupabaseManager.shared.currentUser?.id
+            )
         }
     }
 

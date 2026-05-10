@@ -42,6 +42,9 @@ type Enrollment = {
   streak_3_days?: boolean
   goal_set?: boolean
   notification_permission_granted?: boolean
+  // Test-account isolation (#175 — 2026-05-10). Optional because legacy
+  // enrollments pre-migration won't carry the column (until backfill runs).
+  is_test_account?: boolean
   user_profiles?: UserProfileSummary
 }
 
@@ -153,6 +156,11 @@ async function adminAction<T = unknown>(action: string, params: Record<string, u
 export default function NewUserReportsPage() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
   const [onlyActive, setOnlyActive] = useState(true)
+  // Migration #175 — test-account isolation. Default OFF so the cohort
+  // numbers an exec sees on page load are real-user-only. Toggle ON to
+  // include @test.com / dev / App Store reviewer accounts when debugging
+  // the pipeline itself.
+  const [showTestAccounts, setShowTestAccounts] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [userDetail, setUserDetail] = useState<{
@@ -245,6 +253,15 @@ export default function NewUserReportsPage() {
     if (selectedUserId) await loadUserDetail(selectedUserId)
   }
 
+  const visibleEnrollments = useMemo(() => {
+    if (showTestAccounts) return enrollments
+    return enrollments.filter(en => !en.is_test_account)
+  }, [enrollments, showTestAccounts])
+
+  const testAccountCount = useMemo(() => {
+    return enrollments.filter(en => en.is_test_account).length
+  }, [enrollments])
+
   const filteredEvents = useMemo(() => {
     if (!userDetail) return []
     if (eventFilter === 'all') return userDetail.recent_events
@@ -274,6 +291,10 @@ export default function NewUserReportsPage() {
               <input type="checkbox" checked={onlyActive} onChange={e => setOnlyActive(e.target.checked)} />
               Only active (within 72h window)
             </label>
+            <label className="flex items-center gap-2 text-sm" title="When OFF, hides @test.com / dev / App Store reviewer accounts. Server-side test-account auto-deletion runs hourly after 24h enrollment age.">
+              <input type="checkbox" checked={showTestAccounts} onChange={e => setShowTestAccounts(e.target.checked)} />
+              Show test accounts
+            </label>
             <button onClick={loadEnrollments} className="px-3 py-1.5 rounded text-sm" style={{ background: 'var(--accent)', color: 'white' }}>
               Refresh
             </button>
@@ -287,9 +308,13 @@ export default function NewUserReportsPage() {
           {/* ─── Enrollments list ─── */}
           <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: 12, maxHeight: '70vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-muted)' }}>
-              {loading ? 'Loading…' : `${enrollments.length} enrollments`}
+              {loading
+                ? 'Loading…'
+                : showTestAccounts
+                  ? `${visibleEnrollments.length} enrollments (incl. ${testAccountCount} test)`
+                  : `${visibleEnrollments.length} real enrollments${testAccountCount > 0 ? ` · ${testAccountCount} test hidden` : ''}`}
             </div>
-            {enrollments.map(en => (
+            {visibleEnrollments.map(en => (
               <button
                 key={en.user_id}
                 onClick={() => { setSelectedUserId(en.user_id); setSelectedReportId(null) }}
@@ -301,13 +326,30 @@ export default function NewUserReportsPage() {
                   borderRadius: 6,
                   marginBottom: 4,
                   background: selectedUserId === en.user_id ? 'rgba(37,99,235,0.18)' : 'transparent',
-                  borderLeft: en.total_crashes > 0 ? '3px solid #dc2626'
+                  borderLeft: en.is_test_account ? '3px solid #a855f7'
+                              : en.total_crashes > 0 ? '3px solid #dc2626'
                               : en.total_errors > 5 ? '3px solid #f59e0b'
                               : '3px solid transparent',
                 }}
               >
-                <div style={{ fontWeight: 600, fontSize: 13 }}>
-                  {en.user_profiles?.name || en.user_profiles?.username || en.user_id.slice(0, 8)}
+                <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{en.user_profiles?.name || en.user_profiles?.username || en.user_id.slice(0, 8)}</span>
+                  {en.is_test_account && (
+                    <span
+                      title="Auto-flagged as test account. Excluded from cohort metrics; auto-deleted after 24h enrollment age (#175)."
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: 0.5,
+                        background: '#a855f7',
+                        color: 'white',
+                        padding: '1px 5px',
+                        borderRadius: 3,
+                      }}
+                    >
+                      TEST
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                   {en.user_profiles?.email ?? '(no email)'}

@@ -488,19 +488,57 @@ extension NewOnboardingView {
                     Image(systemName: contactsPermissionGranted ? "person.2.slash" : "person.crop.circle.badge.questionmark")
                         .font(.system(size: 50))
                         .foregroundColor(.secondary.opacity(0.5))
-                    
+
                     Text(contactsPermissionGranted
                         ? (friendSearchText.isEmpty ? "No contacts on Fit33 yet" : "No results for \"\(friendSearchText)\"")
                         : "Enable contacts to find friends")
                         .font(.headline)
                         .foregroundColor(.secondary)
-                    
+
                     Text(contactsPermissionGranted
                         ? "When your contacts join, you'll be notified!"
                         : "Go back and allow contacts access")
                         .font(.subheadline)
                         .foregroundColor(.secondary.opacity(0.8))
                         .multilineTextAlignment(.center)
+
+                    // 2026-05-10 audit: ~50% of contacts-granted users hit
+                    // an empty PYMK list (no contacts on Fit33 yet) and
+                    // ended up bouncing between this step and the contacts
+                    // step because there was no in-screen way to advance.
+                    // Surface an explicit "Skip" CTA so the user can move
+                    // forward without backtracking. Only shows when the
+                    // empty state is the no-results-yet state — not the
+                    // permission-denied state, which already routes to
+                    // .confirmation via goToNextStep().
+                    if contactsPermissionGranted && friendSearchText.isEmpty {
+                        Button(action: {
+                            HapticManager.impact(.light)
+                            NewUserJourneyTracker.shared.logTap(action: "addFriends.skip_empty")
+                            navigateTo(.confirmation)
+                        }) {
+                            HStack(spacing: 8) {
+                                Text("Skip for now")
+                                    .font(.subheadline.weight(.semibold))
+                                Image(systemName: "arrow.right")
+                                    .font(.caption.weight(.bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, Spacing.lg)
+                            .padding(.vertical, Spacing.sm)
+                            .background(
+                                Capsule()
+                                    .fill(LinearGradient(
+                                        colors: [Color.blue, Color.cyan.opacity(0.8)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ))
+                                    .shadow(color: Color.blue.opacity(0.3), radius: 6, x: 0, y: 3)
+                            )
+                        }
+                        .padding(.top, 8)
+                        .accessibilityHint("Continues onboarding without adding friends")
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, 60)

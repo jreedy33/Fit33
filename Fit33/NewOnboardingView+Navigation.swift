@@ -47,12 +47,18 @@ extension NewOnboardingView {
         // first, but the server RPC silently drops anonymous calls). Once
         // post-signup, every step transition becomes a funnel event with
         // monotonic step_index, drives the per-user report's onboarding section.
-        let stepName = "\(step)"
+        //
+        // Canonical funnel step name when arriving at the terminal step is
+        // `completed` (singular source of truth — matches the
+        // update_nuj_enrollment_counters trigger which only flips
+        // `completed_onboarding = TRUE` for `step = 'completed'`). We used
+        // to fire BOTH `complete` (raw enum name) AND `completed` (explicit
+        // override) so half the events were unrecognized noise. Now we
+        // emit ONLY the canonical `completed` event for the terminal step
+        // and the raw enum name for every other step.
+        let stepName: String = (step == .complete) ? "completed" : "\(step)"
         let stepIndex = step.rawValue
         let editing = isEditingFromConfirmation
-        // Capture has_goals at the moment the user is LEAVING the .goal step
-        // (Migration #175 trigger contract: payload.step='goals' AND
-        // payload.has_goals='true' → flips `goal_set` flag on enrollment).
         let leavingGoalStep = (previousStep == .goal && step != .goal)
         let hasGoalsAtLeave = !selectedGoals.isEmpty
         Task { @MainActor in
@@ -71,13 +77,6 @@ extension NewOnboardingView {
                         "has_goals": hasGoalsAtLeave,
                         "goal_count": selectedGoals.count
                     ]
-                )
-            }
-            if step == .complete {
-                NewUserJourneyTracker.shared.logFunnelStep(
-                    funnel: "onboarding",
-                    step: "completed",
-                    stepIndex: stepIndex
                 )
             }
         }

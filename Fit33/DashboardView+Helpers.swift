@@ -61,16 +61,17 @@ extension DashboardView {
     
     func loadProfilePhoto() async {
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
-        
-        // Show cached image immediately for fast UX (but don't trust it - verify with database)
+
+        let signpost = PerformanceSignposts.begin(.profilePhotoLoad)
+        defer { PerformanceSignposts.end(signpost, slowThresholdMs: 2_000) }
+
         let hasCachedImage = ProfilePhotoCache.shared.cachedImage != nil
         if hasCachedImage {
             await MainActor.run {
                 self.profilePhotoURL = "cached"
             }
         }
-        
-        // ALWAYS fetch fresh from database to ensure correct photo for current user
+
         do {
             struct ProfilePhotoResult: Codable {
                 let profile_photo_url: String?
@@ -84,7 +85,6 @@ extension DashboardView {
                 .value
             
             if let photoUrl = result.first?.profile_photo_url {
-                // Download fresh from database and update cache
                 if let url = URL(string: photoUrl) {
                     do {
                         let (data, _) = try await URLSession.shared.data(from: url)
@@ -95,18 +95,31 @@ extension DashboardView {
                             }
                         }
                     } catch {
-                        AppLogger.warning("[DASHBOARD] Failed to download profile photo: \(error.localizedDescription)", category: .ui)
+                        NetworkErrorClassifier.log(
+                            error,
+                            context: "[DASHBOARD] Failed to download profile photo",
+                            category: .ui,
+                            op: PerformanceSignposts.Op.profilePhotoLoad.rawValue,
+                            endpoint: "r2/profile_photo",
+                            userId: userId
+                        )
                     }
                 }
             } else {
-                // User has no profile photo - clear any stale cache
                 ProfilePhotoCache.shared.clearCache()
                 await MainActor.run {
                     self.profilePhotoURL = nil
                 }
             }
         } catch {
-            AppLogger.warning("[DASHBOARD] Failed to load profile photo: \(error.localizedDescription)", category: .ui)
+            NetworkErrorClassifier.log(
+                error,
+                context: "[DASHBOARD] Failed to load profile photo",
+                category: .ui,
+                op: PerformanceSignposts.Op.profilePhotoLoad.rawValue,
+                endpoint: "rest/user_profiles",
+                userId: userId
+            )
         }
     }
 

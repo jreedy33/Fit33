@@ -619,6 +619,9 @@ class PrivateChallengeService: ObservableObject {
             return
         }
 
+        let signpost = PerformanceSignposts.begin(.privateChallengesRefresh)
+        defer { PerformanceSignposts.end(signpost, slowThresholdMs: 2_000) }
+
         // Phase 4 (Snappiness Overhaul, 2026-05-07): emit freshness delta
         // BEFORE firing the RPC. Parity-test parser greps for
         // `perf.signpost.foreground.rpc_freshness_delta_ms.<rpc>` to

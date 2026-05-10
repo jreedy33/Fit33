@@ -110,6 +110,10 @@ interface EnrollmentRow {
     streak_3_days?: boolean;
     goal_set?: boolean;
     notification_permission_granted?: boolean;
+    // Test-account isolation (#175 — 2026-05-10). Optional because
+    // pre-migration enrollments don't have the column when read by an
+    // older edge function build mid-deploy.
+    is_test_account?: boolean;
 }
 
 interface SessionRow {
@@ -197,6 +201,15 @@ function buildMarkdownReport(data: ReportData, checkpoint: Checkpoint): string {
     lines.push(`**Checkpoint:** ${checkpoint}`);
     lines.push(`**Window:** ${data.window_start} → ${data.window_end}  (≈${hoursElapsed}h since journey start)`);
     lines.push(`**Generated:** ${new Date().toISOString()}`);
+    // Test-account banner (#175). Manual single-user invocations can still
+    // generate a report for a test account (admin override). Surface this
+    // prominently so any human reviewer (and Claude) instantly sees the
+    // analysis is not real-product signal.
+    if (e.is_test_account) {
+        lines.push("");
+        lines.push("> ⚠️ **TEST ACCOUNT** — this enrollment is flagged as a developer / QA / App Store reviewer account.");
+        lines.push("> Findings here MUST NOT be aggregated into real-user cohort metrics. Use only for pipeline validation.");
+    }
     lines.push("");
 
     // ───── 1. User snapshot ─────
@@ -362,6 +375,11 @@ async function callClaudeForAnalysis(reportMd: string): Promise<{ analysis: stri
 
     const systemPrompt = "You are the Fit33 New-User Journey Analyst. You review a structured " +
         "Markdown report describing a single new user's first 72 hours in the app. " +
+        "If the report header contains a '⚠️ TEST ACCOUNT' banner, your FIRST sentence " +
+        "MUST be 'TEST ACCOUNT — pipeline-validation-only output, do not factor into product decisions.' " +
+        "and your remaining analysis must focus exclusively on pipeline / instrumentation " +
+        "issues (missing events, broken funnel steps, error classification gaps) — never " +
+        "behavioral product insights, since the user is not a real new customer. " +
         "Output ONLY the analysis described in §9 of the report — no preamble, no " +
         "restating of the data. Use Markdown bullets. 6-10 bullets max. Cite event " +
         "timestamps from §8 as your evidence trail.";
@@ -478,9 +496,18 @@ serve(async (req) => {
         userIds = [body.user_id];
         perUserCheckpoint = body.checkpoint ?? "MANUAL";
     } else {
+        // Cron path: skip test accounts (#175). The pg_cron wrapper
+        // (`trigger_generate_new_user_reports`) already filters these out
+        // when computing `pending`, but we ALSO filter here as defense-in-
+        // depth — if the function is invoked directly via the admin CMS
+        // "Generate batch" button, the same exclusion still applies.
+        // Manual single-user invocations (body.user_id) bypass this gate
+        // intentionally — admins occasionally need to generate a one-off
+        // report for an internal QA account to validate the pipeline.
         const { data: dueRows, error } = await supabase
             .from("new_user_journey_enrollment")
             .select("*")
+            .eq("is_test_account", false)
             .or([
                 "and(d1_report_generated.eq.false,d1_report_due_at.lte.now())",
                 "and(d2_report_generated.eq.false,d2_report_due_at.lte.now())",

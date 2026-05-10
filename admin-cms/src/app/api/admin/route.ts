@@ -4936,9 +4936,16 @@ export async function POST(req: NextRequest) {
         const { days = 7 } = params as { days?: number }
         const cutoff = new Date(Date.now() - Math.min(Math.max(days, 1), 90) * 86_400_000).toISOString()
 
+        // Migration #175 — exclude test accounts from the cohort math.
+        // Cohort summary cards drive product decisions; if the underlying
+        // 15-row sample is half @test.com, every percentage is misleading.
+        // The list view above can OPT-IN to test accounts via the
+        // "Show test accounts" toggle, but the cohort summary is always
+        // real-user-only.
         const { data, error } = await admin.from('new_user_journey_enrollment')
           .select('user_id, enrolled_at, completed_onboarding, completed_first_workout, logged_first_meal, added_first_friend, connected_wearable, saw_paywall, converted_paywall, created_custom_workout, streak_3_days, goal_set, notification_permission_granted, total_events, total_sessions, total_errors, total_crashes, install_app_version, install_device_model, auth_provider')
           .gte('enrolled_at', cutoff)
+          .eq('is_test_account', false)
 
         if (error) return NextResponse.json({ error: error.message }, { status: 500 })
         const rows = data ?? []

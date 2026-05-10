@@ -304,7 +304,11 @@ struct InsightsTabContent: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
+                // Test Account toggle — keep at top so it's easy to find
+                // when starting a fresh QA pass. Migration #175 (2026-05-10).
+                testAccountModeCard
+
                 // Stats Overview
                 statsOverviewCard
                 
@@ -389,6 +393,61 @@ struct InsightsTabContent: View {
         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
     
+    @State private var testAccountToggle: Bool = NewUserJourneyTracker.manualTestAccountOverride
+
+    /// Marks the current account as a test account in the new-user-journey
+    /// pipeline (#175). When TRUE the next `enroll_new_user_journey` call
+    /// will stamp `is_test_account = TRUE`, the report cron will skip this
+    /// user, and the hourly cleanup_test_journey_data() job will auto-delete
+    /// all journey events for this user after 24h of enrollment age.
+    ///
+    /// This is the manual override — the email-pattern auto-detect
+    /// (`is_test_account_email()` server-side) catches @test.com /
+    /// joereedis@icloud.com / joe.r.reedis@gmail.com without needing the
+    /// toggle. Use this card when:
+    ///   - You're on a real-prod account but doing a QA pass and don't want
+    ///     to pollute the cohort.
+    ///   - App Store reviewers — flip ON before TestFlight build, ship, then
+    ///     OFF after review approval.
+    private var testAccountModeCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: testAccountToggle ? "person.fill.questionmark" : "person.fill.checkmark")
+                    .font(.title2)
+                    .foregroundColor(testAccountToggle ? .orange : .green)
+                Text("Test Account Mode")
+                    .font(.headline)
+                Spacer()
+                Toggle("", isOn: $testAccountToggle)
+                    .labelsHidden()
+                    .onChange(of: testAccountToggle) { _, newValue in
+                        NewUserJourneyTracker.setManualTestAccountOverride(newValue)
+                        if newValue {
+                            // Re-enroll so the flag reaches the server NOW
+                            // (otherwise it doesn't propagate until the
+                            // next cold start). No-op if already enrolled —
+                            // the RPC just sets is_test_account=TRUE and
+                            // returns the existing window.
+                            Task {
+                                await NewUserJourneyTracker.shared.checkEnrollmentAndActivate()
+                            }
+                        }
+                    }
+            }
+
+            Text(testAccountToggle
+                 ? "This account is flagged as TEST. New-user-journey events will be excluded from cohort reports and auto-deleted after 24h."
+                 : "Auto-detect handles @test.com and your dev emails. Flip ON for App Store review accounts or ad-hoc QA on real-prod emails.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding()
+        .background(Color.cardBackground)
+        .cornerRadius(CornerRadius.md)
+        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+    }
+
     private var forceExerciseRefreshCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {

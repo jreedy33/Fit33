@@ -696,6 +696,11 @@ extension NewOnboardingView {
                 password: password,
                 name: name.isEmpty ? "User" : name
             )
+            // NUJ channel attribution (#162) — happy-path email signup.
+            // The recovery branch below ALSO fires this (after sign-in
+            // succeeds) so the enrollment row carries `auth_provider='email'`
+            // regardless of which branch landed the session.
+            NewUserJourneyTracker.recordAuthProvider("email")
         } catch {
             let desc = error.localizedDescription.lowercased()
             let isAlreadyRegistered = desc.contains("already registered")
@@ -752,6 +757,8 @@ extension NewOnboardingView {
                 name: name.isEmpty ? "User" : name,
                 email: email
             )
+            // NUJ channel attribution (#162) — recovery path.
+            NewUserJourneyTracker.recordAuthProvider("email")
         }
     }
     

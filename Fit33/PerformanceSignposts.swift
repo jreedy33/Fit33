@@ -137,6 +137,30 @@ enum PerformanceSignposts {
         case achievementCheck         = "achievement.check_unlock"
         case achievementIncrement     = "achievement.increment"
         case achievementFetch         = "achievement.fetch"
+        // OlympianPathService.fetchSeasonBadges — added 2026-05-10 to drain
+        // the wrapped-CancellationError-as-NSError leak surfaced in the
+        // 2026-05-10 NUJ audit on knovak98@hotmail.com (75% NUJ error rate;
+        // root cause: `catch is CancellationError` arm doesn't catch the
+        // bridged NSError variant from Supabase-Swift, so the cascade fell
+        // through to bare `AppLogger.error`). Same shape as achievementCheck.
+        case olympianFetchBadges      = "olympian.fetch_badges"
+
+        // dashboard.social_fanout sub-op signposts — added 2026-05-10 after
+        // knovak98@hotmail.com NUJ audit showed `dashboard.social_fanout`
+        // taking 10754ms (3.5x over the 3000ms threshold) but with only 1
+        // friend / ~0 challenges, so the fan-out itself wasn't the bottleneck.
+        // Without per-op timings on the 5 awaited calls in the parallel block
+        // (`fetchFriends`, `fetchActiveChallenges`, `refreshAll`,
+        // `loadProfilePhoto`, `fetchDailyQuests`) we couldn't attribute the
+        // 10.7s. Two of those already had signposts (`friends.fetch`,
+        // `challenges.fetch`); these three close the gap. Next slow user
+        // surfaces the actual slow op instead of just the parent fan-out
+        // span. Use NetworkErrorClassifier.log(op:) at the catch site so
+        // transient cancels collapse to .transientNetwork per the same
+        // pattern as achievementCheck (QPA invariant 25a).
+        case privateChallengesRefresh = "private_challenges.refresh"
+        case profilePhotoLoad         = "profile.photo_load"
+        case dailyQuestsFetch         = "daily_quests.fetch"
 
         // Monetization / In-App Purchase (Phase 1d — added 2026-04-29 per
         // MONETIZATION_AGENT.md invariants 32–33 + BUG_INTELLIGENCE_AGENT

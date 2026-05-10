@@ -1397,6 +1397,13 @@ extension NewOnboardingView {
                             appleProvidedName: appleProvidedFullName
                         )
                         AppLogger.debug("Supabase signInWithApple returned. isNewUser: \(isNewUser)", category: .auth)
+
+                        // NUJ channel attribution (#162): persist the auth
+                        // provider BEFORE the journey-enrollment RPC fires
+                        // so the enrollment row carries the channel that
+                        // brought the user in. checkEnrollmentAndActivate()
+                        // reads UserDefaults inside enrollmentParams().
+                        NewUserJourneyTracker.recordAuthProvider("apple")
                         
                         // Set the FULL NAME (first + last) in onboarding state
                         await MainActor.run {

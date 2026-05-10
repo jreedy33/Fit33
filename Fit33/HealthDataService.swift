@@ -400,9 +400,17 @@ final class HealthDataService: ObservableObject {
             )
             
             do {
+                // 2026-05-10 audit: this upsert was returning PGRST204 on
+                // every WHOOP sync because the `onConflict` column list
+                // didn't match the unique index installed by migration #149
+                // (`user_id, date_of_sleep, source`). Closes the silent-
+                // failure cluster — every WHOOP sleep row was getting
+                // dropped on the floor and the dashboard sleep timeline
+                // stayed empty for WHOOP-connected users. Paired with the
+                // CodingKey rename `date` → `date_of_sleep` above.
                 try await SupabaseManager.shared.supabaseClient
                     .from("sleep_logs")
-                    .upsert(insert, onConflict: "user_id,date,source")
+                    .upsert(insert, onConflict: "user_id,date_of_sleep,source")
                     .execute()
             } catch {
                 AppLogger.warning("[WHOOP] Failed to save sleep for \(sleepDate): \(error)", category: .health)
@@ -640,9 +648,22 @@ final class HealthDataService: ObservableObject {
         let remSleepMilli: Int
         let awakeMilli: Int
 
+        // 2026-05-10 audit: every WHOOP / Oura sleep upsert was failing with
+        // PGRST204 because Swift was sending a `date` JSON key but the
+        // canonical column on `sleep_logs` is `date_of_sleep` (locked in
+        // by migration #149 `20260718_sleep_logs_upsert_unique.sql` —
+        // the unique index is `(user_id, date_of_sleep, source)`).
+        // PostgREST then rejects with "column 'date' not found in schema
+        // cache" and the entire sleep row is dropped on the floor. Fix:
+        // re-key `date` → `date_of_sleep` so the insert payload matches
+        // both the column name AND the unique-index target. Paired with
+        // the `onConflict` strings on the upsert call sites — those were
+        // already wrong (`user_id,date,source` instead of
+        // `user_id,date_of_sleep,source`) and are corrected in the same
+        // sprint.
         enum CodingKeys: String, CodingKey {
             case userId = "user_id"
-            case date
+            case date = "date_of_sleep"
             case totalSleepHours = "total_sleep_hours"
             case source
             case externalId = "external_id"
@@ -796,9 +817,13 @@ final class HealthDataService: ObservableObject {
             )
 
             do {
+                // Same fix as the WHOOP path above — `date` was the wrong
+                // column name; the canonical unique index is on
+                // `user_id, date_of_sleep, source`. PGRST204 on every Oura
+                // sleep upsert until this fix.
                 try await SupabaseManager.shared.supabaseClient
                     .from("sleep_logs")
-                    .upsert(insert, onConflict: "user_id,date,source")
+                    .upsert(insert, onConflict: "user_id,date_of_sleep,source")
                     .execute()
             } catch {
                 AppLogger.warning("[OURA] Failed to save sleep for \(sleep.day): \(error)", category: .health)

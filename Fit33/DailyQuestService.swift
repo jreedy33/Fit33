@@ -1155,6 +1155,9 @@ class DailyQuestService: ObservableObject {
             }
             return
         }
+
+        let signpost = PerformanceSignposts.begin(.dailyQuestsFetch)
+        defer { PerformanceSignposts.end(signpost, slowThresholdMs: 2_000) }
         
         // Throttle
         if !force, let cacheDate = UserDefaults.standard.object(forKey: cacheDateKey) as? Date,

@@ -248,14 +248,37 @@ def load_existing_proposal_keys(supabase) -> set[tuple[str, str, str, str]]:
     return keys
 
 
+def _load_names_file(path: str) -> list[str]:
+    """Read a newline-delimited names file. Blank lines and lines starting with
+    '#' are treated as comments. Names are normalized (stripped). Duplicates
+    preserved (caller decides whether to dedupe).
+    """
+    p = Path(path)
+    if not p.exists():
+        print(f"ERROR: --names-file not found: {p}", file=sys.stderr)
+        sys.exit(2)
+    out: list[str] = []
+    for raw_line in p.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        out.append(line)
+    return out
+
+
 def fetch_exercise_ids(
     supabase,
     skip_recent_days: int,
     skip_existing_proposals: bool,
     family_filter: str | None,
     limit: int | None,
+    names_file: str | None = None,
 ) -> list[dict[str, Any]]:
     """Pull all exercise rows we want to audit. Filters applied:
+      - optional --names-file (case-insensitive name match — targeted seed
+        from an autogen-audit rejection list; bypasses --skip-recent-days
+        and --no-skip-existing gates because the operator EXPLICITLY asked
+        for these names)
       - skip exercises edited manually within `skip_recent_days`
       - skip exercises that already have a non-rejected proposal
       - optional --family filter
@@ -280,11 +303,44 @@ def fetch_exercise_ids(
             break
         page += 1
 
+    # ── Targeted names-file filter (R10 → catalog-cleanup loop) ──
+    # When the operator passes --names-file, scope the audit to ONLY those
+    # exercises. Match is case-insensitive substring against the canonical
+    # name AND the catalog name lowercased — autogen-audit rejection lines
+    # often truncate or normalize spacing (e.g. "Seated Single Leg Hamstring
+    # Stret" vs catalog "Seated Single Leg Hamstring Stretch"). We accept
+    # either direction as a match.
+    #
+    # This filter intentionally bypasses --skip-recent-days and the existing-
+    # proposal skip: if the operator put a name in the file, they EXPLICITLY
+    # want it re-audited regardless of recent edits or pending proposals.
+    names_match_report: tuple[int, int] | None = None
+    if names_file:
+        targets = _load_names_file(names_file)
+        targets_lc = [t.lower() for t in targets]
+        before = len(all_rows)
+        matched: list[dict[str, Any]] = []
+        for row in all_rows:
+            row_name_lc = (row.get("name") or "").lower()
+            if not row_name_lc:
+                continue
+            if any(t == row_name_lc or t in row_name_lc or row_name_lc in t for t in targets_lc):
+                matched.append(row)
+        all_rows = matched
+        names_match_report = (len(targets), before - len(matched))
+        print(
+            f"[scope] names-file: {len(targets)} target names → "
+            f"{len(matched)} catalog rows matched (out of {before})"
+        )
+
     # Manual-edit skip. `skip_recent_days <= 0` means "audit everything, no
     # matter how recently it was hand-edited" — useful when the operator
     # wants a fully clean sweep across the whole catalog (the user already
     # asked for that explicitly on 2026-05-07).
-    if skip_recent_days <= 0:
+    # When --names-file is set the operator explicitly opted in; bypass the
+    # manual-edit and existing-proposal gates.
+    apply_skip_gates = not names_file
+    if skip_recent_days <= 0 or not apply_skip_gates:
         fresh = list(all_rows)
         skipped_manual = 0
     else:
@@ -298,7 +354,7 @@ def fetch_exercise_ids(
 
     # Existing-proposal skip.
     skipped_existing = 0
-    if skip_existing_proposals:
+    if skip_existing_proposals and apply_skip_gates:
         existing_ids = {
             k[0] for k in load_existing_proposal_keys(supabase)
         }
@@ -309,12 +365,19 @@ def fetch_exercise_ids(
     if limit:
         fresh = fresh[:limit]
 
-    print(
-        f"[scope] catalog={len(all_rows)} "
-        f"skipped_manual_recent={skipped_manual} "
-        f"skipped_existing_proposal={skipped_existing} "
-        f"to_audit={len(fresh)}"
-    )
+    if names_file:
+        print(
+            f"[scope] catalog={len(all_rows)} (names-file scoped) "
+            f"skipped_manual_recent=BYPASSED skipped_existing_proposal=BYPASSED "
+            f"to_audit={len(fresh)}"
+        )
+    else:
+        print(
+            f"[scope] catalog={len(all_rows)} "
+            f"skipped_manual_recent={skipped_manual} "
+            f"skipped_existing_proposal={skipped_existing} "
+            f"to_audit={len(fresh)}"
+        )
     return fresh
 
 
@@ -331,6 +394,7 @@ def run_dry_run(args) -> int:
         skip_existing_proposals=not args.no_skip_existing,
         family_filter=args.family,
         limit=args.limit,
+        names_file=args.names_file,
     )
     if not rows:
         print("[done] nothing to audit.")
@@ -642,6 +706,15 @@ def main() -> int:
                     help="(dry-run only) Cap the number of exercises audited. Use for test batches.")
     ap.add_argument("--family", default=None,
                     help="(dry-run only) Filter to a single exercise_family.")
+    ap.add_argument("--names-file", default=None, metavar="PATH",
+                    help="(dry-run only) Restrict the audit to the names listed in "
+                         "the given file (one name per line; '#' comments + blanks "
+                         "ignored). Case-insensitive substring match in either "
+                         "direction (handles truncated audit-report names). When "
+                         "set, --skip-recent-days and --no-skip-existing are "
+                         "BYPASSED — the operator explicitly asked for these names. "
+                         "Pair with `scripts/extract_audit_rejections.py` to seed "
+                         "from an autogen-audit .md.")
     ap.add_argument("--skip-recent-days", type=int, default=DEFAULT_SKIP_RECENT_DAYS,
                     help="(dry-run only) Skip exercises with manually_updated_at within N days. "
                          f"Default: {DEFAULT_SKIP_RECENT_DAYS}.")

@@ -1633,7 +1633,8 @@ class SmartExerciseSelectionEngine {
             name: name,
             isBeginner: isBeginner,
             isIntermediate: isIntermediate,
-            completedWorkoutCount: completedWorkoutCount
+            completedWorkoutCount: completedWorkoutCount,
+            userAge: userAge
         ) {
             return specialtyResult
         }
@@ -2756,6 +2757,112 @@ enum SpecialtyVariantFilter {
                 rationale: "Eccentric-only — specialty programming"),
         Pattern(substring: "isometric hold", baseMovement: "generic", severity: .blockUntilEstablished,
                 rationale: "Isometric-hold prescribed — specialty technique requiring mind-muscle mastery; never the first autogen variant of a movement (audit Round 4: Advanced user got 'Isometric Hold Push Up')"),
+
+        // ════════════════════════════════════════════════════════════════════════
+        // Round 9 audit additions (2026-05-10)
+        // Source: scripts/output/autogen_audit_20260510_145119.md residual slip
+        // table. 31% of workouts had a specialty-variant flag despite Round 8's
+        // filter wire-in. New patterns target Sumo deadlift / RDL stance variants,
+        // alternating-limb stability progressions, single-arm / single-leg
+        // unilateral specialties, isometric-hold programming, rotational /
+        // twisting specialty, low-bar squat, plank-arm/leg progressions, and
+        // several catalog-corruption combos.
+        // ════════════════════════════════════════════════════════════════════════
+
+        // Catalog-corruption combos (.blockAll — never autogen at any level)
+        Pattern(substring: "pullover with bench", baseMovement: "combo", severity: .blockAll,
+                rationale: "Pullover-with-bench-press is a catalog-corruption combo combining two distinct movements — never autogen"),
+        Pattern(substring: "bench press pullover", baseMovement: "combo", severity: .blockAll,
+                rationale: "Bench-press-pullover is a catalog-corruption combo — never autogen"),
+        Pattern(substring: "squat hold calf raise", baseMovement: "combo", severity: .blockAll,
+                rationale: "Squat-hold-with-calf-raise is a catalog-corruption combo combining two distinct movements"),
+        Pattern(substring: "reverse lunge front kick", baseMovement: "combo", severity: .blockAll,
+                rationale: "Reverse-lunge-front-kick is a martial-arts-derived combo — never autogen for strength workouts"),
+
+        // Sumo / SLDL deadlift family additions
+        Pattern(substring: "sumo deadlift", baseMovement: "deadlift", severity: .blockUntilEstablished,
+                rationale: "Sumo deadlift requires different hip mobility / technique than conventional — show conventional first regardless of level (audit Round 9: 3× hits across Beginner/Advanced)"),
+        Pattern(substring: "sumo romanian", baseMovement: "deadlift", severity: .blockUntilEstablished,
+                rationale: "Sumo-stance Romanian deadlift = sumo stance + RDL technique — show conventional RDL first regardless of level"),
+        Pattern(substring: "stiff legged", baseMovement: "deadlift", severity: .blockBeginner,
+                rationale: "Stiff-legged deadlift (catalog spelling) — high low-back stress, specialty for beginners (complement to existing 'stiff leg')"),
+        Pattern(substring: "straight back stiff", baseMovement: "deadlift", severity: .blockUntilEstablished,
+                rationale: "'Straight Back Stiff Leg Deadlift' combines two postural-cue modifiers — show standard SLDL/RDL first regardless of level"),
+
+        // Squat / lunge family additions (Round 9)
+        Pattern(substring: "low bar", baseMovement: "squat", severity: .blockUntilEstablished,
+                rationale: "Low-bar squat is an advanced powerlifting bar position requiring extensive shoulder/wrist mobility — show high-bar / standard back squat first regardless of level"),
+        Pattern(substring: "wide squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Wide-stance squat is a stance modifier — beginners should master standard back squat positioning first"),
+        Pattern(substring: "narrow squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Narrow-stance squat is a stance modifier — beginners should master standard squat positioning first"),
+        Pattern(substring: "pulse ", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Pulse-rep squat / pulse goblet squat is a tempo-variant specialty — beginners should master full-range first"),
+        Pattern(substring: "sumo quarter", baseMovement: "squat", severity: .blockAll,
+                rationale: "Sumo-quarter-squat / tip-toe entries are catalog-corruption multi-modifier combos — never autogen at any level"),
+        Pattern(substring: "tip toe", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Tip-toe / toe-elevated squat is a balance-progression specialty — not appropriate for beginner squat patterning"),
+        Pattern(substring: "high knee squat", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "High-knee squat is a coordination/balance variant — beginners should master basic bodyweight squat first"),
+        Pattern(substring: "elevated heel", baseMovement: "squat", severity: .blockBeginner,
+                rationale: "Heels-elevated squat (catalog phrasing) is a quad-emphasis specialty (complement to existing 'heels elevated')"),
+        Pattern(substring: "opposite reverse lunge", baseMovement: "lunge", severity: .blockBeginner,
+                rationale: "Opposite-reverse-lunge (contralateral loading) is a specialty unilateral variant — show standard reverse lunge first for beginners"),
+        Pattern(substring: "opposite lunge", baseMovement: "lunge", severity: .blockBeginner,
+                rationale: "Opposite-loaded lunge is a contralateral-loading specialty — show standard lunge first"),
+
+        // Plank / core / pallof family additions (Round 9)
+        Pattern(substring: "plank arm lift", baseMovement: "plank", severity: .blockBeginner,
+                rationale: "Plank-with-arm-lift requires single-arm stability — beginners should master basic plank first"),
+        Pattern(substring: "side plank raise", baseMovement: "plank", severity: .blockBeginner,
+                rationale: "Side-plank-with-raise is a complex unilateral plank progression — beginners should master standard side plank first"),
+        Pattern(substring: "front plank arm leg", baseMovement: "plank", severity: .blockBeginner,
+                rationale: "Front plank with arm/leg raise is a complex stability progression — beginners should master basic front plank first"),
+        Pattern(substring: "horizontal pallof", baseMovement: "pallof", severity: .blockBeginner,
+                rationale: "Horizontal pallof press is an anti-rotation progression — beginners should master standing pallof first"),
+
+        // Pull-up additions
+        Pattern(substring: "commando", baseMovement: "pullup", severity: .blockUntilEstablished,
+                rationale: "Commando pull-up = alternating-grip pull-up — specialty grip variant; show standard pull-up first regardless of level"),
+
+        // Equipment-specialty
+        Pattern(substring: "weighted chains", baseMovement: "bench_press", severity: .blockIntermediate,
+                rationale: "Weighted-chains bench press requires accommodating-resistance equipment most users don't have — specialty equipment context"),
+
+        // Triceps specialty
+        Pattern(substring: "tate press", baseMovement: "triceps", severity: .blockUntilEstablished,
+                rationale: "Tate press is a specialty triceps variant — show standard triceps extension/skull crusher first regardless of level"),
+
+        // OHP / overhead specialty
+        Pattern(substring: "seesaw press", baseMovement: "ohp", severity: .blockBeginner,
+                rationale: "Seesaw press = alternating overhead press — unilateral stability progression; beginners should master bilateral overhead press first"),
+        Pattern(substring: "side press", baseMovement: "ohp", severity: .blockBeginner,
+                rationale: "Side press is a kettlebell-windmill-derived overhead variant — show standard OHP first for beginners"),
+
+        // Generic unilateral / alternating / isometric / twisting modifiers
+        // Place near end so family-specific patterns above match first.
+        Pattern(substring: "alternating", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Alternating-limb variants (e.g. '(Dumbbell) - Alternating') are unilateral stability progressions — beginners should master bilateral first (audit Round 9: 4× hits)"),
+        Pattern(substring: "single weight", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Single-weight variants (e.g. 'Bench Press - Single Weight') are unilateral asymmetric loading — beginners should master bilateral first"),
+        Pattern(substring: "single leg push", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Single-leg push-up (incl. 'Raise Single Leg Push Up') is a unilateral stability progression — beginners should master standard push-up first"),
+        Pattern(substring: "single leg chest", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Single-leg chest press (TRX) is a unilateral stability progression — beginners should master bilateral first"),
+        Pattern(substring: "single leg bridge", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Single-leg bridge / hip thrust is a unilateral progression — beginners should master bilateral hip thrust first"),
+        Pattern(substring: "single arm lateral", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Single-arm lateral raise is a unilateral specialty — beginners should master bilateral lateral raise first"),
+        Pattern(substring: "single arm twisting", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Single-arm twisting row is a rotational unilateral specialty — beginners should master bilateral standard row first"),
+        Pattern(substring: "raise single leg", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Raise-single-leg variants are unilateral stability progressions — beginners should master bilateral first"),
+        Pattern(substring: "staggered stance", baseMovement: "generic", severity: .blockBeginner,
+                rationale: "Staggered-stance variants are unilateral asymmetric specialties — beginners should master bilateral foundation first"),
+        Pattern(substring: " isometric", baseMovement: "generic", severity: .blockUntilEstablished,
+                rationale: "Isometric-hold programming (e.g. 'Bicep Hold - Isometric (Band)') is a specialty technique — show standard cadence first regardless of level (complement to existing 'isometric hold')"),
+        Pattern(substring: "twisting ", baseMovement: "generic", severity: .blockUntilEstablished,
+                rationale: "Twisting / rotational variants combine flexion + rotation — rotational specialty; show standard movement first regardless of level"),
     ]
 
     /// Returns a `PracticalityResult` to short-circuit selection if the
@@ -2771,16 +2878,40 @@ enum SpecialtyVariantFilter {
     /// threshold (`workoutCountThresholds`). Audit synthetic users always
     /// pass count=0 → grip / unilateral / stability progression variants
     /// are blocked across the board.
+    ///
+    /// `userAge` was added in the 2026-05-10 Round 9 audit pass. When
+    /// `userAge >= 60`, every specialty pattern (regardless of severity)
+    /// is treated as `.blockAll` — older adults should never see Sumo
+    /// Quarter Squat Tip Toe, Low Bar Squat, Anti Gravity Pull Up, or
+    /// any other specialty variant via autogen, even if their experience
+    /// level says "Advanced". The Round 9 report had multiple high-priority
+    /// `obscure_exercise` flags caused by 60+ Beginners getting specialty
+    /// variants the level-based filter would have allowed for Advanced.
+    /// Default `0` keeps legacy callers compatible — the age check no-ops
+    /// at 0.
     static func evaluate(
         name: String,
         isBeginner: Bool,
         isIntermediate: Bool,
-        completedWorkoutCount: Int = 0
+        completedWorkoutCount: Int = 0,
+        userAge: Int = 0
     ) -> SmartExerciseSelectionEngine.PracticalityResult? {
         let haystack = " \(name) "
+        // Audit Round 9: age >= 60 hard-blocks ALL specialty variants
+        // regardless of severity. Older adults need canonical movements
+        // only — specialty programming carries disproportionate injury
+        // risk in this population.
+        let isOlderAdult = userAge >= 60
         for pattern in patterns {
             guard haystack.contains(pattern.substring) else { continue }
             let trimmed = pattern.substring.trimmingCharacters(in: .whitespaces)
+            if isOlderAdult {
+                return SmartExerciseSelectionEngine.PracticalityResult(
+                    shouldExclude: true,
+                    scoreModifier: 0,
+                    reason: "Specialty variant '\(trimmed)' blocked for users 60+ (auto-block all severities) — \(pattern.rationale)"
+                )
+            }
             switch pattern.severity {
             case .blockAll:
                 return SmartExerciseSelectionEngine.PracticalityResult(

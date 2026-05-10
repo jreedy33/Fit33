@@ -769,6 +769,9 @@ class WorkoutGeneratorService: ObservableObject {
         let userLevelLower = context.userLevel.lowercased()
         let isBeginnerForSpecialty = userLevelLower == "beginner"
         let isIntermediateForSpecialty = userLevelLower == "intermediate"
+        // Audit Round 9 (2026-05-10) — pass userAge so SpecialtyVariantFilter can
+        // hard-block all specialty variants for users 60+ regardless of level.
+        let userAgeForSpecialty = context.userAge
         let beforeSpecialtyCount = allExercises.count
         allExercises = allExercises.filter { exercise in
             guard let rawName = exercise.name else { return true }
@@ -776,7 +779,8 @@ class WorkoutGeneratorService: ObservableObject {
                 name: rawName.lowercased(),
                 isBeginner: isBeginnerForSpecialty,
                 isIntermediate: isIntermediateForSpecialty,
-                completedWorkoutCount: userWorkoutCount
+                completedWorkoutCount: userWorkoutCount,
+                userAge: userAgeForSpecialty
             )
             if let result = result, result.shouldExclude {
                 #if DEBUG
@@ -788,9 +792,62 @@ class WorkoutGeneratorService: ObservableObject {
         }
         let filteredSpecialty = beforeSpecialtyCount - allExercises.count
         if filteredSpecialty > 0 {
-            AppLogger.debug("[SPECIALTY] Pre-filtered \(filteredSpecialty) specialty variants (level=\(userLevelLower), count=\(userWorkoutCount))", category: .workout)
+            AppLogger.debug("[SPECIALTY] Pre-filtered \(filteredSpecialty) specialty variants (level=\(userLevelLower), age=\(userAgeForSpecialty), count=\(userWorkoutCount))", category: .workout)
         }
-        
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 🚫 STRETCH EXCLUSION (Audit 2026-05-10 Round 9 fix #2)
+        //
+        // Round 9's worst-rated workout (`user-5`, 19yo Advanced Build Muscle, rated
+        // 3/10, verdict REJECT) had TWO static stretches in a Lower Body strength
+        // session: "Standing Raised Leg Hip Adductor Stretch" and "Seated Single Leg
+        // Hamstring Stret". Claude flagged both as `critical` "static stretch
+        // included in strength workout provides no training stimulus for muscle
+        // building goal." The catalog has stretch exercises mixed in with strength
+        // exercises and the autogen pipeline never separated them.
+        //
+        // Hard-skip any exercise whose name contains "stretch" or the truncated
+        // catalog typo "stret " — these are mobility / cooldown movements, not
+        // strength stimuli. If a future Mobility / Recovery autogen path needs
+        // stretches, it can opt back in by skipping this filter.
+        //
+        // We DO NOT block by `exerciseType` field because the catalog's typing is
+        // inconsistent — name-based detection is more reliable and matches what
+        // Claude actually flagged.
+        // ═══════════════════════════════════════════════════════════════════════════
+        let beforeStretchCount = allExercises.count
+        allExercises = allExercises.filter { exercise in
+            guard let rawName = exercise.name else { return true }
+            let nameLower = rawName.lowercased()
+            // "stretch" + the typo "stret " (catalog has "Stret" without "ch")
+            // OR yoga / mobility-flow keywords that already appeared in obscure
+            // exercise rounds but slipped through here when database scores were
+            // high. Listed as one combined check so the reason log is consistent.
+            let isStretch =
+                nameLower.contains("stretch") ||
+                nameLower.contains(" stret ") ||
+                nameLower.hasSuffix(" stret") ||
+                nameLower.contains("cat cow") ||
+                nameLower.contains("child pose") ||
+                nameLower.contains("downward dog") ||
+                nameLower.contains("cobra pose") ||
+                nameLower.contains("pigeon pose") ||
+                nameLower.contains("lizard pose") ||
+                nameLower.contains("warrior pose") ||
+                nameLower.contains("upward dog")
+            if isStretch {
+                #if DEBUG
+                AppLogger.debug("[STRETCH] Excluding '\(rawName)' — stretches are not strength stimuli (use mobility flow for these)", category: .workout)
+                #endif
+                return false
+            }
+            return true
+        }
+        let filteredStretches = beforeStretchCount - allExercises.count
+        if filteredStretches > 0 {
+            AppLogger.debug("[STRETCH] Pre-filtered \(filteredStretches) stretch / mobility exercises from strength autogen", category: .workout)
+        }
+
         let foundationalDB = FoundationalExerciseDatabase.shared
         let hasLowerBackIssue = context.hasLowerBackIssue
         
@@ -4052,7 +4109,85 @@ class WorkoutGeneratorService: ObservableObject {
         
         // Step 3: Combine in order: compounds → isolations → core
         var finalOrder = spacedCompounds + spacedIsolations + coreExercises
-        
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // Step 4: Bilateral-first + max-consecutive-unilateral guard
+        // (Audit 2026-05-10 Round 9 fix #3)
+        //
+        // Round 9 found 89 `compound_after_isolation` flags AND repeated cases where
+        // 3+ unilateral exercises stacked back-to-back (e.g. Bulgarian Split Squat →
+        // Single-Leg Press → Pistol Squat) with no bilateral interrupt. For Advanced
+        // users at workouts_completed >= threshold, the SpecialtyVariantFilter is no
+        // longer engaged, so we need a structural ordering guard.
+        //
+        // Rules:
+        //   1. If finalOrder[0] is unilateral AND a bilateral exercise exists later,
+        //      swap to put the bilateral first (workouts open with a bilateral base).
+        //   2. Walk the list with a sliding window — if 3 consecutive exercises are
+        //      unilateral, find the next bilateral after position N+2 and swap it
+        //      into position N+2. If no bilateral remains, leave the order alone
+        //      (better to preserve content than break the workout).
+        // ═══════════════════════════════════════════════════════════════════════════
+        func isUnilateral(_ ex: GeneratedExercise) -> Bool {
+            let name = ex.name.lowercased()
+            let unilateralKeywords = [
+                "single arm", "single-arm", "one arm", "one-arm",
+                "single leg", "single-leg", "one leg", "one-leg",
+                "single side", "single-side", "one side",
+                "single weight", "isolateral",
+                "alternating", "seesaw", "see-saw",
+                "split squat", "bulgarian", "pistol",
+                "step up", "step-up", "stepup",
+                "lunge",
+                "rear foot elevated", "front foot elevated", "rfe ", " rfe",
+                "staggered stance", "split stance",
+                "unilateral",
+                "side plank", "side bridge"
+            ]
+            return unilateralKeywords.contains(where: { name.contains($0) })
+        }
+
+        // Rule 1 — bilateral-first
+        if let first = finalOrder.first, isUnilateral(first),
+           let firstBilateralIdx = finalOrder.firstIndex(where: { !isUnilateral($0) }) {
+            finalOrder.swapAt(0, firstBilateralIdx)
+            #if DEBUG
+            AppLogger.debug("[UNILATERAL GUARD] Bilateral-first: swapped position 0 with index \(firstBilateralIdx) so workout opens with a bilateral movement", category: .workout)
+            #endif
+        }
+
+        // Rule 2 — max consecutive unilateral = 2
+        let maxConsecutiveUnilateral = 2
+        var swapsApplied = 0
+        var i = 0
+        while i + maxConsecutiveUnilateral < finalOrder.count {
+            // Window of size (maxConsecutive + 1). If all are unilateral,
+            // we've got 3+ in a row → break the streak.
+            let window = i...(i + maxConsecutiveUnilateral)
+            let allUnilateral = window.allSatisfy { isUnilateral(finalOrder[$0]) }
+            if allUnilateral {
+                let breakPosition = i + maxConsecutiveUnilateral
+                // Find a bilateral exercise AFTER the break position.
+                if let nextBilateralIdx = finalOrder.indices.dropFirst(breakPosition + 1)
+                    .first(where: { !isUnilateral(finalOrder[$0]) }) {
+                    finalOrder.swapAt(breakPosition, nextBilateralIdx)
+                    swapsApplied += 1
+                    // Don't advance i — re-check the window with the new exercise
+                    // at breakPosition (it should be bilateral now, ending the streak).
+                    continue
+                }
+                // No bilateral remaining → accept the streak and move on.
+                i += 1
+            } else {
+                i += 1
+            }
+        }
+        #if DEBUG
+        if swapsApplied > 0 {
+            AppLogger.debug("[UNILATERAL GUARD] Applied \(swapsApplied) bilateral interrupt swap(s) to enforce maxConsecutiveUnilateral=\(maxConsecutiveUnilateral)", category: .workout)
+        }
+        #endif
+
         #if DEBUG
         AppLogger.debug("[SMART ORDER] Compounds: \(spacedCompounds.count), Isolations: \(spacedIsolations.count), Core: \(coreExercises.count)", category: .workout)
         #endif

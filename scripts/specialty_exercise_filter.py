@@ -560,6 +560,108 @@ GENERIC_MODIFIERS: List[SpecialtyPattern] = [
 ]
 
 
+# ─── Round 9 audit additions (2026-05-10) ───────────────────────────────────
+# Source: scripts/output/autogen_audit_20260510_145119.md residual slip table.
+# 31% of workouts had a specialty-variant flag despite Round 8's filter wire-in.
+# Mirrors the equivalent block in `Fit33/SmartExerciseSelectionEngine.swift`
+# `SpecialtyVariantFilter.patterns`. Order matters within this list: catalog
+# combos (BLOCK_ALL) and sumo / family-specific patterns first, generic
+# alternating / single-arm / isometric / twisting modifiers last.
+
+ROUND_9_VARIANTS: List[SpecialtyPattern] = [
+    # Catalog-corruption combos (BLOCK_ALL — never autogen at any level)
+    SpecialtyPattern("pullover with bench", "combo", SEVERITY_BLOCK_ALL,
+        "Pullover-with-bench-press is a catalog-corruption combo combining two distinct movements — never autogen"),
+    SpecialtyPattern("bench press pullover", "combo", SEVERITY_BLOCK_ALL,
+        "Bench-press-pullover is a catalog-corruption combo — never autogen"),
+    SpecialtyPattern("squat hold calf raise", "combo", SEVERITY_BLOCK_ALL,
+        "Squat-hold-with-calf-raise is a catalog-corruption combo combining two distinct movements"),
+    SpecialtyPattern("reverse lunge front kick", "combo", SEVERITY_BLOCK_ALL,
+        "Reverse-lunge-front-kick is a martial-arts-derived combo — never autogen for strength workouts"),
+
+    # Sumo / SLDL deadlift family additions (specific before generic stiff-leg patterns)
+    SpecialtyPattern("sumo romanian", "deadlift", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Sumo-stance Romanian deadlift = sumo stance + RDL technique — show conventional RDL first regardless of level"),
+    SpecialtyPattern("sumo deadlift", "deadlift", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Sumo deadlift requires different hip mobility / technique than conventional — show conventional first regardless of level (audit Round 9: 3× hits)"),
+    SpecialtyPattern("stiff legged", "deadlift", SEVERITY_BLOCK_BEGINNER,
+        "Stiff-legged deadlift (catalog spelling) — high low-back stress, specialty for beginners (complement to existing 'stiff leg')"),
+    SpecialtyPattern("straight back stiff", "deadlift", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "'Straight Back Stiff Leg Deadlift' combines two postural-cue modifiers — show standard SLDL/RDL first regardless of level"),
+
+    # Squat / lunge family additions
+    SpecialtyPattern("low bar", "squat", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Low-bar squat is an advanced powerlifting bar position requiring extensive shoulder/wrist mobility — show high-bar / standard back squat first regardless of level"),
+    SpecialtyPattern("wide squat", "squat", SEVERITY_BLOCK_BEGINNER,
+        "Wide-stance squat is a stance modifier — beginners should master standard back squat positioning first"),
+    SpecialtyPattern("narrow squat", "squat", SEVERITY_BLOCK_BEGINNER,
+        "Narrow-stance squat is a stance modifier — beginners should master standard squat positioning first"),
+    SpecialtyPattern("pulse ", "squat", SEVERITY_BLOCK_BEGINNER,
+        "Pulse-rep squat / pulse goblet squat is a tempo-variant specialty — beginners should master full-range first"),
+    SpecialtyPattern("sumo quarter", "squat", SEVERITY_BLOCK_ALL,
+        "Sumo-quarter-squat / tip-toe entries are catalog-corruption multi-modifier combos — never autogen at any level"),
+    SpecialtyPattern("tip toe", "squat", SEVERITY_BLOCK_BEGINNER,
+        "Tip-toe / toe-elevated squat is a balance-progression specialty — not appropriate for beginner squat patterning"),
+    SpecialtyPattern("high knee squat", "squat", SEVERITY_BLOCK_BEGINNER,
+        "High-knee squat is a coordination/balance variant — beginners should master basic bodyweight squat first"),
+    SpecialtyPattern("elevated heel", "squat", SEVERITY_BLOCK_BEGINNER,
+        "Heels-elevated squat (catalog phrasing) is a quad-emphasis specialty (complement to existing 'heels elevated')"),
+    SpecialtyPattern("opposite reverse lunge", "lunge", SEVERITY_BLOCK_BEGINNER,
+        "Opposite-reverse-lunge (contralateral loading) is a specialty unilateral variant — show standard reverse lunge first for beginners"),
+    SpecialtyPattern("opposite lunge", "lunge", SEVERITY_BLOCK_BEGINNER,
+        "Opposite-loaded lunge is a contralateral-loading specialty — show standard lunge first"),
+
+    # Plank / core / pallof family additions
+    SpecialtyPattern("plank arm lift", "plank", SEVERITY_BLOCK_BEGINNER,
+        "Plank-with-arm-lift requires single-arm stability — beginners should master basic plank first"),
+    SpecialtyPattern("side plank raise", "plank", SEVERITY_BLOCK_BEGINNER,
+        "Side-plank-with-raise is a complex unilateral plank progression — beginners should master standard side plank first"),
+    SpecialtyPattern("front plank arm leg", "plank", SEVERITY_BLOCK_BEGINNER,
+        "Front plank with arm/leg raise is a complex stability progression — beginners should master basic front plank first"),
+    SpecialtyPattern("horizontal pallof", "pallof", SEVERITY_BLOCK_BEGINNER,
+        "Horizontal pallof press is an anti-rotation progression — beginners should master standing pallof first"),
+
+    # Pull-up additions
+    SpecialtyPattern("commando", "pullup", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Commando pull-up = alternating-grip pull-up — specialty grip variant; show standard pull-up first regardless of level"),
+
+    # Equipment / triceps / OHP specialty
+    SpecialtyPattern("weighted chains", "bench_press", SEVERITY_BLOCK_INTERMEDIATE,
+        "Weighted-chains bench press requires accommodating-resistance equipment most users don't have — specialty equipment context"),
+    SpecialtyPattern("tate press", "triceps", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Tate press is a specialty triceps variant — show standard triceps extension/skull crusher first regardless of level"),
+    SpecialtyPattern("seesaw press", "ohp", SEVERITY_BLOCK_BEGINNER,
+        "Seesaw press = alternating overhead press — unilateral stability progression; beginners should master bilateral overhead press first"),
+    SpecialtyPattern("side press", "ohp", SEVERITY_BLOCK_BEGINNER,
+        "Side press is a kettlebell-windmill-derived overhead variant — show standard OHP first for beginners"),
+
+    # Generic unilateral / alternating / isometric / twisting modifiers
+    # (place near end so family-specific patterns above match first)
+    SpecialtyPattern("alternating", "generic", SEVERITY_BLOCK_BEGINNER,
+        "Alternating-limb variants (e.g. '(Dumbbell) - Alternating') are unilateral stability progressions — beginners should master bilateral first (audit Round 9: 4× hits)"),
+    SpecialtyPattern("single weight", "generic", SEVERITY_BLOCK_BEGINNER,
+        "Single-weight variants (e.g. 'Bench Press - Single Weight') are unilateral asymmetric loading — beginners should master bilateral first"),
+    SpecialtyPattern("single leg push", "generic", SEVERITY_BLOCK_BEGINNER,
+        "Single-leg push-up (incl. 'Raise Single Leg Push Up') is a unilateral stability progression — beginners should master standard push-up first"),
+    SpecialtyPattern("single leg chest", "generic", SEVERITY_BLOCK_BEGINNER,
+        "Single-leg chest press (TRX) is a unilateral stability progression — beginners should master bilateral first"),
+    SpecialtyPattern("single leg bridge", "generic", SEVERITY_BLOCK_BEGINNER,
+        "Single-leg bridge / hip thrust is a unilateral progression — beginners should master bilateral hip thrust first"),
+    SpecialtyPattern("single arm lateral", "generic", SEVERITY_BLOCK_BEGINNER,
+        "Single-arm lateral raise is a unilateral specialty — beginners should master bilateral lateral raise first"),
+    SpecialtyPattern("single arm twisting", "generic", SEVERITY_BLOCK_BEGINNER,
+        "Single-arm twisting row is a rotational unilateral specialty — beginners should master bilateral standard row first"),
+    SpecialtyPattern("raise single leg", "generic", SEVERITY_BLOCK_BEGINNER,
+        "Raise-single-leg variants are unilateral stability progressions — beginners should master bilateral first"),
+    SpecialtyPattern("staggered stance", "generic", SEVERITY_BLOCK_BEGINNER,
+        "Staggered-stance variants are unilateral asymmetric specialties — beginners should master bilateral foundation first"),
+    SpecialtyPattern(" isometric", "generic", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Isometric-hold programming (e.g. 'Bicep Hold - Isometric (Band)') is a specialty technique — show standard cadence first regardless of level (complement to existing 'isometric hold')"),
+    SpecialtyPattern("twisting ", "generic", SEVERITY_BLOCK_UNTIL_ESTABLISHED,
+        "Twisting / rotational variants combine flexion + rotation — rotational specialty; show standard movement first regardless of level"),
+]
+
+
 # All patterns assembled. Order matters — specific (longer) families come
 # before generic modifiers so a name like "Paused Squat" matches
 # `paused squat` (specific) before ` paused ` (generic).
@@ -574,6 +676,11 @@ SPECIALTY_PATTERNS: List[SpecialtyPattern] = (
     # any fragment match (e.g. squat-family "clean grip" BLOCK_UNTIL_ESTABLISHED)
     # on names like "Swing Clean Grip Front Squat".
     + KETTLEBELL_COMBO_VARIANTS
+    # Round 9 catalog combos + sumo deadlift specifics need to match BEFORE
+    # the generic family lists so e.g. "Sumo Romanian Deadlift" hits the
+    # specific Round 9 pattern instead of falling through to family generic
+    # patterns.
+    + ROUND_9_VARIANTS
     + BENCH_PRESS_VARIANTS
     + SQUAT_VARIANTS
     + DEADLIFT_VARIANTS
@@ -632,6 +739,7 @@ def is_blocked_for_level(
     exercise_name: str,
     experience_level: str,
     completed_workout_count: int = 0,
+    user_age: int = 0,
 ) -> SpecialtyMatch:
     """
     Return a SpecialtyMatch with `matched=True` ONLY if the exercise is a
@@ -646,6 +754,12 @@ def is_blocked_for_level(
     block_until_established gate). The live Swift caller passes the user's
     real workout count from `WorkoutManager`.
 
+    `user_age` was added in Round 9 (2026-05-10) — when `user_age >= 60`,
+    EVERY specialty pattern is treated as `block_all` regardless of severity.
+    Older adults should never see specialty variants via autogen even if their
+    experience level says "Advanced". Default 0 keeps legacy callers
+    compatible (the age check no-ops at 0).
+
     Mapping:
       - block_beginner             → blocks Beginner only
       - block_intermediate         → blocks Beginner + Intermediate
@@ -653,10 +767,15 @@ def is_blocked_for_level(
                                      has completed at least
                                      `WORKOUT_COUNT_THRESHOLDS[level]` workouts
       - block_all                  → blocks every level always
+      - any severity + age >= 60   → blocked
     """
     match = is_specialty_variant(exercise_name)
     if not match.matched:
         return _NO_MATCH
+
+    # Age >= 60 hard-block (Round 9) — applies regardless of pattern severity.
+    if user_age >= 60:
+        return match
 
     level = (experience_level or "").strip().lower()
 
@@ -937,17 +1056,19 @@ def _self_test() -> int:
     print("\nWorkout-count gating regression…")
     gating_cases = [
         # (name, level, count, expected_blocked)
+        # Round 6 (2026-05-08) bumped thresholds to 25 / 18 / 12 — fixtures
+        # follow that. Round 9 (2026-05-10) kept the same thresholds.
         ("Wide Bench Press (Barbell)", "Beginner",     0,  True),
-        ("Wide Bench Press (Barbell)", "Beginner",    11,  True),
-        ("Wide Bench Press (Barbell)", "Beginner",    12, False),
+        ("Wide Bench Press (Barbell)", "Beginner",    24,  True),
+        ("Wide Bench Press (Barbell)", "Beginner",    25, False),
         ("Wide Bench Press (Barbell)", "Intermediate", 0,  True),
-        ("Wide Bench Press (Barbell)", "Intermediate", 7,  True),
-        ("Wide Bench Press (Barbell)", "Intermediate", 8, False),
+        ("Wide Bench Press (Barbell)", "Intermediate",17,  True),
+        ("Wide Bench Press (Barbell)", "Intermediate",18, False),
         ("Wide Bench Press (Barbell)", "Advanced",     0,  True),
-        ("Wide Bench Press (Barbell)", "Advanced",     3,  True),
-        ("Wide Bench Press (Barbell)", "Advanced",     4, False),
+        ("Wide Bench Press (Barbell)", "Advanced",    11,  True),
+        ("Wide Bench Press (Barbell)", "Advanced",    12, False),
         ("Pendlay Row (Cable)",        "Advanced",     0,  True),
-        ("Pendlay Row (Cable)",        "Advanced",     4, False),
+        ("Pendlay Row (Cable)",        "Advanced",    12, False),
         # block_all should never unlock with workout count
         ("Swing To Goblet Squat (Kettlebell)", "Advanced", 100, True),
         ("Pallof Press Twist",                 "Advanced", 100, True),

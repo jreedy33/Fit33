@@ -736,7 +736,8 @@ def apply_specialty_filter(
         if not hit:
             continue
         # Reject specialty here too — replacement must NOT itself be specialty.
-        if is_blocked_for_level(name, user.experience_level).matched:
+        # Pass user.age so the Round 9 age-60 hard-block applies to replacements.
+        if is_blocked_for_level(name, user.experience_level, user_age=user.age).matched:
             continue
         # Index by every primary muscle this exercise hits.
         for m in primary_lower:
@@ -745,7 +746,9 @@ def apply_specialty_filter(
     filtered: List[Dict[str, Any]] = []
     for ex in selected:
         name = ex.get("name") or ""
-        match = is_blocked_for_level(name, user.experience_level)
+        # Pass user.age — Round 9 age-60 hard-block treats every specialty
+        # severity as block_all for users 60+.
+        match = is_blocked_for_level(name, user.experience_level, user_age=user.age)
         if not match.matched:
             filtered.append(ex)
             continue

@@ -63,9 +63,9 @@
 	<key>NSUserTrackingUsageDescription</key>
 	<string>Fit33 uses this to show you relevant ads and support free features. Your data is never sold.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Fit33 tracks your daily steps to help you reach your fitness goals.</string>
+	<string>Fit33 reads your steps, active energy, workouts, body weight, height, biological sex, and date of birth from Apple Health to power your daily activity rings, accurate calorie calculations, workout tracking, recovery scoring, and personalized program recommendations.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Fit33 may write health data to sync your activity.</string>
+	<string>Fit33 writes the workouts you complete in the app — including workout type, duration, and active energy burned — back to Apple Health so your fitness data stays in one place across all your devices.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Fit33 uses your location to track your outdoor runs even when the app is in the background, ensuring accurate distance and route recording.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

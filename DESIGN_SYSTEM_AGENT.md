@@ -12,10 +12,12 @@ Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal) and `.cu
 
 1. **Never change token definitions.** If a token value seems wrong, raise with Design Agent — don't edit `DesignSystem.swift` unilaterally.
 2. **One token type per commit.** "typography fixes in `WeeklyLeagueViews.swift`", not "various fixes". Aim 20-50 replacements per commit.
-3. **Visual verification is non-negotiable.** Every batch checked in BOTH light and dark mode. A 14pt → 13pt round-down must still look right.
-4. **Every decorative animation gates on BOTH `ProcessInfo.isLowPowerModeEnabled` AND `@Environment(\.accessibilityReduceMotion)`.** Canonical: `AnimatedOrbBackground.shouldDisableMotion` in `AdaptiveColors.swift`. Missing either check = DESIGN_SYSTEM violation — block in review. (Functional animations — presentation transitions, state-change tint — use SwiftUI's built-in reduce-motion handling and don't need per-animation gating.)
+3. **Visual verification is non-negotiable.** Every batch checked in BOTH light and dark mode AND at `.accessibility3` Dynamic Type. A 14pt → 13pt round-down must still look right at all three.
+4. **Every decorative animation gates through `MotionPolicy.shouldDisableDecorative`** (in `Fit33/MotionPolicy.swift`). Two callable styles: main-actor `MotionPolicy.shouldDisableDecorative` static accessor (reads `UIAccessibility` directly — use from view models / managers) and `MotionPolicy.shouldDisableDecorative(reduceMotion:)` pure function (use from SwiftUI views that already read `@Environment(\.accessibilityReduceMotion)`). Both check `UIAccessibility.isReduceMotionEnabled` AND `ProcessInfo.processInfo.isLowPowerModeEnabled`. `AnimatedOrbBackground.shouldDisableMotion` delegates here. Missing the gate on a decorative animation = DESIGN_SYSTEM violation — block in review. (Functional animations — presentation transitions, state-change tint — use SwiftUI's built-in reduce-motion handling and don't need per-animation gating.)
 5. **Premium/paywall badges use the gold crown style only.** `"crown.fill"` icon in yellow (`.yellow` or gold gradient `[1.0/0.84/0 → 1.0/0.75/0.3]`). Never purple/blue/green gradient for paywall. Text on gold capsule = `.black.opacity(0.8)`; text on dark background = `.yellow`. Canonical: `PremiumBadge` in `PremiumUpgradeView.swift`. Challenge "winning" crowns share the same gold language (fine). Level/milestone crowns may use other colors — they represent achievement tiers, not paywalls.
 6. **Side-panel pattern (see spec below) is the canonical half-width settings panel.** First used in `ActiveWorkoutView`.
+7. **`ds_*` typography tokens scale with Dynamic Type automatically.** All tokens are wired through `UIFontMetrics` (`dsScaled` helper in `DesignSystem.swift`). Default-size visual output is unchanged. New code MUST go through a `ds_*` token — `Font.system(size:)` skips both the token system AND Dynamic Type scaling, so it shows up double-broken in audits.
+8. **Translucent backgrounds honor Reduce Transparency.** `.adaptiveMaterialBackground(cornerRadius:fallback:)` (in `Fit33/AdaptiveMaterialBackground.swift`) is the canonical wrapper around `.ultraThinMaterial`. Raw `.background(.ultraThinMaterial)` ignores the user's Reduce Transparency setting and produces unreadable text for those users. New surfaces using `.ultraThinMaterial` MUST go through the wrapper.
 
 ---
 
@@ -188,6 +190,14 @@ HStack(spacing: 3) {
 3. Batch 20-50 replacements per commit.
 4. One token type per commit.
 5. Update metrics after each phase.
+
+## Accessibility audit flags (raise in review; sweep is its own follow-up)
+
+When reviewing a PR or auditing a file, flag the following — they are now design-system violations even when the call site "looks right":
+
+- **Bare `.background(.ultraThinMaterial)`** without `.adaptiveMaterialBackground()`. Ignores Reduce Transparency → unreadable for accessibility users.
+- **`.repeatForever(autoreverses:` (or any open-ended animation loop) without `MotionPolicy.shouldDisableDecorative` / `staticOrbs` gating**. Decorative animations that fire forever burn battery and ignore Reduce Motion.
+- **`Font.system(size:` in new code.** Existing legacy is OK (still in Phase 3 migration), but new uses must go through `ds_*` tokens — they now scale with Dynamic Type automatically.
 
 ---
 

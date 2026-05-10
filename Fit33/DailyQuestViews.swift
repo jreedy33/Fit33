@@ -494,6 +494,13 @@ struct DailyQuestsWidget: View {
             }
         } label: {
         HStack(alignment: .center, spacing: 12) {
+            // Per QP invariant 44 (compound-card a11y): the OUTER content of
+            // the Button label uses `.accessibilityElement(children: .combine)`
+            // so VoiceOver reads the card as one natural sentence
+            // ("Crush a Chest workout. Worth 60 XP.") instead of piecewise
+            // ("flame, 0 of 1, 60 XP, button"). Trailing XP pill below is
+            // hidden so it doesn't double-read; its content is folded into
+            // the combined `accessibilityLabel` via `accessibilityLabel(for:isDone:)`.
             ZStack {
                 if isDone {
                     Circle()
@@ -628,6 +635,7 @@ struct DailyQuestsWidget: View {
             .padding(.top, 10)
             .padding(.trailing, Spacing.md)
             .fixedSize()
+            .accessibilityHidden(true)
         }
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -637,6 +645,10 @@ struct DailyQuestsWidget: View {
                 )
         )
         .animation(.easeInOut(duration: 0.25), value: glowingQuestKey)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel(for: quest, isDone: isDone))
+        .accessibilityHint(isDone ? "" : "Opens the \(categoryHint(for: quest)) screen.")
+        .accessibilityAddTraits(.isButton)
         }
         .buttonStyle(.plain)
         // Smart Adaptive Daily Goals (20260607) — long-press to reroll
@@ -857,6 +869,65 @@ struct DailyQuestsWidget: View {
         }
     }
     
+    // MARK: - Accessibility (compactQuestRow grouped label) — QP invariant 44
+
+    /// Builds the single-sentence VoiceOver label for the combined card.
+    /// Three shapes:
+    ///   • completed         → "<completionSummary>, completed, plus <xp> XP."
+    ///   • watch_ads quest   → "<dynamicDescription>. <watched> of <needed> videos. Worth <xp> XP."
+    ///   • active w/ progress → "<dynamicDescription>. <progress label>. Worth <xp> XP."
+    ///   • active no progress → "<dynamicDescription>. Worth <xp> XP."
+    /// Verb-first, complete imperative — matches the canonical action sentence
+    /// pattern enforced for every compound card on the dashboard.
+    private func accessibilityLabel(for quest: DailyQuest, isDone: Bool) -> String {
+        let xp = quest.xpReward
+        if isDone {
+            return "\(completionSummary(for: quest)), completed, plus \(xp) XP."
+        }
+        if quest.questKey == QuestKey.watchAds.rawValue {
+            return "\(dynamicDescription(for: quest)). \(quest.currentValue) of \(quest.targetValue) videos. Worth \(xp) XP."
+        }
+        let baseDesc = dynamicDescription(for: quest)
+        let live = liveCurrentValue(for: quest)
+        if live > 0 {
+            return "\(baseDesc). \(liveProgressLabel(for: quest)). Worth \(xp) XP."
+        }
+        return "\(baseDesc). Worth \(xp) XP."
+    }
+
+    /// Maps a quest to a user-facing destination word for the
+    /// `.accessibilityHint("Opens the X screen.")` line. Sub-routes by
+    /// `questKey` first (challenge / hydration / weight / paywall split
+    /// from broader categories), then falls back to `quest.category`.
+    private func categoryHint(for quest: DailyQuest) -> String {
+        if let key = QuestKey(rawValue: quest.questKey) {
+            switch key {
+            case .logWater3, .logWater8, .logWater, .hydrationBeforeNoon:
+                return "hydration"
+            case .logWeight, .weeklyWeighIn:
+                return "weight"
+            case .sendChallenge, .start1v1Challenge, .startFirstChallenge,
+                 .beginnerSendChallenge, .start1v1WithTopFriend,
+                 .league3Workouts, .top3League, .beatFriendSteps:
+                return "challenge"
+            case .watchAds:
+                return "premium upgrade"
+            default:
+                break
+            }
+        }
+        switch quest.category {
+        case "workout":   return "workout"
+        case "nutrition": return "meals"
+        case "social":    return "social"
+        case "steps":     return "step counter"
+        case "tracking":  return "weight"
+        case "reward":    return "premium upgrade"
+        case "wildcard":  return "workout"
+        default:          return "workout"
+        }
+    }
+
     // MARK: - Completion Summary (contextual detail for completed quests)
     
     private func completionSummary(for quest: DailyQuest) -> String {

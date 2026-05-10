@@ -157,6 +157,12 @@ struct SetRowView: View {
     
     var body: some View {
         VStack(spacing: 0) {
+            // Per QP invariant 44 (compound-card a11y): the set row uses
+            // `.accessibilityElement(children: .contain)` (NOT `.combine`)
+            // so each interactive child (set-type menu, weight field, reps
+            // field, complete button) stays individually focusable +
+            // editable. The container announces "Set N" on entry; each
+            // child reads its own action label below.
             HStack(spacing: 8) {
                 // Set number/type indicator - tap to change set type
                 // IMPORTANT: Use the standard `Label(title, systemImage:)` form for
@@ -475,13 +481,15 @@ struct SetRowView: View {
                         .font(.title3)
                         .foregroundColor(setData.isCompleted ? .blue : .gray)
                 }
-                .accessibilityLabel(setData.isCompleted ? "Set \(setNumber) completed" : "Complete set \(setNumber)")
+                .accessibilityLabel(setData.isCompleted ? "Set \(setNumber) completed" : "Mark set \(setNumber) complete")
                 .accessibilityHint(setData.isCompleted ? "Tap to uncheck this set" : "Mark this set as done")
                 .frame(width: 40)
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, 6)
             .background(Color.clear)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Set \(setNumber)")
             
             // Timer countdown is now shown as a glow border on ExerciseCard
         }

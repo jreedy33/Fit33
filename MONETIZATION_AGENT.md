@@ -1,6 +1,6 @@
 # Monetization Agent — Invariants + Map
 
-> **Role**: Staff Monetization & Finance Engineer — single owner of revenue strategy, premium conversion, in-app purchase plumbing, ad inventory, and the CMS `/revenue` tab. Audits every feature PR for "is the monetization decision explicit?" Authority on `StoreKitManager`, `PremiumManager`, `AdManager`, `PremiumUpgradeView`, the (planned) `subscriptions` / `iap_receipts` / `subscription_grants` schema, the App Store Server Notifications v2 webhook, and CMS Revenue tab.
+> **Role**: Staff Monetization & Finance Engineer — single owner of revenue strategy, premium conversion, in-app purchase plumbing, ad inventory, and the CMS `/revenue` tab. Audits every feature PR for "is the monetization decision explicit?" Authority on `StoreKitManager`, `PremiumManager`, `AdManager`, `PremiumUpgradeView`, `PaywallFirstScreenView`, `LegalURLs`, the (planned) `subscriptions` / `iap_receipts` / `subscription_grants` schema, the App Store Server Notifications v2 webhook, and CMS Revenue tab.
 >
 > **Routing**: Anything that introduces a feature, an ad surface, a price, a free→paid gate, a refund flow, a comp grant, a competitor signal, or a regulator-mandated disclosure → this agent has a bullet to enforce. INFLUENCE product, do not block it.
 >
@@ -136,6 +136,11 @@
 42. **Recap stats are read from on-device Core Data, NOT from the server.** `ProRecapView.recentWorkouts` is a `@FetchRequest` bounded to last 14 days. Why: (a) the recap renders instantly on push tap with no spinner; (b) the push payload never leaks Pro-tier numbers to a free user; (c) the recap works offline. The push body uses its OWN server-side numbers from `get_sunday_recap_candidates` — small drift between push body and recap view is expected and acceptable.
 43. **Sunday Pro Recap RPC is service-role-only.** `get_sunday_recap_candidates` raises `EXCEPTION 'get_sunday_recap_candidates is service-role-only'` if `auth.uid() IS NOT NULL`. The cron path uses `current_setting('app.service_role_key', true)` from a pg_cron `DO` block. Manual re-fires (testing) require a service-role JWT in the `x-cron-key` header. Never expose this RPC to a user JWT — it returns push tokens for OTHER users.
 
+### 11. Paywall accessibility & legal footer (added 2026-05-10)
+
+44. **Every paywall surface MUST display Privacy Policy + Terms of Use links** sourced from `Fit33/LegalURLs.swift` (`LegalURLs.privacy`, `LegalURLs.terms`). Required by App Review 3.1.2 (subscription disclosure block — invariant 35) and Apple Privacy guidelines. Current surfaces wired: `PremiumUpgradeView` (footer, under Restore Purchases) and `PaywallFirstScreenView` (footer, under Restore Purchases). Any future paywall — soft-sell, churn-save sheet, win-back modal, lifetime-only upsell, A/B variants — MUST include the same `HStack { Link · Link }` block. Never hardcode the URLs at the call site; the `LegalURLs` enum is the single source of truth so a domain or path change is a one-file diff. Placeholders today point at `https://fit33.app/privacy` and `https://fit33.app/terms` — if the canonical pages move, edit `LegalURLs.swift` only.
+45. **Paywall dismiss / close buttons MUST have a 44×44pt tap target** (Apple HIG minimum touch target) even when the visual glyph is intentionally smaller. Pattern: keep the existing visual frame (e.g. `.frame(width: 32, height: 32)` for a small subtle close), then wrap with `.frame(width: 44, height: 44).contentShape(Rectangle())` BEFORE the gesture / `Button` label closure. App Review 4 (accessibility) rejects close buttons below 44pt; a small-visual + large-hit layout is the standard accessible solution. Also attach an `.accessibilityLabel("Close")` for VoiceOver. The dismiss button in `PremiumUpgradeView` (line ~267) is the canonical example.
+
 ---
 
 ## Pricing Strategy (current target — locked 2026-05-03)
@@ -188,7 +193,9 @@
 |---|---|
 | `Fit33/StoreKitManager.swift` | StoreKit 2 wrapper — products, purchase, restore, transaction listener, entitlement refresh |
 | `Fit33/UserManager.swift` (lines 1066+) | `PremiumManager` singleton — gate-check API surface + 14-feature flags |
-| `Fit33/PremiumUpgradeView.swift` | Paywall sheet — 14-feature `PremiumFeature` enum, gold-crown badging, restore button, disclosures |
+| `Fit33/PremiumUpgradeView.swift` | Paywall sheet — 14-feature `PremiumFeature` enum, gold-crown badging, restore button, disclosures, Privacy + Terms footer (invariant 44), 44×44pt dismiss target (invariant 45) |
+| `Fit33/PaywallFirstScreenView.swift` | First-screen soft-sell paywall (post-onboarding, once-per-device). 3-tier anchored pricing, competitor comparison row, testimonial reel, "Continue free" exit, Privacy + Terms footer (invariant 44) |
+| `Fit33/LegalURLs.swift` | Canonical Privacy Policy + Terms of Use URLs. Every paywall references these (invariant 44). Placeholder values point at `fit33.app/privacy` / `fit33.app/terms` — verify before TestFlight |
 | `Fit33/AdManager.swift` | AdMob wrapper — interstitial (rest timer) + rewarded (daily quest), ATT lifecycle, premium skip |
 | `Fit33/NativeAdView.swift` | Native ad rendering inside dashboard / list contexts |
 | `Fit33/SettingsView.swift` | Manage Subscription deep-link + Restore button + ad-toggle (dev) |

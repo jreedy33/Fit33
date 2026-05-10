@@ -153,6 +153,45 @@ struct SettingsView: View {
                                 }
                                 .accessibilityLabel("Blocked Users")
                                 .accessibilityHint("Manage the list of users you have blocked")
+
+                                Divider().padding(.leading, 52)
+
+                                // App Review HIG passive-disclosure surface
+                                // for HealthKit-derived data we sync to
+                                // Supabase. Owned by INFRA_SECURITY_AGENT —
+                                // any new HK category synced to the cloud
+                                // must be added to the categories list inside
+                                // HealthDataSyncDetailView in the same PR.
+                                NavigationLink(destination: HealthDataSyncDetailView()) {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "heart.text.square.fill")
+                                            .font(.title3)
+                                            .foregroundColor(.pink)
+                                            .frame(width: 28)
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Health Data")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.primary)
+
+                                            Text("Review what's synced to the cloud")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.secondary.opacity(0.5))
+                                    }
+                                    .padding(Spacing.md)
+                                    .contentShape(Rectangle())
+                                }
+                                .accessibilityLabel("Health Data")
+                                .accessibilityHint("Review what HealthKit data Fit33 syncs to the cloud and request a purge.")
                             }
                         }
 

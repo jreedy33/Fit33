@@ -11,43 +11,87 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Typography Tokens
 /// Use these instead of .font(.system(size:…)) to ensure consistent typography.
+///
+/// Every `ds_*` token now scales with Dynamic Type via `UIFontMetrics`. At the
+/// default content size category each token renders at the exact pixel size
+/// declared below (no visual regression for users at default Dynamic Type),
+/// but at larger sizes the font scales proportionally relative to the chosen
+/// `UIFont.TextStyle`. Consumers never need to add their own scaling — reach
+/// for a `ds_*` token and the scaling is automatic.
+
+private extension Font {
+    /// Returns a system font that scales with Dynamic Type relative to the given text style.
+    /// Uses `UIFontMetrics` to honor the user's preferred content size category while
+    /// preserving the design intent of the original pixel size at default scale.
+    static func dsScaled(
+        _ size: CGFloat,
+        weight: Font.Weight,
+        design: Font.Design = .default,
+        relativeTo style: UIFont.TextStyle
+    ) -> Font {
+        let scaled = UIFontMetrics(forTextStyle: style).scaledValue(for: size)
+        return .system(size: scaled, weight: weight, design: design)
+    }
+}
 
 extension Font {
     // Display
-    static let ds_displayLarge  = Font.system(size: 42, weight: .bold)
-    static let ds_displayMedium = Font.system(size: 34, weight: .bold)
-    
+    static var ds_displayLarge: Font  { .dsScaled(42, weight: .bold, relativeTo: .largeTitle) }
+    static var ds_displayMedium: Font { .dsScaled(34, weight: .bold, relativeTo: .largeTitle) }
+
     // Headings
-    static let ds_heading1 = Font.system(size: 28, weight: .bold)
-    static let ds_heading2 = Font.system(size: 22, weight: .bold)
-    static let ds_heading3 = Font.system(size: 18, weight: .semibold)
-    
+    static var ds_heading1: Font { .dsScaled(28, weight: .bold, relativeTo: .title1) }
+    static var ds_heading2: Font { .dsScaled(22, weight: .bold, relativeTo: .title2) }
+    static var ds_heading3: Font { .dsScaled(18, weight: .semibold, relativeTo: .title3) }
+
     // Body
-    static let ds_bodyLarge   = Font.system(size: 17, weight: .regular)
-    static let ds_bodyMedium  = Font.system(size: 15, weight: .regular)
-    static let ds_bodySmall   = Font.system(size: 13, weight: .regular)
-    
+    static var ds_bodyLarge: Font  { .dsScaled(17, weight: .regular, relativeTo: .body) }
+    static var ds_bodyMedium: Font { .dsScaled(15, weight: .regular, relativeTo: .subheadline) }
+    static var ds_bodySmall: Font  { .dsScaled(13, weight: .regular, relativeTo: .footnote) }
+
     // Labels
-    static let ds_labelLarge  = Font.system(size: 15, weight: .semibold)
-    static let ds_labelMedium = Font.system(size: 13, weight: .semibold)
-    static let ds_labelSmall  = Font.system(size: 11, weight: .medium)
-    
+    static var ds_labelLarge: Font  { .dsScaled(15, weight: .semibold, relativeTo: .subheadline) }
+    static var ds_labelMedium: Font { .dsScaled(13, weight: .semibold, relativeTo: .footnote) }
+    static var ds_labelSmall: Font  { .dsScaled(11, weight: .medium, relativeTo: .caption2) }
+
     // Body extended
-    static let ds_bodyRegular = Font.system(size: 16, weight: .regular)
-    
+    static var ds_bodyRegular: Font { .dsScaled(16, weight: .regular, relativeTo: .body) }
+
     // Caption
-    static let ds_caption = Font.system(size: 10, weight: .medium)
-    
+    static var ds_caption: Font { .dsScaled(10, weight: .medium, relativeTo: .caption2) }
+
     // Mono / Stats
-    static let ds_stat = Font.system(size: 24, weight: .bold, design: .rounded)
-    static let ds_statSmall = Font.system(size: 18, weight: .bold, design: .rounded)
-    
+    static var ds_stat: Font      { .dsScaled(24, weight: .bold, design: .rounded, relativeTo: .title2) }
+    static var ds_statSmall: Font { .dsScaled(18, weight: .bold, design: .rounded, relativeTo: .title3) }
+
     // Timer
-    static let ds_timer = Font.system(size: 56, weight: .bold, design: .rounded)
+    static var ds_timer: Font { .dsScaled(56, weight: .bold, design: .rounded, relativeTo: .largeTitle) }
 }
+
+#if DEBUG
+#Preview("Typography — default Dynamic Type") {
+    VStack(alignment: .leading, spacing: Spacing.sm) {
+        Text("ds_heading1 — The quick brown fox").font(.ds_heading1)
+        Text("ds_bodyMedium — The quick brown fox").font(.ds_bodyMedium)
+        Text("ds_labelSmall — THE QUICK BROWN FOX").font(.ds_labelSmall)
+    }
+    .padding(Spacing.md)
+}
+
+#Preview("Typography — accessibility3 Dynamic Type") {
+    VStack(alignment: .leading, spacing: Spacing.sm) {
+        Text("ds_heading1 — The quick brown fox").font(.ds_heading1)
+        Text("ds_bodyMedium — The quick brown fox").font(.ds_bodyMedium)
+        Text("ds_labelSmall — THE QUICK BROWN FOX").font(.ds_labelSmall)
+    }
+    .padding(Spacing.md)
+    .environment(\.dynamicTypeSize, .accessibility3)
+}
+#endif
 
 // MARK: - Spacing Tokens
 

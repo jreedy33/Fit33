@@ -8,17 +8,18 @@
 
 ## Invariants (will cause visual bugs / design-system drift if violated)
 
-1. **No hardcoded fonts.** Always use `Font.ds_*` tokens from `DesignSystem.swift`. Never `.font(.system(size:))` inline. See token table below.
+1. **No hardcoded fonts.** Always use `Font.ds_*` tokens from `DesignSystem.swift`. Never `.font(.system(size:))` inline. See token table below. **`ds_*` tokens scale with Dynamic Type automatically via `UIFontMetrics`** — consumers never need a manual scaler. Hardcoded `.font(.system(size:))` is doubly broken: ignores tokens AND ignores Dynamic Type.
 2. **No hardcoded padding.** Always use `Spacing.*` tokens (`xxxs` 2 / `xxs` 4 / `xs` 8 / `sm` 12 / `md` 16 / `lg` 24 / `xl` 32 / `xxl` 48).
 3. **No hardcoded corner radii.** Always use `CornerRadius.*` (`sm` 8 / `md` 12 / `lg` 16 / `xl` 24 / `pill` 999).
 4. **No hardcoded card colors.** Use `Color.cardBackground` (`AdaptiveColors.swift`). Never `Color(white: 0.12)`, `Color.black` as bg, or a local `private var cardBackground`.
 5. **Every full-page screen gets `AnimatedOrbBackground`** (correct tab variant). Exceptions: premium upsell, active-workout overlays.
 6. **Buttons use `UniversalScaleButtonStyle`** with haptic feedback. Never a local `ScaleButtonStyle`.
 7. **Section headers use `SectionHeader`** from `DesignSystem.swift`. Never an ad-hoc HStack.
-8. **Decorative animations must gate on both `isLowPowerMode` and `accessibilityReduceMotion`.** Canonical helper: `AnimatedOrbBackground.shouldDisableMotion`.
+8. **Decorative animations must gate through `MotionPolicy.shouldDisableDecorative`** (or `MotionPolicy.shouldDisableDecorative(reduceMotion:)` for SwiftUI views that already read `@Environment(\.accessibilityReduceMotion)`). `MotionPolicy` lives in `Fit33/MotionPolicy.swift` and is the canonical base gate — it checks both `UIAccessibility.isReduceMotionEnabled` and `ProcessInfo.processInfo.isLowPowerModeEnabled`. `AnimatedOrbBackground.shouldDisableMotion` delegates here. Functional / state-transition animations (sheet presentations, button feedback, list inserts) are EXEMPT — they use SwiftUI's built-in reduce-motion handling.
 9. **Primary card = `.sleekCard()`.** List-row card = `Color.cardBackground` + `RoundedRectangle(.continuous)`. Never invent a third card treatment.
 10. **iOS 26 Liquid Glass**: never set opaque `backgroundColor` on `UITabBar`/`UINavigationBar` — that blocks system glass. For custom toolbar materials use `.adaptiveToolbarBackground()`.
 11. **Main tab navigation pattern (current):** hidden system nav bar + custom in-layout header. See `LEGACY_CUSTOM_HEADERS.md` before changing.
+12. **Translucent backgrounds must honor Reduce Transparency.** Use `.adaptiveMaterialBackground(cornerRadius:fallback:)` from `Fit33/AdaptiveMaterialBackground.swift` instead of raw `.background(.ultraThinMaterial)`. The modifier auto-swaps to `Color.cardBackground` (or a custom opaque fallback) when the user enables Reduce Transparency in iOS Settings → Accessibility → Display & Text Size.
 
 ---
 
@@ -41,6 +42,8 @@
 | `ds_stat` / `ds_statSmall` | 24 / 18 | Bold rounded | Metrics |
 
 Never use sizes between tokens (no 14/16/20pt).
+
+All `ds_*` typography tokens are wired through `UIFontMetrics` and scale with the user's Dynamic Type setting (default-size output unchanged). New code MUST reach for a `ds_*` token — `Font.system(size:)` skips both the design system and Dynamic Type scaling.
 
 ### Color — Dark base / Adaptive
 ```

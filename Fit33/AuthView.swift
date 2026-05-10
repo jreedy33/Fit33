@@ -192,7 +192,15 @@ struct AuthView: View {
                         // Social Login Divider
                         SocialLoginDivider()
                             .padding(.vertical, Spacing.xs)
-                        
+
+                        // Apple Sign-In Button — App Review HIG 4.8 requires
+                        // Sign in with Apple to be the FIRST third-party SSO
+                        // option whenever any third-party SSO (Google,
+                        // Facebook, etc.) is offered. Do not reorder.
+                        SignInWithAppleButton {
+                            handleAppleSignIn()
+                        }
+
                         // Google Sign-In Button
                         Button(action: handleGoogleSignIn) {
                             HStack(spacing: 12) {
@@ -221,11 +229,6 @@ struct AuthView: View {
                                 RoundedRectangle(cornerRadius: 14)
                                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                             )
-                        }
-                        
-                        // Apple Sign-In Button
-                        SignInWithAppleButton {
-                            handleAppleSignIn()
                         }
                         .padding(.top, 4)
                     }

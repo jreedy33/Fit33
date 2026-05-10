@@ -607,8 +607,19 @@ class RecipeBrowserViewModel: ObservableObject {
             AppLogger.info("🍽️ [BROWSER] ✅ Loaded \(recipes.count) recipes (total available: \(searchResponse.totalResults))", category: .nutrition)
             
         } catch {
-            AppLogger.error("🍽️ [BROWSER] ❌ Error: \(error)", category: .nutrition)
-            errorMessage = error.localizedDescription
+            // QP invariants 25a + 45: Supabase / URL-backed catch blocks
+            // route through `NetworkErrorClassifier` so transient timeouts
+            // / cancellations don't manufacture bug-intel fingerprints,
+            // and the user sees a friendly hardcoded message instead of
+            // the raw `error.localizedDescription` (which would leak
+            // "URLError -1009: The Internet connection appears to be
+            // offline" or PostgREST jargon directly to the user).
+            NetworkErrorClassifier.log(
+                error,
+                context: "🍽️ [BROWSER] Recipe search failed",
+                category: .nutrition
+            )
+            errorMessage = "Couldn't load recipes. Check your connection and try again."
         }
         
         isLoading = false
@@ -658,7 +669,16 @@ class RecipeBrowserViewModel: ObservableObject {
             hasMoreResults = false
             
         } catch {
-            errorMessage = error.localizedDescription
+            // QP invariants 25a + 45: classifier routes transient/cancelled
+            // at .warning so we don't fingerprint network blips, and the
+            // user-facing message is a friendly hardcoded fallback instead
+            // of the raw `error.localizedDescription`.
+            NetworkErrorClassifier.log(
+                error,
+                context: "🍽️ [BROWSER] Ingredient search failed",
+                category: .nutrition
+            )
+            errorMessage = "Couldn't search by ingredients. Check your connection and try again."
         }
         
         isLoading = false

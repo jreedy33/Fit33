@@ -608,17 +608,13 @@ struct AnimatedOrbBackground: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
-    /// In Low Power Mode, disable orb animations to save battery and prevent FPS drops.
-    /// The orbs render once in their resting position — still looks good, just static.
-    private var isLowPowerMode: Bool {
-        ProcessInfo.processInfo.isLowPowerModeEnabled
-    }
-
     /// Sprint 3 (Q2-32): unified gate. Respect Low Power Mode, Reduce Motion,
     /// AND any caller-requested static mode. Any one means: render orbs
-    /// statically, no easing animation.
+    /// statically, no easing animation. Delegates to `MotionPolicy` for the
+    /// shared Reduce Motion / Low Power Mode base check, then layers the
+    /// orb-specific `staticOrbs` constraint on top.
     private var shouldDisableMotion: Bool {
-        isLowPowerMode || reduceMotion || staticOrbs
+        MotionPolicy.shouldDisableDecorative(reduceMotion: reduceMotion) || staticOrbs
     }
     
     // Convenience initializers for each tab

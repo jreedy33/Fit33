@@ -210,7 +210,7 @@ struct PaywallFirstScreenView: View {
 
                 Text(plan.period)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.white.opacity(0.7))
 
                 if let savings = plan.savings {
                     Text(savings)
@@ -276,7 +276,7 @@ struct PaywallFirstScreenView: View {
                 .foregroundColor(isUs ? .yellow : .white.opacity(0.6))
             Text(price)
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(isUs ? .white : .white.opacity(0.5))
+                .foregroundColor(isUs ? .white : .white.opacity(0.7))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
@@ -455,13 +455,22 @@ struct PaywallFirstScreenView: View {
             Button(action: { Task { await storeKit.restorePurchases() } }) {
                 Text("Restore Purchases")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.white.opacity(0.7))
             }
             .buttonStyle(.plain)
 
+            HStack(spacing: 8) {
+                Link("Privacy Policy", destination: LegalURLs.privacy)
+                Text("·")
+                    .foregroundColor(.white.opacity(0.5))
+                Link("Terms of Use", destination: LegalURLs.terms)
+            }
+            .font(.ds_labelSmall)
+            .foregroundColor(.white.opacity(0.75))
+
             Text("Auto-renews. Cancel anytime in Settings → Apple ID → Subscriptions.")
                 .font(.system(size: 11, weight: .regular))
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(.white.opacity(0.6))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 20)
         }

@@ -269,7 +269,10 @@ struct PremiumUpgradeView: View {
                             .foregroundColor(.white.opacity(0.6))
                             .frame(width: 32, height: 32)
                             .background(Circle().fill(Color.white.opacity(0.1)))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .accessibilityLabel("Close")
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
@@ -446,7 +449,7 @@ struct PremiumUpgradeView: View {
             
             Text("Unlock your full potential")
                 .font(.subheadline)
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(.white.opacity(0.7))
         }
         .padding(.top, 8)
         .opacity(contentOpacity)
@@ -477,7 +480,7 @@ struct PremiumUpgradeView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("You're unlocking")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.white.opacity(0.7))
                 
                 Text(triggeringFeature.rawValue)
                     .font(.subheadline)
@@ -740,7 +743,7 @@ struct PremiumUpgradeView: View {
 
                         Text(plan.monthlyEquivalent)
                             .font(.caption)
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(.white.opacity(0.7))
                     }
 
                     Spacer()
@@ -752,7 +755,7 @@ struct PremiumUpgradeView: View {
                             .foregroundColor(.white)
                         Text(plan.period)
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(.white.opacity(0.65))
                     }
                 }
                 .padding(14)
@@ -842,7 +845,7 @@ struct PremiumUpgradeView: View {
                     .foregroundColor(.green)
                 Text("Cancel in 2 taps • Auto-renew off anytime")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.white.opacity(0.7))
             }
         }
         .opacity(contentOpacity)
@@ -906,13 +909,22 @@ struct PremiumUpgradeView: View {
             }) {
                 Text("Restore Purchases")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(.white.opacity(0.65))
             }
             
             Text("Payment charged to Apple ID. Auto-renews until cancelled.")
                 .font(.ds_caption)
-                .foregroundColor(.white.opacity(0.25))
+                .foregroundColor(.white.opacity(0.6))
                 .multilineTextAlignment(.center)
+
+            HStack(spacing: 8) {
+                Link("Privacy Policy", destination: LegalURLs.privacy)
+                Text("·")
+                    .foregroundColor(.white.opacity(0.5))
+                Link("Terms of Use", destination: LegalURLs.terms)
+            }
+            .font(.ds_labelSmall)
+            .foregroundColor(.white.opacity(0.75))
         }
         .opacity(contentOpacity)
     }

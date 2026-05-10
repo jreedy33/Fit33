@@ -79,14 +79,25 @@ struct ExerciseCard: View {
         return activeTimerSetNumber != nil
     }
 
-    // True when this exercise is dumbbell-based (case-insensitive substring
-    // match on `Exercise.equipment`). Drives the "each" clarifier under the
-    // weight field in `SetRowView` so users know to enter ONE dumbbell's
-    // weight — bug 996ca300 (Joe Reed feedback, build 1.38). Catches both
-    // canonical "Dumbbell" and combined strings like "Dumbbells / Bench".
+    // True when this exercise uses per-implement weight equipment — i.e.
+    // the user enters the weight of ONE piece (one bell), not the total
+    // across both hands. Covers dumbbells AND kettlebells (and is named
+    // `isDumbbellExercise` for historical reasons — see bug 996ca300 /
+    // Joe Reed feedback, build 1.38, which originally covered only
+    // dumbbells; kettlebells added 2026-05-10 per user request to apply
+    // the same "each" treatment across all bell-style equipment).
+    //
+    // Drives:
+    //   • the inline "each" suffix INSIDE the weight box (SetRowView)
+    //   • the "Nea. × R" formatting in the PREVIOUS / SUGGESTED column
+    //   • the VoiceOver "Weight each" accessibility label
+    //
+    // Case-insensitive substring match handles combined equipment strings
+    // like "Dumbbells / Bench" or "Kettlebell (Single)".
     private var isDumbbellExercise: Bool {
         guard let equipment = exercise.equipment?.lowercased() else { return false }
         return equipment.contains("dumbbell")
+            || equipment.contains("kettlebell")
     }
     
     var body: some View {

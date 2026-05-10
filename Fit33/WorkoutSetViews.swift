@@ -107,13 +107,21 @@ struct SetRowView: View {
     var useKg: Bool = false
     @ObservedObject var restTimer: RestTimer
     var autoStartTimer: Bool = true
-    // True when the parent exercise's equipment is dumbbell-based.
-    // Renders an inline "each" suffix to the right of the number INSIDE the
-    // weight box (e.g. "70 each") so users know the value is per dumbbell —
-    // bug 996ca300. The number font shrinks from 17pt → 14pt and the suffix
-    // is 10pt so both fit cleanly inside the same 70×38pt box without
-    // changing the row's height (so column alignment with non-dumbbell rows
-    // is preserved). VoiceOver gets the same hint via `weightAccessibilityLabel`.
+    // True when the parent exercise uses per-implement weight equipment —
+    // dumbbell or kettlebell, where the user enters the weight of ONE
+    // bell, not the total. The parameter name stayed `isDumbbell` for
+    // historical reasons (bug 996ca300, originally dumbbell-only);
+    // kettlebells were added 2026-05-10 to share the same treatment.
+    //
+    // Renders three coordinated affordances when true:
+    //   • Inline "each" suffix to the right of the weight number INSIDE
+    //     the box (e.g. "70 each"). Number font shrinks 17pt → 14pt and
+    //     the suffix is 10pt so both fit in the existing 70×38pt frame
+    //     without changing row height (column alignment preserved).
+    //   • "Nea. × R" formatting in the PREVIOUS / SUGGESTED column
+    //     (e.g. "25ea. × 10"), so users see the per-implement reading
+    //     in both their history and their input cell.
+    //   • VoiceOver "Weight each" label via `weightAccessibilityLabel`.
     var isDumbbell: Bool = false
 
     // Convenience: true when we should render the inline "each" suffix
@@ -199,21 +207,27 @@ struct SetRowView: View {
                 .accessibilityLabel("Set \(setNumber) type: \(setData.setType.rawValue)")
                 .accessibilityHint("Tap to change set type")
                 
-                // Previous set info - show last workout's data or smart recommendation
+                // Previous set info - show last workout's data or smart
+                // recommendation. For dumbbell / kettlebell exercises the
+                // value renders as "25ea. × 10" so users see the
+                // per-implement reading in their history (matching the
+                // "each" treatment inside the editable weight box).
+                // Non-bell equipment keeps the compact "70×8" shorthand.
                 HStack(spacing: 4) {
                     if let prev = previousSet {
                         let displayWeight = useKg
                             ? (prev.weight * WorkoutSetData.lbsToKg * 10).rounded() / 10
                             : prev.weight
+                        let label = formattedPreviousSetLabel(weight: displayWeight, reps: prev.reps)
                         if prev.isSmartRecommendation {
                             Image(systemName: "sparkles")
                                 .font(.ds_bodySmall)
                                 .foregroundColor(.orange)
-                            Text("\(formatWeightPlaceholder(displayWeight))×\(prev.reps)")
+                            Text(label)
                                 .font(.ds_labelLarge)
                                 .foregroundColor(.orange)
                         } else {
-                            Text("\(formatWeightPlaceholder(displayWeight))×\(prev.reps)")
+                            Text(label)
                                 .font(.ds_bodyLarge)
                                 .foregroundColor(.secondary)
                         }
@@ -573,6 +587,21 @@ struct SetRowView: View {
         } else {
             return String(format: "%.1f", weight)
         }
+    }
+
+    // PREVIOUS / SUGGESTED column label. Reads "70×8" for normal equipment
+    // and "25ea. × 10" for dumbbell / kettlebell exercises — making it
+    // clear that the historical / recommended value is per implement, not
+    // total. The `× ` form (with spaces) reads as natural shorthand when
+    // the "ea." marker is present; the tight `×` form stays as-is for
+    // non-dumbbell rows to keep the column compact (user request
+    // 2026-05-10).
+    private func formattedPreviousSetLabel(weight: Double, reps: Int) -> String {
+        let weightStr = formatWeightPlaceholder(weight)
+        if isDumbbell && !isPerSideMode {
+            return "\(weightStr)ea. × \(reps)"
+        }
+        return "\(weightStr)×\(reps)"
     }
     
     /// Parse weight text handling both period and comma as decimal separator

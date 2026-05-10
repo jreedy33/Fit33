@@ -138,9 +138,6 @@ struct DashboardView: View {
     @State var showingChallengeCreation = false
     @State var showCommunityHub = false
     
-    // Widget settings
-    @State var showingWidgetSettings = false
-
     // Share Beta Link sheet (TestFlight invite for friends/family).
     @State var showShareBetaLink = false
     @AppStorage("showWeightTrackerWidget") var showWeightTrackerWidget = true  // Default ON
@@ -252,7 +249,7 @@ struct DashboardView: View {
                                 LinearGradient(colors: [.blue, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .font(.title3)
-                        Text("Ready for today's workout?")
+                        Text("Today's Workout")
                             .font(.title3)
                             .fontWeight(.bold)
                         Spacer()
@@ -260,7 +257,7 @@ struct DashboardView: View {
                     .padding(.bottom, 12)
 
                     // Swipeable Workout Carousel: [Custom+Auto Buttons] <-> [Active Program]
-                    // Ordered above Challenges so the "Ready for today's workout?"
+                    // Ordered above Challenges so the "Today's Workout"
                     // header leads directly into the primary workout CTA; the
                     // Challenge widget is a secondary social action.
                     swipeableWorkoutCarousel
@@ -500,22 +497,6 @@ struct DashboardView: View {
                     ChallengeFlowStartView()
                         .environmentObject(userManager)
                 }
-            }
-            .fullScreenCover(isPresented: $showingWidgetSettings) {
-                WidgetSettingsSheet(
-                    showWeightTracker: $showWeightTrackerWidget,
-                    showHydration: $showHydrationWidget,
-                    showMacros: $showMacrosWidget,
-                    showChallenge: $showChallengeWidget,
-                    showRecommended: $showRecommendedWidget,
-                    showWhoop: $showWhoopWidget,
-                    showOura: $showOuraWidget,
-                    showStrava: $showStravaWidget,
-                    showCardio: $showCardioWidget,
-                    showOlympian: $showOlympianWidget,
-                    showRecentActivity: $showRecentActivityWidget
-                )
-                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showPhoneVerificationPrompt) {
                 phoneVerificationPromptSheet

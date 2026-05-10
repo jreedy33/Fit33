@@ -909,98 +909,105 @@ private struct BattleLogRow: View {
     private var iAmAhead: Bool { myValue > opponentValue && !isFuture }
     
     var body: some View {
-        HStack(spacing: Spacing.sm) {
-            VStack(spacing: 1) {
-                if isToday {
-                    Text("TODAY")
+        VStack(alignment: .leading, spacing: Spacing.xxxs) {
+            HStack(spacing: Spacing.sm) {
+                VStack(spacing: 1) {
+                    if isToday {
+                        Text("TODAY")
+                            .font(.ds_caption)
+                            .tracking(0.6)
+                            .foregroundColor(typeColor)
+                    } else {
+                        Text("Day \(dayNumber)")
+                            .font(.ds_caption)
+                            .foregroundColor(isFuture ? .secondary.opacity(0.4) : .secondary)
+                    }
+
+                    Text(dayLabel)
                         .font(.ds_caption)
-                        .tracking(0.6)
-                        .foregroundColor(typeColor)
+                        .foregroundColor(.secondary.opacity(isFuture ? 0.3 : 0.6))
+                }
+                .frame(width: 44)
+
+                if isFuture {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "lock.fill")
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary.opacity(0.2))
+                        Spacer()
+                    }
                 } else {
-                    Text("Day \(dayNumber)")
-                        .font(.ds_caption)
-                        .foregroundColor(isFuture ? .secondary.opacity(0.4) : .secondary)
-                }
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text("You")
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary)
 
-                Text(dayLabel)
-                    .font(.ds_caption)
-                    .foregroundColor(.secondary.opacity(isFuture ? 0.3 : 0.6))
-            }
-            .frame(width: 44)
+                        HStack(spacing: Spacing.xxxs) {
+                            Text(myValue > 0 ? formatValue(myValue) : "–")
+                                .font(.ds_labelMedium)
+                                .foregroundColor(myWon ? .green : (myValue > 0 ? .primary : .secondary.opacity(0.4)))
 
-            if isFuture {
-                HStack {
-                    Spacer()
-                    Image(systemName: "lock.fill")
-                        .font(.ds_caption)
-                        .foregroundColor(.secondary.opacity(0.2))
-                    Spacer()
-                }
-            } else {
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text("You")
-                        .font(.ds_caption)
-                        .foregroundColor(.secondary)
-
-                    HStack(spacing: Spacing.xxxs) {
-                        Text(myValue > 0 ? formatValue(myValue) : "–")
-                            .font(.ds_labelMedium)
-                            .foregroundColor(myWon ? .green : (myValue > 0 ? .primary : .secondary.opacity(0.4)))
-
-                        if myWon {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.ds_caption)
-                                .foregroundColor(.green)
-                        } else if myValue > 0 {
-                            miniRing(progress: min(1.0, Double(myValue) / Double(target)))
+                            if myWon {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.ds_caption)
+                                    .foregroundColor(.green)
+                            } else if myValue > 0 {
+                                miniRing(progress: min(1.0, Double(myValue) / Double(target)))
+                            }
                         }
                     }
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
 
-                if myValue > 0 || opponentValue > 0 {
-                    ZStack {
-                        if iAmAhead {
-                            Image(systemName: "arrowtriangle.left.fill")
-                                .font(.ds_caption)
-                                .foregroundColor(.green.opacity(0.6))
-                        } else if opponentValue > myValue {
-                            Image(systemName: "arrowtriangle.right.fill")
-                                .font(.ds_caption)
-                                .foregroundColor(.orange.opacity(0.6))
-                        } else {
-                            Circle()
-                                .fill(Color.secondary.opacity(0.2))
-                                .frame(width: 4, height: 4)
+                    if myValue > 0 || opponentValue > 0 {
+                        ZStack {
+                            if iAmAhead {
+                                Image(systemName: "arrowtriangle.left.fill")
+                                    .font(.ds_caption)
+                                    .foregroundColor(.green.opacity(0.6))
+                            } else if opponentValue > myValue {
+                                Image(systemName: "arrowtriangle.right.fill")
+                                    .font(.ds_caption)
+                                    .foregroundColor(.orange.opacity(0.6))
+                            } else {
+                                Circle()
+                                    .fill(Color.secondary.opacity(0.2))
+                                    .frame(width: 4, height: 4)
+                            }
                         }
-                    }
-                    .frame(width: 12)
-                } else {
-                    Spacer()
                         .frame(width: 12)
-                }
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(opponentName)
-                        .font(.ds_caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-
-                    HStack(spacing: Spacing.xxxs) {
-                        if oppWon {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.ds_caption)
-                                .foregroundColor(.green)
-                        } else if opponentValue > 0 {
-                            miniRing(progress: min(1.0, Double(opponentValue) / Double(target)))
-                        }
-
-                        Text(opponentValue > 0 ? formatValue(opponentValue) : "–")
-                            .font(.ds_labelMedium)
-                            .foregroundColor(oppWon ? .green : (opponentValue > 0 ? .primary : .secondary.opacity(0.4)))
+                    } else {
+                        Spacer()
+                            .frame(width: 12)
                     }
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(opponentName)
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+
+                        HStack(spacing: Spacing.xxxs) {
+                            if oppWon {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.ds_caption)
+                                    .foregroundColor(.green)
+                            } else if opponentValue > 0 {
+                                miniRing(progress: min(1.0, Double(opponentValue) / Double(target)))
+                            }
+
+                            Text(opponentValue > 0 ? formatValue(opponentValue) : "–")
+                                .font(.ds_labelMedium)
+                                .foregroundColor(oppWon ? .green : (opponentValue > 0 ? .primary : .secondary.opacity(0.4)))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if leaguePointsAwarded > 0 && !isFuture {
+                leaguePointsChip
+                    .padding(.leading, 44 + Spacing.sm)
             }
         }
         .padding(.horizontal, Spacing.sm)
@@ -1011,13 +1018,6 @@ private struct BattleLogRow: View {
                     ? typeColor.opacity(colorScheme == .dark ? 0.1 : 0.06)
                     : Color.clear)
         )
-        .overlay(alignment: .topTrailing) {
-            if leaguePointsAwarded > 0 && !isFuture {
-                leaguePointsChip
-                    .padding(.top, 2)
-                    .padding(.trailing, Spacing.xs)
-            }
-        }
     }
 
     /// 2026-04-30 — Challenge League Points Expansion.

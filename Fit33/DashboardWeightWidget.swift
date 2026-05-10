@@ -254,7 +254,7 @@ struct DashboardWeightWidget: View {
             }
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("Weight")
+                Text("Today's Weight")
                     .font(.title3)
                     .fontWeight(.bold)
                     .foregroundColor(.primary)
@@ -278,7 +278,7 @@ struct DashboardWeightWidget: View {
                     .id(todayWeight.id) // Force refresh when weight changes
             } else {
                 Text("Tap to add")
-                    .font(.title2)
+                    .font(.title3)
                     .fontWeight(.bold)
                     .foregroundStyle(
                         LinearGradient(colors: gradientColors, startPoint: .leading, endPoint: .trailing)
@@ -287,13 +287,11 @@ struct DashboardWeightWidget: View {
         }
     }
     
+    /// Empty state shows nothing under the title — the "Tap to add"
+    /// affordance on the right carries the call-to-action on its own.
     @ViewBuilder
     private var expandedTrendLabel: some View {
-        if weightService.todayLog == nil {
-            Text("Log today's weight")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        } else {
+        if weightService.todayLog != nil {
             let weeklyChange = weightService.weeklyChange
             
             if abs(weeklyChange) < 0.1 {

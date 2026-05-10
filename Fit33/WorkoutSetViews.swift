@@ -95,7 +95,12 @@ struct SetRowView: View {
     var exerciseId: String = ""
     let onShowAd: (@escaping () -> Void) -> Void
     let shouldAutoFocus: Bool
-    var onFocusChanged: ((Bool) -> Void)? = nil
+    // (isFocused, isLastSet) — the second flag lets the parent pick a
+    // .bottom-anchored scroll (so the card's bottom sits cleanly above the
+    // keyboard + music player) when the user focuses the last set, vs the
+    // standard .top-anchored scroll for any other set. See
+    // ActiveWorkoutView+Layout.swift's `onFocusChanged` closure.
+    var onFocusChanged: ((_ isFocused: Bool, _ isLastSet: Bool) -> Void)? = nil
     @Binding var isPerSideMode: Bool
     var barWeight: Double = 45
     var onOpenPlateCalculator: (() -> Void)? = nil
@@ -103,10 +108,42 @@ struct SetRowView: View {
     @ObservedObject var restTimer: RestTimer
     var autoStartTimer: Bool = true
     // True when the parent exercise's equipment is dumbbell-based.
-    // Renders an "each" clarifier under the weight field so users know to
-    // enter the weight of ONE dumbbell — bug 996ca300. Storage stays
-    // per-dumbbell; this is purely a labeling affordance.
+    // Renders an inline "each" suffix to the right of the number INSIDE the
+    // weight box (e.g. "70 each") so users know the value is per dumbbell —
+    // bug 996ca300. The number font shrinks from 17pt → 14pt and the suffix
+    // is 10pt so both fit cleanly inside the same 70×38pt box without
+    // changing the row's height (so column alignment with non-dumbbell rows
+    // is preserved). VoiceOver gets the same hint via `weightAccessibilityLabel`.
     var isDumbbell: Bool = false
+
+    // Convenience: true when we should render the inline "each" suffix
+    // alongside the weight value. Per-side mode wins (per-side is barbell-only
+    // — defensive: never show two conflicting clarifiers).
+    private var showsEachSuffix: Bool {
+        isDumbbell && !isPerSideMode
+    }
+
+    // Content-sized width for the weight text field when the "each" suffix
+    // is showing. We measure the live text (or the placeholder when empty)
+    // at the field's actual font, then add a tiny cursor cushion. This is
+    // what makes the HStack auto-center the "<number> each" cluster inside
+    // the 70pt box: with a fixed-width field, short numbers leave dead
+    // space on one side and push the visible cluster off the box's center;
+    // with a content-sized field, the HStack centers naturally and the
+    // visible cluster's geometric center lands on the box's center
+    // regardless of digit count.
+    //
+    // Capped at 44pt — the maximum 5-char value ("12.55", "99.99",
+    // "100.5", etc.) measures ~36–40pt at 14pt semibold, plus a tiny
+    // buffer. The 16pt floor handles the focused-but-empty state so the
+    // cursor doesn't render in a zero-width frame.
+    private var weightFieldWidth: CGFloat {
+        let displayText = weightText.isEmpty ? weightPlaceholder : weightText
+        guard !displayText.isEmpty else { return 16 }
+        let font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+        let measured = (displayText as NSString).size(withAttributes: [.font: font])
+        return min(44, max(16, ceil(measured.width) + 4))
+    }
     
     @State private var weightText: String = ""
     @State private var repsText: String = ""
@@ -182,20 +219,45 @@ struct SetRowView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
-            VStack(spacing: 2) {
+            // Weight input. For dumbbell exercises (not in per-side mode) we
+            // render an inline "each" suffix INSIDE the box — both the number
+            // and the suffix are shrunk so they read together as "70 each"
+            // cleanly inside the existing 70×38pt frame. Row heights stay
+            // identical across exercise types either way, preserving column
+            // alignment.
+            //
+            // Layout details:
+            //   • The text field is sized to its CONTENT (see
+            //     `weightFieldWidth`) so the HStack auto-centers the
+            //     "<number> each" cluster on the box's geometric center for
+            //     ANY digit count — short numbers like "75" no longer
+            //     leave dead space and shift the cluster off-center.
+            //   • `HStack(alignment: .bottom)` + `.padding(.bottom, 12)` on
+            //     "each" baseline-aligns the suffix with the bottom of the
+            //     digit row. The UITextField centers its 14pt text in the
+            //     38pt frame, putting the digit baseline at ~y=25 from the
+            //     frame top; the 12pt bottom-padding lifts the 10pt "each"
+            //     text up so its baseline lands at the same y. The result
+            //     reads as one continuous text run, not two stacked items.
+            //   • `maxLength: 5` caps input at the "xx.xx" format the user
+            //     specified — "12.55", "99.99", "100.5", or "1000" all fit;
+            //     anything longer is rejected by SelectAllTextField's
+            //     delegate before reaching the binding.
+            HStack(alignment: .bottom, spacing: 2) {
                 SelectAllTextField(
                     placeholder: weightPlaceholder,
                     text: $weightText,
                     keyboardType: .decimalPad,
-                    font: .systemFont(ofSize: 17, weight: .semibold),
+                    font: .systemFont(ofSize: showsEachSuffix ? 14 : 17, weight: .semibold),
                     textAlignment: .center,
                     textColor: setData.isCompleted ? .white : .label,
+                    maxLength: 5,
                     onFocusChange: { isFocused in
                         isWeightFocused = isFocused
                         if isFocused {
                             HapticManager.selectionChanged()
                             onNewExerciseInteraction()
-                            onFocusChanged?(true)
+                            onFocusChanged?(true, isLastSet)
                         } else {
                             if let weight = parseWeight(weightText) {
                                 applyWeight(weight)
@@ -203,32 +265,29 @@ struct SetRowView: View {
                         }
                     }
                 )
-                .frame(width: 70, height: 38)
-                .background(Color(.systemGray6))
-                .cornerRadius(CornerRadius.sm)
-                .overlay(
-                    RoundedRectangle(cornerRadius: CornerRadius.sm)
-                        .stroke(Color.blue, lineWidth: isWeightFocused ? 2 : 0)
-                )
-                .shadow(color: isWeightFocused ? Color.blue.opacity(0.4) : Color.clear, radius: 4)
-                .accessibilityLabel(weightAccessibilityLabel)
-                .accessibilityHint("Enter weight for set \(setNumber)")
-                .onLongPressGesture(minimumDuration: 0.5) {
-                    HapticManager.impact(.medium)
-                    onOpenPlateCalculator?()
-                }
+                .frame(width: showsEachSuffix ? weightFieldWidth : 70, height: 38)
 
-                // Dumbbell clarifier — bug 996ca300. Sits directly below the
-                // weight field so it reads as a unit on the field, matching
-                // the "LB"/"KG" column header rhythm above. `isPerSideMode`
-                // wins if both happen to be true (per-side is barbell-only,
-                // but defensive: never show two conflicting clarifiers).
-                if isDumbbell && !isPerSideMode {
+                if showsEachSuffix {
                     Text("each")
-                        .font(.ds_caption)
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
+                        .padding(.bottom, 12)
                         .accessibilityHidden(true)
                 }
+            }
+            .frame(width: 70, height: 38)
+            .background(Color(.systemGray6))
+            .cornerRadius(CornerRadius.sm)
+            .overlay(
+                RoundedRectangle(cornerRadius: CornerRadius.sm)
+                    .stroke(Color.blue, lineWidth: isWeightFocused ? 2 : 0)
+            )
+            .shadow(color: isWeightFocused ? Color.blue.opacity(0.4) : Color.clear, radius: 4)
+            .accessibilityLabel(weightAccessibilityLabel)
+            .accessibilityHint("Enter weight for set \(setNumber)")
+            .onLongPressGesture(minimumDuration: 0.5) {
+                HapticManager.impact(.medium)
+                onOpenPlateCalculator?()
             }
             .onChange(of: weightText) { _, newValue in
                 weightDebounceTask?.cancel()
@@ -268,7 +327,7 @@ struct SetRowView: View {
                     if isFocused {
                         HapticManager.selectionChanged()
                         onNewExerciseInteraction()
-                        onFocusChanged?(true)
+                        onFocusChanged?(true, isLastSet)
                     } else {
                         // Update setData when focus is lost
                         if let reps = Int(repsText) {
@@ -457,10 +516,10 @@ struct SetRowView: View {
             }
         }
         .onChange(of: isWeightFocused) { _, isFocused in
-            if isFocused { HapticManager.selectionChanged(); onFocusChanged?(true) }
+            if isFocused { HapticManager.selectionChanged(); onFocusChanged?(true, isLastSet) }
         }
         .onChange(of: isRepsFocused) { _, isFocused in
-            if isFocused { HapticManager.selectionChanged(); onFocusChanged?(true) }
+            if isFocused { HapticManager.selectionChanged(); onFocusChanged?(true, isLastSet) }
         }
     }
     

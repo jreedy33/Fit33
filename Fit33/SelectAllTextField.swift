@@ -8,6 +8,10 @@ struct SelectAllTextField: UIViewRepresentable {
     var font: UIFont = .systemFont(ofSize: 17, weight: .semibold)
     var textAlignment: NSTextAlignment = .center
     var textColor: UIColor = .label // Default to system label color
+    // Maximum allowed character count for the resulting text after a
+    // user edit. `nil` means no limit. Used by the weight field to cap
+    // input at "xx.xx" (5 chars) — see SetRowView's weight input.
+    var maxLength: Int? = nil
     var onFocusChange: ((Bool) -> Void)? = nil
     
     func makeUIView(context: Context) -> UITextField {
@@ -72,13 +76,21 @@ struct SelectAllTextField: UIViewRepresentable {
                 if let currentText = textField.text,
                    let textRange = Range(range, in: currentText) {
                     let newText = currentText.replacingCharacters(in: textRange, with: string)
-                    
+
                     // Prevent multiple decimal points
                     let decimalCount = newText.filter { $0 == "." || $0 == "," }.count
                     if decimalCount > 1 {
                         return false
                     }
-                    
+
+                    // Enforce caller-supplied max length (e.g. weight =
+                    // "xx.xx" → maxLength: 5). Backspace / delete paths
+                    // produce `newText.count <= currentText.count`, so
+                    // they're never blocked by this check.
+                    if let maxLength = parent.maxLength, newText.count > maxLength {
+                        return false
+                    }
+
                     parent.text = newText
                 }
                 return true

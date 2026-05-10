@@ -19,7 +19,12 @@ struct ExerciseCard: View {
     var isFirstExercise: Bool = false // Whether this is the first exercise (for auto-focus)
     @Binding var exerciseWithActiveTimer: String? // Track which exercise has the active timer globally
     var exerciseId: String = "" // This exercise's ID
-    var onFocusChanged: ((Bool) -> Void)? = nil // Callback when focus changes
+    // (isFocused, isLastSet) — second flag tells the parent that focus
+    // landed specifically on the LAST set's input, so it should anchor the
+    // scroll to .bottom (clean cushion above the keyboard / music player)
+    // rather than the default .top. Card-level taps pass `false` because
+    // they don't target a specific set.
+    var onFocusChanged: ((_ isFocused: Bool, _ isLastSet: Bool) -> Void)? = nil
     var onDragChanged: ((Int) -> Void)? = nil // Callback when drag position changes with target index
     var onDragEnded: (() -> Void)? = nil // Callback when drag ends
     var currentIndex: Int = 0
@@ -159,7 +164,10 @@ struct ExerciseCard: View {
         // redundant addition that has now been reverted.
         .onTapGesture {
             HapticManager.selectionChanged()
-            onFocusChanged?(true)
+            // Card-level tap (not on a specific field). Pass isLastSet=false
+            // so the parent uses its default anchor: .top scroll — the user
+            // didn't focus a particular row, so there's no last-set context.
+            onFocusChanged?(true, false)
         }
         .overlay(alignment: .bottomTrailing) {
             if cardRestTimer.isActive {
@@ -648,7 +656,7 @@ struct ExerciseCard: View {
                 .font(.ds_caption)
                 .foregroundColor(.secondary)
                 .frame(width: 70, alignment: .center)
-            
+
             Text("REPS")
                 .font(.ds_caption)
                 .foregroundColor(.secondary)
@@ -668,16 +676,45 @@ struct ExerciseCard: View {
             ForEach(Array(sets.enumerated()), id: \.element.id) { index, setItem in
                 SwipeableSetRow(
                     onDelete: {
+                        // CRASH GUARD (2026-05-10, "Index out of range"): the
+                        // `index` value captured here is from the ForEach at
+                        // RENDER TIME. The `sets` binding can be mutated
+                        // out-of-band BEFORE the swipe gesture completes —
+                        // most commonly by `WorkoutWearableMerger` rebuilding
+                        // the array when a WHOOP / wearable session overlaps
+                        // the active workout, but also by the seamless
+                        // `onAddSet` flow on another card or by background
+                        // sync paths. If the array shrinks, the captured
+                        // positional `index` can point past `sets.count`,
+                        // and `sets.remove(at: index)` traps.
+                        //
+                        // The row's stable identity is `setItem.id` (the
+                        // `WorkoutSetData` UUID — that's why `ForEach` uses
+                        // `id: \.element.id`). Re-resolve the current
+                        // position by that identity inside the closure body
+                        // so we always operate on the correct row, no
+                        // matter what mutated the array in the meantime.
+                        // If the row has already been removed by another
+                        // path, this becomes a no-op (idempotent).
+                        guard let currentIndex = sets.firstIndex(where: { $0.id == setItem.id }) else {
+                            AppLogger.debug("⚠️ SwipeableSetRow.onDelete: setItem \(setItem.id.uuidString.prefix(8)) already removed (captured index \(index), current sets.count \(sets.count)) — no-op", category: .workout)
+                            return
+                        }
                         withAnimation(.easeOut(duration: 0.2)) {
-                            // Stop any active timer for this set
-                            if activeTimerSetNumber == index + 1 {
+                            // Stop any active timer for this set.
+                            // Uses `currentIndex` (1-indexed via +1) — the
+                            // SetRowView uses the same convention.
+                            if activeTimerSetNumber == currentIndex + 1 {
                                 activeTimerSetNumber = nil
                             }
-                            // If this is the only set, replace with fresh set instead of deleting
+                            // If this is the only set, replace with a fresh
+                            // set instead of deleting (preserves the visual
+                            // shape of the card; the user expects to see a
+                            // single empty set rather than an empty card).
                             if sets.count == 1 {
                                 sets[0] = WorkoutSetData()
                             } else {
-                                sets.remove(at: index)
+                                sets.remove(at: currentIndex)
                             }
                         }
                     }

@@ -371,6 +371,18 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# audit-catalog-exercise: gateway-level JWT verification disabled because
+# .env carries the new-format `sb_secret_` opaque key and this project's
+# gateway version doesn't translate it (returns UNAUTHORIZED_INVALID_JWT_FORMAT
+# at the platform layer before the function runs). Function-internal auth
+# is unchanged — `resolveAuth()` (audit-catalog-exercise/index.ts line ~406)
+# still requires a service-role credential (legacy JWT, sb_secret_, OR
+# direct env match) and 403s anything else. Net security posture is the
+# same as before; we just moved auth check one layer down. See
+# INFRA_SECURITY_AGENT.md invariant 11a for the JWT-format context.
+[functions.audit-catalog-exercise]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

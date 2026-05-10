@@ -253,6 +253,7 @@
 		7C98FAC62EECA9F4001AE1F3 /* DevSessionLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */; };
 		7C98FAC82EEDB4A0001AE1F3 /* SmartExerciseSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */; };
 		7C9A7F022F5E281C00B5C928 /* SendWorkoutToFriendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */; };
+		7C9A7F042F5E281C00B5C928 /* FriendShareSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9A7F032F5E281C00B5C928 /* FriendShareSelectionSheet.swift */; };
 		7C9F0A012F357EB600C2F7EC /* PerformanceOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */; };
 		7CA0643A2F7ACA48004CF656 /* PrivacySettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */; };
 		7CA0643C2F7ACA56004CF656 /* PrivacySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */; };
@@ -741,6 +742,7 @@
 		7C98FAC52EECA9F4001AE1F3 /* DevSessionLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevSessionLogsView.swift; sourceTree = "<group>"; };
 		7C98FAC72EEDB49F001AE1F3 /* SmartExerciseSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmartExerciseSearchService.swift; sourceTree = "<group>"; };
 		7C9A7F012F5E281C00B5C928 /* SendWorkoutToFriendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendWorkoutToFriendView.swift; sourceTree = "<group>"; };
+		7C9A7F032F5E281C00B5C928 /* FriendShareSelectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendShareSelectionSheet.swift; sourceTree = "<group>"; };
 		7C9F0A002F357EB600C2F7EC /* PerformanceOptimizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceOptimizer.swift; sourceTree = "<group>"; };
 		7CA064392F7ACA48004CF656 /* PrivacySettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsManager.swift; sourceTree = "<group>"; };
 		7CA0643B2F7ACA56004CF656 /* PrivacySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsView.swift; sourceTree = "<group>"; };
@@ -1201,6 +1203,7 @@
 				7C53E1E52F327B4A00C2F7EC /* FriendRankingService.swift */,
 				7C792AFF2F2C2CE70048A97E /* FriendRequestPreviewWidget.swift */,
 				7C53E2272F353FE200C2F7EC /* FriendSelectionSheet.swift */,
+				7C9A7F032F5E281C00B5C928 /* FriendShareSelectionSheet.swift */,
 				7C0C427D2F1833CB00F02E84 /* FriendService.swift */,
 				7C0C427F2F1833DA00F02E84 /* FriendsListView.swift */,
 				7CAA1FB22F43EAE9008200B9 /* FriendsTabView.swift */,
@@ -1995,6 +1998,7 @@
 				7CAFD5602EE10EA700920F0D /* VideoPreloadManager.swift in Sources */,
 				7C0C42822F18340100F02E84 /* SharedWorkoutPreviewView.swift in Sources */,
 				7C9A7F022F5E281C00B5C928 /* SendWorkoutToFriendView.swift in Sources */,
+				7C9A7F042F5E281C00B5C928 /* FriendShareSelectionSheet.swift in Sources */,
 				7C792ACC2F2ABA150048A97E /* OrientationManager.swift in Sources */,
 				7C792AFC2F2C23AC0048A97E /* ReceivedWorkoutPreviewWidget.swift in Sources */,
 				7C558B162ED4D3AD00A01E1F /* ContentView.swift in Sources */,

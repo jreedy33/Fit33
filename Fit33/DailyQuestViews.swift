@@ -523,30 +523,40 @@ struct DailyQuestsWidget: View {
                 }
             }
 
-            // Text column — title, subheader, and progress bar all align to
-            // the right of the emoji ring so the card stays compact (the bar
-            // sits just below the subheader, not below the ring).
+            // Text column — single action line + progress bar, aligned to
+            // the right of the emoji ring. 2026-05-10 (Joe Reed shake,
+            // build 1.40 "daily goals are too wordy — head + subhead is
+            // too much"): the server-side `quest.title` ("Breakfast
+            // Check-in" / "Crush a Workout" / "Do a Friend's Workout")
+            // is cute-naming that adds no info beyond what
+            // `dynamicDescription` already carries ("Log your breakfast"
+            // / "Crush a Chest workout" / "Do a friend's workout"). One
+            // line per card, action-verb first — same vertical rhythm
+            // as the FE invariant 19b "Daily Goals never return empty"
+            // contract since `dynamicDescription` always resolves to a
+            // non-empty action string. The XP pill in the top-right
+            // owns the trailing 56pt — every primary text view in here
+            // reserves that padding so long copy never collides.
             VStack(alignment: .leading, spacing: 4) {
-                Text(quest.title)
-                    .font(.ds_labelMedium)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                // Reserve space so long titles don't collide with the
-                // XP pill pinned to the card's top-trailing corner.
-                .padding(.trailing, 56)
-
                 if isDone {
                     Text(completionSummary(for: quest))
-                        .font(.ds_caption)
+                        .font(.ds_labelMedium)
                         .foregroundColor(.green.opacity(0.9))
                         .lineLimit(1)
+                        .padding(.trailing, 56)
                 } else if quest.questKey == QuestKey.watchAds.rawValue {
+                    Text(dynamicDescription(for: quest))
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .padding(.trailing, 56)
                     compactAdRow(quest: quest)
                 } else {
                     Text(dynamicDescription(for: quest))
-                        .font(.ds_caption)
-                        .foregroundColor(.secondary.opacity(0.7))
+                        .font(.ds_labelMedium)
+                        .foregroundColor(.primary)
                         .lineLimit(1)
+                        .padding(.trailing, 56)
 
                     if hasMetadataRow(for: quest) {
                         questMetadataRow(quest: quest)
@@ -1305,6 +1315,42 @@ struct DailyQuestsWidget: View {
         return markers.contains { text.contains($0) }
     }
 
+    /// 2026-05-10 (shake build 1.40 "make it personalized too"): rewrites the
+    /// server-side personalized workout description into the action-verb-
+    /// first cadence used everywhere else on the daily-goal surface (PE
+    /// invariant 19e). The server's `get_daily_quests` v4 emits
+    /// "Suggested: Legs today" / "Your legs are fresh — hit quads & hamstrings
+    /// today" / etc. — both formats collapse to "Crush leg day" client-side.
+    /// Server copy stays the canonical data contract; iOS owns the
+    /// presentation cadence (avoids a 700-line `CREATE OR REPLACE FUNCTION`
+    /// migration just to flip 5 strings). Returns `nil` for unrecognized
+    /// variants so the caller falls back to the verbatim server description
+    /// — future server copy iterations stay legible until a matcher is added
+    /// here. Match strings are case-sensitive on the capitalized split name
+    /// ("Legs" / "Push" / "Pull" / "Upper body" / "Full body") plus the
+    /// 20260421-era "X are fresh" templates that still live in already-
+    /// assigned `user_daily_quests` rows. Don't lowercase the input — that
+    /// would over-match user-typed copy that happens to contain "legs".
+    private static func actionVerbFirstFromPersonalized(_ text: String) -> String? {
+        if text.contains("Legs") || text.contains("legs are fresh") {
+            return "Crush leg day"
+        }
+        if text.contains("Push") || text.contains("Chest, shoulders") {
+            return "Crush push day"
+        }
+        if text.contains("Pull") || text.contains("Back & biceps") {
+            return "Crush pull day"
+        }
+        if text.contains("Upper body") || text.contains("Upper Body")
+            || text.contains("Upper body is recovered") {
+            return "Crush upper body"
+        }
+        if text.contains("Full body") || text.contains("Everything is fresh") {
+            return "Crush full body"
+        }
+        return nil
+    }
+
     private func dynamicDescription(for quest: DailyQuest) -> String {
         guard let key = QuestKey(rawValue: quest.questKey) else {
             return quest.description
@@ -1314,23 +1360,33 @@ struct DailyQuestsWidget: View {
         case .completeWorkout:
             let suggestion = WorkoutSuggestionEngine.shared.suggestForToday()
             if suggestion.isFromProgram, let dayName = suggestion.programDayName {
-                return "Program: \(dayName)"
+                return "Crush \(dayName)"
             }
-            // Server now personalizes description for split-aware workout
-            // slots ("Your legs are fresh…"). Prefer it when present.
+            // Server-personalized split-aware description ("Suggested: Legs
+            // today" / "Your legs are fresh — …") gets rewritten to the
+            // action-verb cadence (PE invariant 19e). Unrecognized variants
+            // fall back to the verbatim server copy so future server copy
+            // iterations stay legible until the matcher is updated.
             if Self.isPersonalizedWorkoutDescription(quest.description) {
+                if let rewritten = Self.actionVerbFirstFromPersonalized(quest.description) {
+                    return rewritten
+                }
                 return quest.description
             }
+            // 2026-05-10 (shake build 1.40): action-verb first so the card
+            // reads as a complete sentence with the title row dropped.
+            // "Suggested: Chest" → "Crush a Chest workout" — matches the
+            // user's canonical example ("Crush a chest workout").
             if let first = suggestion.suggestedMuscles.first {
-                return "Suggested: \(first.rawValue.capitalized)"
+                return "Crush a \(first.rawValue.capitalized) workout"
             }
-            return "Finish any workout today"
+            return "Crush a workout today"
         case .completeProgramDay:
             if let day = GeneratedProgramService.shared.currentDay {
                 let muscle = day.focusMuscles.first ?? "program"
-                return "Day \(day.dayNumber): \(muscle)"
+                return "Crush Day \(day.dayNumber) — \(muscle)"
             }
-            return "Next program day"
+            return "Crush your next program day"
         case .complete2Workouts:
             return "Knock out 2 workouts today"
         case .workout30Min:

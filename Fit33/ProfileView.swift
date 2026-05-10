@@ -89,6 +89,26 @@ struct ProfileView: View {
     @State private var showingPhotoPicker = false
     @State private var showingCamera = false
     @State private var isUploadingPhoto = false
+
+    // 2026-05-08 — Header simplification (lead-designer call). The
+    // dashboard widget-settings ellipsis moved off the home top bar
+    // and into this toolbar (next to the gearshape cog) so the avatar
+    // strip on the dashboard could host the league tier badge instead.
+    // Storage stays in `@AppStorage` so the same keys read/write
+    // regardless of where the sheet is launched from.
+    @State private var showingWidgetSettings = false
+    @AppStorage("showWeightTrackerWidget") private var showWeightTrackerWidget = true
+    @AppStorage("showHydrationWidget") private var showHydrationWidget = false
+    @AppStorage("showMacrosWidget") private var showMacrosWidget = false
+    @AppStorage("showChallengeWidget") private var showChallengeWidget = true
+    @AppStorage("showRecommendedWidget") private var showRecommendedWidget = true
+    @AppStorage("showWhoopWidget") private var showWhoopWidget = true
+    @AppStorage("showOuraWidget") private var showOuraWidget = true
+    @AppStorage("showStravaWidget") private var showStravaWidget = true
+    @AppStorage("showCardioWidget") private var showCardioWidget = true
+    @AppStorage("showOlympianWidget") private var showOlympianWidget = true
+    @AppStorage("showRecentActivityWidget") private var showRecentActivityWidget = false
+
     
     let genderOptions = ["Male", "Female", "Other", "Prefer not to say"]
     let fitnessGoalOptions = ["Build Muscle", "Get Lean", "Maintain Weight", "Improve Endurance", "General Fitness"]
@@ -776,12 +796,29 @@ struct ProfileView: View {
                 }
             }
             
+            // 2026-05-08 — Header simplification. Ellipsis = customize
+            // dashboard widgets (relocated from the home top bar).
+            // Order in source = right-to-left in the rendered toolbar,
+            // so the cog stays as the rightmost trailing item.
             ToolbarItem(placement: .navigationBarTrailing) {
                 NavigationLink(value: ProfileRoute.settings) {
                     Image(systemName: "gearshape.fill")
                         .font(.ds_heading3)
                         .foregroundColor(.blue)
                 }
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    HapticManager.tap()
+                    showingWidgetSettings = true
+                }) {
+                    Image(systemName: "ellipsis")
+                        .font(.ds_heading3)
+                        .foregroundColor(.blue)
+                }
+                .accessibilityLabel("Widget settings")
+                .accessibilityHint("Customize dashboard widgets")
             }
         }
         .navigationDestination(for: ProfileRoute.self) { route in
@@ -1042,6 +1079,21 @@ struct ProfileView: View {
                     await processAndUploadImage(image)
                 }
             }
+        }
+        .fullScreenCover(isPresented: $showingWidgetSettings) {
+            WidgetSettingsSheet(
+                showWeightTracker: $showWeightTrackerWidget,
+                showHydration: $showHydrationWidget,
+                showMacros: $showMacrosWidget,
+                showChallenge: $showChallengeWidget,
+                showRecommended: $showRecommendedWidget,
+                showWhoop: $showWhoopWidget,
+                showOura: $showOuraWidget,
+                showStrava: $showStravaWidget,
+                showCardio: $showCardioWidget,
+                showOlympian: $showOlympianWidget,
+                showRecentActivity: $showRecentActivityWidget
+            )
         }
         .background(
             Group {

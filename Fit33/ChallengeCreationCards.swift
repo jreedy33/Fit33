@@ -33,54 +33,43 @@ struct ModeSelectionCard: View {
     let isSelected: Bool
     let onSelect: () -> Void
 
-    // 2026-05-08 — Per Joe Reed shake bugs `46df4e5c` (build 1.38, "this
-    // doesn't really explain how to do it") and `88e1979c` (build 1.39,
-    // "these cards need to showcase how the cap points work for
-    // accountability vs 1v1 vs private"). The mode picker showed bullet
-    // points but no scoring contract or step-by-step. Cap math sourced
+    // 2026-05-10 — Per Joe Reed shake (build 1.40, "these cards are way
+    // too wordy — keep the same messaging but drastically fewer words").
+    // Earlier sprint (2026-05-08, shakes `46df4e5c` + `88e1979c`) added
+    // a verbose "How it works" paragraph + multi-clause LP cap line to
+    // explain the scoring contract — that ran past the user's attention
+    // budget. Current shape: 3 ≤4-word bullets that carry the vibe + a
+    // single short LP footer that carries the differentiator (collab =
+    // both score / competition = leader bonus). Cap math still sourced
     // from `compute_challenge_daily_awards` in
-    // `supabase/20260430c_challenge_league_scoring_rpcs.sql` (per-challenge
-    // 100 LP/day, day_winner 2x for 1v1 / 1.5x for group, early_bird +10 LP
-    // 1v1-only) and tier seeds in `20260430_challenge_league_awards_schema.sql`.
+    // `supabase/20260430c_challenge_league_scoring_rpcs.sql` (100 LP/day
+    // per challenge, 2× for 1v1 day_winner, +10 LP Early Bird 1v1-only).
     private var bulletPoints: [String] {
         switch mode {
         case .accountability:
             return [
-                "Both commit to the same daily goal",
-                "Build a shared streak together 🔥",
-                "No scores — just consistency",
-                "Get nudged if your buddy misses a day"
+                "Same daily goal",
+                "Shared streak 🔥",
+                "Both score — no losing"
             ]
         case .competition:
             return [
-                "Real-time scoreboard tracks everything",
-                "Crown 👑 goes to whoever's ahead",
-                "Daily winner & overall winner",
-                "Bragging rights on the line"
+                "Race the daily scoreboard",
+                "Daily leader gets 2× bonus 👑",
+                "Winner takes the pot"
             ]
         }
     }
 
-    /// Plain-language step list answering "ok, but how do I actually do it?"
-    /// — addresses bug `46df4e5c`.
-    private var howItWorksLine: String {
-        switch mode {
-        case .accountability:
-            return "Pick a daily target → both commit. Each day you hit it, you both earn League Points. Final Bell pot at the end scales with how many days you kept the chain together."
-        case .competition:
-            return "Pick a daily target → race the scoreboard every day. Hit target = base LP. Lead the day = bonus multiplier. Final Bell pot pays out when the challenge ends."
-        }
-    }
-
-    /// LP cap one-liner — addresses bug `88e1979c`. Per-challenge cap is
-    /// constant (100 LP/day); what differs is the daily-winner multiplier
-    /// and the 1v1-only Early Bird +10 LP bonus.
+    /// LP cap one-liner — single short sentence so it reads in <2 seconds.
+    /// The differentiator (collab = both score; competition = leader bonus)
+    /// is preserved so users understand why the modes feel different.
     private var lpCapLine: String {
         switch mode {
         case .accountability:
-            return "Up to 100 LP/day from this challenge. Both buddies score — no zero-sum. Stack with up to 500 LP/day across all your active challenges."
+            return "100 LP/day · both buddies win"
         case .competition:
-            return "Up to 100 LP/day from this challenge. Daily leader earns 2× bonus (1v1) or 1.5× (group), plus +10 LP Early Bird in 1v1. Stack with up to 500 LP/day."
+            return "100 LP/day · 2× bonus for the leader"
         }
     }
 
@@ -88,7 +77,7 @@ struct ModeSelectionCard: View {
     private var accessibilityCardDescription: String {
         "\(mode.title). \(mode.subtitle). " +
         bulletPoints.joined(separator: ". ") + ". " +
-        "How it works: \(howItWorksLine) League Points: \(lpCapLine)"
+        "League Points: \(lpCapLine)"
     }
 
     var body: some View {
@@ -133,47 +122,23 @@ struct ModeSelectionCard: View {
                     }
                 }
 
-                // 2026-05-08 — How-It-Works + LP cap explainer (Joe Reed shakes
-                // 46df4e5c + 88e1979c). Sits below the bullet list, separated
-                // by a hairline so it reads as a footnote — the bullets are
-                // "vibe", this section is the "contract".
-                Rectangle()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.caption2)
-                            .foregroundStyle(LinearGradient(colors: mode.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .accessibilityHidden(true)
-                        Text("How it works")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.white.opacity(0.85))
-                    }
-
-                    Text(howItWorksLine)
+                // 2026-05-10 — Tight LP cap footer (Joe Reed shake, build 1.40,
+                // "way too wordy"). Replaces the earlier divider + "How it
+                // works" paragraph + multi-clause cap line. Single trophy +
+                // one short sentence so the contract reads in <2 seconds.
+                HStack(spacing: 6) {
+                    Image(systemName: "trophy.fill")
                         .font(.caption2)
-                        .foregroundColor(.white.opacity(0.7))
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "trophy.fill")
-                            .font(.caption2)
-                            .foregroundStyle(LinearGradient(colors: mode.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .padding(.top, 1)
-                            .accessibilityHidden(true)
-                        Text(lpCapLine)
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .foregroundStyle(LinearGradient(colors: mode.gradientColors, startPoint: .leading, endPoint: .trailing))
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                        .foregroundStyle(LinearGradient(colors: mode.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .accessibilityHidden(true)
+                    Text(lpCapLine)
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(LinearGradient(colors: mode.gradientColors, startPoint: .leading, endPoint: .trailing))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
+                .padding(.top, 2)
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)

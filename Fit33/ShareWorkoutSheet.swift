@@ -13,7 +13,11 @@ struct ShareWorkoutSheet: View {
     
     @ObservedObject private var friendService = FriendService.shared
     @ObservedObject private var rankingService = FriendRankingService.shared
-    @State private var selectedFriend: Friend?
+    // Multi-select up to 3 (matches the challenge-flow share page); see
+    // `FriendShareSelectionSheet`. Bubble-row taps toggle add/remove;
+    // "Search" opens the full multi-select picker.
+    @State private var selectedFriends: [Friend] = []
+    @State private var sentFriendsSnapshot: [Friend] = []
     @State private var messageText = ""
     @State private var isSending = false
     @State private var showingSuccess = false
@@ -85,7 +89,7 @@ struct ShareWorkoutSheet: View {
                 
                 if showingSuccess {
                     successView
-                } else if selectedFriend != nil {
+                } else if !selectedFriends.isEmpty {
                     composeMessageView
                 } else {
                     mainShareView
@@ -97,9 +101,9 @@ struct ShareWorkoutSheet: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if !showingSuccess {
                         Button(action: {
-                            if selectedFriend != nil {
+                            if !selectedFriends.isEmpty {
                                 withAnimation(.spring(response: 0.3)) {
-                                    selectedFriend = nil
+                                    selectedFriends = []
                                 }
                             } else {
                                 dismiss()
@@ -134,13 +138,16 @@ struct ShareWorkoutSheet: View {
             }
         }
         .sheet(isPresented: $showingFriendSearch) {
-            // Use the selection-mode picker (NOT FriendsListView, which is the
-            // friends-management hub — taps there route to FriendProfileView and
-            // break the share-to-friend flow). FriendSelectionSheet returns the
-            // chosen friend via `onSelect` so we drop straight into compose.
-            FriendSelectionSheet { friend in
-                showingFriendSearch = false
-                selectedFriend = friend
+            // Multi-select picker (mirrors the challenge-flow "Who do you
+            // want to challenge?" page — same 3-bubble row, search,
+            // frosted cards, blue orb). Returns up to 3 chosen friends;
+            // the compose view below handles message + fan-out send.
+            // NEVER reuse `FriendsListView` here — that's the friends-
+            // management hub and routes taps to `FriendProfileView`.
+            FriendShareSelectionSheet(initialSelection: selectedFriends) { picked in
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    selectedFriends = picked
+                }
             }
         }
         .task {
@@ -406,30 +413,38 @@ struct ShareWorkoutSheet: View {
                 .buttonStyle(PlainButtonStyle())
                 
                 ForEach(friendsForPicker) { friend in
-                    Button(action: {
-                        HapticManager.impact(.light)
-                        withAnimation(.spring(response: 0.3)) {
-                            selectedFriend = friend
-                        }
-                    }) {
+                    Button(action: { toggleFriend(friend) }) {
                         VStack(spacing: Spacing.xs) {
                             CachedFriendPhoto(
                                 friendId: friend.friendId.uuidString,
                                 photoUrl: friend.profilePhotoUrl,
                                 name: friend.friendName ?? friend.friendUsername ?? "Friend",
                                 size: 56,
-                                showGradientRing: false,
+                                showGradientRing: isFriendSelected(friend),
                                 gradientColors: [accentColor, accentColor.opacity(0.7)]
                             )
-                            
+                            .scaleEffect(isFriendSelected(friend) ? 1.06 : 1.0)
+
                             Text(friend.displayName.components(separatedBy: " ").first ?? friend.displayName)
                                 .font(.ds_bodySmall)
-                                .foregroundColor(.primary)
+                                .fontWeight(isFriendSelected(friend) ? .semibold : .regular)
+                                .foregroundColor(isFriendSelected(friend) ? accentColor : .primary)
                                 .lineLimit(1)
                         }
                         .frame(width: 64)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFriendSelected(friend))
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .accessibilityLabel(
+                        isFriendSelected(friend)
+                            ? "\(friend.displayName), selected"
+                            : friend.displayName
+                    )
+                    .accessibilityHint(
+                        isFriendSelected(friend)
+                            ? "Removes from recipients"
+                            : "Adds to recipients (max 3)"
+                    )
                 }
             }
             .padding(.horizontal, Spacing.md)
@@ -460,49 +475,18 @@ struct ShareWorkoutSheet: View {
     private var composeMessageView: some View {
         ScrollView {
             VStack(spacing: Spacing.lg) {
-                if let friend = selectedFriend {
-                    HStack(spacing: Spacing.sm) {
-                        CachedFriendPhoto(
-                            friendId: friend.friendId.uuidString,
-                            photoUrl: friend.profilePhotoUrl,
-                            name: friend.friendName ?? friend.friendUsername ?? "Friend",
-                            size: 50,
-                            showGradientRing: true,
-                            gradientColors: [accentColor, accentColor.opacity(0.7)]
-                        )
-                        
-                        VStack(alignment: .leading, spacing: Spacing.xxxs) {
-                            Text("Sending to")
-                                .font(.ds_bodySmall)
-                                .foregroundColor(.secondary)
-                            Text(friend.displayName)
-                                .font(.ds_heading3)
-                        }
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            withAnimation(.spring(response: 0.3)) {
-                                selectedFriend = nil
-                            }
-                        }) {
-                            Text("Change")
-                                .font(.ds_labelMedium)
-                                .foregroundColor(.blue)
-                        }
-                    }
-                    .padding(Spacing.md)
-                    .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
+                if !selectedFriends.isEmpty {
+                    composeRecipientsCard
                 }
-                
+
                 expandableShareCard
                     .padding(.horizontal, -Spacing.md)
-                
+
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text("Add a message (optional)")
                         .font(.ds_labelMedium)
                         .foregroundColor(.secondary)
-                    
+
                     TextField("Great workout! Try it out", text: $messageText, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.ds_bodyMedium)
@@ -511,8 +495,8 @@ struct ShareWorkoutSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: CornerRadius.md))
                         .lineLimit(3...5)
                 }
-                
-                Button(action: sendWorkoutToFriend) {
+
+                Button(action: sendWorkoutToFriends) {
                     HStack(spacing: Spacing.xs) {
                         if isSending {
                             ProgressView()
@@ -520,7 +504,7 @@ struct ShareWorkoutSheet: View {
                         } else {
                             Image(systemName: "paperplane.fill")
                                 .font(.ds_labelLarge)
-                            Text("Send Workout")
+                            Text(sendButtonTitle)
                                 .font(.ds_labelLarge)
                                 .fontWeight(.bold)
                         }
@@ -541,6 +525,99 @@ struct ShareWorkoutSheet: View {
                 .padding(.top, Spacing.xs)
             }
             .padding(Spacing.md)
+        }
+    }
+
+    private var sendButtonTitle: String {
+        switch selectedFriends.count {
+        case 0:  return "Send Workout"
+        case 1:  return "Send Workout"
+        default: return "Send to \(selectedFriends.count) Friends"
+        }
+    }
+
+    private var composeRecipientsCard: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(selectedFriends.count == 1
+                     ? "Sending to"
+                     : "Sending to \(selectedFriends.count) friends")
+                    .font(.ds_bodySmall)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 6) {
+                    ForEach(selectedFriends) { friend in
+                        HStack(spacing: 6) {
+                            CachedFriendPhoto(
+                                friendId: friend.friendId.uuidString,
+                                photoUrl: friend.profilePhotoUrl,
+                                name: friend.friendName ?? friend.friendUsername ?? "Friend",
+                                size: 22,
+                                showGradientRing: false,
+                                gradientColors: [accentColor, accentColor.opacity(0.7)]
+                            )
+                            Text(friend.friendName?.components(separatedBy: " ").first
+                                 ?? friend.friendUsername ?? "Friend")
+                                .font(.ds_bodySmall)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                            Button(action: { toggleFriend(friend) }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.ds_bodySmall)
+                                    .foregroundColor(.secondary.opacity(0.7))
+                            }
+                            .accessibilityLabel("Remove \(friend.displayName)")
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(accentColor.opacity(0.15))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(accentColor.opacity(0.4), lineWidth: 1)
+                                )
+                        )
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                }
+            }
+
+            Spacer(minLength: Spacing.xs)
+
+            Button(action: {
+                withAnimation(.spring(response: 0.3)) {
+                    selectedFriends = []
+                }
+            }) {
+                Text("Change")
+                    .font(.ds_labelMedium)
+                    .foregroundColor(accentColor)
+            }
+            .accessibilityLabel("Change recipients")
+        }
+        .padding(Spacing.md)
+        .adaptiveSleekCardSubtle(cornerRadius: CornerRadius.lg)
+    }
+
+    private func isFriendSelected(_ friend: Friend) -> Bool {
+        selectedFriends.contains(where: { $0.friendId == friend.friendId })
+    }
+
+    private func toggleFriend(_ friend: Friend) {
+        HapticManager.impact(.light)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            if let idx = selectedFriends.firstIndex(where: { $0.friendId == friend.friendId }) {
+                selectedFriends.remove(at: idx)
+            } else if selectedFriends.count < 3 {
+                selectedFriends.append(friend)
+            } else {
+                // At cap — replace the oldest pick (FIFO).
+                selectedFriends.removeFirst()
+                selectedFriends.append(friend)
+            }
         }
     }
     
@@ -569,13 +646,11 @@ struct ShareWorkoutSheet: View {
                 Text("Workout Sent!")
                     .font(.ds_heading2)
                     .fontWeight(.bold)
-                
-                if let friend = selectedFriend {
-                    Text("Your workout has been sent to \(friend.displayName)")
-                        .font(.ds_bodyMedium)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+
+                Text(successHeadline)
+                    .font(.ds_bodyMedium)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
             }
             
             Spacer()
@@ -620,24 +695,40 @@ struct ShareWorkoutSheet: View {
         return formatter.string(from: date)
     }
     
-    private func sendWorkoutToFriend() {
-        guard let friend = selectedFriend else { return }
-        
+    private var successHeadline: String {
+        switch sentFriendsSnapshot.count {
+        case 0:
+            return "Your workout has been sent."
+        case 1:
+            return "Your workout has been sent to \(sentFriendsSnapshot[0].displayName)."
+        case 2:
+            let a = sentFriendsSnapshot[0].friendName?.components(separatedBy: " ").first ?? sentFriendsSnapshot[0].displayName
+            let b = sentFriendsSnapshot[1].friendName?.components(separatedBy: " ").first ?? sentFriendsSnapshot[1].displayName
+            return "Your workout has been sent to \(a) & \(b)."
+        default:
+            let first = sentFriendsSnapshot[0].friendName?.components(separatedBy: " ").first ?? sentFriendsSnapshot[0].displayName
+            return "Your workout has been sent to \(first) and \(sentFriendsSnapshot.count - 1) others."
+        }
+    }
+
+    private func sendWorkoutToFriends() {
+        guard !selectedFriends.isEmpty else { return }
+
         isSending = true
-        
+
         let sharedExercises = workoutExercises.compactMap { we -> SharedExercise? in
             guard let name = we.exercise?.name ?? we.exercise?.displayName else { return nil }
-            
+
             let sets = we.sets?.allObjects as? [WorkoutSet] ?? []
             let completedSets = sets.filter { $0.isCompleted }
-            
+
             let repsString: String
             if let bestSet = completedSets.max(by: { $0.reps < $1.reps }) {
                 repsString = "\(bestSet.reps)"
             } else {
                 repsString = "8-12"
             }
-            
+
             return SharedExercise(
                 exerciseId: we.exercise?.id?.uuidString,
                 name: name,
@@ -647,23 +738,49 @@ struct ShareWorkoutSheet: View {
                 notes: nil
             )
         }
-        
+
+        let recipients = selectedFriends
+        let nameToSend = workoutName
+        let durationMinutes = duration
+        let trimmedMessage = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+
         Task {
-            let success = await friendService.sendWorkoutToFriend(
-                toUserId: friend.friendId,
-                workoutName: workoutName,
-                exercises: sharedExercises,
-                description: "Shared from completed workout",
-                message: messageText.isEmpty ? nil : messageText,
-                duration: duration,
-                difficulty: "Custom"
-            )
-            
+            // Fan out one RPC per recipient, concurrently.
+            let successes = await withTaskGroup(of: (UUID, Bool).self, returning: Int.self) { group in
+                for friend in recipients {
+                    group.addTask {
+                        let ok = await friendService.sendWorkoutToFriend(
+                            toUserId: friend.friendId,
+                            workoutName: nameToSend,
+                            exercises: sharedExercises,
+                            description: "Shared from completed workout",
+                            message: trimmedMessage.isEmpty ? nil : trimmedMessage,
+                            duration: durationMinutes,
+                            difficulty: "Custom"
+                        )
+                        return (friend.friendId, ok)
+                    }
+                }
+                var count = 0
+                for await (_, ok) in group where ok {
+                    count += 1
+                }
+                return count
+            }
+
             await MainActor.run {
                 isSending = false
-                
-                if success {
+
+                if successes == recipients.count {
                     HapticManager.notification(.success)
+                    sentFriendsSnapshot = recipients
+                    withAnimation(.spring(response: 0.4)) {
+                        showingSuccess = true
+                    }
+                } else if successes > 0 {
+                    HapticManager.notification(.warning)
+                    sentFriendsSnapshot = recipients
+                    sendError = "Sent to \(successes) of \(recipients.count) friends. Some sends failed — please try the rest again later."
                     withAnimation(.spring(response: 0.4)) {
                         showingSuccess = true
                     }

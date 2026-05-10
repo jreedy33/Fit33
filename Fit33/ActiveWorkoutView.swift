@@ -46,14 +46,18 @@ struct ActiveWorkoutView: View {
     @State var activeExerciseId: String? = nil
     
     // When the user taps "ADD SET", the new bottom set auto-focuses (per
-    // `SetRowView.shouldAutoFocus` rule), which would normally fire
-    // `onFocusChanged` → scroll the card to its TOP. For tall cards with
-    // many sets, scroll-to-top hides the just-added bottom set behind the
-    // keyboard / music player. We instead want to scroll the card's BOTTOM
-    // cleanly above keyboard + music player. This flag, set inside
-    // `onAddSet`, suppresses the next focus-triggered scroll-to-top for
-    // that specific exercise so the explicit scroll-to-bottom wins
-    // (2026-05-04). Cleared automatically after the scroll animation.
+    // `SetRowView.shouldAutoFocus` rule), which fires `onFocusChanged` with
+    // `isLastSet: true` → the parent would otherwise issue ANOTHER
+    // `scrollTo(.bottom)` while `onAddSet`'s own `scrollTo(.bottom)`
+    // animation is still mid-flight. Same destination, but the second call
+    // can interrupt the SwiftUI animation mid-curve and produce a visible
+    // jitter. This flag, set inside `onAddSet`, suppresses the next
+    // focus-driven scroll for that specific exercise so the original
+    // explicit scroll-to-bottom plays out cleanly to its 16pt-cushion
+    // resting position (2026-05-04, refreshed 2026-05-10 when the
+    // focus-driven scroll became `.bottom`-anchored for the last set too).
+    // Cleared automatically 500ms after `onAddSet` fires (covers the 0.3s
+    // animation plus a small buffer for keyboard appearance).
     @State var suppressFocusScrollForExerciseId: String? = nil
     
     // Track which exercise currently has an active rest timer (to stop when switching)

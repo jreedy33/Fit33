@@ -168,10 +168,19 @@ extension ActiveWorkoutView {
                 .padding(.top, 2)
                 .padding(.bottom, Spacing.xs)
                 
-                // Exercise list - transparent container
+                // Exercise list - transparent container.
+                //
+                // SCROLL CUSHION (2026-05-10): the LazyVStack uses `spacing: 0`
+                // and each card carries its own `.padding(.bottom, 16)` BELOW
+                // the `.id(exerciseId)` modifier. This is intentional and load-
+                // bearing for the "add set" scroll behavior — see comment on
+                // `.padding(.bottom, 16).id(exerciseId)` below. The visible
+                // 16pt inter-card gap is preserved (provided by the per-card
+                // bottom padding instead of LazyVStack spacing), so users see
+                // no layout change.
                 ScrollViewReader { scrollProxy in
                     ScrollView(showsIndicators: false) {
-                        LazyVStack(spacing: 16) {
+                        LazyVStack(spacing: 0) {
                             ForEach(Array(exercises.enumerated()), id: \.element.id) { index, exercise in
                                 let exerciseId = exercise.id?.uuidString ?? ""
                                 
@@ -190,35 +199,75 @@ extension ActiveWorkoutView {
                                             newSet.weight = lastSet.weight
                                             newSet.reps = lastSet.reps
                                         }
-                                        workoutManager.addSetToExercise(id: exerciseId, set: newSet)
 
-                                        // Scroll the entire card up so the new bottom set
-                                        // sits cleanly above the keyboard + music player.
-                                        // Anchor `.bottom` aligns the card's bottom edge
-                                        // with the bottom of the visible scroll area —
-                                        // and because the music player is a
-                                        // `.safeAreaInset(edge: .bottom)` and SwiftUI's
-                                        // automatic keyboard avoidance reduces the
-                                        // visible area by keyboard height, the card's
-                                        // bottom (and therefore the new last set + ADD
-                                        // SET button) lands cleanly above both.
-                                        //
-                                        // We must suppress the auto-focus scroll-to-top
-                                        // that the new set fires via `onFocusChanged`
-                                        // (otherwise it would immediately undo this
-                                        // scroll-to-bottom). The 500ms suppression
-                                        // window covers the 0.3s scroll animation plus
-                                        // a small buffer for keyboard appearance.
+                                        // Suppress the focus-driven scroll-to-top that
+                                        // the new set's auto-focus will fire on the
+                                        // next layout pass (otherwise it would yank the
+                                        // card back to `anchor: .top` and hide the new
+                                        // last set behind the keyboard + music player).
+                                        // Set BEFORE the mutation so the suppression is
+                                        // already in place when the focus event arrives.
                                         suppressFocusScrollForExerciseId = exerciseId
+
+                                        // SEAMLESS GROW + SCROLL (2026-05-10, snappier
+                                        // 2026-05-10 PM): wrap BOTH the data mutation
+                                        // and the scrollTo in a single `withAnimation`
+                                        // transaction. SwiftUI batches the "card grows
+                                        // by one row" layout change and the "scroll up
+                                        // to keep the new bottom cushioned above the
+                                        // music player / keyboard" scroll into ONE
+                                        // 0.2s `.snappy` interpolation — the card
+                                        // visibly slides up as the new set row appears
+                                        // in lock-step.
+                                        //
+                                        // Tuning notes:
+                                        //   • `.snappy(duration: 0.2)` (was
+                                        //     `.easeInOut(duration: 0.3)`) — `.snappy`
+                                        //     is a built-in spring tuned for crisp UI
+                                        //     motion with effectively zero overshoot,
+                                        //     and the shorter duration removes the
+                                        //     "sluggish" feel without losing
+                                        //     smoothness.
+                                        //   • `HapticManager.impact(.rigid)` fires
+                                        //     alongside the animation — `.rigid` is
+                                        //     iOS's "snapped into place" haptic
+                                        //     (used in segmented controls, picker
+                                        //     detents, etc.), which reinforces the
+                                        //     visual snap. The ADD SET button's own
+                                        //     `.light` haptic still fires for tap
+                                        //     confirmation; the two register as one
+                                        //     decisive event on-device.
+                                        //
+                                        // Why no `Task.sleep(50ms)` between mutation
+                                        // and scrollTo: the sleep deferred scrollTo
+                                        // to a later runloop so LazyVStack geometry
+                                        // was settled before the proxy computed its
+                                        // target. That delay was the root cause of
+                                        // an earlier "drop behind music player → pop
+                                        // up" two-stage glitch. With both calls in
+                                        // the same `withAnimation` block,
+                                        // ScrollViewReader tracks the moving target
+                                        // throughout the animation (it follows the
+                                        // `.id`-bearing frame as the card's height
+                                        // animates), so the scroll target is correct
+                                        // from frame 1.
+                                        HapticManager.impact(.rigid)
+                                        withAnimation(.snappy(duration: 0.2)) {
+                                            workoutManager.addSetToExercise(id: exerciseId, set: newSet)
+                                            scrollProxy.scrollTo(exerciseId, anchor: .bottom)
+                                        }
+
+                                        // Clear the focus-scroll suppression after the
+                                        // scroll animation finishes (200ms) plus a
+                                        // small buffer for keyboard appearance.
+                                        // Shortened from 500ms → 350ms to match the
+                                        // new faster `.snappy(0.2)` curve — the
+                                        // window must cover the animation but not
+                                        // linger past it (a stale suppress flag would
+                                        // swallow legitimate user taps on other sets
+                                        // during the residual window).
                                         Task { @MainActor in
-                                            // Wait one runloop for the LazyVStack to
-                                            // re-measure with the new set's row before
-                                            // computing the scroll target.
-                                            try? await Task.sleep(for: .milliseconds(50))
-                                            withAnimation(.easeInOut(duration: 0.3)) {
-                                                scrollProxy.scrollTo(exerciseId, anchor: .bottom)
-                                            }
-                                            try? await Task.sleep(for: .milliseconds(500))
+                                            try? await Task.sleep(for: .milliseconds(350))
                                             if suppressFocusScrollForExerciseId == exerciseId {
                                                 suppressFocusScrollForExerciseId = nil
                                             }
@@ -275,22 +324,53 @@ extension ActiveWorkoutView {
                                     isFirstExercise: index == 0,
                                     exerciseWithActiveTimer: $exerciseWithActiveTimer,
                                     exerciseId: exerciseId,
-                                    onFocusChanged: { isFocused in
+                                    onFocusChanged: { isFocused, isLastSet in
                                         if isFocused {
                                             activeExerciseId = exerciseId
-                                            // Skip the usual scroll-to-top when this
-                                            // focus event was triggered by the new set
-                                            // that was just added — `onAddSet` is
-                                            // already running its own scroll-to-bottom
-                                            // so the new bottom set lands above the
-                                            // keyboard + music player. Without this
-                                            // guard, the focus scroll-to-top would
-                                            // immediately undo the scroll-to-bottom and
-                                            // the new last set would be hidden behind
-                                            // the keyboard for tall cards (2026-05-04).
+                                            // Anchor selection:
+                                            //   • LAST set focused → `.bottom`. The card's
+                                            //     bottom (last set + ADD SET button + the
+                                            //     16pt cushion baked into the `.id` wrapper)
+                                            //     sits cleanly above the keyboard + music
+                                            //     player, with no clipping. Mirrors what
+                                            //     `onAddSet` does so newly-added sets and
+                                            //     manually-tapped last sets behave the same
+                                            //     (user feedback 2026-05-10).
+                                            //   • Any other set (or card-level tap) →
+                                            //     `.top`. The user is working on an earlier
+                                            //     set in a tall card, so the natural view
+                                            //     puts the card's top at the visible top.
+                                            //
+                                            // Animation + haptic:
+                                            //   • `.snappy(duration: 0.2)` — crisp, fast,
+                                            //     no overshoot. Replaced the older
+                                            //     `.easeInOut(0.3)` which felt sluggish on
+                                            //     this scroll path (user feedback
+                                            //     2026-05-10 PM).
+                                            //   • `HapticManager.impact(.rigid)` ONLY on
+                                            //     the last-set bottom snap — `.rigid` is
+                                            //     iOS's "snapped into place" haptic and
+                                            //     reinforces the special visual snap to
+                                            //     the keyboard cushion. We deliberately
+                                            //     skip the haptic on the `.top` branch:
+                                            //     that's a routine scroll, not a snap.
+                                            //
+                                            // Suppression: when the new set's auto-focus
+                                            // event fires DURING `onAddSet`'s in-flight
+                                            // scroll animation, both would target `.bottom`
+                                            // — same destination, no visible difference —
+                                            // but skipping the redundant `scrollTo` keeps
+                                            // SwiftUI from interrupting its own animation
+                                            // (and prevents a doubled `.rigid` haptic).
                                             if suppressFocusScrollForExerciseId != exerciseId {
-                                                withAnimation(.easeInOut(duration: 0.3)) {
-                                                    scrollProxy.scrollTo(exerciseId, anchor: .top)
+                                                if isLastSet {
+                                                    HapticManager.impact(.rigid)
+                                                }
+                                                withAnimation(.snappy(duration: 0.2)) {
+                                                    scrollProxy.scrollTo(
+                                                        exerciseId,
+                                                        anchor: isLastSet ? .bottom : .top
+                                                    )
                                                 }
                                             }
                                         }
@@ -327,6 +407,27 @@ extension ActiveWorkoutView {
                                     useKg: useKg,
                                     autoStartTimer: autoStartRestTimer
                                 )
+                                // 16pt transparent bottom cushion is applied
+                                // BEFORE `.id(exerciseId)` on purpose. The id
+                                // modifier captures the frame at this point in
+                                // the chain — including the cushion — so when
+                                // `onAddSet` calls
+                                // `scrollProxy.scrollTo(exerciseId, anchor: .bottom)`
+                                // the cushion's bottom lines up with the
+                                // visible scroll bottom, leaving the card
+                                // content (last set + ADD SET button) sitting
+                                // 16pt above the keyboard / music player.
+                                // Without the cushion, the card's bottom edge
+                                // sat flush against the keyboard / music
+                                // player top with no breathing room (user
+                                // feedback 2026-05-10).
+                                //
+                                // The matching `LazyVStack(spacing: 0)` above
+                                // ensures the visible inter-card gap stays at
+                                // 16pt overall — provided here by each card's
+                                // bottom padding instead of LazyVStack
+                                // spacing.
+                                .padding(.bottom, 16)
                                 .id(exerciseId) // For ScrollViewReader
                             }
                         }

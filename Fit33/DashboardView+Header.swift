@@ -86,9 +86,7 @@ extension DashboardView {
                 }
             }
 
-            Spacer()
-
-            DashboardLeagueBadge(navigationPath: $dashboardNavPath)
+            Spacer(minLength: 0)
         }
         // Match `customHeaderView`'s internal horizontal padding so the
         // "W" in WELCOME aligns with the "F" in Fit33. Trailing keeps
@@ -110,7 +108,13 @@ extension DashboardView {
             
             Spacer()
             
-            // Timer, widget settings, and profile icon grouped together
+            // Timer, league badge, and profile icon grouped together.
+            // 2026-05-08 — Header simplification (lead-designer call).
+            // The widget-settings ellipsis moved into the ProfileView
+            // toolbar (next to the settings cog) and the weekly league
+            // tier badge moved up into this slot. One identity element
+            // ("you, your tier") sits next to the avatar instead of two
+            // controls competing with the wordmark.
             HStack(spacing: 8) {
                 // Active workout timer (only shows when workout is active)
                 if workoutManager.isWorkoutActive {
@@ -125,25 +129,16 @@ extension DashboardView {
                         )
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
-                
-                // Widget settings button (three dots)
-                Button(action: {
-                    HapticManager.tap()
-                    showingWidgetSettings = true
-                }) {
-                    Image(systemName: "ellipsis")
-                        .font(.ds_heading2)
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
-                }
-                .accessibilityLabel("Widget settings")
-                .accessibilityHint("Customize dashboard widgets")
-                .buttonStyle(PlainButtonStyle())
-                
-                // Add spacing between ... and profile icon
+
+                // Weekly league tier badge ("Gold", "Silver", trend
+                // chip) — promoted from the welcome row to the avatar
+                // row so it reads as part of the user's identity strip.
+                DashboardLeagueBadge(navigationPath: $dashboardNavPath)
+
+                // 4pt breathing room between the tier badge and the avatar.
                 Spacer()
                     .frame(width: 4)
-                
+
                 // Profile button with hollow blue gradient ring and photo/person icon
                 NavigationLink(value: DashboardRoute.profile) {
                     ZStack(alignment: .topTrailing) {

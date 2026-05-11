@@ -17,6 +17,15 @@ struct ExerciseCard: View {
     let onNewExerciseInteraction: () -> Void
     let onShowAd: (@escaping () -> Void) -> Void // Callback to show ad between sets
     var isFirstExercise: Bool = false // Whether this is the first exercise (for auto-focus)
+    // True when the user just tapped "ADD SET" on THIS exercise and the
+    // resulting auto-focus + grow + scroll cycle is still in flight.
+    // Parent (`ActiveWorkoutView`) sets `justAddedSetForExerciseId =
+    // exerciseId` inside `onAddSet` and clears it ~1.2s later. We use it
+    // to gate REPS-auto-focus on the new last set so workout-open with
+    // multi-set exercises doesn't trigger reps-focus on every card's
+    // last row simultaneously (the cause of the "cursor jumps
+    // everywhere" bug, 2026-05-10 PM).
+    var isJustAddedSet: Bool = false
     @Binding var exerciseWithActiveTimer: String? // Track which exercise has the active timer globally
     var exerciseId: String = "" // This exercise's ID
     // (isFocused, isLastSet) — second flag tells the parent that focus
@@ -745,7 +754,27 @@ struct ExerciseCard: View {
                         exerciseWithActiveTimer: $exerciseWithActiveTimer,
                         exerciseId: exerciseId,
                         onShowAd: onShowAd,
-                        shouldAutoFocus: (isFirstExercise && index == 0 && !setItem.isCompleted) || (index == sets.count - 1 && index > 0 && !setItem.isCompleted),
+                        // Two — and ONLY two — auto-focus triggers:
+                        //   1) The very first set of the very first exercise
+                        //      when the workout opens. Drops the cursor on
+                        //      WEIGHT (the natural starting point of a fresh
+                        //      workout). Gated on `isFirstExercise && index == 0`
+                        //      so it only fires for ONE row in the whole list,
+                        //      not for every exercise's set 0.
+                        //   2) The new last set immediately after the user
+                        //      taps "ADD SET" on THIS card. Drops the cursor
+                        //      on REPS (weight is already cloned from the
+                        //      prior set; reps are what the user actually
+                        //      varies). Gated on `isJustAddedSet` so the
+                        //      multi-set workout-open case does NOT trip
+                        //      every card's last row into reps-auto-focus.
+                        //
+                        // `!setItem.isCompleted` guards both branches so we
+                        // don't yank focus onto a row the user has already
+                        // checked off (e.g. resumed workouts where some sets
+                        // are pre-completed).
+                        shouldAutoFocus: (isFirstExercise && index == 0 && !setItem.isCompleted) || (isJustAddedSet && index == sets.count - 1 && !setItem.isCompleted),
+                        autoFocusOnReps: isJustAddedSet && index == sets.count - 1 && !setItem.isCompleted,
                         onFocusChanged: onFocusChanged,
                         isPerSideMode: $isPerSideMode,
                         barWeight: barWeight,

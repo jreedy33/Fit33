@@ -59,6 +59,18 @@ struct ActiveWorkoutView: View {
     // Cleared automatically 500ms after `onAddSet` fires (covers the 0.3s
     // animation plus a small buffer for keyboard appearance).
     @State var suppressFocusScrollForExerciseId: String? = nil
+
+    // Tracks the exercise whose user-initiated "ADD SET" tap is currently
+    // in flight. Set inside `onAddSet` BEFORE the data mutation; cleared
+    // ~1.2s later (covers the 0.3s settle delay before SetRowView flips
+    // its focus flag + the next-runloop `becomeFirstResponder()` hop +
+    // a small buffer for re-renders). Used to GATE the
+    // "auto-focus the new last set on its REPS field" behavior so it
+    // ONLY fires for sets the user explicitly just added — not for
+    // every exercise's last set on workout open (which previously
+    // caused every card with >1 set to fight for focus simultaneously
+    // and the cursor to jump around the screen).
+    @State var justAddedSetForExerciseId: String? = nil
     
     // Track which exercise currently has an active rest timer (to stop when switching)
     @State var exerciseWithActiveTimer: String? = nil

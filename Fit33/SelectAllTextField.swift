@@ -13,6 +13,23 @@ struct SelectAllTextField: UIViewRepresentable {
     // input at "xx.xx" (5 chars) — see SetRowView's weight input.
     var maxLength: Int? = nil
     var onFocusChange: ((Bool) -> Void)? = nil
+    // Optional external focus binding. When the bound value is `true`
+    // and the field is not already first responder, `updateUIView`
+    // pushes the underlying `UITextField` into first-responder state
+    // on the next main-actor tick. When `false`, the field is left
+    // alone — we deliberately don't force-resign because the user may
+    // have moved focus themselves (tapping the keyboard's dismiss, or
+    // another field), and force-resigning would race with that.
+    //
+    // Why we need this: `SelectAllTextField` wraps a UIKit
+    // `UITextField`, not a SwiftUI `TextField`. SwiftUI's `@FocusState`
+    // / `.focused($flag)` modifier has no effect on UIKit textfields
+    // — it only steers SwiftUI's own focus system. Before this
+    // binding existed, programmatic auto-focus (e.g. "drop the
+    // cursor on the new set's reps field after ADD SET") was silently
+    // a no-op: the FocusState bool flipped, but the UITextField never
+    // became first responder. This binding closes that loop.
+    var isFocused: Binding<Bool>? = nil
     
     func makeUIView(context: Context) -> UITextField {
         let textField = UITextField()
@@ -37,6 +54,21 @@ struct SelectAllTextField: UIViewRepresentable {
         uiView.placeholder = placeholder
         // Update text color dynamically (for completion state changes)
         uiView.textColor = textColor
+
+        // Push external focus state into the UITextField. Deferred to
+        // the next main-actor tick so we don't mutate first-responder
+        // state inside SwiftUI's view-update cycle (which can produce
+        // "Modifying state during view update" warnings via the
+        // delegate -> onFocusChange -> @State write chain).
+        if let focusBinding = isFocused,
+           focusBinding.wrappedValue,
+           !uiView.isFirstResponder {
+            Task { @MainActor in
+                guard focusBinding.wrappedValue,
+                      !uiView.isFirstResponder else { return }
+                uiView.becomeFirstResponder()
+            }
+        }
     }
     
     func makeCoordinator() -> Coordinator {

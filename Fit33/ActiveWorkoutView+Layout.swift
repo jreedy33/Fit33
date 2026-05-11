@@ -209,6 +209,17 @@ extension ActiveWorkoutView {
                                         // already in place when the focus event arrives.
                                         suppressFocusScrollForExerciseId = exerciseId
 
+                                        // Mark this exercise as having just had a set
+                                        // added by the user. ExerciseCard reads this
+                                        // (via `isJustAddedSet`) to decide whether the
+                                        // new last set should auto-focus its REPS
+                                        // field. Without this gate, EVERY exercise's
+                                        // last set on workout open would qualify for
+                                        // reps-auto-focus and race for first responder,
+                                        // making the cursor jump around (user feedback
+                                        // 2026-05-10 PM).
+                                        justAddedSetForExerciseId = exerciseId
+
                                         // SEAMLESS GROW + SCROLL (2026-05-10, snappier
                                         // 2026-05-10 PM): wrap BOTH the data mutation
                                         // and the scrollTo in a single `withAnimation`
@@ -272,6 +283,31 @@ extension ActiveWorkoutView {
                                                 suppressFocusScrollForExerciseId = nil
                                             }
                                         }
+
+                                        // Clear the `justAddedSetForExerciseId` flag
+                                        // after the auto-focus window finishes. Budget:
+                                        //   200ms scroll animation
+                                        // + 300ms SetRowView settle delay
+                                        // + 1 main-actor hop for becomeFirstResponder
+                                        // + buffer for re-renders
+                                        // → 1200ms is comfortable. We leave it
+                                        // intentionally longer than the scroll-suppress
+                                        // clear (350ms) because this flag drives the
+                                        // EXISTING `if shouldAutoFocus` block inside
+                                        // `SetRowView.onAppear`, which runs after the
+                                        // 0.3s sleep — clearing too early would race
+                                        // the focus push and we'd be back to no
+                                        // auto-focus. A stale flag here is harmless:
+                                        // SetRowView's `hasInitialized` guard prevents
+                                        // its onAppear from firing twice on the same
+                                        // row, so a long-lived flag can't retrigger
+                                        // auto-focus on existing rows.
+                                        Task { @MainActor in
+                                            try? await Task.sleep(for: .milliseconds(1200))
+                                            if justAddedSetForExerciseId == exerciseId {
+                                                justAddedSetForExerciseId = nil
+                                            }
+                                        }
                                     },
                                     onRemoveExercise: {
                                         removeExercise(at: index)
@@ -322,6 +358,7 @@ extension ActiveWorkoutView {
                                         showAdBetweenSets(completion: completion)
                                     },
                                     isFirstExercise: index == 0,
+                                    isJustAddedSet: justAddedSetForExerciseId == exerciseId,
                                     exerciseWithActiveTimer: $exerciseWithActiveTimer,
                                     exerciseId: exerciseId,
                                     onFocusChanged: { isFocused, isLastSet in

@@ -95,6 +95,17 @@ struct SetRowView: View {
     var exerciseId: String = ""
     let onShowAd: (@escaping () -> Void) -> Void
     let shouldAutoFocus: Bool
+    // When `shouldAutoFocus` fires, normally we focus the WEIGHT field
+    // (the natural starting point at workout open). For sets created
+    // via the "ADD SET" button this flips to the REPS field instead —
+    // both fields are pre-filled with the prior set's values
+    // (ActiveWorkoutView+Layout.swift's `onAddSet` copies
+    // `lastSet.weight` AND `lastSet.reps` onto the new row), and
+    // user feedback (2026-05-10) is that reps are what tend to vary
+    // set-to-set as fatigue accumulates, so dropping the cursor there
+    // saves a tap. Defaults to false so the existing "first set of
+    // first exercise" auto-focus keeps targeting weight.
+    var autoFocusOnReps: Bool = false
     // (isFocused, isLastSet) — the second flag lets the parent pick a
     // .bottom-anchored scroll (so the card's bottom sits cleanly above the
     // keyboard + music player) when the user focuses the last set, vs the
@@ -155,8 +166,17 @@ struct SetRowView: View {
     
     @State private var weightText: String = ""
     @State private var repsText: String = ""
-    @FocusState private var isWeightFocused: Bool
-    @FocusState private var isRepsFocused: Bool
+    // Plain `@State Bool` (not `@FocusState`) on purpose: the underlying
+    // text fields are UIKit `UITextField`s wrapped in `SelectAllTextField`,
+    // and SwiftUI's `@FocusState` / `.focused($flag)` only steers the
+    // SwiftUI focus system, not UIKit first-responder state. Using @State
+    // gives us a normal `Binding<Bool>` that we can pass to
+    // `SelectAllTextField.isFocused`, which DOES propagate into the
+    // underlying UITextField via `becomeFirstResponder()`. The bools are
+    // still bidirectional — `SelectAllTextField.onFocusChange` writes
+    // back from `textFieldDidBegin/EndEditing`.
+    @State private var isWeightFocused: Bool = false
+    @State private var isRepsFocused: Bool = false
     @State private var hasInitialized = false
     
     // Debounce timer for weight/reps updates to prevent excessive re-renders
@@ -213,6 +233,18 @@ struct SetRowView: View {
                 // per-implement reading in their history (matching the
                 // "each" treatment inside the editable weight box).
                 // Non-bell equipment keeps the compact "70×8" shorthand.
+                // Single-line, auto-shrinking SUGGESTED / PREVIOUS readout.
+                // The column is narrow and dumbbell labels like "155ea. × 8"
+                // hit ~10 chars at body-large which wraps on small screens
+                // (or even iPhone 17 Pro at certain device-text-size
+                // settings). `.lineLimit(1)` keeps it to one row,
+                // `.minimumScaleFactor(0.7)` lets the text shrink to ~70%
+                // of its declared font size before truncating — enough
+                // headroom for "999ea. × 99" worst case. `.fixedSize`
+                // along the horizontal axis stops the HStack from getting
+                // squashed by sibling columns; the column already has a
+                // `.frame(maxWidth: .infinity, alignment: .leading)` to
+                // claim available space.
                 HStack(spacing: 4) {
                     if let prev = previousSet {
                         let displayWeight = useKg
@@ -226,15 +258,20 @@ struct SetRowView: View {
                             Text(label)
                                 .font(.ds_labelLarge)
                                 .foregroundColor(.orange)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
                         } else {
                             Text(label)
                                 .font(.ds_bodyLarge)
                                 .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
                         }
                     } else {
                         Text("-")
                             .font(.ds_bodyLarge)
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -283,7 +320,8 @@ struct SetRowView: View {
                                 applyWeight(weight)
                             }
                         }
-                    }
+                    },
+                    isFocused: $isWeightFocused
                 )
                 .frame(width: showsEachSuffix ? weightFieldWidth : 70, height: 38)
 
@@ -354,7 +392,8 @@ struct SetRowView: View {
                             setData.reps = reps
                         }
                     }
-                }
+                },
+                isFocused: $isRepsFocused
             )
             .frame(width: 70, height: 38)
             .background(Color(.systemGray6))
@@ -527,13 +566,51 @@ struct SetRowView: View {
                 repsText = "\(setData.reps)"
             }
             
-            // Auto-focus the weight field for the first set of first exercise
-            // Delay slightly to allow layout to complete
+            // Auto-focus on appear. Two scenarios with very different
+            // settle requirements:
+            //
+            //   1) First set of the first exercise (workout just
+            //      opened) → focus WEIGHT. The full view hierarchy
+            //      (ScrollView + LazyVStack + every ExerciseCard +
+            //      every SetRowView) is initializing, the keyboard
+            //      almost always has to appear from a down state, and
+            //      the focus push needs to land AFTER initial layout
+            //      settles so the keyboard appearance doesn't fight
+            //      the card-mount animation. 300ms is the budget
+            //      that's proven safe across device sizes.
+            //
+            //   2) New set appended via "ADD SET" (`autoFocusOnReps`
+            //      true) → focus REPS. The keyboard is already up
+            //      (the user just tapped a button rendered above it),
+            //      only ONE new row is mounting into an already-
+            //      settled hierarchy, and there's no first-appearance
+            //      animation choreography to coordinate with. 300ms
+            //      here was pure dead time the user could feel as
+            //      lag. 50ms is enough for one SwiftUI render pass
+            //      (so the row's `SelectAllTextField` is mounted in
+            //      the responder chain when `becomeFirstResponder()`
+            //      fires) and below the ~100ms human-perception
+            //      threshold for UI lag — the cursor lands on the
+            //      new row's reps field essentially "instantly"
+            //      (user feedback 2026-05-10 PM).
+            //
+            // The Task.sleep flips the local @State bool, which
+            // re-renders SelectAllTextField → updateUIView sees the
+            // updated `isFocused.wrappedValue=true` → schedules a
+            // main-actor Task that calls `becomeFirstResponder()`
+            // on the underlying UITextField.
             if shouldAutoFocus {
+                let settleDelay: Duration = autoFocusOnReps
+                    ? .milliseconds(50)
+                    : .milliseconds(300)
                 Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(0.3))
+                    try? await Task.sleep(for: settleDelay)
                     guard !Task.isCancelled else { return }
-                    isWeightFocused = true
+                    if autoFocusOnReps {
+                        isRepsFocused = true
+                    } else {
+                        isWeightFocused = true
+                    }
                 }
             }
         }

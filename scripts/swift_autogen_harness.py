@@ -273,10 +273,19 @@ def run_harness(
 
 def slim_exercise_from_harness_row(row: Dict[str, Any]) -> Dict[str, Any]:
     """
-    The Swift `GeneratedExercise` Codable encodes with these keys:
+    The Swift `EnrichedExercise` Codable encodes with these keys:
       id, name, primary_muscle, primary_body_region, secondary_muscles,
-      equipment, category, difficulty, instructions
+      equipment, category, difficulty, instructions, is_compound, sets,
+      reps_min, reps_max
+
     Convert to the slim wire-shape the audit + Claude reviewer expect.
+
+    Audit 2026-05-10 R12 fix: previously `is_compound` was hard-coded to
+    None and rep ranges were absent → Claude saw nothing to grade and
+    flagged "rep ranges not specified" 33×/200. The harness now populates
+    these from the catalog + DynamicProgramGenerator's week-1 prescription
+    formula, so Claude can grade `compound_after_isolation` and
+    `wrong_rep_range_for_goal` deterministically.
     """
     primary_muscle = row.get("primary_muscle") or ""
     primary_muscles = [primary_muscle] if primary_muscle else []
@@ -288,7 +297,10 @@ def slim_exercise_from_harness_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "equipment": row.get("equipment", ""),
         "primary_muscles": primary_muscles,
         "secondary_muscles": [str(m) for m in secondary if m],
-        "is_compound": None,  # not surfaced by GeneratedExercise — defer
+        "is_compound": row.get("is_compound"),
+        "sets": row.get("sets"),
+        "reps_min": row.get("reps_min"),
+        "reps_max": row.get("reps_max"),
     }
 
 

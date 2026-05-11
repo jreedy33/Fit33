@@ -528,8 +528,14 @@ class GeneratedWorkout:
     user_label: str
     split_name: str
     target_muscles: List[str]
-    exercises: List[Dict[str, Any]]   # slim {name, equipment, primary_muscles, secondary_muscles, is_compound}
+    exercises: List[Dict[str, Any]]   # slim {name, equipment, primary_muscles, secondary_muscles, is_compound, sets, reps_min, reps_max}
     specialty_blocked_in_audit: List[Dict[str, Any]] = field(default_factory=list)
+    # Goal-derived target rep range (advisory — derived from user
+    # fitness_goal by the Swift harness). Lets Claude grade
+    # `wrong_rep_range_for_goal` against an explicit canonical range
+    # rather than guessing. R12 audit added — see WORKOUT_QUALITY_RUBRIC.md.
+    goal_target_rep_min: Optional[int] = None
+    goal_target_rep_max: Optional[int] = None
 
 
 def _slim_exercise(ex: Dict[str, Any]) -> Dict[str, Any]:
@@ -666,7 +672,7 @@ def generate_workouts_via_swift(
 
     # 4. Re-zip results back to the (user_id, split_name) tuples the
     #    rest of the audit pipeline keys off.
-    by_user: Dict[int, List[Tuple[str, List[Dict[str, Any]]]]] = {}
+    by_user: Dict[int, List[Tuple[str, List[Dict[str, Any]], Optional[int], Optional[int]]]] = {}
     for plan_entry, result in zip(plan, output["results"]):
         user, splits = plan_entry
         result_workouts = result["workouts"]
@@ -675,7 +681,7 @@ def generate_workouts_via_swift(
                 f"  ⚠ user-{user.id}: harness returned {len(result_workouts)} "
                 f"workouts for {len(splits)} requested splits"
             )
-        out_for_user: List[Tuple[str, List[Dict[str, Any]]]] = []
+        out_for_user: List[Tuple[str, List[Dict[str, Any]], Optional[int], Optional[int]]] = []
         for split_entry, result_workout in zip(splits, result_workouts):
             split_name, _muscles, _count = split_entry
             slim_exercises = [
@@ -687,7 +693,9 @@ def generate_workouts_via_swift(
                     f"  ⚠ user-{user.id} · {split_name}: harness error: "
                     f"{result_workout['error']}"
                 )
-            out_for_user.append((split_name, slim_exercises))
+            goal_min = result_workout.get("goal_target_rep_min")
+            goal_max = result_workout.get("goal_target_rep_max")
+            out_for_user.append((split_name, slim_exercises, goal_min, goal_max))
         by_user[user.id] = out_for_user
     return by_user
 
@@ -824,6 +832,8 @@ def call_claude_review(
             "target_muscles": workout.target_muscles,
             "workout_type": workout.split_name,
             "exercises": workout.exercises,
+            "goal_target_rep_min": workout.goal_target_rep_min,
+            "goal_target_rep_max": workout.goal_target_rep_max,
         },
     }
     headers = {
@@ -1388,9 +1398,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             use_swift = False
         if use_swift and results_by_user is not None:
             for user, _triples in plan:
-                for split_name, slim_exercises in results_by_user.get(
-                    user.id, []
-                ):
+                for entry in results_by_user.get(user.id, []):
+                    # Tuple shape: (split_name, slim_exercises, goal_min,
+                    # goal_max) — goal_min/max added 2026-05-10 R12 fix
+                    # so Claude can grade rep ranges deterministically.
+                    if len(entry) == 4:
+                        split_name, slim_exercises, goal_min, goal_max = entry
+                    else:
+                        split_name, slim_exercises = entry  # type: ignore[misc]
+                        goal_min, goal_max = None, None
                     target_muscles = target_to_muscles.get(
                         (user.id, split_name), []
                     )
@@ -1404,6 +1420,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                         target_muscles=target_muscles,
                         exercises=slim_exercises,
                         specialty_blocked_in_audit=[],
+                        goal_target_rep_min=goal_min,
+                        goal_target_rep_max=goal_max,
                     ))
 
     # ── Mechanical rubric grader (opt-in, post-harness, pre-Claude) ──

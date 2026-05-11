@@ -3771,52 +3771,113 @@ class WorkoutGeneratorService: ObservableObject {
             }
         }
         
-        // 🆕 BALANCE SLOT ENFORCEMENT: Add a balance exercise if space allows
-        if let balance = balanceSlot, !hasBalanceExercise, result.count < count {
+        // 🛡️ BALANCE SLOT ENFORCEMENT — MANDATORY (Audit 2026-05-10 R12 fix)
+        //
+        // Round 12 rubric grader flagged 71/200 workouts (36%) missing the
+        // mandatory balance slot (e.g. chest+shoulders without rear_delt).
+        // Root cause: the prior implementation ONLY appended a balance
+        // exercise when `result.count < count` — once the slate was full,
+        // balance was silently skipped. WorkoutComboRules.balanceSlot is
+        // declared MANDATORY for combos like back+biceps ("Rear delt is
+        // MANDATORY"), so the contract here must be: balance ALWAYS lands,
+        // and if the workout is full we swap out the lowest-priority
+        // non-anchor isolation move to make room.
+        if let balance = balanceSlot, !hasBalanceExercise {
             #if DEBUG
-            AppLogger.debug("[BALANCE SLOT] Adding balance exercise: \(balance)", category: .workout)
+            AppLogger.debug("[BALANCE SLOT] Ensuring balance exercise: \(balance) (current count=\(result.count)/\(count))", category: .workout)
             #endif
-            
+
+            func isBalanceMatch(_ nameLower: String, _ balance: String) -> Bool {
+                if balance == "rear_delt" && (nameLower.contains("face pull") || nameLower.contains("rear delt") || nameLower.contains("reverse fly")) {
+                    return true
+                }
+                if balance == "core_stability" && (nameLower.contains("pallof") || nameLower.contains("dead bug") || nameLower.contains("plank")) {
+                    return true
+                }
+                if balance == "rotator_cuff" && (nameLower.contains("external rotation") || nameLower.contains("face pull") || nameLower.contains("y raise") || nameLower.contains("y-raise") || nameLower.contains("ytw") || nameLower.contains("scapular")) {
+                    return true
+                }
+                return false
+            }
+
+            // Find the best balance candidate (scoredExercises is ordered
+            // best-first, so first match wins).
+            var matchedExercise: Exercise? = nil
             for scored in scoredExercises {
                 let exercise = scored.exercise
                 let name = exercise.name ?? ""
                 let nameLower = name.lowercased()
-                
                 if usedNames.contains(nameLower) { continue }
-                
-                var isBalanceMatch = false
-                if balance == "rear_delt" && (nameLower.contains("face pull") || nameLower.contains("rear delt") || nameLower.contains("reverse fly")) {
-                    isBalanceMatch = true
-                }
-                if balance == "core_stability" && (nameLower.contains("pallof") || nameLower.contains("dead bug")) {
-                    isBalanceMatch = true
-                }
-                
-                if isBalanceMatch {
-                    let muscleGroups = (exercise.muscleGroups as? [String]) ?? []
-                    let secondaryMuscles = muscleGroups.count > 1 ? Array(muscleGroups.dropFirst()) : []
-                    
-                    let generated = GeneratedExercise(
-                        id: exercise.id?.uuidString ?? UUID().uuidString,
-                        name: name,
-                        category: exercise.category ?? "Unknown",
-                        primaryBodyRegion: exercise.category ?? "Unknown",
-                        primaryMuscle: muscleGroups.first ?? "Unknown",
-                        secondaryMuscles: secondaryMuscles,
-                        equipment: exercise.equipment ?? "Bodyweight",
-                        difficulty: "Intermediate",
-                        videoUrl: nil,
-                        instructions: exercise.instructions
-                    )
-                    
-                    result.append(generated)
-                    hasBalanceExercise = true
-                    
-                    #if DEBUG
-                    AppLogger.info("Added balance exercise: \(name)", category: .workout)
-                    #endif
+                if isBalanceMatch(nameLower, balance) {
+                    matchedExercise = exercise
                     break
                 }
+            }
+
+            if let exercise = matchedExercise {
+                let name = exercise.name ?? ""
+                let muscleGroups = (exercise.muscleGroups as? [String]) ?? []
+                let secondaryMuscles = muscleGroups.count > 1 ? Array(muscleGroups.dropFirst()) : []
+                let generated = GeneratedExercise(
+                    id: exercise.id?.uuidString ?? UUID().uuidString,
+                    name: name,
+                    category: exercise.category ?? "Unknown",
+                    primaryBodyRegion: exercise.category ?? "Unknown",
+                    primaryMuscle: muscleGroups.first ?? "Unknown",
+                    secondaryMuscles: secondaryMuscles,
+                    equipment: exercise.equipment ?? "Bodyweight",
+                    difficulty: "Intermediate",
+                    videoUrl: nil,
+                    instructions: exercise.instructions
+                )
+
+                if result.count < count {
+                    // Easy path — there's room. Append.
+                    result.append(generated)
+                    hasBalanceExercise = true
+                    usedNames.insert(name.lowercased())
+                    #if DEBUG
+                    AppLogger.info("[BALANCE SLOT] Added balance exercise (append): \(name)", category: .workout)
+                    #endif
+                } else {
+                    // Hard path — workout is full. Swap out the
+                    // lowest-value NON-COMPOUND, NON-CORE exercise (we'd
+                    // rather lose a redundant raise/curl than a primary
+                    // press/pull). We scan from the END of `result`
+                    // (lowest-priority slot) backwards.
+                    let library = ExerciseLibraryService.shared
+                    if let swapIdx = result.indices.reversed().first(where: { idx in
+                        let ex = result[idx]
+                        let exNameLower = ex.name.lowercased()
+                        // Don't swap out a balance match we already have
+                        if isBalanceMatch(exNameLower, balance) { return false }
+                        // Prefer to swap out isolation (catalog-truth)
+                        let live = library.getExercise(byName: ex.name)
+                        if let liveIsCompound = live?.isCompound {
+                            return liveIsCompound == false
+                        }
+                        // No catalog row — fall back to keyword check
+                        let isolationKeywords = ["curl", "extension", "fly", "flye", "raise", "kickback", "pullover", "shrug", "crunch", "twist"]
+                        return isolationKeywords.contains(where: { exNameLower.contains($0) })
+                    }) {
+                        let dropped = result[swapIdx]
+                        result[swapIdx] = generated
+                        usedNames.remove(dropped.name.lowercased())
+                        usedNames.insert(name.lowercased())
+                        hasBalanceExercise = true
+                        #if DEBUG
+                        AppLogger.info("[BALANCE SLOT] Swapped \(dropped.name) → \(name) to enforce mandatory \(balance)", category: .workout)
+                        #endif
+                    } else {
+                        #if DEBUG
+                        AppLogger.warning("[BALANCE SLOT] No isolation slot to swap — leaving \(balance) unfilled (all slots are compounds/core)", category: .workout)
+                        #endif
+                    }
+                }
+            } else {
+                #if DEBUG
+                AppLogger.warning("[BALANCE SLOT] No catalog candidate found for \(balance) — leaving unfilled", category: .workout)
+                #endif
             }
         }
         
@@ -3995,9 +4056,38 @@ class WorkoutGeneratorService: ObservableObject {
     ///           4) Core/abs at the very end
     nonisolated private func sortExercisesStrategically(_ exercises: [GeneratedExercise]) -> [GeneratedExercise] {
         guard exercises.count > 1 else { return exercises }
-        
+
+        // 🛡️ Audit 2026-05-10 R12: catalog-driven isCompound.
+        //
+        // Round 12 rubric grader (deterministic Swift checks against the
+        // SAME isCompound field Claude grades by) found 86/200 workouts
+        // (43%) flagged `compound_after_isolation`. Root cause: this
+        // function's `isCompound` helper used NAME HEURISTICS while the
+        // rubric + Claude judge by the catalog's `isCompound` BOOL field.
+        // When the two disagree (e.g. catalog says "Cable Crossover" =
+        // compound but the keyword set classifies it as isolation), the
+        // ordering goes wrong. Fix: look up the live catalog row first,
+        // use its `isCompound` if present, fall back to keyword heuristics
+        // on a cache miss (rare — autogen just picked these exercises).
+        let catalogIsCompound: [String: Bool] = {
+            let library = ExerciseLibraryService.shared
+            var out: [String: Bool] = [:]
+            for ex in exercises {
+                if let row = library.getExercise(byName: ex.name) {
+                    out[ex.name] = row.isCompound
+                }
+            }
+            return out
+        }()
+
         // Helper to determine if exercise is compound (multi-joint) or isolation
         func isCompound(_ exercise: GeneratedExercise) -> Bool {
+            // 1. Catalog truth wins — this is the EXACT field the rubric +
+            //    Claude grade against, so any disagreement here is a real
+            //    `compound_after_isolation` violation downstream.
+            if let live = catalogIsCompound[exercise.name] { return live }
+
+            // 2. Fallback: keyword heuristics (catalog cache miss).
             let name = exercise.name.lowercased()
             // 🛡️ Audit 2026-05-08 Round 8: added `pulldown` / `pull-down` / `pull-up` /
             // `chin-up` (hyphenated) / `hip thrust` / `good morning`. Round 8 found
@@ -4017,7 +4107,7 @@ class WorkoutGeneratorService: ObservableObject {
                 "curl", "extension", "fly", "flye", "raise", "kickback",
                 "pullover", "shrug", "calf", "crunch", "plank", "twist"
             ]
-            
+
             // Check isolation first (more specific)
             for keyword in isolationKeywords {
                 if name.contains(keyword) { return false }

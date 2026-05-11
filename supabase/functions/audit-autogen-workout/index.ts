@@ -281,12 +281,24 @@ interface WorkoutExercise {
     primary_muscles?: string[];
     secondary_muscles?: string[];
     is_compound?: boolean;
+    // R12 fix — Audit 2026-05-10
+    // Prior payload omitted these → Claude flagged "rep ranges not specified"
+    // 33×/200. Now populated by the Swift harness using
+    // DynamicProgramGenerator's week-1 prescription formula.
+    sets?: number;
+    reps_min?: number;
+    reps_max?: number;
 }
 
 interface GeneratedWorkout {
     target_muscles: string[];
     workout_type?: string; // "Push" | "Pull" | "Legs" | "Upper" | "Lower" | "Full Body" | etc.
     exercises: WorkoutExercise[];
+    // Goal-derived target rep range — advisory canonical range for the
+    // user's fitness goal (Build Muscle=8-12, Strength=3-6, etc.). Used
+    // by Claude to grade `wrong_rep_range_for_goal` deterministically.
+    goal_target_rep_min?: number;
+    goal_target_rep_max?: number;
 }
 
 interface AuditRequestBody {
@@ -417,6 +429,9 @@ function resolveAuth(req: Request, supabaseServiceKey: string): AuthDecision {
 
 function buildUserMessage(profile: UserProfile, workout: GeneratedWorkout): string {
     // Slim each exercise to the fields Claude actually needs.
+    // R12 fix (2026-05-10): include sets/reps_min/reps_max from the
+    // Swift harness so `wrong_rep_range_for_goal` and
+    // `compound_after_isolation` can be graded deterministically.
     const slimExercises = workout.exercises.map((ex, idx) => ({
         index: idx,
         name: ex.name ?? "",
@@ -424,6 +439,9 @@ function buildUserMessage(profile: UserProfile, workout: GeneratedWorkout): stri
         primary_muscles: ex.primary_muscles ?? [],
         secondary_muscles: ex.secondary_muscles ?? [],
         is_compound: typeof ex.is_compound === "boolean" ? ex.is_compound : null,
+        sets: typeof ex.sets === "number" ? ex.sets : null,
+        reps_min: typeof ex.reps_min === "number" ? ex.reps_min : null,
+        reps_max: typeof ex.reps_max === "number" ? ex.reps_max : null,
     }));
 
     const payload = {
@@ -447,12 +465,27 @@ function buildUserMessage(profile: UserProfile, workout: GeneratedWorkout): stri
             workout_type: workout.workout_type ?? null,
             exercise_count: slimExercises.length,
             exercises: slimExercises,
+            // Canonical goal → rep range, supplied by the harness so
+            // Claude doesn't have to guess. If `null`, fall back to your
+            // best judgment from `fitness_goal`.
+            goal_target_rep_min: typeof workout.goal_target_rep_min === "number"
+                ? workout.goal_target_rep_min : null,
+            goal_target_rep_max: typeof workout.goal_target_rep_max === "number"
+                ? workout.goal_target_rep_max : null,
         },
     };
 
     return [
         "Audit this single auto-generated workout for this single user. Return ONLY the JSON described in the system prompt.",
         "Be specific: every issue must point at an exercise index, every improvement must point at a code/data location.",
+        "",
+        "GRADING NOTES (read carefully — these prevent false positives):",
+        "  • `is_compound` is CATALOG TRUTH — if it says `true`, the exercise is compound; do not re-classify by name.",
+        "  • `sets`, `reps_min`, `reps_max` are populated for every exercise. Use them — do NOT flag 'rep ranges not specified'.",
+        "  • `goal_target_rep_min/max` is the canonical range for this user's goal. Only flag `wrong_rep_range_for_goal` if a real per-exercise rep range falls outside it (compound 6-10 reps overlapping a 'Build Endurance' goal target 12-20 IS a real mismatch; a typical 8-12 range overlapping an 8-12 target is NOT).",
+        "  • `compound_after_isolation`: walk exercises in order; if a true compound comes AFTER any isolation, flag it. Otherwise do not.",
+        "  • `missing_balance_slot`: only flag when the COMBO actually requires one (Chest+Shoulders/Back+Biceps/etc. need a rear-delt move; Legs need core_stability). Don't invent balance requirements.",
+        "",
         "If the workout is genuinely good, return overall_rating >= 8 with a short fitness_expert_summary and an empty issues array.",
         "",
         "INPUT:",

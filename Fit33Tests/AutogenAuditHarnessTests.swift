@@ -80,12 +80,64 @@ final class AutogenAuditHarnessTests: XCTestCase {
         let users: [InputUser]
     }
 
+    /// One enriched exercise row — `GeneratedExercise` augmented with the
+    /// fields Claude needs to grade rep-range + compound ordering.
+    /// (Audit 2026-05-10 R12 fix: prior wire shape sent `is_compound: null`
+    /// and no rep_min/rep_max → Claude flagged "rep ranges not specified"
+    /// 33×/200 workouts.)
+    struct EnrichedExercise: Codable {
+        let id: String
+        let name: String
+        let category: String
+        let primaryBodyRegion: String
+        let primaryMuscle: String
+        let secondaryMuscles: [String]
+        let equipment: String
+        let difficulty: String
+        let videoUrl: String?
+        let instructions: String?
+        // Catalog-truth fields:
+        let isCompound: Bool?
+        // Prescribed rep range (programmatic — same formula
+        // `DynamicProgramGenerator` uses for week-1 prescriptions):
+        let sets: Int?
+        let repsMin: Int?
+        let repsMax: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, category, equipment, difficulty, instructions
+            case primaryBodyRegion = "primary_body_region"
+            case primaryMuscle = "primary_muscle"
+            case secondaryMuscles = "secondary_muscles"
+            case videoUrl = "video_url"
+            case isCompound = "is_compound"
+            case sets
+            case repsMin = "reps_min"
+            case repsMax = "reps_max"
+        }
+    }
+
     struct OutputWorkout: Codable {
         let primaryMuscles: [String]
         let secondaryMuscles: [String]
         let requestedCount: Int
-        let exercises: [GeneratedExercise]
+        let exercises: [EnrichedExercise]
+        // Goal-derived target rep range (advisory — derived from
+        // `fitnessGoal`, not from per-exercise prescription). Lets Claude
+        // grade "this is goal-appropriate" without guessing.
+        let goalTargetRepMin: Int?
+        let goalTargetRepMax: Int?
         let error: String?
+
+        enum CodingKeys: String, CodingKey {
+            case primaryMuscles
+            case secondaryMuscles
+            case requestedCount
+            case exercises
+            case goalTargetRepMin = "goal_target_rep_min"
+            case goalTargetRepMax = "goal_target_rep_max"
+            case error
+        }
     }
 
     struct OutputResult: Codable {
@@ -192,6 +244,7 @@ final class AutogenAuditHarnessTests: XCTestCase {
             var userWorkouts: [OutputWorkout] = []
             userWorkouts.reserveCapacity(inputUser.workouts.count)
 
+            let (goalMin, goalMax) = goalRepRange(for: inputUser.fitnessGoal)
             for input in inputUser.workouts {
                 do {
                     let exercises = try await WorkoutGeneratorService.shared.generateWorkout(
@@ -200,11 +253,14 @@ final class AutogenAuditHarnessTests: XCTestCase {
                         equipment: inputUser.equipment,
                         count: input.count
                     )
+                    let enriched = exercises.map { enrich($0, library: library) }
                     userWorkouts.append(OutputWorkout(
                         primaryMuscles: input.primaryMuscles,
                         secondaryMuscles: input.secondaryMuscles,
                         requestedCount: input.count,
-                        exercises: exercises,
+                        exercises: enriched,
+                        goalTargetRepMin: goalMin,
+                        goalTargetRepMax: goalMax,
                         error: nil
                     ))
                 } catch {
@@ -214,6 +270,8 @@ final class AutogenAuditHarnessTests: XCTestCase {
                         secondaryMuscles: input.secondaryMuscles,
                         requestedCount: input.count,
                         exercises: [],
+                        goalTargetRepMin: goalMin,
+                        goalTargetRepMax: goalMax,
                         error: "\(error)"
                     ))
                 }
@@ -255,6 +313,68 @@ final class AutogenAuditHarnessTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// Enrich a `GeneratedExercise` with catalog-truth (isCompound) +
+    /// programmatic week-1 rep prescription (same formula
+    /// `DynamicProgramGenerator.WorkoutExercise.getPrescription` uses).
+    /// Audit 2026-05-10 R12: prior payload sent isCompound=null and no
+    /// rep ranges → Claude flagged "rep ranges not specified" 33×/200.
+    nonisolated private func enrich(_ ex: GeneratedExercise, library: ExerciseLibraryService) -> EnrichedExercise {
+        let live = library.getExercise(byName: ex.name)
+        let isCompound = live?.isCompound
+        let rx = DynamicProgramGenerator.WorkoutExercise.getPrescription(
+            weekNumber: 1,
+            isCompound: isCompound ?? false,
+            isAnchor: false,
+            exerciseName: ex.name
+        )
+        return EnrichedExercise(
+            id: ex.id,
+            name: ex.name,
+            category: ex.category,
+            primaryBodyRegion: ex.primaryBodyRegion,
+            primaryMuscle: ex.primaryMuscle,
+            secondaryMuscles: ex.secondaryMuscles,
+            equipment: ex.equipment,
+            difficulty: ex.difficulty,
+            videoUrl: ex.videoUrl,
+            instructions: ex.instructions,
+            isCompound: isCompound,
+            sets: rx.sets,
+            repsMin: rx.repsMin,
+            repsMax: rx.repsMax
+        )
+    }
+
+    /// Canonical goal → rep-range mapping. Used by Claude to grade
+    /// "is this workout structure appropriate for the goal?". Values
+    /// match the explicit complaints surfaced in R12 (e.g. Claude said
+    /// "Build Endurance typically requires 12-20 reps", "Strength
+    /// typically emphasizes 3-6 rep ranges"). Keep in sync with
+    /// `WORKOUT_QUALITY_RUBRIC.md` rule `wrong_rep_range_for_goal`.
+    nonisolated private func goalRepRange(for goal: String) -> (Int?, Int?) {
+        let g = goal.lowercased()
+        if g.contains("strong") || g.contains("strength") || g.contains("powerlift") {
+            return (3, 6)
+        }
+        if g.contains("muscle") || g.contains("hypertroph") || g.contains("build") && !g.contains("endurance") {
+            return (8, 12)
+        }
+        if g.contains("endurance") || g.contains("cardio") || g.contains("stamina") {
+            return (12, 20)
+        }
+        if g.contains("weight loss") || g.contains("fat loss") || g.contains("lose") {
+            return (8, 15)
+        }
+        if g.contains("toning") || g.contains("tone") {
+            return (10, 15)
+        }
+        if g.contains("athletic") || g.contains("perform") {
+            return (5, 8)
+        }
+        // General fitness / unknown → broad moderate range
+        return (8, 12)
+    }
 
     /// Encodes a synthetic `UserExerciseMaturityProfile` to UserDefaults
     /// under the key `ProgressiveExerciseUnlockService` reads on init

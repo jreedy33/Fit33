@@ -345,7 +345,13 @@ class WorkoutGeneratorService: ObservableObject {
             return response.exercises
             
         } catch {
-            AppLogger.error("Cloud generation failed: \(error.localizedDescription)", category: .workout)
+            NetworkErrorClassifier.log(
+                error,
+                context: "Cloud workout generation",
+                category: .workout,
+                op: "workout-generator",
+                endpoint: "workout-generator"
+            )
             self.error = "Failed to generate workout: \(error.localizedDescription)"
             throw error
         }

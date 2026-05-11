@@ -104,7 +104,7 @@ final class WorkoutQualityTests: XCTestCase {
 
     // MARK: - Single entry point — runs every rule, emits report
 
-    func testGradeBatchAgainstRubric() throws {
+    func testGradeBatchAgainstRubric() async throws {
         let env = ProcessInfo.processInfo.environment
         guard let inputPath = env["FIT33_RUBRIC_INPUT_PATH"],
               let outputPath = env["FIT33_RUBRIC_OUTPUT_PATH"] else {
@@ -116,6 +116,30 @@ final class WorkoutQualityTests: XCTestCase {
         let batch = try JSONDecoder().decode(InputBatch.self, from: data)
         let totalWorkouts = batch.results.reduce(0) { $0 + $1.workouts.count }
         print("[WorkoutQuality] 📥 Grading \(totalWorkouts) workouts across \(batch.results.count) users")
+
+        // Pre-warm exercise catalog so Rule 8 (compound_after_isolation)
+        // and similar rules can look up isCompound + popularity per
+        // exercise. The harness already syncs Supabase → Core Data on
+        // its run, but the rubric grader is a separate xcodebuild
+        // invocation with a cold persistent store, so we sync here too.
+        let library = ExerciseLibraryService.shared
+        let beforeCount = library.getAllExercises().count
+        if beforeCount < 1000 {
+            print("[WorkoutQuality] 📡 Core Data has \(beforeCount) exercises — force-syncing…")
+            await library.forceSyncExercises()
+        } else {
+            print("[WorkoutQuality] 📚 Core Data already has \(beforeCount) exercises — skipping sync")
+        }
+        let timeoutDate = Date().addingTimeInterval(120)
+        while !library.isExercisesReady && Date() < timeoutDate {
+            try await Task.sleep(nanoseconds: 200_000_000)
+        }
+        let exerciseCount = library.getAllExercises().count
+        guard library.isExercisesReady, exerciseCount > 1000 else {
+            XCTFail("[WorkoutQuality] catalog not ready (count=\(exerciseCount), ready=\(library.isExercisesReady))")
+            return
+        }
+        print("[WorkoutQuality] 📚 Library ready: \(exerciseCount) exercises")
 
         var perRule: [String: (count: Int, workouts: Set<String>, penalty: Double)] = [:]
         var zeroViolationWorkouts = 0
@@ -244,6 +268,43 @@ final class WorkoutQualityTests: XCTestCase {
             }
             if patterns.count < 3 {
                 v.append(Violation(rule: "missing_balance_slot", severity: .major))
+            }
+        }
+
+        // Rule 8 — compound_after_isolation (uses real `isCompound` field
+        // from the live exercise catalog, not name heuristics)
+        let library = ExerciseLibraryService.shared
+        let isCompoundFlags: [Bool?] = workout.exercises.map { ex in
+            library.getExercise(byName: ex.name)?.isCompound
+        }
+        var lastIsolationIdx: Int? = nil
+        for (idx, isCompound) in isCompoundFlags.enumerated() {
+            guard let isComp = isCompound else { continue }
+            if !isComp {
+                lastIsolationIdx = idx
+            } else if let prevIso = lastIsolationIdx, prevIso < idx {
+                v.append(Violation(rule: "compound_after_isolation", severity: .major))
+                lastIsolationIdx = nil
+            }
+        }
+
+        // Rule 4 — specialty_variant_for_level
+        // Reuse the EXACT filter the autogen uses (SpecialtyVariantFilter)
+        // so the grader and the algorithm agree on what counts as a
+        // specialty variant. If a violation surfaces here it's a REAL
+        // autogen bug (filter said block, autogen showed it anyway).
+        let levelLower = user.experienceLevel.lowercased()
+        let isBeginner = levelLower.hasPrefix("beginner")
+        let isIntermediate = levelLower.hasPrefix("intermediate")
+        for ex in workout.exercises {
+            if let result = SpecialtyVariantFilter.evaluate(
+                name: ex.name,
+                isBeginner: isBeginner,
+                isIntermediate: isIntermediate,
+                completedWorkoutCount: user.completedWorkoutCount,
+                userAge: user.age
+            ), result.shouldExclude {
+                v.append(Violation(rule: "specialty_variant_for_level", severity: .major))
             }
         }
 

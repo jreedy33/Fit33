@@ -383,6 +383,13 @@ deno_version = 2
 [functions.audit-catalog-exercise]
 verify_jwt = false
 
+# audit-autogen-workout: same rationale as audit-catalog-exercise above.
+# Function's internal resolveAuth() (audit-autogen-workout/index.ts line
+# ~399) requires legacy JWT, sb_secret_ prefix, OR cron-key match — net
+# security posture is unchanged; auth moves one layer down from the gateway.
+[functions.audit-autogen-workout]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

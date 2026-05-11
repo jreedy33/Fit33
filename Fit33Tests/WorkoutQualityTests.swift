@@ -201,18 +201,19 @@ final class WorkoutQualityTests: XCTestCase {
             }
         }
 
-        // Rule 2 — equipment_mismatch (case-insensitive subset check)
-        let userEquip = Set(user.equipment.map { $0.lowercased() })
+        // Rule 2 — equipment_mismatch
+        // Reuse the EXACT matcher the real autogen uses
+        // (ExerciseFilterService.userHasRequiredEquipment) so the rubric
+        // grader doesn't false-positive on alias mismatches like "bands"
+        // vs "resistance band" or "trx/rings" vs "anchor point". If a
+        // gap surfaces here, it's a REAL autogen bug, not a check bug.
         for ex in workout.exercises {
-            let exEquip = ex.equipment.lowercased()
-            if exEquip.isEmpty || exEquip == "bodyweight" || exEquip == "none" { continue }
-            // ex.equipment is comma-separated; user must have ALL parts.
-            let needed = exEquip.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            let missingAny = needed.contains { piece in
-                if piece.isEmpty || piece == "bodyweight" { return false }
-                return !userEquip.contains(piece) && !userEquip.contains(where: { $0.contains(piece) || piece.contains($0) })
-            }
-            if missingAny {
+            let hasEquip = ExerciseFilterService.userHasRequiredEquipment(
+                exerciseEquipment: ex.equipment,
+                exerciseName: ex.name,
+                userEquipment: user.equipment
+            )
+            if !hasEquip {
                 v.append(Violation(rule: "equipment_mismatch", severity: .critical))
             }
         }

@@ -31,6 +31,14 @@ from typing import Any, Dict, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEST_METHOD = "Fit33Tests/WorkoutQualityTests/testGradeBatchAgainstRubric"
+# Reuse the same simulator UUID as swift_autogen_harness so the rubric grader
+# runs on the simulator the harness already booted (saves boot time) and
+# avoids OS-version drift when Xcode bumps simulator OSes (e.g. 26.4 → 26.4.1
+# silently breaks `OS=26.4` destination strings).
+try:
+    from swift_autogen_harness import DEFAULT_DESTINATION as _HARNESS_DESTINATION
+except Exception:
+    _HARNESS_DESTINATION = "platform=iOS Simulator,name=iPhone 17 Pro"
 
 
 def patch_xctestrun_env(xctestrun: Path, env: Dict[str, str]) -> None:
@@ -59,7 +67,7 @@ def run_rubric_grader(
     xctestrun: Path,
     input_path: Path,
     output_path: Optional[Path] = None,
-    destination: str = "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4",
+    destination: str = _HARNESS_DESTINATION,
     timeout_s: float = 600,
 ) -> Dict[str, Any]:
     """

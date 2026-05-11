@@ -45,6 +45,32 @@ struct VerifiedBadge: View {
     }
 }
 
+// MARK: - Podium Rank (shared by widget + detail view)
+
+/// One podium rank rendered in the league's tier gradient at the given opacity.
+/// Used by both `WeeklyLeagueWidget.rankBadge` (compact, 24pt frame) and
+/// `WeeklyLeagueDetailView.fullLeaderboardRow` (larger, 32pt frame). Ranks
+/// 1/2/3 all use this; rank 4+ falls back to plain `.secondary` text.
+@ViewBuilder
+fileprivate func podiumRank(
+    _ text: String,
+    font: Font,
+    opacity: Double,
+    gradient: [Color]
+) -> some View {
+    Text(text)
+        .font(font)
+        .fontWeight(.bold)
+        .foregroundStyle(
+            LinearGradient(
+                colors: gradient,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .opacity(opacity)
+}
+
 // MARK: - League Widget (for FriendsTabView)
 
 /// Compact league card shown on the Friends tab.
@@ -62,8 +88,7 @@ struct WeeklyLeagueWidget: View {
     var onShowInfo: (() -> Void)? = nil
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Section header (outside card)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: 6) {
                 Image(systemName: "trophy.circle.fill")
                     .foregroundStyle(
@@ -73,18 +98,21 @@ struct WeeklyLeagueWidget: View {
                             endPoint: .bottomTrailing
                         )
                     )
-                    .font(.title3)
+                    .font(.ds_heading3)
                 Text("Weekly League")
-                    .font(.title3)
+                    .font(.ds_heading3)
                     .fontWeight(.bold)
-                
+
                 Button {
                     HapticManager.impact(.light)
                     onShowInfo?()
                 } label: {
                     Image(systemName: "info.circle")
-                        .font(.ds_bodyRegular).fontWeight(.medium)
+                        .font(.ds_bodyRegular)
+                        .fontWeight(.medium)
                         .foregroundColor(.secondary)
+                        .frame(width: 44, height: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("How weekly leagues work")
                 .accessibilityHint("Opens the Weekly League info page")
@@ -122,397 +150,489 @@ struct WeeklyLeagueWidget: View {
         guard let standing = standing else { return 0 }
         return standing.leaderboard.first(where: { $0.isCurrentUser })?.workoutsCompleted ?? 0
     }
-    
-    private var pointsGapText: String? {
-        guard let standing = standing else { return nil }
-        if standing.myRank == 1 {
-            if let second = standing.leaderboard.first(where: { $0.rank == 2 }) {
-                let gap = standing.myPoints - second.points
-                return gap > 0 ? "Leading by \(gap) pts" : "Tied for 1st"
-            }
-            return nil
-        }
-        if let above = standing.leaderboard.first(where: { $0.rank == standing.myRank - 1 }) {
-            let gap = above.points - standing.myPoints
-            return gap > 0 ? "\(gap) pts behind #\(standing.myRank - 1)" : "Tied at #\(standing.myRank)"
-        }
-        return nil
-    }
+
     
     private func leagueContent(standing: LeagueStanding) -> some View {
-        VStack(spacing: 10) {
-            // Tier banner + motivational context
-            HStack(spacing: 10) {
-                // Tier badge capsule
-                HStack(spacing: 5) {
-                    Text(standing.tierEmoji)
-                        .font(.system(size: 16))
-                    Text(standing.tierName)
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: standing.tierGradient,
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                )
-                
-                Spacer()
-                
-                // Workouts this week
-                HStack(spacing: 3) {
-                    Image(systemName: "dumbbell.fill")
-                        .font(.system(size: 9))
-                        .foregroundColor(standing.tierSwiftUIColor)
-                    Text("\(myWorkoutsThisWeek)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                    Text("this week")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
-                
-                if standing.daysRemaining <= 2 {
-                    Text("⏰")
-                        .font(.system(size: 12))
-                }
-            }
-            
-            // Points gap + position bar
-            VStack(spacing: 6) {
-                if let gapText = pointsGapText {
-                    HStack(spacing: 4) {
-                        Image(systemName: standing.myRank == 1 ? "crown.fill" : "arrow.up.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(standing.myRank == 1 ? .yellow : standing.tierSwiftUIColor)
-                        Text(gapText)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(standing.myRank == 1 ? .primary : .secondary)
-                        Spacer()
-                    }
-                }
-                
-                leaguePositionBar(standing: standing)
-            }
-            
-            // Compact stats row
-            HStack(spacing: 0) {
-                // Rank
-                statCell(
-                    value: "#\(standing.myRank)",
-                    label: "of \(standing.groupSize)",
-                    valueColor: standing.tierSwiftUIColor
-                )
-                
-                thinDivider
-                
-                // Points
-                statCell(
-                    value: "\(standing.myPoints)",
-                    label: "pts",
-                    valueColor: .primary
-                )
-                
-                thinDivider
-                
-                // Status
-                VStack(spacing: 2) {
-                    if standing.isInPromotionZone {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.green)
-                        Text("Promoting")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.green)
-                    } else if standing.isInRelegationZone {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.red)
-                        Text("Relegation")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.red)
-                    } else {
-                        Image(systemName: "shield.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.secondary.opacity(0.6))
-                        Text("Safe zone")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                
-                thinDivider
-                
-                // Days left
-                statCell(
-                    value: "\(standing.daysRemaining)",
-                    label: standing.daysRemaining == 1 ? "day left" : "days left",
-                    valueColor: standing.daysRemaining <= 1 ? .red : .primary
-                )
-            }
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(standing.tierSwiftUIColor.opacity(colorScheme == .dark ? 0.06 : 0.04))
-            )
-            
-            // Mini leaderboard (top 3 + user if not in top 3)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            heroRow(standing: standing)
+            tierSubhead(standing: standing)
+            actionLine(standing: standing)
+            positionBarBlock(standing: standing)
+            contextLine(standing: standing)
+            Divider()
+                .opacity(0.35)
+                .padding(.top, 2)
             miniLeaderboard(standing: standing)
-            
-            // "View Full Leaderboard" hint
-            HStack(spacing: 4) {
-                Spacer()
-                Text("View Full Leaderboard")
-                    .font(.caption2)
-                    .fontWeight(.semibold)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                Spacer()
-            }
-            .foregroundColor(standing.tierSwiftUIColor)
         }
         .padding(Spacing.sm)
         .adaptiveSleekCard(cornerRadius: 20, accentColor: standing.tierSwiftUIColor)
     }
-    
-    private func statCell(value: String, label: String, valueColor: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundColor(valueColor)
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
+
+    // MARK: - Hero Row
+
+    /// Big rank number in tier color, tier capsule beside it, optional zone chip,
+    /// chevron at the trailing edge. The card itself is the tap target — the
+    /// chevron is just an affordance.
+    private func heroRow(standing: LeagueStanding) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                Text("#")
+                    .font(.ds_heading2)
+                    .foregroundColor(standing.tierSwiftUIColor.opacity(0.7))
+                Text("\(standing.myRank)")
+                    .font(.ds_displayMedium)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: standing.tierGradient,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Rank \(standing.myRank) of \(standing.groupSize)")
+
+            tierTitle(standing: standing)
+
+            zoneChip(standing: standing)
+
+            Spacer(minLength: 4)
+
+            Image(systemName: "chevron.right")
+                .font(.ds_labelMedium)
                 .foregroundColor(.secondary)
+                .accessibilityHidden(true)
         }
-        .frame(maxWidth: .infinity)
     }
-    
-    private var thinDivider: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.2))
-            .frame(width: 1, height: 28)
+
+    /// Floating, gradient-filled tier title (e.g. "Gold League" rendered in
+    /// the gold gradient). Sized to match the hero rank so the two read as a
+    /// single big statement: "#1 Gold League". No pill — the gradient text
+    /// itself carries the identity. Aggressive `minimumScaleFactor` keeps the
+    /// longest tier names (Platinum / Verified) on one line on iPhone SE.
+    private func tierTitle(standing: LeagueStanding) -> some View {
+        Text("\(standing.tierName) League")
+            .font(.ds_displayMedium)
+            .foregroundStyle(
+                LinearGradient(
+                    colors: standing.tierGradient,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .accessibilityLabel("\(standing.tierName) league")
     }
-    
-    /// Rank position bar: relegation (red) | safety (grey) | promotion (green)
-    /// Left = bottom of league (demotion), Right = top (promotion)
+
+    @ViewBuilder
+    private func zoneChip(standing: LeagueStanding) -> some View {
+        if standing.isInPromotionZone {
+            zoneChipContent(text: "Promoting", icon: "arrow.up", color: .green)
+        } else if standing.isInRelegationZone {
+            zoneChipContent(text: "Relegation", icon: "arrow.down", color: .red)
+        }
+    }
+
+    private func zoneChipContent(text: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.ds_caption)
+                .fontWeight(.bold)
+            Text(text)
+                .font(.ds_labelSmall)
+                .fontWeight(.semibold)
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, Spacing.xs)
+        .padding(.vertical, 3)
+        .background(
+            Capsule().fill(color.opacity(colorScheme == .dark ? 0.18 : 0.12))
+        )
+    }
+
+    // MARK: - Subhead + Action Line
+
+    /// One-line system restate: "Bronze League · 30 athletes". Mirrors the
+    /// pitch in `joinContent` so a returning user sees the same framing.
+    private func tierSubhead(standing: LeagueStanding) -> some View {
+        Text("\(standing.tierName) League · \(standing.groupSize) athletes")
+            .font(.ds_labelSmall)
+            .foregroundColor(.secondary)
+    }
+
+    /// Action-driving fact: "Need +12 pts to promote", "Locked in +5 pts", or
+    /// "Need +8 pts to escape". Replaces the duplicate "Promoting / Safe / Relegation"
+    /// stat cell — the bar already shows zone state, so this line answers the
+    /// only question a returning user has: "what do I do this week?"
+    @ViewBuilder
+    private func actionLine(standing: LeagueStanding) -> some View {
+        if let action = zoneActionMessage(standing: standing) {
+            HStack(spacing: 5) {
+                Image(systemName: action.icon)
+                    .font(.ds_labelSmall)
+                    .fontWeight(.bold)
+                    .foregroundColor(action.color)
+                Text(action.text)
+                    .font(.ds_labelMedium)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+        }
+    }
+
+    private func zoneActionMessage(standing: LeagueStanding) -> (text: String, icon: String, color: Color)? {
+        let lb = standing.leaderboard
+        if standing.isInPromotionZone {
+            if standing.myRank == 1 {
+                if let second = lb.first(where: { $0.rank == 2 }) {
+                    let lead = standing.myPoints - second.points
+                    if lead > 0 {
+                        return ("Crown holder · +\(lead) over #2", "crown.fill", .yellow)
+                    }
+                    return ("Tied for the crown", "crown.fill", .yellow)
+                }
+                return ("Crown holder", "crown.fill", .yellow)
+            }
+            if let firstBelow = lb.first(where: { $0.rank == standing.promotionCount + 1 }) {
+                let margin = standing.myPoints - firstBelow.points
+                if margin > 0 {
+                    return ("Locked in +\(margin) pts", "checkmark.circle.fill", .green)
+                }
+                return ("Tied for promotion", "arrow.up.circle.fill", .green)
+            }
+            return ("In the promotion zone", "arrow.up.circle.fill", .green)
+        }
+        if standing.isInRelegationZone {
+            let firstSafeRank = standing.groupSize - standing.relegationCount
+            if let firstSafe = lb.first(where: { $0.rank == firstSafeRank }) {
+                let gap = max(1, firstSafe.points - standing.myPoints + 1)
+                return ("Need +\(gap) pts to escape", "arrow.up.circle.fill", .red)
+            }
+            return ("In the relegation zone", "exclamationmark.triangle.fill", .red)
+        }
+        // Safe zone — surface the gap to promotion if there's a promo slot.
+        if standing.promotionCount > 0,
+           let lastPromo = lb.first(where: { $0.rank == standing.promotionCount }) {
+            let gap = max(0, lastPromo.points - standing.myPoints + 1)
+            if gap == 0 {
+                return ("Tied for promotion", "arrow.up.circle.fill", standing.tierSwiftUIColor)
+            }
+            return ("Need +\(gap) pts to promote", "arrow.up.circle", standing.tierSwiftUIColor)
+        }
+        return nil
+    }
+
+    // MARK: - Position Bar Block
+
+    private func positionBarBlock(standing: LeagueStanding) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            leaguePositionBar(standing: standing)
+            zoneFootnote(standing: standing)
+        }
+    }
+
+    /// Inline self-documenting label under the bar: "Bottom 5 → Bronze" (left)
+    /// and "Top 5 → Silver" (right). Makes the red/grey/green zones legible
+    /// without tapping the (i) info button.
+    @ViewBuilder
+    private func zoneFootnote(standing: LeagueStanding) -> some View {
+        let leftLabel: String? = (standing.relegationCount > 0)
+            ? (standing.prevTierName.map { "Bottom \(standing.relegationCount) → \($0)" }
+                ?? "Bottom \(standing.relegationCount) drop")
+            : nil
+        let rightLabel: String? = (standing.promotionCount > 0)
+            ? (standing.nextTierName.map { "Top \(standing.promotionCount) → \($0)" }
+                ?? "Top \(standing.promotionCount)")
+            : nil
+
+        if leftLabel != nil || rightLabel != nil {
+            HStack(spacing: 0) {
+                if let l = leftLabel {
+                    Text(l)
+                        .font(.ds_caption)
+                        .foregroundColor(.red.opacity(colorScheme == .dark ? 0.85 : 0.7))
+                }
+                Spacer(minLength: 0)
+                if let r = rightLabel {
+                    Text(r)
+                        .font(.ds_caption)
+                        .foregroundColor(.green.opacity(colorScheme == .dark ? 0.85 : 0.7))
+                }
+            }
+        }
+    }
+
+    /// Promotion (right, green) | safety (centre, grey) | relegation (left, red).
+    /// Bumped from 6→8pt track and 10→12pt marker with a 2pt white stroke
+    /// (lead-designer P0). Keeps a single, premium bar instead of the previous
+    /// 5+ bars (one main + per-row).
     private func leaguePositionBar(standing: LeagueStanding) -> some View {
         let total = max(standing.groupSize, 1)
         let promoFraction = CGFloat(standing.promotionCount) / CGFloat(total)
         let relegFraction = CGFloat(standing.relegationCount) / CGFloat(total)
         let userPosition = 1.0 - CGFloat(standing.myRank - 1) / CGFloat(max(total - 1, 1))
-        
+
         return GeometryReader { geo in
             let w = geo.size.width
-            
+
             ZStack(alignment: .leading) {
-                // Base track (safety zone color)
                 Capsule()
-                    .fill(Color.gray.opacity(colorScheme == .dark ? 0.15 : 0.1))
-                    .frame(height: 6)
-                
-                // Relegation zone — left edge
+                    .fill(Color.gray.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                    .frame(height: 8)
+
                 if relegFraction > 0 {
                     Capsule()
-                        .fill(Color.red.opacity(colorScheme == .dark ? 0.3 : 0.25))
-                        .frame(width: w * relegFraction, height: 6)
+                        .fill(Color.red.opacity(colorScheme == .dark ? 0.32 : 0.22))
+                        .frame(width: w * relegFraction, height: 8)
                 }
-                
-                // Promotion zone — right edge
+
                 if promoFraction > 0 {
                     Capsule()
-                        .fill(Color.green.opacity(colorScheme == .dark ? 0.3 : 0.25))
-                        .frame(width: w * promoFraction, height: 6)
+                        .fill(Color.green.opacity(colorScheme == .dark ? 0.32 : 0.22))
+                        .frame(width: w * promoFraction, height: 8)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                
-                // User marker dot
+
                 Circle()
                     .fill(standing.tierSwiftUIColor)
-                    .frame(width: 10, height: 10)
+                    .overlay(Circle().stroke(Color.white.opacity(0.95), lineWidth: 2))
+                    .frame(width: 12, height: 12)
                     .shadow(color: standing.tierSwiftUIColor.opacity(0.5), radius: 3)
-                    .offset(x: max(0, min(w - 10, w * userPosition - 5)))
+                    .offset(x: max(0, min(w - 12, w * userPosition - 6)))
             }
         }
-        .frame(height: 10)
+        .frame(height: 12)
         .clipped()
     }
-    
-    /// Thin per-row position bar showing where a specific rank falls in the zones
-    private func rowPositionBar(rank: Int, standing: LeagueStanding) -> some View {
-        let total = max(standing.groupSize, 1)
-        let promoFraction = CGFloat(standing.promotionCount) / CGFloat(total)
-        let relegFraction = CGFloat(standing.relegationCount) / CGFloat(total)
-        let position = 1.0 - CGFloat(rank - 1) / CGFloat(max(total - 1, 1))
-        
-        return GeometryReader { geo in
-            let w = geo.size.width
-            
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.gray.opacity(colorScheme == .dark ? 0.12 : 0.08))
-                    .frame(height: 3)
-                
-                if relegFraction > 0 {
-                    Capsule()
-                        .fill(Color.red.opacity(colorScheme == .dark ? 0.2 : 0.15))
-                        .frame(width: w * relegFraction, height: 3)
-                }
-                
-                if promoFraction > 0 {
-                    Capsule()
-                        .fill(Color.green.opacity(colorScheme == .dark ? 0.2 : 0.15))
-                        .frame(width: w * promoFraction, height: 3)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 6, height: 6)
-                    .shadow(color: .black.opacity(0.3), radius: 1)
-                    .offset(x: max(0, min(w - 6, w * position - 3)))
-            }
+
+    // MARK: - Context Line
+
+    /// Replaces the 4-stat row + thin dividers + tinted background. Three
+    /// derived facts (points, days left, workouts) in a single low-weight
+    /// inline row. Rank/zone live in the hero now.
+    private func contextLine(standing: LeagueStanding) -> some View {
+        HStack(spacing: Spacing.sm) {
+            contextItem(icon: "bolt.fill", value: "\(standing.myPoints)", suffix: "pts")
+            divDot
+            contextItem(
+                icon: "clock.fill",
+                value: "\(standing.daysRemaining)",
+                suffix: standing.daysRemaining == 1 ? "day left" : "days left",
+                tint: standing.daysRemaining <= 1 ? .red : nil
+            )
+            divDot
+            contextItem(icon: "dumbbell.fill", value: "\(myWorkoutsThisWeek)", suffix: "workouts")
+            Spacer(minLength: 0)
         }
-        .frame(height: 6)
-        .clipped()
     }
-    
+
+    private var divDot: some View {
+        Circle()
+            .fill(Color.secondary.opacity(0.45))
+            .frame(width: 2.5, height: 2.5)
+    }
+
+    private func contextItem(icon: String, value: String, suffix: String, tint: Color? = nil) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.ds_caption)
+                .foregroundColor(tint ?? .secondary)
+            Text(value)
+                .font(.ds_labelMedium)
+                .foregroundColor(tint ?? .primary)
+            Text(suffix)
+                .font(.ds_caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
     // MARK: - Mini Leaderboard
-    
-    private func miniLeaderboard(standing: LeagueStanding) -> some View {
-        let top3 = Array(standing.leaderboard.prefix(3))
-        let userInTop3 = top3.contains(where: { $0.isCurrentUser })
-        let currentUserEntry = standing.leaderboard.first(where: { $0.isCurrentUser })
-        
-        return VStack(spacing: 4) {
-            ForEach(top3) { entry in
-                leaderboardRow(entry: entry, standing: standing)
+
+    /// Top 3 + (me-1, me, me+1), with natural dedup when ranks overlap (e.g.
+    /// the user is rank #2). Solves the "I'm #15 in 30 — who am I actually
+    /// racing?" problem (product-engineer P1).
+    private func leaderboardWindow(standing: LeagueStanding) -> [LeagueEntry] {
+        let lb = standing.leaderboard
+        var window = Array(lb.prefix(3))
+        var seen = Set(window.map { $0.rank })
+        let myRank = standing.myRank
+        for r in [myRank - 1, myRank, myRank + 1] {
+            if !seen.contains(r), let entry = lb.first(where: { $0.rank == r }) {
+                seen.insert(r)
+                window.append(entry)
             }
-            
-            if !userInTop3, let userEntry = currentUserEntry {
-                HStack(spacing: 4) {
-                    ForEach(0..<3) { _ in
-                        Circle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(width: 2.5, height: 2.5)
-                    }
+        }
+        return window
+    }
+
+    private func miniLeaderboard(standing: LeagueStanding) -> some View {
+        let entries = leaderboardWindow(standing: standing)
+        let firstUserWindowRank = entries.first(where: { $0.rank > 3 })?.rank
+        let needsSeparator = (firstUserWindowRank ?? 0) > 4
+        let myRank = standing.myRank
+
+        return VStack(spacing: 3) {
+            ForEach(entries) { entry in
+                if needsSeparator, entry.rank == firstUserWindowRank {
+                    leaderboardSeparator
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 1)
-                
-                leaderboardRow(entry: userEntry, standing: standing)
+                // A "neighbor" row is the rank directly above/below the user,
+                // shown to give the user context on who they're actually racing.
+                // Rendered inset + faded so the user's own row reads as the
+                // focal point. Top-3 rows always stay full-size even when one
+                // of them happens to be the user's neighbor.
+                let isNeighbor = !entry.isCurrentUser
+                    && entry.rank > 3
+                    && (entry.rank == myRank - 1 || entry.rank == myRank + 1)
+                leaderboardRow(entry: entry, standing: standing, isNeighbor: isNeighbor)
             }
         }
     }
-    
-    private func leaderboardRow(entry: LeagueEntry, standing: LeagueStanding) -> some View {
+
+    private var leaderboardSeparator: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<3) { _ in
+                Circle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 2.5, height: 2.5)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 1)
+    }
+
+    private func leaderboardRow(entry: LeagueEntry, standing: LeagueStanding, isNeighbor: Bool = false) -> some View {
         let isPromoZone = standing.promotionCount > 0 && entry.rank <= standing.promotionCount
         let isRelegZone = standing.relegationCount > 0 && entry.rank > (standing.groupSize - standing.relegationCount)
-        
+        let isUser = entry.isCurrentUser
+        let avatarSize: CGFloat = isNeighbor ? 22 : 26
+
         return Button {
             guard !entry.isCurrentUser else { return }
             showingProfile = ProfileUser(leagueEntry: entry)
         } label: {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
-                ZStack {
-                    if entry.rank <= 3 {
-                        Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
-                            .font(.system(size: 14))
-                    } else {
-                        Text("#\(entry.rank)")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .secondary)
-                    }
-                }
-                .frame(width: 24)
-                
-                CachedFriendPhoto(
-                    friendId: entry.userId.uuidString,
-                    photoUrl: entry.profilePhotoUrl,
-                    name: entry.displayName,
-                    size: 26,
-                    showGradientRing: entry.isCurrentUser || entry.isFriend == true,
-                    gradientColors: entry.isCurrentUser
-                        ? standing.tierGradient
-                        : entry.isFriend == true ? [.green, .green.opacity(0.6)] : [.gray.opacity(0.3)]
-                )
-                
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 3) {
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(isUser ? standing.tierSwiftUIColor : Color.clear)
+                    .frame(width: 2)
+
+                HStack(spacing: 8) {
+                    rankBadge(entry: entry, standing: standing)
+
+                    CachedFriendPhoto(
+                        friendId: entry.userId.uuidString,
+                        photoUrl: entry.profilePhotoUrl,
+                        name: entry.displayName,
+                        size: avatarSize,
+                        showGradientRing: entry.isCurrentUser || entry.isFriend == true,
+                        gradientColors: entry.isCurrentUser
+                            ? standing.tierGradient
+                            : entry.isFriend == true ? [.green, .green.opacity(0.6)] : [.gray.opacity(0.3)]
+                    )
+
+                    HStack(spacing: 4) {
                         Text(entry.isCurrentUser ? "You" : entry.firstName)
-                            .font(.system(size: 13, weight: entry.isCurrentUser ? .bold : .medium))
+                            .font(.ds_labelMedium)
+                            .fontWeight(entry.isCurrentUser ? .bold : .medium)
                             .foregroundColor(entry.isCurrentUser ? .primary : .secondary)
                             .lineLimit(1)
-                        
+
                         if entry.isVerified == true || entry.isGoldVerified == true {
                             VerifiedBadge(size: 11, isGold: entry.isGoldVerified == true || (standing.tierRank == 7 && entry.rank <= 5))
                         }
+
+                        friendIndicator(entry: entry)
                     }
-                    
-                    if !entry.isCurrentUser, entry.isFriend == true {
-                        Text("Friend")
-                            .font(.system(size: 8, weight: .bold))
+
+                    Spacer(minLength: 4)
+
+                    if isPromoZone {
+                        Image(systemName: "arrow.up")
+                            .font(.ds_caption)
+                            .fontWeight(.bold)
                             .foregroundColor(.green)
-                    } else if !entry.isCurrentUser, let mc = entry.mutualFriendCount, mc > 0 {
-                        Text("\(mc) mutual")
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundColor(.blue)
+                    } else if isRelegZone {
+                        Image(systemName: "arrow.down")
+                            .font(.ds_caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.red)
+                    }
+
+                    HStack(spacing: 2) {
+                        Text("\(entry.points)")
+                            .font(.ds_labelMedium)
+                            .fontWeight(.bold)
+                            .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
+                        Text("pts")
+                            .font(.ds_caption)
+                            .foregroundColor(.secondary)
                     }
                 }
-                
-                Spacer()
-                
-                if isPromoZone {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.green)
-                } else if isRelegZone {
-                    Image(systemName: "arrow.down")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(.red)
-                }
-                
-                HStack(spacing: 2) {
-                    Text("\(entry.points)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .primary)
-                    Text("pts")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
+                .padding(.vertical, isNeighbor ? 4 : 6)
+                .padding(.horizontal, Spacing.xs)
             }
-            
-            // Mini position bar per row
-            rowPositionBar(rank: entry.rank, standing: standing)
-        }
-        .padding(.vertical, 5)
-        .padding(.horizontal, Spacing.xs)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(entry.isCurrentUser
-                    ? standing.tierSwiftUIColor.opacity(colorScheme == .dark ? 0.12 : 0.08)
-                    : Color.clear)
-        )
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(entry.isCurrentUser
+                        ? standing.tierSwiftUIColor.opacity(colorScheme == .dark ? 0.14 : 0.10)
+                        : Color.clear)
+            )
         }
         .buttonStyle(.plain)
+        .padding(.horizontal, isNeighbor ? Spacing.md : 0)
+        .opacity(isNeighbor ? 0.55 : 1.0)
+    }
+
+    /// Podium cascade: ranks 1/2/3 all render in the league's tier gradient,
+    /// with each step smaller and at a lower opacity so the leader glows
+    /// brightest and the cascade fades down to #3. Rank 4+ is plain — no
+    /// gradient, normal weight — so it sits underneath the podium without
+    /// competing. No medal emoji.
+    @ViewBuilder
+    private func rankBadge(entry: LeagueEntry, standing: LeagueStanding) -> some View {
+        Group {
+            switch entry.rank {
+            case 1:
+                podiumRank("#1", font: .ds_bodyRegular, opacity: 1.0, gradient: standing.tierGradient)
+            case 2:
+                podiumRank("#2", font: .ds_labelMedium, opacity: 0.7, gradient: standing.tierGradient)
+            case 3:
+                podiumRank("#3", font: .ds_labelSmall, opacity: 0.45, gradient: standing.tierGradient)
+            default:
+                Text("#\(entry.rank)")
+                    .font(.ds_labelSmall)
+                    .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .secondary)
+            }
+        }
+        .frame(width: 24)
+    }
+
+    /// 6pt friend/mutual dot — replaces the two-line micro-text badge that
+    /// used 8pt text (below iOS HIG) and added per-row vertical bloat.
+    @ViewBuilder
+    private func friendIndicator(entry: LeagueEntry) -> some View {
+        if !entry.isCurrentUser, entry.isFriend == true {
+            Circle()
+                .fill(Color.green)
+                .frame(width: 6, height: 6)
+                .accessibilityLabel("Friend")
+        } else if !entry.isCurrentUser, let mc = entry.mutualFriendCount, mc > 0 {
+            Circle()
+                .fill(Color.blue)
+                .frame(width: 6, height: 6)
+                .accessibilityLabel("\(mc) mutual friends")
+        }
     }
     
     // MARK: - Loading State
     
     private var loadingContent: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Spacing.sm) {
             ProgressView()
             Text("Loading league...")
-                .font(.subheadline)
+                .font(.ds_bodySmall)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
@@ -521,108 +641,108 @@ struct WeeklyLeagueWidget: View {
     }
     
     // MARK: - Not Placed (missed Monday placement)
-    
+
     private var notPlacedContent: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: Spacing.sm + 2) {
             ZStack {
                 Circle()
                     .fill(
                         LinearGradient(colors: [.gray.opacity(0.2), .gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
                     .frame(width: 56, height: 56)
-                
+
                 Image(systemName: "clock.badge.exclamationmark")
                     .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(colors: [.gray, .secondary], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
             }
-            
+
             VStack(spacing: 4) {
                 Text("League Starts Monday")
-                    .font(.headline)
+                    .font(.ds_heading3)
                     .fontWeight(.bold)
-                
+
                 if let tierName = leagueService.notPlacedTierName {
-                    Text("You'll be placed in the \(tierName) league when the new week begins.")
-                        .font(.caption)
+                    Text("You'll be placed in the \(tierName) league with ~30 athletes. Top 5 promote, bottom 5 drop.")
+                        .font(.ds_bodySmall)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
-                        .lineLimit(2)
+                        .lineLimit(3)
                 } else {
-                    Text("Open the app on Monday to be placed in next week's league.")
-                        .font(.caption)
+                    Text("Open the app on Monday to join ~30 athletes for the week. Top 5 promote, bottom 5 drop.")
+                        .font(.ds_bodySmall)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
-                        .lineLimit(2)
+                        .lineLimit(3)
                 }
             }
-            
+
             HStack(spacing: 6) {
                 Image(systemName: "bell.fill")
                     .font(.ds_bodySmall)
                 Text("Next Week")
+                    .font(.ds_bodySmall)
                     .fontWeight(.semibold)
             }
-            .font(.subheadline)
             .foregroundColor(.white)
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, 10)
             .background(Color.secondary.opacity(0.5))
-            .cornerRadius(20)
+            .clipShape(Capsule())
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity)
         .adaptiveSleekCard(cornerRadius: 24, accentColor: .gray)
     }
-    
+
     // MARK: - Join Prompt (first time)
-    
+
     private var joinContent: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: Spacing.sm + 2) {
             ZStack {
                 Circle()
                     .fill(
                         LinearGradient(colors: [.yellow.opacity(0.2), .orange.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
                     .frame(width: 56, height: 56)
-                
+
                 Image(systemName: "trophy.fill")
                     .font(.ds_heading2)
                     .foregroundStyle(
                         LinearGradient(colors: [.yellow, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
             }
-            
+
             VStack(spacing: 4) {
                 Text("Join the Weekly League!")
-                    .font(.headline)
+                    .font(.ds_heading3)
                     .fontWeight(.bold)
-                
+
                 Text("Compete with friends & ~30 athletes. Earn points from workouts. Top 5 get promoted!")
-                    .font(.caption)
+                    .font(.ds_bodySmall)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    .lineLimit(3)
             }
-            
+
             HStack(spacing: 6) {
                 Image(systemName: "bolt.fill")
                     .font(.ds_bodySmall)
                 Text("Join Now")
+                    .font(.ds_bodySmall)
                     .fontWeight(.semibold)
             }
-            .font(.subheadline)
             .foregroundColor(.white)
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, 10)
             .background(
                 LinearGradient(colors: [.yellow, .orange], startPoint: .leading, endPoint: .trailing)
             )
-            .cornerRadius(20)
+            .clipShape(Capsule())
             .shadow(color: .orange.opacity(0.3), radius: 8, x: 0, y: 2)
         }
-        .padding(20)
+        .padding(Spacing.lg)
         .frame(maxWidth: .infinity)
         .adaptiveSleekCard(cornerRadius: 24, accentColor: .yellow)
     }
@@ -723,15 +843,21 @@ struct WeeklyLeagueDetailView: View {
                 Spacer()
                 
                 if let standing = leagueService.standing {
-                    Text(standing.tierEmoji)
-                        .font(.ds_heading3)
                     Text("\(standing.tierName) League")
-                        .font(.title3)
-                        .fontWeight(.bold)
+                        .font(.ds_heading2)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: standing.tierGradient,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityLabel("\(standing.tierName) league")
                 } else {
                     Text("Weekly League")
-                        .font(.title3)
-                        .fontWeight(.bold)
+                        .font(.ds_heading2)
                 }
                 
                 Spacer()
@@ -1446,12 +1572,16 @@ struct WeeklyLeagueDetailView: View {
         VStack(spacing: 6) {
             HStack(spacing: 12) {
                 ZStack {
-                    if entry.rank <= 3 {
-                        Text(entry.rank == 1 ? "🥇" : entry.rank == 2 ? "🥈" : "🥉")
-                            .font(.ds_heading3)
-                    } else {
+                    switch entry.rank {
+                    case 1:
+                        podiumRank("#1", font: .ds_heading2, opacity: 1.0, gradient: standing.tierGradient)
+                    case 2:
+                        podiumRank("#2", font: .ds_heading3, opacity: 0.7, gradient: standing.tierGradient)
+                    case 3:
+                        podiumRank("#3", font: .ds_bodyRegular, opacity: 0.45, gradient: standing.tierGradient)
+                    default:
                         Text("#\(entry.rank)")
-                            .font(.ds_bodySmall).fontWeight(.bold).fontDesign(.rounded)
+                            .font(.ds_bodySmall)
                             .foregroundColor(entry.isCurrentUser ? standing.tierSwiftUIColor : .secondary)
                     }
                 }

@@ -83,8 +83,9 @@ ehthumbs.db
 Desktop.ini
 
 # Secrets & Signing
+# NEVER commit signing keys. The APNs key is provided to the backend at runtime
+# via the APNS_PRIVATE_KEY env var (Supabase edge-function secret), not from a file.
 *.p8
-!DO\ NOT\ DELETE/*.p8
 *.pem
 *.key
 *.p12

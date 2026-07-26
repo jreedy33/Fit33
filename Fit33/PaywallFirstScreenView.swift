@@ -23,20 +23,14 @@ import StoreKit
 //   5. "Restore purchases" link in the footer (invariant 14 — never
 //      lock out paying customers; restore is always one tap away).
 //
-// Auto-presentation contract (NOT yet wired):
-//   `Fit33App.swift` will own the `shouldPresentFirstScreenPaywall`
-//   decision. The rule: present once per device, after onboarding
-//   completes, when `PremiumManager.serverEntitlement == .free`. After
-//   one presentation, persist `hasSeenFirstScreenPaywall=true` to
-//   UserDefaults — never present again automatically. Users can re-open
-//   from Settings → Manage Subscription.
-//
-// This file ships the View only; the auto-presentation is product +
-// design work that follows a separate review (PRODUCT_ENGINEER + LEAD_DESIGNER).
-//
-// Do NOT ship this view auto-presenting until that review lands —
-// shipping a "paywall on first launch" without the right copy + timing
-// would tank conversion AND the App Store rating.
+// Auto-presentation contract (WIRED — comment corrected 2026-07-26, PR-36):
+//   `ContentView` owns the presentation: it watches the completed-workout
+//   count (`paywallWorkoutFetchRequest`) and calls
+//   `MonetizationState.shouldPresentFirstScreenPaywall(completedWorkouts:)`,
+//   which gates on the workout threshold + premium status + cooldown
+//   (`MonetizationState.firstScreenPaywallWorkoutThreshold` /
+//   `firstScreenPaywallCooldownDays`). It never presents over the tutorial,
+//   tier-migration card, or Pro Preview expiry modal.
 struct PaywallFirstScreenView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var storeKit = StoreKitManager.shared

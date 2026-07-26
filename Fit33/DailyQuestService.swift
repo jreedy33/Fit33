@@ -1932,11 +1932,13 @@ class DailyQuestService: ObservableObject {
         }
     }
     
-    /// Call when a program day is completed
+    /// Call when a program day is completed.
+    /// Audit PR-34 (2026-07-26): this must tick ONLY `.completeProgramDay`.
+    /// The workout that completed the day already reported
+    /// `.completeWorkout` via `onWorkoutCompleted()` (UserManager fanout) —
+    /// reporting it here too double-counted for multi-target quests.
     func onProgramDayCompleted() async {
         await reportProgress(questKey: .completeProgramDay)
-        // Also counts as a general workout
-        await reportProgress(questKey: .completeWorkout)
     }
     
     /// Call when a workout targets specific body parts. `bodyParts` is the set

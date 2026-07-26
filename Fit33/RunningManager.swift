@@ -1205,13 +1205,13 @@ extension RunningManager {
         _ coordinates: [CLLocationCoordinate2D],
         epsilonMeters: Double = 2.0
     ) -> [CLLocationCoordinate2D] {
-        guard coordinates.count > 2 else { return coordinates }
+        guard coordinates.count > 2,
+              let start = coordinates.first,
+              let end = coordinates.last else { return coordinates }
 
         // Find the point with the maximum distance from the start-end line.
         var maxDistance: Double = 0
         var maxIndex: Int = 0
-        let start = coordinates.first!
-        let end = coordinates.last!
 
         for i in 1..<(coordinates.count - 1) {
             let d = perpendicularDistanceMeters(

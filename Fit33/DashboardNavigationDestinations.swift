@@ -61,8 +61,6 @@ struct DashboardNavigationDestinations: ViewModifier {
             SimpleMealPlanView()
         case .workoutHistory:
             WorkoutHistoryFullView()
-        case .programDetailsPlaceholder:
-            Text("Program Details - Coming Soon")
         case .generatedProgramsList:
             GeneratedProgramsListView()
         case .personalizedPrograms:
@@ -73,6 +71,14 @@ struct DashboardNavigationDestinations: ViewModifier {
                let day = generatedProgramService.currentDay {
                 SmartWorkoutPreviewView(day: day, program: program)
                     .environmentObject(generatedProgramService)
+            } else {
+                // Audit PR-28 (2026-07-26): never push a BLANK destination —
+                // if the program/day evaporated between tap and push (sync
+                // race, program ended), show an explicit empty state.
+                routeUnavailableFallback(
+                    title: "Workout Unavailable",
+                    message: "This program day is no longer available. Head back and pick a workout from the dashboard."
+                )
             }
         case .smartProgramOverview(let programId):
             if let program = smartProgramEngine.userPrograms.first(where: { $0.id == programId }) {
@@ -81,6 +87,11 @@ struct DashboardNavigationDestinations: ViewModifier {
                 SmartProgramOverviewView(program: program, template: template)
                     .environmentObject(workoutManager)
                     .environmentObject(userManager)
+            } else {
+                routeUnavailableFallback(
+                    title: "Program Unavailable",
+                    message: "This program is no longer on your account."
+                )
             }
         case .smartProgramDayPreview(let programId, let dayNumber):
             if let program = smartProgramEngine.userPrograms.first(where: { $0.id == programId }),
@@ -96,6 +107,11 @@ struct DashboardNavigationDestinations: ViewModifier {
                 )
                 .environmentObject(workoutManager)
                 .environmentObject(userManager)
+            } else {
+                routeUnavailableFallback(
+                    title: "Day Unavailable",
+                    message: "This program day is no longer available."
+                )
             }
         case .stravaSettings:
             StravaSettingsView()
@@ -114,6 +130,28 @@ struct DashboardNavigationDestinations: ViewModifier {
             // `fit33://olympian` deep link.
             OlympianPathView()
         }
+    }
+
+    /// Audit PR-28 (2026-07-26): explicit empty state for routes whose
+    /// backing data disappeared between tap and push. A `@ViewBuilder` `if`
+    /// with no `else` renders a BLANK pushed screen — an App Review
+    /// "broken flow" magnet.
+    private func routeUnavailableFallback(title: String, message: String) -> some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 40))
+                .foregroundColor(.secondary)
+            Text(title)
+                .font(.ds_heading3)
+                .foregroundColor(.primary)
+            Text(message)
+                .font(.ds_bodyRegular)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Spacing.xl)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.appBackgroundTop.ignoresSafeArea())
     }
 
     /// 2026-05-02 — resolves a `CardioWorkoutDTO.externalId` to the

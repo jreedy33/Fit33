@@ -106,8 +106,15 @@ struct MainTabView: View {
                         Text(tabs[2].title)
                             .foregroundColor(.red)
                     } icon: {
-                        Image(uiImage: UIImage(systemName: "dumbbell.fill")!
-                            .withTintColor(.red, renderingMode: .alwaysOriginal))
+                        // Audit PR-36: no force unwraps in production —
+                        // fall back to the SwiftUI symbol image if UIKit
+                        // ever fails to resolve the SF Symbol.
+                        if let dumbbell = UIImage(systemName: "dumbbell.fill")?
+                            .withTintColor(.red, renderingMode: .alwaysOriginal) {
+                            Image(uiImage: dumbbell)
+                        } else {
+                            Image(systemName: "dumbbell.fill")
+                        }
                     }
                     .foregroundColor(.red)
                     .accessibilityLabel("Workout tab, workout in progress")

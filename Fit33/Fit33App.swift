@@ -1052,6 +1052,17 @@ struct Fit33App: App {
                         OuraService.shared.refreshConnectionState()
                         StravaService.shared.refreshConnectionState()
 
+                        // Audit PR-35 (2026-07-26, MONETIZATION invariant 2):
+                        // refresh StoreKit entitlements + the server
+                        // subscription state on every foreground so refunds /
+                        // renewals / cross-device purchases reflect without a
+                        // relaunch. Both calls are cheap (local StoreKit
+                        // cache + one RPC) and internally coalesced.
+                        Task {
+                            await StoreKitManager.shared.updatePurchasedProducts()
+                            await PremiumManager.shared.refreshFromServer()
+                        }
+
                         // Forward local OAuth audit breadcrumbs to
                         // `dev_session_logs` so "WHOOP/Oura disconnected
                         // with no log line" reports are investigable from

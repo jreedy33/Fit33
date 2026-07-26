@@ -473,10 +473,16 @@ struct MealPlanView: View {
             calorieGoal = tdee // Maintenance
         }
         
-        // Calculate macro goals
-        let proteinGoal = Double(weight) * 1.0 // 1g per lb body weight
+        // Calculate macro goals.
+        // Audit PR-33 (2026-07-26): cap protein at 35% of calories before
+        // deriving carbs — the old unconditional "1g per lb" made
+        // `protein*4 + fat*9` exceed the calorie goal for heavy users on a
+        // cut, producing a NEGATIVE carb goal in the UI.
         let fatGoal = calorieGoal * 0.25 / 9 // 25% of calories from fat
-        let carbGoal = (calorieGoal - (proteinGoal * 4) - (fatGoal * 9)) / 4
+        let proteinFromWeight = Double(weight) * 1.0 // 1g per lb body weight
+        let proteinCalorieCap = calorieGoal * 0.35 / 4 // ≤35% of calories
+        let proteinGoal = min(proteinFromWeight, proteinCalorieCap)
+        let carbGoal = max(0, (calorieGoal - (proteinGoal * 4) - (fatGoal * 9)) / 4)
         
         nutritionGoals = NutritionGoals(
             calories: Int(calorieGoal),

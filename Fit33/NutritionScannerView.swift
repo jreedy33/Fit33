@@ -12,6 +12,10 @@ struct NutritionScannerView: View {
     @State private var isProcessing = false
     @State private var extractedNutrition: ExtractedNutrition?
     @State private var showingEditor = false
+    // Audit PR-33 (2026-07-26): OCR failures previously dead-ended (spinner
+    // stopped, stale image stayed, no message). Every failure path now
+    // resets to the instructions screen with an explanatory alert.
+    @State private var scanErrorMessage: String?
     
     var body: some View {
         ZStack {
@@ -39,6 +43,26 @@ struct NutritionScannerView: View {
                 showingCamera = false
                 processImage(image)
             }
+        }
+        .alert(
+            "Couldn't Read Label",
+            isPresented: Binding(
+                get: { scanErrorMessage != nil },
+                set: { if !$0 { scanErrorMessage = nil } }
+            )
+        ) {
+            Button("Try Again") {
+                scanErrorMessage = nil
+                showingCamera = true
+            }
+            Button("Enter Manually") {
+                scanErrorMessage = nil
+                extractedNutrition = .empty
+                showingEditor = true
+            }
+            Button("Cancel", role: .cancel) { scanErrorMessage = nil }
+        } message: {
+            Text(scanErrorMessage ?? "")
         }
         .background(
             NavigationLink(
@@ -168,7 +192,7 @@ struct NutritionScannerView: View {
         
         guard let cgImage = image.cgImage else {
             AppLogger.error("❌ Failed to get CGImage", category: .nutrition)
-            isProcessing = false
+            failScan("We couldn't process that photo. Please try taking another one.")
             return
         }
         
@@ -176,13 +200,13 @@ struct NutritionScannerView: View {
         let request = VNRecognizeTextRequest { request, error in
             if let error = error {
                 AppLogger.error("❌ Vision error: \(error.localizedDescription)", category: .nutrition)
-                isProcessing = false
+                failScan("Text recognition failed. Try again with better lighting and hold the label flat.")
                 return
             }
             
             guard let observations = request.results as? [VNRecognizedTextObservation] else {
                 AppLogger.error("❌ No text observations", category: .nutrition)
-                isProcessing = false
+                failScan("We couldn't find any text in that photo. Make sure the nutrition label fills the frame.")
                 return
             }
             
@@ -197,6 +221,14 @@ struct NutritionScannerView: View {
             // Parse nutrition facts
             DispatchQueue.main.async {
                 let nutrition = parseNutritionFacts(from: recognizedText)
+                // Audit PR-33: an all-empty parse means the scan effectively
+                // failed — surface the retry/manual alert instead of opening
+                // the editor with blank fields as if it worked.
+                guard !nutrition.isEssentiallyEmpty else {
+                    AppLogger.warning("⚠️ Nutrition parse produced no usable values", category: .nutrition)
+                    failScan("We couldn't read any nutrition values from that label. Try again, or enter the values manually.")
+                    return
+                }
                 self.extractedNutrition = nutrition
                 self.isProcessing = false
                 self.showingEditor = true
@@ -213,10 +245,19 @@ struct NutritionScannerView: View {
                 try handler.perform([request])
             } catch {
                 AppLogger.error("❌ Failed to perform Vision request: \(error)", category: .nutrition)
-                DispatchQueue.main.async {
-                    isProcessing = false
-                }
+                failScan("Text recognition failed. Please try again.")
             }
+        }
+    }
+
+    /// Audit PR-33: single funnel for scan failures — resets the captured
+    /// image (so the UI returns to the instructions screen) and raises the
+    /// user-facing alert. Safe to call from any thread.
+    private func failScan(_ message: String) {
+        DispatchQueue.main.async {
+            self.isProcessing = false
+            self.capturedImage = nil
+            self.scanErrorMessage = message
         }
     }
     
@@ -611,6 +652,22 @@ struct ExtractedNutrition {
     var calcium: String
     var iron: String
     var potassium: String
+
+    /// Blank template for the "Enter Manually" path (audit PR-33).
+    static let empty = ExtractedNutrition(
+        foodName: "", servingSize: "", servingUnit: "", servingQuantity: 1.0,
+        servingsPerContainer: "", calories: "", caloriesFromFat: "",
+        totalFat: "", saturatedFat: "", transFat: "", cholesterol: "",
+        sodium: "", totalCarbs: "", dietaryFiber: "", totalSugars: "",
+        addedSugars: "", protein: "", vitaminD: "", calcium: "", iron: "",
+        potassium: ""
+    )
+
+    /// True when OCR found no usable nutrition numbers at all (audit PR-33 —
+    /// don't open the editor pretending the scan worked).
+    var isEssentiallyEmpty: Bool {
+        calories.isEmpty && totalFat.isEmpty && totalCarbs.isEmpty && protein.isEmpty
+    }
 }
 
 // MARK: - Camera View

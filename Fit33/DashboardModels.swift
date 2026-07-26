@@ -6,7 +6,8 @@ enum DashboardRoute: Hashable {
     case profile
     case mealPlan
     case workoutHistory
-    case programDetailsPlaceholder
+    // `programDetailsPlaceholder` deleted 2026-07-26 (audit PR-36 / Q2-4):
+    // the "Coming Soon" destination had no remaining entry points.
     case generatedProgramsList
     case personalizedPrograms
     case smartWorkoutPreview  // uses GeneratedProgramService.shared

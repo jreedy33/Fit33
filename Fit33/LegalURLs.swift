@@ -12,6 +12,17 @@ import Foundation
 // domain (`https://fit33.app/...`). If the canonical pages live at a
 // different path, swap them here and every paywall picks it up.
 enum LegalURLs {
-    static let privacy = URL(string: "https://fit33.app/privacy")!
-    static let terms   = URL(string: "https://fit33.app/terms")!
+    // Audit PR-36: no force unwraps in production code — these literals are
+    // valid by construction, but route through a checked helper anyway so
+    // a future typo fails loudly in DEBUG instead of crashing in release.
+    static let privacy = makeURL("https://fit33.app/privacy")
+    static let terms   = makeURL("https://fit33.app/terms")
+
+    private static func makeURL(_ string: String) -> URL {
+        guard let url = URL(string: string) else {
+            assertionFailure("LegalURLs: invalid URL literal \(string)")
+            return URL(fileURLWithPath: "/")
+        }
+        return url
+    }
 }

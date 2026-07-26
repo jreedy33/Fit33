@@ -343,7 +343,7 @@ class DynamicProgramGenerator {
             requiredEquipment: profile.availableEquipment,
             benefits: getBenefits(for: type),
             muscleGroupRotation: muscleRotation,
-            generatedDays: day1 != nil ? [day1!] : [],
+            generatedDays: day1.map { [$0] } ?? [],
             isActive: false,
             createdAt: Date()
         )
@@ -523,7 +523,7 @@ class DynamicProgramGenerator {
             requiredEquipment: profile.availableEquipment,
             benefits: getBenefits(for: type),
             muscleGroupRotation: muscleRotation,
-            generatedDays: day1 != nil ? [day1!] : [],
+            generatedDays: day1.map { [$0] } ?? [],
             isActive: false,
             createdAt: Date()
         )

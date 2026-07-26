@@ -327,7 +327,10 @@ class ContactsService: ObservableObject {
         }
         
         AppLogger.debug("Searching for matching Fit33 users... Emails: \(contactEmails.count) (sample: \(sampleEmails.joined(separator: ", "))), Phone numbers: \(contactPhoneNumbers.count) (sample: \(samplePhones.joined(separator: ", ")))", category: .social)
-        AppLogger.debug("First 10 full normalized phones: \(Array(contactPhoneNumbers.prefix(10)))", category: .social)
+        // Audit PR-19 (2026-07-26): NEVER log full phone numbers — debug logs
+        // flow into session logs / crash context. Log redacted tails only.
+        let redactedSample = contactPhoneNumbers.prefix(5).map { "…\($0.suffix(4))" }
+        AppLogger.debug("Sample normalized phones (redacted): \(redactedSample)", category: .social)
         
         // Use direct database query method - more reliable than RPC
         AppLogger.debug("Using direct database query for maximum reliability...", category: .social)

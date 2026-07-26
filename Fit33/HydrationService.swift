@@ -664,6 +664,13 @@ class HydrationService: ObservableObject {
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        // Audit PR-33 (2026-07-26): pin calendar/locale/timezone explicitly.
+        // The default-locale formatter could produce non-Gregorian or
+        // ambiguous day keys near midnight/travel, desyncing the "today"
+        // row key from what the user sees.
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
         return formatter
     }()
 }

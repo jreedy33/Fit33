@@ -48,10 +48,21 @@ struct ContentView: View {
     // which tab the user lands on.
     @ObservedObject private var monetizationState = MonetizationState.shared
 
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Workout.date, ascending: false)],
-        predicate: NSPredicate(format: "isCompleted == true")
-    ) private var allCompletedWorkouts: FetchedResults<Workout>
+    // Audit PR-29 (2026-07-26): this fetch ONLY drives the paywall workout
+    // counter (`.count` is the sole consumer), so it must not materialize
+    // the user's entire workout history at cold start. `fetchLimit` caps it
+    // at the paywall threshold — the `>= threshold` comparison saturates
+    // correctly and `.onChange(of: count)` still fires on 1→2→3.
+    private static let paywallWorkoutFetchRequest: NSFetchRequest<Workout> = {
+        let request = NSFetchRequest<Workout>(entityName: "Workout")
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Workout.date, ascending: false)]
+        request.predicate = NSPredicate(format: "isCompleted == true")
+        request.fetchLimit = MonetizationState.firstScreenPaywallWorkoutThreshold
+        return request
+    }()
+
+    @FetchRequest(fetchRequest: ContentView.paywallWorkoutFetchRequest)
+    private var allCompletedWorkouts: FetchedResults<Workout>
 
     // 2026-04-29 — League Redesign Plan §B1 ship gate.
     // One-time "Your level is now your tier" framing card. Triggered for

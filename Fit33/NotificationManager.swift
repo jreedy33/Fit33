@@ -742,7 +742,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             ("Fit33 check-in", "Have you moved your body today? Let's go!")
         ]
         
-        let message = messages.randomElement()!
+        let message = messages.randomElement() ?? ("Time to crush it! 💪", "Your workout is waiting. Let's make today count!")
         content.title = message.0
         content.body = message.1
         
@@ -875,7 +875,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             ("Wake up and crush it!", "Every rep brings you closer to your goals.")
         ]
         
-        let message = messages.randomElement()!
+        let message = messages.randomElement() ?? ("Good morning champion! ☀️", "Today is another chance to be better than yesterday.")
         
         let content = UNMutableNotificationContent()
         content.title = message.0

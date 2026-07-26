@@ -20,6 +20,9 @@ struct HealthDataSyncDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var showPurgeConfirmation = false
     @State private var showRequestReceivedBanner = false
+    @State private var isPurging = false
+    @State private var showPurgeErrorAlert = false
+    @State private var purgeErrorMessage = ""
 
     /// Categories of HealthKit data Fit33 reads + writes to Supabase.
     /// MUST stay in sync with `HealthKitManager.requestAuthorization()` —
@@ -71,6 +74,11 @@ struct HealthDataSyncDetailView: View {
             }
         } message: {
             Text("This deletes your synced health data from Fit33's servers. Your Apple Health data remains untouched on your device.")
+        }
+        .alert("Couldn't delete health data", isPresented: $showPurgeErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(purgeErrorMessage)
         }
     }
 
@@ -226,10 +234,10 @@ struct HealthDataSyncDetailView: View {
                 .foregroundColor(.green)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Request received")
+                Text("Cloud copy deleted")
                     .font(.ds_labelLarge)
                     .foregroundColor(.primary)
-                Text("Purge will run within 24 hours.")
+                Text("Sync is off. Your synced health data was removed from Fit33's servers.")
                     .font(.ds_labelSmall)
                     .foregroundColor(.secondary)
             }
@@ -246,29 +254,46 @@ struct HealthDataSyncDetailView: View {
 
     // MARK: - Actions
 
-    /// Honest UX: we do NOT claim "deleted" because the backend RPC isn't
-    /// wired yet. We log the request and surface a transient "Request
-    /// received — purge will run within 24h" banner. Next sprint this gets
-    /// hooked up to the real `purge_user_health_data` RPC.
+    /// Wired to the real `purge_user_health_data` RPC (migration
+    /// `supabase/20260726_purge_user_health_data_rpc.sql`, audit PR-10).
+    /// On success we ALSO stop future syncing (`HealthKitService.disconnect()`)
+    /// so "Stop syncing & delete cloud copy" does exactly what it says.
+    /// On failure we surface an honest error alert — we never claim deletion
+    /// happened when it didn't (Infra invariant 33).
     private func handlePurgeRequest() {
-        // TODO(infra-security): implement actual purge — needs
-        // `purge_user_health_data` RPC in Supabase + an entry in the Edge
-        // Function Auth Registry if a wrapper edge function is added. For
-        // now this only logs the user's intent and surfaces an honest
-        // "request received" banner. DO NOT change the banner copy to claim
-        // deletion happened until the backend wiring lands.
-        AppLogger.warning(
-            "[HealthDataSyncDetailView] User requested health data purge — backend RPC not yet implemented",
-            category: .health
-        )
-
-        HapticManager.notification(.success)
-
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            showRequestReceivedBanner = true
-        }
+        guard !isPurging else { return }
+        isPurging = true
 
         Task { @MainActor in
+            defer { isPurging = false }
+            do {
+                _ = try await SupabaseManager.shared.supabaseClient
+                    .rpc("purge_user_health_data")
+                    .execute()
+
+                // Stop future syncing so deleted data doesn't re-appear on
+                // the next background sync tick.
+                HealthKitService.shared.disconnect()
+
+                AppLogger.info(
+                    "[HealthDataSyncDetailView] Health data purge completed + HK sync disconnected",
+                    category: .health
+                )
+                HapticManager.notification(.success)
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    showRequestReceivedBanner = true
+                }
+            } catch {
+                AppLogger.error(
+                    "[HealthDataSyncDetailView] Health data purge FAILED: \(error.localizedDescription)",
+                    category: .health
+                )
+                HapticManager.notification(.error)
+                purgeErrorMessage = "We couldn't reach the server, so nothing was deleted. Please check your connection and try again."
+                showPurgeErrorAlert = true
+                return
+            }
+
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: 0.3)) {

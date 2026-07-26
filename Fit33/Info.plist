@@ -60,6 +60,8 @@
 	<string>Fit33 uses your contacts to help you find friends who are already using the app.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Fit33 needs access to your photo library to set a profile picture.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Fit33 saves workout share cards and progress images to your photo library when you choose to export them.</string>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>Fit33 uses this to show you relevant ads and support free features. Your data is never sold.</string>
 	<key>NSHealthShareUsageDescription</key>
@@ -72,6 +74,8 @@
 	<string>Fit33 uses your location to track your outdoor runs, showing your route, distance, and pace.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

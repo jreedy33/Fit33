@@ -41,7 +41,7 @@
     <key>NSHealthShareUsageDescription</key>
     <string>Fit33 reads steps, active energy, and exercise minutes from your Apple Watch to keep your challenges in sync — even when your iPhone is locked.</string>
     <key>NSHealthUpdateUsageDescription</key>
-    <string>Fit33 does not write health data; this is required by Apple even when only reading.</string>
+    <string>Fit33 saves the workouts you record on your watch — workout type, heart rate, active energy, and distance — to Apple Health so your training history stays complete.</string>
     <!-- Background modes — watchOS uses UIBackgroundModes verbatim for the
          processing entitlement; "fetch" is what enables
          WKApplicationRefreshBackgroundTask delivery. -->

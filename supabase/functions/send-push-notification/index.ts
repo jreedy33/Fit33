@@ -324,7 +324,10 @@ serve(async (req) => {
       `)
 
     if (requestBody.queue_id) {
-      query = query.eq('id', requestBody.queue_id)
+      // Status filter is NOT optional here: without it any authenticated
+      // caller could replay an already-sent/failed queue row by id
+      // (duplicate pushes). Only pending rows are ever eligible.
+      query = query.eq('id', requestBody.queue_id).eq('status', 'pending')
     } else {
       query = query
         .eq('status', 'pending')

@@ -78,7 +78,12 @@ struct SettingsView: View {
                             )
                         }
 
-                        // Developer/Testing Section
+                        // Developer/Testing Section — DEBUG builds only.
+                        // Production-readiness audit 2026-07-26 (MASTER_TODO PR-4):
+                        // this section previously shipped in Release, letting real
+                        // users flip Test Ads / Free User Mode and mutate
+                        // entitlement state mid-session (App Review rejection risk).
+                        #if DEBUG
                         settingsSection(title: "Developer Testing") {
                             VStack(spacing: 0) {
                                 adsToggleRow()
@@ -88,6 +93,7 @@ struct SettingsView: View {
                                 freeUserToggleRow()
                             }
                         }
+                        #endif
                         
                         // Privacy & Security Section
                         settingsSection(title: "Privacy & Security") {

@@ -35,7 +35,11 @@ struct NotificationAllowlistTests {
             "challenge_accepted",
             "challenge_completed",
             "private_challenge_member_joined",
-            "private_challenge_progress"
+            "private_challenge_progress",
+            // Audit PR-23 (2026-07-26): routed to .olympianPath; previously
+            // missing from the allowlist (false "unknown type" warnings).
+            "olympian_goal_completed",
+            "olympian_path"
         ]
         for alias in aliases {
             #expect(

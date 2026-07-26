@@ -297,8 +297,18 @@ final class FitbitService: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            // Refresh failed - user needs to re-authenticate
-            disconnect()
+            // Audit PR-20 (2026-07-26): only disconnect on a HARD auth
+            // failure (400–403 → revoked/invalid grant), mirroring
+            // Strava/WHOOP/Oura. The old behavior disconnected on ANY
+            // non-200 — a Fitbit 5xx blip or 429 rate limit silently
+            // "lost" the user's connection.
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            if (400...403).contains(status) {
+                AppLogger.warning("🔄 [FITBIT] Token refresh rejected (HTTP \(status)) — disconnecting", category: .health)
+                disconnect()
+            } else {
+                AppLogger.warning("🔄 [FITBIT] Token refresh failed transiently (HTTP \(status)) — keeping connection for retry", category: .health)
+            }
             throw FitbitError.tokenRefreshFailed
         }
         

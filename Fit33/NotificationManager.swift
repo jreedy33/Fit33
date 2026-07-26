@@ -2105,7 +2105,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             }
             AppLogger.debug("Opening dashboard for private challenge invite", category: .general)
             
-        case "private_challenge_member_joined", "private_challenge_progress":
+        // Audit PR-23 (2026-07-26): `private_challenge_update` was in the
+        // enum/allowlist but had no tap-routing case — fell to default
+        // (dashboard) and lost the challenge deep-link.
+        case "private_challenge_member_joined", "private_challenge_progress", "private_challenge_update":
             await PrivateChallengeService.shared.refreshAll(force: true)
             if let challengeId = userInfo["challenge_id"] as? String {
                 DeepLinkManager.shared.pendingDestination = .privateChallengeDetail(challengeId: challengeId)
@@ -2220,6 +2223,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         case "water_reminder":
             DeepLinkManager.shared.pendingDestination = .hydration
             AppLogger.debug("Opening hydration widget", category: .general)
+
+        // Audit PR-23 (2026-07-26): `weight_reminder` was allowlisted but
+        // had no routing case — tap landed on the dashboard with no context.
+        // Route to the dashboard weight widget (same surface the reminder
+        // asks the user to update).
+        case "weight_reminder":
+            DeepLinkManager.shared.pendingDestination = .weightTracker
+            AppLogger.debug("Opening weight tracker for weight reminder", category: .general)
             
         case "steps_goal":
             DeepLinkManager.shared.pendingDestination = .stepTracker
@@ -2403,6 +2414,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // already-queued payloads from before the rename.
         "personal_record", "streak_milestone", "tier_promotion", "level_up", "goal_achieved",
         "weekly_progress", "morning_motivation",
+        // Audit PR-23 (2026-07-26): both types were routed in
+        // `handleNotificationType` (→ .olympianPath) but missing here,
+        // producing false "unknown notification type" warnings in telemetry.
+        "olympian_goal_completed", "olympian_path",
         // Health / nutrition
         "nutrition_reminder", "protein_goal", "water_reminder", "steps_goal",
         "weight_reminder",

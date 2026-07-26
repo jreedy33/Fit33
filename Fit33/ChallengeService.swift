@@ -2221,16 +2221,13 @@ class ChallengeService: ObservableObject {
             targetUnit: targetUnit
         )
         
-        // For steps and active minutes, take the max (they might overlap)
-        // For workouts/runs/walks, add them (different sources = different workouts)
-        if challengeType == "steps" || challengeType == "active_minutes" {
-            totalProgress = max(totalProgress, stravaProgress)
-        } else {
-            // For runs, walks, lifts - Strava activities are additional to HealthKit
-            // But HealthKit might already include Strava data synced to Apple Health
-            // So we still take max to avoid double counting
-            totalProgress = max(totalProgress, healthKitProgress + stravaProgress / 2) // Conservative estimate
-        }
+        // Audit PR-21 (2026-07-26): take max(HK, Strava) for EVERY challenge
+        // type. Strava activities almost always mirror into HealthKit (the
+        // Strava app writes workouts to Apple Health, and Fit33's own runs
+        // auto-push to Strava then come back via webhook), so the old
+        // `HK + strava/2` heuristic systematically inflated progress and
+        // league points whenever both were connected.
+        totalProgress = max(totalProgress, stravaProgress)
         AppLogger.verbose("Strava progress: \(stravaProgress)", category: .social)
         
         AppLogger.verbose("Total progress from all sources: \(totalProgress)", category: .social)

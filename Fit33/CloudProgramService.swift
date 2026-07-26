@@ -1113,7 +1113,7 @@ class CloudProgramService: ObservableObject {
         case .upperLower:
             // Classic Upper/Lower - train each area 2x per week
             return [
-                ("Upper Body Push", ["chest", "shoulders", "triceps"], "heavy"),
+                ("Upper Body Push", ["chest", "shoulders", "triceps", "rear delts"], "heavy"),
                 ("Lower Body Strength", ["legs", "glutes", "hamstrings"], "heavy"),
                 ("Upper Body Pull", ["back", "biceps", "rear delts"], "heavy"),
                 ("Lower Body Power", ["legs", "glutes", "calves"], "moderate"),
@@ -1124,10 +1124,10 @@ class CloudProgramService: ObservableObject {
         case .pushPullLegs:
             // PPL - each muscle group hit with optimal frequency
             return [
-                ("Push Day", ["chest", "shoulders", "triceps"], "heavy"),
+                ("Push Day", ["chest", "shoulders", "triceps", "rear delts"], "heavy"),
                 ("Pull Day", ["back", "biceps", "rear delts"], "heavy"),
                 ("Leg Day", ["legs", "glutes", "hamstrings", "calves"], "heavy"),
-                ("Push Volume", ["chest", "shoulders", "triceps"], "moderate"),
+                ("Push Volume", ["chest", "shoulders", "triceps", "rear delts"], "moderate"),
                 ("Pull Volume", ["back", "biceps"], "moderate"),
                 ("Legs & Core", ["legs", "glutes", "core"], "moderate")
             ]

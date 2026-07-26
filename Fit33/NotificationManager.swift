@@ -2203,8 +2203,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // "tier_promotion" and route to the same destination (the league
         // tab — a tier promotion is a league moment, not a stats moment).
         case "tier_promotion":
-            DeepLinkManager.shared.pendingDestination = .statsTab
-            AppLogger.debug("Opening stats tab for tier promotion", category: .general)
+            // Audit PR-24 (2026-07-26): a tier promotion is a league moment —
+            // route to the Friends-tab league widget (`.statsTab` now lands
+            // on the dashboard since the Stats tab no longer exists).
+            DeepLinkManager.shared.pendingDestination = .leagues
+            AppLogger.debug("Opening league widget for tier promotion", category: .general)
         case "level_up", "goal_achieved":
             DeepLinkManager.shared.pendingDestination = .statsTab
             AppLogger.debug("Opening stats tab for achievement", category: .general)

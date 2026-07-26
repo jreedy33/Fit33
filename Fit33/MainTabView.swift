@@ -548,10 +548,24 @@ struct MainTabView: View {
             deepLinkManager.pendingDestination = nil
             AppLogger.debug("[DEEPLINK] Switched to Meals tab → Add Food (\(mealType))", category: .ui)
             
-        case .statsTab, .personalRecord:
-            selectedTab = 4
+        // Audit PR-24 (2026-07-26): there is no Stats tab anymore (tabs are
+        // Home/Exercises/Workout/Nutrition/Friends) — these destinations
+        // were silently landing on Friends (tab 4) with no further push.
+        // Route to the surfaces that actually exist: dashboard workout
+        // history for PRs, dashboard home for generic stats intents.
+        case .personalRecord:
+            selectedTab = 0
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                NotificationCenter.default.post(name: .scrollToWidget, object: "workoutHistory")
+            }
             deepLinkManager.pendingDestination = nil
-            AppLogger.debug("[DEEPLINK] Switched to Friends tab", category: .ui)
+            AppLogger.debug("[DEEPLINK] Personal record → Home tab, workout-history widget", category: .ui)
+
+        case .statsTab:
+            selectedTab = 0
+            deepLinkManager.pendingDestination = nil
+            AppLogger.debug("[DEEPLINK] Stats intent → Home tab (dashboard)", category: .ui)
             
         // Dashboard Widget Navigation (Home tab + scroll to widget)
         case .hydration:
@@ -701,7 +715,8 @@ struct MainTabView: View {
 
         // ── Smart Notification Engine destinations (2026-08-01) ─────────
         case .leagues:
-            // League widget lives on Stats tab (tab 4 — same as personalRecord).
+            // League widget lives on the Friends tab (tab 4).
+            // (Comment corrected 2026-07-26 — there is no Stats tab.)
             selectedTab = 4
             deepLinkManager.pendingDestination = nil
             Task { @MainActor in

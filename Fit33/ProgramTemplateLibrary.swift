@@ -210,6 +210,12 @@ class ProgramTemplateLibrary {
                     .init(role: .accessory, targetBundles: ["tricep_extension_bundle"], targetMuscles: ["Triceps"], isAnchor: false, setsOverride: 3, repsMinOverride: 8, repsMaxOverride: 12, restOverride: 60, notes: "Dip or close-grip pattern"),
                     .init(role: .isolation, targetBundles: ["tricep_extension_bundle"], targetMuscles: ["Triceps"], isAnchor: false, setsOverride: 3, repsMinOverride: 12, repsMaxOverride: 15, restOverride: 60, notes: "Pushdown or overhead extension"),
                     .init(role: .isolation, targetBundles: ["lateral_raise_bundle"], targetMuscles: ["Shoulders"], isAnchor: false, setsOverride: 3, repsMinOverride: 12, repsMaxOverride: 15, restOverride: 60, notes: "Optional lateral raise"),
+                    // Audit PR-27 / FE-7 (2026-07-26): push days need a
+                    // rear-delt balance slot — pressing volume without
+                    // posterior-delt work drives the shoulder imbalance the
+                    // autogen path already guards against (WorkoutComboRules
+                    // .getBalanceSlot). Face pull or reverse fly.
+                    .init(role: .isolation, targetBundles: ["rear_delt_bundle"], targetMuscles: ["Rear Delts"], isAnchor: false, setsOverride: 3, repsMinOverride: 12, repsMaxOverride: 15, restOverride: 60, notes: "Rear-delt balance slot (FE-7)"),
                 ], hasFinisher: false, supersetPairs: nil),
             
             // Day 2: Lower (Squat emphasis)

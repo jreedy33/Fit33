@@ -246,7 +246,7 @@ class SmartProgramEngine: ObservableObject {
                 ProgramDayTemplate(dayNumber: 1, name: "Upper Body", focusMuscles: ["Chest", "Back", "Shoulders"], exerciseCount: 5, isRestDay: false, intensity: 0.7, notes: nil),
                 ProgramDayTemplate(dayNumber: 2, name: "Lower Body", focusMuscles: ["Legs", "Glutes", "Core"], exerciseCount: 5, isRestDay: false, intensity: 0.7, notes: nil),
                 ProgramDayTemplate(dayNumber: 3, name: "Active Recovery", focusMuscles: ["Stretch"], exerciseCount: 0, isRestDay: true, intensity: 0.3, notes: nil),
-                ProgramDayTemplate(dayNumber: 4, name: "Push Focus", focusMuscles: ["Chest", "Shoulders", "Triceps"], exerciseCount: 5, isRestDay: false, intensity: 0.75, notes: nil),
+                ProgramDayTemplate(dayNumber: 4, name: "Push Focus", focusMuscles: ["Chest", "Shoulders", "Triceps", "Rear Delts"], exerciseCount: 5, isRestDay: false, intensity: 0.75, notes: nil),
                 ProgramDayTemplate(dayNumber: 5, name: "Pull Focus", focusMuscles: ["Back", "Biceps", "Core"], exerciseCount: 5, isRestDay: false, intensity: 0.75, notes: nil),
                 ProgramDayTemplate(dayNumber: 6, name: "Legs & Core", focusMuscles: ["Legs", "Core"], exerciseCount: 5, isRestDay: false, intensity: 0.7, notes: nil),
                 ProgramDayTemplate(dayNumber: 7, name: "Rest", focusMuscles: [], exerciseCount: 0, isRestDay: true, intensity: 0, notes: nil)
@@ -302,10 +302,10 @@ class SmartProgramEngine: ObservableObject {
             estimatedMinutesPerDay: 50,
             restDayPattern: [7],
             dayTemplates: [
-                ProgramDayTemplate(dayNumber: 1, name: "Push A", focusMuscles: ["Chest", "Shoulders", "Triceps"], exerciseCount: 5, isRestDay: false, intensity: 0.8, notes: "Heavy compound focus"),
+                ProgramDayTemplate(dayNumber: 1, name: "Push A", focusMuscles: ["Chest", "Shoulders", "Triceps", "Rear Delts"], exerciseCount: 5, isRestDay: false, intensity: 0.8, notes: "Heavy compound focus"),
                 ProgramDayTemplate(dayNumber: 2, name: "Pull A", focusMuscles: ["Back", "Biceps", "Rear Delts"], exerciseCount: 5, isRestDay: false, intensity: 0.8, notes: nil),
                 ProgramDayTemplate(dayNumber: 3, name: "Legs A", focusMuscles: ["Quads", "Glutes", "Calves"], exerciseCount: 5, isRestDay: false, intensity: 0.8, notes: nil),
-                ProgramDayTemplate(dayNumber: 4, name: "Push B", focusMuscles: ["Chest", "Shoulders", "Triceps"], exerciseCount: 5, isRestDay: false, intensity: 0.75, notes: "Volume focus"),
+                ProgramDayTemplate(dayNumber: 4, name: "Push B", focusMuscles: ["Chest", "Shoulders", "Triceps", "Rear Delts"], exerciseCount: 5, isRestDay: false, intensity: 0.75, notes: "Volume focus"),
                 ProgramDayTemplate(dayNumber: 5, name: "Pull B", focusMuscles: ["Back", "Biceps"], exerciseCount: 5, isRestDay: false, intensity: 0.75, notes: nil),
                 ProgramDayTemplate(dayNumber: 6, name: "Legs B", focusMuscles: ["Hamstrings", "Glutes", "Calves"], exerciseCount: 5, isRestDay: false, intensity: 0.75, notes: nil),
                 ProgramDayTemplate(dayNumber: 7, name: "Rest", focusMuscles: [], exerciseCount: 0, isRestDay: true, intensity: 0, notes: nil)
@@ -1644,7 +1644,7 @@ class SmartProgramEngine: ObservableObject {
             // 3 days: Push/Pull/Legs or Full Body
             if goal.contains("muscle") || goal.contains("strong") {
                 dayTemplates = [
-                    ProgramDayTemplate(dayNumber: 1, name: "Push Day", focusMuscles: ["Chest", "Shoulders", "Triceps"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
+                    ProgramDayTemplate(dayNumber: 1, name: "Push Day", focusMuscles: ["Chest", "Shoulders", "Triceps", "Rear Delts"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                     ProgramDayTemplate(dayNumber: 2, name: "Pull Day", focusMuscles: ["Back", "Biceps", "Rear Delts"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                     ProgramDayTemplate(dayNumber: 3, name: "Legs Day", focusMuscles: ["Legs", "Glutes", "Core"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil)
                 ]
@@ -1666,7 +1666,7 @@ class SmartProgramEngine: ObservableObject {
         case 5:
             // 5 days: Push/Pull/Legs/Upper/Lower hybrid
             dayTemplates = [
-                ProgramDayTemplate(dayNumber: 1, name: "Push Day", focusMuscles: ["Chest", "Shoulders", "Triceps"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
+                ProgramDayTemplate(dayNumber: 1, name: "Push Day", focusMuscles: ["Chest", "Shoulders", "Triceps", "Rear Delts"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                 ProgramDayTemplate(dayNumber: 2, name: "Pull Day", focusMuscles: ["Back", "Biceps", "Rear Delts"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                 ProgramDayTemplate(dayNumber: 3, name: "Legs Day", focusMuscles: ["Legs", "Glutes", "Core"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                 ProgramDayTemplate(dayNumber: 4, name: "Upper Body", focusMuscles: ["Chest", "Back", "Arms"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity + 0.05, notes: nil),
@@ -1675,17 +1675,17 @@ class SmartProgramEngine: ObservableObject {
         case 6:
             // 6 days: PPL x 2
             dayTemplates = [
-                ProgramDayTemplate(dayNumber: 1, name: "Push A", focusMuscles: ["Chest", "Shoulders", "Triceps"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
+                ProgramDayTemplate(dayNumber: 1, name: "Push A", focusMuscles: ["Chest", "Shoulders", "Triceps", "Rear Delts"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                 ProgramDayTemplate(dayNumber: 2, name: "Pull A", focusMuscles: ["Back", "Biceps"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                 ProgramDayTemplate(dayNumber: 3, name: "Legs A", focusMuscles: ["Legs", "Glutes"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
-                ProgramDayTemplate(dayNumber: 4, name: "Push B", focusMuscles: ["Chest", "Shoulders", "Triceps"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity + 0.05, notes: nil),
+                ProgramDayTemplate(dayNumber: 4, name: "Push B", focusMuscles: ["Chest", "Shoulders", "Triceps", "Rear Delts"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity + 0.05, notes: nil),
                 ProgramDayTemplate(dayNumber: 5, name: "Pull B", focusMuscles: ["Back", "Biceps", "Core"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity + 0.05, notes: nil),
                 ProgramDayTemplate(dayNumber: 6, name: "Legs B", focusMuscles: ["Legs", "Glutes", "Core"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity + 0.05, notes: nil)
             ]
         default: // 7 days
             // 7 days: PPL + Upper/Lower + Arms + Active Recovery
             dayTemplates = [
-                ProgramDayTemplate(dayNumber: 1, name: "Push Day", focusMuscles: ["Chest", "Shoulders", "Triceps"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
+                ProgramDayTemplate(dayNumber: 1, name: "Push Day", focusMuscles: ["Chest", "Shoulders", "Triceps", "Rear Delts"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                 ProgramDayTemplate(dayNumber: 2, name: "Pull Day", focusMuscles: ["Back", "Biceps"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                 ProgramDayTemplate(dayNumber: 3, name: "Legs Day", focusMuscles: ["Legs", "Glutes"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity, notes: nil),
                 ProgramDayTemplate(dayNumber: 4, name: "Upper Body", focusMuscles: ["Chest", "Back", "Shoulders"], exerciseCount: baseExerciseCount, isRestDay: false, intensity: baseIntensity + 0.05, notes: nil),

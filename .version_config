@@ -1,4 +1,7 @@
 # Version Configuration for Fit33 (TestFlight / App Store alignment)
+# Audit PR-39 (2026-07-26): resynced with project.pbxproj (was 1.37/41 —
+# drifted three releases behind). Keep in lockstep with MARKETING_VERSION /
+# CURRENT_PROJECT_VERSION in Fit33.xcodeproj when cutting a build.
 
-MARKETING_VERSION=1.37
-CURRENT_PROJECT_VERSION=41
+MARKETING_VERSION=1.39
+CURRENT_PROJECT_VERSION=70

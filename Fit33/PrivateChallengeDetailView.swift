@@ -28,10 +28,16 @@ struct PrivateChallengeDetailView: View {
     @State private var showFullChat = false
     @State private var showLeaveConfirmation = false
     @State private var showEndConfirmation = false
+    // Audit PR-7c (2026-07-26): challenge title/description are creator-
+    // authored UGC — Guideline 1.2 requires a report affordance.
+    @State private var showReportChallengeConfirmation = false
     @State private var chatMessages: [PrivateChallengeMessage] = []
     @State private var chatText = ""
     @State private var isSendingMessage = false
     @State private var showModerationWarning = false
+    // Audit PR-8 (2026-07-26): distinct alert for "we couldn't screen your
+    // message" (fail closed) vs "your message was flagged".
+    @State private var showModerationUnavailableWarning = false
     // Sprint 2 Q2-7: Report-and-Block sheet (long-press a non-self message)
     @State private var reportTarget: PrivateChallengeMessage?
     // Chat keyboard focus — drives: (a) auto-scrolling the chat widget above
@@ -121,6 +127,14 @@ struct PrivateChallengeDetailView: View {
                     
                     Divider()
                     
+                    if !challenge.isAdmin && challenge.createdBy != nil {
+                        // Audit PR-7c: report the challenge's title /
+                        // description / icon (creator-authored UGC).
+                        Button(role: .destructive, action: { showReportChallengeConfirmation = true }) {
+                            Label("Report Challenge", systemImage: "flag.fill")
+                        }
+                    }
+                    
                     if challenge.isAdmin {
                         Button(role: .destructive, action: { showEndConfirmation = true }) {
                             Label("End Challenge", systemImage: "xmark.octagon.fill")
@@ -159,6 +173,46 @@ struct PrivateChallengeDetailView: View {
         .fullScreenCover(isPresented: $showFullChat) {
             fullChatSheet
         }
+        .confirmationDialog(
+            "Report this challenge?",
+            isPresented: $showReportChallengeConfirmation,
+            titleVisibility: .visible
+        ) {
+            if let creatorId = challenge.createdBy {
+                Button("Report", role: .destructive) {
+                    Task {
+                        let snippet = "title=\(challenge.title) | desc=\(challenge.description ?? "-")"
+                        _ = await FriendService.shared.reportContent(
+                            tableName: "private_challenges",
+                            recordId: challenge.challengeId.uuidString,
+                            reportedUserId: creatorId,
+                            contentSnippet: String(snippet.prefix(200)),
+                            reason: "Reported challenge title/description"
+                        )
+                        HapticManager.notification(.success)
+                    }
+                }
+                Button("Report & Block Creator", role: .destructive) {
+                    Task {
+                        let snippet = "title=\(challenge.title) | desc=\(challenge.description ?? "-")"
+                        _ = await FriendService.shared.reportContent(
+                            tableName: "private_challenges",
+                            recordId: challenge.challengeId.uuidString,
+                            reportedUserId: creatorId,
+                            contentSnippet: String(snippet.prefix(200)),
+                            reason: "Reported challenge title/description + blocked creator"
+                        )
+                        _ = await FriendService.shared.blockUser(userId: creatorId)
+                        _ = await privateChallengeService.leaveChallenge(challengeId: challenge.challengeId)
+                        HapticManager.notification(.success)
+                        await MainActor.run { dismiss() }
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("We'll flag this challenge's name and description for review. \"Report & Block Creator\" also blocks \(challenge.creatorName ?? "the creator") and leaves the challenge.")
+        }
         .confirmationDialog("Leave Challenge?", isPresented: $showLeaveConfirmation) {
             Button("Leave", role: .destructive) {
                 Task {
@@ -183,6 +237,11 @@ struct PrivateChallengeDetailView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("Your message was not sent because it may violate our community guidelines. Please keep conversations respectful.")
+        }
+        .alert("Couldn't Send Right Now", isPresented: $showModerationUnavailableWarning) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("We couldn't reach the server to check your message. Please check your connection and try again — your draft has been kept.")
         }
         // Sprint 2 Q2-7 — Report & Block confirmation
         .confirmationDialog(
@@ -733,6 +792,12 @@ struct PrivateChallengeDetailView: View {
             
             if result.isBlocked {
                 showModerationWarning = true
+                HapticManager.notification(.error)
+            } else if result.isModerationUnavailable {
+                // Audit PR-8: precheck couldn't run — message NOT sent.
+                // Restore the draft so the user can retry without retyping.
+                chatText = text
+                showModerationUnavailableWarning = true
                 HapticManager.notification(.error)
             } else {
                 chatMessages = await privateChallengeService.fetchMessages(

@@ -764,6 +764,20 @@ class PrivateChallengeService: ObservableObject {
         allowMemberInvites: Bool = false,
         showLeaderboard: Bool = true
     ) async -> UUID? {
+        // Audit PR-8 (2026-07-26): challenge titles/descriptions are freeform
+        // UGC shown to every member — run the same Layer-1 moderation
+        // precheck as chat messages before the row is created.
+        let textToCheck = description.map { "\(title)\n\($0)" } ?? title
+        let moderationResult = await ContentModerationService.shared.checkContent(
+            content: textToCheck,
+            source: "private_challenge_metadata"
+        )
+        if moderationResult.flagged || moderationResult.unavailable {
+            AppLogger.info("Private challenge creation blocked by moderation (flagged=\(moderationResult.flagged), unavailable=\(moderationResult.unavailable))", category: .social)
+            HapticManager.notification(.error)
+            return nil
+        }
+
         do {
             struct CreateParams: Encodable {
                 let p_challenge_type: String
@@ -1366,6 +1380,12 @@ class PrivateChallengeService: ObservableObject {
             AppLogger.info("Message blocked by content moderation: \(moderationResult.categories.joined(separator: ", "))", category: .social)
             return .blocked(categories: moderationResult.categories)
         }
+
+        // Audit PR-8: fail closed when the precheck couldn't run at all.
+        if moderationResult.unavailable {
+            AppLogger.info("Message send deferred — moderation precheck unavailable (fail closed)", category: .social)
+            return .moderationUnavailable
+        }
         
         do {
             struct MessageParams: Encodable {
@@ -1397,6 +1417,9 @@ class PrivateChallengeService: ObservableObject {
     enum SendMessageResult {
         case sent(messageId: UUID)
         case blocked(categories: [String])
+        /// Audit PR-8 (2026-07-26): the moderation precheck could not run
+        /// (offline / service down). The message was NOT sent — fail closed.
+        case moderationUnavailable
         case error(String)
         
         var messageId: UUID? {
@@ -1406,6 +1429,11 @@ class PrivateChallengeService: ObservableObject {
         
         var isBlocked: Bool {
             if case .blocked = self { return true }
+            return false
+        }
+
+        var isModerationUnavailable: Bool {
+            if case .moderationUnavailable = self { return true }
             return false
         }
     }

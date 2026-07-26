@@ -377,8 +377,14 @@ struct FriendProfileView: View {
                 Button("Block", role: .destructive) {
                     blockUser()
                 }
+                // Audit PR-7b (2026-07-26): profiles are UGC (display name /
+                // username / photo) — Guideline 1.2 requires Report alongside
+                // Block. Reports the user_profiles row, then blocks.
+                Button("Report & Block", role: .destructive) {
+                    reportAndBlockUser()
+                }
             } message: {
-                Text("They won't be able to find you, send you requests, or see your activity. You will also be unfriended.")
+                Text("They won't be able to find you, send you requests, or see your activity. You will also be unfriended. Choose \"Report & Block\" to also flag this profile for review.")
             }
             .onAppear {
                 AppLogger.debug("📱 [PROFILE] View appeared for \(user.name ?? user.username ?? "user")", category: .social)
@@ -1378,6 +1384,28 @@ struct FriendProfileView: View {
         Task {
             let success = await FriendService.shared.blockUser(userId: user.userId)
             if success {
+                dismiss()
+            }
+            isBlocking = false
+        }
+    }
+
+    /// Audit PR-7b (2026-07-26): report the profile (name/username/photo are
+    /// user-authored) for admin review, then block. Guideline 1.2.
+    private func reportAndBlockUser() {
+        isBlocking = true
+        Task {
+            let snippet = "name=\(user.name ?? "-") | username=\(user.username ?? "-")"
+            _ = await FriendService.shared.reportContent(
+                tableName: "user_profiles",
+                recordId: user.userId.uuidString,
+                reportedUserId: user.userId,
+                contentSnippet: String(snippet.prefix(200)),
+                reason: "Reported from profile view"
+            )
+            let success = await FriendService.shared.blockUser(userId: user.userId)
+            if success {
+                HapticManager.notification(.success)
                 dismiss()
             }
             isBlocking = false

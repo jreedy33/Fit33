@@ -45,6 +45,8 @@ struct ReceivedWorkoutsView: View {
     @State private var selectedWorkout: ReceivedWorkoutDTO?
     @State private var navigateToDetail = false
     @State private var hasLoadedInitialData = false // Prevent navigation reset from data reloading
+    // Audit PR-7a (2026-07-26): Report & Block from the list (Guideline 1.2).
+    @State private var workoutToReport: ReceivedWorkoutDTO?
     
     
     var body: some View {
@@ -81,6 +83,13 @@ struct ReceivedWorkoutsView: View {
                                     } label: {
                                         Label("Delete", systemImage: "trash.fill")
                                     }
+                                    // Audit PR-7a: report + block the sender.
+                                    Button {
+                                        workoutToReport = workout
+                                    } label: {
+                                        Label("Report", systemImage: "flag.fill")
+                                    }
+                                    .tint(.orange)
                                 }
                             }
                         }
@@ -88,6 +97,34 @@ struct ReceivedWorkoutsView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                .confirmationDialog(
+                    "Report this shared workout?",
+                    isPresented: Binding(
+                        get: { workoutToReport != nil },
+                        set: { if !$0 { workoutToReport = nil } }
+                    ),
+                    titleVisibility: .visible,
+                    presenting: workoutToReport
+                ) { reported in
+                    Button("Report & Block", role: .destructive) {
+                        Task {
+                            let snippet = String((reported.message ?? "").prefix(200)) +
+                                " | workout=\(reported.workoutName)"
+                            _ = await FriendService.shared.reportContent(
+                                tableName: "shared_workouts",
+                                recordId: reported.workoutId.uuidString,
+                                reportedUserId: reported.senderId,
+                                contentSnippet: snippet,
+                                reason: "Reported from received workouts list"
+                            )
+                            _ = await FriendService.shared.blockUser(userId: reported.senderId)
+                            HapticManager.notification(.success)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: { reported in
+                    Text("We'll flag this for review and block \(reported.senderName). You can manage blocks in Settings → Privacy & Security → Blocked Users.")
+                }
             }
             
             // Navigation link for full-page detail view
@@ -477,6 +514,9 @@ struct ReceivedWorkoutDetailView: View {
     @State private var selectedCoreDataExercise: Exercise? = nil
     @State private var showingSavedConfirmation = false
     @State private var showingPremiumUpgrade = false
+    // Audit PR-7a (2026-07-26): shared-workout messages are sender-authored
+    // UGC — App Store Guideline 1.2 requires a Report + Block affordance.
+    @State private var showReportConfirmation = false
     
     // Theme colors (blue/purple gradient for received workouts)
     private let themeColor: Color = .blue
@@ -752,6 +792,44 @@ struct ReceivedWorkoutDetailView: View {
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 8, x: 0, y: 3)
+        // Audit PR-7a (2026-07-26): Report & Block on sender-authored message
+        // text (Guideline 1.2 — every UGC surface needs report + block).
+        // Mirrors the canonical Q2-7 pattern from FriendActivityFeedView.
+        .contextMenu {
+            Button(role: .destructive) {
+                showReportConfirmation = true
+            } label: {
+                Label("Report & Block", systemImage: "flag.fill")
+            }
+        }
+        .confirmationDialog(
+            "Report this message?",
+            isPresented: $showReportConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Report & Block", role: .destructive) {
+                Task {
+                    let snippet = String((workout.message ?? "").prefix(200)) +
+                        " | workout=\(workout.workoutName)"
+                    _ = await FriendService.shared.reportContent(
+                        tableName: "shared_workouts",
+                        recordId: workout.workoutId.uuidString,
+                        reportedUserId: workout.senderId,
+                        contentSnippet: snippet,
+                        reason: "Reported from received workout message"
+                    )
+                    _ = await FriendService.shared.blockUser(userId: workout.senderId)
+                    HapticManager.notification(.success)
+                    await MainActor.run {
+                        workoutManager.shouldPopToRootHome = true
+                        workoutManager.shouldNavigateToHomeTab = true
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("We'll flag this message for review and block \(workout.senderName). You can manage blocks in Settings → Privacy & Security → Blocked Users.")
+        }
     }
     
     // MARK: - Exercise List Section (Matches AutoWorkoutPreviewView style)

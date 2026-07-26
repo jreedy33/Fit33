@@ -17,6 +17,11 @@ class ContentModerationService {
     struct ModerationResult {
         let flagged: Bool
         let categories: [String]
+        /// Audit PR-8 (2026-07-26): true when the content was NOT screened
+        /// (no session / non-200 / network failure). UGC write paths must
+        /// treat this as fail-CLOSED — the old behavior silently allowed
+        /// everything through whenever the edge function was unreachable.
+        var unavailable: Bool = false
     }
     
     private struct PrecheckRequest: Encodable {
@@ -50,8 +55,8 @@ class ContentModerationService {
         do {
             session = try await SupabaseManager.shared.client.auth.session
         } catch {
-            AppLogger.warning("Moderation pre-check skipped — no user session: \(error.localizedDescription)", category: .network)
-            return ModerationResult(flagged: false, categories: [])
+            AppLogger.warning("Moderation pre-check unavailable — no user session: \(error.localizedDescription)", category: .network)
+            return ModerationResult(flagged: false, categories: [], unavailable: true)
         }
         let accessToken = session.accessToken
 
@@ -77,8 +82,8 @@ class ContentModerationService {
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 let bodyPreview = String(data: data.prefix(200), encoding: .utf8) ?? "<non-utf8>"
-                AppLogger.warning("Moderation API returned HTTP \(code), allowing content through. Body: \(bodyPreview)", category: .network)
-                return ModerationResult(flagged: false, categories: [])
+                AppLogger.warning("Moderation API returned HTTP \(code) — reporting unavailable (fail closed). Body: \(bodyPreview)", category: .network)
+                return ModerationResult(flagged: false, categories: [], unavailable: true)
             }
             
             let result = try JSONDecoder().decode(PrecheckResponse.self, from: data)
@@ -87,9 +92,11 @@ class ContentModerationService {
                 categories: result.categories ?? []
             )
         } catch {
-            // Fail-open: if moderation service is down, allow content through
-            AppLogger.warning("Moderation pre-check failed, allowing content: \(error.localizedDescription)", category: .network)
-            return ModerationResult(flagged: false, categories: [])
+            // Audit PR-8: fail CLOSED — callers on UGC write paths block the
+            // write and ask the user to retry (server-side Layer-2 webhook
+            // moderation still backstops anything that slips through).
+            AppLogger.warning("Moderation pre-check failed — reporting unavailable (fail closed): \(error.localizedDescription)", category: .network)
+            return ModerationResult(flagged: false, categories: [], unavailable: true)
         }
     }
 }

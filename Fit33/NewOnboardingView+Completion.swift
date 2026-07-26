@@ -6,11 +6,16 @@ import SwiftUI
 enum OnboardingError: LocalizedError, Identifiable {
     case invalidWeight
     case invalidHeight
+    /// Audit PR-17c (2026-07-26): the cloud profile create failed after
+    /// retries. Previously the flow "continued with local setup", leaving an
+    /// authenticated user with no cloud profile (broken social/sync/orphan).
+    case cloudProfileCreateFailed(details: String)
 
     var id: String {
         switch self {
         case .invalidWeight: return "invalid_weight"
         case .invalidHeight: return "invalid_height"
+        case .cloudProfileCreateFailed: return "cloud_profile_create_failed"
         }
     }
 
@@ -20,6 +25,8 @@ enum OnboardingError: LocalizedError, Identifiable {
             return "We couldn't read your weight. Please edit it and try again."
         case .invalidHeight:
             return "We couldn't read your height. Please edit it and try again."
+        case .cloudProfileCreateFailed:
+            return "We couldn't create your profile — please check your connection and try again."
         }
     }
 }
@@ -568,6 +575,12 @@ extension NewOnboardingView {
                         AppLogger.warning("Skipping contact notifications (phone verified: \(isPhoneVerified), contacts synced: \(ContactsService.shared.hasCheckedContacts))", category: .social)
                     }
                     
+                    // Cloud profile confirmed — NOW finish locally. Audit
+                    // PR-17c: local completion must never outrun the cloud
+                    // profile for authenticated users.
+                    await MainActor.run {
+                        finalizeLocalOnboarding(parsedWeight: parsedWeight)
+                    }
                 } catch {
                     AppLogger.error("Failed to create OAuth profile: \(error.localizedDescription)", category: .auth)
                     
@@ -579,11 +592,32 @@ extension NewOnboardingView {
                         errorMessage: error.localizedDescription
                     )
                     
-                    // Continue with local setup even if cloud fails
+                    // Audit PR-17c (2026-07-26): do NOT "continue with local
+                    // setup" — that stranded authenticated users with no
+                    // cloud profile (no social, no sync, orphan account on
+                    // retry). Surface the recovery dialog instead; the user
+                    // is still on the confirmation step and can Try Again /
+                    // Start Over.
+                    await MainActor.run {
+                        presentOnboardingCompletionError(
+                            .cloudProfileCreateFailed(details: error.localizedDescription)
+                        )
+                    }
                 }
             }
+            // Authenticated path finishes (or errors) inside the Task above.
+            return
         }
-        
+
+        // Unauthenticated path (shouldn't normally happen — auth precedes
+        // completion) finishes locally right away.
+        finalizeLocalOnboarding(parsedWeight: parsedWeight)
+    }
+
+    /// Tail of `completeOnboarding()` — creates the local Core Data user and
+    /// runs the post-completion fanout. For authenticated users this is
+    /// called ONLY after `createProfileForOAuthUser` succeeded (audit PR-17c).
+    func finalizeLocalOnboarding(parsedWeight: Double) {
         // Calculate age from birthday
         let ageInt = Int16(calculatedAge)
         

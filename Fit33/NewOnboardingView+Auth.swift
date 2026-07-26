@@ -1129,15 +1129,16 @@ extension NewOnboardingView {
                 // Normal email/password login
                 do {
                     try await supabaseManager.signIn(email: email, password: password)
-                    
-                    // After sign-in, syncAllDataFromCloud() runs which updates hasCompletedOnboarding
-                    // Give it a moment to complete, then check if user already completed onboarding
-                    try? await Task.sleep(nanoseconds: 300_000_000) // 300ms for sync to complete
-                    
+
+                    // Audit PR-16 (2026-07-26): signIn awaits
+                    // syncAllDataFromCloud, so Core Data already holds the
+                    // cloud profile — but the published flag is only updated
+                    // by the reload. AWAIT it (the old fire-and-forget reload
+                    // + 300ms guess let returning users read a stale `false`
+                    // and get stranded in onboarding).
+                    await userManager.reloadCurrentUserAndWait()
+
                     await MainActor.run {
-                        // Reload to get latest onboarding status from cloud sync
-                        userManager.reloadCurrentUser()
-                        
                         if userManager.hasCompletedOnboarding {
                             // Returning user - ContentView will show main app automatically
                             // because it observes userManager.hasCompletedOnboarding
@@ -1239,9 +1240,10 @@ extension NewOnboardingView {
                 // Re-run sign-in to trigger syncAllDataFromCloud + routing.
                 do {
                     try await supabaseManager.signIn(email: signInUnverifiedEmail, password: password)
-                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    // Audit PR-16: await the reload before routing (see main
+                    // sign-in path).
+                    await userManager.reloadCurrentUserAndWait()
                     await MainActor.run {
-                        userManager.reloadCurrentUser()
                         if userManager.hasCompletedOnboarding {
                             AppLogger.info("Email verified + signed in - routing to main app", category: .auth)
                         } else {
@@ -1462,6 +1464,14 @@ extension NewOnboardingView {
                             }
                         }
                         
+                        // Audit PR-16 (2026-07-26): await the Core Data →
+                        // published-flag reload BEFORE routing so returning
+                        // Apple users never read a stale
+                        // `hasCompletedOnboarding == false`.
+                        if !isNewUser {
+                            await userManager.reloadCurrentUserAndWait()
+                        }
+
                         await MainActor.run {
                             AppLogger.info("Apple sign-in complete. isNewUser: \(isNewUser), name: \(name), hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)", category: .auth)
                             
@@ -1484,9 +1494,9 @@ extension NewOnboardingView {
                                     focusedField = .username
                                 }
                             } else {
-                                // Returning user - force reload from Core Data to get latest onboarding status
-                                userManager.reloadCurrentUser()
-                                AppLogger.debug("Apple auth after reload - hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)", category: .auth)
+                                // Returning user — reload was awaited above
+                                // (PR-16), so this read is authoritative.
+                                AppLogger.debug("Apple auth after awaited reload - hasCompletedOnboarding: \(userManager.hasCompletedOnboarding)", category: .auth)
                                 
                                 if userManager.hasCompletedOnboarding {
                                     // They completed onboarding - ContentView will show main app automatically

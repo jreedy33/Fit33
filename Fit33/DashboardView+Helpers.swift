@@ -594,22 +594,17 @@ extension DashboardView {
     }
     
     func handlePhoneVerificationComplete(_ phoneNumber: String) {
-        Task {
-            do {
-                try await SupabaseManager.shared.updatePhoneNumber(phoneNumber)
-                await MainActor.run {
-                    userHasVerifiedPhone = true
-                    hasSeenPhonePrompt = true
-                }
-                if let user = userManager.currentUser {
-                    user.phoneNumber = phoneNumber
-                    try? viewContext.save()
-                }
-                AppLogger.info("[PHONE PROMPT] Phone saved successfully: \(phoneNumber)", category: .ui)
-            } catch {
-                AppLogger.error("[PHONE PROMPT] Failed to save phone: \(error.localizedDescription)", category: .ui)
-            }
+        // Audit PR-17b (2026-07-26): the cloud save now happens INSIDE
+        // `ExistingUserPhonePrompt` (awaited before dismiss, with a visible
+        // retry on failure). By the time onComplete fires the number is
+        // durably saved — this handler only updates local state.
+        userHasVerifiedPhone = true
+        hasSeenPhonePrompt = true
+        if let user = userManager.currentUser {
+            user.phoneNumber = phoneNumber
+            try? viewContext.save()
         }
+        AppLogger.info("[PHONE PROMPT] Phone saved successfully: \(phoneNumber)", category: .ui)
     }
     
     func handlePhoneVerificationSkip() {

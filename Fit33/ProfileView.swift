@@ -60,6 +60,10 @@ struct ProfileView: View {
     @State private var showingSignOutConfirmation = false
     @State private var showingDeleteAccountConfirmation = false
     @State private var isDeleting = false
+    // Audit PR-17a (2026-07-26): deletion failures must be surfaced, not
+    // just logged — the user would otherwise assume the account is gone.
+    @State private var showDeleteAccountError = false
+    @State private var deleteAccountErrorMessage = ""
     
     // 2FA / Phone Verification
     @State private var showPhoneVerificationSheet = false
@@ -928,6 +932,11 @@ struct ProfileView: View {
             }
         } message: {
             Text("This will permanently delete your account and ALL your data from our servers. This action cannot be undone.")
+        }
+        .alert("Couldn't delete account", isPresented: $showDeleteAccountError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteAccountErrorMessage)
         }
     }
     
@@ -1870,8 +1879,13 @@ struct ProfileView: View {
                 
                 AppLogger.debug("🗑️ Account deleted successfully - returning to login", category: .ui)
             } catch {
+                // Audit PR-17a: surface the failure — the account still
+                // exists and the user stays signed in. Silently stopping the
+                // spinner made users believe deletion succeeded.
                 await MainActor.run {
                     isDeleting = false
+                    deleteAccountErrorMessage = "Your account was NOT deleted — we couldn't reach the server. Please check your connection and try again."
+                    showDeleteAccountError = true
                 }
                 AppLogger.error("Error deleting account: \(error)", category: .ui)
             }

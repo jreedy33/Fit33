@@ -518,25 +518,45 @@ struct NewOnboardingView: View {
     // isn't inline. Keeps the button wiring + rollback semantics identical.
     @ViewBuilder
     private var completionErrorDialogButtons: some View {
-        Button("Edit Details") {
-            // Sprint 3 (Q2-37) recovery path: weight/height parse failures are
-            // surfaced here, so send the user back to the `.body` step (height
-            // + weight) where they can fix the bad input. The prior string
-            // was `.profile` which isn't an OnboardingStep case — the error
-            // was masked while this closure was inline because the enclosing
-            // body expression was busting the type-checker budget.
-            navigateTo(.body)
-            completionError = nil
-        }
-        Button("Start Over", role: .destructive) {
-            Task {
-                await rollbackCloudProfileIfNeeded()
+        if case .cloudProfileCreateFailed = completionError {
+            // Audit PR-17c (2026-07-26): cloud profile create failed after
+            // sign-in. Try Again re-runs the whole completion (validation is
+            // idempotent); Start Over rolls back any partial cloud row.
+            Button("Try Again") {
                 completionError = nil
-                navigateTo(.auth)
+                completeOnboarding()
             }
-        }
-        Button("Cancel", role: .cancel) {
-            completionError = nil
+            Button("Start Over", role: .destructive) {
+                Task {
+                    await rollbackCloudProfileIfNeeded()
+                    completionError = nil
+                    navigateTo(.auth)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                completionError = nil
+            }
+        } else {
+            Button("Edit Details") {
+                // Sprint 3 (Q2-37) recovery path: weight/height parse failures are
+                // surfaced here, so send the user back to the `.body` step (height
+                // + weight) where they can fix the bad input. The prior string
+                // was `.profile` which isn't an OnboardingStep case — the error
+                // was masked while this closure was inline because the enclosing
+                // body expression was busting the type-checker budget.
+                navigateTo(.body)
+                completionError = nil
+            }
+            Button("Start Over", role: .destructive) {
+                Task {
+                    await rollbackCloudProfileIfNeeded()
+                    completionError = nil
+                    navigateTo(.auth)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                completionError = nil
+            }
         }
     }
 

@@ -17,6 +17,10 @@ struct ExistingUserPhonePrompt: View {
     @State private var isVerifyingCode = false
     @State private var isPhoneVerified = false
     @State private var verificationError = ""
+    // Audit PR-17b (2026-07-26): the cloud save is awaited BEFORE dismiss so
+    // "Phone Verified!" can never be followed by a silently-lost number.
+    @State private var isSavingPhone = false
+    @State private var phoneSaveError = ""
 
     // Sprint 4 (Q2-38): countdowns are owned by `PhoneOTPCountdown` which
     // stores + invalidates its `Timer`. The previous implementation fired
@@ -325,20 +329,55 @@ struct ExistingUserPhonePrompt: View {
                     .foregroundColor(.secondary)
             }
             
-            Button(action: {
-                onComplete(fullPhoneNumber)
-                dismiss()
-            }) {
-                Text("Continue")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Spacing.md)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
-                    )
+            if !phoneSaveError.isEmpty {
+                Text(phoneSaveError)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
             }
+
+            Button(action: {
+                // Audit PR-17b: persist to the cloud BEFORE dismissing. The
+                // old flow dismissed immediately and the parent's save
+                // failure was only logged — the user left believing the
+                // phone was saved when it wasn't.
+                guard !isSavingPhone else { return }
+                isSavingPhone = true
+                phoneSaveError = ""
+                Task { @MainActor in
+                    defer { isSavingPhone = false }
+                    do {
+                        try await SupabaseManager.shared.updatePhoneNumber(fullPhoneNumber)
+                        onComplete(fullPhoneNumber)
+                        dismiss()
+                    } catch {
+                        AppLogger.error("[PHONE PROMPT] Cloud phone save failed: \(error.localizedDescription)", category: .ui)
+                        phoneSaveError = "Couldn't save your number — check your connection and tap Continue again."
+                    }
+                }
+            }) {
+                if isSavingPhone {
+                    ProgressView()
+                        .tint(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.md)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+                        )
+                } else {
+                    Text("Continue")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.md)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+                        )
+                }
+            }
+            .disabled(isSavingPhone)
         }
     }
     

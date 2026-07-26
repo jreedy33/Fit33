@@ -79,6 +79,17 @@ class UserManager: ObservableObject {
             AppLogger.debug("UserManager reloaded - hasCompletedOnboarding: \(self?.hasCompletedOnboarding ?? false)", category: .auth)
         }
     }
+
+    /// Awaitable variant of `reloadCurrentUser()` (audit PR-16, 2026-07-26).
+    /// Post-sign-in routing MUST await this before reading
+    /// `hasCompletedOnboarding` — the fire-and-forget `reloadCurrentUser()`
+    /// plus a guessed 300ms sleep let returning users read the stale cached
+    /// `false` and get stranded in onboarding.
+    @MainActor
+    func reloadCurrentUserAndWait() async {
+        await loadCurrentUserAsync()
+        AppLogger.debug("UserManager reloaded (awaited) - hasCompletedOnboarding: \(hasCompletedOnboarding)", category: .auth)
+    }
     
     /// Async variant used by `init()` so cold start never blocks the main
     /// thread on a Core Data fetch. Heavy fetch runs on a background context;

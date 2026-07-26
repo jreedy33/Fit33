@@ -1,6 +1,6 @@
 # Fit33 Master TODO
 
-> **Last updated:** April 29, 2026 (post Sprint 11 — "Monetization Phase 2 — CMS Sub-Tabs + Cert Chain")
+> **Last updated:** July 26, 2026 (Production-Readiness Master Audit — see §PR below; supersedes prioritization of everything under it)
 > **Source:** Consolidated from (1) April 17 full-app audit, (2) still-open items from previous MASTER_TODO, (3) April 22 cross-agent rules-compliance audit, (4) April 26 Sprint 7 execution pass (security hygiene + Swift perf sweeps + agent-doc refresh), (5) April 27 Sprint 8 execution pass (concurrency & cleanup), and (6) April 28 Sprint 9 execution pass that shipped AVFoundation asset/player construction off main thread (`ExerciseDetailView.VideoPlayerManager` + `StretchModeView` + `VideoPreloadManager` + `VideoPlaybackEngine.InstantVideoPlayerState`), `RunningManager` `deinit` cleanup, Exercise name-lookups routed through `ExerciseLibraryService`, `ExerciseLibraryService` sync race locked via `syncLock` + `fetchAndPerformSyncLocked()`, aggregation-DTO null-safety via custom `init(from:)` decoders, `Color.cardGradientStops(for:)` token replacing ~~23 hard-coded `[Color(white: 0.15), Color(white: 0.10)]` sites, 5 highest-traffic empty states migrated to `EmptyStateView`, Zod validation helpers + schemas for Admin CMS API routes, and admin MFA enrollment enforcement.
 > **Rule:** Only items that are **not yet addressed**. Items marked `[~~]`are partially done with a specific remaining gap called out. Items marked`[x]` were closed by a prior sprint — kept inline so reviewers can trace the shipping delta.
 
@@ -15,6 +15,115 @@
 - **P4** — Nice to have
 
 IDs with a letter prefix (`C-`, `H-`, `M-`, `F-`, `FE-`, `DB-`, `L-`) were inherited from the previous MASTER_TODO so existing cross-references still resolve. New items use a `Q2-` prefix (April-2026 audit).
+
+---
+
+## PR. Production-Readiness Master Audit (2026-07-26) — THE list to App Store
+
+> Full-repo review (iOS core, workout engine, social/nutrition/health, Supabase
+> backend + 24 edge functions, monetization, admin CMS, Website, watch, widget,
+> project config, and the agent-doc system). Every finding below was verified in
+> code, not speculated. **This section is the canonical work queue** — the sprint
+> sections and numbered sections below it remain for traceability, and open items
+> from them that still matter are cross-referenced here rather than duplicated.
+>
+> **Verdict:** the app is feature-complete and architecturally coherent, but NOT
+> yet submittable. Two categories dominate: (1) hard App Review blockers
+> (dead legal URLs, release-visible dev tooling, missing UGC report/block
+> surfaces, missing plist strings), and (2) a monetization layer that exists but
+> isn't turned on (everyone is premium, so ads and paywalls never bite).
+> Clearing Gate A + Gate B below gets to 99% submit-confidence; Gate C is
+> quality-of-launch.
+
+### Gate A — P0 ship blockers (submission fails or users are harmed)
+
+#### A1. Security (fix first — live-data exposure)
+
+| ID | Task | Files | Owner |
+|---|---|---|---|
+| PR-1 | [x] **`delete_user_account` IDOR regression** — the 20260425 guard (`auth.uid()` callers may only delete themselves) was silently dropped by three later `CREATE OR REPLACE` bodies; latest (20260715) also dropped the `user_deletion_events` realtime broadcast. Function is SECURITY DEFINER + granted to `authenticated` → any logged-in user could delete ANY account. **Fixed 2026-07-26:** `supabase/20260726_delete_user_account_guard_hotfix.sql` (MIGRATION_INDEX #203) restores guard + broadcast + keeps monetization deletes, with a fail-loud trailing audit. **DEPLOY THIS MIGRATION TO PROD IMMEDIATELY.** | `supabase/20260726_delete_user_account_guard_hotfix.sql` | Supabase + Infra |
+| PR-2 | [x] **`send-push-notification` queue replay** — `queue_id` request path skipped the `status='pending'` filter, letting any authenticated caller re-send an already-sent queue row (duplicate pushes). Fixed 2026-07-26 (status filter added). NOTE: general user-JWT access to this function is **by design** (client queue flush, Q2-35) — the Edge Function Auth Registry has been corrected to say so. Residual: add per-user rate limit on flush invocations (tracked PR-31). | `supabase/functions/send-push-notification/index.ts` | Infra |
+| PR-3 | [ ] **`get_league_history(p_user_id)` IDOR** — SECURITY DEFINER, granted to authenticated, returns any user's league history with a forged `p_user_id`. Sibling league RPCs were hardened in Sprint 7; this one was missed. Add the standard `IF auth.uid() IS NOT NULL AND p_user_id <> auth.uid() THEN RAISE` guard in a new migration. Same pass: `test_account_deletion` (in `complete_account_deletion.sql`) is DEFINER + granted to authenticated and leaks friendship/workout counts for any user — revoke from authenticated. | `supabase/weekly_leagues_migration.sql`, `supabase/complete_account_deletion.sql` | Supabase + Infra |
+| PR-4 | [x] **"Developer Testing" section shipped in Release** — Settings exposed Test Ads + Free User Mode toggles to real users (entitlement mutation mid-session; App Review "incomplete app" rejection risk). Fixed 2026-07-26: section wrapped in `#if DEBUG`. | `Fit33/SettingsView.swift` | Monetization + PE |
+| PR-5 | [ ] **Rotate the APNs key `7QB2KJ3HU5`** — the `.p8` was removed from HEAD (commit `1c60aff`) but the blob is still recoverable from git history. Revoke in Apple Developer portal, mint a new key, update `APNS_*` Supabase secrets. Pairs with C-1 (service-role key supply chain). | Apple Developer portal + Supabase secrets | Infra |
+
+#### A2. App Review policy (Guidelines 1.2, 3.1.x, 5.1.1)
+
+| ID | Task | Files | Owner |
+|---|---|---|---|
+| PR-6 | [ ] **Privacy Policy / Terms / Help Center URLs are parking pages.** `https://fit33.app/privacy`, `/terms`, `/help-center.html` return Squarespace "Coming Soon". Paywalls (`PremiumUpgradeView`, `PaywallFirstScreenView`) link them → automatic 3.1.2 rejection; Settings → Help & FAQ opens a dead page. Publish real pages at those URLs (in-app `PrivacyPolicyView`/`TermsConditionsView` copy already exists to adapt) and verify HTTP 200 from a device. `Website/` also lacks `privacy.html`/`terms.html` that its own footers link. | `Fit33/LegalURLs.swift`, `Fit33/AppConfig.swift`, `Website/` | Infra + Support |
+| PR-7 | [ ] **Report + Block missing on three UGC surfaces (Guideline 1.2).** Feed + private chat have it; these don't: (a) shared-workout messages (`ReceivedWorkoutsView` renders sender-authored `message` with no report/block), (b) friend profiles (Block exists, Report doesn't), (c) private-challenge titles/descriptions (freeform text, no moderation precheck on create, no report affordance on detail). Reuse `FriendService.reportContent` + `blockUser` with a context menu / confirmationDialog on each. | `Fit33/ReceivedWorkoutsView.swift`, `Fit33/FriendProfileView.swift`, `Fit33/PrivateChallengeCreationFlow.swift`, `Fit33/PrivateChallengeService.swift` | PE + Data |
+| PR-8 | [ ] **Moderation precheck fails open and is barely wired.** `ContentModerationService.checkContent` returns `flagged:false` on missing session / non-200 / network error, and only private chat calls it. Fail closed for chat sends (or queue for server-side scan) and extend precheck to challenge titles/descriptions + shared-workout messages (pairs with PR-7). | `Fit33/ContentModerationService.swift` | PE + Infra |
+| PR-9 | [x] **`NSPhotoLibraryAddUsageDescription` missing** — `CardioShareCardSheet` calls `UIImageWriteToSavedPhotosAlbum`; without the Add-usage string the app crashes on save (instant rejection). Fixed 2026-07-26. Same pass: `ITSAppUsesNonExemptEncryption=false` added (export compliance) and the watch `NSHealthUpdateUsageDescription` corrected (it claimed "does not write health data" while `WatchWorkoutSessionManager` writes workouts/HR/energy/distance — a false declaration). | `Fit33/Info.plist`, `Fit33Watch/Info.plist` | Infra |
+| PR-10 | [ ] **Health-data purge UI lies.** "Stop syncing & delete cloud copy" shows "Purge will run within 24 hours" but the implementation only logs a TODO — no purge runs. Either wire a real `purge_user_health_data` RPC or change the copy; never claim a timed purge that doesn't happen (5.1.1 trust risk). | `Fit33/HealthDataSyncDetailView.swift` (~L222–263) + new migration | PE + Supabase |
+
+#### A3. Monetization cutover (decide: launch free-only OR finish IAP — don't ship the half-state)
+
+| ID | Task | Files | Owner |
+|---|---|---|---|
+| PR-11 | [ ] **Everyone is premium.** `PremiumManager.isPremiumUser` forces `true` every launch; StoreKit purchases/restores don't flip anything; ads + paywalls + feature gates never bite. If IAP ships: derive entitlement from `serverEntitlement` (+ StoreKit warm cache), backfill existing users from `Transaction.currentEntitlements` (MON-15 precondition), then remove the always-true init. If IAP does NOT ship this release: remove Subscription section + paywall presentation from the build so reviewers don't see purchasable products that do nothing. | `Fit33/UserManager.swift` (~L1175–1231), `Fit33/StoreKitManager.swift`, `Fit33/ContentView.swift` | Monetization |
+| PR-12 | [ ] **ASSN not live end-to-end.** `assn-webhook` + `20260715_monetization_phase_1a.sql` are "Ready" but need deploy + App Store Server Notification URLs registered (sandbox + prod) + a sandbox purchase soak (`subscriptions` row → `get_my_subscription_state`). Also: `record_iap_event` never persists `ownership_type`/`original_purchaser_user_id` (Family Sharing rows recorded as `purchased`), and the documented `ASSN_VERIFY_SIGNATURE` env flag is never read by the function (docs corrected 2026-07-26; either implement audit-mode or keep fail-closed). | `supabase/functions/assn-webhook/`, `supabase/20260715_monetization_phase_1a.sql` | Monetization + Infra |
+| PR-13 | [ ] **App Store Connect parity checklist:** create `com.gofit.app.pro.monthly|yearly|lifetime` products (+ intro offer matching paywall CTA copy), verify against `StoreKitManager` IDs, add a local `.storekit` config for QA, add `SKAdNetworkItems` (Google's list) to Info.plist for AdMob attribution, and verify Release archive rewrites `aps-environment` → `production`. | ASC + `Fit33/Info.plist`, `Fit33/GoFit.entitlements` | Monetization + Infra |
+
+#### A4. Feature-correctness P0s
+
+| ID | Task | Files | Owner |
+|---|---|---|---|
+| PR-14 | [ ] **Cardio double-awards +50 league points.** Native cardio saves call `record_cardio_workout` (RPC awards `add_league_points(...,50,'workout')` + graduated `cardio_bonus`) AND then `completeCardioWorkout` → client `addPoints(.workout)` (+50 again); the `workout` source has no daily cap → +100/cardio vs strength's +50. Pick ONE owner (recommended: RPC) — client must skip `addPoints(.workout)` when the save went through the RPC. Same pass: RPC posts to the friend feed on goal-achieved while the client always posts too (duplicate feed rows) — same single-owner rule. Agent docs were corrected 2026-07-26 to describe the actual (buggy) state + this decision. | `Fit33/UserManager.swift` (~L976–993, 1056–1070), `supabase/20260815_record_cardio_workout_rpc.sql` | PE + Fitness + Supabase |
+| PR-15 | [ ] **`not_placed` users earn 0 strength LP mid-week.** `WeeklyLeagueService.addPoints` returns before the RPC when `not_placed` (`hasJoined=false`), but the server would bucket the points into `pending_league_points`. Cardio (RPC path) still awards server-side → parity break. Call `add_league_points` even when `notPlaced`. | `Fit33/WeeklyLeagueService.swift` (~L629–638, 915–917) | PE + Supabase |
+| PR-16 | [ ] **Post-sign-in routing race strands returning users in onboarding.** After sign-in, code sleeps 300ms, fires a non-awaited `reloadCurrentUser()`, then reads `hasCompletedOnboarding` — a returning user can read stale `false` and get pushed into `.basics`. Await a single reload (or set the flag from the fetched profile DTO) before routing. | `Fit33/NewOnboardingView+Auth.swift` (~L1131–1150, 1241–1250, 1487–1498) | PE |
+| PR-17 | [ ] **Silent failures on destructive/identity flows:** (a) account deletion error only logs — user thinks it succeeded (present alert, stay signed in); (b) phone-number cloud save failure after "Phone Verified!" only logs — sheet already dismissed (await save before dismiss); (c) OAuth cloud-profile create failure still completes onboarding locally → orphaned local account (surface `completionError` with Retry / Start Over). | `Fit33/ProfileView.swift` (~L1849–1877), `Fit33/ExistingUserPhonePrompt.swift`, `Fit33/DashboardView+Helpers.swift`, `Fit33/NewOnboardingView+Completion.swift` (~L571–686) | PE |
+
+### Gate B — P1 (fix before launch; won't necessarily fail review but will hurt users/trust)
+
+| ID | Task | Files | Owner |
+|---|---|---|---|
+| PR-18 | [ ] **Sign-out doesn't clear social/nutrition caches.** `signOut` clears ChallengeService/realtime/photos but NOT `FriendService`, `ActivityFeedService`, `PrivateChallengeService`, `CommunityChallengeService`, `WeeklyLeagueService`, `ContactsService` UserDefaults caches, `MealService.todaysMeals` → next account on the same device briefly sees the previous user's data. Add one `SessionCleanup` fan-out called from `signOut` + `deleteAccount`. | `Fit33/SupabaseManager.swift` (~L1071–1134) + services | PE + Data |
+| PR-19 | [ ] **Contacts privacy:** phone numbers are MD5-hashed before match (good) but contact EMAILS are uploaded/queried in plaintext (`sync_user_contacts` + `user_profiles.email` query), and a debug log prints full E.164 phone numbers. Hash emails like phones; never log full numbers. Update the App Privacy questionnaire accordingly. | `Fit33/ContactsService.swift` (~L315, 351–357, 645–654) | Data + Infra |
+| PR-20 | [ ] **Fitbit disconnects on any refresh failure** (5xx/429/network blip) — Strava/WHOOP/Oura only disconnect on hard revoke (400–403). Mirror that policy. | `Fit33/FitbitService.swift` (~L299–303) | Data |
+| PR-21 | [ ] **Challenge progress can double-count HK + Strava** — `calculateTotalProgressFromAllSources` uses `HK + strava/2` heuristic while Strava usually mirrors into HK already. Use `max(HK, Strava)` or exclude Strava-origin HK samples when Strava OAuth is connected (same pattern as `HealthDataService`). | `Fit33/ChallengeService.swift` (~L2206–2233) | PE + Fitness |
+| PR-22 | [ ] **Cardio XP awarded even when cloud save fails** on Recap/Run-completion paths (`savedWorkoutId ?? UUID()`), while the indoor path correctly gates on save success. Gate all cardio fan-out on a durable save + reuse `CloudSyncRetryQueue` for offline. | `Fit33/CardioRecapView.swift` (~L362–387), `Fit33/RunningWorkoutView.swift` (~L1558–1582) | PE |
+| PR-23 | [ ] **Notification routing holes:** `weight_reminder` allowlisted but no route (falls to dashboard); `private_challenge_update` enum'd but not routed; `olympian_goal_completed`/`olympian_path` routed but missing from allowlist (false "unknown type" warnings); legacy `smart_nudge_*` server types have no client route (decide: schedule + route, or drop the RPC + category rows). Keep `NotificationAllowlistTests` in sync. | `Fit33/NotificationManager.swift` | QP + PE |
+| PR-24 | [ ] **Universal-link domain mismatch:** entitlements declare only `applinks:fit33.app` + `www`; `DeepLinkManager` allowlists `doublethr33s.com`/`www`/`admin` too — those links won't open the app. Add applinks entries + host AASA files (none exist in repo), or drop the extra hosts from the allowlist. Also: deep-link `stats`/`personalRecord` land on the Friends tab with no push (comments still say "Stats tab") — route to the real surface. | `Fit33/GoFit.entitlements`, `Fit33/DeepLinkManager.swift`, `Fit33/MainTabView.swift` | Infra + PE |
+| PR-25 | [ ] **Privacy manifests:** widget + watch extensions use App-Group UserDefaults but ship NO `PrivacyInfo.xcprivacy` (Required Reason API CA92.1); main manifest lacks a location collected-data type despite GPS runs, and `DeviceID`'s tracking flag is inconsistent with `NSPrivacyTracking=true`. Also verify every SPM dependency ships its own manifest via Xcode Privacy Report export. | `RunningActivityWidget/`, `Fit33Watch*/`, `Fit33/PrivacyInfo.xcprivacy` | Infra + Monetization |
+| PR-26 | [ ] **CI is red:** `ios-*.yml` workflows pin Xcode 15.4 which can't read the project's object format (70); `Fit33Tests` deployment target is `26.2` vs app `17.0`. Bump runner Xcode, align targets — a green build+test gate is a submission precondition. | `.github/workflows/ios-*.yml`, `Fit33.xcodeproj/project.pbxproj` | Infra + QP |
+| PR-27 | [ ] **Program push days skip rear-delt balance (FE-7).** Autogen enforces the balance slot; `SmartProgramEngine`/`CloudProgramService` push focus = chest/shoulders/triceps only and the selection engine has no balance pass; templates put rear delts on pull. Add `getBalanceSlot` (or a rear-delt requirement) to the program path. Related still-open engine debt: FE-3 (three drifting exercise-count formulas + Python audit mirror missing the Advanced bump → false audit confidence) and FE-4 (upright row classified shoulders in catalog, traps+side-delts in filter aliases). | `Fit33/SmartProgramEngine.swift`, `Fit33/CloudProgramService.swift`, `Fit33/ProgramTemplateLibrary.swift`, `Fit33/WorkoutComboRules.swift`, `scripts/*.py` | Fitness + PE |
+| PR-28 | [ ] **Blank-push guards + navigation debt:** `smartWorkoutPreview` can push an empty destination when `activeProgram`/`currentDay` is nil; Settings still has 13 `NavigationLink(destination:)` (+1 `isActive`) and Profile 2 — the "Phase 3 complete" rule-file claim was false (rule file corrected 2026-07-26). Finish the migration with a `SettingsRoute` enum. | `Fit33/DashboardNavigationDestinations.swift` (~L71–76), `Fit33/SettingsView.swift`, `Fit33/ProfileView.swift` | PE |
+| PR-29 | [ ] **`ContentView` unbounded `@FetchRequest`** fetches ALL completed workouts at cold start just to drive the paywall counter — violates the fetchLimit invariant and scales with history. Replace with a count fetch or cached counter. | `Fit33/ContentView.swift` (~L51–54) | QP |
+| PR-30 | [ ] **Backend reproducibility:** ~32 Swift-called RPCs have no `CREATE FUNCTION` in the repo (`create_user_profile`, `sync_user_contacts`, `is_username_available`, `send_workout_to_friend`, notification read/unread RPCs, friend-ranking RPCs, …) — prod is the only copy. Export live `pg_proc` definitions into a versioned `supabase/baseline/` dump. `DEPLOYMENT_ORDER.md` retired 2026-07-26 (now points at `MIGRATION_INDEX.md`). | `supabase/` | Supabase + Data |
+| PR-31 | [ ] **Backend hygiene batch:** per-user rate limit on client-triggered push-queue flush (PR-2 residual); `group_challenge_members` RLS-disabled + grants not revoked (Q2-15 revoked writes — verify SELECT too); `challenge_award_tiers` no-RLS + SELECT granted (scoring config gameable); revoke unused `authenticated` EXECUTE grants (`get_quest_history`, `calc_league_zone_count`, `interpolate_template`, …); add numbered MIGRATION_INDEX rows for schema-touching unindexed files (e.g. `20260619_lock_daily_quests_to_3_slots.sql`). | `supabase/` | Supabase + Infra |
+
+### Gate C — P2 (quality of launch)
+
+| ID | Task | Files | Owner |
+|---|---|---|---|
+| PR-32 | [ ] Strength workout has no pause (wall-clock only — long breaks inflate duration/XP); indoor cardio has no kill/restore (outdoor does); set-persistence throttle can drop the last ≤5s of sets on hard kill. | `Fit33/ActiveWorkoutView+Init.swift`, `Fit33/CardioActiveWorkoutView.swift`, `Fit33/WorkoutManager.swift` | PE |
+| PR-33 | [ ] Nutrition edge cases: scanner OCR failure dead-ends with no alert (and opens the editor even on empty parse); macro math can produce negative carb goals for heavy users (clamp ≥0 + rebalance); hydration `yyyy-MM-dd` formatter has no explicit timezone (midnight/travel drift). | `Fit33/NutritionScannerView.swift`, `Fit33/MealPlanView.swift` (~L476–485), `Fit33/HydrationService.swift` | PE |
+| PR-34 | [ ] Program-day quest double-report: `onProgramDayCompleted` also reports `completeWorkout` on top of `onWorkoutCompleted` — restrict to `complete_program_day`. | `Fit33/CloudProgramService.swift` (~L653), `Fit33/DailyQuestService.swift` (~L1936) | PE |
+| PR-35 | [ ] Foreground entitlement refresh: on scenePhase `.active` call `StoreKitManager.updatePurchasedProducts()` + `refreshFromServer()` (MONETIZATION invariant 2). | `Fit33/Fit33App.swift` | Monetization |
+| PR-36 | [ ] Small crash/style debt: `messages.randomElement()!` in NotificationManager; `day1!` in DynamicProgramGenerator; `first!`/`last!` in RunningManager polyline; `UIImage(systemName:)!` tab icon; `LegalURLs` force-unwrapped URL literals; GenderFilter cache read/write race + fuzzy match on main in video hot path; HK background observers never torn down after sign-out; InBody placeholder OAuth creds surface a dead settings row; delete the dead `programDetailsPlaceholder` route case; stale "auto-presentation NOT yet wired" comment on `PaywallFirstScreenView`. | various (see 2026-07-26 audit) | QP |
+| PR-37 | [ ] Report & Block on preset-string surfaces (challenge reactions / battle cries) — lower risk than PR-7 but same 1.2 spirit. | `Fit33/ChallengeReactionsView.swift`, `Fit33/BattleCryComposer.swift` | PE |
+| PR-38 | [ ] Website help-center: pages linked but missing (`workouts/programs/tracking/account/troubleshooting.html`); remove "AI-powered" wording (product bans it). CMS: move login/admin rate limits from in-memory Maps to a shared store (Vercel multi-instance). | `Website/`, `admin-cms/` | Support + Infra |
+| PR-39 | [ ] Orphan watch files (`Fit33Watch Watch App/Info.plist` + entitlements with empty `healthkit.access` — provisioning landmine if ever switched); `.version_config` (1.37/41) drifted from pbxproj (1.39/70); dead `INFOPLIST_KEY_*` in pbxproj (GENERATE_INFOPLIST_FILE=NO); hardcoded anon JWT in watch/widget clients (prefer shared Secrets). | project config | Infra + Device |
+
+### Meta — agent-doc integrity (shipped 2026-07-26 in this audit pass)
+
+| ID | Task | Status |
+|---|---|---|
+| PR-40 | `codingrules.mdc` CSP contradiction fixed (middleware-only is the truth); SECURITY DEFINER wording aligned with `supabase-rules.mdc`; length target aligned. | [x] |
+| PR-41 | `navigation-migration-phase3.mdc` false "COMPLETED" claim corrected (15 legacy links remain — see PR-28). | [x] |
+| PR-42 | Cardio LP ownership misdocumentation corrected in FITNESS_EXPERT / SUPABASE / DATA_BACKEND / PRODUCT_ENGINEER / SUPPORT agent files (docs now describe the real double-award bug + the PR-14 decision; `record_cardio_workout` RETURNS UUID not JSONB). | [x] |
+| PR-43 | Edge Function Auth Registry: added `analyze-quality-workout`, `audit-autogen-workout`, `sunday-pro-recap`; corrected `send-push-notification` (user JWT by design) + `wake-challenge-opponents` throttle (20s) + `ASSN_VERIFY_SIGNATURE` (env never read). | [x] |
+| PR-44 | Dead cross-references pruned: MASTER_TODO Cross-Reference table, ENGINEERING_TEAM Shared File Ownership (`SECURITY_CHECKLIST.md`, `FAQ_PLAN.md`), DEVICE_COMPATIBILITY (`Fit33WatchComplications`, `DEVICE_COMPATIBILITY_TASKS.md`); SUPPORT PP-009 closed (progress photos shipped); MONETIZATION CMS tab statuses corrected; DESIGN_AGENT See Also added; `DEPLOYMENT_ORDER.md` retired → `MIGRATION_INDEX.md`. | [x] |
+| PR-45 | [ ] **Remaining doc debt:** `.cursor/agents/*.md` short-form mirrors (mandated by the MIRROR RULE) do not exist in this checkout — regenerate locally from the root long-forms after merging, or decide to commit them (un-ignore `.cursor/agents/`); AGD-3 shrink pass (PE ~134KB / DB ~87KB / QP ~77KB + FITNESS/MONETIZATION/SUPPORT/BUG_INTEL/SUPABASE over line budget); add `docs/history/` archives for BUG_INTELLIGENCE + MONETIZATION. | [ ] |
+
+### Suggested execution order
+
+1. **Deploy PR-1 migration + PR-5 key rotation today** (live-prod exposure, independent of any app release).
+2. **Sprint α (submission blockers):** PR-3, PR-6, PR-7, PR-8, PR-10, PR-14→PR-17 — everything a reviewer or first-week user hits.
+3. **Sprint β (monetization decision):** PR-11→PR-13 as one unit — either full IAP cutover or strip the half-state; don't submit in between.
+4. **Sprint γ (launch quality):** Gate B items PR-18→PR-31, prioritizing sign-out cache hygiene (PR-18), contacts privacy (PR-19), and CI green (PR-26).
+5. **Post-launch:** Gate C + PR-45.
 
 ---
 
@@ -428,7 +537,7 @@ These keep the agent docs consistent and prevent the "MASTER_TODO says not done 
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | AGD-1 | [ ] **Extract the duplicated "Mandatory Standards" block** (logging / force unwraps / design tokens / structured concurrency / accessibility / RLS / SECURITY DEFINER views) that appears at the top of every agent doc into a single `AGENT_STANDARDS.md`. Each agent doc then opens with `See AGENT_STANDARDS.md`. Reduces drift when a rule changes.                                                                                                                                                                             | All `*_AGENT.md`                                                                                                                                                                                                                               | Infra         |
 | AGD-2 | [x] Misleading "All Fixed" banner removed from `INFRA_SECURITY_AGENT.md`; new Edge Function Auth Registry + "Lessons Learned (April 2026)" section are now the authoritative source for per-function auth state. (Sprint 1, 2026-04-17)                                                                                                                                                                                                                                                                                             | `INFRA_SECURITY_AGENT.md`                                                                                                                                                                                                                      | Infra         |
-| AGD-3 | [ ] **Shrink the huge agent docs.** `QUALITY_PERFORMANCE_AGENT.md` (~~93K), `PRODUCT_ENGINEER_AGENT.md` (~~88K), `DATA_BACKEND_AGENT.md` (~48K) now contain months of dated change logs. Move month-by-month history into `docs/agent-archives/<AGENT>/<YYYY-MM>.md`; keep only active rules + last 30 days in the main file.                                                                                                                                                                                                       | The three files above                                                                                                                                                                                                                          | All agents    |
+| AGD-3 | [ ] **Shrink the huge agent docs.** (Sizes re-audited 2026-07-26 — a Sprint 8 row elsewhere claimed this was done; it is not.) `PRODUCT_ENGINEER_AGENT.md` ~134KB, `DATA_BACKEND_AGENT.md` ~87KB, `QUALITY_PERFORMANCE_AGENT.md` ~77KB; also over the line budget: FITNESS_EXPERT (324), MONETIZATION (333), SUPPORT (284), BUG_INTELLIGENCE (292), SUPABASE (235). Move dated changelog paragraphs into `docs/history/*_AGENT.md`; keep only active invariants + map in the root files. Tracked as part of PR-45.                                                                                                                                                                                                       | The three files above                                                                                                                                                                                                                          | All agents    |
 | AGD-4 | [x] **Update `ENGINEERING_TEAM.md` ownership matrix** — Shipped Sprint 7 (2026-04-26): doc-architecture section rewritten around the three-layer model + scoped rules. See §0-prev-2.1. for features added since the last refresh: moderation pipeline (Q2-8), WHOOP, BLE auto-connect, AdMob + ATT, barcode scanner (once real), user blocking UI, push campaigns.                                                                                                                                                                 | `ENGINEERING_TEAM.md`                                                                                                                                                                                                                          | All agents    |
 | AGD-5 | [x] Canonical Edge Function Auth Registry added to `INFRA_SECURITY_AGENT.md` (function → auth method → rate limit → secrets → notes). Referenced from `DATA_BACKEND_AGENT.md` "Edge Function Standards" so ownership is clear on every new function. (Sprint 1, 2026-04-17)                                                                                                                                                                                                                                                         | `INFRA_SECURITY_AGENT.md`, `DATA_BACKEND_AGENT.md`                                                                                                                                                                                             | Infra + Data  |
 | AGD-6 | [x] **Refresh `DESIGN_SYSTEM_AGENT.md` token-adoption metrics.** — Shipped Sprint 7 (2026-04-26): Adoption Snapshot + priorities rewritten against current audit numbers. See §0-prev-2.1. The "March 7, 2026" table is likely stale — rerun the audit script and replace. Fold decision rows (20pt → xl vs lg) that were marked "decision needed" now that they've been picked.                                                                                                                                                    | `DESIGN_SYSTEM_AGENT.md` §"Current State"                                                                                                                                                                                                      | Design System |
@@ -539,21 +648,20 @@ These keep the agent docs consistent and prevent the "MASTER_TODO says not done 
 
 ## Cross-Reference
 
-Detailed specs for items above live in these reference docs:
+> 2026-07-26 audit: the 13 planning docs previously listed here
+> (`FEATURE_GAME_PLAN.md`, `FAQ_PLAN.md`, `SECURITY_CHECKLIST.md`,
+> `DEVICE_COMPATIBILITY_TASKS.md`, `ONBOARDING_AUDIT.md`,
+> `FRIEND_SYSTEM_AUDIT.md`, `FRIEND_SYSTEM_BUGS.md`,
+> `NOTIFICATION_SYSTEM_AUDIT.md`, `FITNESS_EXPERT_AUDIT_FINDINGS.md`,
+> `TUTORIAL_REDESIGN_ACTION_PLAN.md`, `WORKOUT_FLOW_FIXES_PLAN.md`,
+> `DATABASE_AUDIT_REPORT.md`, `SUPABASE_HEALTH_CHECKLIST.md`) **no longer
+> exist in the repo** — their surviving content lives in the agent files and
+> `docs/history/`. Only live references are kept below.
 
-
-| Doc                                                | Covers                                        |
-| -------------------------------------------------- | --------------------------------------------- |
-| `FEATURE_GAME_PLAN.md`                             | Feature backlog details + competitor analysis |
-| `FAQ_PLAN.md`                                      | 87 FAQ entries, website/in-app/tooltip plans  |
-| `SECURITY_CHECKLIST.md`                            | RLS verification matrix                       |
-| `DEVICE_COMPATIBILITY_TASKS.md`                    | iPad/Watch/responsive layout phases           |
-| `ONBOARDING_AUDIT.md`                              | Deep onboarding spec + QA checklist           |
-| `FRIEND_SYSTEM_AUDIT.md` + `FRIEND_SYSTEM_BUGS.md` | Social feature gaps + 15 bugs                 |
-| `NOTIFICATION_SYSTEM_AUDIT.md`                     | Notification phases 1–4                       |
-| `FITNESS_EXPERT_AUDIT_FINDINGS.md`                 | Workout engine backlog (13+ items)            |
-| `TUTORIAL_REDESIGN_ACTION_PLAN.md`                 | 10-screen tutorial redesign                   |
-| `WORKOUT_FLOW_FIXES_PLAN.md`                       | Workout flow unification                      |
-| `DATABASE_AUDIT_REPORT.md`                         | Schema health + Phase 3 roadmap               |
-| `SUPABASE_HEALTH_CHECKLIST.md`                     | Ops checklist (RLS, perf, monitoring)         |
-| `INFRA_SECURITY_AGENT.md`                          | Edge function inventory (once AGD-5 lands)    |
+| Doc | Covers |
+| --- | --- |
+| `supabase/MIGRATION_INDEX.md` | Canonical migration release train (deploy order + status) |
+| `INFRA_SECURITY_AGENT.md` | Edge Function Auth Registry (canonical per-function auth state) |
+| `ENGINEERING_TEAM.md` | Agent ownership matrix + doc architecture |
+| `WORKOUT_QUALITY_RUBRIC.md` | Auto-gen workout quality scoring |
+| `docs/history/*_AGENT.md` | Dated sprint changelogs + long-form decision context |

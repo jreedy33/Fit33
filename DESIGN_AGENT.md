@@ -138,3 +138,10 @@ Icon (`ds_heading1`, `.secondary`) → Title (`ds_heading3`) → Subtitle (`ds_b
 | `SharedUtilities.swift` | Product Engineer (co) | UniversalScaleButtonStyle, HapticManager |
 
 *North star: match the Dashboard. If your screen doesn't feel like the Dashboard, it's wrong.*
+
+---
+
+## See Also
+- `docs/history/DESIGN_AGENT.md` — dated design decisions + sprint changelog (immutable archive).
+- `DESIGN_SYSTEM_AGENT.md` — token enforcement, migration order, adoption metrics.
+- `.cursor/rules/swiftui-rules.mdc` — the auto-loaded rule file that enforces `.ds_*` tokens in code.

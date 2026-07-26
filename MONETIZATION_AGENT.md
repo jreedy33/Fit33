@@ -220,7 +220,7 @@
 
 ### Edge functions (planned + shipped)
 
-- `supabase/functions/assn-webhook/index.ts` — App Store Server Notifications v2 receiver. Verifies JWS, writes `iap_receipts`, updates `subscriptions`, fans out to `revenue_daily_rollup` deltas. **Planned (Phase 1b).**
+- `supabase/functions/assn-webhook/index.ts` — App Store Server Notifications v2 receiver. Verifies JWS, writes `iap_receipts`, updates `subscriptions`, fans out to `revenue_daily_rollup` deltas. **Code shipped (in repo); NOT yet live** — needs deploy + ASSN URLs registered in App Store Connect + sandbox soak (MASTER_TODO PR-12). Known gaps: `ownership_type`/`original_purchaser_user_id` never persisted (Family Sharing rows land as `purchased`); documented `ASSN_VERIFY_SIGNATURE` env flag is never read by the code (effective gate is `record_iap_event`'s fail-closed signature check).
 - `supabase/functions/validate-iap-receipt/index.ts` — server-side receipt validation (used for backfill, restore-on-new-device verification, and audit). Apple public-key JWS. **Planned (Phase 1c).**
 - `supabase/functions/issue-promotional-offer/index.ts` — generates signed JWS for Apple Promotional Offer (churn-save / win-back flow). **Planned (Phase 6).**
 - `supabase/functions/sunday-pro-recap/index.ts` — **shipped 2026-05-03 (Phase 5).** Cron-triggered every hour Sunday; per-user-timezone-local 10am gate inside Deno; sends APNs alert via `_shared/apns.ts::sendApnsAlert`; deep-link payload is `fit33://profile/pro-recap`. Pro tier gets full recap; free tier gets teaser + upsell. Recipients pulled by `get_sunday_recap_candidates` RPC.
@@ -234,10 +234,10 @@
 | File | Status | Role |
 |---|---|---|
 | `admin-cms/src/app/revenue/page.tsx` | **Skeleton this PR** | Overview tab — MRR/ARR/active/trial/churn cards |
-| `admin-cms/src/app/revenue/subscribers/page.tsx` | Planned | Searchable subscribers table |
-| `admin-cms/src/app/revenue/transactions/page.tsx` | Planned | Recent ASSN events feed |
-| `admin-cms/src/app/revenue/grants/page.tsx` | Planned | Comp / refund / extension audit log |
-| `admin-cms/src/app/revenue/experiments/page.tsx` | Planned | Paywall A/B test history + winners |
+| `admin-cms/src/app/revenue/subscribers/page.tsx` | **Shipped** (Sprint 11; status corrected 2026-07-26) | Searchable subscribers table |
+| `admin-cms/src/app/revenue/transactions/page.tsx` | **Shipped** (Sprint 11) | Recent ASSN events feed |
+| `admin-cms/src/app/revenue/grants/page.tsx` | **Shipped** (Sprint 11) | Comp / refund / extension audit log |
+| `admin-cms/src/app/revenue/experiments/page.tsx` | **Shipped** (Sprint 11) | Paywall A/B test history + winners |
 | `admin-cms/src/app/revenue/users/[id]/page.tsx` | Planned | Per-user manage panel (grant / revoke / extend / refund-ack) |
 | `admin-cms/src/components/AdminShell.tsx` | **Updated this PR** | Adds `/revenue` nav entry |
 | `admin-cms/src/app/api/admin/route.ts` | **Updated this PR** | Registers `get_revenue_overview` + write actions; stub handlers until schema deploys |

@@ -61,13 +61,15 @@ Fit33App.swift                    ← Entry point, lifecycle, staged startup pip
 
 ```
 supabase/
-  ├── functions/
-  │   ├── send-push-notification/    APNs delivery
-  │   ├── notify-contacts-user-joined/ Contact-joined push
-  │   ├── send-verification/          Twilio SMS send
-  │   ├── verify-code/                Twilio SMS verify
-  │   └── usda-food-search/           USDA API proxy + caching
+  ├── functions/                     24 edge functions — push delivery,
+  │                                  Twilio verify, USDA proxy, moderation,
+  │                                  Strava/ASSN/GitHub webhooks, bug-intel
+  │                                  triage, notification orchestrator, AI
+  │                                  insights/audits, cron recaps
+  │                                  (auth per function: see the Edge Function
+  │                                  Auth Registry in INFRA_SECURITY_AGENT.md)
   └── *.sql                          Schema migrations & RPC functions
+                                     (deploy order: supabase/MIGRATION_INDEX.md)
 ```
 
 ---
@@ -124,7 +126,8 @@ See `Fit33/Secrets.template.swift` for the required schema.
 
 ### SQL Migrations
 SQL files in `supabase/` are run manually via Supabase SQL Editor.
-See `supabase/DEPLOYMENT_ORDER.md` for ordering.
+See `supabase/MIGRATION_INDEX.md` for the numbered release train and
+per-migration status (`DEPLOYMENT_ORDER.md` is retired).
 
 ---
 

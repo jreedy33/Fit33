@@ -138,7 +138,7 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 | `SharedUtilities.swift` | Product Engineer | Design System | Utilities + dedup |
 | `SupabaseManager.swift` | Data | Infra | Ops + auth/credentials |
 | `AppConfig.swift` | Infra | — | Config |
-| `SECURITY_CHECKLIST.md` | Infra | Data, Supabase | Policy + impl + validation |
+| ~~`SECURITY_CHECKLIST.md`~~ (deleted — RLS verification now lives in `INFRA_SECURITY_AGENT.md` + `supabase/verify_query_performance.sql`) | Infra | Data, Supabase | Policy + impl + validation |
 | `MASTER_TODO.md` | All | — | |
 | `WorkoutComboRules.swift` | Fitness Expert | Product Engineer | Rules + impl |
 | `SmartExerciseSelectionEngine.swift` | Product Engineer | Fitness Expert | Logic + scoring validation |
@@ -150,7 +150,7 @@ We follow a **three-layer** pattern (rules → current-agent → history):
 | `PhoneVerificationSheet.swift` | Product Engineer | Infra | UI + security |
 | `ContactsService.swift` | Data | Product Engineer | Normalization + UI |
 | `OrientationManager.swift` | Device Compatibility | Product Engineer | Device detection |
-| `FAQ_PLAN.md` | Support | All | FAQ content plan |
+| ~~`FAQ_PLAN.md`~~ (deleted — FAQ content now lives in `SUPPORT_AGENT.md` + `Website/help-center.html` + CMS `/api/faq`) | Support | All | FAQ content plan |
 | `Website/help-center.html` | Support | Infra (deploy) | Public help center |
 | `StoreKitManager.swift` | Monetization | Product Engineer | StoreKit 2 wrapper + entitlement refresh |
 | `PremiumUpgradeView.swift` | Monetization | Lead Designer | Paywall sheet + 14-feature gates |

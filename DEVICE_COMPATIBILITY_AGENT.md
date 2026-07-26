@@ -52,7 +52,7 @@ The `Fit33Watch` target is OPTIONAL and `WKRunsIndependentlyOfCompanionApp = tru
 | `WatchTodayView` (HK rings + Digital-Crown-scrollable challenges + streak + Start Cardio button) | shipped | sized for SE 44mm |
 | `WatchLiveWorkoutView` strength mirror (Mark Done + rest-timer haptic) | shipped | driven by phone push (PE invariant 33) |
 | `WatchActiveWorkoutView` cardio session (HKWorkoutSession + HR + Finish) | shipped | writes HKWorkout, iPhone observer auto-imports |
-| `Fit33WatchComplications` GraphicCircular | shipped (Xcode-target setup pending — see `Fit33WatchComplications/README.md`) | reads App Group snapshot, no independent RPC |
+| `Fit33WatchComplications` GraphicCircular | **NOT in repo** (2026-07-26 audit: the `Fit33WatchComplications/` directory does not exist — earlier "shipped" claim was wrong; treat as Phase 2 planned) | would read App Group snapshot, no independent RPC |
 | Set-by-set weight/reps editing (Digital Crown numeric input) | NOT shipped | Phase 2 |
 | End/Cancel workout from wrist | NOT shipped | phone owns lifecycle |
 | Hydration / meal logging from wrist | NOT shipped | phone-only by design |
@@ -210,7 +210,7 @@ extension Spacing {
 5. Verify touch targets ≥ 44×44pt.
 6. Check `.minimumScaleFactor` / `.lineLimit` on variable text.
 7. Log Watch implications.
-8. File in `DEVICE_COMPATIBILITY_TASKS.md`.
+8. File in `MASTER_TODO.md` (`DEVICE_COMPATIBILITY_TASKS.md` was deleted — 2026-07-26 audit).
 
 ### Building a new feature
 1. Plan `DeviceTier` behavior at all breakpoints BEFORE writing view code.
@@ -220,7 +220,7 @@ extension Spacing {
 5. iPad: `NavigationSplitView` or multi-column when appropriate.
 6. Test SE + iPad Pro (minimum).
 7. Log Watch implications.
-8. Update `DEVICE_COMPATIBILITY_TASKS.md`.
+8. Update `MASTER_TODO.md` (`DEVICE_COMPATIBILITY_TASKS.md` was deleted — 2026-07-26 audit).
 
 ---
 
@@ -229,7 +229,7 @@ extension Spacing {
 |---|---|---|
 | `OrientationManager.swift` | **Primary** (co-owned with Product Engineer) | Device detection, dims, orientation |
 | `DesignSystem.swift` (Spacing) | Co-owner (Design Agent primary) | Adaptive-spacing extensions |
-| `DEVICE_COMPATIBILITY_TASKS.md` | **Primary** | Retroactive fix tracker |
+| ~~`DEVICE_COMPATIBILITY_TASKS.md`~~ (deleted — track in `MASTER_TODO.md`) | **Primary** | Retroactive fix tracker |
 | All view files | Reviewer | Layout/spacing review authority |
 
 ---

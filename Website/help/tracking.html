@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Progress &amp; Stats - Fit33 Help Center</title>
+  <meta name="description" content="Track nutrition, hydration, weight, and steps in Fit33, understand the Stats tab, and connect Apple Health, Strava, Fitbit, WHOOP, Oura, and InBody.">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="icon" type="image/png" href="../favicon.png">
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="nav" id="navbar">
+    <div class="nav-container">
+      <a href="../" class="nav-logo">
+        <img src="../app-icon.png" alt="Fit33">
+        <span>Fit33</span>
+      </a>
+
+      <ul class="nav-links" id="navLinks">
+        <li><a href="../">Home</a></li>
+        <li><a href="../features.html">Features</a></li>
+        <li><a href="../help-center.html" class="active">Help Center</a></li>
+        <li><a href="../contact.html">Contact</a></li>
+      </ul>
+
+      <div class="nav-cta">
+        <a href="https://apps.apple.com/app/fit33" class="btn btn-primary">Download Free</a>
+      </div>
+
+      <div class="nav-toggle" onclick="toggleNav()">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Article Content -->
+  <section class="article-page">
+    <div class="article-container">
+
+      <!-- Breadcrumb -->
+      <div class="article-breadcrumb">
+        <a href="../help-center.html">Help Center</a>
+        <span>→</span>
+        <span>Progress &amp; Stats</span>
+      </div>
+
+      <!-- Header -->
+      <div class="article-header">
+        <h1>Progress, Tracking &amp; Integrations</h1>
+        <div class="article-meta">
+          <span>📖 9 min read</span>
+          <span>Last updated: Jul 2026</span>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="article-content">
+        <p>Fit33 tracks a lot more than sets and reps: nutrition, hydration, weight, steps, and — if you connect them — data from your favorite wearables. This guide covers where everything lives and how the integrations work.</p>
+
+        <h2>1. The Stats Tab</h2>
+        <p>The Stats tab is your progress headquarters:</p>
+        <ul>
+          <li><strong>XP &amp; Levels</strong> — earn XP from workouts, daily quests, and challenges</li>
+          <li><strong>Workout charts</strong> — volume, frequency, and trends over time</li>
+          <li><strong>Muscle heatmap</strong> — a visual of which muscle groups you've been training (and neglecting)</li>
+          <li><strong>Personal records</strong> — auto-detected PRs for weight and volume, with 1RM estimates for strength exercises</li>
+          <li><strong>Achievements</strong> — milestone unlocks as you progress</li>
+          <li><strong>Body composition</strong> — weight and body-comp history</li>
+        </ul>
+
+        <h2>2. Nutrition Tracking</h2>
+        <p>The Meals tab handles food logging and macro tracking:</p>
+        <ul>
+          <li><strong>Food search</strong> — powered by the USDA FoodData Central database</li>
+          <li><strong>Label scanner</strong> — point the camera at a product's <strong>nutrition facts panel</strong> and Fit33 reads the numbers straight off the label (on-device, the photo is never uploaded)</li>
+          <li><strong>Macro tracking</strong> — daily calories, protein, carbs, and fat against your targets</li>
+          <li><strong>Recipes</strong> — browse recipes or import one from a URL</li>
+          <li><strong>Saved meals &amp; shopping list</strong> — save frequent meals for one-tap logging and build a shopping list from your plan</li>
+          <li><strong>"What to eat right now"</strong> — suggestions aware of the time of day and the macros you still need</li>
+        </ul>
+
+        <div class="callout">
+          <strong>📷 About the scanner:</strong> the camera reads the <em>nutrition-facts panel text</em>, not the barcode. If a product's label won't scan, search the product name instead. If USDA doesn't carry a niche branded product, logging the closest generic equivalent works well.
+        </div>
+
+        <h2>3. Hydration, Weight &amp; Steps</h2>
+        <ul>
+          <li><strong>Hydration:</strong> the water widget on your Dashboard logs daily intake with a tap.</li>
+          <li><strong>Weight:</strong> log weigh-ins manually or let them sync automatically from Apple Health. Your trend shows on the Dashboard and in Stats.</li>
+          <li><strong>Steps:</strong> synced from Apple Health, with a daily step goal and activity-ring visualization.</li>
+        </ul>
+
+        <h2>4. Connecting Apple Health</h2>
+        <p>Apple HealthKit is the backbone integration — it syncs steps, workouts, active energy, heart rate, weight, and body composition both ways:</p>
+        <ol>
+          <li>Open <strong>Fit33 → Settings</strong> and choose Apple Health</li>
+          <li>Grant the categories you want to share in the iOS permission sheet</li>
+        </ol>
+        <p>Workouts you record in Fit33 are written back to Apple Health, and cardio recorded elsewhere (Apple Watch, other apps) flows into Fit33 through Health.</p>
+
+        <h2>5. Strava</h2>
+        <p>Connect Strava in <strong>Settings → Strava</strong> (or via the Connect Strava card on the Cardio page). Once connected:</p>
+        <ul>
+          <li>Your runs and rides appear in Fit33 shortly after you finish them</li>
+          <li>Strava activities count toward quests, league points, streaks, and challenges — same as native workouts</li>
+          <li>Native Fit33 runs are pushed to Strava automatically</li>
+        </ul>
+        <p>See the <a href="cardio.html">Cardio guide</a> for the full picture.</p>
+
+        <h2>6. Fitbit, WHOOP &amp; Oura</h2>
+        <ul>
+          <li><strong>Fitbit</strong> (Settings → Fitbit): steps, heart rate, and sleep.</li>
+          <li><strong>WHOOP</strong> (Settings → WHOOP): recovery score, HRV, strain, sleep stages, SpO2, skin temperature, and workouts. Recovery data powers the Dashboard recovery widget — when your recovery is deep in the red zone, Fit33 suggests light activity instead of heavy training.</li>
+          <li><strong>Oura</strong> (Settings → Oura): sleep, readiness, HRV, and activity summaries.</li>
+        </ul>
+        <p>Each connects via OAuth — you sign in with the provider's own credentials and approve the data categories. You can disconnect at any time from the same Settings screen or the provider's dashboard.</p>
+
+        <h2>7. InBody &amp; Bluetooth Equipment</h2>
+        <ul>
+          <li><strong>InBody</strong> (Settings → InBody): import body-composition scans into your body-comp history.</li>
+          <li><strong>Bluetooth equipment:</strong> compatible treadmills, bikes, and rowers can connect during indoor cardio to stream live speed, distance, cadence, watts, and heart rate.</li>
+        </ul>
+
+        <h2>8. No Double-Counting</h2>
+        <p>Worried about a run showing up twice because it's in both Strava and Apple Health? Don't be — Fit33 dedupes workouts across sources, so the same session is only saved (and credited) once.</p>
+
+        <h2>9. Exporting Your Data</h2>
+        <p>Your data belongs to you. Go to <strong>Settings → Download Data</strong> to export everything tied to your account. Cloud backup runs automatically whenever you're signed in.</p>
+
+        <h2>10. Common Questions</h2>
+
+        <h3>My steps show zero — what's wrong?</h3>
+        <p>Almost always a HealthKit permission issue. Check <strong>iOS Settings → Privacy &amp; Security → Health → Fit33</strong> and make sure the read categories are enabled. See <a href="troubleshooting.html">Troubleshooting</a> for the full walkthrough.</p>
+
+        <h3>How are PRs detected?</h3>
+        <p>Automatically — every logged set is checked against your history. Fit33 tracks both weight PRs and volume PRs (weight × reps), and shows a 🏆 badge when you beat a previous best.</p>
+
+        <h3>Do wearable workouts count toward my streak and quests?</h3>
+        <p>Yes. Cardio from any source — Fit33 native, Apple Watch, Strava, or anything routed through Apple Health — counts toward streaks, daily quests, league points, and challenges.</p>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Related Articles -->
+  <section class="help-center" style="padding-top: 0;">
+    <div class="help-container">
+      <h2 style="text-align: center; margin-bottom: 32px;">Related Articles</h2>
+      <div class="help-categories" style="max-width: 800px; margin: 0 auto;">
+        <a href="cardio.html" class="help-category">
+          <div class="help-category-icon">🏃</div>
+          <h3>Cardio</h3>
+          <p>Walk, run, ride, or row — and how Strava plugs in.</p>
+        </a>
+        <a href="troubleshooting.html" class="help-category">
+          <div class="help-category-icon">🔧</div>
+          <h3>Troubleshooting</h3>
+          <p>Having issues? Find solutions here.</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-bottom" style="border-top: none; padding-top: 0;">
+        <p>&copy; 2026 DoubleThr33s. All rights reserved. · <a href="../privacy.html">Privacy Policy</a> · <a href="../terms.html">Terms of Service</a></p>
+        <div class="social-links">
+          <a href="https://instagram.com/fit33app" aria-label="Instagram">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073z"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

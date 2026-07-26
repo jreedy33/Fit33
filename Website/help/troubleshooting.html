@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Troubleshooting - Fit33 Help Center</title>
+  <meta name="description" content="Fix common Fit33 issues — sync problems, missing notifications, HealthKit permissions, streak questions, and subscription or restore-purchase help.">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="icon" type="image/png" href="../favicon.png">
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="nav" id="navbar">
+    <div class="nav-container">
+      <a href="../" class="nav-logo">
+        <img src="../app-icon.png" alt="Fit33">
+        <span>Fit33</span>
+      </a>
+
+      <ul class="nav-links" id="navLinks">
+        <li><a href="../">Home</a></li>
+        <li><a href="../features.html">Features</a></li>
+        <li><a href="../help-center.html" class="active">Help Center</a></li>
+        <li><a href="../contact.html">Contact</a></li>
+      </ul>
+
+      <div class="nav-cta">
+        <a href="https://apps.apple.com/app/fit33" class="btn btn-primary">Download Free</a>
+      </div>
+
+      <div class="nav-toggle" onclick="toggleNav()">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Article Content -->
+  <section class="article-page">
+    <div class="article-container">
+
+      <!-- Breadcrumb -->
+      <div class="article-breadcrumb">
+        <a href="../help-center.html">Help Center</a>
+        <span>→</span>
+        <span>Troubleshooting</span>
+      </div>
+
+      <!-- Header -->
+      <div class="article-header">
+        <h1>Troubleshooting</h1>
+        <div class="article-meta">
+          <span>📖 8 min read</span>
+          <span>Last updated: Jul 2026</span>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="article-content">
+        <p>Something not working? Most issues fall into one of the buckets below. Work through the matching section — and if you're still stuck, the contact info is at the bottom.</p>
+
+        <h2>1. Data Isn't Syncing</h2>
+        <p>Your workouts, meals, and stats sync to the cloud whenever you're signed in. If something looks missing:</p>
+        <ol>
+          <li><strong>Check that you're signed in</strong> — open your Profile; if you see a sign-in prompt, sign back in and your data will re-sync.</li>
+          <li><strong>Check your connection</strong> — most data queues locally when you're offline and retries automatically once you're back online, but a few social features need a live connection.</li>
+          <li><strong>Give it a minute</strong> — friend activity, challenge progress, and leaderboards typically update within seconds, but can lag briefly on a poor connection.</li>
+        </ol>
+
+        <h3>My Strava run isn't showing in Fit33</h3>
+        <p>Strava activities usually arrive within about a minute of finishing. If they stop appearing:</p>
+        <ol>
+          <li>Open <strong>Settings → Strava</strong> and confirm it still shows as connected</li>
+          <li>If it's disconnected (tokens can expire), reconnect and re-authorize on Strava's site</li>
+          <li>Confirm the activity actually posted to Strava first</li>
+        </ol>
+
+        <h3>Will workouts double-count from Strava and Apple Health?</h3>
+        <p>No — Fit33 dedupes across sources. The same workout arriving via both Strava and HealthKit is saved and credited only once.</p>
+
+        <h2>2. Notifications Aren't Arriving</h2>
+        <p>Check both layers of settings:</p>
+        <ol>
+          <li><strong>iOS level:</strong> Settings → Notifications → Fit33 → make sure "Allow Notifications" is on</li>
+          <li><strong>App level:</strong> Fit33 → Settings → Notifications → check the per-category toggles (workout reminders, hydration, quests, streaks, challenges, social)</li>
+        </ol>
+        <p>Also worth checking:</p>
+        <ul>
+          <li><strong>Focus modes</strong> (Do Not Disturb, Sleep, Work) can silence notifications — add Fit33 to your allowed apps</li>
+          <li><strong>Scheduled Summary</strong> (iOS Settings → Notifications) can delay notifications into a digest</li>
+          <li><strong>Low Power Mode</strong> can delay background delivery</li>
+        </ul>
+
+        <h2>3. Steps / Weight / Workouts Show Blank or Zero</h2>
+        <p>This is almost always a HealthKit permission issue — for example if you tapped "Don't Allow" at first launch, or revoked access later:</p>
+        <ol>
+          <li>Open <strong>iOS Settings → Privacy &amp; Security → Health → Fit33</strong></li>
+          <li>Turn on the data categories you want Fit33 to read (steps, workouts, weight, heart rate, etc.)</li>
+          <li>Return to Fit33 — data backfills on the next sync</li>
+        </ol>
+        <p>If you'd rather check from inside the app: on newer iOS versions Health permissions also appear under iOS Settings → Apps → Health → Data Access &amp; Devices → Fit33.</p>
+
+        <h2>4. "My Streak Disappeared"</h2>
+        <p>The two usual causes:</p>
+        <ul>
+          <li><strong>Timezone changes:</strong> streak days follow your device's local calendar. Crossing timezones near midnight can make a day appear "missed" — if you believe your streak was lost incorrectly, report it via Settings → Report a Bug so we can investigate.</li>
+          <li><strong>A genuinely missed day:</strong> that's what <strong>Streak Shields</strong> are for — they protect your streak on days you can't train. Check the streak widget to see your shields.</li>
+        </ul>
+        <p>Remember that cardio counts too: a walk logged in Fit33, Apple Health, or Strava keeps your cardio streak alive.</p>
+
+        <h2>5. Subscription &amp; Purchase Issues</h2>
+
+        <h3>I paid but Premium isn't active</h3>
+        <ol>
+          <li>Make sure you're signed in to the App Store with the <strong>same Apple ID</strong> you purchased with</li>
+          <li>Open the upgrade screen in Fit33 and use <strong>Restore Purchases</strong></li>
+          <li>If it still doesn't unlock, contact us with your purchase receipt (Apple emails it to you)</li>
+        </ol>
+
+        <h3>How do I cancel my subscription?</h3>
+        <ol>
+          <li>Open the <strong>Settings</strong> app on your iPhone</li>
+          <li>Tap your name → <strong>Subscriptions</strong></li>
+          <li>Find <strong>Fit33</strong> and tap <strong>Cancel Subscription</strong></li>
+        </ol>
+        <p>Your access continues until the end of the billing period. Refunds are handled by Apple — request one at <a href="https://reportaproblem.apple.com">reportaproblem.apple.com</a>.</p>
+
+        <h2>6. The App Crashed</h2>
+        <p>Sorry about that. Crash reports reach us automatically, but a bug report helps us fix it much faster:</p>
+        <ol>
+          <li>Update to the latest version of Fit33 and iOS first — many crashes are already fixed</li>
+          <li>Go to <strong>Settings → Report a Bug</strong></li>
+          <li>Include what screen you were on and what you tapped right before the crash — screenshots help a lot</li>
+        </ol>
+
+        <div class="callout tip">
+          <strong>💡 Mid-run crash?</strong> If the app quits during an outdoor run, just reopen it — Fit33 snapshots your in-progress cardio session and restores it automatically (within a 4-hour window).
+        </div>
+
+        <h2>7. "I Can't Find My Food"</h2>
+        <p>Food search is powered by the USDA database, which doesn't carry every branded product. Try searching the generic equivalent ("greek yogurt" instead of a specific brand), or point the camera at the product's <strong>nutrition facts panel</strong> — the scanner reads the label text directly.</p>
+
+        <h2>8. Still Stuck?</h2>
+        <p>Reach out and we'll get you sorted:</p>
+        <ul>
+          <li><strong>In-app:</strong> Settings → Report a Bug</li>
+          <li><strong>Email:</strong> <a href="mailto:info@doublethr33s.com">info@doublethr33s.com</a></li>
+        </ul>
+        <p>Include your device model, iOS version, the screen you were on, and what you did right before the problem — it cuts the back-and-forth in half.</p>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Related Articles -->
+  <section class="help-center" style="padding-top: 0;">
+    <div class="help-container">
+      <h2 style="text-align: center; margin-bottom: 32px;">Related Articles</h2>
+      <div class="help-categories" style="max-width: 800px; margin: 0 auto;">
+        <a href="account.html" class="help-category">
+          <div class="help-category-icon">👤</div>
+          <h3>Account &amp; Settings</h3>
+          <p>Manage your profile, preferences, and data.</p>
+        </a>
+        <a href="tracking.html" class="help-category">
+          <div class="help-category-icon">📊</div>
+          <h3>Progress &amp; Stats</h3>
+          <p>Track your gains and understand your data.</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-bottom" style="border-top: none; padding-top: 0;">
+        <p>&copy; 2026 DoubleThr33s. All rights reserved. · <a href="../privacy.html">Privacy Policy</a> · <a href="../terms.html">Terms of Service</a></p>
+        <div class="social-links">
+          <a href="https://instagram.com/fit33app" aria-label="Instagram">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073z"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../script.js"></script>
+</body>
+</html>

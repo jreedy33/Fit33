@@ -58,7 +58,22 @@ class ContactsService: ObservableObject {
     }
     
     // MARK: - Persistent Cache
-    
+
+    /// Audit PR-18 (2026-07-26): purge contact-derived state on sign-out —
+    /// suggestions and cached contact identifiers belong to the previous
+    /// account's address-book grant, not the next signer-in.
+    func resetForSignOut() {
+        contactEmails = []
+        contactPhoneNumbers = []
+        suggestedFriends = []
+        peopleYouMayKnow = []
+        hasCheckedContacts = false
+        UserDefaults.standard.removeObject(forKey: Self.suggestedFriendsCacheKey)
+        UserDefaults.standard.removeObject(forKey: Self.pymkCacheKey)
+        UserDefaults.standard.removeObject(forKey: Self.lastSuggestionsRefreshKey)
+        AppLogger.debug("🔐 ContactsService state cleared for sign-out", category: .social)
+    }
+
     private func loadCachedSuggestions() {
         if let data = UserDefaults.standard.data(forKey: Self.suggestedFriendsCacheKey),
            let cached = try? JSONDecoder().decode([SuggestedFriend].self, from: data) {

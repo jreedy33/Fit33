@@ -1099,6 +1099,19 @@ class SupabaseManager: ObservableObject {
                 // Clear challenge cache - ensures no challenge data leaks between users
                 ChallengeService.shared.clearCache()
 
+                // Audit PR-18 (2026-07-26): zero the remaining social /
+                // nutrition / league singletons. Before this, the next
+                // account on the same device briefly saw the previous
+                // user's friends, feed, private challenges, league standing,
+                // contact suggestions, and meals until each surface refetched.
+                FriendService.shared.resetForSignOut()
+                ActivityFeedService.shared.resetForSignOut()
+                PrivateChallengeService.shared.clearCache()
+                CommunityChallengeService.shared.resetForSignOut()
+                WeeklyLeagueService.shared.resetForSignOut()
+                ContactsService.shared.resetForSignOut()
+                MealService.shared.resetForSignOut()
+
                 // Clear progressive-unlock maturity cache so the next signed-in
                 // user starts from a fresh recompute. Without this, a returning
                 // user could see the previous account's cached profile (or, more
@@ -1214,6 +1227,15 @@ class SupabaseManager: ObservableObject {
             ChallengeService.shared.clearCache()
             ChallengeService.shared.activeChallenges = []
             ChallengeService.shared.pendingInvites = []
+            // Audit PR-18 (2026-07-26): same singleton wipe as signOut() —
+            // deletion must never leave more residue than a plain sign-out.
+            FriendService.shared.resetForSignOut()
+            ActivityFeedService.shared.resetForSignOut()
+            PrivateChallengeService.shared.clearCache()
+            CommunityChallengeService.shared.resetForSignOut()
+            WeeklyLeagueService.shared.resetForSignOut()
+            ContactsService.shared.resetForSignOut()
+            MealService.shared.resetForSignOut()
             UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
             currentUser = nil
             isAuthenticated = false

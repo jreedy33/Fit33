@@ -28,6 +28,16 @@ class MealService: ObservableObject {
         }
     }
     
+    /// Audit PR-18 (2026-07-26): drop the in-memory meal list on sign-out.
+    /// Core Data rows are wiped by `clearAllUserData()`, but this published
+    /// array would otherwise keep showing the previous user's meals until
+    /// the next reload.
+    @MainActor
+    func resetForSignOut() {
+        todaysMeals = []
+        lastLoadDate = nil
+    }
+
     /// Ensures todaysMeals is fresh — re-fetches from Core Data if the last load was on a
     /// different calendar day. Call this before any code that reads todaysMeals for syncing
     /// (challenge sync, background sync, etc.) to prevent stale yesterday data from being

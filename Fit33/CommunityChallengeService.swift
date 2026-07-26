@@ -575,6 +575,21 @@ class CommunityChallengeService: ObservableObject {
     private var lastRefreshTime: Date?
     
     private init() {}
+
+    /// Audit PR-18 (2026-07-26): zero in-memory state on sign-out so the
+    /// next account never sees the previous user's community challenges.
+    @MainActor
+    func resetForSignOut() {
+        myChallenges = []
+        featuredChallenges = []
+        discoverableChallenges = []
+        rankDeltas = [:]
+        previousRanks = [:]
+        knownDiscoverableFriendIds = []
+        lastRefreshTime = nil
+        rankDeltaClearTask?.cancel()
+        rankDeltaClearTask = nil
+    }
     
     // MARK: - Refresh All Community Data
     

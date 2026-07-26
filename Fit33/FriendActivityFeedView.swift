@@ -144,6 +144,15 @@ class ActivityFeedService: ObservableObject {
         activities.removeAll { $0.userId == userId }
     }
 
+    /// Audit PR-18 (2026-07-26): clear the previous account's feed on
+    /// sign-out so the next user never sees stale activities.
+    @MainActor
+    func resetForSignOut() {
+        activities = []
+        myReactions = []
+        lastRealtimeUpdate = nil
+    }
+
     /// Sprint 2 Q2-46 — called from `RealtimeService` when a `friend_activity_feed`
     /// row flips to `is_hidden = true` (moderation webhook). Removes the row
     /// from the in-memory feed so the sender no longer sees their own

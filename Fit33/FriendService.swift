@@ -133,6 +133,28 @@ class FriendService: ObservableObject {
     /// Idempotent — calling with a UUID that's not in any list is a
     /// no-op (and logs nothing, to avoid noise on the realtime fan-out
     /// path where most events won't match THIS session's caches).
+    /// Audit PR-18 (2026-07-26): zero ALL in-memory + cached social state on
+    /// sign-out/deletion so the next account on this device never sees the
+    /// previous user's friends / requests / workouts / notifications.
+    /// Called from `SupabaseManager.signOut()`.
+    func resetForSignOut() {
+        friends = []
+        friendDTOs = []
+        pendingRequests = []
+        sentRequests = []
+        pendingRequestDTOs = []
+        receivedWorkouts = []
+        sentWorkouts = []
+        notifications = []
+        unreadNotificationCount = 0
+        searchResults = []
+        searchResultDTOs = []
+        blockedUserIds = []
+        UserDefaults.standard.removeObject(forKey: friendsCacheKey)
+        UserDefaults.standard.removeObject(forKey: Self.blockedUserIdsCacheKey)
+        AppLogger.debug("🔐 FriendService state cleared for sign-out", category: .social)
+    }
+
     func purgeDeletedUser(_ deletedUserId: UUID) {
         var changedFriends           = false
         var changedPendingRequests   = false

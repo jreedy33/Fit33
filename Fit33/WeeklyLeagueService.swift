@@ -589,6 +589,26 @@ class WeeklyLeagueService: ObservableObject {
             .store(in: &cancellables)
     }
     
+    /// Audit PR-18 (2026-07-26): zero league state on sign-out so the next
+    /// account never sees the previous user's standing / tier / history.
+    @MainActor
+    func resetForSignOut() {
+        standing = nil
+        history = []
+        hasJoined = false
+        notPlaced = false
+        notPlacedTierName = nil
+        notPlacedTierRank = nil
+        notPlacedNextWeek = nil
+        pendingTierPromotion = nil
+        error = nil
+        UserDefaults.standard.removeObject(forKey: standingCacheKey)
+        UserDefaults.standard.removeObject(forKey: standingCacheDateKey)
+        UserDefaults.standard.removeObject(forKey: dailyLoginKey)
+        UserDefaults.standard.removeObject(forKey: lastSeenTierRankKey)
+        AppLogger.debug("🔐 WeeklyLeagueService state cleared for sign-out", category: .social)
+    }
+
     // MARK: - Fetch / Join League
     
     /// Main entry point: get or create the user's league membership for this week.

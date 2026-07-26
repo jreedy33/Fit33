@@ -914,7 +914,14 @@ class WeeklyLeagueService: ObservableObject {
     /// Add points for a specific activity. Call from workout completion, PR detection, etc.
     func addPoints(source: LeaguePointSource) async {
         guard let userId = SupabaseManager.shared.currentUser?.id else { return }
-        guard hasJoined else { return } // Don't add points if user hasn't joined league yet
+        // Audit PR-15 (2026-07-26): `notPlaced` users MUST still call the RPC —
+        // the server banks their points into `pending_league_points` (Sprint 2
+        // stakes migration) and credits them on Monday placement. The old
+        // `guard hasJoined` alone silently dropped every strength LP earned
+        // mid-week by not-yet-placed users, while RPC-backed cardio still
+        // awarded server-side (parity break). Hidden users (hasJoined=false,
+        // notPlaced=false) remain excluded.
+        guard hasJoined || notPlaced else { return }
         
         do {
             struct PointsResult: Decodable {

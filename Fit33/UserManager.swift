@@ -940,13 +940,24 @@ class UserManager: ObservableObject {
     ///   • +10 if distance ≥ 3 km (road / bike / run milestone)
     ///   • +10 if calories ≥ 300 (sustained effort)
     /// Typical 30 min run ≈ 40 XP; 45 min bike with 10 km ≈ 60 XP.
+    /// - Parameters:
+    ///   - savedViaRPC: true when the workout row was durably saved through the
+    ///     `record_cardio_workout` RPC. The RPC is the SINGLE OWNER of the
+    ///     +50 'workout' league-point award AND of the goal-achieved friend-feed
+    ///     post (audit PR-14 — the previous unconditional client-side
+    ///     `addPoints(.workout)` double-awarded +100/cardio vs strength's +50).
+    ///   - goalAchieved: mirrors the `goal_achieved` flag in the RPC payload —
+    ///     when true the RPC already posted to the friend feed, so the client
+    ///     must not post again.
     func completeCardioWorkout(
         workoutId: String,
         activityType: String,
         durationSeconds: Int,
         distanceMeters: Double,
         caloriesBurned: Int,
-        averageHeartRate: Int?
+        averageHeartRate: Int?,
+        savedViaRPC: Bool = false,
+        goalAchieved: Bool = false
     ) {
         guard let user = currentUser else { return }
 
@@ -974,23 +985,26 @@ class UserManager: ObservableObject {
         let currentStreak = Int(user.currentStreak)
 
         Task {
-            // League points fanout: +50 'workout' (strength-parity) is
-            // STILL awarded on iOS for non-RPC cardio paths (Strava
-            // webhook ingest, HealthKit ambient sync, manual entry from
-            // CardioActiveWorkoutView) because they don't go through the
-            // `record_cardio_workout` RPC.
+            // League points (audit PR-14, 2026-07-26): the
+            // `record_cardio_workout` RPC is the SINGLE OWNER of cardio
+            // league points — it awards both the +50 'workout'
+            // (strength-parity) AND the graduated `cardio_bonus`
+            // (base_per_km × km × intensity_multiplier, capped +50/day).
+            // The previous unconditional client-side
+            // `addPoints(source: .workout)` here double-awarded +100 per
+            // native cardio vs strength's +50 (the 'workout' source has
+            // NO daily cap server-side).
             //
-            // Cardio Redesign Phase 1 — the previous iOS-side
-            //     `+50 .cardioSession` award (for any session ≥15min)
-            // was REMOVED here because the server-side
-            // `record_cardio_workout` RPC (migration 185) now awards a
-            // graduated `cardio_bonus` LP using
-            //     base_per_km × km × intensity_multiplier
-            // capped at +50/day. Keeping both = double-counting on every
-            // native run/walk save. The server formula is the single
-            // source of truth for native cardio LP; iOS retains the
-            // +50 'workout' base award for parity with strength.
-            await WeeklyLeagueService.shared.addPoints(source: .workout)
+            // When the cloud save FAILED (savedViaRPC == false) we also
+            // skip the client-side award: there is no durable workout
+            // row, so awarding LP would inflate the league (audit PR-22).
+            // XP / streak / quests / badges below stay local-first.
+            if !savedViaRPC {
+                AppLogger.warning(
+                    "[CARDIO] Cloud save missing — skipping league-point award (no durable row)",
+                    category: .workout
+                )
+            }
 
             // Daily quest progression. Cardio has no sets, so pass 0.
             await DailyQuestService.shared.onWorkoutCompleted(
@@ -1057,6 +1071,14 @@ class UserManager: ObservableObject {
             // `completeWorkout`.
             guard !PrivacySettingsManager.shared.hideFriendActivity else {
                 AppLogger.debug("[PRIVACY] Skipping cardio activity feed post — friend activity hidden", category: .social)
+                return
+            }
+            // Feed ownership (audit PR-14): the RPC posts to the friend
+            // feed when goal_achieved=true, so the client only posts for
+            // RPC-saved workouts that did NOT hit their goal. Failed saves
+            // never post (the workoutId would reference a nonexistent row).
+            guard savedViaRPC && !goalAchieved else {
+                AppLogger.debug("[CARDIO] Skipping client feed post — savedViaRPC=\(savedViaRPC), goalAchieved=\(goalAchieved)", category: .social)
                 return
             }
             await ActivityFeedService.shared.postCardioActivity(

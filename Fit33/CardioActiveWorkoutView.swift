@@ -1025,7 +1025,9 @@ struct CardioCompletionView: View {
                         durationSeconds: workoutData.durationSeconds,
                         distanceMeters: workoutData.distanceMeters,
                         caloriesBurned: Int(workoutData.caloriesBurned),
-                        averageHeartRate: workoutData.averageHeartRate
+                        averageHeartRate: workoutData.averageHeartRate,
+                        savedViaRPC: true,
+                        goalAchieved: workoutData.goalAchieved
                     )
                 }
 

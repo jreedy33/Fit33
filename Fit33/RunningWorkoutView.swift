@@ -1578,7 +1578,9 @@ struct RunCompletionView: View {
                 durationSeconds: Int(result.duration),
                 distanceMeters: result.distance,
                 caloriesBurned: Int(result.calories),
-                averageHeartRate: result.averageHeartRate
+                averageHeartRate: result.averageHeartRate,
+                savedViaRPC: savedWorkoutId != nil,
+                goalAchieved: payload.goalAchieved
             )
 
             // 3b. Cardio Redesign Phase 1 — fire the verify_quests RPC so

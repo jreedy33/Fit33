@@ -383,7 +383,9 @@ struct CardioRecapView: View {
                 durationSeconds: Int(result.duration),
                 distanceMeters: result.distance,
                 caloriesBurned: Int(result.calories),
-                averageHeartRate: result.averageHeartRate
+                averageHeartRate: result.averageHeartRate,
+                savedViaRPC: savedWorkoutId != nil,
+                goalAchieved: payload.goalAchieved
             )
             await DailyQuestService.shared.onCardioActivityImported(source: "fit33")
             if StravaService.shared.isConnected {

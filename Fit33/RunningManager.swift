@@ -240,7 +240,14 @@ class RunningManager: NSObject, ObservableObject {
     @Published var averagePace: Double = 0 // seconds per kilometer
     @Published var currentSpeed: Double = 0 // meters per second
     @Published var calories: Double = 0
-    @Published var routeCoordinates: [CLLocationCoordinate2D] = []
+    /// Canonical GPS polyline. Deliberately NOT `@Published` (finding J,
+    /// 2026-07-31): appending a fix used to publish a copy of the whole
+    /// growing array every ~5m — O(n) per fix for the entire session.
+    /// Views observe the cheap `routeVersion` Int instead and read this
+    /// array directly.
+    private(set) var routeCoordinates: [CLLocationCoordinate2D] = []
+    /// Bumped on every `routeCoordinates` mutation so SwiftUI re-renders.
+    @Published private(set) var routeVersion: Int = 0
     @Published var currentLocation: CLLocationCoordinate2D?
     @Published var currentHeading: Double = 0 // degrees
     @Published var locationAuthStatus: CLAuthorizationStatus = .notDetermined
@@ -285,7 +292,10 @@ class RunningManager: NSObject, ObservableObject {
     /// Rolling list of horizontalAccuracy values across the session — used
     /// to populate `cardio_workouts.gps_avg_accuracy_m` for the leaderboard
     /// "junk run" filter.
-    private var gpsAccuracySamples: [Double] = []
+    /// Running sum + count instead of an unbounded array (finding J) —
+    /// a multi-hour session was appending one Double per fix forever.
+    private var gpsAccuracySampleSum: Double = 0
+    private var gpsAccuracySampleCount: Int = 0
     /// Timestamp of the last `updateLiveActivity` fire — coalesces updates
     /// per activityType.liveActivityUpdateSeconds. Drops Live Activity
     /// chatter on long sessions (QP §3).
@@ -503,6 +513,10 @@ class RunningManager: NSObject, ObservableObject {
         // cycling gets 10m — keeps battery friendly on multi-hour walks.
         locationManager.distanceFilter = activityType.distanceFilter
         locationManager.activityType = .fitness
+        // Finding J: without a filter, CoreLocation delivers heading
+        // callbacks on ~1° changes → a published var churning the UI at
+        // magnetometer rate. 5° is plenty for a map arrow.
+        locationManager.headingFilter = 5
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.pausesLocationUpdatesAutomatically = false
 
@@ -550,7 +564,9 @@ class RunningManager: NSObject, ObservableObject {
         currentSpeed = 0
         calories = 0
         routeCoordinates = []
-        gpsAccuracySamples = []
+        routeVersion &+= 1
+        gpsAccuracySampleSum = 0
+        gpsAccuracySampleCount = 0
         splits = []
         paceHistory = []
         lastLocation = nil
@@ -1004,7 +1020,10 @@ extension RunningManager: CLLocationManagerDelegate {
                 // GPS accuracy is recorded even when paused so the banner state
                 // stays current (Quality §6: visible "GPS searching…" UI).
                 updateGPSAccuracy(location.horizontalAccuracy)
-                gpsAccuracySamples.append(location.horizontalAccuracy)
+                if location.horizontalAccuracy >= 0 {
+                    gpsAccuracySampleSum += location.horizontalAccuracy
+                    gpsAccuracySampleCount += 1
+                }
 
                 // Filter inaccurate readings unconditionally.
                 guard location.horizontalAccuracy < 30 else { continue }
@@ -1022,6 +1041,7 @@ extension RunningManager: CLLocationManagerDelegate {
 
                 currentLocation = location.coordinate
                 routeCoordinates.append(location.coordinate)
+                routeVersion &+= 1
 
                 // Track elevation
                 if location.verticalAccuracy >= 0 {
@@ -1133,10 +1153,8 @@ extension RunningManager {
     /// leaderboard junk-run filter (>30m avg → excluded). Public so the
     /// recap save path can attach it to `cardio_workouts.gps_avg_accuracy_m`.
     var averageGPSAccuracyMeters: Double {
-        guard !gpsAccuracySamples.isEmpty else { return 0 }
-        let valid = gpsAccuracySamples.filter { $0 >= 0 }
-        guard !valid.isEmpty else { return 0 }
-        return valid.reduce(0, +) / Double(valid.count)
+        guard gpsAccuracySampleCount > 0 else { return 0 }
+        return gpsAccuracySampleSum / Double(gpsAccuracySampleCount)
     }
 
     /// Called when the latest GPS sample shows speed < 0.5 m/s (essentially

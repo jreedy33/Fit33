@@ -47,8 +47,10 @@ extension ActiveWorkoutView {
                 let newIds = Set(newExercises.compactMap { $0.id })
                 if oldIds != newIds { exercises = newExercises }
             }
+            .onChange(of: exercises.count) { _, _ in
+                refreshNotesPlaceholder()
+            }
             .onDisappear {
-                stopTimer()
                 UIApplication.shared.isIdleTimerDisabled = false
                 for task in initTasks { task.cancel() }
                 initTasks.removeAll()
@@ -117,7 +119,7 @@ extension ActiveWorkoutView {
                                 Image(systemName: workoutNotes.isEmpty ? "note.text" : "note.text.badge.plus")
                                     .font(.ds_bodyMedium)
                                     .foregroundColor(.secondary)
-                                Text(notesPlaceholder)
+                                Text(cachedNotesPlaceholder)
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
@@ -537,11 +539,11 @@ extension ActiveWorkoutView {
     var workoutHeaderBar: some View {
         VStack(spacing: 0) {
             ZStack {
-                Text(workoutDuration)
-                    .foregroundColor(colorScheme == .dark ? .white : .primary)
-                    .font(.title)
-                    .fontWeight(.bold)
-                    .accessibilityLabel("Workout timer: \(Int(elapsedTime) / 60) minutes \(Int(elapsedTime) % 60) seconds")
+                // ⚡️ PERF (finding I): per-second duration lives in a tiny
+                // TimelineView leaf so ONLY this text re-renders each second
+                // — the old root Timer tick invalidated the entire
+                // active-workout layout every second.
+                WorkoutDurationText(startTime: workoutManager.workoutStartTime ?? workout.date ?? Date())
                 
                 HStack {
                     Button(action: {
@@ -734,5 +736,28 @@ extension ActiveWorkoutView {
         }
         .padding(.horizontal)
         .padding(.vertical, 6)
+    }
+}
+
+/// ⚡️ PERF (2026-07-31 finding I): tiny leaf view that owns the per-second
+/// workout-duration re-render. TimelineView invalidates ONLY this Text each
+/// second — the old approach ticked a root `@State elapsedTime` Timer that
+/// re-evaluated the entire active-workout layout every second for the whole
+/// session.
+struct WorkoutDurationText: View {
+    let startTime: Date
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        TimelineView(.periodic(from: startTime, by: 1)) { context in
+            let elapsed = max(0, context.date.timeIntervalSince(startTime))
+            let minutes = Int(elapsed) / 60
+            let seconds = Int(elapsed) % 60
+            Text(String(format: "%d:%02d", minutes, seconds))
+                .foregroundColor(colorScheme == .dark ? .white : .primary)
+                .font(.title)
+                .fontWeight(.bold)
+                .accessibilityLabel("Workout timer: \(minutes) minutes \(seconds) seconds")
+        }
     }
 }

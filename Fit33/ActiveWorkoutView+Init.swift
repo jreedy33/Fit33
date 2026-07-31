@@ -394,7 +394,11 @@ extension ActiveWorkoutView {
 
     func handleWorkoutAppear() {
         if keepScreenOn { UIApplication.shared.isIdleTimerDisabled = true }
-        startTimer()
+        // ⚡️ PERF (finding I): no root per-second timer anymore — the header
+        // duration renders in `WorkoutDurationText` (TimelineView leaf).
+        // Sync the captured elapsed value once; it's recomputed at finish.
+        elapsedTime = workoutManager.workoutStartTime.map { Date().timeIntervalSince($0) } ?? 0
+        refreshNotesPlaceholder()
         applyWarmupDataInstantly()
         isWorkoutFavorite = workout.isFavorite
         if activeExerciseId == nil || !exercises.contains(where: { $0.id?.uuidString == activeExerciseId }) {
@@ -424,39 +428,4 @@ extension ActiveWorkoutView {
         }
     }
     
-    func startTimer() {
-        // Sprint 3 (Q2-33): `ActiveWorkoutView` is a struct, so `[weak self]`
-        // doesn't apply. The live anchor is the class-backed `workoutManager`.
-        // We capture it weakly and self-invalidate if it disappears, so a
-        // rogue/stale timer can never outlive the workout session and keep
-        // mutating `@State` storage from a now-detached view.
-        guard let startTime = workoutManager.workoutStartTime else {
-            AppLogger.warning("⚠️ [TIMER] No workout start time available, using current time", category: .workout)
-            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak workoutManager] t in
-                guard workoutManager != nil else {
-                    t.invalidate()
-                    return
-                }
-                elapsedTime += 1
-            }
-            if let t = timer { RunLoop.main.add(t, forMode: .common) }
-            return
-        }
-        
-        elapsedTime = Date().timeIntervalSince(startTime)
-        
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak workoutManager] t in
-            guard workoutManager != nil else {
-                t.invalidate()
-                return
-            }
-            elapsedTime = Date().timeIntervalSince(startTime)
-        }
-        if let t = timer { RunLoop.main.add(t, forMode: .common) }
-    }
-    
-    func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-    }
 }

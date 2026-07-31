@@ -1068,35 +1068,68 @@ struct EnhancedRunningMapView: UIViewRepresentable {
         return mapView
     }
     
+    // ⚡️ PERF (2026-07-31 finding J): this used to remove EVERY overlay +
+    // annotation and re-add a single O(n) polyline on every GPS fix — a
+    // full route re-tessellation per fix for the whole session. Now:
+    //   • polyline segments are APPEND-ONLY, keyed off the coordinate
+    //     count the Coordinator has already rendered
+    //   • the start marker is added once
+    //   • the current-position annotation MOVES by mutating its
+    //     KVO-observable `coordinate` (no remove/re-add)
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Remove old overlays and annotations
-        mapView.removeOverlays(mapView.overlays)
-        mapView.removeAnnotations(mapView.annotations)
+        let coordinator = context.coordinator
         
-        // Add route polyline (thicker, more vibrant)
-        if coordinates.count > 1 {
-            let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
-            mapView.addOverlay(polyline)
-            
-            // Add start marker
-            if let firstCoord = coordinates.first {
-                let startAnnotation = RunAnnotation(coordinate: firstCoord, type: .start)
-                mapView.addAnnotation(startAnnotation)
+        // Route shrank → new session. Reset everything once.
+        if coordinates.count < coordinator.renderedCoordinateCount {
+            mapView.removeOverlays(mapView.overlays)
+            if let start = coordinator.startAnnotation {
+                mapView.removeAnnotation(start)
+                coordinator.startAnnotation = nil
             }
+            coordinator.renderedCoordinateCount = 0
         }
         
-        // Add current position with heading
+        // Append only the NEW segment (overlapping one point so segments
+        // connect seamlessly).
+        if coordinates.count > 1, coordinates.count > coordinator.renderedCoordinateCount {
+            let fromIndex = max(0, coordinator.renderedCoordinateCount - 1)
+            let segment = Array(coordinates[fromIndex...])
+            if segment.count > 1 {
+                mapView.addOverlay(MKPolyline(coordinates: segment, count: segment.count))
+            }
+            coordinator.renderedCoordinateCount = coordinates.count
+        }
+        
+        // Start marker — once per session.
+        if coordinator.startAnnotation == nil, let firstCoord = coordinates.first {
+            let startAnnotation = RunAnnotation(coordinate: firstCoord, type: .start)
+            coordinator.startAnnotation = startAnnotation
+            mapView.addAnnotation(startAnnotation)
+        }
+        
+        // Current position: move the existing annotation instead of
+        // remove/re-add; refresh the arrow rotation in place.
         if let current = currentLocation {
-            let currentAnnotation = RunAnnotation(coordinate: current, type: .current, heading: heading)
-            mapView.addAnnotation(currentAnnotation)
+            if let annotation = coordinator.currentAnnotation {
+                annotation.coordinate = current
+                if annotation.heading != heading {
+                    annotation.heading = heading
+                    mapView.view(for: annotation)?.transform =
+                        CGAffineTransform(rotationAngle: CGFloat(heading * .pi / 180))
+                }
+            } else {
+                let currentAnnotation = RunAnnotation(coordinate: current, type: .current, heading: heading)
+                coordinator.currentAnnotation = currentAnnotation
+                mapView.addAnnotation(currentAnnotation)
+            }
             
             // Update region if following
             if isFollowing {
-            let region = MKCoordinateRegion(
+                let region = MKCoordinateRegion(
                     center: current,
                     span: MKCoordinateSpan(latitudeDelta: 0.006, longitudeDelta: 0.006)
-            )
-            mapView.setRegion(region, animated: true)
+                )
+                mapView.setRegion(region, animated: true)
             }
         }
     }
@@ -1106,6 +1139,11 @@ struct EnhancedRunningMapView: UIViewRepresentable {
     }
     
     class Coordinator: NSObject, MKMapViewDelegate {
+        // Append-only rendering state (finding J).
+        var renderedCoordinateCount: Int = 0
+        var startAnnotation: RunAnnotation?
+        var currentAnnotation: RunAnnotation?
+        
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let polyline = overlay as? MKPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
@@ -1176,9 +1214,12 @@ class RunAnnotation: NSObject, MKAnnotation {
         case start, current
     }
     
-    let coordinate: CLLocationCoordinate2D
+    // `@objc dynamic` — MKMapView observes `coordinate` via KVO, so the
+    // current-position annotation moves in place when we mutate it
+    // (finding J: no remove/re-add per GPS fix).
+    @objc dynamic var coordinate: CLLocationCoordinate2D
     let type: AnnotationType
-    let heading: Double
+    var heading: Double
     
     init(coordinate: CLLocationCoordinate2D, type: AnnotationType, heading: Double = 0) {
         self.coordinate = coordinate

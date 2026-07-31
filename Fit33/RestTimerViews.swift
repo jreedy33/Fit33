@@ -148,6 +148,17 @@ class RestTimer: ObservableObject {
         }
     }
     
+    /// ⚡️ PERF (2026-07-31 finding H): every ExerciseCard observing this
+    /// timer used to re-evaluate its body at display refresh rate (60–120 Hz)
+    /// for the whole rest period, because the CADisplayLink published
+    /// `timeRemaining` on every frame. The link is now capped at 1–4 fps
+    /// AND `tick` only publishes when the whole second flips.
+    private func makeDisplayLink() -> CADisplayLink {
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 1, maximum: 4, preferred: 2)
+        return link
+    }
+    
     func syncToWallClock() {
         guard let endDate = endDate else { return }
         let remaining = endDate.timeIntervalSinceNow
@@ -158,7 +169,7 @@ class RestTimer: ObservableObject {
             timeRemaining = remaining
             if !isActive { isActive = true }
             if displayLink == nil {
-                displayLink = CADisplayLink(target: self, selector: #selector(tick))
+                displayLink = makeDisplayLink()
                 displayLink?.add(to: .main, forMode: .common)
             }
         }
@@ -180,7 +191,7 @@ class RestTimer: ObservableObject {
         let endsAt = Date().addingTimeInterval(duration)
         endDate = endsAt
 
-        displayLink = CADisplayLink(target: self, selector: #selector(tick))
+        displayLink = makeDisplayLink()
         displayLink?.add(to: .main, forMode: .common)
 
         // Mirror the rest-end timestamp to the watch so it can fire
@@ -201,7 +212,9 @@ class RestTimer: ObservableObject {
         if remaining <= 0 {
             timeRemaining = 0
             stop()
-        } else {
+        } else if Int(remaining) != Int(timeRemaining) {
+            // Publish only when the whole second changes — observers render
+            // seconds, so intra-second publishes were pure invalidation churn.
             timeRemaining = remaining
         }
     }
@@ -233,7 +246,7 @@ class RestTimer: ObservableObject {
         guard timeRemaining > 0 else { return }
         isActive = true
         endDate = Date().addingTimeInterval(timeRemaining)
-        displayLink = CADisplayLink(target: self, selector: #selector(tick))
+        displayLink = makeDisplayLink()
         displayLink?.add(to: .main, forMode: .common)
     }
 }

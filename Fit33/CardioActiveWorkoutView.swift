@@ -12,6 +12,7 @@ struct CardioActiveWorkoutView: View {
     
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var userManager: UserManager
     @StateObject private var locationManager = CardioLocationManager()
     @StateObject private var bluetoothManager = BluetoothFitnessManager.shared
@@ -30,6 +31,14 @@ struct CardioActiveWorkoutView: View {
     @State private var cadence: Int = 0
     @State private var power: Int = 0 // watts
     @State private var startTime: Date = Date()
+    // Finding L (2026-07-31): elapsed time is COMPUTED from wall clock
+    // (startTime minus accumulated pause), never tick-accumulated — Timer
+    // ticks are suspended while backgrounded, so `elapsedTime += 1` was
+    // silently losing all backgrounded time.
+    @State private var accumulatedPauseTime: TimeInterval = 0
+    @State private var pauseStartedAt: Date?
+    // Finding K: goal-achieved haptic fires exactly once per session.
+    @State private var didFireGoalHaptic = false
     
     // UI state
     @State private var showingFinishAlert = false
@@ -121,6 +130,15 @@ struct CardioActiveWorkoutView: View {
             if shouldDismiss {
                 showingCompletionView = false
                 dismiss()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Finding L: resync immediately on foreground — the Timer was
+            // suspended while backgrounded, so the next tick could be up
+            // to a second away and stats would briefly show stale time.
+            if phase == .active && isRunning && !isPaused {
+                syncElapsedToWallClock()
+                updateStats()
             }
         }
     }
@@ -453,11 +471,16 @@ struct CardioActiveWorkoutView: View {
         isRunning = true
         isPaused = false
         startTime = Date()
+        accumulatedPauseTime = 0
+        pauseStartedAt = nil
+        didFireGoalHaptic = false
         
-        // Start timer
+        // Start timer — each tick RECOMPUTES elapsed from the wall clock
+        // (finding L) instead of accumulating +1, so time survives
+        // backgrounding/timer coalescing.
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if !isPaused {
-                elapsedTime += 1
+                syncElapsedToWallClock()
                 updateStats()
             }
         }
@@ -486,10 +509,24 @@ struct CardioActiveWorkoutView: View {
         isPaused.toggle()
         
         if isPaused {
+            pauseStartedAt = Date()
             locationManager.stopTracking()
-        } else if activityType.requiresGPS {
-            locationManager.startTracking()
+        } else {
+            if let pausedAt = pauseStartedAt {
+                accumulatedPauseTime += Date().timeIntervalSince(pausedAt)
+                pauseStartedAt = nil
+            }
+            if activityType.requiresGPS {
+                locationManager.startTracking()
+            }
         }
+    }
+    
+    /// Finding L: wall-clock anchored elapsed time. Recomputed per tick and
+    /// on foreground so backgrounded intervals are never lost.
+    private func syncElapsedToWallClock() {
+        let pausedSoFar = accumulatedPauseTime + (pauseStartedAt.map { Date().timeIntervalSince($0) } ?? 0)
+        elapsedTime = max(0, Date().timeIntervalSince(startTime) - pausedSoFar)
     }
     
     private func updateStats() {
@@ -528,8 +565,10 @@ struct CardioActiveWorkoutView: View {
         cadence = btData.cadence
         power = btData.power
         
-        // Check if goal achieved
-        if isGoalAchieved && goalType != .openGoal {
+        // Check if goal achieved — haptic fires ONCE (finding K: this used
+        // to buzz .success every second for the rest of the session).
+        if isGoalAchieved && goalType != .openGoal && !didFireGoalHaptic {
+            didFireGoalHaptic = true
             HapticManager.notification(.success)
         }
     }

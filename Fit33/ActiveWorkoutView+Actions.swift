@@ -140,8 +140,9 @@ extension ActiveWorkoutView {
         
         isFinishingWorkout = true
         
-        // Stop the timer immediately
-        stopTimer()
+        // Finding I: no root per-second tick anymore — compute the final
+        // duration once from the canonical start timestamp.
+        elapsedTime = workoutManager.workoutStartTime.map { Date().timeIntervalSince($0) } ?? elapsedTime
 
         // Sync kg values on all sets before saving
         for (_, sets) in workoutManager.exerciseSetsData {
@@ -384,9 +385,6 @@ extension ActiveWorkoutView {
     }
     
     func cancelWorkout() {
-        // Stop the timer immediately
-        stopTimer()
-        
         // Cancel through WorkoutManager
         workoutManager.cancelWorkout()
         

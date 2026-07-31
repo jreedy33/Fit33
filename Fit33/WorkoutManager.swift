@@ -42,7 +42,12 @@ class WorkoutManager: ObservableObject {
     @Published var navigateProgramDay: SmartProgramDay? = nil
     @Published var isTransitioningBackToHome: Bool = false  // 🔧 Cover back navigation transition
     @Published var shouldClearWorkoutTabNav: Bool = false  // 🔧 Clear nav path before workout starts
-    @Published var currentTime: Date = Date()
+    // ⚡️ PERF (2026-07-31 finding G): the old `@Published var currentTime`
+    // was written every second by the workout timer and read by NOTHING —
+    // ~35 views observe WorkoutManager (ContentView/MainTabView/Dashboard
+    // included), so it invalidated the whole app at 1 Hz for the entire
+    // workout. Do not re-add a per-second published clock here; per-second
+    // UI belongs in a tiny child view (TimelineView) — see finding I.
     @Published var workoutInsights: WorkoutInsights? = nil
 
     /// Session-scoped guard for the completion fanout (P0 fix 2026-07-31).
@@ -970,23 +975,18 @@ class WorkoutManager: ObservableObject {
     
     private var cancellables = Set<AnyCancellable>()
     
-    // Counter for periodic saves (save every 15 seconds during workout for better persistence)
-    private var saveCounter: Int = 0
-    
     private func startTimer() {
-        timer = Timer.publish(every: 1, on: .main, in: .common)
+        // ⚡️ PERF (2026-07-31 finding G): the timer's only job is the
+        // periodic state save — fire every 15 s directly instead of
+        // ticking at 1 Hz and counting (the 1 Hz tick also fed the
+        // phantom `currentTime` publish that invalidated the whole app).
+        timer = Timer.publish(every: 15, on: .main, in: .common)
             .autoconnect()
-            .sink { [weak self] time in
-                self?.currentTime = time
-                
-                self?.saveCounter += 1
-                if self?.saveCounter ?? 0 >= 15 {
-                    self?.saveCounter = 0
-                    self?.saveActiveWorkoutToStorage()
-                    #if DEBUG
-                    AppLogger.debug("💾 [WORKOUT] Auto-saved (\(self?.exerciseSetsData.count ?? 0) exercises, periodic)", category: .data)
-                    #endif
-                }
+            .sink { [weak self] _ in
+                self?.saveActiveWorkoutToStorage()
+                #if DEBUG
+                AppLogger.debug("💾 [WORKOUT] Auto-saved (\(self?.exerciseSetsData.count ?? 0) exercises, periodic)", category: .data)
+                #endif
             }
     }
     

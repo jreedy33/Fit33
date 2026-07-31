@@ -325,6 +325,12 @@ struct ReactiveBattleFeed: View {
     @State private var confettiCount = 0
     @State private var lastFlash = 0
 
+    // PR-37 (2026-07-30): report/block affordances on received cries.
+    // Content is preset-only, but App Review 1.2 still expects a way to
+    // report and block an abusive sender (e.g. spamming trash talk).
+    @State private var reactionPendingBlock: ChallengeReaction?
+    @State private var showReportedConfirmation = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: Spacing.xs) {
@@ -372,6 +378,30 @@ struct ReactiveBattleFeed: View {
             lastFlash = newValue
             triggerConfetti()
         }
+        .confirmationDialog(
+            "Block \(reactionPendingBlock?.senderFirstName ?? "user")?",
+            isPresented: Binding(
+                get: { reactionPendingBlock != nil },
+                set: { if !$0 { reactionPendingBlock = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) {
+                guard let reaction = reactionPendingBlock else { return }
+                reactionPendingBlock = nil
+                Task {
+                    _ = await FriendService.shared.blockUser(userId: reaction.senderId)
+                }
+            }
+            Button("Cancel", role: .cancel) { reactionPendingBlock = nil }
+        } message: {
+            Text("They won't be able to send you battle cries, friend requests, or challenges.")
+        }
+        .alert("Reported", isPresented: $showReportedConfirmation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Thanks — our team will review this message.")
+        }
     }
 
     /// Compact fixed-size feed: ~4 bubbles tall, older cries scroll
@@ -408,6 +438,37 @@ struct ReactiveBattleFeed: View {
 
     @ViewBuilder
     private func bubble(_ reaction: ChallengeReaction) -> some View {
+        if reaction.isMine {
+            bubbleContent(reaction)
+        } else {
+            // Long-press → Report / Block (PR-37). Only on received cries.
+            bubbleContent(reaction)
+                .contextMenu {
+                    Button {
+                        Task {
+                            let ok = await FriendService.shared.reportContent(
+                                tableName: "challenge_reactions",
+                                recordId: reaction.reactionId.uuidString,
+                                reportedUserId: reaction.senderId,
+                                contentSnippet: "\(reaction.reactionEmoji) \(reaction.reactionText)",
+                                reason: "battle_cry_report"
+                            )
+                            if ok { await MainActor.run { showReportedConfirmation = true } }
+                        }
+                    } label: {
+                        Label("Report", systemImage: "flag")
+                    }
+                    Button(role: .destructive) {
+                        reactionPendingBlock = reaction
+                    } label: {
+                        Label("Block \(reaction.senderFirstName)", systemImage: "hand.raised")
+                    }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func bubbleContent(_ reaction: ChallengeReaction) -> some View {
         HStack(alignment: .top, spacing: Spacing.xs) {
             if reaction.isMine {
                 Spacer(minLength: Spacing.xl)

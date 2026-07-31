@@ -113,6 +113,19 @@ class BackgroundChallengeSyncService {
     /// Key form: `bg_challenge_last_sync_<source>` (e.g. `bg_challenge_last_sync_steps`).
     private let lastSyncKeyPrefix = "bg_challenge_last_sync_"
 
+    /// All sources that get a `bg_challenge_last_sync_<source>` throttle key —
+    /// kept in sync with `setupBackgroundObserverQueries()` so
+    /// `teardownForSignOut()` can sweep them.
+    private static let observerSources = ["steps", "workout", "active_energy", "distance", "exercise_time"]
+
+    /// Live observer queries so sign-out can stop them (PR-36b, 2026-07-30).
+    /// Before this, `HKObserverQuery`s were fire-and-forget: after sign-out
+    /// they kept waking the app and firing challenge syncs for a user who no
+    /// longer had a session. Guarded by `observerLock` — setup runs on a
+    /// detached utility task while teardown arrives from the sign-out path.
+    private var activeObserverQueries: [HKObserverQuery] = []
+    private let observerLock = NSLock()
+
     /// Currently-running `performChallengeSyncInBackground` invocation, if
     /// any. Concurrent callers (e.g. three HealthKit observers firing in the
     /// same millisecond) await this shared Task instead of spawning their
@@ -231,57 +244,81 @@ class BackgroundChallengeSyncService {
     /// processing is finished. If you don't call it, iOS assumes the app hung
     /// and will eventually STOP delivering background updates entirely.
     private func setupBackgroundObserverQueries() {
-        // Steps observer — syncs step challenges (throttled — high frequency)
-        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
-        let stepObserver = HKObserverQuery(sampleType: stepType, predicate: nil) { [weak self] _, completionHandler, error in
-            guard error == nil else { completionHandler(); return }
-            self?.handleBackgroundHealthUpdate(source: "steps", isHighPriority: false) {
-                completionHandler()
-            }
+        // (sampleType, source, isHighPriority). Workouts are HIGH PRIORITY:
+        // they sync immediately (no throttle) because the user just finished
+        // a Dance, Walk, Run, etc. in another app and expects to see it.
+        var observerSpecs: [(HKSampleType, String, Bool)] = [
+            (.workoutType(), "workout", true),
+        ]
+        if let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+            observerSpecs.append((stepType, "steps", false))
         }
-        healthStore.execute(stepObserver)
-        
-        // Workout observer — syncs lift/run/walk/streak challenges
-        // HIGH PRIORITY: Workouts sync IMMEDIATELY (no throttle) because the user
-        // just finished a Dance, Walk, Run, etc. in another app and expects to see it.
-        let workoutObserver = HKObserverQuery(sampleType: .workoutType(), predicate: nil) { [weak self] _, completionHandler, error in
-            guard error == nil else { completionHandler(); return }
-            self?.handleBackgroundHealthUpdate(source: "workout", isHighPriority: true) {
-                completionHandler()
-            }
+        if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+            observerSpecs.append((energyType, "active_energy", false))
         }
-        healthStore.execute(workoutObserver)
-        
-        // Active energy observer — syncs active minutes/calorie challenges (throttled)
-        let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
-        let energyObserver = HKObserverQuery(sampleType: energyType, predicate: nil) { [weak self] _, completionHandler, error in
-            guard error == nil else { completionHandler(); return }
-            self?.handleBackgroundHealthUpdate(source: "active_energy", isHighPriority: false) {
-                completionHandler()
-            }
+        if let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
+            observerSpecs.append((distanceType, "distance", false))
         }
-        healthStore.execute(energyObserver)
-        
-        // Distance observer — syncs walk/run challenges (throttled)
-        let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
-        let distanceObserver = HKObserverQuery(sampleType: distanceType, predicate: nil) { [weak self] _, completionHandler, error in
-            guard error == nil else { completionHandler(); return }
-            self?.handleBackgroundHealthUpdate(source: "distance", isHighPriority: false) {
-                completionHandler()
-            }
-        }
-        healthStore.execute(distanceObserver)
-        
-        // Exercise time observer — syncs active minutes challenges (throttled)
         if let exerciseType = HKQuantityType.quantityType(forIdentifier: .appleExerciseTime) {
-            let exerciseObserver = HKObserverQuery(sampleType: exerciseType, predicate: nil) { [weak self] _, completionHandler, error in
+            observerSpecs.append((exerciseType, "exercise_time", false))
+        }
+
+        var queries: [HKObserverQuery] = []
+        for (sampleType, source, isHighPriority) in observerSpecs {
+            let observer = HKObserverQuery(sampleType: sampleType, predicate: nil) { [weak self] _, completionHandler, error in
                 guard error == nil else { completionHandler(); return }
-                self?.handleBackgroundHealthUpdate(source: "exercise_time", isHighPriority: false) {
+                self?.handleBackgroundHealthUpdate(source: source, isHighPriority: isHighPriority) {
                     completionHandler()
                 }
             }
-            healthStore.execute(exerciseObserver)
+            queries.append(observer)
         }
+
+        // Retain BEFORE executing so a concurrent teardown can always see
+        // (and stop) every query that will run.
+        observerLock.lock()
+        activeObserverQueries.append(contentsOf: queries)
+        observerLock.unlock()
+
+        for query in queries {
+            healthStore.execute(query)
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // MARK: - Sign-out Teardown (PR-36b, 2026-07-30)
+    // ═══════════════════════════════════════════════════════════
+
+    /// Stop every background observer query, disable HK background delivery,
+    /// and clear the per-source throttle keys. Called from the sign-out /
+    /// account-deletion fan-out in `SupabaseManager` so the next account on
+    /// this device doesn't inherit background syncs for the previous user.
+    /// Safe to call when nothing is registered. `setup()` re-registers
+    /// everything on the next launch/sign-in.
+    func teardownForSignOut() {
+        observerLock.lock()
+        let queries = activeObserverQueries
+        activeObserverQueries.removeAll()
+        observerLock.unlock()
+
+        for query in queries {
+            healthStore.stop(query)
+        }
+
+        healthStore.disableAllBackgroundDelivery { success, error in
+            if let error = error {
+                // Expected on devices without Health data; never bug-class.
+                AppLogger.warning("⚠️ [BG SYNC] disableAllBackgroundDelivery failed: \(error.localizedDescription)", category: .health)
+            } else if success {
+                AppLogger.info("🔄 [BG SYNC] HK background delivery disabled (sign-out)", category: .health)
+            }
+        }
+
+        for source in Self.observerSources {
+            UserDefaults.standard.removeObject(forKey: lastSyncKey(for: source))
+        }
+
+        AppLogger.info("🔄 [BG SYNC] Observer queries stopped (\(queries.count)) — sign-out teardown complete", category: .health)
     }
     
     /// Called when HealthKit delivers new data in the background.

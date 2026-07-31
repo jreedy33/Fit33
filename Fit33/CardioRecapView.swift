@@ -376,6 +376,9 @@ struct CardioRecapView: View {
                     "❌ [CARDIO] recap save failed: \(error.localizedDescription)",
                     category: .network
                 )
+                // PR-22 residual (2026-07-30): queue for offline retry —
+                // the RPC's external_id idempotency makes this duplicate-safe.
+                CloudSyncRetryQueue.shared.enqueueCardioCloudSync(payload)
             }
             UserManager.shared.completeCardioWorkout(
                 workoutId: savedWorkoutId ?? UUID().uuidString,

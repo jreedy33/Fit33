@@ -12,6 +12,10 @@ enum ProfileRoute: Hashable {
     case inBody
     case healthKit
     case settings
+    // PR-28 (2026-07-30): last two legacy NavigationLink(destination:) links
+    // converted to value-based navigation.
+    case progressPhotoGallery
+    case olympianPath
 }
 
 struct ProfileView: View {
@@ -519,7 +523,7 @@ struct ProfileView: View {
                             iconColor: .purple
                         ) {
                             VStack(spacing: 0) {
-                                NavigationLink(destination: ProgressPhotoGalleryView()) {
+                                NavigationLink(value: ProfileRoute.progressPhotoGallery) {
                                     HStack(spacing: 12) {
                                         Image(systemName: "photo.on.rectangle.angled")
                                             .font(.ds_bodyRegular)
@@ -841,6 +845,10 @@ struct ProfileView: View {
                 HealthKitSettingsView()
             case .settings:
                 SettingsView()
+            case .progressPhotoGallery:
+                ProgressPhotoGalleryView()
+            case .olympianPath:
+                OlympianPathView()
             }
         }
         .onAppear {
@@ -1104,26 +1112,19 @@ struct ProfileView: View {
                 showRecentActivity: $showRecentActivityWidget
             )
         }
-        .background(
-            Group {
-                // Hidden NavigationLinks for programmatic navigation (works with NavigationView)
-                NavigationLink(
-                    destination: WorkoutHistoryFullView(),
-                    isActive: $showWorkoutHistory
-                ) { EmptyView() }
-                
-                // Navigate to: Requests tab (1) if pending requests, Search tab (2) if 0 friends, else Friends tab (0)
-                NavigationLink(
-                    destination: FriendsListView(initialTab: friendService.pendingRequests.count > 0 ? 1 : (friendService.friends.count == 0 ? 2 : 0)),
-                    isActive: $showFriendsList
-                ) { EmptyView() }
-                
-                NavigationLink(
-                    destination: ReceivedWorkoutsView(),
-                    isActive: $showReceivedWorkouts
-                ) { EmptyView() }
-            }
-        )
+        // PR-28 (2026-07-30): the deprecated hidden `NavigationLink(isActive:)`
+        // trio is replaced with `navigationDestination(isPresented:)` — the
+        // value-based-era API for bool-triggered programmatic pushes.
+        .navigationDestination(isPresented: $showWorkoutHistory) {
+            WorkoutHistoryFullView()
+        }
+        .navigationDestination(isPresented: $showFriendsList) {
+            // Requests tab (1) if pending requests, Search tab (2) if 0 friends, else Friends tab (0)
+            FriendsListView(initialTab: friendService.pendingRequests.count > 0 ? 1 : (friendService.friends.count == 0 ? 2 : 0))
+        }
+        .navigationDestination(isPresented: $showReceivedWorkouts) {
+            ReceivedWorkoutsView()
+        }
     }
     
     // MARK: - Profile Stats Row (Instagram-style, Floating)
@@ -1316,7 +1317,7 @@ struct ProfileView: View {
         let pathDeep = OlympianPathBluePalette.color(for: 5)
         if !olympianPath.goals.isEmpty {
             VStack(spacing: 8) {
-                NavigationLink(destination: OlympianPathView()) {
+                NavigationLink(value: ProfileRoute.olympianPath) {
                     HStack(spacing: 10) {
                         Image(systemName: "crown.fill")
                             .font(.subheadline)

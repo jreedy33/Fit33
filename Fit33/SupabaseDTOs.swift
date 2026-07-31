@@ -834,7 +834,9 @@ struct MealLogDTO: Codable {
 // MARK: - Cardio Workout DTOs
 
 /// Data structure for creating a new cardio workout
-struct CardioWorkoutData {
+// Codable added 2026-07-30 (PR-22 residual) so `CloudSyncRetryQueue` can
+// persist failed cardio saves for offline retry.
+struct CardioWorkoutData: Codable {
     let activityType: String
     let workoutName: String?
     let goalType: String

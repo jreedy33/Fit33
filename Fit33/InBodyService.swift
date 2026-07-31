@@ -47,9 +47,21 @@ class InBodyService: ObservableObject {
     
     // MARK: - OAuth Flow
     
-    /// Check if InBody integration is properly configured (not using placeholder credentials)
+    /// Check if InBody integration is properly configured (not using placeholder credentials).
+    ///
+    /// PR-36c (2026-07-30): the old check only matched the literal
+    /// "YOUR_INBODY_CLIENT_ID", but `Secrets.template.swift` ships
+    /// "<INBODY_CLIENT_ID>" — a copied-but-unfilled template passed as
+    /// "configured" and surfaced a dead OAuth flow. Treat empty values and
+    /// any placeholder-shaped value (either convention) as unconfigured.
     var isConfigured: Bool {
-        clientId != "YOUR_INBODY_CLIENT_ID" && clientSecret != "YOUR_INBODY_CLIENT_SECRET"
+        func isPlaceholder(_ value: String) -> Bool {
+            value.isEmpty
+                || value.hasPrefix("<")
+                || value.hasPrefix("YOUR_")
+                || value.contains("INBODY_CLIENT")
+        }
+        return !isPlaceholder(clientId) && !isPlaceholder(clientSecret)
     }
     
     /// Get the authorization URL to start OAuth flow

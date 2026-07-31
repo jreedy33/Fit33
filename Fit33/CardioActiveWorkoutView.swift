@@ -1060,7 +1060,11 @@ struct CardioCompletionView: View {
             #if DEBUG
             AppLogger.error("❌ [CARDIO] Failed to save workout: \(error)", category: .workout)
             #endif
+            // PR-22 residual (2026-07-30): queue for offline retry so an
+            // indoor session isn't silently lost to a network blip — the
+            // RPC's external_id idempotency makes retries duplicate-safe.
             await MainActor.run {
+                CloudSyncRetryQueue.shared.enqueueCardioCloudSync(workoutData)
                 isSaving = false
                 savedSuccessfully = false
             }

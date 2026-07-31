@@ -1112,6 +1112,12 @@ class SupabaseManager: ObservableObject {
                 ContactsService.shared.resetForSignOut()
                 MealService.shared.resetForSignOut()
 
+                // PR-36b (2026-07-30): stop HKObserverQuery background wakes.
+                // Without this, iOS kept waking the app for the PREVIOUS
+                // user's challenge syncs after sign-out (background delivery
+                // + the five observer queries were never torn down).
+                BackgroundChallengeSyncService.shared.teardownForSignOut()
+
                 // Clear progressive-unlock maturity cache so the next signed-in
                 // user starts from a fresh recompute. Without this, a returning
                 // user could see the previous account's cached profile (or, more
@@ -1236,6 +1242,8 @@ class SupabaseManager: ObservableObject {
             WeeklyLeagueService.shared.resetForSignOut()
             ContactsService.shared.resetForSignOut()
             MealService.shared.resetForSignOut()
+            // PR-36b (2026-07-30): stop HK background wakes (same as signOut).
+            BackgroundChallengeSyncService.shared.teardownForSignOut()
             UserDefaults.standard.set(true, forKey: "user_manually_signed_out")
             currentUser = nil
             isAuthenticated = false

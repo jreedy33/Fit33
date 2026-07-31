@@ -26,10 +26,26 @@ final class GenderFilterService: ObservableObject {
     /// User's preferred gender (observed from UserManager/UserDefaults)
     @Published private(set) var preferredGender: Gender = .male
     
-    // Cache of exercises by gender availability
+    // Cache of exercises by gender availability.
+    //
+    // PR-36a (2026-07-30): reads come from arbitrary threads (the video hot
+    // path calls `getVideoFilename` via `Task.detached` per swiftui-rules)
+    // while the writer replaces the dictionary on main — an unguarded read
+    // during that reassignment is a data race. All access now goes through
+    // `currentCache()` / the lock. The dictionary is only ever REPLACED
+    // (never mutated in place), so a snapshot taken under the lock is safe
+    // to read outside it (Swift COW).
     private var exerciseGenderCache: [String: ExerciseGenderInfo] = [:]
+    private let cacheLock = NSLock()
     private var cacheLoaded = false
     private let cacheQueue = DispatchQueue(label: "gender.cache", qos: .userInitiated)
+
+    /// Thread-safe snapshot of the gender cache.
+    private func currentCache() -> [String: ExerciseGenderInfo] {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return exerciseGenderCache
+    }
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -112,7 +128,7 @@ final class GenderFilterService: ObservableObject {
     func shouldShowExercise(_ exerciseName: String) -> Bool {
         let key = exerciseName.lowercased()
         
-        guard let info = exerciseGenderCache[key] else {
+        guard let info = currentCache()[key] else {
             return true
         }
         
@@ -143,15 +159,16 @@ final class GenderFilterService: ObservableObject {
     /// breaks that promise per user request 2026-04-27.
     func shouldShowExerciseStrict(_ exerciseName: String) -> Bool {
         let key = exerciseName.lowercased()
+        let cache = currentCache()
         
         // Try exact match first
-        if let info = exerciseGenderCache[key] {
+        if let info = cache[key] {
             return info.isAvailable(for: preferredGender)
         }
         
         // Try normalized match (handles "(Leaning)" vs "Lean", etc.)
         let normalizedKey = normalizeExerciseName(key)
-        if let info = exerciseGenderCache[normalizedKey] {
+        if let info = cache[normalizedKey] {
             return info.isAvailable(for: preferredGender)
         }
         
@@ -161,11 +178,18 @@ final class GenderFilterService: ObservableObject {
     }
     
     /// Get the correct video filename for an exercise based on gender
+    ///
+    /// PR-36a (2026-07-30): the old step-3 fuzzy scan (O(n) normalize over
+    /// every cache key, on the video hot path) was removed — it was fully
+    /// redundant: `loadExerciseGenderCache()` already inserts every cache
+    /// key's normalized form into the dictionary, so the step-2 lookup
+    /// covers exactly the matches the scan could find.
     func getVideoFilename(for exerciseName: String, fallbackToOpposite: Bool = true) -> String? {
         let key = exerciseName.lowercased()
+        let cache = currentCache()
         
         // 1. Try exact match first
-        if let info = exerciseGenderCache[key] {
+        if let info = cache[key] {
             let filename = info.videoFilename(for: preferredGender, withFallback: fallbackToOpposite)
             #if DEBUG
             AppLogger.debug("👤 [Gender] Exact match: '\(exerciseName)' -> \(preferredGender.rawValue) -> \(filename ?? "nil")", category: .workout)
@@ -175,23 +199,12 @@ final class GenderFilterService: ObservableObject {
         
         // 2. Try normalized key (handles variations like "(Leaning)" vs "Lean")
         let normalizedKey = normalizeExerciseName(key)
-        if let info = exerciseGenderCache[normalizedKey] {
+        if let info = cache[normalizedKey] {
             let filename = info.videoFilename(for: preferredGender, withFallback: fallbackToOpposite)
             #if DEBUG
             AppLogger.debug("👤 [Gender] Normalized match: '\(exerciseName)' -> '\(normalizedKey)' -> \(preferredGender.rawValue) -> \(filename ?? "nil")", category: .workout)
             #endif
             return filename
-        }
-        
-        // 3. Try fuzzy match on cache keys
-        for (cacheKey, info) in exerciseGenderCache {
-            if normalizeExerciseName(cacheKey) == normalizedKey {
-                let filename = info.videoFilename(for: preferredGender, withFallback: fallbackToOpposite)
-                #if DEBUG
-                AppLogger.debug("👤 [Gender] Fuzzy match: '\(exerciseName)' via '\(cacheKey)' -> \(preferredGender.rawValue) -> \(filename ?? "nil")", category: .workout)
-                #endif
-                return filename
-            }
         }
         
         #if DEBUG
@@ -271,25 +284,20 @@ final class GenderFilterService: ObservableObject {
     }
     
     /// Check if exercise has video for preferred gender (vs fallback)
+    /// (Fuzzy scan removed 2026-07-30 — see `getVideoFilename` note.)
     func hasPreferredGenderVideo(for exerciseName: String) -> Bool {
         let key = exerciseName.lowercased()
+        let cache = currentCache()
         
         // Try exact match
-        if let info = exerciseGenderCache[key] {
+        if let info = cache[key] {
             return info.isAvailable(for: preferredGender)
         }
         
         // Try normalized match
         let normalizedKey = normalizeExerciseName(key)
-        if let info = exerciseGenderCache[normalizedKey] {
+        if let info = cache[normalizedKey] {
             return info.isAvailable(for: preferredGender)
-        }
-        
-        // Try fuzzy match
-        for (cacheKey, info) in exerciseGenderCache {
-            if normalizeExerciseName(cacheKey) == normalizedKey {
-                return info.isAvailable(for: preferredGender)
-            }
         }
         
         return false
@@ -314,7 +322,7 @@ final class GenderFilterService: ObservableObject {
     
     /// Get gender info for an exercise
     func getGenderInfo(for exerciseName: String) -> ExerciseGenderInfo? {
-        return exerciseGenderCache[exerciseName.lowercased()]
+        return currentCache()[exerciseName.lowercased()]
     }
     
     // MARK: - Private Methods
@@ -379,8 +387,10 @@ final class GenderFilterService: ObservableObject {
             }
             
             DispatchQueue.main.async {
+                self.cacheLock.lock()
                 let sizeChanged = newCache.count != self.exerciseGenderCache.count
                 self.exerciseGenderCache = newCache
+                self.cacheLock.unlock()
                 self.cacheLoaded = true
                 
                 // Only clear video caches when the cache actually changed size

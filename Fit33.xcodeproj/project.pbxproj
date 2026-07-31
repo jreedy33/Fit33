@@ -234,7 +234,6 @@
 		7C8CFD542FA426F9007CD766 /* BarcodeScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD532FA426F9007CD766 /* BarcodeScannerView.swift */; };
 		7C8CFD562FA42DAA007CD766 /* PinnedTabHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */; };
 		7C8CFD602FA42700007CD766 /* CommonFoodDensities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */; };
-		7C8CFE512FA431FF007CD766 /* CommonFoodDensities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */; };
 		7C8E80012FB10001007CD766 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80002FB10001007CD766 /* PushPayload.swift */; };
 		7C8E80032FB10002007CD766 /* PushPermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */; };
 		7C8E80052FB10003007CD766 /* NotificationPrimerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */; };
@@ -342,8 +341,6 @@
 		7CB08CA52EDCF00400236ECB /* ProgramScheduleFullView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08CA62EDCF00400236ECB /* ProgramScheduleFullView.swift */; };
 		7CB08CA52EDE397200236ECB /* BugReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08CA42EDE397200236ECB /* BugReportView.swift */; };
 		7CB08CA72EDE398A00236ECB /* DevMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB08CA62EDE398A00236ECB /* DevMenuView.swift */; };
-		7CD6DD322FA4382700E49D30 /* NewUserJourneyTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */; };
-		7CD6E66D2FA468FE00E49D30 /* ChallengeCreationCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */; };
 		7CDE51062F8A100100B5C928 /* MotionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CDE51052F8A100100B5C928 /* MotionPolicy.swift */; };
 		7CDE51082F8A100200B5C928 /* AdaptiveMaterialBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CDE51072F8A100200B5C928 /* AdaptiveMaterialBackground.swift */; };
 		7CDEAD022E5F0507007F1A60 /* PerfFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CDEAD012E5F0507007F1A60 /* PerfFlags.swift */; };
@@ -727,7 +724,6 @@
 		7C8CFD532FA426F9007CD766 /* BarcodeScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeScannerView.swift; sourceTree = "<group>"; };
 		7C8CFD552FA42DAA007CD766 /* PinnedTabHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedTabHeader.swift; sourceTree = "<group>"; };
 		7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonFoodDensities.swift; sourceTree = "<group>"; };
-		7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonFoodDensities.swift; sourceTree = "<group>"; };
 		7C8E80002FB10001007CD766 /* PushPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayload.swift; sourceTree = "<group>"; };
 		7C8E80022FB10002007CD766 /* PushPermissionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPermissionCoordinator.swift; sourceTree = "<group>"; };
 		7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPrimerSheet.swift; sourceTree = "<group>"; };
@@ -840,8 +836,6 @@
 		7CB08CA42EDE397200236ECB /* BugReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BugReportView.swift; sourceTree = "<group>"; };
 		7CB08CA62EDCF00400236ECB /* ProgramScheduleFullView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgramScheduleFullView.swift; sourceTree = "<group>"; };
 		7CB08CA62EDE398A00236ECB /* DevMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevMenuView.swift; sourceTree = "<group>"; };
-		7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewUserJourneyTracker.swift; sourceTree = "<group>"; };
-		7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeCreationCards.swift; sourceTree = "<group>"; };
 		7CDE51052F8A100100B5C928 /* MotionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionPolicy.swift; sourceTree = "<group>"; };
 		7CDE51072F8A100200B5C928 /* AdaptiveMaterialBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveMaterialBackground.swift; sourceTree = "<group>"; };
 		7CDEAD012E5F0507007F1A60 /* PerfFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerfFlags.swift; sourceTree = "<group>"; };
@@ -1098,7 +1092,6 @@
 				7C0C41F72F09D76A00F02E84 /* CardioWorkoutDetailView.swift */,
 				7C53E2232F353B7700C2F7EC /* ChallengeActivityType.swift */,
 				A12345678901234567890401 /* ChallengeAFriendEntryWidget.swift */,
-				7CD6E66C2FA468FE00E49D30 /* ChallengeCreationCards.swift */,
 				7C53E2252F353B7700C2F7ED /* ChallengeCreationCards.swift */,
 				9D4F5E6D7C8B9A0C1D2E3F41 /* ChallengeDetailKit.swift */,
 				7CACB57A2F2E971E003A7C91 /* ChallengeDetailView.swift */,
@@ -1115,7 +1108,6 @@
 				7CAA26060001000000000042 /* CloudSyncRetryQueue.swift */,
 				7C8405D92EE8AF830009ED0F /* CollaborativeLearningEngine.swift */,
 				7C8CFD612FA42700007CD766 /* CommonFoodDensities.swift */,
-				7C8CFE502FA431FF007CD766 /* CommonFoodDensities.swift */,
 				7CAA1FAE2F428898008200B9 /* CommunityChallengeService.swift */,
 				7CAA1FAC2F428889008200B9 /* CommunityChallengeViews.swift */,
 				7C8405C52EE65E490009ED0F /* CommunityIntelligenceService.swift */,
@@ -1272,7 +1264,6 @@
 				EF7F4EB0AB2ADBE287AC1AC4 /* NewOnboardingView+Social.swift */,
 				F1E3406881B826760E5E531D /* NewOnboardingView+Steps.swift */,
 				4F4A4117978615CECC0201DA /* NewOnboardingView+Verification.swift */,
-				7CD6DD312FA4382700E49D30 /* NewUserJourneyTracker.swift */,
 				7CA81D862F6EF1010020170A /* NewUserJourneyTracker.swift */,
 				7CB08C8C2EDAB01300236ECB /* NotificationManager.swift */,
 				7C8E80042FB10003007CD766 /* NotificationPrimerSheet.swift */,
@@ -1854,7 +1845,6 @@
 				7C8EB1C42F26B03C007BFA55 /* StravaService.swift in Sources */,
 				7C98FAC42EEC7EA8001AE1F3 /* SessionLogManager.swift in Sources */,
 				7C8CEA3C2F99C11E007CD766 /* ReadinessWorkoutAdjuster.swift in Sources */,
-				7C8CFE512FA431FF007CD766 /* CommonFoodDensities.swift in Sources */,
 				7CAA0420202604200A000001 /* RequestCoalescer.swift in Sources */,
 				7CAA1FA12F4AAAA0008200B9 /* SystemMetrics.swift in Sources */,
 				7CAA1FA32F4AAAA0008200B9 /* KeychainHelper.swift in Sources */,
@@ -1867,7 +1857,6 @@
 				7CB08C7F2ED8BB1700236ECB /* NewOnboardingView.swift in Sources */,
 				7C8405C02EE646D90009ED0F /* UserBehaviorLearningEngine.swift in Sources */,
 				7C87B6392EEA3F3C00AC01F3 /* ExerciseSwapService.swift in Sources */,
-				7CD6E66D2FA468FE00E49D30 /* ChallengeCreationCards.swift in Sources */,
 				7CAFD56A2EE2100B00920F0D /* WorkoutEnvironmentService.swift in Sources */,
 				A12345678901234567890182 /* WorkoutCreationView.swift in Sources */,
 				7C98FAC82EEDB4A0001AE1F3 /* SmartExerciseSearchService.swift in Sources */,
@@ -1920,7 +1909,6 @@
 				7C47F9DB2EE336E000BEC4D7 /* SmartDayGenerator.swift in Sources */,
 				7C792AC82F2AB2390048A97E /* RecipeBrowserView.swift in Sources */,
 				7CB08C972EDBB88200236ECB /* ProgramExplorerView.swift in Sources */,
-				7CD6DD322FA4382700E49D30 /* NewUserJourneyTracker.swift in Sources */,
 				7C792B022F2C2F7B0048A97E /* PulsingRedDot.swift in Sources */,
 				7C0C41D22F00B21600F02E84 /* ExerciseMetadataClassifier.swift in Sources */,
 				7C6DE3792F5BCA2800BCA276 /* StoreKitManager.swift in Sources */,
@@ -2476,6 +2464,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
+				DEVELOPMENT_TEAM = HT4GPR2K33;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2514,6 +2503,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_ASSET_PATHS = "\"Fit33/Preview Content\"";
+				DEVELOPMENT_TEAM = HT4GPR2K33;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;

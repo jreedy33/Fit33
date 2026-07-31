@@ -296,17 +296,39 @@ class WorkoutManager: ObservableObject {
         throttledSave()
     }
     
-    // Throttle saves to at most once per 5 seconds for performance
+    // Throttle saves to at most once per 5 seconds for performance.
+    //
+    // PR-32 (2026-07-30): the old guard dropped the TRAILING edge — a set
+    // logged inside the 5s window was simply never persisted until the next
+    // save trigger, so a hard kill in that window lost the user's last set.
+    // Skipped saves now coalesce into one deferred save so the final write
+    // in a burst always lands, while burst rate stays capped at 1 per 5s.
     private var lastSaveTime: Date = .distantPast
+    private var pendingSaveTask: Task<Void, Never>?
     private func throttledSave() {
-        let now = Date()
-        guard now.timeIntervalSince(lastSaveTime) > 5 else { return }
-        lastSaveTime = now
-        saveActiveWorkoutToStorage()
+        let elapsed = Date().timeIntervalSince(lastSaveTime)
+        if elapsed > 5 {
+            lastSaveTime = Date()
+            saveActiveWorkoutToStorage()
+            return
+        }
+        guard pendingSaveTask == nil else { return }
+        let delay = max(0.1, 5.0 - elapsed)
+        pendingSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled else { return }
+            self.pendingSaveTask = nil
+            self.lastSaveTime = Date()
+            self.saveActiveWorkoutToStorage()
+        }
     }
     
     // Clear all sets data (when workout ends)
     func clearAllSetsData() {
+        // Cancel any coalesced deferred save — the workout is over, and a
+        // late fire would re-persist a stale snapshot of the ended workout.
+        pendingSaveTask?.cancel()
+        pendingSaveTask = nil
         exerciseSetsData.removeAll()
         Task { @MainActor in
             ExerciseSwapService.shared.clearSwapCache()

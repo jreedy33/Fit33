@@ -2,6 +2,25 @@ import SwiftUI
 import SafariServices
 import StoreKit
 
+// MARK: - Settings Navigation Route
+
+/// PR-28 (2026-07-30): value-based navigation for every pushed screen in
+/// Settings. Completes Navigation Migration Phase 3 — do not add new
+/// `NavigationLink(destination:)` links here.
+enum SettingsRoute: Hashable {
+    case privacySettings
+    case blockedUsers
+    case healthDataSync
+    case cloudBackup
+    case dataDownload
+    case stravaSettings
+    case fitbitSettings
+    case healthKitSettings
+    case termsConditions
+    case privacyPolicy
+    case notificationSettings
+}
+
 struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var notificationManager = NotificationManager.shared
@@ -98,7 +117,7 @@ struct SettingsView: View {
                         // Privacy & Security Section
                         settingsSection(title: "Privacy & Security") {
                             VStack(spacing: 0) {
-                                NavigationLink(destination: PrivacySettingsView()) {
+                                NavigationLink(value: SettingsRoute.privacySettings) {
                                     HStack(spacing: 16) {
                                         Image(systemName: "lock.fill")
                                             .font(.title3)
@@ -129,7 +148,7 @@ struct SettingsView: View {
 
                                 Divider().padding(.leading, 52)
 
-                                NavigationLink(destination: BlockedUsersView()) {
+                                NavigationLink(value: SettingsRoute.blockedUsers) {
                                     HStack(spacing: 16) {
                                         Image(systemName: "hand.raised.fill")
                                             .font(.title3)
@@ -168,7 +187,7 @@ struct SettingsView: View {
                                 // any new HK category synced to the cloud
                                 // must be added to the categories list inside
                                 // HealthDataSyncDetailView in the same PR.
-                                NavigationLink(destination: HealthDataSyncDetailView()) {
+                                NavigationLink(value: SettingsRoute.healthDataSync) {
                                     HStack(spacing: 16) {
                                         Image(systemName: "heart.text.square.fill")
                                             .font(.title3)
@@ -204,7 +223,7 @@ struct SettingsView: View {
                         // Data & Backup Section
                         settingsSection(title: "Data & Backup") {
                             VStack(spacing: 0) {
-                                NavigationLink(destination: CloudBackupView()) {
+                                NavigationLink(value: SettingsRoute.cloudBackup) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: CornerRadius.sm)
@@ -298,7 +317,7 @@ struct SettingsView: View {
                                 
                                 Divider().padding(.leading, 68)
                                 
-                                NavigationLink(destination: DataDownloadView()) {
+                                NavigationLink(value: SettingsRoute.dataDownload) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: CornerRadius.sm)
@@ -348,7 +367,7 @@ struct SettingsView: View {
                         settingsSection(title: "Integrations") {
                             VStack(spacing: 0) {
                                 // Strava Integration
-                                NavigationLink(destination: StravaSettingsView()) {
+                                NavigationLink(value: SettingsRoute.stravaSettings) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: CornerRadius.sm)
@@ -400,7 +419,7 @@ struct SettingsView: View {
                                 Divider().padding(.leading, 52)
                                 
                                 // Fitbit Integration
-                                NavigationLink(destination: FitbitSettingsView()) {
+                                NavigationLink(value: SettingsRoute.fitbitSettings) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: CornerRadius.sm)
@@ -456,7 +475,7 @@ struct SettingsView: View {
                                 /*
                                 Divider().padding(.leading, 52)
 
-                                NavigationLink(destination: OuraSettingsView()) {
+                                NavigationLink(value: SettingsRoute.ouraSettings) { // (commented-out block; add the enum case if re-enabled)
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: CornerRadius.sm)
@@ -511,7 +530,7 @@ struct SettingsView: View {
                                 Divider().padding(.leading, 52)
                                 
                                 // Apple Health Integration (Nike Run Club, Apple Watch, etc.)
-                                NavigationLink(destination: HealthKitSettingsView()) {
+                                NavigationLink(value: SettingsRoute.healthKitSettings) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: CornerRadius.sm)
@@ -674,17 +693,14 @@ struct SettingsView: View {
                                 }
                                 .buttonStyle(.plain)
                                 
-                                #if DEBUG
-                                // Hidden NavigationLink to dev menu (after password authentication)
-                                NavigationLink(destination: DevMenuView(), isActive: $showDevMenu) {
-                                    EmptyView()
-                                }
-                                .hidden()
-                                #endif
+                                // (PR-28 2026-07-30: hidden DevMenu
+                                // NavigationLink(isActive:) replaced by the
+                                // navigationDestination(isPresented:) modifier
+                                // on the body — see below.)
                                 
                                 Divider().padding(.leading, 52)
                                 
-                                NavigationLink(destination: TermsConditionsView()) {
+                                NavigationLink(value: SettingsRoute.termsConditions) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: CornerRadius.sm)
@@ -717,7 +733,7 @@ struct SettingsView: View {
                                 
                                 Divider().padding(.leading, 52)
                                 
-                                NavigationLink(destination: PrivacyPolicyView()) {
+                                NavigationLink(value: SettingsRoute.privacyPolicy) {
                                     HStack(spacing: 16) {
                                         ZStack {
                                             RoundedRectangle(cornerRadius: CornerRadius.sm)
@@ -756,10 +772,30 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        // PR-28 (2026-07-30): value-based destinations for every pushed
+        // Settings screen. Completes Navigation Migration Phase 3.
+        .navigationDestination(for: SettingsRoute.self) { route in
+            switch route {
+            case .privacySettings: PrivacySettingsView()
+            case .blockedUsers: BlockedUsersView()
+            case .healthDataSync: HealthDataSyncDetailView()
+            case .cloudBackup: CloudBackupView()
+            case .dataDownload: DataDownloadView()
+            case .stravaSettings: StravaSettingsView()
+            case .fitbitSettings: FitbitSettingsView()
+            case .healthKitSettings: HealthKitSettingsView()
+            case .termsConditions: TermsConditionsView()
+            case .privacyPolicy: PrivacyPolicyView()
+            case .notificationSettings: NotificationSettingsView()
+            }
+        }
         .onAppear {
             SessionLogManager.shared.logScreen(.settings)
         }
         #if DEBUG
+        .navigationDestination(isPresented: $showDevMenu) {
+            DevMenuView()
+        }
         .sheet(isPresented: $showAdminPassword) {
             AdminPasswordView(isAuthenticated: $isAdminAuthenticated)
         }
@@ -1293,7 +1329,7 @@ struct SettingsView: View {
     
     // MARK: - Notifications Row
     private func notificationsRow() -> some View {
-        NavigationLink(destination: NotificationSettingsView()) {
+        NavigationLink(value: SettingsRoute.notificationSettings) {
             HStack(spacing: 16) {
                 ZStack {
                     Circle()

@@ -1157,8 +1157,13 @@ struct ManualBugReportView: View {
             .frame(maxWidth: .infinity)
             .padding()
             .background(
-                LinearGradient(colors: [.red, .orange], startPoint: .leading, endPoint: .trailing)
-                    .opacity(bugDescription.isEmpty ? 0.5 : 1.0)
+                LinearGradient(
+                    colors: bugDescription.isEmpty
+                        ? [.red.opacity(0.5), .orange.opacity(0.5)]
+                        : [.red, .orange],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
             )
             .foregroundColor(.white)
             .cornerRadius(CornerRadius.lg)

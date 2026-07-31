@@ -1557,8 +1557,9 @@ struct RunCompletionView: View {
 
             // 2. Persist to Supabase. Failure must not block the rest of
             //    the fanout — XP/streak/feed should still apply even if the
-            //    network is briefly down (Wave 2 will switch to the
-            //    record_cardio_workout RPC and queue on failure).
+            //    network is briefly down. Failed saves queue for offline
+            //    retry (PR-22 residual, 2026-07-30) — the RPC's external_id
+            //    idempotency makes retries duplicate-safe.
             var savedWorkoutId: String?
             do {
                 savedWorkoutId = try await SupabaseManager.shared.saveCardioWorkout(payload)
@@ -1567,6 +1568,7 @@ struct RunCompletionView: View {
                     "❌ [\(activityKey)] Failed to save run to Supabase: \(error.localizedDescription)",
                     category: .network
                 )
+                CloudSyncRetryQueue.shared.enqueueCardioCloudSync(payload)
             }
 
             // 3. UserManager fanout (XP, streak, league, daily quests,

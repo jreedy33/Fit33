@@ -31,13 +31,22 @@ final class CloudSyncRetryQueue: ObservableObject {
 
     enum Kind: String, Codable {
         case workoutCloudSync
+        /// PR-22 residual (2026-07-30): failed `record_cardio_workout` RPC
+        /// calls. The payload is a JSON-encoded `CardioWorkoutData`; the RPC
+        /// is idempotent on the stable external_id derived from
+        /// (started_at, completed_at, activity_type), so retries are safe.
+        case cardioCloudSync
     }
 
     struct Entry: Codable, Identifiable {
         let id: UUID
         let kind: Kind
         /// Core Data NSManagedObjectID URI for workoutCloudSync entries.
+        /// Empty string for cardioCloudSync entries.
         let objectURI: String
+        /// JSON-encoded `CardioWorkoutData` for cardioCloudSync entries.
+        /// Optional so queue files written before 2026-07-30 still decode.
+        var payloadJSON: String?
         var attempts: Int
         var nextAttemptAt: Date
         let enqueuedAt: Date
@@ -67,6 +76,7 @@ final class CloudSyncRetryQueue: ObservableObject {
             id: UUID(),
             kind: .workoutCloudSync,
             objectURI: uri,
+            payloadJSON: nil,
             attempts: 0,
             nextAttemptAt: Date(),
             enqueuedAt: Date()
@@ -75,6 +85,34 @@ final class CloudSyncRetryQueue: ObservableObject {
         persist()
         pendingCount = entries.count
         AppLogger.warning("Cloud sync queued for retry (\(entries.count) pending)", category: .network)
+    }
+
+    /// Enqueue a cardio cloud-sync retry (PR-22 residual). Safe to call from
+    /// the catch block of any `saveCardioWorkout` caller — the RPC's
+    /// external_id idempotency means a retry of the same payload returns the
+    /// original row instead of duplicating it.
+    func enqueueCardioCloudSync(_ payload: CardioWorkoutData) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(payload),
+              let json = String(data: data, encoding: .utf8) else {
+            AppLogger.error("Failed to encode cardio payload for retry queue", category: .network)
+            return
+        }
+        guard !entries.contains(where: { $0.kind == .cardioCloudSync && $0.payloadJSON == json }) else { return }
+        let entry = Entry(
+            id: UUID(),
+            kind: .cardioCloudSync,
+            objectURI: "",
+            payloadJSON: json,
+            attempts: 0,
+            nextAttemptAt: Date(),
+            enqueuedAt: Date()
+        )
+        entries.append(entry)
+        persist()
+        pendingCount = entries.count
+        AppLogger.warning("Cardio cloud sync queued for retry (\(entries.count) pending)", category: .network)
     }
 
     /// Cancel any pending workout-cloud-sync entry for the given workout
@@ -149,6 +187,29 @@ final class CloudSyncRetryQueue: ObservableObject {
         switch entry.kind {
         case .workoutCloudSync:
             return await attemptWorkoutSync(uri: entry.objectURI)
+        case .cardioCloudSync:
+            return await attemptCardioSync(payloadJSON: entry.payloadJSON)
+        }
+    }
+
+    private func attemptCardioSync(payloadJSON: String?) async -> Bool {
+        guard let json = payloadJSON, let data = json.data(using: .utf8) else {
+            AppLogger.warning("Dropping queued cardio sync — payload missing", category: .network)
+            return true // drop: nothing we can do.
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let payload = try? decoder.decode(CardioWorkoutData.self, from: data) else {
+            AppLogger.warning("Dropping queued cardio sync — payload undecodable", category: .network)
+            return true
+        }
+        do {
+            _ = try await SupabaseManager.shared.saveCardioWorkout(payload)
+            AppLogger.info("✅ Retried cardio cloud sync (\(payload.activityType))", category: .network)
+            return true
+        } catch {
+            AppLogger.error("Retry cardio cloud sync failed: \(error.localizedDescription)", category: .network)
+            return false
         }
     }
 

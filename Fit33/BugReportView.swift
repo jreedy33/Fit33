@@ -1156,10 +1156,15 @@ struct ManualBugReportView: View {
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(
+            .background {
+                // Xcode 16 SDK build fix: LinearGradient conforms to both View
+                // and ShapeStyle, and both protocols now declare `.opacity(_:)`,
+                // making `.background(LinearGradient(...).opacity(...))`
+                // ambiguous. The `.background { }` closure form forces View
+                // context, resolving the overload unambiguously.
                 LinearGradient(colors: [.red, .orange], startPoint: .leading, endPoint: .trailing)
                     .opacity(bugDescription.isEmpty ? 0.5 : 1.0)
-            )
+            }
             .foregroundColor(.white)
             .cornerRadius(CornerRadius.lg)
             .shadow(color: .red.opacity(0.3), radius: 8, x: 0, y: 4)

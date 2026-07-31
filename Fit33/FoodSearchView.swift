@@ -52,50 +52,33 @@ struct FoodSearchView: View {
         }
         .navigationTitle("Add Food")
         .navigationBarTitleDisplayMode(.inline)
-        .background(
-            ZStack {
-                // Food details navigation
-                NavigationLink(
-                    destination: Group {
-                        if let food = selectedFood {
-                            FoodDetailsView(
-                                food: food,
-                                mealType: mealType,
-                                onAdd: onAdd,
-                                onDismiss: { 
-                                    selectedFood = nil
-                                    dismiss()
-                                }
-                            )
-                        }
-                    },
-                    isActive: Binding(
-                        get: { selectedFood != nil },
-                        set: { if !$0 { selectedFood = nil } }
-                    )
-                ) {
-                    EmptyView()
-                }
-                .hidden()
-                
-                // Nutrition scanner navigation
-                NavigationLink(
-                    destination: NutritionScannerView(
-                        mealType: mealType,
-                        onSave: { foodEntry in
-                            AppLogger.debug("💾 [SEARCH VIEW] Saving scanned nutrition: \(foodEntry.name)", category: .nutrition)
-                            onAdd(foodEntry)
-                            showingNutritionScanner = false
-                            dismiss()
-                        }
-                    ),
-                    isActive: $showingNutritionScanner
-                ) {
-                    EmptyView()
-                }
-                .hidden()
+        .navigationDestination(isPresented: Binding(
+            get: { selectedFood != nil },
+            set: { if !$0 { selectedFood = nil } }
+        )) {
+            if let food = selectedFood {
+                FoodDetailsView(
+                    food: food,
+                    mealType: mealType,
+                    onAdd: onAdd,
+                    onDismiss: {
+                        selectedFood = nil
+                        dismiss()
+                    }
+                )
             }
-        )
+        }
+        .navigationDestination(isPresented: $showingNutritionScanner) {
+            NutritionScannerView(
+                mealType: mealType,
+                onSave: { foodEntry in
+                    AppLogger.debug("💾 [SEARCH VIEW] Saving scanned nutrition: \(foodEntry.name)", category: .nutrition)
+                    onAdd(foodEntry)
+                    showingNutritionScanner = false
+                    dismiss()
+                }
+            )
+        }
         .sheet(isPresented: $showingRestaurantSearch) {
             RestaurantSearchSheet()
                 .environmentObject(userManager)

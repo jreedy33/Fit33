@@ -768,6 +768,10 @@ struct SettingsView: View {
                     }
                     .padding()
                     .padding(.bottom, 60)
+                    // iPad: cap content width so full-width rows don't
+                    // stretch edge-to-edge (device-polish batch, 2026-07-31).
+                    .frame(maxWidth: 640)
+                    .frame(maxWidth: .infinity)
                 }
         }
         .navigationTitle("Settings")

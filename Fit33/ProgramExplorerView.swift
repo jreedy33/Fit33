@@ -84,13 +84,11 @@ struct ProgramExplorerView: View {
             .ignoresSafeArea()
         )
         .navigationBarHidden(true)
-        .background(
-            NavigationLink(
-                destination: selectedProgram.map { ProgramDetailFullView(program: $0) },
-                isActive: $navigateToDetail
-            ) { EmptyView() }
-            .hidden()
-        )
+        .navigationDestination(isPresented: $navigateToDetail) {
+            if let program = selectedProgram {
+                ProgramDetailFullView(program: program)
+            }
+        }
         .sheet(isPresented: $showingFilters) {
             AdvancedProgramFiltersView(
                 selectedDifficulty: $selectedDifficulty,
@@ -593,21 +591,13 @@ struct ProgramDetailFullView: View {
         .safeAreaInset(edge: .bottom) {
             bottomActionBar
         }
-        .background(
-            Group {
-                NavigationLink(
-                    destination: CustomizeProgramView(baseProgram: program),
-                    isActive: $navigateToCustomize
-                ) { EmptyView() }
-                
-                NavigationLink(
-                    destination: ProgramScheduleFullView(program: program)
-                        .environmentObject(workoutManager),
-                    isActive: $navigateToSchedule
-                ) { EmptyView() }
-            }
-            .hidden()
-        )
+        .navigationDestination(isPresented: $navigateToCustomize) {
+            CustomizeProgramView(baseProgram: program)
+        }
+        .navigationDestination(isPresented: $navigateToSchedule) {
+            ProgramScheduleFullView(program: program)
+                .environmentObject(workoutManager)
+        }
         .alert("Start Program", isPresented: $showingStartConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Start") {
@@ -1203,14 +1193,10 @@ struct CustomizeProgramView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, Spacing.md)
         .background(.ultraThinMaterial)
-        .background(
-            NavigationLink(
-                destination: ProgramScheduleFullView(program: baseProgram)
-                    .environmentObject(workoutManager),
-                isActive: $navigateToSchedule
-            ) { EmptyView() }
-            .hidden()
-        )
+        .navigationDestination(isPresented: $navigateToSchedule) {
+            ProgramScheduleFullView(program: baseProgram)
+                .environmentObject(workoutManager)
+        }
     }
     
     private func createAndStartProgram() {

@@ -323,7 +323,7 @@ struct SetRowView: View {
                     },
                     isFocused: $isWeightFocused
                 )
-                .frame(width: showsEachSuffix ? weightFieldWidth : 70, height: 38)
+                .frame(width: showsEachSuffix ? weightFieldWidth : 70, height: 44)
 
                 if showsEachSuffix {
                     Text("each")
@@ -333,7 +333,8 @@ struct SetRowView: View {
                         .accessibilityHidden(true)
                 }
             }
-            .frame(width: 70, height: 38)
+            // 44pt HIG minimum touch target (was 38 — device-polish batch)
+            .frame(width: 70, height: 44)
             .background(Color(.systemGray6))
             .cornerRadius(CornerRadius.sm)
             .overlay(
@@ -373,8 +374,10 @@ struct SetRowView: View {
                 
             // Reps input
             // Uses SelectAllTextField for better editing UX (selects all on focus)
+            // Finding S: a program-prescribed rep target beats previous-
+            // session reps (deload weeks must show the deload target).
             SelectAllTextField(
-                placeholder: previousSet.map { "\($0.reps)" } ?? "8",
+                placeholder: setData.targetReps > 0 ? "\(setData.targetReps)" : (previousSet.map { "\($0.reps)" } ?? "8"),
                 text: $repsText,
                 keyboardType: .numberPad,
                 font: .systemFont(ofSize: 17, weight: .semibold),
@@ -395,7 +398,7 @@ struct SetRowView: View {
                 },
                 isFocused: $isRepsFocused
             )
-            .frame(width: 70, height: 38)
+            .frame(width: 70, height: 44)
             .background(Color(.systemGray6))
             .cornerRadius(CornerRadius.sm)
             .overlay(
@@ -428,10 +431,14 @@ struct SetRowView: View {
                     weightDebounceTask?.cancel()
                     repsDebounceTask?.cancel()
                     
-                    // Determine final weight: user input > pre-filled data > placeholder > default
+                    // Determine final weight in canonical TOTAL LBS:
+                    // user input (display units — kg and/or per-side — so it
+                    // MUST go through the same conversion applyWeight uses) >
+                    // pre-filled data > placeholder > default. setData.weight
+                    // and prev.weight are already total lbs.
                     let finalWeight: Double
                     if let weight = parseWeight(weightText), weight > 0 {
-                        finalWeight = weight
+                        finalWeight = totalLbs(fromDisplayWeight: weight)
                     } else if setData.weight > 0 {
                         // Use pre-filled value from previous set
                         finalWeight = setData.weight
@@ -439,7 +446,12 @@ struct SetRowView: View {
                         // Use placeholder from previous workout
                         finalWeight = prev.weight
                     } else {
-                        finalWeight = 45 // Default
+                        // Finding V (2026-07-31): log what the ghost
+                        // placeholder SHOWS. This used to hardcode 45 total
+                        // lbs while the empty-field ghost displayed 135
+                        // (total-mode default) — first-time users logged a
+                        // third of what they saw.
+                        finalWeight = totalLbs(fromDisplayWeight: defaultDisplayWeight)
                     }
                     
                     // Determine final reps: user input > pre-filled data > placeholder > default
@@ -453,15 +465,20 @@ struct SetRowView: View {
                         // Use placeholder from previous workout
                         finalReps = prev.reps
                     } else {
-                        finalReps = 8 // Default
+                        // Match the reps ghost: program target if prescribed
+                        // (finding S), else the same 8 the placeholder shows.
+                        finalReps = setData.targetReps > 0 ? setData.targetReps : 8
                     }
                     
-                    // Update setData with final values
+                    // Update setData with final values (canonical total lbs)
                     setData.weight = finalWeight
+                    setData.syncWeightUnits(fromLbs: true)
                     setData.reps = finalReps
                     
-                    // Update text fields to show the confirmed values (preserve decimals like 187.5)
-                    weightText = formatWeightPlaceholder(finalWeight)
+                    // Echo the confirmed values back in DISPLAY units (kg /
+                    // per-side inverse — same math as weightPlaceholder),
+                    // preserving decimals like 187.5
+                    weightText = formatWeightPlaceholder(displayWeight(fromTotalLbs: finalWeight))
                     repsText = "\(finalReps)"
                     
                     // If already completed, allow unchecking
@@ -481,16 +498,6 @@ struct SetRowView: View {
                     #if DEBUG
                     AppLogger.debug("🔥 Set \(setNumber): Initiating completion...", category: .workout)
                     #endif
-                    
-                    // Cancel any pending debounce and sync weight/reps immediately
-                    weightDebounceTask?.cancel()
-                    repsDebounceTask?.cancel()
-                    if let weight = parseWeight(weightText) {
-                        setData.weight = weight
-                    }
-                    if let reps = Int(repsText) {
-                        setData.reps = reps
-                    }
                     
                     let shouldStartTimer = autoStartTimer && restDuration > 0
                     
@@ -514,6 +521,12 @@ struct SetRowView: View {
                     
                     theSetData.isCompleted = true
                     
+                    // Finding U (2026-07-31): this callback was captured but
+                    // never invoked, so the parent never learned a set was
+                    // checked off and the paired Apple Watch stayed frozen
+                    // on "Set 1 of N" all workout.
+                    theOnSetCompleted()
+                    
                     if shouldStartTimer {
                         theRestTimer.startWithAdOffset(
                             duration: theRestDuration,
@@ -533,10 +546,14 @@ struct SetRowView: View {
                     Image(systemName: setData.isCompleted ? "checkmark.circle.fill" : "circle")
                         .font(.title3)
                         .foregroundColor(setData.isCompleted ? .blue : .gray)
+                        // 44pt HIG minimum tap target (was 40pt wide with no
+                        // min height — device-polish batch, 2026-07-31)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel(setData.isCompleted ? "Set \(setNumber) completed" : "Mark set \(setNumber) complete")
                 .accessibilityHint(setData.isCompleted ? "Tap to uncheck this set" : "Mark this set as done")
-                .frame(width: 40)
+                .frame(width: 44)
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, 6)
@@ -628,21 +645,25 @@ struct SetRowView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
     
-    private var weightPlaceholder: String {
-        if let prev = previousSet {
-            var displayWeight = prev.weight
-            if useKg { displayWeight = (displayWeight * WorkoutSetData.lbsToKg * 10).rounded() / 10 }
-            if isPerSideMode {
-                let bar = useKg ? (barWeight * WorkoutSetData.lbsToKg) : barWeight
-                let perSide = max(0, (displayWeight - bar) / 2)
-                return formatWeightPlaceholder(perSide)
-            }
-            return formatWeightPlaceholder(displayWeight)
-        }
-        return isPerSideMode ? (useKg ? "20" : "45") : (useKg ? "60" : "135")
+    /// No-history ghost default in DISPLAY units. Single source of truth
+    /// for both the visible placeholder and the checkmark's no-input
+    /// fallback (finding V — they used to disagree: ghost 135, logged 45).
+    private var defaultDisplayWeight: Double {
+        isPerSideMode ? (useKg ? 20 : 45) : (useKg ? 60 : 135)
     }
     
-    private func applyWeight(_ inputWeight: Double) {
+    private var weightPlaceholder: String {
+        if let prev = previousSet {
+            return formatWeightPlaceholder(displayWeight(fromTotalLbs: prev.weight))
+        }
+        return formatWeightPlaceholder(defaultDisplayWeight)
+    }
+    
+    /// Convert a value typed in the field's DISPLAY units (kg and/or
+    /// per-side) into canonical TOTAL LBS. Single source of truth for the
+    /// display→storage direction — used by both the focus-loss/debounce
+    /// path (`applyWeight`) and the completion checkmark.
+    private func totalLbs(fromDisplayWeight inputWeight: Double) -> Double {
         var totalLbs: Double
         let bar = useKg ? (barWeight * WorkoutSetData.lbsToKg) : barWeight
         
@@ -654,7 +675,23 @@ struct SetRowView: View {
             totalLbs = useKg ? (inputWeight * WorkoutSetData.kgToLbs) : inputWeight
         }
         
-        setData.weight = (totalLbs * 10).rounded() / 10
+        return (totalLbs * 10).rounded() / 10
+    }
+    
+    /// Inverse of `totalLbs(fromDisplayWeight:)` — canonical TOTAL LBS back
+    /// into the field's display units (same math as `weightPlaceholder`).
+    private func displayWeight(fromTotalLbs weight: Double) -> Double {
+        var displayWeight = weight
+        if useKg { displayWeight = (displayWeight * WorkoutSetData.lbsToKg * 10).rounded() / 10 }
+        if isPerSideMode {
+            let bar = useKg ? (barWeight * WorkoutSetData.lbsToKg) : barWeight
+            displayWeight = max(0, (displayWeight - bar) / 2)
+        }
+        return (displayWeight * 10).rounded() / 10
+    }
+    
+    private func applyWeight(_ inputWeight: Double) {
+        setData.weight = totalLbs(fromDisplayWeight: inputWeight)
         setData.syncWeightUnits(fromLbs: true)
     }
     

@@ -611,10 +611,17 @@ struct ProgramDayPreviewView: View {
             context: viewContext
         )
         
-        // Start the workout
-        workoutManager.currentProgramDayNumber = dayNumber
-        workoutManager.currentProgramDayFocus = programDay.name
-        workoutManager.startWorkout(workout: workout, exercises: exercises, insights: nil)
+        // Start the workout. Finding O (2026-07-31): program day/focus MUST
+        // be passed as parameters — assigning them before the call gets
+        // overwritten by startWorkout's nil defaults, so legacy program-day
+        // completion never recorded.
+        workoutManager.startWorkout(
+            workout: workout,
+            exercises: exercises,
+            insights: nil,
+            programDay: dayNumber,
+            programDayFocus: programDay.name
+        )
         
         // Navigate to workout tab
         workoutManager.shouldNavigateToWorkoutTab = true

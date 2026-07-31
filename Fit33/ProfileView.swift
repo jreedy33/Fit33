@@ -775,6 +775,10 @@ struct ProfileView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 100)
                 }
+                // iPad: cap content width so full-width sections don't
+                // stretch edge-to-edge (device-polish batch, 2026-07-31).
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.immediately)
             .scrollContentBackground(.hidden)
@@ -1242,7 +1246,13 @@ struct ProfileView: View {
         .padding(.horizontal, Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color(white: 0.1) : Color.white)
+                .fill(
+                    LinearGradient(
+                        colors: Color.cardGradientStops(for: colorScheme),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
                 .shadow(
                     color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.12),
                     radius: 16,
@@ -2254,7 +2264,7 @@ struct UsernameSetupSheet: View {
                         }
                         .background(
                             RoundedRectangle(cornerRadius: CornerRadius.md)
-                                .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
+                                .fill(Color.cardBackground)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: CornerRadius.md)

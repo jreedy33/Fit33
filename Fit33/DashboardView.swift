@@ -31,7 +31,13 @@ struct DashboardView: View {
     // Swipeable workout carousel (workout buttons + active program)
     @State var selectedWorkoutPage: Int = 0
     let challengeService = ChallengeService.shared
-    let dailyQuestService = DailyQuestService.shared
+    // @ObservedObject (NOT plain let) — the `.onChange(of:
+    // dailyQuestService.completedCount)` handler below only fires if this
+    // view invalidates when quests change. It previously "worked" as a
+    // plain `let` solely because WorkoutManager's phantom 1 Hz
+    // `currentTime` publish (finding G, removed 2026-07-31) re-evaluated
+    // the body every second.
+    @ObservedObject var dailyQuestService = DailyQuestService.shared
     let stravaService = StravaService.shared
     let streakShieldService = StreakShieldService.shared
     let healthKitService = HealthKitService.shared
@@ -869,7 +875,10 @@ struct DashboardView: View {
                         lastChallengeRefreshDate = Date()
                     }
                     
-                    await FriendService.shared.refreshHomeScreenData()
+                    // Finding Z (2026-07-31): refreshHomeScreenData() was
+                    // ALSO called here ungated on every foreground —
+                    // duplicating Fit33App's gated foreground social fanout
+                    // (pull-to-refresh covers manual refresh). Removed.
                 }
             }
         }

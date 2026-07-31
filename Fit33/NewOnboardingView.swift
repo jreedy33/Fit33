@@ -498,6 +498,9 @@ struct NewOnboardingView: View {
 
                 Spacer()
             }
+            // iPad: cap onboarding content width (device-polish batch).
+            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity)
 
             if currentStep == .auth && hasStartedAuth {
                 authFloatingButtonBar(keyboardUp: keyboardUp)
@@ -802,11 +805,12 @@ struct NewOnboardingView: View {
         if selectedLimitations.isEmpty {
             return AnyShapeStyle(Color.green.opacity(0.1))
         }
-        let colors: [Color] = colorScheme == .dark
-            ? [Color(white: 0.14), Color(white: 0.10)]
-            : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)]
         return AnyShapeStyle(
-            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(
+                colors: Color.cardGradientStops(for: colorScheme),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         )
     }
 

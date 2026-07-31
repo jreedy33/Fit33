@@ -10,6 +10,11 @@ struct RunningWorkoutView: View {
     @StateObject private var runningManager = RunningManager.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    // Finding AC (2026-07-31): landscape is enabled in Info.plist but this
+    // screen's fixed-height VStack overflowed in compact-vertical layouts
+    // (and on SE-height portrait). Compact → hero grid collapses to one
+    // row and the bottom panel becomes scrollable.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     
     @State private var showStopConfirmation = false
     @State private var showCompletionSheet = false
@@ -115,44 +120,29 @@ struct RunningWorkoutView: View {
             
             // Content overlay
             VStack(spacing: 0) {
-                // Top: Hero Metrics 2x2 Grid
+                // Top: Hero Metrics Grid (2x2, or 1x4 in compact vertical)
+                // Safe area already clears the status bar — the old 60pt
+                // was stale compensation (device-polish batch, 2026-07-31).
                 heroMetricsGrid
-                    .padding(.top, 60)
+                    .padding(.top, verticalSizeClass == .compact ? 8 : Spacing.sm)
                     .padding(.horizontal, Spacing.md)
                 
                 // GPS Status + Map Controls
                 mapControlsBar
-                    .padding(.top, 12)
+                    .padding(.top, verticalSizeClass == .compact ? 6 : 12)
                     .padding(.horizontal, 20)
                 
-            Spacer()
-            
-                // Bottom Panel
-                VStack(spacing: 12) {
-                    // Last Split Pill (if available)
-                    if runningManager.splits.count > 0 {
-                        lastSplitPill
+                Spacer(minLength: 0)
+                
+                // Bottom Panel — scrolls in compact vertical so the main
+                // control buttons stay reachable (finding AC).
+                if verticalSizeClass == .compact {
+                    ScrollView(showsIndicators: false) {
+                        bottomPanelContent
                     }
-                    
-                    // Live Chart Strip
-                    liveChartStrip
-                        .padding(.horizontal, Spacing.md)
-                    
-                    // Goal Progress (if set)
-                    if runningManager.goalType != .none {
-                        goalProgressStrip
-                            .padding(.horizontal, Spacing.md)
-                    }
-                    
-                    // Quick Controls Row
-                    quickControlsRow
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                    
-                    // Main Control Buttons
-                    mainControlButtons
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 40)
+                    .frame(maxHeight: 210)
+                } else {
+                    bottomPanelContent
                 }
             }
             
@@ -168,7 +158,37 @@ struct RunningWorkoutView: View {
         }
     }
     
-    // MARK: - Hero Metrics Grid (2x2)
+    // MARK: - Bottom Panel (splits, chart, goal, controls)
+    private var bottomPanelContent: some View {
+        VStack(spacing: 12) {
+            // Last Split Pill (if available)
+            if runningManager.splits.count > 0 {
+                lastSplitPill
+            }
+            
+            // Live Chart Strip
+            liveChartStrip
+                .padding(.horizontal, Spacing.md)
+            
+            // Goal Progress (if set)
+            if runningManager.goalType != .none {
+                goalProgressStrip
+                    .padding(.horizontal, Spacing.md)
+            }
+            
+            // Quick Controls Row
+            quickControlsRow
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+            
+            // Main Control Buttons
+            mainControlButtons
+                .padding(.horizontal, 20)
+                .padding(.bottom, verticalSizeClass == .compact ? 16 : 40)
+        }
+    }
+    
+    // MARK: - Hero Metrics Grid (2x2, or a single 1x4 row in compact vertical)
     private var heroMetricsGrid: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
@@ -187,26 +207,37 @@ struct RunningWorkoutView: View {
                     label: "TIME",
                     color: .cyan
                 )
+                
+                if verticalSizeClass == .compact {
+                    paceMetricCards
+                }
             }
             
-            HStack(spacing: 12) {
-                // Current Pace
-                heroMetricCard(
-                    value: runningManager.formattedCurrentPacePerMile,
-                    unit: "/mi",
-                    label: "PACE",
-                    color: paceColor(runningManager.currentPace)
-                )
-                
-                // Average Pace
-                heroMetricCard(
-                    value: runningManager.formattedPacePerMile,
-                    unit: "/mi",
-                    label: "AVG PACE",
-                    color: .orange
-                )
+            if verticalSizeClass != .compact {
+                HStack(spacing: 12) {
+                    paceMetricCards
+                }
             }
         }
+    }
+    
+    @ViewBuilder
+    private var paceMetricCards: some View {
+        // Current Pace
+        heroMetricCard(
+            value: runningManager.formattedCurrentPacePerMile,
+            unit: "/mi",
+            label: "PACE",
+            color: paceColor(runningManager.currentPace)
+        )
+        
+        // Average Pace
+        heroMetricCard(
+            value: runningManager.formattedPacePerMile,
+            unit: "/mi",
+            label: "AVG PACE",
+            color: .orange
+        )
     }
     
     private func heroMetricCard(value: String, unit: String, label: String, color: Color) -> some View {
@@ -216,6 +247,8 @@ struct RunningWorkoutView: View {
                     .font(.system(size: 32, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 
                 if !unit.isEmpty {
                     Text(unit)
@@ -1068,35 +1101,68 @@ struct EnhancedRunningMapView: UIViewRepresentable {
         return mapView
     }
     
+    // ⚡️ PERF (2026-07-31 finding J): this used to remove EVERY overlay +
+    // annotation and re-add a single O(n) polyline on every GPS fix — a
+    // full route re-tessellation per fix for the whole session. Now:
+    //   • polyline segments are APPEND-ONLY, keyed off the coordinate
+    //     count the Coordinator has already rendered
+    //   • the start marker is added once
+    //   • the current-position annotation MOVES by mutating its
+    //     KVO-observable `coordinate` (no remove/re-add)
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Remove old overlays and annotations
-        mapView.removeOverlays(mapView.overlays)
-        mapView.removeAnnotations(mapView.annotations)
+        let coordinator = context.coordinator
         
-        // Add route polyline (thicker, more vibrant)
-        if coordinates.count > 1 {
-            let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
-            mapView.addOverlay(polyline)
-            
-            // Add start marker
-            if let firstCoord = coordinates.first {
-                let startAnnotation = RunAnnotation(coordinate: firstCoord, type: .start)
-                mapView.addAnnotation(startAnnotation)
+        // Route shrank → new session. Reset everything once.
+        if coordinates.count < coordinator.renderedCoordinateCount {
+            mapView.removeOverlays(mapView.overlays)
+            if let start = coordinator.startAnnotation {
+                mapView.removeAnnotation(start)
+                coordinator.startAnnotation = nil
             }
+            coordinator.renderedCoordinateCount = 0
         }
         
-        // Add current position with heading
+        // Append only the NEW segment (overlapping one point so segments
+        // connect seamlessly).
+        if coordinates.count > 1, coordinates.count > coordinator.renderedCoordinateCount {
+            let fromIndex = max(0, coordinator.renderedCoordinateCount - 1)
+            let segment = Array(coordinates[fromIndex...])
+            if segment.count > 1 {
+                mapView.addOverlay(MKPolyline(coordinates: segment, count: segment.count))
+            }
+            coordinator.renderedCoordinateCount = coordinates.count
+        }
+        
+        // Start marker — once per session.
+        if coordinator.startAnnotation == nil, let firstCoord = coordinates.first {
+            let startAnnotation = RunAnnotation(coordinate: firstCoord, type: .start)
+            coordinator.startAnnotation = startAnnotation
+            mapView.addAnnotation(startAnnotation)
+        }
+        
+        // Current position: move the existing annotation instead of
+        // remove/re-add; refresh the arrow rotation in place.
         if let current = currentLocation {
-            let currentAnnotation = RunAnnotation(coordinate: current, type: .current, heading: heading)
-            mapView.addAnnotation(currentAnnotation)
+            if let annotation = coordinator.currentAnnotation {
+                annotation.coordinate = current
+                if annotation.heading != heading {
+                    annotation.heading = heading
+                    mapView.view(for: annotation)?.transform =
+                        CGAffineTransform(rotationAngle: CGFloat(heading * .pi / 180))
+                }
+            } else {
+                let currentAnnotation = RunAnnotation(coordinate: current, type: .current, heading: heading)
+                coordinator.currentAnnotation = currentAnnotation
+                mapView.addAnnotation(currentAnnotation)
+            }
             
             // Update region if following
             if isFollowing {
-            let region = MKCoordinateRegion(
+                let region = MKCoordinateRegion(
                     center: current,
                     span: MKCoordinateSpan(latitudeDelta: 0.006, longitudeDelta: 0.006)
-            )
-            mapView.setRegion(region, animated: true)
+                )
+                mapView.setRegion(region, animated: true)
             }
         }
     }
@@ -1106,6 +1172,11 @@ struct EnhancedRunningMapView: UIViewRepresentable {
     }
     
     class Coordinator: NSObject, MKMapViewDelegate {
+        // Append-only rendering state (finding J).
+        var renderedCoordinateCount: Int = 0
+        var startAnnotation: RunAnnotation?
+        var currentAnnotation: RunAnnotation?
+        
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let polyline = overlay as? MKPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
@@ -1176,9 +1247,12 @@ class RunAnnotation: NSObject, MKAnnotation {
         case start, current
     }
     
-    let coordinate: CLLocationCoordinate2D
+    // `@objc dynamic` — MKMapView observes `coordinate` via KVO, so the
+    // current-position annotation moves in place when we mutate it
+    // (finding J: no remove/re-add per GPS fix).
+    @objc dynamic var coordinate: CLLocationCoordinate2D
     let type: AnnotationType
-    let heading: Double
+    var heading: Double
     
     init(coordinate: CLLocationCoordinate2D, type: AnnotationType, heading: Double = 0) {
         self.coordinate = coordinate

@@ -62,21 +62,14 @@ struct SmartWorkoutPreviewView: View {
                 Spacer()
                 startButton
             }
-            
-            // Navigation to Active Workout
-            NavigationLink(
-                destination: Group {
-                    if let workout = createdWorkout {
-                        ActiveWorkoutView(isPresented: $navigateToActiveWorkout, workout: workout, exercises: createdExercises)
-                    }
-                },
-                isActive: $navigateToActiveWorkout
-            ) {
-                EmptyView()
-            }
         }
         .navigationTitle("Day \(day.dayNumber)")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $navigateToActiveWorkout) {
+            if let workout = createdWorkout {
+                ActiveWorkoutView(isPresented: $navigateToActiveWorkout, workout: workout, exercises: createdExercises)
+            }
+        }
     }
     
     // MARK: - Header Section

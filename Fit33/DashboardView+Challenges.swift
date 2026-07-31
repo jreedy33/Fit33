@@ -522,7 +522,7 @@ struct DashboardChallengesWrapper: View {
                             .foregroundColor(.primary)
                         
                         Text("PENDING")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.ds_caption).fontWeight(.bold)
                             .foregroundColor(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -819,7 +819,7 @@ struct DashboardChallengesWrapper: View {
                         .foregroundColor(.green)
                 } else {
                     Text("\(Int(livePercent * 100))%")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .font(.ds_caption).fontWeight(.bold)
                         .foregroundColor(.primary)
                 }
             }
@@ -934,7 +934,7 @@ struct DashboardChallengesWrapper: View {
                     let diff = abs(myLiveToday - oppToday)
                     let diffStr = resolver.formatValue(diff, unit: challenge.targetUnit, type: resolvedType)
                     Text(amWinningNow ? "+\(diffStr)" : "-\(diffStr)")
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .font(.ds_caption).fontWeight(.bold)
                         .foregroundColor(amWinningNow ? .green : .red)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -1108,7 +1108,7 @@ struct DashboardChallengesWrapper: View {
                         HStack(spacing: 6) {
                             if isPending {
                                 Text("PENDING")
-                                    .font(.system(size: 9, weight: .bold))
+                                    .font(.ds_caption).fontWeight(.bold)
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -1181,7 +1181,7 @@ struct DashboardChallengesWrapper: View {
                                         let nudgeKey = "nudge_\(challenge.challengeId.uuidString)_\(member.userId.uuidString)"
                                         if UserDefaults.standard.bool(forKey: nudgeKey) {
                                             Text("Sent")
-                                                .font(.system(size: 9, weight: .bold))
+                                                .font(.ds_caption).fontWeight(.bold)
                                                 .foregroundColor(.white)
                                                 .padding(.horizontal, 6)
                                                 .padding(.vertical, 2)
@@ -1193,7 +1193,7 @@ struct DashboardChallengesWrapper: View {
                                                 nudgePendingMember(challengeId: challenge.challengeId, memberId: member.userId)
                                             } label: {
                                                 Text("Nudge")
-                                                    .font(.system(size: 9, weight: .bold))
+                                                    .font(.ds_caption).fontWeight(.bold)
                                                     .foregroundColor(.white)
                                                     .padding(.horizontal, 6)
                                                     .padding(.vertical, 2)
@@ -1221,7 +1221,7 @@ struct DashboardChallengesWrapper: View {
                                             .foregroundColor(.green)
                                     } else if member.isPending && member.userId == currentUserId {
                                         Image(systemName: "clock.fill")
-                                            .font(.system(size: 9))
+                                            .font(.ds_caption)
                                             .foregroundColor(.orange)
                                     }
                                 }
@@ -1267,7 +1267,7 @@ struct DashboardChallengesWrapper: View {
                                         )
                                     if isLeader {
                                         Image(systemName: "crown.fill")
-                                            .font(.system(size: 9))
+                                            .font(.ds_caption)
                                             .foregroundColor(.yellow)
                                             .offset(y: -13)
                                     }
@@ -1574,7 +1574,7 @@ struct DashboardChallengesWrapper: View {
                 .lineLimit(1)
             
             Text(subtitle)
-                .font(.system(size: 9))
+                .font(.ds_caption)
                 .foregroundColor(.secondary)
                 .lineLimit(1)
         }

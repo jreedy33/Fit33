@@ -12,6 +12,8 @@ struct CardioActiveWorkoutView: View {
     
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject var userManager: UserManager
     @StateObject private var locationManager = CardioLocationManager()
     @StateObject private var bluetoothManager = BluetoothFitnessManager.shared
@@ -30,6 +32,14 @@ struct CardioActiveWorkoutView: View {
     @State private var cadence: Int = 0
     @State private var power: Int = 0 // watts
     @State private var startTime: Date = Date()
+    // Finding L (2026-07-31): elapsed time is COMPUTED from wall clock
+    // (startTime minus accumulated pause), never tick-accumulated — Timer
+    // ticks are suspended while backgrounded, so `elapsedTime += 1` was
+    // silently losing all backgrounded time.
+    @State private var accumulatedPauseTime: TimeInterval = 0
+    @State private var pauseStartedAt: Date?
+    // Finding K: goal-achieved haptic fires exactly once per session.
+    @State private var didFireGoalHaptic = false
     
     // UI state
     @State private var showingFinishAlert = false
@@ -92,11 +102,17 @@ struct CardioActiveWorkoutView: View {
         }
         .alert("End Workout?", isPresented: $showingFinishAlert) {
             Button("Continue", role: .cancel) { }
-            Button("End", role: .destructive) {
+            Button("Save & Finish") {
                 finishWorkout()
             }
+            // P2 quickie (2026-07-31): there was no way to abandon an indoor
+            // cardio session — "End" always routed into save/completion.
+            Button("Discard Workout", role: .destructive) {
+                stopTimer()
+                dismiss()
+            }
         } message: {
-            Text("Are you sure you want to end this workout?")
+            Text("Save this workout, or discard it without saving?")
         }
         .fullScreenCover(isPresented: $showingCompletionView) {
             CardioCompletionView(
@@ -121,6 +137,15 @@ struct CardioActiveWorkoutView: View {
             if shouldDismiss {
                 showingCompletionView = false
                 dismiss()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Finding L: resync immediately on foreground — the Timer was
+            // suspended while backgrounded, so the next tick could be up
+            // to a second away and stats would briefly show stale time.
+            if phase == .active && isRunning && !isPaused {
+                syncElapsedToWallClock()
+                updateStats()
             }
         }
     }
@@ -164,7 +189,8 @@ struct CardioActiveWorkoutView: View {
             
             // Timer
             Text(formatTime(elapsedTime))
-                .font(.system(size: 20, weight: .bold, design: .monospaced))
+                .font(.ds_statSmall)
+                .monospacedDigit()
                 .foregroundColor(.white)
             
             Spacer()
@@ -177,7 +203,10 @@ struct CardioActiveWorkoutView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.top, 60)
+        // The VStack already respects the safe area (only the background
+        // gradient ignores it) — the old 60pt was stale status-bar
+        // compensation that pushed everything down (device-polish batch).
+        .padding(.top, Spacing.sm)
         .padding(.bottom, 16)
     }
     
@@ -206,10 +235,15 @@ struct CardioActiveWorkoutView: View {
             
             // Center content
             VStack(spacing: 8) {
-                // Main value
+                // Main value. Finding AC (2026-07-31): after 60 minutes the
+                // "1:00:00"-style string overflowed the fixed 200pt ring at
+                // 48pt — scale down instead (mirrors CardioRecapView).
                 Text(mainGoalValue)
                     .font(.system(size: 48, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(maxWidth: 150)
                 
                 // Goal info
                 Text(goalLabel)
@@ -453,11 +487,16 @@ struct CardioActiveWorkoutView: View {
         isRunning = true
         isPaused = false
         startTime = Date()
+        accumulatedPauseTime = 0
+        pauseStartedAt = nil
+        didFireGoalHaptic = false
         
-        // Start timer
+        // Start timer — each tick RECOMPUTES elapsed from the wall clock
+        // (finding L) instead of accumulating +1, so time survives
+        // backgrounding/timer coalescing.
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if !isPaused {
-                elapsedTime += 1
+                syncElapsedToWallClock()
                 updateStats()
             }
         }
@@ -467,9 +506,12 @@ struct CardioActiveWorkoutView: View {
             locationManager.startTracking()
         }
         
-        // Start pulse animation
-        withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-            progressPulse = true
+        // Start pulse animation — decorative, so gated per motion policy
+        // (finding AE: ran unconditionally under Reduce Motion / Low Power).
+        if !MotionPolicy.shouldDisableDecorative(reduceMotion: reduceMotion) {
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                progressPulse = true
+            }
         }
     }
     
@@ -486,10 +528,24 @@ struct CardioActiveWorkoutView: View {
         isPaused.toggle()
         
         if isPaused {
+            pauseStartedAt = Date()
             locationManager.stopTracking()
-        } else if activityType.requiresGPS {
-            locationManager.startTracking()
+        } else {
+            if let pausedAt = pauseStartedAt {
+                accumulatedPauseTime += Date().timeIntervalSince(pausedAt)
+                pauseStartedAt = nil
+            }
+            if activityType.requiresGPS {
+                locationManager.startTracking()
+            }
         }
+    }
+    
+    /// Finding L: wall-clock anchored elapsed time. Recomputed per tick and
+    /// on foreground so backgrounded intervals are never lost.
+    private func syncElapsedToWallClock() {
+        let pausedSoFar = accumulatedPauseTime + (pauseStartedAt.map { Date().timeIntervalSince($0) } ?? 0)
+        elapsedTime = max(0, Date().timeIntervalSince(startTime) - pausedSoFar)
     }
     
     private func updateStats() {
@@ -528,8 +584,10 @@ struct CardioActiveWorkoutView: View {
         cadence = btData.cadence
         power = btData.power
         
-        // Check if goal achieved
-        if isGoalAchieved && goalType != .openGoal {
+        // Check if goal achieved — haptic fires ONCE (finding K: this used
+        // to buzz .success every second for the rest of the session).
+        if isGoalAchieved && goalType != .openGoal && !didFireGoalHaptic {
+            didFireGoalHaptic = true
             HapticManager.notification(.success)
         }
     }
@@ -592,7 +650,7 @@ struct CardioStatCard: View {
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.ds_stat)
                     .foregroundColor(.white)
                 
                 Text(label)
@@ -673,6 +731,13 @@ class CardioLocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
+        // Finding AA (2026-07-31): mirror RunningManager's tuning — this
+        // manager used to stream EVERY fix at Best accuracy with no
+        // distance filter for the whole session (battery drain on
+        // multi-hour cardio). 10m matches the walk/cycle profile; there's
+        // no live map polyline in this view that needs finer granularity.
+        manager.distanceFilter = 10
+        manager.activityType = .fitness
         manager.requestWhenInUseAuthorization()
     }
     
@@ -774,6 +839,20 @@ struct CardioCompletionView: View {
                                     .font(.caption)
                                     .foregroundColor(.white.opacity(0.7))
                             }
+                        } else {
+                            // Save failed → queued on CloudSyncRetryQueue,
+                            // which completes the XP/quest fanout after the
+                            // first successful retry. Previously this state
+                            // rendered NOTHING (2026-07-31 P0 fix).
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                                    .foregroundColor(.orange)
+                                Text("Saved offline — will sync automatically")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("Workout saved offline, it will sync automatically")
                         }
                         
                         // Done button
@@ -793,7 +872,9 @@ struct CardioCompletionView: View {
                         }
                         .padding(.horizontal, 20)
                     }
-                    .padding(.top, 60)
+                    // Safe area already clears the status bar — the 60pt was
+                    // stale compensation (device-polish batch, 2026-07-31).
+                    .padding(.top, Spacing.lg)
                 }
             }
             .navigationBarHidden(true)
@@ -1013,6 +1094,15 @@ struct CardioCompletionView: View {
             await MainActor.run {
                 savedSuccessfully = workoutId != nil
                 isSaving = false
+            }
+
+            // RPC returned nil without throwing — treat like a failed save:
+            // queue for retry so the fanout credit isn't silently dropped
+            // (2026-07-31; the retry queue completes the fanout).
+            if workoutId == nil {
+                await MainActor.run {
+                    CloudSyncRetryQueue.shared.enqueueCardioCloudSync(workoutData)
+                }
             }
 
             // Sprint 2 Q2-5 — wire into gamification (XP, streak, league,

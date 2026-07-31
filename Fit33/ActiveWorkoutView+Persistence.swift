@@ -363,8 +363,11 @@ extension ActiveWorkoutView {
                   let sets = setsData[exerciseId],
                   !sets.isEmpty else { continue }
             
-            // Get completed sets
-            let completedSets = sets.filter { $0.isCompleted && $0.weight > 0 }
+            // Get completed working sets. Warmups excluded to match the
+            // previous-workout side (fetchPreviousWorkoutSets), otherwise
+            // light warmups drag the current average down and mask real
+            // progressions (P2 quickie, 2026-07-31).
+            let completedSets = sets.filter { $0.isCompleted && $0.weight > 0 && $0.setType != .warmup }
             guard !completedSets.isEmpty else { continue }
             
             // Check if this is a progression from last workout
@@ -503,7 +506,10 @@ extension ActiveWorkoutView {
             guard !completedSets.isEmpty else { continue }
             
             let totalReps = completedSets.reduce(0) { $0 + $1.reps }
-            let totalWeight = completedSets.reduce(0.0) { $0 + $1.weight }
+            // The RPC parameter is totalWeightKg — sum the kg mirror, not
+            // the lbs-canonical `weight` (P2 quickie, 2026-07-31: analytics
+            // were inflated 2.2x).
+            let totalWeightKg = completedSets.reduce(0.0) { $0 + $1.weightKg }
             
             do {
                 try await SupabaseManager.shared.logExerciseUsage(
@@ -511,7 +517,7 @@ extension ActiveWorkoutView {
                     exerciseId: exerciseId,
                     setsCompleted: completedSets.count,
                     totalReps: totalReps,
-                    totalWeightKg: totalWeight,
+                    totalWeightKg: totalWeightKg,
                     workoutType: workoutType,
                     programId: programId
                 )

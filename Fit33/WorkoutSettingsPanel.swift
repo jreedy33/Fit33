@@ -18,6 +18,11 @@ struct WorkoutSettingsPanel: View {
     @AppStorage("showMusicPlayer") private var showMusicPlayer: Bool = true
     
     let onMinimize: () -> Void
+    /// Finding M (2026-07-31): the only way out of a strength workout used
+    /// to be FINISH — no discard affordance existed anywhere.
+    let onDiscard: () -> Void
+    
+    @State private var showingDiscardConfirmation = false
     
     private var barWeightOptions: [Double] { useKg ? [20, 15, 10] : [45, 35, 25] }
     private var unitLabel: String { useKg ? "kg" : "lb" }
@@ -33,6 +38,7 @@ struct WorkoutSettingsPanel: View {
                     generalSection
                     removeAdsButton
                     minimizeButton
+                    discardButton
                     Spacer(minLength: 30)
                 }
                 .padding(.horizontal, 12)
@@ -301,6 +307,36 @@ struct WorkoutSettingsPanel: View {
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.1)))
         }
         .buttonStyle(.plain)
+    }
+    
+    // MARK: - Discard
+    
+    private var discardButton: some View {
+        Button(role: .destructive) {
+            HapticManager.impact(.medium)
+            showingDiscardConfirmation = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "trash")
+                Text("Discard Workout")
+                    .fontWeight(.medium)
+            }
+            .font(.subheadline)
+            .foregroundColor(.red)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.1)))
+        }
+        .buttonStyle(.plain)
+        .confirmationDialog("Discard this workout?", isPresented: $showingDiscardConfirmation, titleVisibility: .visible) {
+            Button("Discard Workout", role: .destructive) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { isPresented = false }
+                onDiscard()
+            }
+            Button("Keep Working", role: .cancel) { }
+        } message: {
+            Text("All sets from this session will be deleted. This can't be undone.")
+        }
     }
     
     // MARK: - Reusable Components

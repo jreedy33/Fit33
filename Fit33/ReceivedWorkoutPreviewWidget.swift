@@ -483,18 +483,6 @@ struct ReceivedWorkoutPreviewContainer: View {
     
     var body: some View {
         ZStack {
-            NavigationLink(
-                destination: Group {
-                    if let workout = selectedWorkout {
-                        ReceivedWorkoutDetailView(workout: workout)
-                    }
-                },
-                isActive: $navigateToDetail
-            ) {
-                EmptyView()
-            }
-            .hidden()
-            
             if !pendingWorkouts.isEmpty {
                 let workouts = Array(pendingWorkouts.prefix(3))
                 let safeIndex = min(max(0, selectedPage), workouts.count - 1)
@@ -573,6 +561,11 @@ struct ReceivedWorkoutPreviewContainer: View {
                 .onChange(of: pendingWorkouts.count) { _, _ in
                     selectedPage = 0
                 }
+            }
+        }
+        .navigationDestination(isPresented: $navigateToDetail) {
+            if let workout = selectedWorkout {
+                ReceivedWorkoutDetailView(workout: workout)
             }
         }
     }

@@ -1,6 +1,6 @@
 # Fit33 Master TODO
 
-> **Last updated:** July 30, 2026 (second fix pass on the Production-Readiness Master Audit — see the 2026-07-30 status block in §PR)
+> **Last updated:** July 31, 2026 (polish sprint — product-quality overhaul from `HANDOFF_POLISH_SPRINT_2026-07-31.md`; see the 2026-07-31 status block in §PR)
 > **Source:** Consolidated from (1) April 17 full-app audit, (2) still-open items from previous MASTER_TODO, (3) April 22 cross-agent rules-compliance audit, (4) April 26 Sprint 7 execution pass (security hygiene + Swift perf sweeps + agent-doc refresh), (5) April 27 Sprint 8 execution pass (concurrency & cleanup), and (6) April 28 Sprint 9 execution pass that shipped AVFoundation asset/player construction off main thread (`ExerciseDetailView.VideoPlayerManager` + `StretchModeView` + `VideoPreloadManager` + `VideoPlaybackEngine.InstantVideoPlayerState`), `RunningManager` `deinit` cleanup, Exercise name-lookups routed through `ExerciseLibraryService`, `ExerciseLibraryService` sync race locked via `syncLock` + `fetchAndPerformSyncLocked()`, aggregation-DTO null-safety via custom `init(from:)` decoders, `Color.cardGradientStops(for:)` token replacing ~~23 hard-coded `[Color(white: 0.15), Color(white: 0.10)]` sites, 5 highest-traffic empty states migrated to `EmptyStateView`, Zod validation helpers + schemas for Admin CMS API routes, and admin MFA enrollment enforcement.
 > **Rule:** Only items that are **not yet addressed**. Items marked `[~~]`are partially done with a specific remaining gap called out. Items marked`[x]` were closed by a prior sprint — kept inline so reviewers can trace the shipping delta.
 
@@ -120,6 +120,80 @@ IDs with a letter prefix (`C-`, `H-`, `M-`, `F-`, `FE-`, `DB-`, `L-`) were inher
 > **Deploy checklist for YOU:** run migrations #203–#206 in the SQL editor,
 > redeploy `send-push-notification` + `bug-intel-rpc-smoke`, and
 > `git push origin main` for the CMS (Vercel `fitapp`).
+
+### Status block — 2026-07-31 polish sprint (product-quality overhaul, Swift-only)
+
+> Executed `HANDOFF_POLISH_SPRINT_2026-07-31.md` end-to-end. 10 phase-sized
+> commits (`a851e95`…`07a854d`), every phase built green (⌘B equivalent via
+> `xcodebuild`). All findings verified in code before fixing; no schema, edge
+> function, or CMS changes — nothing to deploy beyond the app build.
+>
+> **Phase 1 — P0 data integrity (findings A–F):**
+> - **A** — per-side/unit double-conversion on set check-off (`WorkoutSetViews`):
+>   weight now normalized through one `totalLbs(fromDisplayWeight:)` /
+>   `displayWeight(fromTotalLbs:)` pair; kg users no longer get corrupted totals.
+> - **B** — `replaceExercise` reused the old exercise's set rows (history
+>   pollution); now resets to fresh rows preserving only set count.
+> - **C** — shuffle could swap in an exercise already in the workout
+>   (dup slots); exclusion now seeded with all current workout exercise IDs.
+> - **D** — 4-hour timeout silently `cancelWorkout()`-ed (deleted completed
+>   sets); now salvages: persists completed sets + enqueues cloud sync + user
+>   alert via `WorkoutAutoEnded` notification (MainTabView).
+> - **E** — finishing twice ran XP/quest/league fanout twice;
+>   `didRunCompletionFanout` guard makes fanout once-only per workout.
+> - **F** — cardio fanout ran even when the durable save failed; recap/indoor
+>   paths now gate fanout on a real workout ID and enqueue
+>   `CloudSyncRetryQueue` otherwise; retry queue tracks `fanoutCompleted` so
+>   the retry path runs the fanout exactly once.
+>
+> **Phase 2 — P0 performance (G–L):** removed the 1 Hz `currentTime`
+> published tick (G); rest timer publishes on whole-second change with a
+> 1–4 fps CADisplayLink range (H); ActiveWorkout header timer no longer
+> owns a per-view `Timer` (I); run map appends polyline segments + moves
+> the annotation via KVO instead of full rebuild each tick, heading filter
+> 5°, GPS-accuracy stats O(1) (J); goal haptic fires once per cardio
+> session (K); cardio elapsed time recomputed from wall clock on
+> foreground — background suspension no longer freezes the timer (L).
+>
+> **Phase 3 — P1 functional/UX (M–AE), highlights:** empty-finish alert +
+> Discard in settings panel (M); double-start now prompts
+> Resume/Discard&StartNew instead of silently orphaning (N); program
+> day/focus no longer overwritten by nil defaults (O); meal saves surface
+> Core Data failures instead of pretending success, orphan rows deleted
+> (P); per-slot swap state hoisted to WorkoutManager — survives view
+> recreation (Q); shuffle keeps planned blank rows (R); program rep/set
+> prescriptions actually reach the active workout (S + `targetReps`);
+> progression "sparkle" suggestions restored for exercises with history
+> (T); set check-off pushes live state to the watch (U); checkmark default
+> weight matches the placeholder shown (V); battle-cry/friend-request
+> failures show error toasts (W); partial 1v1 invite failures retry only
+> the failed friends (X); dashboard quest count observes the service (Y);
+> duplicate social refresh removed (Z); state persistence moved off main
+> thread onto a serial queue — also fixes a save/clear race (AB); cardio
+> goal ring no longer overflows >60 min (AC); recap accent palette matches
+> live view (AD); pulse animation gated by MotionPolicy (AE).
+>
+> **Phase 4 — P2/P3 polish:** (4a) correctness quickies — PR/progression
+> queries exclude warmups, analytics kg fix, `ExerciseDetailView` respects
+> kg preference, GenderFilterService normalization no longer collides,
+> photo-save failures surfaced, corrupted-workout recovery copy softened +
+> confirmation added; (4b) 16 remaining multi-line legacy NavigationLinks
+> migrated — `navigation-migration-phase3.mdc` now genuinely COMPLETE with
+> a multiline-grep verification snippet; (4c) design tokens — bare
+> `.ultraThinMaterial` → `adaptiveMaterialBackground`, sub-10pt fonts →
+> `ds_caption`+, one-off grays → card tokens, paywall gold alignment,
+> CardioRecapView button row unified; (4d) 44pt tap-target sweep
+> (checkmark, shuffle, header buttons, weight/reps fields, battle-cry
+> button, carousel page dots), stale 60pt top paddings removed, SE paywall
+> tile truncation, iPad `maxWidth: 640` centering + GeometryReader drawer
+> width, dashboard carousel scales with Dynamic Type, dead
+> `RestTimerIndicator` deleted.
+>
+> **Verified and rejected as already-correct:** nothing in the handoff list
+> was found to be a false positive — every finding reproduced in code.
+>
+> **Not pushed** — commits are local pending your approval (push to main
+> deploys the CMS; Swift-only but approval required per protocol).
 
 ### Gate A — P0 ship blockers (submission fails or users are harmed)
 

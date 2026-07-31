@@ -84,6 +84,12 @@ extension ActiveWorkoutView {
         // ⚡️ DEFERRED: Only process exercises that STILL don't have previous data
         let exerciseNames = exercises.compactMap { $0.name }
         var exercisesNeedingSmartRecs: [(exercise: Exercise, name: String)] = []
+        // Finding T (2026-07-31): history-backed exercises get the
+        // progression analysis too (async enrichment below) — suggestions
+        // used to run ONLY when history was empty, so the "+5 lb ready to
+        // progress" sparkle cue was unreachable for exactly the users who
+        // earned it.
+        var exercisesWithHistory: [(exercise: Exercise, name: String)] = []
         
         // Check which exercises still need data (weren't covered by instant warmup)
         for exercise in exercises {
@@ -91,7 +97,10 @@ extension ActiveWorkoutView {
                   let exerciseName = exercise.name else { continue }
             
             // Skip if data was already applied
-            if previousExerciseSets[exerciseId] != nil { continue }
+            if previousExerciseSets[exerciseId] != nil {
+                exercisesWithHistory.append((exercise: exercise, name: exerciseName))
+                continue
+            }
             
             // Try ExerciseHistoryService cache as fallback
             if let cachedSets = ExerciseHistoryService.shared.previousSetsCache[exerciseName], !cachedSets.isEmpty {
@@ -103,10 +112,59 @@ extension ActiveWorkoutView {
                     )
                 }
                 previousExerciseSets[exerciseId] = previousData
+                exercisesWithHistory.append((exercise: exercise, name: exerciseName))
             } else {
                 // No cached data - queue for async smart recommendation
                 exercisesNeedingSmartRecs.append((exercise: exercise, name: exerciseName))
             }
+        }
+        
+        // Finding T: progression enrichment for history-backed exercises.
+        // Runs at low priority AFTER previous-set placeholders are already
+        // on screen; only takes over the PREVIOUS column when the engine is
+        // confident (real-history progression, not a generic profile
+        // placeholder).
+        if !exercisesWithHistory.isEmpty {
+            let currentUser = UserManager.shared.currentUser
+            let progressionContext = viewContext
+            let wmForProgression = workoutManager
+            let progressionTask = Task.detached(priority: .utility) {
+                guard let user = currentUser else { return }
+                for (exercise, exerciseName) in exercisesWithHistory {
+                    guard !Task.isCancelled else { return }
+                    guard let exerciseId = exercise.id?.uuidString else { continue }
+                    
+                    let recs = await MainActor.run { () -> [StrengthProfileRecommendationEngine.SmartRecommendation] in
+                        let prescription = wmForProgression.currentExercisePrescriptions[exerciseName.lowercased()]
+                        return StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
+                            exerciseName: exerciseName,
+                            user: user,
+                            numberOfSets: prescription?.sets ?? WorkoutManager.userDefaultSetCount,
+                            context: progressionContext,
+                            programWeek: wmForProgression.currentProgramWeek,
+                            prescribedReps: prescription?.repsRange
+                        )
+                    }
+                    
+                    guard !recs.isEmpty,
+                          recs.allSatisfy({ !$0.isPlaceholder }),
+                          (recs.first?.confidenceLevel ?? 0) >= 0.9 else { continue }
+                    
+                    let sparkleData = recs.enumerated().map { index, rec in
+                        PreviousSetData(setNumber: index + 1, recommendation: rec)
+                    }
+                    await MainActor.run {
+                        // Don't clobber values the user is already typing
+                        // against — only swap the placeholder column.
+                        previousExerciseSets[exerciseId] = sparkleData
+                        #if DEBUG
+                        AppLogger.debug("💡 [PROGRESSION] Sparkle cue for '\(exerciseName)': \(recs.first?.displayString ?? "")", category: .workout)
+                        #endif
+                    }
+                    await Task.yield()
+                }
+            }
+            initTasks.append(progressionTask)
         }
         
         #if DEBUG
@@ -135,13 +193,17 @@ extension ActiveWorkoutView {
                     // Heavy computation happens on background thread
                     let progWeek = workoutManager.currentProgramWeek
                     let defaultCount = WorkoutManager.userDefaultSetCount
-                    let recs = await MainActor.run {
-                        StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
+                    let recs = await MainActor.run { () -> [StrengthProfileRecommendationEngine.SmartRecommendation] in
+                        // Finding S: forward the program prescription
+                        // (sets + rep range) when this session has one.
+                        let prescription = wm.currentExercisePrescriptions[exerciseName.lowercased()]
+                        return StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                             exerciseName: exerciseName,
                             user: user,
-                            numberOfSets: defaultCount,
+                            numberOfSets: prescription?.sets ?? defaultCount,
                             context: context,
-                            programWeek: progWeek
+                            programWeek: progWeek,
+                            prescribedReps: prescription?.repsRange
                         )
                     }
                     
@@ -226,23 +288,50 @@ extension ActiveWorkoutView {
                 guard !alreadySet else { continue }
                 
                 if let cloudSets = allPreviousSets[exerciseName], !cloudSets.isEmpty {
-                    let previousData = cloudSets.map { cloudSet in
+                    var previousData = cloudSets.map { cloudSet in
                         PreviousSetData(
                             setNumber: cloudSet.setNumber,
                             weight: cloudSet.weight,
                             reps: cloudSet.reps
                         )
                     }
+                    
+                    // Finding T: history loaded — ALSO run the progression
+                    // analysis so returning users get the sparkle cue.
+                    if let user = currentUser {
+                        let recs = await MainActor.run { () -> [StrengthProfileRecommendationEngine.SmartRecommendation] in
+                            let prescription = workoutManager.currentExercisePrescriptions[exerciseName.lowercased()]
+                            return StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
+                                exerciseName: exerciseName,
+                                user: user,
+                                numberOfSets: prescription?.sets ?? WorkoutManager.userDefaultSetCount,
+                                context: ctx,
+                                programWeek: workoutManager.currentProgramWeek,
+                                prescribedReps: prescription?.repsRange
+                            )
+                        }
+                        if !recs.isEmpty,
+                           recs.allSatisfy({ !$0.isPlaceholder }),
+                           (recs.first?.confidenceLevel ?? 0) >= 0.9 {
+                            previousData = recs.enumerated().map { index, rec in
+                                PreviousSetData(setNumber: index + 1, recommendation: rec)
+                            }
+                        }
+                    }
+                    
                     updates.append((exerciseId: exerciseId, data: previousData))
                 } else if let user = currentUser {
                     let progWeek2 = workoutManager.currentProgramWeek
-                    let recommendations = await MainActor.run {
-                        StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
+                    let recommendations = await MainActor.run { () -> [StrengthProfileRecommendationEngine.SmartRecommendation] in
+                        // Finding S: forward the program prescription.
+                        let prescription = workoutManager.currentExercisePrescriptions[exerciseName.lowercased()]
+                        return StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                             exerciseName: exerciseName,
                             user: user,
-                            numberOfSets: WorkoutManager.userDefaultSetCount,
+                            numberOfSets: prescription?.sets ?? WorkoutManager.userDefaultSetCount,
                             context: ctx,
-                            programWeek: progWeek2
+                            programWeek: progWeek2,
+                            prescribedReps: prescription?.repsRange
                         )
                     }
                     
@@ -340,13 +429,16 @@ extension ActiveWorkoutView {
             } else if let user = currentUser {
                 let progWeek3 = await MainActor.run { workoutManager.currentProgramWeek }
                 let defaultCount = WorkoutManager.userDefaultSetCount
-                let recommendations = await MainActor.run {
-                    StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
+                let recommendations = await MainActor.run { () -> [StrengthProfileRecommendationEngine.SmartRecommendation] in
+                    // Finding S: forward the program prescription.
+                    let prescription = wm.currentExercisePrescriptions[exerciseName.lowercased()]
+                    return StrengthProfileRecommendationEngine.shared.getRecommendationsForSets(
                         exerciseName: exerciseName,
                         user: user,
-                        numberOfSets: defaultCount,
+                        numberOfSets: prescription?.sets ?? defaultCount,
                         context: ctx,
-                        programWeek: progWeek3
+                        programWeek: progWeek3,
+                        prescribedReps: prescription?.repsRange
                     )
                 }
 
@@ -394,7 +486,11 @@ extension ActiveWorkoutView {
 
     func handleWorkoutAppear() {
         if keepScreenOn { UIApplication.shared.isIdleTimerDisabled = true }
-        startTimer()
+        // ⚡️ PERF (finding I): no root per-second timer anymore — the header
+        // duration renders in `WorkoutDurationText` (TimelineView leaf).
+        // Sync the captured elapsed value once; it's recomputed at finish.
+        elapsedTime = workoutManager.workoutStartTime.map { Date().timeIntervalSince($0) } ?? 0
+        refreshNotesPlaceholder()
         applyWarmupDataInstantly()
         isWorkoutFavorite = workout.isFavorite
         if activeExerciseId == nil || !exercises.contains(where: { $0.id?.uuidString == activeExerciseId }) {
@@ -424,39 +520,4 @@ extension ActiveWorkoutView {
         }
     }
     
-    func startTimer() {
-        // Sprint 3 (Q2-33): `ActiveWorkoutView` is a struct, so `[weak self]`
-        // doesn't apply. The live anchor is the class-backed `workoutManager`.
-        // We capture it weakly and self-invalidate if it disappears, so a
-        // rogue/stale timer can never outlive the workout session and keep
-        // mutating `@State` storage from a now-detached view.
-        guard let startTime = workoutManager.workoutStartTime else {
-            AppLogger.warning("⚠️ [TIMER] No workout start time available, using current time", category: .workout)
-            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak workoutManager] t in
-                guard workoutManager != nil else {
-                    t.invalidate()
-                    return
-                }
-                elapsedTime += 1
-            }
-            if let t = timer { RunLoop.main.add(t, forMode: .common) }
-            return
-        }
-        
-        elapsedTime = Date().timeIntervalSince(startTime)
-        
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak workoutManager] t in
-            guard workoutManager != nil else {
-                t.invalidate()
-                return
-            }
-            elapsedTime = Date().timeIntervalSince(startTime)
-        }
-        if let t = timer { RunLoop.main.add(t, forMode: .common) }
-    }
-    
-    func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-    }
 }

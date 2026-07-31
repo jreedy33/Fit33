@@ -266,9 +266,12 @@ final class GenderFilterService: ObservableObject {
         normalized = normalized.replacingOccurrences(of: "(wrong right)", with: "")
         normalized = normalized.replacingOccurrences(of: "(combo)", with: "combo")
         
-        // 9. Remove any remaining parentheses content
-        if let regex = try? NSRegularExpression(pattern: "\\s*\\([^)]*\\)\\s*", options: []) {
-            normalized = regex.stringByReplacingMatches(in: normalized, options: [], range: NSRange(normalized.startIndex..., in: normalized), withTemplate: " ")
+        // 9. Keep any remaining parentheses CONTENT, stripping only the
+        // parens. Deleting the content collapsed distinct variants — e.g.
+        // "(barbell)" vs "(dumbbell)" — onto one normalized key, making
+        // which video won nondeterministic (P2 quickie, 2026-07-31).
+        if let regex = try? NSRegularExpression(pattern: "\\s*\\(([^)]*)\\)\\s*", options: []) {
+            normalized = regex.stringByReplacingMatches(in: normalized, options: [], range: NSRange(normalized.startIndex..., in: normalized), withTemplate: " $1 ")
         }
         
         // 10. Normalize whitespace - remove extra spaces
@@ -367,21 +370,25 @@ final class GenderFilterService: ObservableObject {
             
             var newCache: [String: ExerciseGenderInfo] = [:]
             
-            for (key, genderInfo) in genderVideoCache {
-                let info = ExerciseGenderInfo(
+            // Two passes over SORTED keys (P2 quickie, 2026-07-31): exact
+            // keys first so a normalized alias can never clobber a real
+            // entry, and never overwrite an existing normalized alias —
+            // dictionary iteration order made collisions nondeterministic.
+            let sortedEntries = genderVideoCache.sorted { $0.key < $1.key }
+            
+            for (key, genderInfo) in sortedEntries {
+                newCache[key] = ExerciseGenderInfo(
                     exerciseName: key,
                     hasMaleVersion: genderInfo.maleFilename != nil,
                     hasFemaleVersion: genderInfo.femaleFilename != nil,
                     maleVideoFilename: genderInfo.maleFilename,
                     femaleVideoFilename: genderInfo.femaleFilename
                 )
-                
-                // Store under BOTH original key and normalized key for better matching
-                newCache[key] = info
-                
-                // Also store under normalized key if different
+            }
+            
+            for (key, _) in sortedEntries {
                 let normalizedKey = self.normalizeExerciseName(key)
-                if normalizedKey != key {
+                if normalizedKey != key, newCache[normalizedKey] == nil, let info = newCache[key] {
                     newCache[normalizedKey] = info
                 }
             }

@@ -303,8 +303,11 @@ struct ActiveChallengeWidget: View {
     
     let challenge: ActiveChallenge
     let onTap: () -> Void
-    
+
     @State private var showingReactionPicker = false
+    // Finding W (2026-07-31): battle-cry sends used to be fire-and-forget
+    // here — a failed send looked identical to a successful one.
+    @State private var showBattleCrySendFailed = false
     
     private var resolvedType: ChallengeType {
         challenge.resolvedType
@@ -451,17 +454,61 @@ struct ActiveChallengeWidget: View {
                 recipientLabel: challenge.opponentName?.components(separatedBy: " ").first ?? "them",
                 onSend: { preset in
                     Task {
-                        _ = await ChallengeService.shared.sendReaction(
+                        // Finding W: check the result — error haptic +
+                        // brief toast on failure (mirrors the detail
+                        // view's rollback pattern).
+                        let result = await ChallengeService.shared.sendReaction(
                             challengeId: challenge.challengeId,
                             recipientId: challenge.opponentId,
                             preset: preset
                         )
+                        if !result.success {
+                            await MainActor.run {
+                                HapticManager.notification(.error)
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    showBattleCrySendFailed = true
+                                }
+                            }
+                            try? await Task.sleep(for: .seconds(2))
+                            await MainActor.run {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    showBattleCrySendFailed = false
+                                }
+                            }
+                        }
                     }
                 }
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
+        .overlay(alignment: .top) {
+            if showBattleCrySendFailed {
+                BattleCrySendFailedToast()
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+    }
+}
+
+/// Brief "couldn't send" capsule shared by the dashboard battle-cry
+/// surfaces (finding W) and friend-request rows (P2 quickie).
+struct BattleCrySendFailedToast: View {
+    var message: String = "Couldn't send — try again"
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.ds_caption)
+            Text(message)
+                .font(.ds_labelMedium)
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Capsule().fill(Color.red.opacity(0.92)))
+        .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
+        .padding(.top, 6)
     }
 }
 

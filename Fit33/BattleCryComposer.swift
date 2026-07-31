@@ -275,6 +275,10 @@ struct BattleCryQuickOpenButton: View {
                     .stroke(themeColor.opacity(0.3), lineWidth: 1)
             )
             .scaleEffect(pulseAnimation ? 1.03 : 1.0)
+            // Visuals stay compact; the HIT AREA meets the 44pt HIG
+            // minimum (device-polish batch, 2026-07-31).
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isCompetition ? "Open battle cry picker" : "Open hype picker")
@@ -509,7 +513,7 @@ struct ReactiveBattleFeed: View {
                         .fill(
                             reaction.isMine
                                 ? AnyShapeStyle(LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.93))
+                                : AnyShapeStyle(Color.cardBackgroundSecondary)
                         )
                 )
             }

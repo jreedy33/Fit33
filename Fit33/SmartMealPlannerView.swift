@@ -1036,7 +1036,10 @@ struct PlanMealDetailSheet: View {
             source: "manual"
         )
         
-        MealService.shared.addMealEntry(entry, mealType: meal.mealSlot.mealType, user: user)
+        guard MealService.shared.addMealEntry(entry, mealType: meal.mealSlot.mealType, user: user) else {
+            HapticManager.notification(.error)
+            return
+        }
         HapticManager.notification(.success)
         
         withAnimation(.spring(response: 0.4)) { addedToMeal = true }

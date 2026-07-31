@@ -21,11 +21,12 @@ struct ActiveWorkoutView: View {
     @State var exercises: [Exercise]
     
     // exerciseSets is now stored in workoutManager.exerciseSetsData to survive view rebuilds during ads
+    // ⚡️ PERF (2026-07-31 finding I): no per-second root tick anymore. The
+    // live duration renders in the tiny `WorkoutDurationText` leaf view
+    // (TimelineView-driven); this @State is synced from
+    // `workoutManager.workoutStartTime` on appear and recomputed once at
+    // finish time for the captured duration / completion screen.
     @State var elapsedTime: TimeInterval = 0
-    @State var timer: Timer?
-    // ⚡️ PERFORMANCE: Use workoutManager.workoutStartTime instead of local state
-    // This ensures accurate timing even if the view takes time to render
-    // The timer calculation uses the ACTUAL start time (when GO was tapped)
     @State var showingCompletionView = false
     @State var isFinishingWorkout = false // Prevents duplicate workout saves
     @State var exerciseRestTimers: [String: TimeInterval] = [:]
@@ -99,6 +100,10 @@ struct ActiveWorkoutView: View {
     @State var showingSettingsPanel = false
     @State var showingPremiumUpsell = false
     
+    // Finding M (2026-07-31): FINISH with zero completed sets used to save
+    // an empty workout instantly; there was no user-reachable discard path.
+    @State var showingEmptyFinishAlert = false
+    
     // ⚡️ PERFORMANCE: Two-phase rendering for instant load
     // MARK: - Ad Logic
     
@@ -114,12 +119,6 @@ struct ActiveWorkoutView: View {
         self._exercises = State(initialValue: exercises)
     }
     
-    var workoutDuration: String {
-        let minutes = Int(elapsedTime) / 60
-        let seconds = Int(elapsedTime) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-
     /// Live workout name based on current exercises' muscle groups
     /// Stable sort: ties broken alphabetically so the name never flickers
     var liveWorkoutName: String {
@@ -149,11 +148,26 @@ struct ActiveWorkoutView: View {
         return "Workout"
     }
 
-    var notesPlaceholder: String {
+    // ⚡️ PERF (finding I): static formatter — a DateFormatter used to be
+    // allocated on EVERY body evaluation via the computed placeholder.
+    static let notesDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "M/d/yy"
-        let dateStr = formatter.string(from: Date())
+        return formatter
+    }()
+    
+    /// Cached render value for the notes row — `notesPlaceholder` walks every
+    /// exercise's muscle groups, so it must not run per body eval. Refreshed
+    /// on appear and on `.onChange(of: exercises.count)` in `mainWorkoutContent`.
+    @State var cachedNotesPlaceholder: String = ""
+    
+    var notesPlaceholder: String {
+        let dateStr = Self.notesDateFormatter.string(from: Date())
         return "\(liveWorkoutName) - \(dateStr)"
+    }
+    
+    func refreshNotesPlaceholder() {
+        cachedNotesPlaceholder = notesPlaceholder
     }
     
     var body: some View {

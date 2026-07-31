@@ -100,8 +100,11 @@ extension NewOnboardingView {
                                 Spacer()
                                     .frame(height: 60)
                             } else {
+                                // Capped so the magic-620 centering math
+                                // doesn't shove the form far down tall iPad
+                                // windows (device-polish batch, 2026-07-31).
                                 Spacer()
-                                    .frame(height: max(20, (geometry.size.height - 620) / 2.5))
+                                    .frame(height: min(max(20, (geometry.size.height - 620) / 2.5), 120))
                             }
                             
                             authFormContent
@@ -111,6 +114,9 @@ extension NewOnboardingView {
                                 .frame(height: keyboardUp ? (keyboardHeight + 80) : 60)
                                 .id("bottomSpacer")
                         }
+                        // iPad: cap form width (device-polish batch).
+                        .frame(maxWidth: 640)
+                        .frame(maxWidth: .infinity)
                     }
                     .scrollDismissesKeyboard(.interactively)
                     .onChange(of: showingConfirmPassword) { _, isShowing in

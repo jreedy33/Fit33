@@ -37,9 +37,7 @@ extension NewOnboardingView {
                         RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(
                                 LinearGradient(
-                                    colors: colorScheme == .dark 
-                                        ? [Color(white: 0.14), Color(white: 0.10)]
-                                        : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                    colors: Color.cardGradientStops(for: colorScheme),
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -122,9 +120,7 @@ extension NewOnboardingView {
                         RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(
                                 LinearGradient(
-                                    colors: colorScheme == .dark 
-                                        ? [Color(white: 0.14), Color(white: 0.10)]
-                                        : [Color.white, Color(red: 0.97, green: 0.98, blue: 1.0)],
+                                    colors: Color.cardGradientStops(for: colorScheme),
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )

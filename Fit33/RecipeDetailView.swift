@@ -826,8 +826,12 @@ struct RecipeDetailView: View {
             source: "spoonacular"
         )
         
-        // Add to MealService
-        MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user)
+        // Add to MealService — bail before the confirmation UI if the save
+        // failed (finding P).
+        guard MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user) else {
+            HapticManager.notification(.error)
+            return
+        }
         
         // Track this addition for personalized recommendations
         preferenceService.trackRecipeAddedToMeal(recipe: detail, mealType: mealType, servings: portionServings)

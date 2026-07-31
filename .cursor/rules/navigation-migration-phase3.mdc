@@ -1,15 +1,28 @@
 ---
-description: Navigation Migration Phase 3 - COMPLETE (2026-07-30). All surfaces use value-based navigation; never add NavigationLink(destination:) or isActive: links.
+description: Navigation Migration Phase 3 - COMPLETE (2026-07-31). All surfaces use value-based navigation; never add NavigationLink(destination:) or isActive: links.
 alwaysApply: false
 ---
 
-# Navigation Migration Phase 3 — COMPLETE (2026-07-30)
+# Navigation Migration Phase 3 — COMPLETE (2026-07-31)
 
-> History: an earlier revision claimed completion prematurely; the 2026-07-26
-> audit found 15 legacy links remaining (MASTER_TODO PR-28/PR-41). Those were
-> actually migrated on 2026-07-30 as part of the full-stack audit fix pass.
-> Verify anytime with `rg "NavigationLink\(destination:" Fit33/` — expect zero
-> matches outside comments.
+> History: two earlier revisions claimed completion prematurely. The
+> 2026-07-26 audit found 15 legacy links (PR-28/PR-41, migrated 2026-07-30),
+> and the 2026-07-31 polish-sprint audit found 16 MORE multi-line legacy
+> links the single-line grep missed. Those were migrated on 2026-07-31
+> (see below). Verify with a MULTILINE grep — single-line misses wrapped
+> calls: `rg -U --multiline-dotall "NavigationLink\(.{0,200}?(destination:|isActive:)" Fit33/`
+> — expect zero matches outside comments.
+
+## What was migrated on 2026-07-31 (polish sprint, Phase 4b)
+
+16 multi-line `isActive:` / `NavigationLink(destination:` links converted to
+`.navigationDestination(isPresented:)` in: `ProgramExplorerView.swift` (4),
+`FoodSearchView.swift` (2), `NutritionScannerView.swift`,
+`SmartWorkoutPreviewView.swift`, `ReceivedWorkoutsView.swift`,
+`ReceivedWorkoutPreviewWidget.swift`, `RecipeBrowserView.swift`,
+`HealthyRecipesCarousel.swift` (2), `DashboardModels.swift`,
+`ProgramLibraryView.swift`, `SimpleMealPlanView.swift` (not in the audit
+list — found by the multiline grep).
 
 ## What was migrated on 2026-07-30 (PR-28)
 

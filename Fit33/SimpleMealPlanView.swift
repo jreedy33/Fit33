@@ -35,50 +35,6 @@ struct SimpleMealPlanView: View {
                 AnimatedOrbBackground.home(colorScheme: colorScheme)
                     .accessibilityHidden(true)
 
-                // Hidden NavigationLink for food search
-                NavigationLink(
-                    destination: Group {
-                        if let meal = selectedMeal {
-                            FoodSearchView(mealType: meal) { foodEntry in
-                                AppLogger.debug("[CONTENTVIEW] Food entry received: \(foodEntry.name), meal: \(meal.rawValue), calories: \(foodEntry.calories)", category: .ui)
-                                
-                                // Save to meal service
-                                if let user = userManager.currentUser {
-                                    AppLogger.debug("[CONTENTVIEW] User found, calling MealService.addMealEntry", category: .ui)
-                                    MealService.shared.addMealEntry(foodEntry, mealType: meal, user: user)
-                                    AppLogger.debug("[CONTENTVIEW] MealService.addMealEntry completed", category: .ui)
-                                    
-                                    // Show macro goals explainer on first meal input
-                                    if !hasSeenMacroGoalsExplainer {
-                                        Task { @MainActor in
-                                            try? await Task.sleep(nanoseconds: 500_000_000)
-                                            showingMacroGoalsExplainer = true
-                                            hasSeenMacroGoalsExplainer = true
-                                        }
-                                    }
-                                } else {
-                                    AppLogger.error("[CONTENTVIEW] No current user found!", category: .ui)
-                                }
-                                
-                                // Reset selection to dismiss
-                                selectedMeal = nil
-                            }
-                            .environmentObject(userManager)
-                            .onAppear {
-                                AppLogger.debug("[CONTENTVIEW] FoodSearchView appeared for meal: \(meal.rawValue)", category: .ui)
-                            }
-                        }
-                    },
-                    isActive: Binding(
-                        get: { selectedMeal != nil },
-                        set: { if !$0 { selectedMeal = nil } }
-                    )
-                ) {
-                    EmptyView()
-                }
-                .frame(width: 0, height: 0)
-                .hidden()
-                
             // Instagram-style pinned header + hard cutoff: the
             // "Nutrition" title sits ABOVE the ScrollView via the
             // shared `PinnedTabHeader` wrapper so the hairline matches
@@ -138,6 +94,44 @@ struct SimpleMealPlanView: View {
             .padding(.top, TabPinnedChrome.rootTopPullUp)
             .navigationBarHidden(true)
             .adaptiveToolbarBackground()
+            }
+            .navigationDestination(isPresented: Binding(
+                get: { selectedMeal != nil },
+                set: { if !$0 { selectedMeal = nil } }
+            )) {
+                if let meal = selectedMeal {
+                    FoodSearchView(mealType: meal) { foodEntry in
+                        AppLogger.debug("[CONTENTVIEW] Food entry received: \(foodEntry.name), meal: \(meal.rawValue), calories: \(foodEntry.calories)", category: .ui)
+                        
+                        // Save to meal service
+                        if let user = userManager.currentUser {
+                            AppLogger.debug("[CONTENTVIEW] User found, calling MealService.addMealEntry", category: .ui)
+                            let saved = MealService.shared.addMealEntry(foodEntry, mealType: meal, user: user)
+                            AppLogger.debug("[CONTENTVIEW] MealService.addMealEntry completed (saved: \(saved))", category: .ui)
+                            if !saved {
+                                HapticManager.notification(.error)
+                            }
+                            
+                            // Show macro goals explainer on first meal input
+                            if saved && !hasSeenMacroGoalsExplainer {
+                                Task { @MainActor in
+                                    try? await Task.sleep(nanoseconds: 500_000_000)
+                                    showingMacroGoalsExplainer = true
+                                    hasSeenMacroGoalsExplainer = true
+                                }
+                            }
+                        } else {
+                            AppLogger.error("[CONTENTVIEW] No current user found!", category: .ui)
+                        }
+                        
+                        // Reset selection to dismiss
+                        selectedMeal = nil
+                    }
+                    .environmentObject(userManager)
+                    .onAppear {
+                        AppLogger.debug("[CONTENTVIEW] FoodSearchView appeared for meal: \(meal.rawValue)", category: .ui)
+                    }
+                }
             }
         }
         .onAppear {

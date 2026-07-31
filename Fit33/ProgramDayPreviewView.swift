@@ -329,6 +329,18 @@ struct SmartProgramDayPreviewView: View {
             return
         }
         
+        // Finding S (2026-07-31): thread the smart program's per-exercise
+        // prescriptions (sets + reps) through startWorkout — week alone
+        // used to be passed while sets/reps were dropped.
+        var prescriptions: [String: WorkoutManager.ExercisePrescription] = [:]
+        for programExercise in day.exercises {
+            prescriptions[programExercise.exerciseName.lowercased()] = WorkoutManager.ExercisePrescription(
+                sets: programExercise.sets,
+                repsMin: programExercise.reps,
+                repsMax: programExercise.reps
+            )
+        }
+        
         // Start workout via WorkoutManager (pass week for program-aware progressive overload)
         // Derive week from completed days (every ~4-6 workout days ≈ 1 week)
         let completedCount = program.completedDays.count
@@ -339,7 +351,8 @@ struct SmartProgramDayPreviewView: View {
             programDay: program.currentDay,
             programDayFocus: day.name,
             smartProgramId: program.id,
-            programWeek: min(estimatedWeek, 5)
+            programWeek: min(estimatedWeek, 5),
+            prescriptions: prescriptions
         )
     }
     

@@ -123,10 +123,7 @@ extension DashboardView {
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                .fill(.ultraThinMaterial)
-                        )
+                        .adaptiveMaterialBackground(cornerRadius: CornerRadius.sm)
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
 
@@ -394,7 +391,7 @@ extension DashboardView {
                     .shadow(color: .orange.opacity(0.5), radius: 8, x: 0, y: 2)
 
                 Text("\(userManager.currentUser?.currentStreak ?? 0)")
-                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .font(.ds_stat)
                     .foregroundColor(.white)
                     .shadow(color: .black.opacity(0.3), radius: 1, x: 0, y: 1)
                     .offset(y: 4)

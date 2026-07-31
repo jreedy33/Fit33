@@ -13,6 +13,9 @@ struct MealPlanView: View {
     @State private var nutritionGoals: NutritionGoals?
     @State private var showingSavedMealDetail: SavedMeal?
     @State private var showingShoppingList = false
+    // Finding P (2026-07-31): surface meal-save failures instead of
+    // silently swallowing them while the sheet dismisses.
+    @State private var showingMealSaveFailedAlert = false
     
     var body: some View {
         NavigationStack {
@@ -53,6 +56,11 @@ struct MealPlanView: View {
         }
         .onChange(of: showingAddFood) { isShowing in
             AppLogger.debug("Sheet presentation state changed: \(isShowing)", category: .nutrition)
+        }
+        .alert("Couldn't Log Food", isPresented: $showingMealSaveFailedAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("This entry couldn't be saved. Please check the values and try again.")
         }
     }
     
@@ -504,8 +512,12 @@ struct MealPlanView: View {
         
         AppLogger.info("✅ [MEAL PLAN] User found: \(user.email ?? "no email")", category: .nutrition)
         AppLogger.debug("🔄 [MEAL PLAN] Calling mealService.addMealEntry...", category: .nutrition)
-        mealService.addMealEntry(entry, mealType: selectedMeal, user: user)
-        AppLogger.info("✅ [MEAL PLAN] addMealEntry call completed", category: .nutrition)
+        let saved = mealService.addMealEntry(entry, mealType: selectedMeal, user: user)
+        if !saved {
+            HapticManager.notification(.error)
+            showingMealSaveFailedAlert = true
+        }
+        AppLogger.info("✅ [MEAL PLAN] addMealEntry call completed (saved: \(saved))", category: .nutrition)
     }
     
     private func clearAllMeals() {
@@ -865,9 +877,9 @@ struct SavedMealCard: View {
                     // Source badge
                     HStack(spacing: 4) {
                         Image(systemName: meal.source == .urlImport ? "link" : "book")
-                            .font(.system(size: 8))
+                            .font(.ds_caption)
                         Text(meal.source == .urlImport ? "Imported" : "Recipe")
-                            .font(.system(size: 9))
+                            .font(.ds_caption)
                     }
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 6)
@@ -1445,7 +1457,11 @@ struct SavedMealDetailView: View {
             source: "manual"
         )
         
-        MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user)
+        guard MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user) else {
+            HapticManager.notification(.error)
+            AppLogger.error("❌ [SAVED MEAL] Failed to add '\(meal.name)' to \(mealType.displayName)", category: .nutrition)
+            return
+        }
         HapticManager.success()
         
         AppLogger.info("✅ [SAVED MEAL] Added '\(meal.name)' to \(mealType.displayName)", category: .nutrition)

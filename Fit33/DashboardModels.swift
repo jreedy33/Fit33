@@ -269,19 +269,11 @@ struct DashboardNotificationCarousel: View {
             .onChange(of: scrolledID) { _, _ in
                 HapticManager.impact(.light)
             }
-            .background(
-                NavigationLink(
-                    destination: Group {
-                        if let workout = selectedWorkout {
-                            ReceivedWorkoutDetailView(workout: workout)
-                        }
-                    },
-                    isActive: $navigateToDetail
-                ) {
-                    EmptyView()
+            .navigationDestination(isPresented: $navigateToDetail) {
+                if let workout = selectedWorkout {
+                    ReceivedWorkoutDetailView(workout: workout)
                 }
-                .hidden()
-            )
+            }
             .sheet(isPresented: $showingStravaRecap) {
                 if let selectedStravaActivity {
                     StravaActivityRecapSheet(activity: selectedStravaActivity)

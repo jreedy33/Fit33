@@ -219,6 +219,7 @@ enum SubscriptionPlan: String, CaseIterable {
 struct PremiumUpgradeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var storeKit = StoreKitManager.shared
     
     let triggeringFeature: PremiumFeature
@@ -299,6 +300,9 @@ struct PremiumUpgradeView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 30)
+                    // iPad: cap paywall content width (device-polish batch).
+                    .frame(maxWidth: 640)
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -598,22 +602,26 @@ struct PremiumUpgradeView: View {
             }
             
             VStack(spacing: 3) {
+                // minimumScaleFactor so titles like "Smart Workouts" don't
+                // truncate inside the narrow SE tiles (device-polish batch).
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 
                 Text(subtitle)
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 110)
+        .frame(minHeight: 110)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - colored based on gradient
@@ -689,9 +697,11 @@ struct PremiumUpgradeView: View {
 
     private func pricingOption(plan: SubscriptionPlan) -> some View {
         let isSelected = selectedPlan == plan
+        // Gold badge — matches PaywallFirstScreenView; gold is the
+        // sanctioned paywall language (DESIGN_AGENT invariant 5).
         let badgeColor: Color = plan == .lifetime
             ? Color(red: 1.0, green: 0.84, blue: 0)
-            : .green
+            : .yellow
 
         return Button(action: {
             withAnimation(.spring(response: 0.3)) { selectedPlan = plan }
@@ -715,11 +725,11 @@ struct PremiumUpgradeView: View {
 
                 HStack(spacing: 12) {
                     Circle()
-                        .stroke(isSelected ? Color.blue : Color.white.opacity(0.3), lineWidth: 2)
+                        .stroke(isSelected ? Color.yellow : Color.white.opacity(0.3), lineWidth: 2)
                         .frame(width: 20, height: 20)
                         .overlay(
                             Circle()
-                                .fill(Color.blue)
+                                .fill(Color.yellow)
                                 .frame(width: 10, height: 10)
                                 .opacity(isSelected ? 1 : 0)
                         )
@@ -765,7 +775,7 @@ struct PremiumUpgradeView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
                                 .stroke(
-                                    isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.08),
+                                    isSelected ? Color.yellow : Color.white.opacity(0.08),
                                     lineWidth: isSelected ? 2 : 1
                                 )
                         )
@@ -808,7 +818,7 @@ struct PremiumUpgradeView: View {
                 HStack(spacing: 8) {
                     if storeKit.purchaseState == .purchasing {
                         ProgressView()
-                            .tint(.white)
+                            .tint(.black)
                     } else {
                         Text(ctaText)
                             .font(.headline)
@@ -818,23 +828,24 @@ struct PremiumUpgradeView: View {
                             .font(.subheadline.weight(.bold))
                     }
                 }
-                .foregroundColor(.white)
+                // Gold CTA — identical treatment to PaywallFirstScreenView
+                // so the same "Start 7-Day Free Trial" action doesn't render
+                // as two different buttons (DESIGN_AGENT invariant 5).
+                .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.md)
                 .background(
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    Color(red: 0.4, green: 0.5, blue: 1.0),
-                                    Color(red: 0.6, green: 0.4, blue: 1.0)
-                                ],
+                                colors: [.yellow, .orange],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
-                        .shadow(color: .purple.opacity(0.4), radius: 12, x: 0, y: 6)
+                        .shadow(color: .orange.opacity(0.4), radius: 12, x: 0, y: 6)
                 )
+                .opacity(storeKit.purchaseState == .purchasing ? 0.6 : 1.0)
             }
             .disabled(storeKit.purchaseState == .purchasing)
             .scaleEffect(buttonPulse ? 1.02 : 1.0)
@@ -947,12 +958,16 @@ struct PremiumUpgradeView: View {
             }
         }
         
-        withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
-            glowRotation = 360
-        }
-        
-        withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
-            buttonPulse = true
+        // Infinite glow rotation + button pulse are decorative — gated per
+        // motion policy (finding AE: ran under Reduce Motion / Low Power).
+        if !MotionPolicy.shouldDisableDecorative(reduceMotion: reduceMotion) {
+            withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
+                glowRotation = 360
+            }
+            
+            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+                buttonPulse = true
+            }
         }
     }
 }
@@ -988,16 +1003,26 @@ struct PremiumLockOverlay: View {
     let feature: PremiumFeature
     let onTap: () -> Void
     
+    // Full-bleed material cover, so the adaptiveMaterialBackground wrapper
+    // (which is a background modifier) doesn't fit — honor Reduce
+    // Transparency directly (design-system invariant 8).
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    
     var body: some View {
         Button(action: onTap) {
             ZStack {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
+                if reduceTransparency {
+                    Rectangle().fill(Color.cardBackground)
+                } else {
+                    Rectangle().fill(.ultraThinMaterial)
+                }
                 
                 VStack(spacing: 10) {
                     ZStack {
+                        // Gold, not purple — gold is the sanctioned paywall
+                        // language (DESIGN_AGENT invariant 5).
                         Circle()
-                            .fill(Color.purple.opacity(0.2))
+                            .fill(Color.yellow.opacity(0.2))
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: "crown.fill")
@@ -1008,7 +1033,7 @@ struct PremiumLockOverlay: View {
                     Text("PRO")
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 }
             }
         }

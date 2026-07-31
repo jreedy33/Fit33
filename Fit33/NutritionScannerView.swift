@@ -64,29 +64,21 @@ struct NutritionScannerView: View {
         } message: {
             Text(scanErrorMessage ?? "")
         }
-        .background(
-            NavigationLink(
-                destination: Group {
-                    if let nutrition = extractedNutrition {
-                        NutritionEditorView(
-                            nutrition: nutrition,
-                            mealType: mealType,
-                            onSave: { editedNutrition in
-                                saveNutritionEntry(editedNutrition)
-                            },
-                            onCancel: {
-                                extractedNutrition = nil
-                                capturedImage = nil
-                            }
-                        )
+        .navigationDestination(isPresented: $showingEditor) {
+            if let nutrition = extractedNutrition {
+                NutritionEditorView(
+                    nutrition: nutrition,
+                    mealType: mealType,
+                    onSave: { editedNutrition in
+                        saveNutritionEntry(editedNutrition)
+                    },
+                    onCancel: {
+                        extractedNutrition = nil
+                        capturedImage = nil
                     }
-                },
-                isActive: $showingEditor
-            ) {
-                EmptyView()
+                )
             }
-            .hidden()
-        )
+        }
     }
     
     private var instructionsView: some View {

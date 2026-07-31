@@ -30,6 +30,8 @@ struct ActiveChallengeHeaderRow: View {
     let challenge: ActiveChallenge
     
     @State private var showingReactionPicker = false
+    // Finding W (2026-07-31): surface failed battle-cry sends.
+    @State private var showBattleCrySendFailed = false
     
     private var resolvedType: ChallengeType { challenge.resolvedType }
     private var typeColor: Color { resolvedType.color }
@@ -82,16 +84,38 @@ struct ActiveChallengeHeaderRow: View {
                 recipientLabel: opponentFirst,
                 onSend: { preset in
                     Task {
-                        _ = await ChallengeService.shared.sendReaction(
+                        // Finding W: check the result — error haptic +
+                        // brief toast on failure.
+                        let result = await ChallengeService.shared.sendReaction(
                             challengeId: challenge.challengeId,
                             recipientId: challenge.opponentId,
                             preset: preset
                         )
+                        if !result.success {
+                            await MainActor.run {
+                                HapticManager.notification(.error)
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    showBattleCrySendFailed = true
+                                }
+                            }
+                            try? await Task.sleep(for: .seconds(2))
+                            await MainActor.run {
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    showBattleCrySendFailed = false
+                                }
+                            }
+                        }
                     }
                 }
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        .overlay(alignment: .top) {
+            if showBattleCrySendFailed {
+                BattleCrySendFailedToast()
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
     }
     

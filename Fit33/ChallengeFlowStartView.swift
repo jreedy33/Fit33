@@ -58,6 +58,13 @@ struct ChallengeFlowStartView: View {
     @State private var isCreating = false
     @State private var showingSuccess = false
     @State private var showingError = false
+    // Finding X (2026-07-31): per-friend send results for multi-friend
+    // (separate 1v1) challenges. A retry after partial failure used to
+    // re-send to EVERY friend — duplicating invites for the ones that had
+    // already succeeded. Successful sends are recorded here and skipped on
+    // retry; the error copy names only the friends that actually failed.
+    @State private var successfullyInvitedFriendIds: Set<UUID> = []
+    @State private var partialFailureMessage: String? = nil
     @State private var isCustomDuration = false
     @State private var customDurationText = ""
     @FocusState private var durationFieldFocused: Bool
@@ -311,7 +318,8 @@ struct ChallengeFlowStartView: View {
                 // back to the generic line if no specific message landed
                 // (e.g. RPC + direct insert both failed silently — already
                 // a logged invariant, but defensive).
-                Text(ChallengeService.shared.lastCreateChallengeError
+                Text(partialFailureMessage
+                     ?? ChallengeService.shared.lastCreateChallengeError
                      ?? "There was an issue sending your challenge. Please try again.")
             }
             .sheet(isPresented: $showingQRScanner) {
@@ -2052,10 +2060,16 @@ struct ChallengeFlowStartView: View {
             )
             success = groupId != nil
         } else {
-            // SEPARATE CHALLENGES: Create individual 1v1 for each friend
+            // SEPARATE CHALLENGES: Create individual 1v1 for each friend.
+            // Finding X: skip friends whose invite already succeeded on a
+            // previous attempt so a retry can't duplicate invites.
             AppLogger.debug("🔀 [CHALLENGE FLOW] Creating \(selectedFriends.count) separate challenge(s)", category: .social)
-            var allSucceeded = true
+            var failedFriendNames: [String] = []
             for friend in selectedFriends {
+                if successfullyInvitedFriendIds.contains(friend.friendId) {
+                    AppLogger.debug("⏭️ [CHALLENGE FLOW] Skipping \(friend.displayName) — already invited on a previous attempt", category: .social)
+                    continue
+                }
                 AppLogger.debug("📤 [CHALLENGE FLOW] Sending challenge to \(friend.displayName)", category: .social)
                 let challengeId = await ChallengeService.shared.createChallenge(
                     opponentId: friend.friendId,
@@ -2067,9 +2081,21 @@ struct ChallengeFlowStartView: View {
                     targetUnit: option.unit,
                     durationDays: selectedDuration
                 )
-                if challengeId == nil { allSucceeded = false }
+                if challengeId != nil {
+                    successfullyInvitedFriendIds.insert(friend.friendId)
+                } else {
+                    failedFriendNames.append(friend.displayName)
+                }
             }
-            success = allSucceeded
+            success = failedFriendNames.isEmpty
+            if !success {
+                let names = failedFriendNames.joined(separator: ", ")
+                partialFailureMessage = successfullyInvitedFriendIds.isEmpty
+                    ? nil // total failure — the server error copy is more useful
+                    : "Couldn't send to \(names). The others were sent — tap Send again to retry just the failed invite\(failedFriendNames.count == 1 ? "" : "s")."
+            } else {
+                partialFailureMessage = nil
+            }
         }
         
         isCreating = false

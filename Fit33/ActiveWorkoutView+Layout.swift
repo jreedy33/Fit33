@@ -47,8 +47,10 @@ extension ActiveWorkoutView {
                 let newIds = Set(newExercises.compactMap { $0.id })
                 if oldIds != newIds { exercises = newExercises }
             }
+            .onChange(of: exercises.count) { _, _ in
+                refreshNotesPlaceholder()
+            }
             .onDisappear {
-                stopTimer()
                 UIApplication.shared.isIdleTimerDisabled = false
                 for task in initTasks { task.cancel() }
                 initTasks.removeAll()
@@ -117,7 +119,7 @@ extension ActiveWorkoutView {
                                 Image(systemName: workoutNotes.isEmpty ? "note.text" : "note.text.badge.plus")
                                     .font(.ds_bodyMedium)
                                     .foregroundColor(.secondary)
-                                Text(notesPlaceholder)
+                                Text(cachedNotesPlaceholder)
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
@@ -157,10 +159,7 @@ extension ActiveWorkoutView {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                    )
+                    .adaptiveMaterialBackground(cornerRadius: CornerRadius.xl)
                     
                     
                 }
@@ -442,7 +441,14 @@ extension ActiveWorkoutView {
                                     shouldShift: shiftDirection(for: index),
                                     isActiveCard: activeExerciseId == exerciseId || (activeExerciseId == nil && index == 0),
                                     useKg: useKg,
-                                    autoStartTimer: autoStartRestTimer
+                                    autoStartTimer: autoStartRestTimer,
+                                    workoutExerciseIds: Set(exercises.compactMap { $0.id }),
+                                    // Finding U: mirror set completion to the
+                                    // paired Apple Watch so it advances past
+                                    // "Set 1 of N".
+                                    onSetCheckedOff: {
+                                        pushLiveWorkoutStateToWatch(for: exercise)
+                                    }
                                 )
                                 // 16pt transparent bottom cushion is applied
                                 // BEFORE `.id(exerciseId)` on purpose. The id
@@ -536,11 +542,11 @@ extension ActiveWorkoutView {
     var workoutHeaderBar: some View {
         VStack(spacing: 0) {
             ZStack {
-                Text(workoutDuration)
-                    .foregroundColor(colorScheme == .dark ? .white : .primary)
-                    .font(.title)
-                    .fontWeight(.bold)
-                    .accessibilityLabel("Workout timer: \(Int(elapsedTime) / 60) minutes \(Int(elapsedTime) % 60) seconds")
+                // ⚡️ PERF (finding I): per-second duration lives in a tiny
+                // TimelineView leaf so ONLY this text re-renders each second
+                // — the old root Timer tick invalidated the entire
+                // active-workout layout every second.
+                WorkoutDurationText(startTime: workoutManager.workoutStartTime ?? workout.date ?? Date())
                 
                 HStack {
                     Button(action: {
@@ -552,6 +558,10 @@ extension ActiveWorkoutView {
                         Image(systemName: "gearshape.fill")
                             .font(.ds_heading3)
                             .foregroundColor(colorScheme == .dark ? .white : .primary)
+                            // 44pt HIG tap targets on the whole header row
+                            // (device-polish batch, 2026-07-31)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Workout settings")
                     .accessibilityHint("Adjust rest timer, weight unit, and other options")
@@ -564,6 +574,8 @@ extension ActiveWorkoutView {
                                 Image(systemName: "info.circle")
                                     .font(.ds_heading2)
                                     .foregroundColor(.blue)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
                             }
                         }
                         
@@ -601,6 +613,8 @@ extension ActiveWorkoutView {
                                 .font(.ds_heading2)
                                 .foregroundColor(isWorkoutFavorite ? .yellow : (colorScheme == .dark ? .white : .primary))
                                 .scaleEffect(isWorkoutFavorite ? 1.1 : 1.0)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .accessibilityLabel(isWorkoutFavorite ? "Remove from favorites" : "Add to favorites")
                         .accessibilityHint("Save this workout for quick access later")
@@ -608,12 +622,28 @@ extension ActiveWorkoutView {
                         Button("FINISH") {
                             let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
                             heavyImpact.impactOccurred()
-                            finishWorkout()
+                            // Finding M: don't instantly save an empty
+                            // workout — offer discard instead.
+                            if hasCompletedSets {
+                                finishWorkout()
+                            } else {
+                                showingEmptyFinishAlert = true
+                            }
                         }
                         .font(.ds_labelLarge)
                         .foregroundColor(.blue)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityLabel("Finish workout")
                         .accessibilityHint("End your current workout and save results")
+                        .alert("Nothing logged yet", isPresented: $showingEmptyFinishAlert) {
+                            Button("Keep Working", role: .cancel) { }
+                            Button("Discard Workout", role: .destructive) {
+                                cancelWorkout()
+                            }
+                        } message: {
+                            Text("You haven't completed any sets. Discard this workout instead?")
+                        }
                     }
                 }
             }
@@ -635,7 +665,7 @@ extension ActiveWorkoutView {
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: "xmark")
-                                .font(.system(size: 9, weight: .heavy))
+                                .font(.ds_caption).fontWeight(.heavy)
                             Text("Remove Ads")
                                 .font(.system(size: 10, weight: .bold))
                         }
@@ -661,24 +691,33 @@ extension ActiveWorkoutView {
     @ViewBuilder
     var settingsPanelOverlay: some View {
         if showingSettingsPanel {
-            ZStack(alignment: .leading) {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            showingSettingsPanel = false
+            // GeometryReader instead of UIScreen.main.bounds — the screen
+            // bounds don't match the window in iPad split view / Stage
+            // Manager (device-polish batch, 2026-07-31). Width capped so
+            // the drawer doesn't balloon on iPad.
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                showingSettingsPanel = false
+                            }
                         }
-                    }
-                
-                WorkoutSettingsPanel(
-                    isPresented: $showingSettingsPanel,
-                    showingPremiumUpsell: $showingPremiumUpsell,
-                    onMinimize: {
-                        workoutManager.navigateToHomeTab()
-                    }
-                )
-                .frame(width: UIScreen.main.bounds.width * 0.72)
-                .transition(.move(edge: .leading))
+                    
+                    WorkoutSettingsPanel(
+                        isPresented: $showingSettingsPanel,
+                        showingPremiumUpsell: $showingPremiumUpsell,
+                        onMinimize: {
+                            workoutManager.navigateToHomeTab()
+                        },
+                        onDiscard: {
+                            cancelWorkout()
+                        }
+                    )
+                    .frame(width: min(proxy.size.width * 0.72, 360))
+                    .transition(.move(edge: .leading))
+                }
             }
             .transition(.opacity)
             .zIndex(100)
@@ -733,5 +772,28 @@ extension ActiveWorkoutView {
         }
         .padding(.horizontal)
         .padding(.vertical, 6)
+    }
+}
+
+/// ⚡️ PERF (2026-07-31 finding I): tiny leaf view that owns the per-second
+/// workout-duration re-render. TimelineView invalidates ONLY this Text each
+/// second — the old approach ticked a root `@State elapsedTime` Timer that
+/// re-evaluated the entire active-workout layout every second for the whole
+/// session.
+struct WorkoutDurationText: View {
+    let startTime: Date
+    @Environment(\.colorScheme) private var colorScheme
+    
+    var body: some View {
+        TimelineView(.periodic(from: startTime, by: 1)) { context in
+            let elapsed = max(0, context.date.timeIntervalSince(startTime))
+            let minutes = Int(elapsed) / 60
+            let seconds = Int(elapsed) % 60
+            Text(String(format: "%d:%02d", minutes, seconds))
+                .foregroundColor(colorScheme == .dark ? .white : .primary)
+                .font(.title)
+                .fontWeight(.bold)
+                .accessibilityLabel("Workout timer: \(minutes) minutes \(seconds) seconds")
+        }
     }
 }

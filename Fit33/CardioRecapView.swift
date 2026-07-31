@@ -376,21 +376,30 @@ struct CardioRecapView: View {
                     "❌ [CARDIO] recap save failed: \(error.localizedDescription)",
                     category: .network
                 )
-                // PR-22 residual (2026-07-30): queue for offline retry —
-                // the RPC's external_id idempotency makes this duplicate-safe.
+            }
+            // 2026-07-31: fanout only AFTER a durable save (matches the
+            // indoor flow). On failure (thrown OR nil id) queue for offline
+            // retry (PR-22 residual — the RPC's external_id idempotency
+            // makes this duplicate-safe); the retry queue completes the
+            // XP/quest fanout after the first successful retry — running it
+            // here too would double-award, and running it against a made-up
+            // workout id corrupted the trail.
+            if savedWorkoutId == nil {
                 CloudSyncRetryQueue.shared.enqueueCardioCloudSync(payload)
             }
-            UserManager.shared.completeCardioWorkout(
-                workoutId: savedWorkoutId ?? UUID().uuidString,
-                activityType: result.activityType.rawValue,
-                durationSeconds: Int(result.duration),
-                distanceMeters: result.distance,
-                caloriesBurned: Int(result.calories),
-                averageHeartRate: result.averageHeartRate,
-                savedViaRPC: savedWorkoutId != nil,
-                goalAchieved: payload.goalAchieved
-            )
-            await DailyQuestService.shared.onCardioActivityImported(source: "fit33")
+            if let savedWorkoutId {
+                UserManager.shared.completeCardioWorkout(
+                    workoutId: savedWorkoutId,
+                    activityType: result.activityType.rawValue,
+                    durationSeconds: Int(result.duration),
+                    distanceMeters: result.distance,
+                    caloriesBurned: Int(result.calories),
+                    averageHeartRate: result.averageHeartRate,
+                    savedViaRPC: true,
+                    goalAchieved: payload.goalAchieved
+                )
+                await DailyQuestService.shared.onCardioActivityImported(source: "fit33")
+            }
             if StravaService.shared.isConnected {
                 Task.detached {
                     try? await Task.sleep(nanoseconds: 3_000_000_000)

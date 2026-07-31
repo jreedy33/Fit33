@@ -442,7 +442,8 @@ extension ActiveWorkoutView {
                                     shouldShift: shiftDirection(for: index),
                                     isActiveCard: activeExerciseId == exerciseId || (activeExerciseId == nil && index == 0),
                                     useKg: useKg,
-                                    autoStartTimer: autoStartRestTimer
+                                    autoStartTimer: autoStartRestTimer,
+                                    workoutExerciseIds: Set(exercises.compactMap { $0.id })
                                 )
                                 // 16pt transparent bottom cushion is applied
                                 // BEFORE `.id(exerciseId)` on purpose. The id

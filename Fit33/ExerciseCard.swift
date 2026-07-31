@@ -43,6 +43,13 @@ struct ExerciseCard: View {
     var isActiveCard: Bool = false
     var useKg: Bool = false
     var autoStartTimer: Bool = true
+    // Ids of ALL exercises currently in the workout (passed from
+    // ActiveWorkoutView, which owns `exercises`). Seeds the shuffle
+    // exclusion set so a swap can never pick an exercise that's already
+    // another slot in this workout — which would wipe that slot's logged
+    // sets (both slots share one `exerciseSetsData` key) and duplicate
+    // ForEach ids.
+    var workoutExerciseIds: Set<UUID> = []
     
     @State private var showingExerciseDetail = false
     @State private var shuffledExerciseIds: Set<UUID> = [] // Track which exercises we've already shuffled to
@@ -344,6 +351,7 @@ struct ExerciseCard: View {
         let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
         let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
         var excludeIds = shuffledExerciseIds
+        excludeIds.formUnion(workoutExerciseIds)
         if let currentId = exercise.id {
             excludeIds.insert(currentId)
         }

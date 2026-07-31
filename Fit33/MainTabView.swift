@@ -26,6 +26,12 @@ struct MainTabView: View {
     @State private var scrollToTopTrigger: UUID = UUID()
     @State private var showNotificationPermissionPrompt = false
     @State private var hasCheckedNotificationPermission = false
+    // 4-hour auto-end explanation (P0 fix 2026-07-31): WorkoutManager posts
+    // "WorkoutAutoEnded" when it salvages/ends a timed-out workout; before
+    // this observer existed the notification went nowhere and the workout
+    // vanished silently.
+    @State private var showWorkoutAutoEndedAlert = false
+    @State private var workoutAutoEndedMessage = ""
     
     private let tabs = [
         TabItem(icon: "house", selectedIcon: "house.fill", title: "Home", color: .white),
@@ -373,6 +379,16 @@ struct MainTabView: View {
                 pushPermissionCoordinator.markPostDenyPromptShown()
                 await MainActor.run { showNotificationPermissionPrompt = true }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("WorkoutAutoEnded"))) { notification in
+            workoutAutoEndedMessage = (notification.userInfo?["reason"] as? String)
+                ?? "Your workout was automatically ended after 4 hours."
+            showWorkoutAutoEndedAlert = true
+        }
+        .alert("Workout Ended", isPresented: $showWorkoutAutoEndedAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(workoutAutoEndedMessage)
         }
         .alert("Stay on Track with Notifications", isPresented: $showNotificationPermissionPrompt) {
             Button("Enable Notifications") {

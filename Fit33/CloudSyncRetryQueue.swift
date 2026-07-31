@@ -47,6 +47,12 @@ final class CloudSyncRetryQueue: ObservableObject {
         /// JSON-encoded `CardioWorkoutData` for cardioCloudSync entries.
         /// Optional so queue files written before 2026-07-30 still decode.
         var payloadJSON: String?
+        /// Cardio entries only (2026-07-31): `false`/`nil` means the
+        /// XP/streak/league/quest fanout (`UserManager.completeCardioWorkout`
+        /// + quest verify) never ran because the save failed — the drain
+        /// worker owes it after the first successful retry. Optional so
+        /// older queue files still decode.
+        var fanoutCompleted: Bool?
         var attempts: Int
         var nextAttemptAt: Date
         let enqueuedAt: Date
@@ -77,6 +83,7 @@ final class CloudSyncRetryQueue: ObservableObject {
             kind: .workoutCloudSync,
             objectURI: uri,
             payloadJSON: nil,
+            fanoutCompleted: nil,
             attempts: 0,
             nextAttemptAt: Date(),
             enqueuedAt: Date()
@@ -105,6 +112,9 @@ final class CloudSyncRetryQueue: ObservableObject {
             kind: .cardioCloudSync,
             objectURI: "",
             payloadJSON: json,
+            // Both cardio enqueue sites (indoor completion + outdoor recap)
+            // only enqueue when the save failed, i.e. BEFORE any fanout ran.
+            fanoutCompleted: false,
             attempts: 0,
             nextAttemptAt: Date(),
             enqueuedAt: Date()
@@ -188,12 +198,12 @@ final class CloudSyncRetryQueue: ObservableObject {
         case .workoutCloudSync:
             return await attemptWorkoutSync(uri: entry.objectURI)
         case .cardioCloudSync:
-            return await attemptCardioSync(payloadJSON: entry.payloadJSON)
+            return await attemptCardioSync(entry)
         }
     }
 
-    private func attemptCardioSync(payloadJSON: String?) async -> Bool {
-        guard let json = payloadJSON, let data = json.data(using: .utf8) else {
+    private func attemptCardioSync(_ entry: Entry) async -> Bool {
+        guard let json = entry.payloadJSON, let data = json.data(using: .utf8) else {
             AppLogger.warning("Dropping queued cardio sync — payload missing", category: .network)
             return true // drop: nothing we can do.
         }
@@ -204,13 +214,38 @@ final class CloudSyncRetryQueue: ObservableObject {
             return true
         }
         do {
-            _ = try await SupabaseManager.shared.saveCardioWorkout(payload)
+            let workoutId = try await SupabaseManager.shared.saveCardioWorkout(payload)
             AppLogger.info("✅ Retried cardio cloud sync (\(payload.activityType))", category: .network)
+            // 2026-07-31: cardio flows are "fanout after durable save" —
+            // entries enqueued from a failed save still owe the
+            // XP/streak/league/quest credit. Run it exactly once per entry:
+            // mark the flag (persisted) BEFORE the fanout so a crash
+            // mid-fanout can't double-award on the next drain.
+            if entry.fanoutCompleted != true, let id = workoutId {
+                markCardioFanoutCompleted(id: entry.id)
+                UserManager.shared.completeCardioWorkout(
+                    workoutId: id,
+                    activityType: payload.activityType,
+                    durationSeconds: payload.durationSeconds,
+                    distanceMeters: payload.distanceMeters,
+                    caloriesBurned: Int(payload.caloriesBurned),
+                    averageHeartRate: payload.averageHeartRate,
+                    savedViaRPC: true,
+                    goalAchieved: payload.goalAchieved
+                )
+                await DailyQuestService.shared.onCardioActivityImported(source: "fit33")
+            }
             return true
         } catch {
             AppLogger.error("Retry cardio cloud sync failed: \(error.localizedDescription)", category: .network)
             return false
         }
+    }
+
+    private func markCardioFanoutCompleted(id: UUID) {
+        guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[idx].fanoutCompleted = true
+        persist()
     }
 
     private func attemptWorkoutSync(uri: String) async -> Bool {

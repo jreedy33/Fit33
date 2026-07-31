@@ -428,10 +428,14 @@ struct SetRowView: View {
                     weightDebounceTask?.cancel()
                     repsDebounceTask?.cancel()
                     
-                    // Determine final weight: user input > pre-filled data > placeholder > default
+                    // Determine final weight in canonical TOTAL LBS:
+                    // user input (display units — kg and/or per-side — so it
+                    // MUST go through the same conversion applyWeight uses) >
+                    // pre-filled data > placeholder > default. setData.weight
+                    // and prev.weight are already total lbs.
                     let finalWeight: Double
                     if let weight = parseWeight(weightText), weight > 0 {
-                        finalWeight = weight
+                        finalWeight = totalLbs(fromDisplayWeight: weight)
                     } else if setData.weight > 0 {
                         // Use pre-filled value from previous set
                         finalWeight = setData.weight
@@ -456,12 +460,15 @@ struct SetRowView: View {
                         finalReps = 8 // Default
                     }
                     
-                    // Update setData with final values
+                    // Update setData with final values (canonical total lbs)
                     setData.weight = finalWeight
+                    setData.syncWeightUnits(fromLbs: true)
                     setData.reps = finalReps
                     
-                    // Update text fields to show the confirmed values (preserve decimals like 187.5)
-                    weightText = formatWeightPlaceholder(finalWeight)
+                    // Echo the confirmed values back in DISPLAY units (kg /
+                    // per-side inverse — same math as weightPlaceholder),
+                    // preserving decimals like 187.5
+                    weightText = formatWeightPlaceholder(displayWeight(fromTotalLbs: finalWeight))
                     repsText = "\(finalReps)"
                     
                     // If already completed, allow unchecking
@@ -481,16 +488,6 @@ struct SetRowView: View {
                     #if DEBUG
                     AppLogger.debug("🔥 Set \(setNumber): Initiating completion...", category: .workout)
                     #endif
-                    
-                    // Cancel any pending debounce and sync weight/reps immediately
-                    weightDebounceTask?.cancel()
-                    repsDebounceTask?.cancel()
-                    if let weight = parseWeight(weightText) {
-                        setData.weight = weight
-                    }
-                    if let reps = Int(repsText) {
-                        setData.reps = reps
-                    }
                     
                     let shouldStartTimer = autoStartTimer && restDuration > 0
                     
@@ -630,19 +627,16 @@ struct SetRowView: View {
     
     private var weightPlaceholder: String {
         if let prev = previousSet {
-            var displayWeight = prev.weight
-            if useKg { displayWeight = (displayWeight * WorkoutSetData.lbsToKg * 10).rounded() / 10 }
-            if isPerSideMode {
-                let bar = useKg ? (barWeight * WorkoutSetData.lbsToKg) : barWeight
-                let perSide = max(0, (displayWeight - bar) / 2)
-                return formatWeightPlaceholder(perSide)
-            }
-            return formatWeightPlaceholder(displayWeight)
+            return formatWeightPlaceholder(displayWeight(fromTotalLbs: prev.weight))
         }
         return isPerSideMode ? (useKg ? "20" : "45") : (useKg ? "60" : "135")
     }
     
-    private func applyWeight(_ inputWeight: Double) {
+    /// Convert a value typed in the field's DISPLAY units (kg and/or
+    /// per-side) into canonical TOTAL LBS. Single source of truth for the
+    /// display→storage direction — used by both the focus-loss/debounce
+    /// path (`applyWeight`) and the completion checkmark.
+    private func totalLbs(fromDisplayWeight inputWeight: Double) -> Double {
         var totalLbs: Double
         let bar = useKg ? (barWeight * WorkoutSetData.lbsToKg) : barWeight
         
@@ -654,7 +648,23 @@ struct SetRowView: View {
             totalLbs = useKg ? (inputWeight * WorkoutSetData.kgToLbs) : inputWeight
         }
         
-        setData.weight = (totalLbs * 10).rounded() / 10
+        return (totalLbs * 10).rounded() / 10
+    }
+    
+    /// Inverse of `totalLbs(fromDisplayWeight:)` — canonical TOTAL LBS back
+    /// into the field's display units (same math as `weightPlaceholder`).
+    private func displayWeight(fromTotalLbs weight: Double) -> Double {
+        var displayWeight = weight
+        if useKg { displayWeight = (displayWeight * WorkoutSetData.lbsToKg * 10).rounded() / 10 }
+        if isPerSideMode {
+            let bar = useKg ? (barWeight * WorkoutSetData.lbsToKg) : barWeight
+            displayWeight = max(0, (displayWeight - bar) / 2)
+        }
+        return (displayWeight * 10).rounded() / 10
+    }
+    
+    private func applyWeight(_ inputWeight: Double) {
+        setData.weight = totalLbs(fromDisplayWeight: inputWeight)
         setData.syncWeightUnits(fromLbs: true)
     }
     

@@ -150,6 +150,21 @@ extension ActiveWorkoutView {
             }
         }
         
+        // "Reopen" on the completion screen re-arms FINISH (it resets
+        // `isFinishingWorkout` + `workout.isCompleted` in
+        // `handleCompletionDismiss`). The XP/streak/league/quest/HealthKit/
+        // program-day fanout must only run ONCE per session — on a second
+        // finish, re-run only the durable saves: `saveWorkoutData()`
+        // (which also kicks the idempotent cloud upsert) and re-present
+        // the completion screen.
+        if workoutManager.didRunCompletionFanout {
+            AppLogger.info("🔁 [FINISH] Completion fanout already ran this session — re-running durable saves only", category: .workout)
+            saveWorkoutData()
+            showingCompletionView = true
+            return
+        }
+        workoutManager.didRunCompletionFanout = true
+        
         let capturedSetsData = workoutManager.exerciseSetsData
         let capturedExercises = exercises
         let capturedWorkout = workout
@@ -396,6 +411,15 @@ extension ActiveWorkoutView {
     
     func shuffleExercise(at index: Int, with newExercise: Exercise) {
         guard index < exercises.count else { return }
+        // Belt-and-braces (the exclusion set in ExerciseCard should prevent
+        // this): never swap in an exercise that's already another slot in
+        // the workout — the two slots would share one `exerciseSetsData`
+        // key (wiping logged sets) and duplicate ForEach ids.
+        if exercises.contains(where: { $0.id == newExercise.id }) {
+            HapticManager.notification(.warning)
+            AppLogger.warning("⚠️ Shuffle picked an exercise already in the workout (\(newExercise.name ?? "?")) — ignoring", category: .workout)
+            return
+        }
         let oldExercise = exercises[index]
         let oldExerciseId = oldExercise.id?.uuidString ?? ""
         let newExerciseId = newExercise.id?.uuidString ?? ""

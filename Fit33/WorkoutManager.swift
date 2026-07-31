@@ -45,6 +45,16 @@ class WorkoutManager: ObservableObject {
     @Published var currentTime: Date = Date()
     @Published var workoutInsights: WorkoutInsights? = nil
 
+    /// Session-scoped guard for the completion fanout (P0 fix 2026-07-31).
+    /// "Reopen" on the completion screen resets the VIEW-level re-entry
+    /// guards (`isFinishingWorkout` + `workout.isCompleted`) so FINISH works
+    /// again — without this flag a second FINISH re-ran the entire
+    /// XP/streak/league/quests/HealthKit/program-day fanout (repeatable
+    /// double-XP exploit). Lives on WorkoutManager (not view @State) so it
+    /// survives view re-creation. Set by the first
+    /// `ActiveWorkoutView.finishWorkout()`; reset on start/finish/cancel.
+    var didRunCompletionFanout: Bool = false
+
     /// Quality scoring result attached to the most recently finished workout
     /// (migration #154 — `score_workout_quality` rubric mirror). Populated by
     /// `ActiveWorkoutView+Actions.finishWorkout`, read by
@@ -857,21 +867,105 @@ class WorkoutManager: ObservableObject {
         if elapsedTime > maxWorkoutDuration {
             AppLogger.debug("⏰ [WORKOUT] Workout has been active for \(String(format: "%.1f", hoursElapsed)) hours - exceeds 4 hour limit", category: .performance)
             
-            // Auto-end the workout
-            cancelWorkout()
-            
-            // Show alert to user
-            NotificationCenter.default.post(
-                name: NSNotification.Name("WorkoutAutoEnded"),
-                object: nil,
-                userInfo: ["reason": "Your workout was automatically ended after 4 hours. Tap FINISH next time to save your progress!"]
-            )
+            // Auto-end the workout — salvage completed sets instead of
+            // destroying them (P0 fix 2026-07-31; used to call
+            // cancelWorkout() which wiped everything the user logged).
+            Task { @MainActor [weak self] in
+                self?.salvageTimedOutWorkout()
+            }
         } else {
             AppLogger.debug("✅ [WORKOUT] App foregrounded - workout still active (\(minutesElapsed) min / \(String(format: "%.1f", hoursElapsed)) hrs)", category: .performance)
             
             // Re-save state to ensure it's fresh
             saveActiveWorkoutToStorage()
         }
+    }
+    
+    /// 4-hour timeout salvage (P0 fix 2026-07-31): persist any completed
+    /// sets to Core Data using the same row shape as
+    /// `ActiveWorkoutView+Persistence.saveWorkoutData`, enqueue the cloud
+    /// sync, then tear down the active state. The XP / streak / league /
+    /// quest fanout intentionally does NOT run — the user never tapped
+    /// FINISH. Falls back to the plain cancel when there's nothing to save.
+    /// Posts `"WorkoutAutoEnded"` either way (observed by `MainTabView`).
+    @MainActor
+    private func salvageTimedOutWorkout() {
+        let hasCompletedSets = exerciseSetsData.values.contains { sets in
+            sets.contains { $0.isCompleted }
+        }
+        
+        guard let workout = currentWorkout, hasCompletedSets else {
+            // Nothing worth saving — original teardown.
+            cancelWorkout()
+            postWorkoutAutoEnded(salvaged: false)
+            return
+        }
+        
+        let context = PersistenceController.shared.container.viewContext
+        workout.isCompleted = true
+        // Cap the stored duration at the 4-hour ceiling — the user clearly
+        // walked away, so the real training time is unknowable and a 9-hour
+        // "workout" would corrupt duration stats.
+        workout.duration = Int32(maxWorkoutDuration)
+        
+        // Duplicate guard (same as saveWorkoutData): clear any existing
+        // WorkoutExercise rows before re-creating them.
+        if let existingExercises = workout.exercises as? Set<WorkoutExercise>, !existingExercises.isEmpty {
+            for existingExercise in existingExercises {
+                context.delete(existingExercise)
+            }
+        }
+        
+        for (exerciseIndex, exercise) in currentExercises.enumerated() {
+            guard let exerciseId = exercise.id?.uuidString,
+                  let sets = exerciseSetsData[exerciseId],
+                  sets.contains(where: { $0.isCompleted }) else { continue }
+            
+            let workoutExercise = WorkoutExercise(context: context)
+            workoutExercise.id = UUID()
+            workoutExercise.order = Int16(exerciseIndex)
+            workoutExercise.workout = workout
+            workoutExercise.exercise = exercise
+            
+            for (setIndex, setData) in sets.enumerated() {
+                guard setData.isCompleted else { continue }
+                setData.syncWeightUnits(fromLbs: true)
+                let workoutSet = WorkoutSet(context: context)
+                workoutSet.id = UUID()
+                workoutSet.setNumber = Int16(setIndex + 1)
+                workoutSet.weight = setData.weight
+                workoutSet.reps = Int16(setData.reps)
+                workoutSet.isCompleted = true
+                workoutSet.completedAt = setData.completedAt
+                workoutSet.restTime = Int32(setData.restTime)
+                workoutSet.setType = setData.setType.rawValue
+                workoutSet.workoutExercise = workoutExercise
+            }
+        }
+        
+        do {
+            try context.save()
+            AppLogger.info("⏰ [WORKOUT] 4-hour auto-end: salvaged completed sets into workout history", category: .workout)
+            // Durable cloud path — the retry queue flushes when online/authed.
+            CloudSyncRetryQueue.shared.enqueueWorkoutCloudSync(workout)
+            cancelWorkout()
+            postWorkoutAutoEnded(salvaged: true)
+        } catch {
+            AppLogger.error("❌ [WORKOUT] 4-hour auto-end: failed to salvage workout: \(error)", category: .workout)
+            cancelWorkout()
+            postWorkoutAutoEnded(salvaged: false)
+        }
+    }
+    
+    private func postWorkoutAutoEnded(salvaged: Bool) {
+        let message = salvaged
+            ? "Your workout was automatically ended after 4 hours. Your completed sets were saved to your workout history."
+            : "Your workout was automatically ended after 4 hours. Tap FINISH next time to save your progress!"
+        NotificationCenter.default.post(
+            name: NSNotification.Name("WorkoutAutoEnded"),
+            object: nil,
+            userInfo: ["reason": message]
+        )
     }
     
     private var cancellables = Set<AnyCancellable>()
@@ -975,6 +1069,7 @@ class WorkoutManager: ObservableObject {
         currentExercises = exercises
         workoutStartTime = Date()
         workoutInsights = insights
+        didRunCompletionFanout = false
         currentProgramDayNumber = programDay
         currentProgramDayFocus = programDayFocus
         currentSmartProgramId = smartProgramId
@@ -1279,6 +1374,7 @@ class WorkoutManager: ObservableObject {
         currentProgramWeek = nil
         shouldNavigateToWorkoutTab = false
         friendWorkoutBonusXP = 0
+        didRunCompletionFanout = false
         clearAllSetsData() // Clear persistent sets data
         
         // ⚡️ PERSISTENCE: Clear saved workout state
@@ -1329,6 +1425,7 @@ class WorkoutManager: ObservableObject {
         currentProgramWeek = nil
         shouldNavigateToWorkoutTab = false
         friendWorkoutBonusXP = 0
+        didRunCompletionFanout = false
         clearAllSetsData() // Clear persistent sets data
         
         // ⚡️ PERSISTENCE: Clear saved workout state
@@ -1520,25 +1617,17 @@ class WorkoutManager: ObservableObject {
         
         currentExercises[index] = newExercise
         
-        // Preserve set structure: keep the same number of sets so completed
-        // progress isn't lost. Transfer completed set count but clear the
-        // exercise-specific weight/rep data since the new exercise may differ.
+        // Preserve only the SET COUNT (the user's "I do 4 sets" preference
+        // for this slot). The new exercise gets fresh `WorkoutSetData()` rows
+        // — carrying over the old lift's completed weights/reps under the new
+        // exercise's id would poison history, ghosts, and PR detection.
+        // Matches the shuffle path's semantics
+        // (ActiveWorkoutView+Actions.shuffleExercise).
         let oldSets = exerciseSetsData[oldExerciseId] ?? []
         let preservedSetCount = max(oldSets.count, 3)
         
-        var newSets: [WorkoutSetData] = []
-        for i in 0..<preservedSetCount {
-            let setData = WorkoutSetData()
-            if i < oldSets.count && oldSets[i].isCompleted {
-                setData.isCompleted = true
-                setData.reps = oldSets[i].reps
-                setData.weight = oldSets[i].weight
-            }
-            newSets.append(setData)
-        }
-        
         exerciseSetsData.removeValue(forKey: oldExerciseId)
-        exerciseSetsData[newExerciseId] = newSets
+        exerciseSetsData[newExerciseId] = (0..<preservedSetCount).map { _ in WorkoutSetData() }
         
         // Save updated state
         saveActiveWorkoutToStorage()

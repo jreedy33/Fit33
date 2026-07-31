@@ -774,6 +774,20 @@ struct CardioCompletionView: View {
                                     .font(.caption)
                                     .foregroundColor(.white.opacity(0.7))
                             }
+                        } else {
+                            // Save failed → queued on CloudSyncRetryQueue,
+                            // which completes the XP/quest fanout after the
+                            // first successful retry. Previously this state
+                            // rendered NOTHING (2026-07-31 P0 fix).
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                                    .foregroundColor(.orange)
+                                Text("Saved offline — will sync automatically")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("Workout saved offline, it will sync automatically")
                         }
                         
                         // Done button
@@ -1013,6 +1027,15 @@ struct CardioCompletionView: View {
             await MainActor.run {
                 savedSuccessfully = workoutId != nil
                 isSaving = false
+            }
+
+            // RPC returned nil without throwing — treat like a failed save:
+            // queue for retry so the fanout credit isn't silently dropped
+            // (2026-07-31; the retry queue completes the fanout).
+            if workoutId == nil {
+                await MainActor.run {
+                    CloudSyncRetryQueue.shared.enqueueCardioCloudSync(workoutData)
+                }
             }
 
             // Sprint 2 Q2-5 — wire into gamification (XP, streak, league,

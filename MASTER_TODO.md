@@ -1,6 +1,6 @@
 # Fit33 Master TODO
 
-> **Last updated:** July 26, 2026 (Production-Readiness Master Audit — see §PR below; supersedes prioritization of everything under it)
+> **Last updated:** July 30, 2026 (second fix pass on the Production-Readiness Master Audit — see the 2026-07-30 status block in §PR)
 > **Source:** Consolidated from (1) April 17 full-app audit, (2) still-open items from previous MASTER_TODO, (3) April 22 cross-agent rules-compliance audit, (4) April 26 Sprint 7 execution pass (security hygiene + Swift perf sweeps + agent-doc refresh), (5) April 27 Sprint 8 execution pass (concurrency & cleanup), and (6) April 28 Sprint 9 execution pass that shipped AVFoundation asset/player construction off main thread (`ExerciseDetailView.VideoPlayerManager` + `StretchModeView` + `VideoPreloadManager` + `VideoPlaybackEngine.InstantVideoPlayerState`), `RunningManager` `deinit` cleanup, Exercise name-lookups routed through `ExerciseLibraryService`, `ExerciseLibraryService` sync race locked via `syncLock` + `fetchAndPerformSyncLocked()`, aggregation-DTO null-safety via custom `init(from:)` decoders, `Color.cardGradientStops(for:)` token replacing ~~23 hard-coded `[Color(white: 0.15), Color(white: 0.10)]` sites, 5 highest-traffic empty states migrated to `EmptyStateView`, Zod validation helpers + schemas for Admin CMS API routes, and admin MFA enrollment enforcement.
 > **Rule:** Only items that are **not yet addressed**. Items marked `[~~]`are partially done with a specific remaining gap called out. Items marked`[x]` were closed by a prior sprint — kept inline so reviewers can trace the shipping delta.
 
@@ -71,6 +71,56 @@ IDs with a letter prefix (`C-`, `H-`, `M-`, `F-`, `FE-`, `DB-`, `L-`) were inher
 > (remaining backend hygiene items not covered by migration #204), PR-32,
 > PR-37, PR-45. Deploy migrations #203–#205 via the SQL editor.
 
+### Status block — 2026-07-30 fix pass (full-stack audit, second execution round)
+
+> **Fixed in-repo:**
+> - **PR-28** — navigation migration finished: `SettingsRoute` enum (11 cases) +
+>   `.navigationDestination(for:)` in SettingsView; ProfileView's 2 legacy links
+>   and 3 `isActive:` bindings converted. Zero `NavigationLink(destination:)`
+>   remain (rule file `navigation-migration-phase3.mdc` updated to COMPLETE).
+> - **PR-37** — received battle-cry bubbles in `ReactiveBattleFeed`
+>   (`BattleCryComposer.swift`) now have long-press Report + Block via
+>   `FriendService.reportContent`/`blockUser` with a destructive confirmation.
+> - **PR-2 residual / PR-31 (partial)** — migration #206
+>   (`20260730_backend_hygiene_and_rate_limit.sql`) adds `rate_limit_events` +
+>   `check_rate_limit` RPC (service-role only); `send-push-notification` batch
+>   flush now rate-limits 10/min per user; `group_challenge_members` SELECT
+>   revoked from authenticated; `interpolate_template` re-revoked; 7
+>   monetization RPCs granted to `service_role` (CMS/webhook were broken
+>   without it). Still open in PR-31: `challenge_award_tiers` no-RLS,
+>   remaining unused `authenticated` EXECUTE revokes.
+> - **PR-38 (CMS half)** — CMS login + admin routes now use the shared
+>   `check_rate_limit` store via `admin-cms/src/lib/rate-limit.ts` (in-memory
+>   fallback if the RPC is unreachable); auth **refresh** now re-checks the
+>   admin allowlist; `trigger_shake_triage` classified as a WRITE action;
+>   stale `bulk_update_bug_reports` entry removed.
+> - **PR-36 residual** — GenderFilterService cache race fixed (NSLock +
+>   snapshot reads, fuzzy scan removed from video hot path); HealthKit
+>   background observers now retained and torn down on sign-out/delete
+>   (`BackgroundChallengeSyncService.teardownForSignOut()` wired into
+>   `SupabaseManager`); InBody `isConfigured` detects both placeholder styles.
+> - **PR-22 residual** — cardio offline retry shipped: `CloudSyncRetryQueue`
+>   gained a `cardioCloudSync` kind (JSON payload + idempotent `saveCardioWorkout`);
+>   Run/Recap/Indoor save failures now enqueue instead of dropping.
+> - **PR-32 (partial)** — set-persistence throttle now trailing-edge coalesces
+>   (last ≤5s of sets no longer lost on hard kill). Pause + indoor kill/restore
+>   still open.
+> - **PR-39** — the 3 orphan `Fit33Watch Watch App/` config files deleted
+>   (build settings point at `Fit33Watch/`); dead `INFOPLIST_KEY_*` +
+>   hardcoded anon JWT in watch/widget clients still open.
+> - **PR-45 (partial)** — all 12 `.cursor/agents/*.md` short-form mirrors
+>   regenerated from the root long-forms. AGD-3 shrink pass + `docs/history/`
+>   archives for BUG_INTELLIGENCE/MONETIZATION still open.
+> - **Edge functions** — `bug-intel-rpc-smoke` was callable unauthenticated
+>   (could insert `bug_intelligence_trends` rows); now gated to service-role
+>   JWT / `x-cron-key`.
+> - **Migration hygiene** — `NOTIFY pgrst` added to #203–#205; duplicate
+>   header numbers fixed (#209/#210); MIGRATION_INDEX gained rows #206–#210.
+>
+> **Deploy checklist for YOU:** run migrations #203–#206 in the SQL editor,
+> redeploy `send-push-notification` + `bug-intel-rpc-smoke`, and
+> `git push origin main` for the CMS (Vercel `fitapp`).
+
 ### Gate A — P0 ship blockers (submission fails or users are harmed)
 
 #### A1. Security (fix first — live-data exposure)
@@ -124,23 +174,23 @@ IDs with a letter prefix (`C-`, `H-`, `M-`, `F-`, `FE-`, `DB-`, `L-`) were inher
 | PR-25 | [~] (Partially fixed 2026-07-26 — remaining gap in status block above) **Privacy manifests:** widget + watch extensions use App-Group UserDefaults but ship NO `PrivacyInfo.xcprivacy` (Required Reason API CA92.1); main manifest lacks a location collected-data type despite GPS runs, and `DeviceID`'s tracking flag is inconsistent with `NSPrivacyTracking=true`. Also verify every SPM dependency ships its own manifest via Xcode Privacy Report export. | `RunningActivityWidget/`, `Fit33Watch*/`, `Fit33/PrivacyInfo.xcprivacy` | Infra + Monetization |
 | PR-26 | [x] (Fixed 2026-07-26 fix pass — see status block above) **CI is red:** `ios-*.yml` workflows pin Xcode 15.4 which can't read the project's object format (70); `Fit33Tests` deployment target is `26.2` vs app `17.0`. Bump runner Xcode, align targets — a green build+test gate is a submission precondition. | `.github/workflows/ios-*.yml`, `Fit33.xcodeproj/project.pbxproj` | Infra + QP |
 | PR-27 | [~] (Partially fixed 2026-07-26 — remaining gap in status block above) **Program push days skip rear-delt balance (FE-7).** Autogen enforces the balance slot; `SmartProgramEngine`/`CloudProgramService` push focus = chest/shoulders/triceps only and the selection engine has no balance pass; templates put rear delts on pull. Add `getBalanceSlot` (or a rear-delt requirement) to the program path. Related still-open engine debt: FE-3 (three drifting exercise-count formulas + Python audit mirror missing the Advanced bump → false audit confidence) and FE-4 (upright row classified shoulders in catalog, traps+side-delts in filter aliases). | `Fit33/SmartProgramEngine.swift`, `Fit33/CloudProgramService.swift`, `Fit33/ProgramTemplateLibrary.swift`, `Fit33/WorkoutComboRules.swift`, `scripts/*.py` | Fitness + PE |
-| PR-28 | [ ] **Blank-push guards + navigation debt:** `smartWorkoutPreview` can push an empty destination when `activeProgram`/`currentDay` is nil; Settings still has 13 `NavigationLink(destination:)` (+1 `isActive`) and Profile 2 — the "Phase 3 complete" rule-file claim was false (rule file corrected 2026-07-26). Finish the migration with a `SettingsRoute` enum. | `Fit33/DashboardNavigationDestinations.swift` (~L71–76), `Fit33/SettingsView.swift`, `Fit33/ProfileView.swift` | PE |
+| PR-28 | [x] (Fixed 2026-07-30 fix pass — see status block above) **Blank-push guards + navigation debt:** `smartWorkoutPreview` can push an empty destination when `activeProgram`/`currentDay` is nil; Settings still has 13 `NavigationLink(destination:)` (+1 `isActive`) and Profile 2 — the "Phase 3 complete" rule-file claim was false (rule file corrected 2026-07-26). Finish the migration with a `SettingsRoute` enum. | `Fit33/DashboardNavigationDestinations.swift` (~L71–76), `Fit33/SettingsView.swift`, `Fit33/ProfileView.swift` | PE |
 | PR-29 | [x] (Fixed 2026-07-26 fix pass — see status block above) **`ContentView` unbounded `@FetchRequest`** fetches ALL completed workouts at cold start just to drive the paywall counter — violates the fetchLimit invariant and scales with history. Replace with a count fetch or cached counter. | `Fit33/ContentView.swift` (~L51–54) | QP |
 | PR-30 | [ ] **Backend reproducibility:** ~32 Swift-called RPCs have no `CREATE FUNCTION` in the repo (`create_user_profile`, `sync_user_contacts`, `is_username_available`, `send_workout_to_friend`, notification read/unread RPCs, friend-ranking RPCs, …) — prod is the only copy. Export live `pg_proc` definitions into a versioned `supabase/baseline/` dump. `DEPLOYMENT_ORDER.md` retired 2026-07-26 (now points at `MIGRATION_INDEX.md`). | `supabase/` | Supabase + Data |
-| PR-31 | [ ] **Backend hygiene batch:** per-user rate limit on client-triggered push-queue flush (PR-2 residual); `group_challenge_members` RLS-disabled + grants not revoked (Q2-15 revoked writes — verify SELECT too); `challenge_award_tiers` no-RLS + SELECT granted (scoring config gameable); revoke unused `authenticated` EXECUTE grants (`get_quest_history`, `calc_league_zone_count`, `interpolate_template`, …); add numbered MIGRATION_INDEX rows for schema-touching unindexed files (e.g. `20260619_lock_daily_quests_to_3_slots.sql`). | `supabase/` | Supabase + Infra |
+| PR-31 | [~] (Partially fixed 2026-07-30 via migration #206 — see status block) **Backend hygiene batch:** per-user rate limit on client-triggered push-queue flush (PR-2 residual); `group_challenge_members` RLS-disabled + grants not revoked (Q2-15 revoked writes — verify SELECT too); `challenge_award_tiers` no-RLS + SELECT granted (scoring config gameable); revoke unused `authenticated` EXECUTE grants (`get_quest_history`, `calc_league_zone_count`, `interpolate_template`, …); add numbered MIGRATION_INDEX rows for schema-touching unindexed files (e.g. `20260619_lock_daily_quests_to_3_slots.sql`). | `supabase/` | Supabase + Infra |
 
 ### Gate C — P2 (quality of launch)
 
 | ID | Task | Files | Owner |
 |---|---|---|---|
-| PR-32 | [ ] Strength workout has no pause (wall-clock only — long breaks inflate duration/XP); indoor cardio has no kill/restore (outdoor does); set-persistence throttle can drop the last ≤5s of sets on hard kill. | `Fit33/ActiveWorkoutView+Init.swift`, `Fit33/CardioActiveWorkoutView.swift`, `Fit33/WorkoutManager.swift` | PE |
+| PR-32 | [~] (Partially fixed 2026-07-30 — set-persistence throttle now trailing-edge coalesces; pause + indoor kill/restore still open) Strength workout has no pause (wall-clock only — long breaks inflate duration/XP); indoor cardio has no kill/restore (outdoor does). | `Fit33/ActiveWorkoutView+Init.swift`, `Fit33/CardioActiveWorkoutView.swift`, `Fit33/WorkoutManager.swift` | PE |
 | PR-33 | [x] (Fixed 2026-07-26 fix pass — see status block above) Nutrition edge cases: scanner OCR failure dead-ends with no alert (and opens the editor even on empty parse); macro math can produce negative carb goals for heavy users (clamp ≥0 + rebalance); hydration `yyyy-MM-dd` formatter has no explicit timezone (midnight/travel drift). | `Fit33/NutritionScannerView.swift`, `Fit33/MealPlanView.swift` (~L476–485), `Fit33/HydrationService.swift` | PE |
 | PR-34 | [x] (Fixed 2026-07-26 fix pass — see status block above) Program-day quest double-report: `onProgramDayCompleted` also reports `completeWorkout` on top of `onWorkoutCompleted` — restrict to `complete_program_day`. | `Fit33/CloudProgramService.swift` (~L653), `Fit33/DailyQuestService.swift` (~L1936) | PE |
 | PR-35 | [x] (Fixed 2026-07-26 fix pass — see status block above) Foreground entitlement refresh: on scenePhase `.active` call `StoreKitManager.updatePurchasedProducts()` + `refreshFromServer()` (MONETIZATION invariant 2). | `Fit33/Fit33App.swift` | Monetization |
 | PR-36 | [~] (Partially fixed 2026-07-26 — remaining gap in status block above) Small crash/style debt: `messages.randomElement()!` in NotificationManager; `day1!` in DynamicProgramGenerator; `first!`/`last!` in RunningManager polyline; `UIImage(systemName:)!` tab icon; `LegalURLs` force-unwrapped URL literals; GenderFilter cache read/write race + fuzzy match on main in video hot path; HK background observers never torn down after sign-out; InBody placeholder OAuth creds surface a dead settings row; delete the dead `programDetailsPlaceholder` route case; stale "auto-presentation NOT yet wired" comment on `PaywallFirstScreenView`. | various (see 2026-07-26 audit) | QP |
-| PR-37 | [ ] Report & Block on preset-string surfaces (challenge reactions / battle cries) — lower risk than PR-7 but same 1.2 spirit. | `Fit33/ChallengeReactionsView.swift`, `Fit33/BattleCryComposer.swift` | PE |
-| PR-38 | [~] (Partially fixed 2026-07-26 — remaining gap in status block above) Website help-center: pages linked but missing (`workouts/programs/tracking/account/troubleshooting.html`); remove "AI-powered" wording (product bans it). CMS: move login/admin rate limits from in-memory Maps to a shared store (Vercel multi-instance). | `Website/`, `admin-cms/` | Support + Infra |
-| PR-39 | [~] (Partially fixed 2026-07-26 — remaining gap in status block above) Orphan watch files (`Fit33Watch Watch App/Info.plist` + entitlements with empty `healthkit.access` — provisioning landmine if ever switched); `.version_config` (1.37/41) drifted from pbxproj (1.39/70); dead `INFOPLIST_KEY_*` in pbxproj (GENERATE_INFOPLIST_FILE=NO); hardcoded anon JWT in watch/widget clients (prefer shared Secrets). | project config | Infra + Device |
+| PR-37 | [x] (Fixed 2026-07-30 fix pass — see status block above) Report & Block on preset-string surfaces (challenge reactions / battle cries) — lower risk than PR-7 but same 1.2 spirit. | `Fit33/ChallengeReactionsView.swift`, `Fit33/BattleCryComposer.swift` | PE |
+| PR-38 | [x] (Website fixed 2026-07-26; CMS shared rate-limit store shipped 2026-07-30 — see status block) Website help-center: pages linked but missing (`workouts/programs/tracking/account/troubleshooting.html`); remove "AI-powered" wording (product bans it). CMS: move login/admin rate limits from in-memory Maps to a shared store (Vercel multi-instance). | `Website/`, `admin-cms/` | Support + Infra |
+| PR-39 | [~] (Partially fixed 2026-07-26 + 2026-07-30 — orphan watch files deleted; remaining gap in the 2026-07-30 status block) Orphan watch files (`Fit33Watch Watch App/Info.plist` + entitlements with empty `healthkit.access` — provisioning landmine if ever switched); `.version_config` (1.37/41) drifted from pbxproj (1.39/70); dead `INFOPLIST_KEY_*` in pbxproj (GENERATE_INFOPLIST_FILE=NO); hardcoded anon JWT in watch/widget clients (prefer shared Secrets). | project config | Infra + Device |
 
 ### Meta — agent-doc integrity (shipped 2026-07-26 in this audit pass)
 
@@ -151,7 +201,7 @@ IDs with a letter prefix (`C-`, `H-`, `M-`, `F-`, `FE-`, `DB-`, `L-`) were inher
 | PR-42 | Cardio LP ownership misdocumentation corrected in FITNESS_EXPERT / SUPABASE / DATA_BACKEND / PRODUCT_ENGINEER / SUPPORT agent files (docs now describe the real double-award bug + the PR-14 decision; `record_cardio_workout` RETURNS UUID not JSONB). | [x] |
 | PR-43 | Edge Function Auth Registry: added `analyze-quality-workout`, `audit-autogen-workout`, `sunday-pro-recap`; corrected `send-push-notification` (user JWT by design) + `wake-challenge-opponents` throttle (20s) + `ASSN_VERIFY_SIGNATURE` (env never read). | [x] |
 | PR-44 | Dead cross-references pruned: MASTER_TODO Cross-Reference table, ENGINEERING_TEAM Shared File Ownership (`SECURITY_CHECKLIST.md`, `FAQ_PLAN.md`), DEVICE_COMPATIBILITY (`Fit33WatchComplications`, `DEVICE_COMPATIBILITY_TASKS.md`); SUPPORT PP-009 closed (progress photos shipped); MONETIZATION CMS tab statuses corrected; DESIGN_AGENT See Also added; `DEPLOYMENT_ORDER.md` retired → `MIGRATION_INDEX.md`. | [x] |
-| PR-45 | [ ] **Remaining doc debt:** `.cursor/agents/*.md` short-form mirrors (mandated by the MIRROR RULE) do not exist in this checkout — regenerate locally from the root long-forms after merging, or decide to commit them (un-ignore `.cursor/agents/`); AGD-3 shrink pass (PE ~134KB / DB ~87KB / QP ~77KB + FITNESS/MONETIZATION/SUPPORT/BUG_INTEL/SUPABASE over line budget); add `docs/history/` archives for BUG_INTELLIGENCE + MONETIZATION. | [ ] |
+| PR-45 | [~] (Mirrors regenerated 2026-07-30 — all 12 `.cursor/agents/*.md` exist locally; gitignored by design) **Remaining doc debt:** AGD-3 shrink pass (PE ~134KB / DB ~87KB / QP ~77KB + FITNESS/MONETIZATION/SUPPORT/BUG_INTEL/SUPABASE over line budget); add `docs/history/` archives for BUG_INTELLIGENCE + MONETIZATION. | [ ] |
 
 ### Suggested execution order
 

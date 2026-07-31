@@ -56,6 +56,11 @@ These rules only load when editing files under `supabase/`. Cross-cutting rules 
 - **Notification type strings**: Push payloads from `accept_friend_request` use `friend_accepted`; in-app `app_notifications` rows use `friend_request_accepted`. App code handles both.
 - **`app_notifications` schema**: Uses `reference_id` (UUID) + `from_user_id` (UUID), NOT a `data` JSONB column.
 
+## Shared Rate Limiting (2026-07-30, migration #206)
+- **`public.check_rate_limit(p_scope, p_key, p_max, p_window_seconds)` is the ONE rate-limit primitive** for anything that runs multi-instance (Vercel CMS routes, edge functions). It's a `SECURITY DEFINER` sliding-window counter over `rate_limit_events`, granted to `service_role` ONLY — never grant to `authenticated`, and never add client policies to `rate_limit_events` (RLS enabled, zero policies).
+- **Do NOT add new in-memory `Map`-based rate limiters** in edge functions or CMS routes — instances don't share memory, so the limit silently multiplies by instance count. Call `check_rate_limit` (CMS: via `admin-cms/src/lib/rate-limit.ts`, which has an in-memory fallback only for RPC-unreachable).
+- **Scope naming**: `cms_login`, `cms_login_fail`, `cms_admin_<tier>`, `push_flush`. New scopes follow `<surface>_<action>`.
+
 ## Daily Quests
 - **`get_daily_quests` has 19 params (current)** — 16 base + `p_suggested_split TEXT` + `p_fatigued_regions TEXT[]` + `p_active_challenge_types TEXT[]` (migration 59, `20260423_daily_quest_smart_hierarchy.sql`). Old 15-, 16- and 18-arg overloads are DROPped.
 - **Slot 1 quest_key is `complete_workout` (non-program) or `complete_program_day` (program)**. `p_suggested_split` drives the TITLE/DESCRIPTION only ("Leg Day — legs are fresh"), not the progress contract. ANY completed workout ticks slot 1 off — never wire a region-specific quest into the workout slot. `upper_body_workout` / `lower_body_workout` templates are excluded from the eligible pool for the same reason (kept as templates for backwards compatibility only).

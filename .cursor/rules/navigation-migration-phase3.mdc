@@ -1,39 +1,40 @@
 ---
-description: Navigation Migration Phase 3 - INCOMPLETE. SettingsView (13) and ProfileView (2) still use NavigationLink(destination:); everything else is value-based.
+description: Navigation Migration Phase 3 - COMPLETE (2026-07-30). All surfaces use value-based navigation; never add NavigationLink(destination:) or isActive: links.
 alwaysApply: false
 ---
 
-# Navigation Migration Phase 3 — INCOMPLETE (corrected 2026-07-26)
+# Navigation Migration Phase 3 — COMPLETE (2026-07-30)
 
-> Earlier revisions of this rule claimed "COMPLETED — zero remaining legacy
-> patterns" and listed a `SettingsRoute` enum (11 cases). Both claims were
-> false when audited on 2026-07-26 (production-readiness audit, MASTER_TODO
-> PR-28/PR-41): **no `SettingsRoute` enum exists**, and 15 legacy links remain.
+> History: an earlier revision claimed completion prematurely; the 2026-07-26
+> audit found 15 legacy links remaining (MASTER_TODO PR-28/PR-41). Those were
+> actually migrated on 2026-07-30 as part of the full-stack audit fix pass.
+> Verify anytime with `rg "NavigationLink\(destination:" Fit33/` — expect zero
+> matches outside comments.
 
-## Remaining legacy patterns (verify with `rg "NavigationLink\(destination:" Fit33/`)
+## What was migrated on 2026-07-30 (PR-28)
 
-- `Fit33/SettingsView.swift` — **13× `NavigationLink(destination:)`** (one of
-  them also uses deprecated `isActive:` for DevMenu).
-- `Fit33/ProfileView.swift` — **2× `NavigationLink(destination:)`** plus
-  `isActive:` bindings (`showWorkoutHistory`, `showFriendsList`,
-  `showReceivedWorkouts`).
+- `Fit33/SettingsView.swift` — new `SettingsRoute` enum (11 cases:
+  privacySettings, blockedUsers, healthDataSync, cloudBackup, dataDownload,
+  stravaSettings, fitbitSettings, healthKitSettings, termsConditions,
+  privacyPolicy, notificationSettings) + `.navigationDestination(for:)`.
+  DevMenu's deprecated `isActive:` link became
+  `.navigationDestination(isPresented: $showDevMenu)`.
+- `Fit33/ProfileView.swift` — `ProfileRoute` gained `progressPhotoGallery` and
+  `olympianPath` cases; the `showWorkoutHistory` / `showFriendsList` /
+  `showReceivedWorkouts` `isActive:` bindings became
+  `.navigationDestination(isPresented:)` modifiers.
 
-Finishing the migration = introduce a `SettingsRoute` enum +
-`.navigationDestination(for:)` in SettingsView, and convert ProfileView's
-remaining links/bindings. Tracked as MASTER_TODO PR-28.
+## Route enums that exist
 
-## What IS done (verified)
+`SettingsRoute` (SettingsView.swift), `DashboardRoute` (DashboardView.swift),
+`ProfileRoute`, `ProgressRoute`, `PersonalizedProgramRoute`, `DevMenuRoute`,
+`InBodyRoute`, `UnitSettingsRoute`, and the `CloudScheduleDayRoute` /
+`ProgramScheduleDayRoute` / `ProgramScheduleWorkoutRoute` /
+`ProgramScheduleExerciseRoute` structs.
 
-- All other surfaces (~14 files) converted to `NavigationLink(value:)` +
-  `.navigationDestination(for:)` / `.navigationDestination(isPresented:)`.
-- Route enums that exist: `DashboardRoute` (DashboardView.swift),
-  `ProfileRoute`, `ProgressRoute`, `PersonalizedProgramRoute`, `DevMenuRoute`,
-  `InBodyRoute`, `UnitSettingsRoute`, and the
-  `CloudScheduleDayRoute` / `ProgramScheduleDayRoute` /
-  `ProgramScheduleWorkoutRoute` / `ProgramScheduleExerciseRoute` structs.
-- Hashable conformances added: WorkoutProgram, SmartProgramTemplate,
-  SmartActiveProgram, SmartProgramDay, ActiveChallenge, ActiveGroupChallenge,
-  CardioWorkoutDTO (all hash by `id`).
+Hashable conformances added for navigation values: WorkoutProgram,
+SmartProgramTemplate, SmartActiveProgram, SmartProgramDay, ActiveChallenge,
+ActiveGroupChallenge, CardioWorkoutDTO (all hash by `id`).
 
 ## Key Pattern: DashboardView
 

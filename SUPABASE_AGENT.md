@@ -31,6 +31,7 @@ Cross-cutting rules live in `.cursor/rules/codingrules.mdc` (universal) and `.cu
 14. **RECORD variable init:** never `ROW(0,0,0)` (fields become nameless). Use `SELECT 0 AS field_name, ... INTO v_record`.
 15. **`RETURNS jsonb` ↔ Swift `Decodable struct`.** `RETURNS boolean` ↔ `Bool`. If you change a RETURNS clause, update the Swift decoder in `SupabaseManager.swift` / `*Service.swift` in the same commit.
 16. **Social column additions patched atomically.** When adding a column (e.g. `is_gold_verified`) that appears in multiple social RPCs, patch ALL affected RPCs in a single migration. Previous split migrations caused later files to overwrite earlier ones.
+16b. **`check_rate_limit(p_scope, p_key, p_max, p_window_seconds)` is the ONE shared rate-limit primitive** (migration #206, 2026-07-30) — `SECURITY DEFINER` sliding window over `rate_limit_events`, granted to `service_role` ONLY. Never grant to `authenticated`; never add client policies to `rate_limit_events`. Callers: CMS login/admin routes (via `admin-cms/src/lib/rate-limit.ts`) and `send-push-notification` (`push_flush` scope). Never add new in-memory `Map` rate limiters in multi-instance surfaces.
 
 ### Migrations
 17. Always wrap in `BEGIN; ... COMMIT;`. Always idempotent (`IF NOT EXISTS`, `DROP ... IF EXISTS` before `CREATE`).
@@ -173,6 +174,10 @@ Full table inventory lives in [`docs/history/SUPABASE_AGENT.md`](docs/history/SU
 | `20260320_fix_rls_policies.sql` | RLS on 7 analytics tables |
 | `20260320_fix_performance_history.sql` | Missing `exercise_performance_history` columns |
 | `20260321_food_search_integrity.sql` | **BLOCKED** on DB1 fix |
+| `20260726_delete_user_account_guard_hotfix.sql` (#203) | **DEPLOY IMMEDIATELY** — IDOR guard restore |
+| `20260726_rpc_idor_and_grant_hygiene.sql` (#204) | RPC IDOR + grant hygiene |
+| `20260726_purge_user_health_data_rpc.sql` (#205) | Health-data purge RPC |
+| `20260730_backend_hygiene_and_rate_limit.sql` (#206) | `rate_limit_events` + `check_rate_limit` RPC (service-role only), `group_challenge_members` SELECT revoke, `interpolate_template` re-revoke, service_role grants for 7 monetization RPCs |
 
 ---
 

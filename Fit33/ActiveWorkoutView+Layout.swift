@@ -159,10 +159,7 @@ extension ActiveWorkoutView {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
-                    .background(
-                        RoundedRectangle(cornerRadius: CornerRadius.xl, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                    )
+                    .adaptiveMaterialBackground(cornerRadius: CornerRadius.xl)
                     
                     
                 }

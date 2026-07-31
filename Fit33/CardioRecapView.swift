@@ -145,9 +145,7 @@ struct CardioRecapView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 18).fill(.ultraThinMaterial)
-        )
+        .adaptiveMaterialBackground(cornerRadius: 18)
     }
 
     // MARK: - Stats grid
@@ -184,7 +182,7 @@ struct CardioRecapView: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+        .adaptiveMaterialBackground(cornerRadius: 14)
     }
 
     // MARK: - PR badges (best-effort)
@@ -251,7 +249,7 @@ struct CardioRecapView: View {
                         .padding(.vertical, 6)
                     }
                 }
-                .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial))
+                .adaptiveMaterialBackground(cornerRadius: 12)
             }
         }
     }
@@ -267,7 +265,7 @@ struct CardioRecapView: View {
                 Label("Share", systemImage: "square.and.arrow.up")
                     .font(.system(size: 16, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 50)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+                    .adaptiveMaterialBackground(cornerRadius: 14)
                     .foregroundColor(.primary)
             }
             if HealthKitManager.shared.saveWorkoutsToHealth {

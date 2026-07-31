@@ -993,16 +993,26 @@ struct PremiumLockOverlay: View {
     let feature: PremiumFeature
     let onTap: () -> Void
     
+    // Full-bleed material cover, so the adaptiveMaterialBackground wrapper
+    // (which is a background modifier) doesn't fit — honor Reduce
+    // Transparency directly (design-system invariant 8).
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    
     var body: some View {
         Button(action: onTap) {
             ZStack {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
+                if reduceTransparency {
+                    Rectangle().fill(Color.cardBackground)
+                } else {
+                    Rectangle().fill(.ultraThinMaterial)
+                }
                 
                 VStack(spacing: 10) {
                     ZStack {
+                        // Gold, not purple — gold is the sanctioned paywall
+                        // language (DESIGN_AGENT invariant 5).
                         Circle()
-                            .fill(Color.purple.opacity(0.2))
+                            .fill(Color.yellow.opacity(0.2))
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: "crown.fill")
@@ -1013,7 +1023,7 @@ struct PremiumLockOverlay: View {
                     Text("PRO")
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 }
             }
         }

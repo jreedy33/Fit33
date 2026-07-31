@@ -123,10 +123,7 @@ extension DashboardView {
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: CornerRadius.sm)
-                                .fill(.ultraThinMaterial)
-                        )
+                        .adaptiveMaterialBackground(cornerRadius: CornerRadius.sm)
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
 

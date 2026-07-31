@@ -690,9 +690,11 @@ struct PremiumUpgradeView: View {
 
     private func pricingOption(plan: SubscriptionPlan) -> some View {
         let isSelected = selectedPlan == plan
+        // Gold badge — matches PaywallFirstScreenView; gold is the
+        // sanctioned paywall language (DESIGN_AGENT invariant 5).
         let badgeColor: Color = plan == .lifetime
             ? Color(red: 1.0, green: 0.84, blue: 0)
-            : .green
+            : .yellow
 
         return Button(action: {
             withAnimation(.spring(response: 0.3)) { selectedPlan = plan }
@@ -716,11 +718,11 @@ struct PremiumUpgradeView: View {
 
                 HStack(spacing: 12) {
                     Circle()
-                        .stroke(isSelected ? Color.blue : Color.white.opacity(0.3), lineWidth: 2)
+                        .stroke(isSelected ? Color.yellow : Color.white.opacity(0.3), lineWidth: 2)
                         .frame(width: 20, height: 20)
                         .overlay(
                             Circle()
-                                .fill(Color.blue)
+                                .fill(Color.yellow)
                                 .frame(width: 10, height: 10)
                                 .opacity(isSelected ? 1 : 0)
                         )
@@ -766,7 +768,7 @@ struct PremiumUpgradeView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
                                 .stroke(
-                                    isSelected ? Color.blue.opacity(0.5) : Color.white.opacity(0.08),
+                                    isSelected ? Color.yellow : Color.white.opacity(0.08),
                                     lineWidth: isSelected ? 2 : 1
                                 )
                         )
@@ -809,7 +811,7 @@ struct PremiumUpgradeView: View {
                 HStack(spacing: 8) {
                     if storeKit.purchaseState == .purchasing {
                         ProgressView()
-                            .tint(.white)
+                            .tint(.black)
                     } else {
                         Text(ctaText)
                             .font(.headline)
@@ -819,23 +821,24 @@ struct PremiumUpgradeView: View {
                             .font(.subheadline.weight(.bold))
                     }
                 }
-                .foregroundColor(.white)
+                // Gold CTA — identical treatment to PaywallFirstScreenView
+                // so the same "Start 7-Day Free Trial" action doesn't render
+                // as two different buttons (DESIGN_AGENT invariant 5).
+                .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Spacing.md)
                 .background(
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    Color(red: 0.4, green: 0.5, blue: 1.0),
-                                    Color(red: 0.6, green: 0.4, blue: 1.0)
-                                ],
+                                colors: [.yellow, .orange],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
-                        .shadow(color: .purple.opacity(0.4), radius: 12, x: 0, y: 6)
+                        .shadow(color: .orange.opacity(0.4), radius: 12, x: 0, y: 6)
                 )
+                .opacity(storeKit.purchaseState == .purchasing ? 0.6 : 1.0)
             }
             .disabled(storeKit.purchaseState == .purchasing)
             .scaleEffect(buttonPulse ? 1.02 : 1.0)

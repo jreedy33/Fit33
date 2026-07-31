@@ -123,7 +123,7 @@ struct CardioRecapView: View {
     private var routeMap: some View {
         RoutePreviewMap(coordinates: result.routeCoordinates)
             .frame(height: 200)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .clipShape(RoundedRectangle(cornerRadius: CornerRadius.lg))
             .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
     }
 
@@ -145,7 +145,7 @@ struct CardioRecapView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .adaptiveMaterialBackground(cornerRadius: 18)
+        .adaptiveMaterialBackground(cornerRadius: CornerRadius.lg)
     }
 
     // MARK: - Stats grid
@@ -256,6 +256,12 @@ struct CardioRecapView: View {
 
     // MARK: - Action row
 
+    // One font (`ds_labelLarge`), one height, `CornerRadius.lg`, and a
+    // shared pressed state across the whole button row (P2 design batch,
+    // 2026-07-31 — the row mixed 14/16pt radii, 50/54pt heights, and had
+    // no press feedback).
+    private static let actionButtonHeight: CGFloat = 52
+
     private var actionRow: some View {
         HStack(spacing: 10) {
             Button {
@@ -263,25 +269,27 @@ struct CardioRecapView: View {
                 showShareSheet = true
             } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .adaptiveMaterialBackground(cornerRadius: 14)
+                    .font(.ds_labelLarge)
+                    .frame(maxWidth: .infinity, minHeight: Self.actionButtonHeight)
+                    .adaptiveMaterialBackground(cornerRadius: CornerRadius.lg)
                     .foregroundColor(.primary)
             }
+            .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
             if HealthKitManager.shared.saveWorkoutsToHealth {
                 Button(action: saveToHealth) {
                     Label(
                         savedToHealth ? "Saved" : (isSavingToHealth ? "Saving…" : "Save to Health"),
                         systemImage: savedToHealth ? "checkmark.circle.fill" : "heart.fill"
                     )
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .font(.ds_labelLarge)
+                    .frame(maxWidth: .infinity, minHeight: Self.actionButtonHeight)
                     .background(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(cornerRadius: CornerRadius.lg)
                             .fill(savedToHealth ? Color.green.opacity(0.18) : Color.red.opacity(0.18))
                     )
                     .foregroundColor(savedToHealth ? .green : .red)
                 }
+                .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
                 .disabled(isSavingToHealth || savedToHealth)
             }
         }
@@ -292,14 +300,15 @@ struct CardioRecapView: View {
     private var doneButton: some View {
         Button(action: onDismiss) {
             Text("Done")
-                .font(.headline)
+                .font(.ds_labelLarge)
                 .foregroundColor(.white)
-                .frame(maxWidth: .infinity, minHeight: 54)
+                .frame(maxWidth: .infinity, minHeight: Self.actionButtonHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 16).fill(accent.gradient)
+                    RoundedRectangle(cornerRadius: CornerRadius.lg).fill(accent.gradient)
                 )
                 .shadow(color: accent.opacity(0.35), radius: 12, y: 4)
         }
+        .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
     }
 
     // MARK: - Computed labels

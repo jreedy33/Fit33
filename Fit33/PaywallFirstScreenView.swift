@@ -225,7 +225,7 @@ struct PaywallFirstScreenView: View {
                     .stroke(isSelected ? Color.yellow : Color.white.opacity(0.12), lineWidth: 2)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(UniversalScaleButtonStyle(scale: .standard, withHaptic: true))
     }
 
     // MARK: - Competitor Comparison Row
@@ -385,7 +385,10 @@ struct PaywallFirstScreenView: View {
 
     private var ctaSection: some View {
         VStack(spacing: 12) {
-            Button(action: { Task { await purchaseSelected() } }) {
+            Button(action: {
+                HapticManager.tap()
+                Task { await purchaseSelected() }
+            }) {
                 HStack {
                     if isPurchasing {
                         ProgressView()
@@ -409,7 +412,9 @@ struct PaywallFirstScreenView: View {
                             )
                         )
                 )
+                .opacity(isPurchasing || storeKit.products.isEmpty ? 0.6 : 1.0)
             }
+            .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
             .disabled(isPurchasing || storeKit.products.isEmpty)
 
             HStack(spacing: 6) {
@@ -430,7 +435,7 @@ struct PaywallFirstScreenView: View {
                     .foregroundColor(.white.opacity(0.6))
                     .underline()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(UniversalScaleButtonStyle(scale: .standard))
             .padding(.top, 4)
 
             if let errorMessage {

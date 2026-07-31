@@ -1242,7 +1242,13 @@ struct ProfileView: View {
         .padding(.horizontal, Spacing.md)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(colorScheme == .dark ? Color(white: 0.1) : Color.white)
+                .fill(
+                    LinearGradient(
+                        colors: Color.cardGradientStops(for: colorScheme),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
                 .shadow(
                     color: colorScheme == .dark ? Color.black.opacity(0.4) : Color.black.opacity(0.12),
                     radius: 16,
@@ -2254,7 +2260,7 @@ struct UsernameSetupSheet: View {
                         }
                         .background(
                             RoundedRectangle(cornerRadius: CornerRadius.md)
-                                .fill(colorScheme == .dark ? Color(white: 0.15) : Color.white)
+                                .fill(Color.cardBackground)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: CornerRadius.md)

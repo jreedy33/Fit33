@@ -1353,9 +1353,7 @@ struct PremiumCardBackground: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: colorScheme == .dark
-                            ? [Color(white: 0.16), Color(white: 0.11)]
-                            : [Color.white, Color.white.opacity(0.96)],
+                        colors: Color.cardGradientStops(for: colorScheme),
                         startPoint: .top,
                         endPoint: .bottom
                     )

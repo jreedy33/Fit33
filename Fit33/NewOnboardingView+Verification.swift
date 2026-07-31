@@ -55,7 +55,7 @@ extension NewOnboardingView {
             .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: CornerRadius.md)
-                    .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.95))
+                    .fill(Color.cardBackgroundSecondary)
             )
         }
         .accessibilityLabel("Country code selector, currently \(selectedCountryCode.name)")
@@ -90,7 +90,7 @@ extension NewOnboardingView {
         .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: CornerRadius.md)
-                .fill(colorScheme == .dark ? Color(white: 0.18) : Color.white)
+                .fill(Color.cardBackground)
                 .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
         )
         .overlay(
@@ -205,7 +205,7 @@ extension NewOnboardingView {
                                 ForEach(0..<6, id: \.self) { index in
                                     ZStack {
                                         RoundedRectangle(cornerRadius: CornerRadius.md)
-                                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.95))
+                                            .fill(Color.cardBackgroundSecondary)
 
                                         RoundedRectangle(cornerRadius: CornerRadius.md)
                                             .stroke(

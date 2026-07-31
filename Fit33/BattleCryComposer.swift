@@ -509,7 +509,7 @@ struct ReactiveBattleFeed: View {
                         .fill(
                             reaction.isMine
                                 ? AnyShapeStyle(LinearGradient(colors: gradient, startPoint: .leading, endPoint: .trailing))
-                                : AnyShapeStyle(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.93))
+                                : AnyShapeStyle(Color.cardBackgroundSecondary)
                         )
                 )
             }

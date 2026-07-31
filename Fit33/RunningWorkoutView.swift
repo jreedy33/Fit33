@@ -10,6 +10,11 @@ struct RunningWorkoutView: View {
     @StateObject private var runningManager = RunningManager.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    // Finding AC (2026-07-31): landscape is enabled in Info.plist but this
+    // screen's fixed-height VStack overflowed in compact-vertical layouts
+    // (and on SE-height portrait). Compact → hero grid collapses to one
+    // row and the bottom panel becomes scrollable.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     
     @State private var showStopConfirmation = false
     @State private var showCompletionSheet = false
@@ -115,44 +120,27 @@ struct RunningWorkoutView: View {
             
             // Content overlay
             VStack(spacing: 0) {
-                // Top: Hero Metrics 2x2 Grid
+                // Top: Hero Metrics Grid (2x2, or 1x4 in compact vertical)
                 heroMetricsGrid
-                    .padding(.top, 60)
+                    .padding(.top, verticalSizeClass == .compact ? 8 : 60)
                     .padding(.horizontal, Spacing.md)
                 
                 // GPS Status + Map Controls
                 mapControlsBar
-                    .padding(.top, 12)
+                    .padding(.top, verticalSizeClass == .compact ? 6 : 12)
                     .padding(.horizontal, 20)
                 
-            Spacer()
-            
-                // Bottom Panel
-                VStack(spacing: 12) {
-                    // Last Split Pill (if available)
-                    if runningManager.splits.count > 0 {
-                        lastSplitPill
+                Spacer(minLength: 0)
+                
+                // Bottom Panel — scrolls in compact vertical so the main
+                // control buttons stay reachable (finding AC).
+                if verticalSizeClass == .compact {
+                    ScrollView(showsIndicators: false) {
+                        bottomPanelContent
                     }
-                    
-                    // Live Chart Strip
-                    liveChartStrip
-                        .padding(.horizontal, Spacing.md)
-                    
-                    // Goal Progress (if set)
-                    if runningManager.goalType != .none {
-                        goalProgressStrip
-                            .padding(.horizontal, Spacing.md)
-                    }
-                    
-                    // Quick Controls Row
-                    quickControlsRow
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                    
-                    // Main Control Buttons
-                    mainControlButtons
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 40)
+                    .frame(maxHeight: 210)
+                } else {
+                    bottomPanelContent
                 }
             }
             
@@ -168,7 +156,37 @@ struct RunningWorkoutView: View {
         }
     }
     
-    // MARK: - Hero Metrics Grid (2x2)
+    // MARK: - Bottom Panel (splits, chart, goal, controls)
+    private var bottomPanelContent: some View {
+        VStack(spacing: 12) {
+            // Last Split Pill (if available)
+            if runningManager.splits.count > 0 {
+                lastSplitPill
+            }
+            
+            // Live Chart Strip
+            liveChartStrip
+                .padding(.horizontal, Spacing.md)
+            
+            // Goal Progress (if set)
+            if runningManager.goalType != .none {
+                goalProgressStrip
+                    .padding(.horizontal, Spacing.md)
+            }
+            
+            // Quick Controls Row
+            quickControlsRow
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+            
+            // Main Control Buttons
+            mainControlButtons
+                .padding(.horizontal, 20)
+                .padding(.bottom, verticalSizeClass == .compact ? 16 : 40)
+        }
+    }
+    
+    // MARK: - Hero Metrics Grid (2x2, or a single 1x4 row in compact vertical)
     private var heroMetricsGrid: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
@@ -187,26 +205,37 @@ struct RunningWorkoutView: View {
                     label: "TIME",
                     color: .cyan
                 )
+                
+                if verticalSizeClass == .compact {
+                    paceMetricCards
+                }
             }
             
-            HStack(spacing: 12) {
-                // Current Pace
-                heroMetricCard(
-                    value: runningManager.formattedCurrentPacePerMile,
-                    unit: "/mi",
-                    label: "PACE",
-                    color: paceColor(runningManager.currentPace)
-                )
-                
-                // Average Pace
-                heroMetricCard(
-                    value: runningManager.formattedPacePerMile,
-                    unit: "/mi",
-                    label: "AVG PACE",
-                    color: .orange
-                )
+            if verticalSizeClass != .compact {
+                HStack(spacing: 12) {
+                    paceMetricCards
+                }
             }
         }
+    }
+    
+    @ViewBuilder
+    private var paceMetricCards: some View {
+        // Current Pace
+        heroMetricCard(
+            value: runningManager.formattedCurrentPacePerMile,
+            unit: "/mi",
+            label: "PACE",
+            color: paceColor(runningManager.currentPace)
+        )
+        
+        // Average Pace
+        heroMetricCard(
+            value: runningManager.formattedPacePerMile,
+            unit: "/mi",
+            label: "AVG PACE",
+            color: .orange
+        )
     }
     
     private func heroMetricCard(value: String, unit: String, label: String, color: Color) -> some View {
@@ -216,6 +245,8 @@ struct RunningWorkoutView: View {
                     .font(.system(size: 32, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 
                 if !unit.isEmpty {
                     Text(unit)

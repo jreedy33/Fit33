@@ -52,28 +52,33 @@ class MealService: ObservableObject {
     
     // MARK: - Public Methods
     
-    func addMealEntry(_ foodEntry: FoodEntry, mealType: MealType, user: User) {
+    /// Finding P (2026-07-31): returns whether the entry was actually
+    /// persisted. This used to be `Void` with log-only early returns, so
+    /// every call site celebrated (haptics, dismiss, confetti) even when
+    /// validation or the Core Data save failed.
+    @discardableResult
+    func addMealEntry(_ foodEntry: FoodEntry, mealType: MealType, user: User) -> Bool {
         // Input validation - return early on invalid data
         let trimmedName = foodEntry.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty, trimmedName.count <= 200 else {
             AppLogger.error("Validation failed: food name must be 1-200 characters", category: .nutrition)
-            return
+            return false
         }
         guard (0...10000).contains(foodEntry.calories) else {
             AppLogger.error("Validation failed: calories must be 0-10000", category: .nutrition)
-            return
+            return false
         }
         guard (0...1000).contains(foodEntry.protein) else {
             AppLogger.error("Validation failed: protein must be 0-1000g", category: .nutrition)
-            return
+            return false
         }
         guard (0...1000).contains(foodEntry.carbs) else {
             AppLogger.error("Validation failed: carbs must be 0-1000g", category: .nutrition)
-            return
+            return false
         }
         guard (0...1000).contains(foodEntry.fat) else {
             AppLogger.error("Validation failed: fat must be 0-1000g", category: .nutrition)
-            return
+            return false
         }
 
         AppLogger.debug("addMealEntry called — Food: \(foodEntry.name), type: \(mealType.rawValue), cal: \(foodEntry.calories), FDC: \(foodEntry.fdcId ?? -1)", category: .nutrition)
@@ -208,7 +213,12 @@ class MealService: ObservableObject {
             }
         } catch {
             AppLogger.error("Error saving meal entry: \(error.localizedDescription)", category: .nutrition)
+            // The unsaved MealEntry would otherwise linger in viewContext
+            // and be swept into the NEXT successful save.
+            viewContext.delete(mealEntry)
+            return false
         }
+        return true
     }
     
     func removeMealEntry(_ mealEntryData: MealEntryData) {

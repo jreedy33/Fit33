@@ -84,6 +84,38 @@ class WorkoutManager: ObservableObject {
         let swapSource: String             // 'quick_swap' | 'smart_swap' | 'search' | 'random'
         var completedReplacement: Bool?    // updated post-workout
     }
+    
+    /// Finding S (2026-07-31): per-exercise program prescription. Program
+    /// screens (cloud programs, smart programs) know sets + rep ranges (and
+    /// deload adjustments) but used to drop them at `startWorkout` — the
+    /// live screen always fell back to previous-session/default counts.
+    /// Keyed by LOWERCASED exercise name in `currentExercisePrescriptions`;
+    /// consumed by `initializeSetsForExercise(s)` (sets → row count,
+    /// reps → `WorkoutSetData.targetReps` placeholder target).
+    struct ExercisePrescription {
+        let sets: Int?
+        let repsMin: Int?
+        let repsMax: Int?
+        
+        var targetReps: Int? {
+            switch (repsMin, repsMax) {
+            case let (mn?, mx?): return (mn + mx) / 2
+            case let (mn?, nil): return mn
+            case let (nil, mx?): return mx
+            default: return nil
+            }
+        }
+        
+        /// Tuple form consumed by the progression engines.
+        var repsRange: (min: Int, max: Int)? {
+            guard let mn = repsMin ?? repsMax, let mx = repsMax ?? repsMin else { return nil }
+            return (mn, mx)
+        }
+    }
+    
+    /// Prescriptions for the CURRENT session (empty for non-program
+    /// workouts). Set in `startWorkout`, cleared in `cancelWorkout`.
+    var currentExercisePrescriptions: [String: ExercisePrescription] = [:]
 
     // Workout generator selections state
     @Published var generatorSelections: (bodyParts: Set<String>, equipment: Set<String>, surpriseMe: Bool)? = nil
@@ -184,11 +216,19 @@ class WorkoutManager: ObservableObject {
         if exerciseSetsData[id] == nil || exerciseSetsData[id]?.isEmpty == true {
             let defaultCount = Self.userDefaultSetCount
             let previousCount = Self.previousSetCount(forExerciseId: id, exerciseName: exerciseName)
-            let rowCount = max(previousCount, defaultCount)
-            let sets = (0..<rowCount).map { _ in WorkoutSetData() }
+            // Finding S: a program prescription (sets → row count,
+            // reps → placeholder target) wins over history/defaults.
+            let prescription = currentExercisePrescriptions[exerciseName.lowercased()]
+            let rowCount = prescription?.sets ?? max(previousCount, defaultCount)
+            let targetReps = prescription?.targetReps ?? 0
+            let sets = (0..<rowCount).map { _ -> WorkoutSetData in
+                let set = WorkoutSetData()
+                set.targetReps = targetReps
+                return set
+            }
             exerciseSetsData[id] = sets
             #if DEBUG
-            AppLogger.debug("📦 Initialized \(sets.count) empty sets for exercise \(id.prefix(8)) (prev: \(previousCount), default: \(defaultCount))", category: .data)
+            AppLogger.debug("📦 Initialized \(sets.count) empty sets for exercise \(id.prefix(8)) (prev: \(previousCount), default: \(defaultCount), prescribed: \(prescription?.sets.map(String.init) ?? "none"))", category: .data)
             #endif
         }
     }
@@ -260,13 +300,21 @@ class WorkoutManager: ObservableObject {
                     let exerciseName = exercise.name ?? ""
                     let defaultCount = Self.userDefaultSetCount
                     let previousCount = Self.previousSetCount(forExerciseId: exerciseId, exerciseName: exerciseName)
-                    let rowCount = max(previousCount, defaultCount)
-                    let sets = (0..<rowCount).map { _ in WorkoutSetData() }
+                    // Finding S: program prescription wins over
+                    // history/defaults (sets → row count, reps → target).
+                    let prescription = currentExercisePrescriptions[exerciseName.lowercased()]
+                    let rowCount = prescription?.sets ?? max(previousCount, defaultCount)
+                    let targetReps = prescription?.targetReps ?? 0
+                    let sets = (0..<rowCount).map { _ -> WorkoutSetData in
+                        let set = WorkoutSetData()
+                        set.targetReps = targetReps
+                        return set
+                    }
 
                     updates[exerciseId] = sets
                     totalSets += sets.count
                     #if DEBUG
-                    AppLogger.debug("📦 Initialized \(sets.count) empty sets for '\(exerciseName)' \(exerciseId.prefix(8)) (prev: \(previousCount), default: \(defaultCount))", category: .data)
+                    AppLogger.debug("📦 Initialized \(sets.count) empty sets for '\(exerciseName)' \(exerciseId.prefix(8)) (prev: \(previousCount), default: \(defaultCount), prescribed: \(prescription?.sets.map(String.init) ?? "none"))", category: .data)
                     #endif
                 }
             }
@@ -610,10 +658,7 @@ class WorkoutManager: ObservableObject {
             smartProgramId: currentSmartProgramId
         )
         
-        if let encoded = try? JSONEncoder().encode(state) {
-            UserDefaults.standard.set(encoded, forKey: activeWorkoutKey)
-        }
-        
+        // Snapshot the mutable set data into value types ON MAIN…
         var persistedSets: [String: [PersistedSetData]] = [:]
         for (exerciseId, sets) in exerciseSetsData {
             persistedSets[exerciseId] = sets.map { set in
@@ -630,10 +675,25 @@ class WorkoutManager: ObservableObject {
             }
         }
         
-        if let setsEncoded = try? JSONEncoder().encode(persistedSets) {
-            UserDefaults.standard.set(setsEncoded, forKey: workoutSetsDataKey)
+        // …then encode + write OFF main (finding AB, 2026-07-31: the JSON
+        // encode ran synchronously in the set-completion tap path). The
+        // serial utility queue preserves write ordering, so a slower older
+        // snapshot can never clobber a newer one.
+        let stateKey = activeWorkoutKey
+        let setsKey = workoutSetsDataKey
+        Self.statePersistenceQueue.async {
+            if let encoded = try? JSONEncoder().encode(state) {
+                UserDefaults.standard.set(encoded, forKey: stateKey)
+            }
+            if let setsEncoded = try? JSONEncoder().encode(persistedSets) {
+                UserDefaults.standard.set(setsEncoded, forKey: setsKey)
+            }
         }
     }
+    
+    /// Serial background queue for active-workout state persistence
+    /// (finding AB). Serial = FIFO, so snapshot ordering is preserved.
+    private static let statePersistenceQueue = DispatchQueue(label: "com.fit33.workoutStatePersistence", qos: .utility)
     
     /// Load active workout state from UserDefaults (call on app launch).
     /// Uses the main-queue viewContext but runs inside an async Task so init() returns instantly.
@@ -814,8 +874,15 @@ class WorkoutManager: ObservableObject {
     
     /// Clear active workout storage (call when workout finishes/cancels)
     private func clearActiveWorkoutStorage() {
-        UserDefaults.standard.removeObject(forKey: activeWorkoutKey)
-        UserDefaults.standard.removeObject(forKey: workoutSetsDataKey)
+        // Routed through the same serial queue as saveActiveWorkoutToStorage
+        // (finding AB) so an in-flight async save can't land AFTER the clear
+        // and resurrect a cancelled/finished workout on next launch.
+        let stateKey = activeWorkoutKey
+        let setsKey = workoutSetsDataKey
+        Self.statePersistenceQueue.async {
+            UserDefaults.standard.removeObject(forKey: stateKey)
+            UserDefaults.standard.removeObject(forKey: setsKey)
+        }
         AppLogger.debug("🗑️ [WORKOUT] Cleared active workout storage", category: .data)
     }
     
@@ -973,6 +1040,16 @@ class WorkoutManager: ObservableObject {
         )
     }
     
+    // Finding Q (2026-07-31): swap-tier progression PER WORKOUT SLOT.
+    // These used to be @State on ExerciseCard, whose ForEach identity
+    // changes on every swap — the tier counter reset to 0 each shuffle, so
+    // tier 2 (complementary swaps, count >= 3) was unreachable and the
+    // exclusion set forgot every exercise it had already offered. Keyed by
+    // slot index; cleared on start/cancel alongside the other transient
+    // session state.
+    var slotSwapCounts: [Int: Int] = [:]
+    var slotShuffledExerciseIds: [Int: Set<UUID>] = [:]
+    
     private var cancellables = Set<AnyCancellable>()
     
     private func startTimer() {
@@ -995,7 +1072,7 @@ class WorkoutManager: ObservableObject {
         timer = nil
     }
     
-    @MainActor func startWorkout(workout: Workout, exercises: [Exercise], insights: WorkoutInsights? = nil, programDay: Int? = nil, programDayFocus: String? = nil, smartProgramId: String? = nil, programWeek: Int? = nil) {
+    @MainActor func startWorkout(workout: Workout, exercises: [Exercise], insights: WorkoutInsights? = nil, programDay: Int? = nil, programDayFocus: String? = nil, smartProgramId: String? = nil, programWeek: Int? = nil, prescriptions: [String: ExercisePrescription] = [:]) {
         #if DEBUG
         let totalStartTime = CFAbsoluteTimeGetCurrent()
         AppLogger.debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", category: .data)
@@ -1010,16 +1087,31 @@ class WorkoutManager: ObservableObject {
             AppLogger.warning("⚠️ [PERF] Redirecting to main thread...", category: .performance)
             #endif
             DispatchQueue.main.async {
-                self.startWorkout(workout: workout, exercises: exercises, insights: insights, programDay: programDay, programDayFocus: programDayFocus, smartProgramId: smartProgramId, programWeek: programWeek)
+                self.startWorkout(workout: workout, exercises: exercises, insights: insights, programDay: programDay, programDayFocus: programDayFocus, smartProgramId: smartProgramId, programWeek: programWeek, prescriptions: prescriptions)
             }
             return
         }
         
-        // Prevent double-start
+        // Prevent double-start. Finding N (2026-07-31): this used to
+        // silently no-op — every entry point looked broken to the user and
+        // the caller's pre-created Workout row leaked as an orphan. Now the
+        // blocked request is stashed and MainTabView prompts
+        // "Resume / Discard & start new?".
         guard !isWorkoutActive else {
             #if DEBUG
-            AppLogger.warning("⏭️ [PERF] Workout already active, skipping", category: .performance)
+            AppLogger.warning("⏭️ [WORKOUT] Start blocked — workout already active, prompting Resume/Discard (finding N)", category: .workout)
             #endif
+            pendingWorkoutStart = PendingWorkoutStart(
+                workout: workout,
+                exercises: exercises,
+                insights: insights,
+                programDay: programDay,
+                programDayFocus: programDayFocus,
+                smartProgramId: smartProgramId,
+                programWeek: programWeek,
+                prescriptions: prescriptions
+            )
+            NotificationCenter.default.post(name: NSNotification.Name("WorkoutStartBlocked"), object: nil)
             return
         }
         
@@ -1036,6 +1128,11 @@ class WorkoutManager: ObservableObject {
         AppLogger.debug("   Prefetch data: \(String(format: "%.2f", (CFAbsoluteTimeGetCurrent() - checkpoint) * 1000))ms", category: .performance)
         checkpoint = CFAbsoluteTimeGetCurrent()
         #endif
+        
+        // Finding S: prescriptions must be in place BEFORE set
+        // initialization so prescribed set counts / rep targets shape the
+        // rows.
+        currentExercisePrescriptions = prescriptions
         
         // ⚡ CRITICAL: Initialize sets BEFORE setting state
         // This prevents SwiftUI from fighting with data changes during render
@@ -1070,6 +1167,8 @@ class WorkoutManager: ObservableObject {
         workoutStartTime = Date()
         workoutInsights = insights
         didRunCompletionFanout = false
+        slotSwapCounts.removeAll()
+        slotShuffledExerciseIds.removeAll()
         currentProgramDayNumber = programDay
         currentProgramDayFocus = programDayFocus
         currentSmartProgramId = smartProgramId
@@ -1419,6 +1518,9 @@ class WorkoutManager: ObservableObject {
         workoutInsights = nil
         lastWorkoutQuality = nil
         pendingSwapEvents.removeAll()
+        slotSwapCounts.removeAll()
+        slotShuffledExerciseIds.removeAll()
+        currentExercisePrescriptions.removeAll()
         currentProgramDayNumber = nil
         currentProgramDayFocus = nil
         currentSmartProgramId = nil
@@ -1638,6 +1740,71 @@ class WorkoutManager: ObservableObject {
         #if DEBUG
         AppLogger.debug("✅ WorkoutManager: Exercise replaced successfully", category: .data)
         #endif
+    }
+    
+    // MARK: - Blocked start (finding N, 2026-07-31)
+    
+    /// A start request that arrived while another workout was active.
+    /// Held until the user picks Resume / Discard & Start New / Cancel.
+    struct PendingWorkoutStart {
+        let workout: Workout
+        let exercises: [Exercise]
+        let insights: WorkoutInsights?
+        let programDay: Int?
+        let programDayFocus: String?
+        let smartProgramId: String?
+        let programWeek: Int?
+        let prescriptions: [String: ExercisePrescription]
+    }
+    private(set) var pendingWorkoutStart: PendingWorkoutStart?
+    
+    /// User chose "Discard & Start New": tear down the active session and
+    /// start the stashed request.
+    @MainActor func discardActiveAndStartPendingWorkout() {
+        guard let pending = pendingWorkoutStart else { return }
+        pendingWorkoutStart = nil
+        cancelWorkout()
+        startWorkout(
+            workout: pending.workout,
+            exercises: pending.exercises,
+            insights: pending.insights,
+            programDay: pending.programDay,
+            programDayFocus: pending.programDayFocus,
+            smartProgramId: pending.smartProgramId,
+            programWeek: pending.programWeek,
+            prescriptions: pending.prescriptions
+        )
+    }
+    
+    /// User chose "Resume": surface the in-progress session and clean up
+    /// the caller's pre-created (now orphaned) Workout shell row.
+    @MainActor func resumeActiveWorkoutInsteadOfPendingStart() {
+        deletePendingStartOrphanRow()
+        shouldNavigateToWorkoutTab = true
+    }
+    
+    /// User dismissed the prompt: just clean up the orphan shell row.
+    @MainActor func cancelPendingWorkoutStart() {
+        deletePendingStartOrphanRow()
+    }
+    
+    /// Callers create the Workout Core Data row BEFORE calling
+    /// startWorkout(); if the start never proceeds, that empty shell would
+    /// leak into history. Only deletes rows that are demonstrably shells
+    /// (not completed, no WorkoutExercise children).
+    @MainActor private func deletePendingStartOrphanRow() {
+        guard let pending = pendingWorkoutStart else { return }
+        pendingWorkoutStart = nil
+        let workout = pending.workout
+        guard !workout.isCompleted,
+              ((workout.exercises as? Set<WorkoutExercise>)?.isEmpty ?? true) else { return }
+        let context = PersistenceController.shared.container.viewContext
+        context.delete(workout)
+        do {
+            try context.save()
+        } catch {
+            AppLogger.error("❌ [WORKOUT] Failed to delete orphan pre-created workout row: \(error)", category: .workout)
+        }
     }
     
     func showWorkoutGenerator() {

@@ -373,8 +373,10 @@ struct SetRowView: View {
                 
             // Reps input
             // Uses SelectAllTextField for better editing UX (selects all on focus)
+            // Finding S: a program-prescribed rep target beats previous-
+            // session reps (deload weeks must show the deload target).
             SelectAllTextField(
-                placeholder: previousSet.map { "\($0.reps)" } ?? "8",
+                placeholder: setData.targetReps > 0 ? "\(setData.targetReps)" : (previousSet.map { "\($0.reps)" } ?? "8"),
                 text: $repsText,
                 keyboardType: .numberPad,
                 font: .systemFont(ofSize: 17, weight: .semibold),
@@ -443,7 +445,12 @@ struct SetRowView: View {
                         // Use placeholder from previous workout
                         finalWeight = prev.weight
                     } else {
-                        finalWeight = 45 // Default
+                        // Finding V (2026-07-31): log what the ghost
+                        // placeholder SHOWS. This used to hardcode 45 total
+                        // lbs while the empty-field ghost displayed 135
+                        // (total-mode default) — first-time users logged a
+                        // third of what they saw.
+                        finalWeight = totalLbs(fromDisplayWeight: defaultDisplayWeight)
                     }
                     
                     // Determine final reps: user input > pre-filled data > placeholder > default
@@ -457,7 +464,9 @@ struct SetRowView: View {
                         // Use placeholder from previous workout
                         finalReps = prev.reps
                     } else {
-                        finalReps = 8 // Default
+                        // Match the reps ghost: program target if prescribed
+                        // (finding S), else the same 8 the placeholder shows.
+                        finalReps = setData.targetReps > 0 ? setData.targetReps : 8
                     }
                     
                     // Update setData with final values (canonical total lbs)
@@ -510,6 +519,12 @@ struct SetRowView: View {
                     #endif
                     
                     theSetData.isCompleted = true
+                    
+                    // Finding U (2026-07-31): this callback was captured but
+                    // never invoked, so the parent never learned a set was
+                    // checked off and the paired Apple Watch stayed frozen
+                    // on "Set 1 of N" all workout.
+                    theOnSetCompleted()
                     
                     if shouldStartTimer {
                         theRestTimer.startWithAdOffset(
@@ -625,11 +640,18 @@ struct SetRowView: View {
         return String(format: "%d:%02d", minutes, seconds)
     }
     
+    /// No-history ghost default in DISPLAY units. Single source of truth
+    /// for both the visible placeholder and the checkmark's no-input
+    /// fallback (finding V — they used to disagree: ghost 135, logged 45).
+    private var defaultDisplayWeight: Double {
+        isPerSideMode ? (useKg ? 20 : 45) : (useKg ? 60 : 135)
+    }
+    
     private var weightPlaceholder: String {
         if let prev = previousSet {
             return formatWeightPlaceholder(displayWeight(fromTotalLbs: prev.weight))
         }
-        return isPerSideMode ? (useKg ? "20" : "45") : (useKg ? "60" : "135")
+        return formatWeightPlaceholder(defaultDisplayWeight)
     }
     
     /// Convert a value typed in the field's DISPLAY units (kg and/or

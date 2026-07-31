@@ -13,6 +13,7 @@ struct CardioActiveWorkoutView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject var userManager: UserManager
     @StateObject private var locationManager = CardioLocationManager()
     @StateObject private var bluetoothManager = BluetoothFitnessManager.shared
@@ -224,10 +225,15 @@ struct CardioActiveWorkoutView: View {
             
             // Center content
             VStack(spacing: 8) {
-                // Main value
+                // Main value. Finding AC (2026-07-31): after 60 minutes the
+                // "1:00:00"-style string overflowed the fixed 200pt ring at
+                // 48pt — scale down instead (mirrors CardioRecapView).
                 Text(mainGoalValue)
                     .font(.system(size: 48, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(maxWidth: 150)
                 
                 // Goal info
                 Text(goalLabel)
@@ -490,9 +496,12 @@ struct CardioActiveWorkoutView: View {
             locationManager.startTracking()
         }
         
-        // Start pulse animation
-        withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-            progressPulse = true
+        // Start pulse animation — decorative, so gated per motion policy
+        // (finding AE: ran unconditionally under Reduce Motion / Low Power).
+        if !MotionPolicy.shouldDisableDecorative(reduceMotion: reduceMotion) {
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                progressPulse = true
+            }
         }
     }
     
@@ -712,6 +721,13 @@ class CardioLocationManager: NSObject, ObservableObject, CLLocationManagerDelega
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
+        // Finding AA (2026-07-31): mirror RunningManager's tuning — this
+        // manager used to stream EVERY fix at Best accuracy with no
+        // distance filter for the whole session (battery drain on
+        // multi-hour cardio). 10m matches the walk/cycle profile; there's
+        // no live map polyline in this view that needs finer granularity.
+        manager.distanceFilter = 10
+        manager.activityType = .fitness
         manager.requestWhenInUseAuthorization()
     }
     

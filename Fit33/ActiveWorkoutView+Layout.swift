@@ -445,7 +445,13 @@ extension ActiveWorkoutView {
                                     isActiveCard: activeExerciseId == exerciseId || (activeExerciseId == nil && index == 0),
                                     useKg: useKg,
                                     autoStartTimer: autoStartRestTimer,
-                                    workoutExerciseIds: Set(exercises.compactMap { $0.id })
+                                    workoutExerciseIds: Set(exercises.compactMap { $0.id }),
+                                    // Finding U: mirror set completion to the
+                                    // paired Apple Watch so it advances past
+                                    // "Set 1 of N".
+                                    onSetCheckedOff: {
+                                        pushLiveWorkoutStateToWatch(for: exercise)
+                                    }
                                 )
                                 // 16pt transparent bottom cushion is applied
                                 // BEFORE `.id(exerciseId)` on purpose. The id
@@ -611,12 +617,26 @@ extension ActiveWorkoutView {
                         Button("FINISH") {
                             let heavyImpact = UIImpactFeedbackGenerator(style: .heavy)
                             heavyImpact.impactOccurred()
-                            finishWorkout()
+                            // Finding M: don't instantly save an empty
+                            // workout — offer discard instead.
+                            if hasCompletedSets {
+                                finishWorkout()
+                            } else {
+                                showingEmptyFinishAlert = true
+                            }
                         }
                         .font(.ds_labelLarge)
                         .foregroundColor(.blue)
                         .accessibilityLabel("Finish workout")
                         .accessibilityHint("End your current workout and save results")
+                        .alert("Nothing logged yet", isPresented: $showingEmptyFinishAlert) {
+                            Button("Keep Working", role: .cancel) { }
+                            Button("Discard Workout", role: .destructive) {
+                                cancelWorkout()
+                            }
+                        } message: {
+                            Text("You haven't completed any sets. Discard this workout instead?")
+                        }
                     }
                 }
             }
@@ -678,6 +698,9 @@ extension ActiveWorkoutView {
                     showingPremiumUpsell: $showingPremiumUpsell,
                     onMinimize: {
                         workoutManager.navigateToHomeTab()
+                    },
+                    onDiscard: {
+                        cancelWorkout()
                     }
                 )
                 .frame(width: UIScreen.main.bounds.width * 0.72)

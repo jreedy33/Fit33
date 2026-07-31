@@ -45,11 +45,14 @@ struct SimpleMealPlanView: View {
                                 // Save to meal service
                                 if let user = userManager.currentUser {
                                     AppLogger.debug("[CONTENTVIEW] User found, calling MealService.addMealEntry", category: .ui)
-                                    MealService.shared.addMealEntry(foodEntry, mealType: meal, user: user)
-                                    AppLogger.debug("[CONTENTVIEW] MealService.addMealEntry completed", category: .ui)
+                                    let saved = MealService.shared.addMealEntry(foodEntry, mealType: meal, user: user)
+                                    AppLogger.debug("[CONTENTVIEW] MealService.addMealEntry completed (saved: \(saved))", category: .ui)
+                                    if !saved {
+                                        HapticManager.notification(.error)
+                                    }
                                     
                                     // Show macro goals explainer on first meal input
-                                    if !hasSeenMacroGoalsExplainer {
+                                    if saved && !hasSeenMacroGoalsExplainer {
                                         Task { @MainActor in
                                             try? await Task.sleep(nanoseconds: 500_000_000)
                                             showingMacroGoalsExplainer = true

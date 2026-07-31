@@ -934,13 +934,37 @@ struct CloudWorkoutPreviewView: View {
             allExercises.first { $0.name == exerciseData.name }
         }
         
+        // Finding S (2026-07-31): thread the program's per-exercise
+        // prescriptions (sets, rep range) + week through startWorkout —
+        // they used to be dropped here, so the live screen fell back to
+        // previous-session/default set counts and never showed the
+        // prescribed reps. Keyed by the RESOLVED exercise name (accounting
+        // for user swaps) so lookups match the Core Data exercises above.
+        var prescriptions: [String: WorkoutManager.ExercisePrescription] = [:]
+        for fullExercise in day.exercises where !fullExercise.exercise.isWarmup {
+            let resolvedName = programService.getExerciseName(for: fullExercise.exercise)
+            prescriptions[resolvedName.lowercased()] = WorkoutManager.ExercisePrescription(
+                sets: fullExercise.exercise.sets,
+                repsMin: fullExercise.exercise.repsMin,
+                repsMax: fullExercise.exercise.repsMax
+            )
+        }
+        
+        // Derive the program week from completed days (workoutsPerWeek
+        // sessions ≈ 1 week) for progressive-overload/deload awareness.
+        let workoutsPerWeek = max(1, programService.activeProgramDetails?.program.workoutsPerWeek ?? 4)
+        let completedCount = programService.activeProgram?.completedDays.count ?? 0
+        let programWeek = (completedCount / workoutsPerWeek) + 1
+        
         // Start workout
         workoutManager.startWorkout(
             workout: workout,
             exercises: exercises,
             insights: nil,
             programDay: dayNumber,
-            programDayFocus: day.day.name
+            programDayFocus: day.day.name,
+            programWeek: min(programWeek, 5),
+            prescriptions: prescriptions
         )
     }
 }

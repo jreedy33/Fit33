@@ -670,7 +670,11 @@ struct ImportedRecipeDetailView: View {
             source: "spoonacular"
         )
         
-        MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user)
+        guard MealService.shared.addMealEntry(foodEntry, mealType: mealType, user: user) else {
+            HapticManager.notification(.error)
+            AppLogger.error("❌ [IMPORTED RECIPE] Failed to add '\(recipe.title)' to \(mealType.displayName)", category: .nutrition)
+            return
+        }
         HapticManager.success()
         
         AppLogger.info("✅ [IMPORTED RECIPE] Added '\(recipe.title)' to \(mealType.displayName)", category: .nutrition)

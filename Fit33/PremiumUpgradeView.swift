@@ -219,6 +219,7 @@ enum SubscriptionPlan: String, CaseIterable {
 struct PremiumUpgradeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var storeKit = StoreKitManager.shared
     
     let triggeringFeature: PremiumFeature
@@ -947,12 +948,16 @@ struct PremiumUpgradeView: View {
             }
         }
         
-        withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
-            glowRotation = 360
-        }
-        
-        withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
-            buttonPulse = true
+        // Infinite glow rotation + button pulse are decorative — gated per
+        // motion policy (finding AE: ran under Reduce Motion / Low Power).
+        if !MotionPolicy.shouldDisableDecorative(reduceMotion: reduceMotion) {
+            withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
+                glowRotation = 360
+            }
+            
+            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
+                buttonPulse = true
+            }
         }
     }
 }

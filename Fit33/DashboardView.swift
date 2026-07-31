@@ -875,7 +875,10 @@ struct DashboardView: View {
                         lastChallengeRefreshDate = Date()
                     }
                     
-                    await FriendService.shared.refreshHomeScreenData()
+                    // Finding Z (2026-07-31): refreshHomeScreenData() was
+                    // ALSO called here ungated on every foreground —
+                    // duplicating Fit33App's gated foreground social fanout
+                    // (pull-to-refresh covers manual refresh). Removed.
                 }
             }
         }

@@ -124,6 +124,12 @@ class WorkoutSetData: ObservableObject, Identifiable {
     @Published var completedAt: Date? = nil
     @Published var setType: SetType = .normal
     @Published var restTime: TimeInterval = 0
+    /// Finding S (2026-07-31): program-prescribed rep target (midpoint of
+    /// the prescribed range). 0 = no prescription. Stamped once at set
+    /// initialization; drives the reps-field placeholder so program
+    /// prescriptions (incl. deload weeks) actually reach the live screen.
+    /// Not @Published — set before the row renders and never mutated.
+    var targetReps: Int = 0
     
     static let lbsToKg = 0.453592
     static let kgToLbs = 2.20462

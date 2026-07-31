@@ -246,20 +246,26 @@ class StrengthProfileRecommendationEngine {
     }
     
     /// Generate recommendations for multiple sets with PROGRESSIVE OVERLOAD
+    /// Finding S (2026-07-31): `prescribedReps` (program rep range) is now
+    /// forwarded to the progressive engine — it accepted the parameter all
+    /// along but no caller ever supplied it, so program prescriptions
+    /// (incl. deload-week rep targets) never influenced suggestions.
     func getRecommendationsForSets(
         exerciseName: String,
         user: User,
         numberOfSets: Int,
         context: NSManagedObjectContext,
-        programWeek: Int? = nil
+        programWeek: Int? = nil,
+        prescribedReps: (min: Int, max: Int)? = nil
     ) -> [SmartRecommendation] {
-        
+
         // FIRST: Try to get progressive recommendations based on workout history
         let progressiveSets = ProgressiveWorkoutIntelligence.shared.generateProgressiveSets(
             for: exerciseName,
             targetSetCount: numberOfSets,
             context: context,
-            programWeek: programWeek
+            programWeek: programWeek,
+            prescribedReps: prescribedReps
         )
         
         // If we have progressive recommendations, use them!

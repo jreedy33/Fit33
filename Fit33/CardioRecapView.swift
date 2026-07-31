@@ -307,9 +307,12 @@ struct CardioRecapView: View {
     // MARK: - Computed labels
 
     private var accent: Color {
+        // Must stay in lockstep with the canonical per-activity accent in
+        // OutdoorCardioActiveView / CardioLandingView (finding AD,
+        // 2026-07-31: recap + share card drifted to mint/green mid-session).
         switch result.activityType {
-        case .walk:         return .mint
-        case .run:          return .green
+        case .walk:         return .teal
+        case .run:          return .blue
         case .outdoorCycle: return .cyan
         case .hike:         return .orange
         }

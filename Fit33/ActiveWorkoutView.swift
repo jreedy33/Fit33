@@ -100,6 +100,10 @@ struct ActiveWorkoutView: View {
     @State var showingSettingsPanel = false
     @State var showingPremiumUpsell = false
     
+    // Finding M (2026-07-31): FINISH with zero completed sets used to save
+    // an empty workout instantly; there was no user-reachable discard path.
+    @State var showingEmptyFinishAlert = false
+    
     // ⚡️ PERFORMANCE: Two-phase rendering for instant load
     // MARK: - Ad Logic
     

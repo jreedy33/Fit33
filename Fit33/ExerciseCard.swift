@@ -50,9 +50,11 @@ struct ExerciseCard: View {
     // sets (both slots share one `exerciseSetsData` key) and duplicate
     // ForEach ids.
     var workoutExerciseIds: Set<UUID> = []
+    // Finding U (2026-07-31): fired after a set is checked off so the
+    // parent can mirror the new "next set" state to the Apple Watch.
+    var onSetCheckedOff: (() -> Void)? = nil
     
     @State private var showingExerciseDetail = false
-    @State private var shuffledExerciseIds: Set<UUID> = [] // Track which exercises we've already shuffled to
     @State private var prefetchedExercises: [Exercise] = [] // Prefetched similar exercises ready to shuffle
     @State private var showingRestTimerSheet = false
     @State private var showingReplaceExercise = false
@@ -345,15 +347,28 @@ struct ExerciseCard: View {
     // Tier 1 (swaps 1-2): Equipment variants (Dumbbell Bench → Barbell Bench)
     // Tier 2 (swap 3+): Complementary exercises (Bench Press → Chest Fly)
     // Fallback: Algorithmic match via AlternativeExerciseEngine
-    @State private var perExerciseSwapCount: Int = 0
+    //
+    // Finding Q (2026-07-31): the swap counter + already-offered set live on
+    // WorkoutManager keyed by slot index (`currentIndex`), NOT as @State —
+    // this card's ForEach identity changes on every swap, which reset the
+    // @State to 0 and made tier 2 unreachable.
 
     private func shuffleToSimilarExercise() {
         let userEquipment = UserManager.shared.currentUser?.getEquipment() ?? []
         let userGoal = UserManager.shared.currentUser?.fitnessGoal ?? "Build Muscle"
-        var excludeIds = shuffledExerciseIds
+        let manager = WorkoutManager.shared
+        let swapCount = manager.slotSwapCounts[currentIndex] ?? 0
+        var excludeIds = manager.slotShuffledExerciseIds[currentIndex] ?? []
         excludeIds.formUnion(workoutExerciseIds)
         if let currentId = exercise.id {
             excludeIds.insert(currentId)
+        }
+        
+        func recordSwap(to newExercise: Exercise) {
+            manager.slotSwapCounts[currentIndex] = swapCount + 1
+            if let newId = newExercise.id {
+                manager.slotShuffledExerciseIds[currentIndex, default: []].insert(newId)
+            }
         }
 
         // Use ExerciseSwapService tiered logic:
@@ -361,20 +376,16 @@ struct ExerciseCard: View {
         // swapCount >= 3 → complementary exercises (different movement that complements workout)
         if let newExercise = ExerciseSwapService.shared.getQuickSwap(
             for: exercise,
-            swapCount: perExerciseSwapCount,
+            swapCount: swapCount,
             userGoal: userGoal,
             userEquipment: userEquipment,
             previousSwapIds: excludeIds
         ) {
             HapticManager.impact(.medium)
-            perExerciseSwapCount += 1
+            recordSwap(to: newExercise)
 
-            if let newId = newExercise.id {
-                shuffledExerciseIds.insert(newId)
-            }
-
-            let tier = perExerciseSwapCount <= 2 ? "equipment variant" : "complementary"
-            AppLogger.debug("🔄 Shuffle #\(perExerciseSwapCount) (\(tier)): \(exercise.name ?? "") → \(newExercise.name ?? "")", category: .workout)
+            let tier = swapCount + 1 <= 2 ? "equipment variant" : "complementary"
+            AppLogger.debug("🔄 Shuffle #\(swapCount + 1) (\(tier)): \(exercise.name ?? "") → \(newExercise.name ?? "")", category: .workout)
             onShuffleExercise(newExercise)
         } else {
             // Fallback to SmartExercisePairingEngine if swap service has no results
@@ -386,13 +397,9 @@ struct ExerciseCard: View {
             )
             if let alt = fallbackAlts.first {
                 HapticManager.impact(.medium)
-                perExerciseSwapCount += 1
+                recordSwap(to: alt.exercise)
 
-                if let newId = alt.exercise.id {
-                    shuffledExerciseIds.insert(newId)
-                }
-
-                AppLogger.debug("🔄 Shuffle #\(perExerciseSwapCount) (fallback): \(exercise.name ?? "") → \(alt.exercise.name ?? "")", category: .workout)
+                AppLogger.debug("🔄 Shuffle #\(swapCount + 1) (fallback): \(exercise.name ?? "") → \(alt.exercise.name ?? "")", category: .workout)
                 onShuffleExercise(alt.exercise)
             } else {
                 HapticManager.notification(.warning)
@@ -753,6 +760,8 @@ struct ExerciseCard: View {
                         previousSet: getPreviousSetData(for: index + 1),
                         onSetCompleted: {
                             AppLogger.debug("✅ Set \(index + 1) completed - timer started, waiting for user to add next set", category: .workout)
+                            // Finding U: advance the watch's live workout view.
+                            onSetCheckedOff?()
                         },
                         isLastSet: index == sets.count - 1,
                         restDuration: customRestTimer ?? restDuration,

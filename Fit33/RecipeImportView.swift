@@ -963,7 +963,10 @@ struct MenuItemAddSheet: View {
             source: "spoonacular"
         )
         
-        MealService.shared.addMealEntry(foodEntry, mealType: selectedMealType, user: user)
+        guard MealService.shared.addMealEntry(foodEntry, mealType: selectedMealType, user: user) else {
+            HapticManager.notification(.error)
+            return
+        }
         HapticManager.success()
         dismiss()
     }

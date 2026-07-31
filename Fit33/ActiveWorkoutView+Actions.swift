@@ -68,10 +68,17 @@ extension ActiveWorkoutView {
         // FIXED: Less aggressive cleanup - preserve sets with data entered
         for (exerciseId, sets) in workoutManager.exerciseSetsData {
             if exerciseId != currentExerciseId {
+                // Finding R (2026-07-31): the keep-threshold used to be a
+                // hardcoded 3, silently deleting PLANNED blank rows beyond 3
+                // for users whose previous session (or default-set setting)
+                // prescribed more.
+                let keepThreshold = max(3, previousExerciseSets[exerciseId]?.count ?? 0, defaultSetCount)
+                
                 // Keep sets that are EITHER:
                 // 1. Completed (user finished them)
                 // 2. Have data entered (weight > 0 OR reps > 0) - user is working on them
-                // 3. Are in the first 3 positions (standard workout structure)
+                // 3. Within the planned structure (previous session's set
+                //    count / default set count, floor of 3)
                 let validSets = sets.enumerated().filter { (index, set) in
                     // Keep if completed
                     if set.isCompleted { return true }
@@ -79,10 +86,10 @@ extension ActiveWorkoutView {
                     // Keep if has data entered (user entered weight/reps but didn't complete yet)
                     if set.weight > 0 || set.reps > 0 { return true }
                     
-                    // Keep first 3 sets for standard workout structure
-                    if index < 3 { return true }
+                    // Keep planned rows
+                    if index < keepThreshold { return true }
                     
-                    // Remove extra blank sets beyond the first 3
+                    // Remove extra blank sets beyond the planned structure
                     return false
                 }.map { $0.element }
                 
@@ -384,11 +391,22 @@ extension ActiveWorkoutView {
         AppLogger.debug("🧠 [ADVANCED INTELLIGENCE] Workout analyzed for: progression, time patterns, volume trends, strength ratios", category: .workout)
     }
     
+    /// True when at least one set anywhere in the session is checked off.
+    /// Gates the FINISH button's empty-workout alert (finding M).
+    var hasCompletedSets: Bool {
+        workoutManager.exerciseSetsData.values.contains { sets in
+            sets.contains { $0.isCompleted }
+        }
+    }
+    
     func cancelWorkout() {
-        // Cancel through WorkoutManager
+        // Cancel through WorkoutManager (clears isWorkoutActive, which
+        // removes this view from WorkoutTabView's layer stack).
         workoutManager.cancelWorkout()
+        // Covers the NavigationLink presentation path (SmartWorkoutPreviewView).
+        isPresented = false
         
-        AppLogger.error("❌ Workout cancelled", category: .workout)
+        AppLogger.warning("❌ Workout discarded by user", category: .workout)
     }
     
     func removeExercise(at index: Int) {
@@ -426,19 +444,22 @@ extension ActiveWorkoutView {
 
         // Workout intelligence audit (#156). Captured locally; flushed to
         // `workout_swap_events` post-finishWorkout when we have a stable
-        // workout_id. shuffleCount is global swap counter; we surface it as
-        // `swap_index` for FE-invariant-25 tier inference (1-2 = equipment
-        // variant, 3+ = complementary). picked_rank = 0 because
-        // `ExerciseCard.shuffleToSimilarExercise` always accepts the
-        // `getQuickSwap` top suggestion (no menu). When the
-        // `SmartExerciseSwapView` menu becomes the active path, threading
-        // an explicit pickedRank through the closure chain is the V2 fix.
+        // workout_id. Finding Q (2026-07-31): `swap_index` is the PER-SLOT
+        // swap counter (WorkoutManager.slotSwapCounts, already incremented
+        // by ExerciseCard before this callback) — it used to log the global
+        // ad-frequency `shuffleCount`, which broke FE-invariant-25 tier
+        // inference (1-2 = equipment variant, 3+ = complementary).
+        // picked_rank = 0 because `ExerciseCard.shuffleToSimilarExercise`
+        // always accepts the `getQuickSwap` top suggestion (no menu). When
+        // the `SmartExerciseSwapView` menu becomes the active path,
+        // threading an explicit pickedRank through the closure chain is the
+        // V2 fix.
         workoutManager.pendingSwapEvents.append(WorkoutManager.PendingSwapEvent(
             originalExerciseId: oldExercise.id,
             originalExerciseName: oldExerciseName,
             replacementExerciseId: newExercise.id,
             replacementExerciseName: newExerciseName,
-            swapIndex: shuffleCount,
+            swapIndex: workoutManager.slotSwapCounts[index] ?? 1,
             pickedRank: 0,
             swapSource: "quick_swap",
             completedReplacement: nil

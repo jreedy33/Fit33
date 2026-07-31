@@ -877,9 +877,9 @@ struct SavedMealCard: View {
                     // Source badge
                     HStack(spacing: 4) {
                         Image(systemName: meal.source == .urlImport ? "link" : "book")
-                            .font(.system(size: 8))
+                            .font(.ds_caption)
                         Text(meal.source == .urlImport ? "Imported" : "Recipe")
-                            .font(.system(size: 9))
+                            .font(.ds_caption)
                     }
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 6)

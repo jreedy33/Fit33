@@ -189,7 +189,8 @@ struct CardioActiveWorkoutView: View {
             
             // Timer
             Text(formatTime(elapsedTime))
-                .font(.system(size: 20, weight: .bold, design: .monospaced))
+                .font(.ds_statSmall)
+                .monospacedDigit()
                 .foregroundColor(.white)
             
             Spacer()
@@ -646,7 +647,7 @@ struct CardioStatCard: View {
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.ds_stat)
                     .foregroundColor(.white)
                 
                 Text(label)

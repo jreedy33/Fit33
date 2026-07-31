@@ -655,7 +655,7 @@ extension ActiveWorkoutView {
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: "xmark")
-                                .font(.system(size: 9, weight: .heavy))
+                                .font(.ds_caption).fontWeight(.heavy)
                             Text("Remove Ads")
                                 .font(.system(size: 10, weight: .bold))
                         }

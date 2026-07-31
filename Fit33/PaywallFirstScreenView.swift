@@ -107,12 +107,12 @@ struct PaywallFirstScreenView: View {
                 )
 
             Text("Unlock Your Best Self")
-                .font(.system(size: 28, weight: .bold))
+                .font(.ds_heading1)
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
 
             Text("Try Pro free for 7 days")
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular).fontWeight(.medium)
                 .foregroundColor(.white.opacity(0.7))
         }
     }
@@ -131,12 +131,12 @@ struct PaywallFirstScreenView: View {
     private func valuePropRow(icon: String, title: String) -> some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.ds_heading3)
                 .foregroundColor(.yellow)
                 .frame(width: 28)
 
             Text(title)
-                .font(.system(size: 16, weight: .medium))
+                .font(.ds_bodyRegular).fontWeight(.medium)
                 .foregroundColor(.white)
 
             Spacer()
@@ -182,7 +182,7 @@ struct PaywallFirstScreenView: View {
             VStack(spacing: 6) {
                 if let badge = plan.badge {
                     Text(badge)
-                        .font(.system(size: 9, weight: .heavy))
+                        .font(.ds_caption).fontWeight(.heavy)
                         .tracking(0.4)
                         .foregroundColor(.black)
                         .padding(.horizontal, 6)
@@ -193,22 +193,22 @@ struct PaywallFirstScreenView: View {
                 }
 
                 Text(plan.rawValue)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.white.opacity(0.7))
 
                 Text(displayPrice)
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.ds_heading2)
                     .foregroundColor(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
 
                 Text(plan.period)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.ds_labelSmall)
                     .foregroundColor(.white.opacity(0.7))
 
                 if let savings = plan.savings {
                     Text(savings)
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.ds_caption).fontWeight(.semibold)
                         .foregroundColor(plan == .lifetime ? .yellow : .green)
                         .padding(.top, 2)
                 }
@@ -238,7 +238,7 @@ struct PaywallFirstScreenView: View {
     private var competitorComparisonRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Best value in the category")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.ds_labelMedium)
                 .foregroundColor(.white.opacity(0.6))
                 .padding(.horizontal, 4)
 
@@ -266,10 +266,10 @@ struct PaywallFirstScreenView: View {
     private func competitorCell(label: String, price: String, isUs: Bool) -> some View {
         VStack(spacing: 2) {
             Text(label)
-                .font(.system(size: 10, weight: isUs ? .bold : .medium))
+                .font(.ds_caption).fontWeight(isUs ? .bold : .medium)
                 .foregroundColor(isUs ? .yellow : .white.opacity(0.6))
             Text(price)
-                .font(.system(size: 12, weight: .bold))
+                .font(.ds_caption).fontWeight(.bold)
                 .foregroundColor(isUs ? .white : .white.opacity(0.7))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -314,11 +314,11 @@ struct PaywallFirstScreenView: View {
             HStack(spacing: 4) {
                 ForEach(0..<5, id: \.self) { _ in
                     Image(systemName: "star.fill")
-                        .font(.system(size: 11))
+                        .font(.ds_labelSmall)
                         .foregroundColor(.yellow)
                 }
                 Text("4.8 · 12,000+ reviews")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_caption)
                     .foregroundColor(.white.opacity(0.6))
                     .padding(.leading, 6)
             }
@@ -329,7 +329,7 @@ struct PaywallFirstScreenView: View {
                     ForEach(Array(testimonials.enumerated()), id: \.offset) { _, t in
                         VStack(alignment: .leading, spacing: 8) {
                             Text("\u{201C}\(t.quote)\u{201D}")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.ds_labelMedium)
                                 .foregroundColor(.white)
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -393,7 +393,7 @@ struct PaywallFirstScreenView: View {
                             .tint(.black)
                     } else {
                         Text(ctaText)
-                            .font(.system(size: 17, weight: .bold))
+                            .font(.ds_bodyLarge).fontWeight(.bold)
                             .foregroundColor(.black)
                     }
                 }
@@ -414,10 +414,10 @@ struct PaywallFirstScreenView: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.shield.fill")
-                    .font(.system(size: 11))
+                    .font(.ds_labelSmall)
                     .foregroundColor(.green)
                 Text(disclosureCopy)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_caption)
                     .foregroundColor(.white.opacity(0.55))
             }
 
@@ -435,7 +435,7 @@ struct PaywallFirstScreenView: View {
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.ds_caption)
                     .foregroundColor(.red)
                     .multilineTextAlignment(.center)
                     .padding(.top, 4)
@@ -448,7 +448,7 @@ struct PaywallFirstScreenView: View {
         VStack(spacing: 8) {
             Button(action: { Task { await storeKit.restorePurchases() } }) {
                 Text("Restore Purchases")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.ds_labelMedium)
                     .foregroundColor(.white.opacity(0.7))
             }
             .buttonStyle(.plain)
@@ -463,7 +463,7 @@ struct PaywallFirstScreenView: View {
             .foregroundColor(.white.opacity(0.75))
 
             Text("Auto-renews. Cancel anytime in Settings → Apple ID → Subscriptions.")
-                .font(.system(size: 11, weight: .regular))
+                .font(.ds_labelSmall)
                 .foregroundColor(.white.opacity(0.6))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 20)

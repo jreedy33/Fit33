@@ -59,7 +59,7 @@ extension DashboardView {
                         
                         VStack(spacing: 10) {
                             Text("Active Program Detected")
-                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
                                 .foregroundColor(.primary)
                                 .multilineTextAlignment(.center)
                             
@@ -327,7 +327,7 @@ extension DashboardView {
                         HStack {
                             Spacer()
                             Text("\(Int(displayInfo.progressPercentage))%")
-                                .font(.system(size: 8, weight: .bold))
+                                .font(.ds_caption).fontWeight(.bold)
                                 .foregroundColor((displayInfo.progressPercentage / 100) > 0.15 ? .white : programColor)
                                 .padding(.trailing, 6)
                         }
@@ -1171,7 +1171,7 @@ extension DashboardView {
                                     
                                     // Match badge
                                     Text("\(program.matchPercentage)% match")
-                                        .font(.system(size: 9, weight: .bold))
+                                        .font(.ds_caption).fontWeight(.bold)
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
@@ -1508,7 +1508,7 @@ extension DashboardView {
                         HStack {
                             Spacer()
                             Text("\(Int(progressPercent * 100))%")
-                                .font(.system(size: 8, weight: .bold))
+                                .font(.ds_caption).fontWeight(.bold)
                                 .foregroundColor(progressPercent > 0.15 ? .white : programColor)
                                 .padding(.trailing, 6)
                         }

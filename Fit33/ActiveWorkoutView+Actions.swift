@@ -503,13 +503,16 @@ extension ActiveWorkoutView {
         let setCount = max(existingSets.count, WorkoutManager.userDefaultSetCount)
         workoutManager.exerciseSetsData[newExerciseId] = (0..<setCount).map { _ in WorkoutSetData() }
 
-        // Clean up old exercise data
+        // Clean up old exercise data. Capture the rest-timer preference
+        // BEFORE removing it — the old code read it back after removeValue,
+        // so the transfer was always nil (P2 quickie, 2026-07-31).
+        let transferredRestTimer = exerciseRestTimers[oldExerciseId]
         workoutManager.exerciseSetsData.removeValue(forKey: oldExerciseId)
         previousExerciseSets.removeValue(forKey: oldExerciseId) // Clear old previous data
         exerciseRestTimers.removeValue(forKey: oldExerciseId)
 
         // Transfer rest timer preference if set
-        if let customRest = exerciseRestTimers[oldExerciseId] {
+        if let customRest = transferredRestTimer {
             exerciseRestTimers[newExerciseId] = customRest
         }
 

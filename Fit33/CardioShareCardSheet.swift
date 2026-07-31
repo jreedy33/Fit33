@@ -34,6 +34,7 @@ struct CardioShareCardSheet: View {
     @State private var renderedImage: UIImage?
     @State private var isRendering = true
     @State private var didSaveToPhotos = false
+    @State private var photoSaveFailed = false
 
     private let exportSize = CGSize(width: 1080, height: 1920)
     private let stravaConnected = StravaService.shared.isConnected
@@ -216,12 +217,12 @@ struct CardioShareCardSheet: View {
                         .foregroundColor(.primary)
                 }
                 Button(action: saveToPhotos) {
-                    Label(didSaveToPhotos ? "Saved to Photos" : "Save to Photos",
-                          systemImage: didSaveToPhotos ? "checkmark.circle.fill" : "square.and.arrow.down")
+                    Label(photoSaveButtonTitle,
+                          systemImage: didSaveToPhotos ? "checkmark.circle.fill" : (photoSaveFailed ? "exclamationmark.triangle.fill" : "square.and.arrow.down"))
                         .font(.system(size: 16, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 50)
                         .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
-                        .foregroundColor(didSaveToPhotos ? .green : .primary)
+                        .foregroundColor(didSaveToPhotos ? .green : (photoSaveFailed ? .red : .primary))
                 }
                 .disabled(didSaveToPhotos)
             } else if isRendering {
@@ -229,6 +230,12 @@ struct CardioShareCardSheet: View {
                     .frame(maxWidth: .infinity, minHeight: 50)
             }
         }
+    }
+
+    private var photoSaveButtonTitle: String {
+        if didSaveToPhotos { return "Saved to Photos" }
+        if photoSaveFailed { return "Save failed — check Photos access" }
+        return "Save to Photos"
     }
 
     // MARK: - Render
@@ -247,9 +254,27 @@ struct CardioShareCardSheet: View {
 
     private func saveToPhotos() {
         guard let img = renderedImage else { return }
-        UIImageWriteToSavedPhotosAlbum(img, nil, nil, nil)
-        didSaveToPhotos = true
-        HapticManager.notification(.success)
+        // Success is claimed via the completion selector — the old
+        // fire-and-forget call showed "Saved to Photos" even when the write
+        // failed (e.g. Photos permission denied). P2 quickie, 2026-07-31.
+        let target = PhotoSaveCompletionTarget { error in
+            Task { @MainActor in
+                if error == nil {
+                    didSaveToPhotos = true
+                    photoSaveFailed = false
+                    HapticManager.notification(.success)
+                } else {
+                    photoSaveFailed = true
+                    HapticManager.notification(.error)
+                }
+            }
+        }
+        UIImageWriteToSavedPhotosAlbum(
+            img,
+            target,
+            #selector(PhotoSaveCompletionTarget.image(_:didFinishSavingWithError:contextInfo:)),
+            nil
+        )
     }
 
     // MARK: - Helpers
@@ -319,5 +344,25 @@ private struct RouteSilhouette: Shape {
             else      { p.addLine(to: CGPoint(x: x, y: y)) }
         }
         return p
+    }
+}
+
+/// `UIImageWriteToSavedPhotosAlbum` needs an Obj-C target/selector for its
+/// completion; SwiftUI structs can't be one, so this tiny NSObject bridges
+/// the callback to a closure. It retains itself until the callback fires
+/// (the API does not retain the target).
+private final class PhotoSaveCompletionTarget: NSObject {
+    private let onComplete: (Error?) -> Void
+    private var selfRetain: PhotoSaveCompletionTarget?
+
+    init(onComplete: @escaping (Error?) -> Void) {
+        self.onComplete = onComplete
+        super.init()
+        self.selfRetain = self
+    }
+
+    @objc func image(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer?) {
+        onComplete(error)
+        selfRetain = nil
     }
 }

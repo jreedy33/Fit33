@@ -492,13 +492,15 @@ struct ActiveChallengeWidget: View {
 }
 
 /// Brief "couldn't send" capsule shared by the dashboard battle-cry
-/// surfaces (finding W).
+/// surfaces (finding W) and friend-request rows (P2 quickie).
 struct BattleCrySendFailedToast: View {
+    var message: String = "Couldn't send — try again"
+
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.ds_caption)
-            Text("Couldn't send — try again")
+            Text(message)
                 .font(.ds_labelMedium)
         }
         .foregroundColor(.white)

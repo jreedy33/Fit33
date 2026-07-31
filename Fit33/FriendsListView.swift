@@ -1123,6 +1123,7 @@ struct SuggestedFriendCard: View {
     @State private var isProcessing = false
     @State private var requestSent = false
     @State private var showCancelConfirmation = false
+    @State private var showSendFailedToast = false
     
     private var hasSentRequest: Bool {
         friend.hasOutgoingRequest || friendService.sentRequests.contains { $0.toUserId == friend.userId }
@@ -1164,6 +1165,12 @@ struct SuggestedFriendCard: View {
         }
         .padding(Spacing.md)
         .background(PremiumCardBackground(accentColor: .cyan))
+        .overlay(alignment: .top) {
+            if showSendFailedToast {
+                BattleCrySendFailedToast(message: "Request failed — try again")
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
     }
     
     private var avatarView: some View {
@@ -1292,7 +1299,13 @@ struct SuggestedFriendCard: View {
                     HapticManager.notification(.success)
                     onActionCompleted?()
                 } else {
+                    // Visible failure, not just a haptic (P2 quickie, 2026-07-31)
                     HapticManager.notification(.error)
+                    withAnimation { showSendFailedToast = true }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(2))
+                        withAnimation { showSendFailedToast = false }
+                    }
                 }
                 isProcessing = false
             }
@@ -1672,6 +1685,7 @@ struct UserSearchResultCard: View {
     @State private var isProcessing = false
     @State private var requestSent = false
     @State private var showCancelConfirmation = false
+    @State private var showSendFailedToast = false
     
     private var hasSentRequest: Bool {
         user.hasOutgoingRequest == true || friendService.sentRequests.contains { $0.toUserId == user.userId }
@@ -1713,6 +1727,12 @@ struct UserSearchResultCard: View {
         }
         .padding(Spacing.md)
         .background(PremiumCardBackground(accentColor: .cyan))
+        .overlay(alignment: .top) {
+            if showSendFailedToast {
+                BattleCrySendFailedToast(message: "Request failed — try again")
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
     }
     
     private var defaultAvatar: some View {
@@ -1842,8 +1862,14 @@ struct UserSearchResultCard: View {
                     HapticManager.notification(.success)
                     AppLogger.info("✅ Friend request sent successfully!", category: .social)
                 } else {
+                    // Visible failure, not just a haptic (P2 quickie, 2026-07-31)
                     HapticManager.notification(.error)
                     AppLogger.error("❌ Failed to send friend request", category: .social)
+                    withAnimation { showSendFailedToast = true }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(2))
+                        withAnimation { showSendFailedToast = false }
+                    }
                 }
                 isProcessing = false
             }

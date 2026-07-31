@@ -9,6 +9,7 @@ struct WorkoutTabView: View {
     @StateObject private var deepLinkManager = DeepLinkManager.shared
     @State private var navigationPath = NavigationPath()
     @State private var showingStretchModeOverlay = false
+    @State private var showingResetConfirmation = false
     
     var body: some View {
         ZStack {
@@ -52,19 +53,19 @@ struct WorkoutTabView: View {
                         .font(.system(size: 60))
                         .foregroundColor(.orange)
                     
-                    Text("Workout Data Error")
+                    Text("Something Went Wrong")
                         .font(.title2.bold())
                     
-                    Text("Your workout data is corrupted. Tap below to clear it and start fresh.")
+                    Text("We couldn't load your active workout. Resetting will discard the stuck session so you can start fresh.")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                     
                     Button {
-                        workoutManager.forceResetWorkoutState()
+                        showingResetConfirmation = true
                     } label: {
-                        Text("Clear Stuck Workout")
+                        Text("Reset Workout State")
                             .font(.headline)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -73,6 +74,18 @@ struct WorkoutTabView: View {
                             .cornerRadius(CornerRadius.md)
                     }
                     .padding(.horizontal, 40)
+                    .confirmationDialog(
+                        "Reset workout state?",
+                        isPresented: $showingResetConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Reset & Discard Session", role: .destructive) {
+                            workoutManager.forceResetWorkoutState()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This discards the stuck workout session. It can't be undone.")
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(.systemBackground))

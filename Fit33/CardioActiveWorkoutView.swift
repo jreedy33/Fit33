@@ -102,11 +102,17 @@ struct CardioActiveWorkoutView: View {
         }
         .alert("End Workout?", isPresented: $showingFinishAlert) {
             Button("Continue", role: .cancel) { }
-            Button("End", role: .destructive) {
+            Button("Save & Finish") {
                 finishWorkout()
             }
+            // P2 quickie (2026-07-31): there was no way to abandon an indoor
+            // cardio session — "End" always routed into save/completion.
+            Button("Discard Workout", role: .destructive) {
+                stopTimer()
+                dismiss()
+            }
         } message: {
-            Text("Are you sure you want to end this workout?")
+            Text("Save this workout, or discard it without saving?")
         }
         .fullScreenCover(isPresented: $showingCompletionView) {
             CardioCompletionView(

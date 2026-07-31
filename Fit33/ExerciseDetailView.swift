@@ -14,6 +14,9 @@ struct ExerciseDetailView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var workoutManager = WorkoutManager.shared
+    // Same unit preference the active-workout screen uses — stat blocks
+    // hardcoded "lbs" for kg users (P2 quickie, 2026-07-31).
+    @AppStorage("workoutWeightUnit") private var useKg: Bool = false
     
     // User history data
     @State private var personalRecord: (weight: Double, reps: Int, date: Date)?
@@ -535,10 +538,10 @@ struct ExerciseDetailView: View {
             .foregroundColor(tintColor)
             
             HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(formatWeight(weight))
+                Text(formatWeight(useKg ? (weight * WorkoutSetData.lbsToKg * 10).rounded() / 10 : weight))
                     .font(.ds_stat)
                     .foregroundColor(.primary)
-                Text("lbs")
+                Text(useKg ? "kg" : "lbs")
                     .font(.ds_labelSmall)
                     .foregroundColor(.secondary)
             }
@@ -683,7 +686,9 @@ struct ExerciseDetailView: View {
                 
                 for (index, we) in workoutExercises.enumerated() {
                     guard let sets = we.sets?.allObjects as? [WorkoutSet] else { continue }
-                    let completedSets = sets.filter { $0.isCompleted }
+                    // Warmups excluded — a heavy rack-walkout warmup isn't a
+                    // PR (P2 quickie, 2026-07-31).
+                    let completedSets = sets.filter { $0.isCompleted && ($0.setType ?? "Normal") != "Warmup" }
                     
                     for set in completedSets {
                         if set.weight > bestWeight && set.reps > 0 {

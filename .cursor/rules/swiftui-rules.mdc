@@ -19,7 +19,8 @@ These rules only load when editing Swift files under `Fit33/`. Cross-cutting rul
 - **No force unwraps**: Never use `!` on optionals in production code. Use `guard let`, `if let`, or `??`.
 - **Design tokens**: Use `.ds_*` font tokens from `DesignSystem.swift` and `Color.cardBackground` from `AdaptiveColors.swift`. NEVER hardcode `.font(.system(size:))` or define local `cardBackground` properties.
 - **Structured concurrency**: Use `Task { }` with `Task.sleep(for:)` — NEVER `DispatchQueue.main.asyncAfter`.
-- **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`. Decorative elements get `.accessibilityHidden(true)`.
+- **Accessibility**: All new interactive elements must have `.accessibilityLabel()` and `.accessibilityHint()`. Decorative elements get `.accessibilityHidden(true)`. Interactive elements need a ≥44×44pt hit area — pad small visuals (page dots, icons) with `.padding` + `.contentShape(Rectangle())` rather than growing the visual.
+- **No `UIScreen.main.bounds` for layout** (2026-07-31): screen bounds ≠ window size in iPad split view / Stage Manager. Use `GeometryReader` (and cap widths where a phone-designed panel would balloon).
 - **Thread safety**: `@Published` properties must only be mutated on the main thread. Use `@MainActor`, `NSLock`, or actor isolation for shared mutable state.
 - **`@Published` + non-`@MainActor` ObservableObjects (Q2-82)**: Classes that do heavy network / Core Data work (`SupabaseManager`, `ExerciseLibraryService`, `UserManager`) are intentionally NOT marked `@MainActor` because it would serialize background work onto main. Every `@Published` assignment in them MUST be wrapped in `await MainActor.run { … }`. When adding a new `@Published` var, audit every write site before merging. Opposite end of the spectrum — small UI-only `ObservableObject`s (`RestTimer`) SHOULD be `@MainActor` to codify the contract.
 
@@ -34,6 +35,14 @@ These rules only load when editing Swift files under `Fit33/`. Cross-cutting rul
 - **Startup timing**: Critical startup paths (auth check, limitations fetch, cloud sync) should log elapsed milliseconds via `CFAbsoluteTimeGetCurrent()` so regressions are visible in crash reports.
 - **Long-lived observers MUST be retained and torn down on sign-out** (2026-07-30): any `HKObserverQuery` (or similar registration) must be stored so it can be `healthStore.stop(...)`ped later. Pattern: `BackgroundChallengeSyncService.activeObserverQueries` + `teardownForSignOut()`, called from `SupabaseManager.signOut()`/`deleteAccount()`. Fire-and-forget observer registration leaks queries across accounts on the same device.
 - **Failed cloud saves of workout data go through `CloudSyncRetryQueue`** — strength uses `enqueueWorkoutCloudSync`, cardio uses `enqueueCardioCloudSync(payload)` (added 2026-07-30). Never leave a `catch` that only logs on a durable-data save path; enqueue for retry instead.
+
+## Workout Engine Invariants (2026-07-31 polish sprint)
+- **Completion fanout is once-only and gated on a durable save.** Strength: `WorkoutManager.didRunCompletionFanout` short-circuits repeat `finishWorkout()` calls. Cardio: XP/quest/league/feed fanout runs ONLY when the save returned a real workout ID; otherwise enqueue `CloudSyncRetryQueue` (entries carry `fanoutCompleted` so the retry path fans out exactly once). Never add a second call site that awards XP/points for the same workout.
+- **Set weights are stored as TOTAL POUNDS.** All display↔storage conversion (kg toggle, per-side "each side" exercises) goes through the `totalLbs(fromDisplayWeight:)` / `displayWeight(fromTotalLbs:)` pair in `WorkoutSetViews.swift`. Never inline `* 2.20462` / per-side math at a call site — that's how the double-conversion corruption (finding A) shipped.
+- **Active-workout state persistence goes through `WorkoutManager`'s serial `statePersistenceQueue`.** Both saves AND `clearActiveWorkoutStorage()` — a direct UserDefaults write can be reordered against an in-flight save and resurrect a cleared workout.
+- **Never `cancelWorkout()` on timeout/recovery paths** — it deletes completed sets. Salvage instead: persist completed sets, enqueue cloud sync, then clear state (`salvageTimedOutWorkout()` pattern) and tell the user via the `WorkoutAutoEnded` notification.
+- **Per-slot active-workout UI state (swap counts, shuffled-exercise IDs) lives on `WorkoutManager`** (`slotSwapCounts` / `slotShuffledExerciseIds`), not view `@State` — cards are recreated on scroll and `@State` resets silently.
+- **PR and progression queries MUST exclude warmup sets** (`setType != .warmup` / `"Warmup"`), matching how they're excluded from volume.
 
 ## Singleton `init()` & UserDefaults
 - **No `UserDefaults.synchronize()`**: iOS auto-batches writes. `.synchronize()` forces synchronous disk I/O — never call it.

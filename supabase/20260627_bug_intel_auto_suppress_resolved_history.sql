@@ -1,7 +1,10 @@
 -- ════════════════════════════════════════════════════════════════════
--- Migration #127 — Auto-suppress fingerprints whose md5 is in
+-- Migration #210 — Auto-suppress fingerprints whose md5 is in
 -- bug_intel_resolved_history (Phase 13 close-the-loop, hardening).
 -- 2026-04-27
+-- (Header corrected 2026-07-30: this file previously claimed "#127", but
+--  index #127 is 20260626_widget_writes_kill_switch.sql. Indexed as #210
+--  in the 2026-07-30 backfill — see MIGRATION_INDEX.md.)
 --
 -- PROBLEM
 -- -------

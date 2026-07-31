@@ -126,7 +126,11 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION interpolate_template(TEXT, JSONB) TO authenticated, service_role;
+-- 2026-07-30 (PR-31 hygiene): service_role only. `interpolate_template` is
+-- SQL-internal (called by render_notification_copy) — no Swift caller exists,
+-- so the original `authenticated` grant was needless surface. Migration #206
+-- re-revokes for databases that ran the earlier revision of this file.
+GRANT EXECUTE ON FUNCTION interpolate_template(TEXT, JSONB) TO service_role;
 
 -- ── Variant picker ──────────────────────────────────────────────────────
 

@@ -260,6 +260,11 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
+    // Non-null when the caller authenticated with a USER JWT (client queue
+    // flush, Q2-35). Service-role / cron callers stay null and bypass the
+    // per-user rate limit below.
+    let callerUserId: string | null = null
+
     if (cronKey && isServiceRoleJWT(cronKey)) {
       // pg_cron bypass: verified service_role JWT via custom header
     } else if (!authHeader) {
@@ -277,6 +282,31 @@ serve(async (req) => {
             status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }
+        callerUserId = user.id
+      }
+    }
+
+    // ── Per-user flush rate limit (PR-31 residual, 2026-07-30) ────────────
+    // User-JWT access is by design (client queue flush) but the batch path is
+    // not user-scoped, so a hostile client could hammer the global queue.
+    // 10 invocations/user/minute is ~30x a legitimate flush cadence.
+    // Fails OPEN if the check_rate_limit RPC isn't deployed yet (migration
+    // #206) — never brick the queue flush over missing infra.
+    if (callerUserId) {
+      const { data: allowed, error: rlError } = await supabase.rpc('check_rate_limit', {
+        p_scope: 'push_flush',
+        p_key: callerUserId,
+        p_max: 10,
+        p_window_seconds: 60,
+      })
+      if (rlError) {
+        console.warn(JSON.stringify({ event: 'rate_limit_check_unavailable', detail: rlError.message }))
+      } else if (allowed === false) {
+        console.warn(JSON.stringify({ event: 'push_flush_rate_limited', user_id: callerUserId }))
+        return new Response(JSON.stringify({ error: 'Too many requests', retry_after_seconds: 60 }), {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' }
+        })
       }
     }
 

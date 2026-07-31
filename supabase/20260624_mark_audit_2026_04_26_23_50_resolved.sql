@@ -1,7 +1,10 @@
 -- ════════════════════════════════════════════════════════════════════
--- Migration #126 — Mark fingerprints resolved from the
+-- Migration #209 — Mark fingerprints resolved from the
 -- bug-intelligence-audit-2026-04-26T23-50-07 export.
 -- 2026-04-26
+-- (Header corrected 2026-07-30: this file previously claimed "#126", but
+--  index #126 is 20260625_opponent_progress_silent_push.sql. Indexed as
+--  #209 in the 2026-07-30 backfill — see MIGRATION_INDEX.md.)
 --
 -- CONTEXT
 -- -------

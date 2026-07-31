@@ -133,4 +133,8 @@ BEGIN
     RAISE NOTICE '✅ get_league_history guard verified';
 END $$;
 
+-- PostgREST schema-cache reload (supabase-rules.mdc — mandatory after
+-- CREATE OR REPLACE FUNCTION; fires only on successful commit).
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;

@@ -32,13 +32,39 @@
 //       + every RPC you find via `rg -n 'CREATE .* FUNCTION' supabase/*.sql`.
 //   [ ] Add a GH Actions workflow `.github/workflows/rpc-smoke.yml` that runs
 //       `curl -X POST $SUPABASE_URL/functions/v1/bug-intel-rpc-smoke
-//        -H "Authorization: Bearer $ANON_KEY"` nightly + on every deploy.
+//        -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"` nightly + on
+//       every deploy. (2026-07-30: the function is service-role gated — anon
+//       or user JWTs are rejected with 401.)
 //   [ ] Wire failure notifications to the existing Slack / Pushover webhook.
 //
 // Until the checklist is complete, calling this function returns a friendly
 // 503 ("not yet deployed").
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// ── Auth (service-role / x-cron-key only) ─────────────────────────────────
+// This function runs every fixture with a SERVICE-ROLE client and can insert
+// bug_intelligence_trends rows — it must NEVER be invocable by end users.
+// Same gate as notification-orchestrator (Edge Function Auth Registry —
+// INFRA_SECURITY invariant 11).
+const EXPECTED_PROJECT_REF = (() => {
+  const raw = Deno.env.get('SUPABASE_URL') || ''
+  const match = raw.match(/^https?:\/\/([a-z0-9]+)\.supabase\.co/i)
+  return match?.[1] ?? ''
+})()
+
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return false
+    const payload = JSON.parse(atob(parts[1]))
+    if (payload.role !== 'service_role') return false
+    if (!EXPECTED_PROJECT_REF) return false
+    return payload.ref === EXPECTED_PROJECT_REF
+  } catch {
+    return false
+  }
+}
 
 type Fixture = {
   rpc: string
@@ -196,7 +222,27 @@ const DATA_INTEGRITY_PREFIX = [
   'P0001', // RAISE EXCEPTION 'Not authenticated' from SECURITY DEFINER RPCs
 ]
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  // ── Auth gate — service-role bearer or x-cron-key service JWT only ──────
+  const serviceKeyForAuth = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  const cronKey = req.headers.get('x-cron-key')
+  const authHeader = req.headers.get('Authorization')
+  let authed = false
+  if (cronKey && isServiceRoleJWT(cronKey)) {
+    authed = true
+  } else if (authHeader) {
+    const token = authHeader.replace('Bearer ', '')
+    if ((serviceKeyForAuth && token === serviceKeyForAuth) || isServiceRoleJWT(token)) {
+      authed = true
+    }
+  }
+  if (!authed) {
+    return new Response(JSON.stringify({ error: 'Service-role only' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
   if (FIXTURES.length === 0) {
     return new Response(
       JSON.stringify({

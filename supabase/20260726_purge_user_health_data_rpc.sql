@@ -83,4 +83,8 @@ COMMENT ON FUNCTION public.purge_user_health_data() IS
     'rate, HK-sourced sleep + cardio). Backs the Settings → Health Data '
     '"Stop syncing & delete cloud copy" control. auth.uid()-scoped; no params.';
 
+-- PostgREST schema-cache reload (supabase-rules.mdc — mandatory after
+-- CREATE OR REPLACE FUNCTION; fires only on successful commit).
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;

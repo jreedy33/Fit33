@@ -188,4 +188,8 @@ BEGIN
     RAISE NOTICE '✅ delete_user_account guard + broadcast verified';
 END $$;
 
+-- PostgREST schema-cache reload (supabase-rules.mdc — mandatory after
+-- CREATE OR REPLACE FUNCTION; fires only on successful commit).
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;

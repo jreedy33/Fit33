@@ -490,7 +490,7 @@ struct ExerciseCard: View {
                     Image(systemName: "shuffle")
                         .font(.ds_bodyLarge)
                         .foregroundColor(.blue)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PlainButtonStyle())
@@ -698,7 +698,8 @@ struct ExerciseCard: View {
                 .frame(width: 70, alignment: .center)
             
             Spacer()
-                .frame(width: 34)
+                // Matches the 44pt checkmark column below (was 34/40)
+                .frame(width: 44)
         }
         .padding(.horizontal, Spacing.md)
         .padding(.top, 2)

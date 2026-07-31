@@ -121,8 +121,10 @@ struct RunningWorkoutView: View {
             // Content overlay
             VStack(spacing: 0) {
                 // Top: Hero Metrics Grid (2x2, or 1x4 in compact vertical)
+                // Safe area already clears the status bar — the old 60pt
+                // was stale compensation (device-polish batch, 2026-07-31).
                 heroMetricsGrid
-                    .padding(.top, verticalSizeClass == .compact ? 8 : 60)
+                    .padding(.top, verticalSizeClass == .compact ? 8 : Spacing.sm)
                     .padding(.horizontal, Spacing.md)
                 
                 // GPS Status + Map Controls

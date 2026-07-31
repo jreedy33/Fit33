@@ -323,7 +323,7 @@ struct SetRowView: View {
                     },
                     isFocused: $isWeightFocused
                 )
-                .frame(width: showsEachSuffix ? weightFieldWidth : 70, height: 38)
+                .frame(width: showsEachSuffix ? weightFieldWidth : 70, height: 44)
 
                 if showsEachSuffix {
                     Text("each")
@@ -333,7 +333,8 @@ struct SetRowView: View {
                         .accessibilityHidden(true)
                 }
             }
-            .frame(width: 70, height: 38)
+            // 44pt HIG minimum touch target (was 38 — device-polish batch)
+            .frame(width: 70, height: 44)
             .background(Color(.systemGray6))
             .cornerRadius(CornerRadius.sm)
             .overlay(
@@ -397,7 +398,7 @@ struct SetRowView: View {
                 },
                 isFocused: $isRepsFocused
             )
-            .frame(width: 70, height: 38)
+            .frame(width: 70, height: 44)
             .background(Color(.systemGray6))
             .cornerRadius(CornerRadius.sm)
             .overlay(
@@ -545,10 +546,14 @@ struct SetRowView: View {
                     Image(systemName: setData.isCompleted ? "checkmark.circle.fill" : "circle")
                         .font(.title3)
                         .foregroundColor(setData.isCompleted ? .blue : .gray)
+                        // 44pt HIG minimum tap target (was 40pt wide with no
+                        // min height — device-polish batch, 2026-07-31)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel(setData.isCompleted ? "Set \(setNumber) completed" : "Mark set \(setNumber) complete")
                 .accessibilityHint(setData.isCompleted ? "Tap to uncheck this set" : "Mark this set as done")
-                .frame(width: 40)
+                .frame(width: 44)
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, 6)

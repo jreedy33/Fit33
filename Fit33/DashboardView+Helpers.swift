@@ -523,7 +523,9 @@ extension DashboardView {
                 }
                 .offset(x: -CGFloat(selectedWorkoutPage) * (cardWidth + spacing))
             }
-            .frame(height: 160)
+            // Scaled so the carousel grows with Dynamic Type instead of
+            // clipping card content (device-polish batch, 2026-07-31).
+            .frame(height: UIFontMetrics.default.scaledValue(for: 160))
             .animation(.easeOut(duration: 0.25), value: selectedWorkoutPage)
             .highPriorityGesture(
                 DragGesture(minimumDistance: 25)
@@ -543,20 +545,28 @@ extension DashboardView {
             )
             
             if pageCount > 1 {
-                HStack(spacing: 8) {
+                // spacing 0: the per-dot 8pt horizontal padding supplies the
+                // visual gap (8 + 8 = 16pt between capsules).
+                HStack(spacing: 0) {
                     ForEach(0..<pageCount, id: \.self) { index in
+                        // Dots stay 6pt visually but get a padded hit area —
+                        // the bare capsule was far below the 44pt tap-target
+                        // minimum (device-polish batch, 2026-07-31).
                         Capsule()
                             .fill(selectedWorkoutPage == index ? Color.blue : Color.gray.opacity(0.3))
                             .frame(width: selectedWorkoutPage == index ? 20 : 8, height: 6)
                             .animation(.easeOut(duration: 0.2), value: selectedWorkoutPage)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 8)
+                            .contentShape(Rectangle())
                             .onTapGesture {
                                 HapticManager.impact(.light)
                                 selectedWorkoutPage = index
                             }
+                            .accessibilityLabel("Page \(index + 1) of \(pageCount)")
+                            .accessibilityAddTraits(selectedWorkoutPage == index ? [.isButton, .isSelected] : .isButton)
                     }
                 }
-                .padding(.top, 6)
-                .padding(.bottom, 2)
             }
         }
         .onAppear {

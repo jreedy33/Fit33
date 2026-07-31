@@ -203,7 +203,10 @@ struct CardioActiveWorkoutView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.top, 60)
+        // The VStack already respects the safe area (only the background
+        // gradient ignores it) — the old 60pt was stale status-bar
+        // compensation that pushed everything down (device-polish batch).
+        .padding(.top, Spacing.sm)
         .padding(.bottom, 16)
     }
     
@@ -869,7 +872,9 @@ struct CardioCompletionView: View {
                         }
                         .padding(.horizontal, 20)
                     }
-                    .padding(.top, 60)
+                    // Safe area already clears the status bar — the 60pt was
+                    // stale compensation (device-polish batch, 2026-07-31).
+                    .padding(.top, Spacing.lg)
                 }
             }
             .navigationBarHidden(true)

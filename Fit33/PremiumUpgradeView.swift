@@ -300,6 +300,9 @@ struct PremiumUpgradeView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 30)
+                    // iPad: cap paywall content width (device-polish batch).
+                    .frame(maxWidth: 640)
+                    .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -599,22 +602,26 @@ struct PremiumUpgradeView: View {
             }
             
             VStack(spacing: 3) {
+                // minimumScaleFactor so titles like "Smart Workouts" don't
+                // truncate inside the narrow SE tiles (device-polish batch).
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 
                 Text(subtitle)
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 110)
+        .frame(minHeight: 110)
         .background(
             ZStack {
                 // Bottom shadow layer (deepest) - colored based on gradient

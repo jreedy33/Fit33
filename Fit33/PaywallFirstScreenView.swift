@@ -70,6 +70,9 @@ struct PaywallFirstScreenView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 60)
                 .padding(.bottom, 40)
+                // iPad: cap paywall content width (device-polish batch).
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
             }
         }
         .task {

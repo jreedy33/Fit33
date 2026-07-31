@@ -775,6 +775,10 @@ struct ProfileView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 100)
                 }
+                // iPad: cap content width so full-width sections don't
+                // stretch edge-to-edge (device-polish batch, 2026-07-31).
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.immediately)
             .scrollContentBackground(.hidden)

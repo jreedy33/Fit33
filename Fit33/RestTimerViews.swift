@@ -1,68 +1,8 @@
 import SwiftUI
 
-struct RestTimerIndicator: View {
-    @ObservedObject var restTimer: RestTimer
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // Progress bar
-            VStack(spacing: 4) {
-                HStack {
-                    Text("Rest")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.blue)
-                    
-                    Spacer()
-                    
-                    Text(formatTime(restTimer.timeRemaining))
-                        .font(.system(.caption, design: .monospaced))
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
-                }
-                
-                ProgressView(value: 1 - (restTimer.timeRemaining / restTimer.totalTime))
-                    .progressViewStyle(LinearProgressViewStyle(tint: .blue))
-                    .scaleEffect(x: 1, y: 1.5, anchor: .center)
-            }
-            
-            // Control buttons
-            HStack(spacing: 8) {
-                Button(action: {
-                    if restTimer.isActive {
-                        restTimer.pause()
-                    } else {
-                        restTimer.resume()
-                    }
-                }) {
-                    Image(systemName: restTimer.isActive ? "pause.fill" : "play.fill")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                        .frame(width: 20, height: 20)
-                }
-                
-                Button(action: {
-                    restTimer.stop()
-                }) {
-                    Image(systemName: "stop.fill")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .frame(width: 20, height: 20)
-                }
-            }
-        }
-        .padding(.vertical, Spacing.xs)
-        .padding(.horizontal, Spacing.sm)
-        .background(Color.blue.opacity(0.1))
-        .cornerRadius(CornerRadius.sm)
-    }
-    
-    private func formatTime(_ timeInterval: TimeInterval) -> String {
-        let minutes = Int(timeInterval) / 60
-        let seconds = Int(timeInterval) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-}
+// RestTimerIndicator (formerly here) was dead code — deleted in the
+// 2026-07-31 device-polish batch. TimerBorderShape and the views below
+// are the live rest-timer UI.
 
 struct TimerBorderShape: InsettableShape {
     let cornerRadius: CGFloat

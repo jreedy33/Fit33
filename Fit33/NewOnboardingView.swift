@@ -498,6 +498,9 @@ struct NewOnboardingView: View {
 
                 Spacer()
             }
+            // iPad: cap onboarding content width (device-polish batch).
+            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity)
 
             if currentStep == .auth && hasStartedAuth {
                 authFloatingButtonBar(keyboardUp: keyboardUp)

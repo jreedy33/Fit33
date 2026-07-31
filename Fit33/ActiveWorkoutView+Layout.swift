@@ -558,6 +558,10 @@ extension ActiveWorkoutView {
                         Image(systemName: "gearshape.fill")
                             .font(.ds_heading3)
                             .foregroundColor(colorScheme == .dark ? .white : .primary)
+                            // 44pt HIG tap targets on the whole header row
+                            // (device-polish batch, 2026-07-31)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Workout settings")
                     .accessibilityHint("Adjust rest timer, weight unit, and other options")
@@ -570,6 +574,8 @@ extension ActiveWorkoutView {
                                 Image(systemName: "info.circle")
                                     .font(.ds_heading2)
                                     .foregroundColor(.blue)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
                             }
                         }
                         
@@ -607,6 +613,8 @@ extension ActiveWorkoutView {
                                 .font(.ds_heading2)
                                 .foregroundColor(isWorkoutFavorite ? .yellow : (colorScheme == .dark ? .white : .primary))
                                 .scaleEffect(isWorkoutFavorite ? 1.1 : 1.0)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .accessibilityLabel(isWorkoutFavorite ? "Remove from favorites" : "Add to favorites")
                         .accessibilityHint("Save this workout for quick access later")
@@ -624,6 +632,8 @@ extension ActiveWorkoutView {
                         }
                         .font(.ds_labelLarge)
                         .foregroundColor(.blue)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityLabel("Finish workout")
                         .accessibilityHint("End your current workout and save results")
                         .alert("Nothing logged yet", isPresented: $showingEmptyFinishAlert) {
@@ -681,27 +691,33 @@ extension ActiveWorkoutView {
     @ViewBuilder
     var settingsPanelOverlay: some View {
         if showingSettingsPanel {
-            ZStack(alignment: .leading) {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            showingSettingsPanel = false
+            // GeometryReader instead of UIScreen.main.bounds — the screen
+            // bounds don't match the window in iPad split view / Stage
+            // Manager (device-polish batch, 2026-07-31). Width capped so
+            // the drawer doesn't balloon on iPad.
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                showingSettingsPanel = false
+                            }
                         }
-                    }
-                
-                WorkoutSettingsPanel(
-                    isPresented: $showingSettingsPanel,
-                    showingPremiumUpsell: $showingPremiumUpsell,
-                    onMinimize: {
-                        workoutManager.navigateToHomeTab()
-                    },
-                    onDiscard: {
-                        cancelWorkout()
-                    }
-                )
-                .frame(width: UIScreen.main.bounds.width * 0.72)
-                .transition(.move(edge: .leading))
+                    
+                    WorkoutSettingsPanel(
+                        isPresented: $showingSettingsPanel,
+                        showingPremiumUpsell: $showingPremiumUpsell,
+                        onMinimize: {
+                            workoutManager.navigateToHomeTab()
+                        },
+                        onDiscard: {
+                            cancelWorkout()
+                        }
+                    )
+                    .frame(width: min(proxy.size.width * 0.72, 360))
+                    .transition(.move(edge: .leading))
+                }
             }
             .transition(.opacity)
             .zIndex(100)

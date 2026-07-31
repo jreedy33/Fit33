@@ -316,13 +316,13 @@ final class AutogenAuditHarnessTests: XCTestCase {
 
     /// Enrich a `GeneratedExercise` with catalog-truth (isCompound) +
     /// programmatic week-1 rep prescription (same formula
-    /// `DynamicProgramGenerator.WorkoutExercise.getPrescription` uses).
+    /// `DynamicProgramGenerator.GeneratedExercise.getPrescription` uses).
     /// Audit 2026-05-10 R12: prior payload sent isCompound=null and no
     /// rep ranges → Claude flagged "rep ranges not specified" 33×/200.
     nonisolated private func enrich(_ ex: GeneratedExercise, library: ExerciseLibraryService) -> EnrichedExercise {
         let live = library.getExercise(byName: ex.name)
         let isCompound = live?.isCompound
-        let rx = DynamicProgramGenerator.WorkoutExercise.getPrescription(
+        let rx = DynamicProgramGenerator.GeneratedExercise.getPrescription(
             weekNumber: 1,
             isCompound: isCompound ?? false,
             isAnchor: false,

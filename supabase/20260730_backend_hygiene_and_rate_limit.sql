@@ -107,7 +107,11 @@ DO $$
 BEGIN
     IF EXISTS (SELECT FROM information_schema.tables
                WHERE table_schema = 'public' AND table_name = 'group_challenge_members') THEN
-        REVOKE SELECT ON public.group_challenge_members FROM authenticated;
+        -- REVOKE ALL (not just SELECT): first prod run (2026-07-31) tripped the
+        -- trailing audit because the live DB still carried residual non-SELECT
+        -- grants to authenticated — the 20260418 (Q2-15) write-revoke never
+        -- fully landed. ALL matches the audit's zero-client-grants contract.
+        REVOKE ALL ON public.group_challenge_members FROM authenticated;
         REVOKE ALL ON public.group_challenge_members FROM anon;
         COMMENT ON TABLE public.group_challenge_members IS
             'Legacy group-challenge membership. Fully client-revoked as of '

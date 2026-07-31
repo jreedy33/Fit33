@@ -473,16 +473,6 @@ struct ProgramDetailView: View {
     
     private var startButton: some View {
         ZStack {
-            // Hidden NavigationLink
-            NavigationLink(
-                destination: WorkoutPreviewView(program: program, day: 1, programColor: programColor)
-                    .environmentObject(workoutManager),
-                isActive: $navigateToDay1
-            ) {
-                EmptyView()
-            }
-            .opacity(0)
-            
             // Visible Button
             Button(action: {
                 HapticManager.impact(.medium)
@@ -526,6 +516,10 @@ struct ProgramDetailView: View {
             } message: {
                 Text("Ready to begin \(program.name)? This \(program.duration)-day program will become your active program.")
             }
+        }
+        .navigationDestination(isPresented: $navigateToDay1) {
+            WorkoutPreviewView(program: program, day: 1, programColor: programColor)
+                .environmentObject(workoutManager)
         }
     }
     

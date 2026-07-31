@@ -126,19 +126,11 @@ struct RecipeBrowserView: View {
                 }
             }
         }
-        .background(
-            NavigationLink(
-                destination: Group {
-                    if let recipe = selectedRecipe {
-                        RecipeDetailView(recipeId: recipe.id, initialRecipe: recipe)
-                    }
-                },
-                isActive: $showingRecipeDetail
-            ) {
-                EmptyView()
+        .navigationDestination(isPresented: $showingRecipeDetail) {
+            if let recipe = selectedRecipe {
+                RecipeDetailView(recipeId: recipe.id, initialRecipe: recipe)
             }
-            .hidden()
-        )
+        }
         .fullScreenCover(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(
                 triggeringFeature: .recipes,

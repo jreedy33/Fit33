@@ -93,30 +93,14 @@ struct HealthyRecipesCarousel: View {
             AppLogger.debug("🔄 [CAROUSEL] Preferences changed (\(newValue)) - refreshing", category: .nutrition)
             loadRecipes()
         }
-        .background(
-            Group {
-                // Recipe Detail Navigation
-                NavigationLink(
-                    destination: Group {
-                        if let recipe = selectedRecipe {
-                            RecipeDetailView(recipeId: recipe.id, initialRecipe: recipe)
-                        }
-                    },
-                    isActive: $showingRecipeDetail
-                ) {
-                    EmptyView()
-                }
-                
-                // Recipe Browser Navigation (See All)
-                NavigationLink(
-                    destination: RecipeBrowserView(),
-                    isActive: $showingRecipeBrowser
-                ) {
-                    EmptyView()
-                }
+        .navigationDestination(isPresented: $showingRecipeDetail) {
+            if let recipe = selectedRecipe {
+                RecipeDetailView(recipeId: recipe.id, initialRecipe: recipe)
             }
-            .hidden()
-        )
+        }
+        .navigationDestination(isPresented: $showingRecipeBrowser) {
+            RecipeBrowserView()
+        }
         .fullScreenCover(isPresented: $showingPremiumUpgrade) {
             PremiumUpgradeView(
                 triggeringFeature: .recipes,

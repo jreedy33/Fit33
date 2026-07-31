@@ -127,21 +127,14 @@ struct ReceivedWorkoutsView: View {
                 }
             }
             
-            // Navigation link for full-page detail view
-            NavigationLink(
-                destination: Group {
-                    if let workout = selectedWorkout {
-                        ReceivedWorkoutDetailView(workout: workout)
-                    }
-                },
-                isActive: $navigateToDetail
-            ) {
-                EmptyView()
-            }
-            .hidden()
         }
         .navigationTitle("Received Workouts")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $navigateToDetail) {
+            if let workout = selectedWorkout {
+                ReceivedWorkoutDetailView(workout: workout)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Done") {

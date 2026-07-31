@@ -4,57 +4,45 @@ import { isAdminEmail } from '@/lib/auth'
 import { parseJson, loginSchema } from '@/lib/validation'
 import { setAuthCookies } from '@/lib/auth-cookies'
 import { isMfaTrustedForUser } from '@/lib/mfa-trust'
+import { checkSharedRateLimit } from '@/lib/rate-limit'
+import { createAdminClient } from '@/lib/supabase-admin'
 
-const loginAttempts = new Map<string, { count: number; firstAttempt: number; lockedUntil: number }>()
-const MAX_ATTEMPTS = 5
-const WINDOW_MS = 15 * 60_000
-const LOCKOUT_MS = 30 * 60_000
+// PR-38 (2026-07-30): rate limiting moved to the shared cross-instance store
+// (`@/lib/rate-limit`, Postgres-backed via migration #206). The old
+// per-module Map only counted requests landing on the same Vercel isolate.
+//
+// Two layers, preserving the original semantics ("5 FAILED attempts per
+// 15 min per IP" — successful logins never consume budget):
+//   1. Flood cap: 30 total attempts / 15 min / IP (records every request).
+//   2. Failure lockout: 5 recorded `cms_login_fail` events / 15 min / IP,
+//      counted with a read-only peek so the pre-check itself records nothing.
+const MAX_FAILED_ATTEMPTS = 5
+const WINDOW_SECONDS = 15 * 60
+const FLOOD_MAX_ATTEMPTS = 30
 
-function checkRateLimit(ip: string): { allowed: boolean; retryAfter?: number } {
-  const now = Date.now()
-  const record = loginAttempts.get(ip)
-
-  if (!record) return { allowed: true }
-
-  if (record.lockedUntil > now) {
-    return { allowed: false, retryAfter: Math.ceil((record.lockedUntil - now) / 1000) }
-  }
-
-  if (now - record.firstAttempt > WINDOW_MS) {
-    loginAttempts.delete(ip)
-    return { allowed: true }
-  }
-
-  if (record.count >= MAX_ATTEMPTS) {
-    record.lockedUntil = now + LOCKOUT_MS
-    return { allowed: false, retryAfter: Math.ceil(LOCKOUT_MS / 1000) }
-  }
-
-  return { allowed: true }
+// Records one failed attempt in the shared store. Fire-and-forget — the
+// return value is irrelevant here, we only want the event row.
+async function recordFailedAttempt(ip: string) {
+  await checkSharedRateLimit('cms_login_fail', ip, Number.MAX_SAFE_INTEGER, WINDOW_SECONDS)
 }
 
-function recordFailedAttempt(ip: string) {
-  const now = Date.now()
-  const record = loginAttempts.get(ip)
-  if (!record) {
-    loginAttempts.set(ip, { count: 1, firstAttempt: now, lockedUntil: 0 })
-  } else {
-    record.count++
+// Read-only count of recent failures (no event recorded). Falls back to
+// "not locked" if the store is unreachable — the flood cap still applies.
+async function isLockedOut(ip: string): Promise<boolean> {
+  try {
+    const admin = createAdminClient()
+    const { count, error } = await admin
+      .from('rate_limit_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('scope', 'cms_login_fail')
+      .eq('key', ip)
+      .gte('created_at', new Date(Date.now() - WINDOW_SECONDS * 1000).toISOString())
+    if (error) throw error
+    return (count ?? 0) >= MAX_FAILED_ATTEMPTS
+  } catch {
+    return false
   }
 }
-
-function clearAttempts(ip: string) {
-  loginAttempts.delete(ip)
-}
-
-setInterval(() => {
-  const now = Date.now()
-  for (const [ip, record] of loginAttempts) {
-    if (now - record.firstAttempt > WINDOW_MS && record.lockedUntil < now) {
-      loginAttempts.delete(ip)
-    }
-  }
-}, 10 * 60_000)
 
 export async function POST(req: NextRequest) {
   try {
@@ -62,11 +50,12 @@ export async function POST(req: NextRequest) {
       || req.headers.get('x-real-ip')
       || 'unknown'
 
-    const rateCheck = checkRateLimit(ip)
-    if (!rateCheck.allowed) {
+    const floodCheck = await checkSharedRateLimit('cms_login', ip, FLOOD_MAX_ATTEMPTS, WINDOW_SECONDS)
+    if (!floodCheck.allowed || await isLockedOut(ip)) {
+      const retryAfter = floodCheck.retryAfter ?? WINDOW_SECONDS
       return NextResponse.json(
-        { error: `Too many login attempts. Try again in ${rateCheck.retryAfter} seconds.` },
-        { status: 429, headers: { 'Retry-After': String(rateCheck.retryAfter) } },
+        { error: `Too many login attempts. Try again in ${retryAfter} seconds.` },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } },
       )
     }
 
@@ -82,7 +71,7 @@ export async function POST(req: NextRequest) {
     // not surface either of these reasons in the API response.
     if (!isAdminEmail(email)) {
       console.warn(`[auth/login] reject reason=NOT_ALLOWLISTED email=${email} ip=${ip}`)
-      recordFailedAttempt(ip)
+      await recordFailedAttempt(ip)
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
     }
 
@@ -100,11 +89,12 @@ export async function POST(req: NextRequest) {
       // "Email not confirmed". Run `npm run admin:audit` if you need to know
       // whether the user row actually exists.
       console.warn(`[auth/login] reject reason=SUPABASE_AUTH_FAILED email=${email} ip=${ip} supabase_error=${error?.message ?? 'no_session_returned'}`)
-      recordFailedAttempt(ip)
+      await recordFailedAttempt(ip)
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
     }
 
-    clearAttempts(ip)
+    // (Legacy `clearAttempts(ip)` removed — failures age out of the shared
+    // sliding window on their own; success doesn't need to reset anything.)
 
     const authedClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

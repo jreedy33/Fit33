@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { isAdminEmail } from '@/lib/auth'
 import { getAccessToken } from '@/lib/auth-cookies'
 import { parseJson, adminEnvelopeSchema } from '@/lib/validation'
+import { checkSharedRateLimit } from '@/lib/rate-limit'
 
 // ═══════════════════════════════════════════════════
 // RATE LIMITING (per-IP, per-endpoint)
@@ -44,8 +45,13 @@ const WRITE_ACTIONS = new Set([
   'update_insight_status', 'trigger_insights_generation',
   'save_chat_conversation', 'delete_chat_conversation',
   'toggle_dev_logging', 'update_suggestion_status',
-  // Bug intelligence (Phase 2) mutations
+  // Bug intelligence (Phase 2) mutations. `trigger_shake_triage` (Phase 6)
+  // added 2026-07-30 — it fires an edge function with the service-role key
+  // (Anthropic spend + DB mutation) exactly like `trigger_bug_triage`, but
+  // was missing here, so it ran under the loose `read` tier with NO audit
+  // log.
   'update_bug_fingerprint', 'update_bug_report_review', 'trigger_bug_triage',
+  'trigger_shake_triage',
   // Export mutates last_exported_at watermark when mode='new' (default).
   // Classified as `write` so every Cursor-handoff export is audit-logged
   // and rate-limited at 30/min — plenty for a human clicking the button,
@@ -80,7 +86,10 @@ const WRITE_ACTIONS = new Set([
   'backfill_workout_intel',
 ])
 const BULK_ACTIONS = new Set([
-  'bulk_update_bug_reports', 'bulk_update_crash_reports',
+  // ('bulk_update_bug_reports' removed 2026-07-30 — no case handler exists;
+  // it was a dead set entry. The audit page keeps the string for filtering
+  // historical audit-log rows.)
+  'bulk_update_crash_reports',
   'bulk_publish_faq_entries',
   'send_push_campaign',
   // Bulk crash-report deletion paths — previously untracked.
@@ -99,34 +108,16 @@ function getActionTier(action: string): 'read' | 'write' | 'bulk' {
   return 'read'
 }
 
-const rateBuckets = new Map<string, { count: number; resetAt: number }>()
-
-function checkAdminRateLimit(ip: string, action: string): { allowed: boolean; retryAfter?: number } {
+// PR-38 (2026-07-30): backed by the shared cross-instance store
+// (`@/lib/rate-limit`, Postgres via migration #206). The old per-module Map
+// only counted requests landing on the same Vercel isolate, so the limits
+// were bypassable by spreading requests across instances. Falls back to an
+// in-memory window inside the lib if the shared store is unreachable.
+async function checkAdminRateLimit(ip: string, action: string): Promise<{ allowed: boolean; retryAfter?: number }> {
   const tier = getActionTier(action)
   const limit = RATE_LIMITS[tier]
-  const key = `${ip}:${tier}`
-  const now = Date.now()
-
-  const bucket = rateBuckets.get(key)
-  if (!bucket || now > bucket.resetAt) {
-    rateBuckets.set(key, { count: 1, resetAt: now + limit.windowMs })
-    return { allowed: true }
-  }
-
-  if (bucket.count >= limit.max) {
-    return { allowed: false, retryAfter: Math.ceil((bucket.resetAt - now) / 1000) }
-  }
-
-  bucket.count++
-  return { allowed: true }
+  return checkSharedRateLimit(`cms_admin_${tier}`, ip, limit.max, Math.ceil(limit.windowMs / 1000))
 }
-
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, bucket] of rateBuckets) {
-    if (now > bucket.resetAt) rateBuckets.delete(key)
-  }
-}, 5 * 60_000)
 
 // ═══════════════════════════════════════════════════
 // AUDIT LOGGING
@@ -209,7 +200,7 @@ export async function POST(req: NextRequest) {
     const { action, ...params } = parsed.data as any
 
     // Rate limit check
-    const rateCheck = checkAdminRateLimit(ip, action)
+    const rateCheck = await checkAdminRateLimit(ip, action)
     if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: `Rate limit exceeded. Retry in ${rateCheck.retryAfter}s.` },
